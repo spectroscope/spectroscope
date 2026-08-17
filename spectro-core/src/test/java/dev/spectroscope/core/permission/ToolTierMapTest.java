@@ -132,7 +132,7 @@ class ToolTierMapTest {
         ToolTierMap map = ToolTierMap.shipped();
         for (String name : java.util.List.of("web_fetch", "web_search", "browse_page",
                 "generate_image", "update_plan", "use_skill", "report_status",
-                "spawn_agent", "spawn_agents")) {
+                "spawn_agent", "spawn_agents", "ask_user_question")) {
             assertNotEquals("unmapped", map.resolve(name).source(), name + " ships unrated");
         }
     }

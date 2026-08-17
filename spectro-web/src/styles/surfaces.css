@@ -115,6 +115,114 @@
 .gate-outcome--denied { color: var(--ev-gate); border-color: var(--ev-gate); }
 .gate-outcome--pending { color: var(--ev-pending); border-color: var(--ev-pending); }
 
+/* ---------- Ask bar (card 265: the run is waiting for an answer) ----------
+   The gate's slot and the gate's violet "waiting on you" line, its own body:
+   a question is read, not scanned, so it gets a line of its own and the choices
+   are chips rather than two verdict buttons. Colour only from tokens, and the
+   kicker word carries the state in text so the line is never the only sign. */
+.ask-bar {
+  position: relative;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3) calc(var(--sp-4) + 4px);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.ask-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.ask-kicker {
+  font-size: var(--fs-11);
+  color: var(--ev-pending);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.ask-header { font-size: var(--fs-12); color: var(--text-dim); }
+.ask-queue { font-size: var(--fs-11); color: var(--ev-pending); }
+.ask-question {
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--text);
+  /* Model-authored text: it wraps and it is never clipped, because a question
+     whose tail is cut off is a question nobody can answer honestly. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ask-options {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.ask-option {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+  transition: border-color var(--t-fast), transform var(--t-fast);
+}
+.ask-option:hover { border-color: var(--ev-pending); transform: translateY(-1px); }
+.ask-option--chosen { border-color: var(--ev-pending); }
+.ask-option-label { font-size: var(--fs-13); color: var(--text); }
+.ask-option-desc { font-size: var(--fs-11); color: var(--text-faint); }
+.ask-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.ask-text {
+  font: inherit;
+  font-size: var(--fs-13);
+  flex: 1;
+  min-width: 10rem;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--sp-1) var(--sp-2);
+}
+.ask-text:focus-visible { border-color: var(--ev-pending); outline: none; }
+.ask-skip,
+.ask-send {
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 560;
+  border-radius: var(--radius-control);
+  padding: var(--sp-1) var(--sp-4);
+  cursor: pointer;
+  transition: border-color var(--t-fast), filter var(--t-fast), transform var(--t-fast);
+}
+.ask-skip {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.ask-skip:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.ask-send {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--text-on-accent);
+}
+.ask-send:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+.ask-send:disabled { opacity: 0.5; cursor: default; }
+.ask-notice {
+  margin: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+
 /* ---------- Explain panel (docked right of the trace stream) ---------- */
 .explain-panel {
   width: 320px;

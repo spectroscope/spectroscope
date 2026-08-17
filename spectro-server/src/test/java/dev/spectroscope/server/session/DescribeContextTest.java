@@ -41,6 +41,28 @@ class DescribeContextTest {
     }
 
     @Test
+    void introspectionListsTheAskBecauseTheLiveBeltCarriesIt(@TempDir Path cwd) {
+        // Card 265, and the same failure this whole class exists to stop: the ask
+        // is registered in buildAgentOnce beside update_plan, so a System-Context
+        // panel that does not name it describes a belt the session does not have.
+        // The seam here is Asker.none() — describing a tool is not driving one,
+        // and this endpoint has no session and therefore nobody to ask.
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
+
+        ContextInfo context = ContextDescriber.describe(config, cwd);
+        Map<String, ContextInfo.ToolInfo> byName = context.tools().stream()
+                .collect(Collectors.toMap(ContextInfo.ToolInfo::name, Function.identity()));
+
+        assertTrue(byName.containsKey("ask_user_question"),
+                "the ask must appear in the introspection list");
+        assertEquals(new dev.spectroscope.core.tools.AskUserQuestionTool(
+                        dev.spectroscope.core.Asker.none()).description(),
+                byName.get("ask_user_question").description(),
+                "introspection reads the real tool, not a drifted literal");
+        assertEquals(false, byName.get("ask_user_question").needsPermission());
+    }
+
+    @Test
     void introspectionListsWebSearchWithItsActiveTierAndBrowsePage(@TempDir Path cwd) {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
 

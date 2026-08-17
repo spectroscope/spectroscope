@@ -16,7 +16,7 @@
     "land on every gate audit line."
   ],
   "schemaVersion": 1,
-  "mapVersion": "2026-08-13.3",
+  "mapVersion": "2026-08-17.1",
 
   "builtin": {
     "_comment": [
@@ -29,6 +29,12 @@
       "",
       "The browser_* family (card 201) is rated by what each tool DOES to the page.",
       "browser_read_page, browser_find and browser_read_console look and never touch.",
+      "ask_user_question (card 265) neither looks nor touches: it asks the person",
+      "watching and waits. It is permission-free, so this entry is never consulted for",
+      "a gate — it is here because an unrated built-in is a prompt waiting to happen the",
+      "day somebody makes it gated, and read is the honest ceiling for a tool whose only",
+      "effect is a question.",
+      "",
       "browser_navigate and browser_resize act on the pane; browser_computer bundles a",
       "screenshot (read) with input injection (write), and a tool's tier is its widest",
       "capability, so it is write. browser_eval is eval-execute and deliberately so:",
@@ -62,6 +68,7 @@
     "browser_read_console": "read",
     "launch_list": "read",
     "launch_logs": "read",
+    "ask_user_question": "read",
 
     "write_file": "write",
     "edit_file": "write",

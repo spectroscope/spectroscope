@@ -37,6 +37,7 @@ const TICK_COLOR: Record<TickKind, string> = {
   reasoning: "var(--ev-reasoning)",
   tool: "var(--ev-tool)",
   gate: "var(--ev-gate)",
+  ask: "var(--ev-pending)", // card 265: a person is holding this run
   subagent: "var(--ev-subagent)",
   lifecycle: "var(--ev-lifecycle)",
   error: "var(--error)",

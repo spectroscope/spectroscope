@@ -513,6 +513,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "gate.recorded": { de: "aufgezeichnet", en: "recorded" },
   "gate.histAllowed": { de: "erlaubt", en: "allowed" },
   "gate.histDenied": { de: "abgelehnt", en: "denied" },
+  // The ask surface (card 265). Its own words, because it is its own act: a gate
+  // is answered with allow/deny, a question with a choice — and the notice below
+  // is the one fence against somebody typing a key into a session file.
+  "ask.aria": { de: "Frage an dich", en: "A question for you" },
+  "ask.kicker": { de: "frage", en: "question" },
+  "ask.queue": { de: "+{n} wartend", en: "+{n} waiting" },
+  "ask.skip": { de: "Überspringen", en: "Skip" },
+  "ask.send": { de: "Antworten", en: "Answer" },
+  "ask.placeholder": {
+    de: "… oder in eigenen Worten",
+    en: "… or in your own words",
+  },
+  // The number card 111 wrote the second clock for and nobody ever drew. It
+  // reads as WAITING, never as work: the tool's own badge sits right beside it.
+  "ask.waited": { de: "{d} auf dich gewartet", en: "waited {d} for you" },
+  "ask.notice": {
+    de: "Deine Antwort steht im Transkript dieser Session. Keine Keys, keine Passwörter.",
+    en: "Your answer goes into the transcript of this session. No keys, no passwords.",
+  },
 
   // explain panel (the why layer)
   "explain.toggle": { de: "gates", en: "gates" },
@@ -635,6 +654,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "sp.openTrace": { de: "Lane {id} im Trace öffnen", en: "Open lane {id} in the trace" },
   "sp.gateOpen": { de: "gate offen", en: "gate open" },
+  // Card 265 on the fleet surface: the lane says WHOSE turn it is, in words, so
+  // the violet is never the only thing carrying it. Lower case like every other
+  // lane chip, and it says "you" — the whole point of the flag is that this one
+  // lane of five cannot move without the reader.
+  "sp.askOpen": { de: "wartet auf dich", en: "waiting on you" },
   "sp.noTask": { de: "(kein Task angekündigt)", en: "(no task announced)" },
   // What THIS view hides, counted against what is visible rather than against
   // the whole stream: on a sparse stretch the number falls to zero and the line

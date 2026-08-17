@@ -148,6 +148,14 @@ export function buildTextFeed(events: readonly RunEvent[], extended = false): Fe
       case "images_withheld":
         push("marker", e.agentId, `[images_withheld ${e.images} · ${e.reason}]`);
         break;
+      // Card 265. A pasted transcript where the agent changed course has to say
+      // that a person told it to — and, when nobody did, that it decided alone.
+      case "question_asked":
+        push("marker", e.agentId, `[question] ${e.questions.map((q) => q.question).join(" · ")}`);
+        break;
+      case "question_answered":
+        push("marker", "main", e.cancelled ? "[question unanswered]" : `[answer] ${e.answers.join(", ")}`);
+        break;
       case "error":
         closeThinking(e.agentId ?? "main");
         mode.set(e.agentId ?? "main", null);

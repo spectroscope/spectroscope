@@ -32,6 +32,7 @@ import { ImagePanel } from "./components/ImagePanel";
 import { backendWithAKey } from "./components/imageBackend";
 import { ImportDialog } from "./components/ImportDialog";
 import { GateBar } from "./components/GateBar";
+import { AskBar } from "./components/AskBar";
 import { LevelPill } from "./components/LevelPill";
 import { LevelingPanel } from "./components/LevelingPanel";
 import { LockedSurface } from "./components/LockedSurface";
@@ -679,6 +680,12 @@ export function App() {
       remember: opts?.remember,
       persist: opts?.persist,
     });
+  };
+  // Card 265: the answer to a parked question. Its own frame and its own sender —
+  // a question is not a permission, and answering one consents to nothing, so
+  // none of the gate's remember/persist machinery rides along.
+  const answerQuestion = (callId: string, answers: string[], cancelled: boolean): void => {
+    sendClient({ type: "question_response", callId, answers, cancelled });
   };
   // the provider choice lives client-side AND on the session — the
   // send() no-ops (returns false) while the socket is down, which is fine:
@@ -1843,6 +1850,13 @@ export function App() {
   const gateVisible =
     enteredFleet === null && viewingLive && tab !== "lab" && live.pendingPermissions.length > 0;
 
+  // Card 265. The same guard as the gate bar, for the same reason and one more:
+  // an ARCHIVED or IMPORTED session must never grow a live control, because the
+  // decision it shows was made by somebody else, months ago, and has an answer
+  // already. The reducer clears the queue on a replay as well — this is the
+  // second lock on the same door.
+  const askVisible = enteredFleet === null && viewingLive && live.pendingAsks.length > 0;
+
   const firstUser = view.turns.find((turn) => turn.kind === "user");
   const title =
     firstUser !== undefined && firstUser.kind === "user"
@@ -2628,6 +2642,9 @@ export function App() {
             onDecide={decide}
           />
         )}
+        {/* The ask surface: the run stopped and is waiting for an answer. Same
+            slot as the gate, its own component — Escape must not answer. */}
+        {askVisible && <AskBar pending={live.pendingAsks} onAnswer={answerQuestion} />}
         {/* The FLEET gate: a node in ask mode parked a tool; answer it over the
             hub. Same bar, no "remember" (a remote node has no allowlist here).
             Shown on EVERY tab while a fleet is entered — since card 59 the lab

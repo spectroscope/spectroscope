@@ -3,7 +3,7 @@
 // function; replay is not a separate code path. Pure and framework-free, the
 // same mental figure as buildGraph.
 
-import type { ClientMessage, RunEvent } from "../events";
+import type { AskedQuestionWire, ClientMessage, RunEvent } from "../events";
 import type { WorkspaceMode } from "../workspace/paneState";
 
 import type { ToolResultDetail } from "../import/toolResultDetail";
@@ -32,6 +32,18 @@ export interface ToolCard {
    *  and the card would read the fact backwards. */
   fileChange?: string;
   permission?: "pending" | "allowed" | "denied";
+  /* The ANSWER is deliberately not a field here. It reaches the card the same
+     way an imported question's answer does — as the prose the tool returns,
+     which `describeTool` reads by its `"<question>"="<answer>"` anchor — and that
+     is the whole reason a native ask renders identically to a foreign one. A
+     second copy in this model was written by the reducer and read by nobody for
+     one review cycle; a state field with no reader is the dead fold the card's
+     own lesson warns about, so it is gone rather than duplicated. A released
+     question needs no flag either: with no anchor in the result the renderer
+     already reports "not answered" (`answerFace`, ToolViewBody.tsx). */
+  /** How long the run stood parked on the person. Kept APART from durationMs,
+   *  which records the tool's own work — card 111's rule, one surface further. */
+  askWaitMs?: number;
   /** ts of the tool_call event — drives the live duration count-up. */
   startedAt: number;
 }
@@ -88,6 +100,20 @@ export interface PendingPermission {
   name: string;
   input: unknown;
 }
+
+/** A question the run is parked on, waiting for this person (card 265). Its own
+ *  queue and not the gate's: the two surfaces have two different answers, and a
+ *  question offered Allow/Deny would let one click invent a refusal nobody gave. */
+export interface PendingAsk {
+  callId: string;
+  agentId: string;
+  questions: AskedQuestionWire[];
+}
+
+/** The tool the ask rides on. The reducer derives a pending question from the
+ *  `tool_call` as well as from `question_asked` — the call is emitted BEFORE the
+ *  tool parks, so the bar appears even if the newer event is missed. */
+export const ASK_TOOL = "ask_user_question";
 
 export interface TokenUsage {
   inputTokens: number;
@@ -216,6 +242,9 @@ export interface UiState {
   /** tool_call + tool_result, paired by callId. */
   cards: Record<string, ToolCard>;
   pendingPermissions: PendingPermission[];
+  /** Questions the run is parked on, in arrival order (card 265). Its own queue
+   *  beside the gate's; the bar renders pendingAsks[0] and nothing else. */
+  pendingAsks: PendingAsk[];
   /** Session totals across every run seen by this state. */
   usage: TokenUsage;
   /** The current (or most recently finished) run only. */
@@ -313,6 +342,7 @@ export const initialState: UiState = {
   turns: [],
   cards: {},
   pendingPermissions: [],
+  pendingAsks: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   runUsage: { inputTokens: 0, outputTokens: 0 },
   runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
@@ -340,6 +370,78 @@ export const initialState: UiState = {
   permissionMode: "ask",
   assistantTurnStart: {},
 };
+
+/**
+ * The questions of an ask_user_question call, read out of the model-supplied
+ * input defensively — it is untrusted, and half a question is worse than none.
+ *
+ * @param input the tool_call input, of any shape
+ * @return the questions, or null when the input is not a readable ask
+ */
+function askQuestionsOf(input: unknown): AskedQuestionWire[] | null {
+  if (typeof input !== "object" || input === null) return null;
+  const raw = (input as Record<string, unknown>).questions;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const questions: AskedQuestionWire[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const row = entry as Record<string, unknown>;
+    if (typeof row.question !== "string" || row.question === "") return null;
+    if (!Array.isArray(row.options) || row.options.length === 0) return null;
+    const options: { label: string; description?: string }[] = [];
+    for (const option of row.options) {
+      if (typeof option === "string") {
+        options.push({ label: option });
+        continue;
+      }
+      if (typeof option !== "object" || option === null) return null;
+      const o = option as Record<string, unknown>;
+      if (typeof o.label !== "string") return null;
+      options.push({
+        label: o.label,
+        ...(typeof o.description === "string" ? { description: o.description } : {}),
+      });
+    }
+    questions.push({
+      question: row.question,
+      ...(typeof row.header === "string" ? { header: row.header } : {}),
+      multiSelect: row.multiSelect === true,
+      options,
+    });
+  }
+  return questions;
+}
+
+/**
+ * Queues a pending question derived from a tool_call, idempotent per callId.
+ * Anything that is not a readable ask leaves the queue exactly as it was.
+ *
+ * @param queue   the current pending questions
+ * @param callId  the call the question belongs to
+ * @param agentId the asking agent
+ * @param name    the tool's wire name — only our own ask ever queues
+ * @param input   the call's model-supplied input
+ * @return the queue, unchanged unless this call added a question
+ */
+function queueAsk(
+  queue: PendingAsk[],
+  callId: string,
+  agentId: string,
+  name: string,
+  input: unknown,
+): PendingAsk[] {
+  // OUR tool only. The input shape cannot tell a native question from an
+  // imported one — it is the importer's shape, adopted on purpose — so the name
+  // is the only thing that can. Measured against a real Claude Code transcript
+  // on 2026-08-17: its AskUserQuestion call carries exactly this shape, and
+  // without this line it queued as a live question for the person reading
+  // somebody else's already-answered decision.
+  if (name !== ASK_TOOL) return queue;
+  if (queue.some((a) => a.callId === callId)) return queue;
+  const questions = askQuestionsOf(input);
+  if (questions === null) return queue;
+  return [...queue, { callId, agentId, questions }];
+}
 
 /** Upsert an agent by id; patch is a partial or a function of the current row. */
 function upsertAgent(
@@ -773,6 +875,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           thinkingActive: false,
           cards: { ...state.cards, [card.callId]: card },
           ...(held !== undefined ? { orphanCardImages: orphans } : {}),
+          // Card 265, belt and braces: tool_call is emitted BEFORE the tool
+          // parks, so the browser holds the question even if question_asked is
+          // dropped or comes from a server this build has never heard of. A run
+          // parked behind a bar nobody drew looks like a run that hung.
+          pendingAsks: queueAsk(state.pendingAsks, event.callId, event.agentId, event.name, event.input),
         },
         { kind: "tool", callId: card.callId },
       );
@@ -801,13 +908,50 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
     }
 
-    case "tool_result":
-      return patchCard(state, event.callId, {
-        output: event.output,
-        durationMs: event.durationMs,
-        status: event.isError ? "error" : "ok",
-        fileChange: event.fileChange,
+    case "question_asked": {
+      // Idempotent per callId, and the same rule for both sources: the tool_call
+      // above may already have queued this exact question.
+      if (state.pendingAsks.some((a) => a.callId === event.callId)) return state;
+      return {
+        ...state,
+        pendingAsks: [
+          ...state.pendingAsks,
+          { callId: event.callId, agentId: event.agentId, questions: event.questions },
+        ],
+      };
+    }
+
+    case "question_answered": {
+      // The answer patches the card and drops the question off the queue. A
+      // cancelled one records the release — never a fabricated answer.
+      // Only the WAIT is patched onto the card: it is the one number the event
+      // carries that no other surface has (the tool's own durationMs excludes
+      // it by design — card 111's split). The answer itself travels in the
+      // result prose, which the card renderer already reads.
+      const next = patchCard(state, event.callId, {
+        ...(event.waitMs !== undefined ? { askWaitMs: event.waitMs } : {}),
       });
+      return {
+        ...next,
+        pendingAsks: next.pendingAsks.filter((a) => a.callId !== event.callId),
+      };
+    }
+
+    case "tool_result":
+      return {
+        ...patchCard(state, event.callId, {
+          output: event.output,
+          durationMs: event.durationMs,
+          status: event.isError ? "error" : "ok",
+          // Card 269: what the tool did to the file, as one word beside the output.
+          fileChange: event.fileChange,
+        }),
+        // Card 265: the call is over, so its question is too. This is the release
+        // for every path that ends an ask without a question_answered reaching
+        // this browser — and for a replayed transcript, where the result is the
+        // only thing that ever says the decision was made.
+        pendingAsks: state.pendingAsks.filter((a) => a.callId !== event.callId),
+      };
 
     case "agent_spawn":
       return addTurn(state, {
@@ -1067,5 +1211,10 @@ export function normalizeReplay(state: UiState): UiState {
     runStartTs: null,
     thinkingActive: false,
     pendingPermissions: [],
+    // Card 265, criterion 8: an imported or archived transcript NEVER shows a
+    // live question. An interrupted one carries a tool_call whose result never
+    // came, which is exactly the shape that would put answer buttons over
+    // somebody else's decision from months ago.
+    pendingAsks: [],
   };
 }

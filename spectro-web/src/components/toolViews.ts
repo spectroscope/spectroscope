@@ -370,12 +370,24 @@ const answerAnchor = (question: string): string => `"${question}"="`;
  * @return one answer per question, null where the result carries none
  */
 function answersFor(questions: string[], out: string): (string | null)[] {
-  const at = questions.map((q) => out.indexOf(answerAnchor(q)));
+  // Verbatim first, trimmed second. Both spellings are real and neither may be
+  // the only one tried: a FOREIGN transcript quotes the question exactly as the
+  // model sent it, padding and all, while our own tool strips it before writing
+  // the anchor (it has to — the 500-char bound and the "is it blank" refusal both
+  // measure the real text). Until 2026-08-17 only the verbatim spelling was
+  // looked for, so a question that ended in a newline was answered, recorded,
+  // handed back to the model, and drawn as unanswered.
+  const anchored = questions.map((q) => {
+    const verbatim = out.indexOf(answerAnchor(q));
+    if (verbatim >= 0) return { at: verbatim, text: q };
+    return { at: out.indexOf(answerAnchor(q.trim())), text: q.trim() };
+  });
+  const at = anchored.map((a) => a.at);
   const starts = at.filter((i) => i >= 0).sort((a, b) => a - b);
-  return questions.map((q, i) => {
+  return questions.map((_q, i) => {
     const from = at[i];
     if (from < 0) return null;
-    const head = from + answerAnchor(q).length;
+    const head = from + answerAnchor(anchored[i].text).length;
     const region = out.slice(head, starts.find((s) => s > from) ?? out.length);
     const echo = region.indexOf(PREVIEW_ECHO);
     const body = echo < 0 ? region : region.slice(0, echo + 1);
@@ -398,15 +410,23 @@ function answersFor(questions: string[], out: string): (string | null)[] {
  * @return the named labels in the order the answer listed them, or null
  */
 function labelRun(answer: string, labels: string[]): string[] | null {
-  const byLength = labels.filter((l) => l !== "").sort((a, b) => b.length - a.length);
+  // Matched on the TRIMMED label and reported as the original: the answer names
+  // the label our tool published, which it strips, while the option here still
+  // carries whatever padding the model typed. The returned spelling has to be
+  // the original, because that is what the caller compares its own options
+  // against when it marks one chosen.
+  const byLength = labels
+    .map((label) => ({ label, match: label.trim() }))
+    .filter((l) => l.match !== "")
+    .sort((a, b) => b.match.length - a.match.length);
   const out: string[] = [];
   let rest = answer;
   for (;;) {
-    const hit = byLength.find((l) => rest === l || rest.startsWith(`${l},`));
+    const hit = byLength.find((l) => rest === l.match || rest.startsWith(`${l.match},`));
     if (hit === undefined) return null;
-    out.push(hit);
-    if (rest === hit) return out;
-    rest = rest.slice(hit.length + 1).trimStart();
+    out.push(hit.label);
+    if (rest === hit.match) return out;
+    rest = rest.slice(hit.match.length + 1).trimStart();
   }
 }
 
@@ -1473,6 +1493,11 @@ export function describeTool(
       return { kind: "task", op: "list", rows, wrote: "silent", result: "" };
     }
 
+    // Card 265: our OWN ask lands on the importer's renderer, deliberately. The
+    // input shape is the same by design and the tool's result carries the answer
+    // in the same "<question>"="<answer>" prose, so a native question and an
+    // imported one read identically and this card came for free.
+    case "ask_user_question":
     case "AskUserQuestion": {
       // The answers travel in the RESULT, as prose. A `__unparsedToolInput`
       // payload has no `questions` at all and lands in generic on purpose: it

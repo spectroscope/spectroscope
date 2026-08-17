@@ -103,6 +103,16 @@ public final class SessionConnection {
     private final Map<String, PermissionRequest> pendingRequests = new ConcurrentHashMap<>();
 
     /**
+     * The question side of the same idea (card 265): one extra map, kept apart
+     * from {@link #pending} on purpose. {@link #onPermissionResponse}
+     * unconditionally does allowlist-rule work, and a question must not trigger
+     * any of it; the release rules also differ — a released gate is DENIED, which
+     * is a legitimate verdict, while a released question is only ever
+     * "nobody answered". Built once per connection, like the broker.
+     */
+    private final ParkingAsker asker = new ParkingAsker(this::mode, this::runSignal);
+
+    /**
      * Session-scoped "always allow" rules (the web checkbox). Per-socket, never
      * static: a genuinely new tab is a new SessionConnection with an empty set, so
      * a remembered decision never leaks across the two independent tabs.
@@ -166,6 +176,20 @@ public final class SessionConnection {
     private List<ProviderMessage> initial = List.of();
 
     private volatile CancelSignal signal;     // the running run's signal, or null
+
+    /** The live permission mode, for the asker's own short circuit — a method
+     *  reference rather than a field read, because the asker is built before both
+     *  fields exist and must see the CURRENT value on every question.
+     *  @return the session's mode ("ask", "auto" or "readonly") */
+    private String mode() {
+        return permissionMode;
+    }
+
+    /** The running run's cancel signal, or null between runs.
+     *  @return the signal the asker re-checks around its park */
+    private CancelSignal runSignal() {
+        return signal;
+    }
     private volatile boolean running = false;
     private Agent agent;                      // one agent per connection, built lazily
     private SubagentManager subagents;        // built together with the agent — the spawn
@@ -543,6 +567,27 @@ public final class SessionConnection {
                 }
             }
         }
+    }
+
+    /**
+     * A question_response completes the parked question (card 265) — and that is
+     * ALL it does. No allowlist rule, no "remember", no persistence: a question
+     * is not a permission, and a person answering one has consented to nothing.
+     *
+     * @param callId    the parked question this answers
+     * @param answers   one answer per question asked; ignored when {@code cancelled}
+     * @param cancelled true when the person closed the question without answering
+     *                  (the bar's skip). Released, never answered: an empty string
+     *                  is a person saying nothing, which is a different fact from
+     *                  nobody saying anything
+     */
+    public void onQuestionResponse(String callId, List<String> answers, boolean cancelled) {
+        asker.answer(callId, cancelled ? null : new dev.spectroscope.core.Asker.Answer(answers));
+    }
+
+    /** This session's asker — the seam the ask tests park on. */
+    ParkingAsker asker() {
+        return asker;
     }
 
     /** Where a persisted rule belongs: the session's real workspace when one is
@@ -953,6 +998,12 @@ public final class SessionConnection {
     private void runPrompt(String text, List<Attachment> attachments) {
         CancelSignal runSignal = new CancelSignal();
         this.signal = runSignal;
+        // Card 265, release path 1: the stop button cancels this signal while the
+        // agent's own thread may be parked on a question, and the run's finally
+        // below cannot run until that thread comes back. So cancellation releases
+        // the parked questions itself — the same listener GateBroker registers in
+        // its constructor, and the reason the asker re-checks after publishing.
+        runSignal.onCancel(asker::releaseAllPending);
         ensureStore();
         reportRunning(true);   // every rail on this machine, not just this page
 
@@ -1057,6 +1108,15 @@ public final class SessionConnection {
         // snapshot must not be clobbered by a subagent. describeContext lists it
         // from its own instance; this registration only feeds the live agent.
         registry.register(new dev.spectroscope.core.tools.UpdatePlanTool());
+        // Card 265: the ask, registered HERE and only here on this face, for the
+        // same reason as the plan tool above — registration IS the fence. This
+        // face has a person attached (a browser holding a socket), so the model
+        // may see the verb; a headless run, a cron fire, a library lane and a
+        // subagent never assemble their belts from this method, so the tool
+        // cannot reach a face where nobody could answer. Not in childBase either:
+        // a child's question would park the CHILD's loop behind a bar the
+        // operator's own run does not own.
+        registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(asker));
         if (!skills.skills().isEmpty()) {
             registry.register(skills.useSkillTool());
         }
@@ -1942,5 +2002,9 @@ public final class SessionConnection {
         pending.values().forEach(future -> future.complete(false)); // deny orphans so no thread hangs
         pending.clear();
         pendingRequests.clear();
+        // Card 265: and every parked QUESTION — released as cancelled, never as
+        // an answer. A denial is a verdict a gate can honestly report; a question
+        // has no such verdict, and one invented answer in a JSONL is permanent.
+        asker.releaseAllPending();
     }
 }

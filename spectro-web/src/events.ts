@@ -212,7 +212,50 @@ export type RunEvent =
        *  a vision provider) is a second value here, not a second event. */
       reason: string;
       ts: number;
+    } // additive
+  // Card 265: the run stopped and asked the person watching it something. Its own
+  // pair of types rather than a permission_request with text on it — a gate's
+  // whole vocabulary is allow/deny, and a reader that only ever saw the boolean
+  // could not say what was asked or what came back.
+  //
+  // The shape is the IMPORTER's, verbatim, which is what makes a native question
+  // render identically to one read out of a foreign transcript: toolViews.ts
+  // already draws exactly this.
+  | {
+      type: "question_asked";
+      agentId: string;
+      /** The tool call parked on the answer; keys the response frame. */
+      callId: string;
+      questions: AskedQuestionWire[];
+      ts: number;
+    }
+  | {
+      type: "question_answered";
+      callId: string;
+      /** One entry per question asked. Empty exactly when `cancelled`. */
+      answers: string[];
+      /** True when the question was released without an answer: a cancelled run,
+       *  a socket that went away, an unattended permission mode, a skip. Never a
+       *  fabricated reply — an invented answer in a session file cannot be told
+       *  from a real one afterwards. */
+      cancelled: boolean;
+      /** How long the run stood parked on the person. Card 111's split, one
+       *  surface further: these same millis are SUBTRACTED from the tool's
+       *  durationMs, so a slow human never paints the tool as slow. Absent when
+       *  nothing was ever measured. */
+      waitMs?: number;
+      ts: number;
     }; // additive
+
+/** One question of an ask, as the wire carries it (card 265). Deliberately the
+ *  same field names the transcript importer reads, so both halves of the app
+ *  draw a question with one renderer. */
+export interface AskedQuestionWire {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: { label: string; description?: string }[];
+}
 
 // Client -> server frames (socket protocol, design/BUILD-PLAN.md). The server
 // sends nothing but RunEvent JSON in the other direction. user_message
@@ -227,7 +270,13 @@ export type ClientMessage =
   | { type: "set_reasoning"; mode: "on" | "off" | "default"; effort?: string } // picker reasoning control (card 88)
   | { type: "set_provider"; provider: string; model?: string } // switch the LLM backend mid-session
   | { type: "set_workspace"; mode?: "random" | "default" | "set"; path?: string } // pin THIS session's workspace by mode (before the first run)
-  | { type: "set_permission_mode"; mode: string }; // switch ask/auto/readonly mid-session (composer gear)
+  | { type: "set_permission_mode"; mode: string } // switch ask/auto/readonly mid-session (composer gear)
+  // Card 265: the answer to a parked question. Its own frame rather than a wider
+  // permission_response, because that one carries allowlist work ("remember",
+  // "persist") and answering a question consents to nothing. `cancelled` is the
+  // skip button: released, never answered — "" would be a person saying nothing,
+  // which is a different fact from nobody saying anything.
+  | { type: "question_response"; callId: string; answers: string[]; cancelled?: boolean };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {

@@ -550,11 +550,18 @@ public final class Agent {
         // write, and every other reader would otherwise have to parse prose.
         // A tool that reports nothing leaves this null, which is not "unchanged".
         AtomicReference<Tool.FileChange> reported = new AtomicReference<>();
+        // Card 265: the loop provides the wait sink, because only the loop can
+        // subtract. A tool that parks on a PERSON inside execute (ask_user_question
+        // today) reports those milliseconds here, and they leave durationMs the
+        // same way card 111 took the gate's wait out of it — a four-minute answer
+        // must not be recorded as a four-minute tool call. Every existing tool
+        // reports nothing and is timed exactly as before.
+        java.util.concurrent.atomic.AtomicLong humanWaitMs = new java.util.concurrent.atomic.AtomicLong();
         long startedAt = now();
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
-                        planLedger(emit), attach, reported::set));
-        long durationMs = now() - startedAt;
+                        planLedger(emit), attach, reported::set, humanWaitMs::addAndGet));
+        long durationMs = Math.max(0, now() - startedAt - humanWaitMs.get());
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is
         // not a finding in this phase, and reporting one would invent a veto

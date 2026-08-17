@@ -43,7 +43,7 @@ class StandardToolsTest {
     /** A context that keeps what the tool reported about the file (card 269). */
     private static ToolContext reportingContextIn(Path cwd, List<Tool.FileChange> into) {
         return new ToolContext(cwd, new CancelSignal(), "main", "c1", event -> { },
-                attachment -> { }, into::add);
+                attachment -> { }, into::add, millis -> { });
     }
 
     private static ObjectNode input(String field, String value) {

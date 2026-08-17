@@ -201,6 +201,10 @@
 .fleet-node-card--completed { border-left-color: var(--ok); }
 .fleet-node-card--failed { border-left-color: var(--error); }
 .fleet-node-card--gate { border-color: var(--ev-gate); }
+/* Card 265: a question is a different wait from a gate, so a different edge —
+   the wait violet, not the gate red. Colour on the LINE only, per the brand
+   rules; the pulse beside it carries the motion. */
+.fleet-node-card--ask { border-color: var(--ev-pending); }
 .fleet-node-card-head {
   display: flex;
   align-items: center;

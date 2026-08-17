@@ -32,7 +32,7 @@ import { useEffect } from "react";
 import { beacon } from "../state/levelingBeacon";
 
 /** The legend mirrors the wire vocabulary — protocol terms, not translated. */
-const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "subagent", "lifecycle"];
+const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "ask", "subagent", "lifecycle"];
 
 /** The whole domain: what a view with no window of its own is looking at. */
 const FULL = fit();
@@ -183,6 +183,7 @@ function LaneRow({
             </span>
           )}
           {lane.pendingGate && <span className="spectrum-gate mono pulse">{t(lang, "sp.gateOpen")}</span>}
+          {lane.pendingAsk && <span className="spectrum-ask mono pulse">{t(lang, "sp.askOpen")}</span>}
         </span>
         <span className="spectrum-task" title={lane.task}>
           {lane.task === "" ? t(lang, "sp.noTask") : lane.task}

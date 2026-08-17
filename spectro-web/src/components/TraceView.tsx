@@ -197,6 +197,14 @@ export function categoryOf(type: string): Category {
     case "attachment_image":
     case "images_withheld":
       return "image";
+    // Card 265: a question and its answer are the gate's kind of row — the run
+    // stopped and a person decided something. They join the `permission` chip
+    // rather than getting a fourteenth one: a reader pressing it to follow
+    // "where did this run wait on me" is standing exactly where both answers are.
+    case "question_asked":
+    case "question_answered":
+    case "question_response":
+      return "permission";
     case "context_info":
     case "system_context":
       return "context";
@@ -845,6 +853,18 @@ function chainLabel(e: TraceEntry): string {
     // kept back and leave out how much of the prompt the model never saw.
     case "images_withheld":
       return `${String(p["images"] ?? "")} image(s) not sent`;
+    // The row's content is the question and the answer. "question_asked" alone
+    // would say a person was consulted and leave out about what.
+    case "question_asked": {
+      const asked = Array.isArray(p["questions"]) ? p["questions"] : [];
+      const first = asked[0] as Record<string, unknown> | undefined;
+      return `ask ${String(first?.["question"] ?? "")}`;
+    }
+    case "question_answered": {
+      const answers = Array.isArray(p["answers"]) ? p["answers"].map(String) : [];
+      const waited = p["waitMs"] === undefined ? "" : ` · ${Math.round(Number(p["waitMs"]) / 1000)}s`;
+      return p["cancelled"] === true ? `unanswered${waited}` : `answered ${answers.join(", ")}${waited}`;
+    }
     default:
       return e.type;
   }

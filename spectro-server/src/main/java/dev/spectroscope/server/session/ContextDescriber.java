@@ -1,9 +1,11 @@
 package dev.spectroscope.server.session;
 
+import dev.spectroscope.core.Asker;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
 import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.core.subagents.RoleCatalog;
+import dev.spectroscope.core.tools.AskUserQuestionTool;
 import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.UpdatePlanTool;
@@ -101,6 +103,12 @@ final class ContextDescriber {
         List<Tool> extras = new ArrayList<>(
                 SettingsToolBelt.assemble(SettingsToolBelt.describeSeams(config)).tools());
         extras.add(new UpdatePlanTool());
+        // Card 265: registered right beside the plan tool in
+        // SessionConnection.buildAgentOnce, so it belongs on both faces or on
+        // neither. Asker.none() is an honest describe-time stand-in — this
+        // endpoint is stateless and has no session, therefore nobody to ask;
+        // describing a tool is not driving one, and nothing here can act.
+        extras.add(new AskUserQuestionTool(Asker.none()));
         Stream<Tool> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()
                 : Stream.of(skills.useSkillTool());

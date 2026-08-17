@@ -136,6 +136,62 @@ describe("buildSpectrum", () => {
     expect(m.running).toBe(true); // root run never ended in this slice
   });
 
+  // Card 265 / concept §3.5, leg 26: "the lane carries pendingAsk; the tick
+  // appears". The gate had both since the Spectrum shipped; the ask arrived with
+  // neither, so the one view built to show a whole fleet at once could not show
+  // the only state in which a run needs a person.
+  const question: RunEvent = {
+    type: "question_asked",
+    agentId: "worker-1",
+    callId: "q1",
+    questions: [{ question: "Which store?", multiSelect: false, options: [{ label: "Postgres" }] }],
+    ts: 1650,
+  } as unknown as RunEvent;
+
+  it("puts an ask tick on the lane and flags the lane as waiting on a person", () => {
+    const asked = [...fleet.slice(0, 8), question];
+    const worker = buildSpectrum(asked).lanes[1];
+    const asks = worker.ticks.filter((t) => t.kind === "ask");
+    expect(asks).toHaveLength(1);
+    expect(asks[0].pending).toBe(true);
+    expect(worker.pendingAsk).toBe(true);
+  });
+
+  it("keeps the ask apart from the gate, both ways", () => {
+    // Two waits, two flags. A gate is a yes/no on a side effect and has a verdict
+    // to report; a question has none, and the two bars are two components on
+    // purpose. One flag standing in for both would raise the wrong one.
+    const openGate = buildSpectrum(fleet.slice(0, 8)).lanes[1];
+    expect(openGate.pendingGate).toBe(true);
+    expect(openGate.pendingAsk).toBe(false);
+
+    const openAsk = buildSpectrum([...fleet.slice(0, 7), question]).lanes[1];
+    expect(openAsk.pendingAsk).toBe(true);
+    expect(openAsk.pendingGate).toBe(false);
+  });
+
+  it("clears the lane and marks the tick once the answer lands", () => {
+    const answered = [
+      ...fleet.slice(0, 8),
+      question,
+      { type: "question_answered", callId: "q1", answers: ["Postgres"], cancelled: false, ts: 1700 },
+    ] as unknown as RunEvent[];
+    const worker = buildSpectrum(answered).lanes[1];
+    expect(worker.pendingAsk).toBe(false);
+    const asks = worker.ticks.filter((t) => t.kind === "ask");
+    expect(asks).toHaveLength(2); // the question and the answer
+    expect(asks[0].pending).toBe(false);
+  });
+
+  it("stops claiming a wait when the question was released without an answer", () => {
+    const released = [
+      ...fleet.slice(0, 8),
+      question,
+      { type: "question_answered", callId: "q1", answers: [], cancelled: true, ts: 1700 },
+    ] as unknown as RunEvent[];
+    expect(buildSpectrum(released).lanes[1].pendingAsk).toBe(false);
+  });
+
   it("keeps every mark: density is a question for the viewport, not for the fold", () => {
     // The old fold deleted the dense channels wholesale past a fixed budget, so
     // a long imported session lost its whole reasoning channel while the legend
