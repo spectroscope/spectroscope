@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { matchSkills, slashQueryAt, tokenInsert, type SkillOption } from "../state/slashCommands";
 import { useSkills } from "../state/skillList";
+import { SLASH_TIP_W, SlashTip, slashTipBox, slashTipView, type SlashTipBox } from "./SlashTip";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -70,6 +71,40 @@ export function useSlashPicker(
   const open = query !== null && !dismissed;
   const active = options[index];
 
+  // Card 253: where the description popover hangs, from the room there actually
+  // is. It starts on the right — the side the card's screenshot shows, and the
+  // side every window with room ends up on anyway — and the measurement below
+  // corrects it. Starting at null instead would cost a first frame without the
+  // box for the common case, to spare the rare one a flip nobody can see.
+  const popRef = useRef<HTMLDivElement>(null);
+  const [tipBox, setTipBox] = useState<SlashTipBox | null>({ side: "right", width: SLASH_TIP_W });
+  useEffect(() => {
+    if (!open) return;
+    const pop = popRef.current;
+    if (pop === null) return;
+    const measure = (): void => {
+      const box = pop.getBoundingClientRect();
+      setTipBox(slashTipBox({ popLeft: box.left, popRight: box.right, viewportWidth: window.innerWidth }));
+    };
+    // Once immediately, because an observer is not a measurement: in a window
+    // that never renders a frame nothing is delivered at all, and the first
+    // opening is exactly when the answer is needed.
+    measure();
+    // Two watchers, for two independent movements. Dragging the dock resizes the
+    // composer column without touching the window, and resizing the window moves
+    // the room without touching the column once it is at its 860px cap.
+    const observer = new ResizeObserver(measure);
+    observer.observe(pop);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [open]);
+
+  const tipView = slashTipView(options, index);
+  const tip = tipView === null || tipBox === null ? null : <SlashTip view={tipView} box={tipBox} />;
+
   const pick = (skill: SkillOption): void => {
     if (at === null) return;
     const picked = tokenInsert(draft, at, caret, skill);
@@ -110,38 +145,44 @@ export function useSlashPicker(
   }
 
   const node = (
-    <div className="wsg-pop slash-pop" role="dialog" aria-label={t(lang, "slash.title")}>
-      <div className="settings-label">{t(lang, "slash.title")}</div>
-      {options.length === 0 ? (
-        <p className="settings-note">
-          {skills.length === 0 ? t(lang, "slash.empty") : t(lang, "slash.none", { query: query ?? "" })}
-        </p>
-      ) : (
-        <ul className="slash-list" role="listbox" aria-label={t(lang, "slash.title")}>
-          {options.map((skill, at) => (
-            <li key={skill.name}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={at === index}
-                className={`slash-row${at === index ? " slash-row--on" : ""}`}
-                // The pointer must not take focus off the textarea, or the
-                // composer loses the caret the pick is about to write into.
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setIndex(at)}
-                onClick={() => pick(skill)}
-              >
-                <span className="slash-name mono">{skill.name}</span>
-                <span className="slash-desc" title={skill.description}>
-                  {skill.description}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <p className="settings-note slash-hint">{t(lang, "slash.hint")}</p>
-    </div>
+    <>
+      <div className="wsg-pop slash-pop" role="dialog" aria-label={t(lang, "slash.title")} ref={popRef}>
+        <div className="settings-label">{t(lang, "slash.title")}</div>
+        {options.length === 0 ? (
+          <p className="settings-note">
+            {skills.length === 0 ? t(lang, "slash.empty") : t(lang, "slash.none", { query: query ?? "" })}
+          </p>
+        ) : (
+          <ul className="slash-list" role="listbox" aria-label={t(lang, "slash.title")}>
+            {options.map((skill, at) => (
+              <li key={skill.name}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={at === index}
+                  className={`slash-row${at === index ? " slash-row--on" : ""}`}
+                  // The pointer must not take focus off the textarea, or the
+                  // composer loses the caret the pick is about to write into.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setIndex(at)}
+                  onClick={() => pick(skill)}
+                >
+                  <span className="slash-name mono">{skill.name}</span>
+                  <span className="slash-desc" title={skill.description}>
+                    {skill.description}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="settings-note slash-hint">{t(lang, "slash.hint")}</p>
+      </div>
+      {/* A SIBLING of the list, never a child: .wsg-pop scrolls (overflow-y),
+          and a box that hangs out of a scrolling box is clipped by it — the
+          rule .plus-sub in workspace-gear.css documents the same trap. */}
+      {tip}
+    </>
   );
   return { node, handleKey };
 }

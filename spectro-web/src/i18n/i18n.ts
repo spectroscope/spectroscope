@@ -2153,6 +2153,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Abgeschaltete Skills stehen nicht in der Liste — der Agent kennt sie nicht.",
     en: "Disabled skills are not listed; the agent has not been told about them.",
   },
+  // Card 253: heads the popover beside the list, which carries the focused
+  // row's description in full — the row itself only has space for its first
+  // few words.
+  "slash.about": { de: "Beschreibung", en: "Description" },
   "chat.placeholder": { de: "Nachricht an den Agenten …", en: "Message the agent …" },
   "chat.running": { de: "Läuft …", en: "Running …" },
   "chat.send": { de: "Senden", en: "Send" },
