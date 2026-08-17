@@ -25,13 +25,18 @@ export type ToolView =
        *  this presents a partial file as the file. */
       truncated: boolean;
     }
-  | { kind: "write"; path: string; content: string; result: string }
+  | { kind: "write"; path: string; content: string; result: string; changed: FileChange | null }
   | {
       kind: "edit";
       path: string;
       before: string;
       after: string;
       result: string;
+      /** What the replacement did to the file (card 269), or null when the
+       *  record claimed nothing. A replacement that found its string and put
+       *  the same string back is different news from one that found nothing —
+       *  that second case is an error and never reaches this view at all. */
+      changed: FileChange | null;
       /** Where the change landed, in the file's NEW numbering ("lines 51–71"),
        *  or null when the record carried no patch. The before/after panes come
        *  from the call's own strings and float with no position otherwise: the
@@ -72,6 +77,19 @@ export type ToolView =
       result: string;
     }
   | { kind: "generic"; input: unknown; output: string };
+
+/** What a mutating file tool did (card 269) — the three words the harness
+ *  reports, and the whole vocabulary. Anything else on the wire is a word this
+ *  build does not know, and an unknown word is shown as no word at all. */
+export type FileChange = "created" | "changed" | "unchanged";
+
+/** The wire's word, or null when it said nothing this build understands.
+ *
+ * @param raw the `fileChange` field of a tool_result, if it carried one
+ */
+export function fileChange(raw: string | null | undefined): FileChange | null {
+  return raw === "created" || raw === "changed" || raw === "unchanged" ? raw : null;
+}
 
 /** One child of a fan-out. `label` is the short headline some vocabularies send
  *  next to the full task (Claude Code's `description`); null when there is none. */
@@ -1213,9 +1231,14 @@ export function describeTool(
    *  the field, so every use below is absent-first: with nothing here the view
    *  is exactly what it was. */
   detail?: ToolResultDetail | null,
+  /** What the result said a write DID to the file (card 269). Absent on every
+   *  import, on every session older than the field, and on every tool that
+   *  touched no file — and absent is not "unchanged", it is no claim. */
+  reportedChange?: string | null,
 ): ToolView {
   const out = output ?? "";
   const d = detail ?? null;
+  const changed = fileChange(reportedChange);
   const generic: ToolView = { kind: "generic", input, output: out };
 
   switch (name) {
@@ -1252,7 +1275,7 @@ export function describeTool(
       const path = firstStr(input, "path", "filePath", "file_path");
       const content = str(input, "content");
       if (path === null || content === null) return generic;
-      return { kind: "write", path, content, result: out };
+      return { kind: "write", path, content, result: out, changed };
     }
 
     case "Edit":
@@ -1264,7 +1287,15 @@ export function describeTool(
       const before = str(input, "old_string") ?? str(input, "oldString");
       const after = str(input, "new_string") ?? str(input, "newString");
       if (path === null || before === null || after === null) return generic;
-      return { kind: "edit", path, before, after, result: out, at: d?.patch ? patchAt(d.patch) : null };
+      return {
+        kind: "edit",
+        path,
+        before,
+        after,
+        result: out,
+        at: d?.patch ? patchAt(d.patch) : null,
+        changed,
+      };
     }
 
     case "list_dir": {

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** The safeguards of the built-in tools: sandbox, size cap, timeout, error contract. */
 @Timeout(value = 10, unit = TimeUnit.SECONDS)
@@ -36,6 +38,12 @@ class StandardToolsTest {
 
     private static ToolContext contextIn(Path cwd) {
         return new ToolContext(cwd, new CancelSignal());
+    }
+
+    /** A context that keeps what the tool reported about the file (card 269). */
+    private static ToolContext reportingContextIn(Path cwd, List<Tool.FileChange> into) {
+        return new ToolContext(cwd, new CancelSignal(), "main", "c1", event -> { },
+                attachment -> { }, into::add);
     }
 
     private static ObjectNode input(String field, String value) {
@@ -62,7 +70,115 @@ class StandardToolsTest {
         assertEquals(List.of("write_file", "run_command", "edit_file"), guarded);
     }
 
+    // ------------------------------------------------- write_file: the difference
+
+    /**
+     * Card 269. The measured loop wrote the same 31 files and asked the harness,
+     * in the model's own words, whether anything had moved — then spent a whole
+     * turn on a read_file to find out. The write already knew.
+     */
+    @Test
+    void writeFileSaysWhetherItCreatedOrChangedTheFile(@TempDir Path cwd) throws IOException {
+        Tool write = tools(10).get("write_file");
+
+        ObjectNode fresh = JSON.createObjectNode();
+        fresh.put("path", "pi.py");
+        fresh.put("content", "import math\n");
+        assertEquals("Wrote: pi.py (12 bytes) — created",
+                write.execute(fresh, contextIn(cwd)));
+
+        ObjectNode grown = JSON.createObjectNode();
+        grown.put("path", "pi.py");
+        grown.put("content", "import math\nprint(math.pi)\n");
+        // The delta is the SIZE, not the line count: a different length proves a
+        // different file without opening it, and opening it to count lines would
+        // buy prose at the price of the read this card promised not to make.
+        assertEquals("Wrote: pi.py (27 bytes) — changed (+15 bytes)",
+                write.execute(grown, contextIn(cwd)));
+
+        // Same length, other bytes: a signed delta of zero would read as "nothing
+        // happened", which is the exact confusion this card exists to end.
+        ObjectNode swapped = JSON.createObjectNode();
+        swapped.put("path", "pi.py");
+        swapped.put("content", "import math\nprint(math.e_)\n");
+        assertEquals("Wrote: pi.py (27 bytes) — changed (same size, different bytes)",
+                write.execute(swapped, contextIn(cwd)));
+    }
+
+    /**
+     * The pin that matters (card 269, AC 5): three identical writes in a row each
+     * report unchanged, and the third does not report changed. A guard that only
+     * catches the SECOND write would let the 31-file loop run on from there.
+     */
+    @Test
+    void threeIdenticalWritesEachSayUnchangedAndNeverSayChanged(@TempDir Path cwd) {
+        Tool write = tools(10).get("write_file");
+        ObjectNode same = JSON.createObjectNode();
+        same.put("path", "src/particleEngine.js");
+        same.put("content", "export const spawn = () => {};\n");
+        List<Tool.FileChange> reported = new ArrayList<>();
+
+        assertEquals("Wrote: src/particleEngine.js (31 bytes) — created",
+                write.execute(same, reportingContextIn(cwd, reported)));
+        for (int attempt = 2; attempt <= 4; attempt++) {
+            assertEquals("Wrote: src/particleEngine.js (31 bytes) — unchanged (the file already"
+                            + " contained exactly these bytes)",
+                    write.execute(same, reportingContextIn(cwd, reported)), "write #" + attempt);
+        }
+        // The word, not the prose: "unchanged" CONTAINS "changed", so a substring
+        // pin on the sentence would pass while the field said the opposite.
+        assertEquals(List.of(Tool.FileChange.CREATED, Tool.FileChange.UNCHANGED,
+                        Tool.FileChange.UNCHANGED, Tool.FileChange.UNCHANGED), reported,
+                "the third identical write must still say unchanged, never changed");
+    }
+
+    @Test
+    void anUnreadableFileMakesNoClaimRatherThanAWrongOne(@TempDir Path cwd) throws IOException {
+        Path writeOnly = cwd.resolve("write-only.txt");
+        Files.writeString(writeOnly, "abc\n");
+        assumeTrue(Files.getFileStore(writeOnly).supportsFileAttributeView("posix"),
+                "the case needs POSIX permissions to build");
+        Files.setPosixFilePermissions(writeOnly, PosixFilePermissions.fromString("-w-------"));
+        assumeTrue(!Files.isReadable(writeOnly), "running as root reads it anyway");
+
+        ObjectNode in = JSON.createObjectNode();
+        in.put("path", "write-only.txt");
+        in.put("content", "xyz\n"); // same length, so the size shortcut cannot answer
+        // The write itself is allowed; only the comparison is not. Reporting
+        // "unchanged" here would be a guess, and an ERROR would break a write
+        // that works — so the line falls back to exactly its pre-269 shape.
+        assertEquals("Wrote: write-only.txt (4 bytes)",
+                tools(10).get("write_file").execute(in, contextIn(cwd)));
+        Files.setPosixFilePermissions(writeOnly, PosixFilePermissions.fromString("rw-------"));
+        assertEquals("xyz\n", Files.readString(writeOnly), "the write still happened");
+    }
+
     // ---------------------------------------------------------------- edit_file
+
+    /**
+     * Card 269, AC 2: "I found nothing to replace" and "I replaced it with
+     * itself" are different news, and a loop that cannot tell them apart keeps
+     * sending the second one.
+     */
+    @Test
+    void editFileSeparatesAReplacementWithItselfFromNothingToReplace(@TempDir Path cwd) throws IOException {
+        Files.writeString(cwd.resolve("config.txt"), "port=8080\n");
+        Tool edit = tools(10).get("edit_file");
+
+        ObjectNode itself = JSON.createObjectNode();
+        itself.put("path", "config.txt");
+        itself.put("old_string", "port=8080");
+        itself.put("new_string", "port=8080");
+        assertEquals("Edited: config.txt (1 replacement) — unchanged (the replacement produced"
+                + " identical content)", edit.execute(itself, contextIn(cwd)));
+
+        ObjectNode absent = JSON.createObjectNode();
+        absent.put("path", "config.txt");
+        absent.put("old_string", "port=9999");
+        absent.put("new_string", "port=8080");
+        assertEquals("ERROR: old_string not found in config.txt.",
+                edit.execute(absent, contextIn(cwd)));
+    }
 
     @Test
     void editFileReplacesAUniqueString(@TempDir Path cwd) throws IOException {
@@ -71,7 +187,7 @@ class StandardToolsTest {
         in.put("path", "config.txt");
         in.put("old_string", "port=8080");
         in.put("new_string", "port=9090");
-        assertEquals("Edited: config.txt (1 replacement)",
+        assertEquals("Edited: config.txt (1 replacement) — changed (same size, different bytes)",
                 tools(10).get("edit_file").execute(in, contextIn(cwd)));
         assertEquals("host=localhost\nport=9090\n",
                 Files.readString(cwd.resolve("config.txt")));
@@ -97,7 +213,7 @@ class StandardToolsTest {
         assertEquals("x\nx\n", Files.readString(cwd.resolve("a.txt")), "a rejected edit writes nothing");
 
         ambiguous.put("replace_all", true);
-        assertEquals("Edited: a.txt (2 replacements)",
+        assertEquals("Edited: a.txt (2 replacements) — changed (same size, different bytes)",
                 tools(10).get("edit_file").execute(ambiguous, contextIn(cwd)));
         assertEquals("y\ny\n", Files.readString(cwd.resolve("a.txt")));
     }

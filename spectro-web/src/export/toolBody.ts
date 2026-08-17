@@ -39,6 +39,7 @@ import type { Lang } from "../i18n/i18n";
 import { breakShellChain } from "../components/shellChain";
 import type {
   AskedQuestion,
+  FileChange,
   QuestionOption,
   TaskOp,
   TaskRow,
@@ -65,6 +66,25 @@ export interface ToolContext {
 function head(text: string, meta?: string): string {
   const m = meta === undefined || meta === "" ? "" : `<span class="x-tv-meta">${escapeHtml(meta)}</span>`;
   return `<div class="x-io">${escapeHtml(text)}${m}</div>`;
+}
+
+/**
+ * What the write DID to the file (card 269) — the export carries it because the
+ * screen does: a saved file that dropped the one word telling a reader the run
+ * wrote the same bytes again would be a second reading of the same call.
+ * Nothing when the record claimed nothing.
+ *
+ * @param change the view's own word, or null
+ * @param lang   the document's language
+ * @return one chip, or the empty string
+ */
+function changeChip(change: FileChange | null, lang: Lang): string {
+  if (change === null) return "";
+  const word = label(
+    lang,
+    change === "created" ? "changeCreated" : change === "changed" ? "changeChanged" : "changeUnchanged",
+  );
+  return `<p class="x-tv-note x-tv-change x-tv-change--${change}">${escapeHtml(word)}</p>`;
 }
 
 /** A block of someone else's text, coloured only where the language is known
@@ -306,6 +326,7 @@ export const TOOL_HTML: Writers = {
   // is the one worth reading byte for byte.
   write: (view, { lang }) =>
     head(label(lang, "wrote"), view.result) +
+    changeChip(view.changed, lang) +
     pathLine(view.path) +
     head(label(lang, "content")) +
     well(view.content, hlLangForPath(view.path)),
@@ -316,6 +337,7 @@ export const TOOL_HTML: Writers = {
   // the border carries the side, so nothing here needs a claim about the syntax.
   edit: (view, { lang }) =>
     head(label(lang, "edited"), view.result) +
+    changeChip(view.changed, lang) +
     pathLine(view.path) +
     (view.at === null
       ? ""
@@ -513,6 +535,9 @@ export const TOOL_CSS = `
 .x-tv-server{color:var(--text-dim)}
 .x-tv-desc{margin:0 0 6px;font-size:13px;color:var(--text-dim);overflow-wrap:anywhere}
 .x-tv-note{margin:6px 0 0;font-size:11px;color:var(--text-faint)}
+.x-tv-change{margin:0 0 6px;letter-spacing:0.06em}
+.x-tv-change--created{color:var(--ok)}
+.x-tv-change--unchanged{color:var(--warn)}
 .x-tv-list{margin:0;padding:0;list-style:none;font-family:var(--font-mono);font-size:12px}
 .x-tv-item{padding:1px 0;color:var(--text-dim);overflow-wrap:anywhere}
 .x-tv-item--dir{color:var(--text)}

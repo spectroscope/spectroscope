@@ -86,6 +86,11 @@ const LABELS: Record<Lang, Record<string, string>> = {
     content: "content",
     wrote: "wrote",
     edited: "edited",
+    // Card 269: what the write DID to the file. Three words, and the third is
+    // the one a reader stops on.
+    changeCreated: "created",
+    changeChanged: "changed",
+    changeUnchanged: "unchanged",
     before: "before",
     after: "after",
     listing: "directory",
@@ -165,6 +170,9 @@ const LABELS: Record<Lang, Record<string, string>> = {
     file: "Datei",
     content: "Inhalt",
     wrote: "geschrieben",
+    changeCreated: "neu",
+    changeChanged: "geändert",
+    changeUnchanged: "unverändert",
     edited: "bearbeitet",
     before: "vorher",
     after: "nachher",

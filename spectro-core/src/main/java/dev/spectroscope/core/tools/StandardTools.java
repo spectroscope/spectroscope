@@ -16,6 +16,7 @@ import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
@@ -344,6 +345,94 @@ public final class StandardTools {
         };
     }
 
+    // ---- what a write did (card 269) --------------------------------------------
+
+    /**
+     * The difference a mutating file tool made: the word the loop records, and
+     * the clause the model reads. {@code change} is null when no honest word
+     * exists — then {@code tail} is empty and the line keeps its pre-card-269
+     * shape exactly.
+     *
+     * @param change what happened to the file, or null when it could not be told
+     * @param tail   the clause appended to the tool's answer, "" when nothing is claimed
+     */
+    private record Difference(Tool.FileChange change, String tail) {}
+
+    /** The one clause worth a whole extra turn to a looping model. */
+    private static final Difference NO_DIFFERENCE = new Difference(null, "");
+
+    /**
+     * What the write is ABOUT to do, decided before a byte moves.
+     *
+     * <p>Cheap on purpose (card 269's non-functional criterion): the existing
+     * content is read at most ONCE, and not at all when its size already proves
+     * a difference. A file that cannot be read — a write-only file, a path that
+     * turned into something else — yields no word rather than a guess: reporting
+     * "unchanged" there would be invention, and raising an error would break a
+     * write that works.
+     *
+     * @param file the resolved target, inside the sandbox
+     * @param next the bytes this call is about to write
+     * @return the word plus its clause; {@link #NO_DIFFERENCE} when nothing can be claimed
+     */
+    private static Difference inspectWrite(Path file, byte[] next) {
+        try {
+            if (!Files.exists(file)) {
+                return new Difference(Tool.FileChange.CREATED, " — created");
+            }
+            if (!Files.isRegularFile(file)) {
+                return NO_DIFFERENCE; // a directory: the write itself will fail below
+            }
+            long had = Files.size(file);
+            if (had != next.length) {
+                return new Difference(Tool.FileChange.CHANGED,
+                        " — changed (" + signed(next.length - had, "byte") + ")");
+            }
+            return Arrays.equals(Files.readAllBytes(file), next)
+                    ? new Difference(Tool.FileChange.UNCHANGED, UNCHANGED_WRITE)
+                    : new Difference(Tool.FileChange.CHANGED, SAME_SIZE);
+        } catch (IOException | RuntimeException cannotTell) {
+            return NO_DIFFERENCE;
+        }
+    }
+
+    /**
+     * The same verdict for a replacement, where both versions are already in hand.
+     *
+     * @param before the file content as it was read
+     * @param after  the content the replacement produced
+     * @return the word plus its clause
+     */
+    private static Difference inspectReplacement(String before, String after) {
+        if (before.equals(after)) {
+            return new Difference(Tool.FileChange.UNCHANGED,
+                    " — unchanged (the replacement produced identical content)");
+        }
+        long delta = after.getBytes(StandardCharsets.UTF_8).length
+                - (long) before.getBytes(StandardCharsets.UTF_8).length;
+        return new Difference(Tool.FileChange.CHANGED,
+                delta == 0 ? SAME_SIZE : " — changed (" + signed(delta, "byte") + ")");
+    }
+
+    /** Byte-identical is the news the looping model paid a whole turn for. */
+    private static final String UNCHANGED_WRITE =
+            " — unchanged (the file already contained exactly these bytes)";
+
+    /** A signed zero would read as "nothing happened", which is the opposite of the truth. */
+    private static final String SAME_SIZE = " — changed (same size, different bytes)";
+
+    /**
+     * A delta with its sign and its unit, singular at one.
+     *
+     * @param delta how much bigger (or smaller) the file got
+     * @param unit  the singular unit name
+     * @return e.g. {@code +15 bytes}, {@code -1 byte}
+     */
+    private static String signed(long delta, String unit) {
+        return (delta > 0 ? "+" : "-") + Math.abs(delta) + " " + unit
+                + (Math.abs(delta) == 1 ? "" : "s");
+    }
+
     // ---- write_file (additive) --------------------------------------------------
 
     /** Builds {@code write_file}: creates or overwrites a sandboxed text file — a mutation, therefore permission-gated. */
@@ -372,16 +461,23 @@ public final class StandardTools {
              *  is guarded exactly like run_command, no special case. */
             public boolean needsPermission() { return true; }
 
-            /** Sandbox-resolves the path, creates parent directories and writes the content — answers with the byte count. */
+            /** Sandbox-resolves the path, creates parent directories and writes the content —
+             *  answers with the byte count AND what the write did to the file (card 269). */
             public String execute(JsonNode input, ToolContext context) {
                 try {
                     String relative = input.path("path").asText();
                     String content = input.path("content").asText();
                     Path file = resolveInside(context.cwd(), relative); // path sandbox
+                    byte[] next = content.getBytes(StandardCharsets.UTF_8);
+                    // Card 269: look at what is there ONCE, before writing over
+                    // it, against the bytes already in hand.
+                    Difference made = inspectWrite(file, next);
                     Files.createDirectories(file.getParent());
-                    Files.writeString(file, content, StandardCharsets.UTF_8);
-                    int bytes = content.getBytes(StandardCharsets.UTF_8).length;
-                    return "Wrote: " + relative + " (" + bytes + " bytes)";
+                    Files.write(file, next);
+                    if (made.change() != null) {
+                        context.report().accept(made.change());
+                    }
+                    return "Wrote: " + relative + " (" + next.length + " bytes)" + made.tail();
                 } catch (IOException | RuntimeException error) {
                     return "ERROR: " + error.getMessage(); // never throw out of a tool
                 }
@@ -495,8 +591,14 @@ public final class StandardTools {
                     }
                     Files.writeString(file, updated, StandardCharsets.UTF_8);
                     int replacements = replaceAll ? count : 1;
+                    // Card 269. A replacement that found its string and put the
+                    // same string back is not the same news as one that found
+                    // nothing — that case left above as an ERROR, and a loop that
+                    // cannot tell them apart keeps sending the second one.
+                    Difference made = inspectReplacement(content, updated);
+                    context.report().accept(made.change());
                     return "Edited: " + relative + " (" + replacements + " replacement"
-                            + (replacements == 1 ? "" : "s") + ")";
+                            + (replacements == 1 ? "" : "s") + ")" + made.tail();
                 } catch (IOException | RuntimeException error) {
                     return "ERROR: " + error.getMessage(); // never throw out of a tool
                 }

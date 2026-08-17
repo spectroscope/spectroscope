@@ -94,16 +94,58 @@ describe("what the tool returned reaches the card that draws it", () => {
     expect(element(card, "ToolViewBody")).toContain("detail=");
   });
 
+  it("hands the card's file outcome down too (card 269)", () => {
+    // The same hole one card later: the reducer patches the word onto the card,
+    // describeTool reads it, both renderers draw it — and a mount that passes
+    // every prop but this one leaves the operator reading "Wrote" while the
+    // model is being told the file never moved.
+    expect(element(card, "ToolViewBody")).toContain("fileChange=");
+  });
+
   it("hands it on to describeTool, which has taken it all along", () => {
-    const call = bodyView.slice(bodyView.indexOf("describeTool(props."));
-    expect(call.slice(0, call.indexOf(")"))).toContain("props.detail");
+    // Read to the MATCHING paren, not to the first one: the call outgrew a
+    // single line when card 269 gave it a sixth argument, and the old slice
+    // (`indexOf("describeTool(props.")`) then found nothing and asserted
+    // against the empty string — a guard that fails loudly is the good case,
+    // but a slice that silently reads "" is the bad one, so the premise is
+    // replaced rather than loosened.
+    const call = argsOf(bodyView, "describeTool(");
+    expect(call).toContain("props.detail");
+    expect(call).toContain("props.fileChange");
   });
 
   it("hands it to the export too, so a saved file says what the screen says", () => {
-    const call = html.slice(html.indexOf("const view = describeTool("));
-    expect(call.slice(0, call.indexOf(");"))).toContain("card.detail");
+    const call = argsOf(html, "const view = describeTool(");
+    expect(call).toContain("card.detail");
+    expect(call).toContain("card.fileChange");
   });
 });
+
+/**
+ * The argument list of the first real call to `open` in `src`, however it wraps.
+ *
+ * Empty lists are skipped, because the module's own header names the function in
+ * prose as `describeTool()` — and a scan that stopped there would assert against
+ * an empty string and pass whatever the call site actually does.
+ *
+ * @param src  the module's source text
+ * @param open the call's opening text, up to and including its "("
+ * @return everything between that paren and the one that closes it
+ */
+function argsOf(src: string, open: string): string {
+  for (let at = src.indexOf(open); at >= 0; at = src.indexOf(open, at + 1)) {
+    let depth = 0;
+    for (let i = at + open.length - 1; i < src.length; i++) {
+      if (src[i] === "(") depth++;
+      else if (src[i] === ")" && --depth === 0) {
+        const args = src.slice(at + open.length, i);
+        if (args.trim() !== "") return args;
+        break;
+      }
+    }
+  }
+  throw new Error(`no call to ${open} with arguments in this module`);
+}
 
 describe("the fleet roster is mounted where its own comment says it belongs", () => {
   const view = read("./spectrum/SpectrumView.tsx", import.meta.url);

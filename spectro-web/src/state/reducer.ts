@@ -25,6 +25,12 @@ export interface ToolCard {
    *  generated here nor on disk anywhere. */
   images?: UserAttachment[];
   durationMs?: number;
+  /** What the tool did to the file it wrote (card 269): "created", "changed" or
+   *  "unchanged", straight off the result's own field. Undefined when the tool
+   *  claimed nothing — which is most tools, and every session older than the
+   *  field. Never derived from the output text: "unchanged" contains "changed",
+   *  and the card would read the fact backwards. */
+  fileChange?: string;
   permission?: "pending" | "allowed" | "denied";
   /** ts of the tool_call event — drives the live duration count-up. */
   startedAt: number;
@@ -800,6 +806,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         output: event.output,
         durationMs: event.durationMs,
         status: event.isError ? "error" : "ok",
+        fileChange: event.fileChange,
       });
 
     case "agent_spawn":

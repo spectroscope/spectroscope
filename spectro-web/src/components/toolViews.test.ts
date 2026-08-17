@@ -35,6 +35,59 @@ describe("describeTool — files", () => {
     expect(v.result).toBe("Wrote: pi.py (26 bytes)");
   });
 
+  // Card 269. The write reports what it DID, and the card has to show the same
+  // news the model got — read off the field, never off the sentence: "unchanged"
+  // contains "changed", and a substring pin on prose passes while the fact flips.
+  it("a write carries the word for what it did to the file", () => {
+    const v = describeTool(
+      "write_file",
+      { path: "src/particleEngine.js", content: "export const spawn = () => {};\n" },
+      "Wrote: src/particleEngine.js (31 bytes) — unchanged (the file already contained exactly these bytes)",
+      false,
+      null,
+      "unchanged",
+    );
+    if (v.kind !== "write") throw new Error("kind");
+    expect(v.changed).toBe("unchanged");
+  });
+
+  it("a write that reported nothing claims nothing", () => {
+    const v = describeTool("write_file", { path: "a.txt", content: "x" }, "Wrote: a.txt (1 bytes)", false);
+    if (v.kind !== "write") throw new Error("kind");
+    // A session recorded before the field, or a tool that could not tell.
+    // Absent is not "unchanged".
+    expect(v.changed).toBeNull();
+  });
+
+  it("a word this build does not know is shown as no word at all", () => {
+    // The field is the harness's vocabulary, and a newer harness may widen it.
+    // An unknown word rendered raw would put untranslated machine prose in a
+    // chip; null keeps the card silent instead of wrong.
+    const v = describeTool(
+      "write_file",
+      { path: "a.txt", content: "x" },
+      "Wrote: a.txt",
+      false,
+      null,
+      "reticulated",
+    );
+    if (v.kind !== "write") throw new Error("kind");
+    expect(v.changed).toBeNull();
+  });
+
+  it("an edit carries it too — replaced with itself is not nothing to replace", () => {
+    const v = describeTool(
+      "edit_file",
+      { path: "a.ts", old_string: "const a = 1;", new_string: "const a = 1;" },
+      "Edited: a.ts (1 replacement) — unchanged (the replacement produced identical content)",
+      false,
+      null,
+      "unchanged",
+    );
+    if (v.kind !== "edit") throw new Error("kind");
+    expect(v.changed).toBe("unchanged");
+  });
+
   it("edit_file becomes a two-sided edit view", () => {
     const v = describeTool(
       "edit_file",

@@ -207,11 +207,18 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      *                   permission gate before the decision; present only when a
      *                   gate parked the call — absent (null, omitted on the wire)
      *                   otherwise, so ungated results stay byte-identical
+     * @param fileChange additive (card 269): what a mutating file tool DID —
+     *                   {@code created}, {@code changed} or {@code unchanged} —
+     *                   as a word rather than a sentence to parse. Absent (null,
+     *                   omitted on the wire) for every tool that touched no file
+     *                   and for every result recorded before this card, so those
+     *                   stay byte-identical. Absence is NOT a synonym for
+     *                   {@code unchanged}: it means nothing was claimed.
      * @param ts         epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ToolResult(String agentId, String callId, String output, boolean isError,
-                      long durationMs, Long gateWaitMs, long ts) implements RunEvent {
+                      long durationMs, Long gateWaitMs, String fileChange, long ts) implements RunEvent {
         /** The pre-card-111 arity — no gate wait recorded; Jackson keeps using the canonical.
          *
          * @param agentId    the agent the call ran under
@@ -222,7 +229,21 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param ts         epoch millis of emission */
         public ToolResult(String agentId, String callId, String output, boolean isError,
                           long durationMs, long ts) {
-            this(agentId, callId, output, isError, durationMs, null, ts);
+            this(agentId, callId, output, isError, durationMs, null, null, ts);
+        }
+
+        /** The pre-card-269 arity — a gate wait, but no word about any file.
+         *
+         * @param agentId    the agent the call ran under
+         * @param callId     correlation id of the originating {@link ToolCall}
+         * @param output     the tool output, or an {@code ERROR: } string
+         * @param isError    true when {@code output} is such an {@code ERROR: } string
+         * @param durationMs wall-clock execution time of the call
+         * @param gateWaitMs time parked at the permission gate, or null
+         * @param ts         epoch millis of emission */
+        public ToolResult(String agentId, String callId, String output, boolean isError,
+                          long durationMs, Long gateWaitMs, long ts) {
+            this(agentId, callId, output, isError, durationMs, gateWaitMs, null, ts);
         }
     }
 

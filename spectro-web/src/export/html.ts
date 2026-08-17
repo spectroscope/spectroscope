@@ -486,12 +486,15 @@ function toolHtml(card: ToolCard, lang: Lang, open: boolean): string {
   // imported transcript (card 167). It goes to both renderers or to neither: a
   // saved file that showed the gutter while the screen beside it did not would
   // be a second reading of the same call, and the export exists to be the view.
+  // The sixth is what a write DID to the file (card 269), and it travels for the
+  // same reason as the fifth: to both renderers or to neither.
   const view = describeTool(
     card.name,
     card.input,
     denied ? undefined : card.output,
     card.status === "error",
     denied ? null : card.detail,
+    denied ? null : card.fileChange,
   );
   // Open by default, and the dialog can say otherwise: a collapsed command in a
   // file attached to a ticket is a command nobody reads, but a hundred-call
