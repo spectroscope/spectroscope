@@ -25,6 +25,7 @@ import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.SwitchableProvider;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.core.skills.SkillInvocations;
 import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.core.subagents.SubagentConfig;
 import dev.spectroscope.core.subagents.SubagentManager;
@@ -203,6 +204,8 @@ public final class SessionConnection {
      */
     private final AtomicReference<SpectroConfig> activeConfig;
     private SwitchableProvider switchable;   // the agent's provider indirection
+    /** Card 247: the catalog runPrompt expands /skill tokens against — set with the agent. */
+    private SkillLibrary skillLibrary;
 
     /** The process-wide live-session registry, or null — then this connection
      *  claims nothing and announces nothing, frame for frame the pre-212 one. */
@@ -962,7 +965,14 @@ public final class SessionConnection {
             // events merge into ONE stream. ONE sender virtual thread drains it and
             // writes each event out — Spring's WebSocketSession does not tolerate
             // concurrent sends, so one drainer per connection is the whole story.
-            try (EventStream events = subagents.run(agent, text, new RunOptions(runSignal, attachments))) {
+            // Card 247: /skill tokens expand into the skill bodies — for the
+            // MODEL only. The record (run_start.prompt, the user's bubble)
+            // keeps the literal text; the llm-wire proves what was sent.
+            String expanded = skillLibrary == null
+                    ? text
+                    : SkillInvocations.expand(text, skillLibrary::find);
+            try (EventStream events = subagents.run(agent, text,
+                    new RunOptions(runSignal, attachments, expanded.equals(text) ? null : expanded))) {
                 for (RunEvent event : events) {
                     tracing.onEvent(event); // file and socket get the SAME object
                     send(event);
@@ -1034,6 +1044,7 @@ public final class SessionConnection {
         LlmProvider provider = switchable;
         // the skill catalog rides in the system prompt, bodies come via use_skill.
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
+        this.skillLibrary = skills; // card 247: runPrompt expands /skill tokens against it
         String systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
                 + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
 

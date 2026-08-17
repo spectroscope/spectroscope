@@ -1,16 +1,15 @@
-// Completing a skill by typing `/` in the composer (card 183).
+// Completing a skill by typing `/` in the composer (card 183; card 247 made
+// it a token).
 //
-// The whole feature rests on one thing being true: a skill is INSTRUCTIONS in
-// the system prompt, not a callable. There is no wire verb to invent here and
-// no hidden payload to send. Picking one writes an ordinary sentence into the
-// composer naming the skill, and the reader reads it, edits it, and presses
-// send like any other message. That is the honest spelling, and it is also the
-// only one that survives the reader disagreeing with the completion.
+// A skill is INSTRUCTIONS, not a callable — there is still no wire verb here.
+// Picking one now writes a /token into the draft, several per message if the
+// reader likes, and the SERVER appends the named skills' instructions to the
+// prompt the model reads (SkillInvocations.java); the message itself stays the
+// reader's own words. The token is visible, editable and deletable, which is
+// what survives the reader disagreeing with the completion.
 //
 // Everything in this file is pure so the suite can drive it in node; the
 // popover that uses it is markup over these three functions.
-
-import { t, type Lang } from "../i18n/i18n";
 
 /** One installed skill, as `GET /api/skills` lists it. */
 export interface SkillOption {
@@ -24,22 +23,37 @@ export interface SkillOption {
   disabled: boolean;
 }
 
+/** A command being spelled at the caret: the text after the slash, and where
+ *  the slash stands in the draft. */
+export interface SlashQueryAt {
+  query: string;
+  start: number;
+}
+
+/** The skill-name charset, shared with the token shape in skillTokens.ts. */
+const NAME_CHAR = /[\p{L}\p{N}_:-]/u;
+
 /**
- * The query a draft is spelling, or null when the draft is not a command.
+ * The query the CARET is spelling, or null (card 247: several tokens, anywhere
+ * in the text — the old whole-draft rule is the start-of-text special case).
  *
- * Two rules, and the second is the one that matters. The slash must be the
- * FIRST character, because hijacking a mid-sentence slash would make "and/or"
- * impossible to type. And the moment any whitespace appears the draft has
- * stopped being a pick and become a sentence: "/humanize this paragraph" is
- * somebody writing, not somebody choosing.
+ * Two rules survive from the old reading. A slash glued to a word is prose —
+ * "and/or" and "/tmp/x" stay typable. And the moment the caret leaves the
+ * token (a space, a click elsewhere), the draft at that spot has stopped being
+ * a pick: "/humanize this paragraph" is somebody writing, not choosing.
  *
  * @param draft the composer's whole text
- * @returns the text after the slash, or null
+ * @param caret the caret position inside it
+ * @returns the query and the slash's index, or null
  */
-export function slashQuery(draft: string): string | null {
-  if (!draft.startsWith("/")) return null;
-  const rest = draft.slice(1);
-  return /\s/.test(rest) ? null : rest;
+export function slashQueryAt(draft: string, caret: number): SlashQueryAt | null {
+  let at = caret;
+  while (at > 0 && NAME_CHAR.test(draft[at - 1])) at--;
+  if (at === 0 || draft[at - 1] !== "/") return null;
+  const slashAt = at - 1;
+  const before = slashAt === 0 ? "" : draft[slashAt - 1];
+  if (before !== "" && (NAME_CHAR.test(before) || before === "/")) return null;
+  return { query: draft.slice(at, caret), start: slashAt };
 }
 
 /** Where a query hit: the front of a name ranks above the middle of one. */
@@ -86,18 +100,30 @@ function rankOf(needle: string, skill: SkillOption): number | null {
 }
 
 /**
- * What picking a skill writes into the composer.
+ * What picking a skill does to the draft (card 247): the token spliced over
+ * the query — slash kept, the agent's exact name, a space after so the caret
+ * carries straight on mid-sentence. The token stays visible and editable; the
+ * server appends the skill's instructions for the model when it is sent.
  *
- * It ends in a space on purpose: the cursor lands after it and the reader
- * carries straight on with what they actually wanted, which is the sentence
- * the agent needs anyway. The skill is named exactly as the agent knows it,
- * namespace included, so the name in the message and the name in the system
- * prompt are the same string.
- *
+ * @param draft the composer's whole text
+ * @param at    the query being spelled, from {@link slashQueryAt}
+ * @param caret the caret position at pick time
  * @param skill the picked skill
- * @param lang  the reader's language
- * @returns the text to put in the composer
+ * @returns the new draft and where the caret lands in it
  */
-export function invocationFor(skill: SkillOption, lang: Lang): string {
-  return t(lang, "slash.invocation", { skill: skill.name }) + " ";
+export function tokenInsert(
+  draft: string,
+  at: SlashQueryAt,
+  caret: number,
+  skill: SkillOption,
+): { text: string; caret: number } {
+  const rest = draft.slice(caret);
+  // Mid-sentence the space is already there; only a token at the seam of the
+  // text earns its own, so completing never doubles the whitespace.
+  const pad = /^\s/.test(rest) ? "" : " ";
+  const token = `/${skill.name}${pad}`;
+  return {
+    text: draft.slice(0, at.start) + token + rest,
+    caret: at.start + token.length + (pad === "" ? 1 : 0),
+  };
 }

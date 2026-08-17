@@ -325,6 +325,29 @@
   pointer-events: none;
 }
 .composer-ghost .said { color: transparent; }
+/* Card 247: accent pills under the draft's known /skill tokens — the ghost's
+   mirror idiom, one box, same metrics. All ink transparent: the textarea's
+   real text paints ON TOP and only the pill background shows through, so the
+   caret and the selection never change hands. Scroll-synced from the textarea
+   (Chat.tsx onScroll), which the ghost never needed. */
+.composer-marks {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 10px var(--sp-4);
+  font: inherit;
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  color: transparent;
+}
+.composer-marks .skill-pill {
+  color: transparent;
+  background: var(--accent-soft);
+  border-radius: var(--radius-chip);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
 /* Faint on purpose, and it means one thing: this is a guess. It turns into real
    text only when the model says it is finished. */
 .composer-ghost .heard { color: var(--text-faint); }
