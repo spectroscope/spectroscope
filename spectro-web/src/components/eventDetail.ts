@@ -43,6 +43,13 @@ export type DetailSection =
        *  body the chat card draws, so it is handed the same evidence; absent
        *  everywhere the stream said nothing. */
       detail?: ToolResultDetail;
+      /** What a mutating file tool DID (card 269): "created", "changed" or
+       *  "unchanged", straight off the result's own field. The trace draws the
+       *  very body the chat card draws, so it is handed the same word — without
+       *  it the operator reading the trace got the raw wire token in the
+       *  leftover ledger while the chat card and the export showed the chip.
+       *  Absent for every tool that touched no file, and absence is no claim. */
+      fileChange?: string;
     }
   | { kind: "prose"; field: string; text: string; markdown: boolean }
   | { kind: "rows"; field: string; rows: DetailRow[] }
@@ -278,6 +285,12 @@ export function describeEvent(
       // flag stays a row of its own. A failed result must read as failed.
       if (call !== undefined) {
         used.add("output");
+        // Card 269. THIS one is a field of this payload, so it IS consumed: the
+        // chip replaces the ledger row rather than joining it, or the trace
+        // would state the same outcome twice — once as a translated word and
+        // once as a raw wire token beside it.
+        const outcome = str(p, "fileChange");
+        if (outcome !== null) used.add("fileChange");
         named.push({
           kind: "tool",
           field: "",
@@ -285,6 +298,7 @@ export function describeEvent(
           input: call.input,
           output,
           isError: p["isError"] === true,
+          ...(outcome === null ? {} : { fileChange: outcome }),
           // Not `used.add`ed: the detail is not a field of THIS payload, it is
           // a second frame's reading of the same call. The ledger above counts
           // what this frame carries, and nothing here went missing from it.

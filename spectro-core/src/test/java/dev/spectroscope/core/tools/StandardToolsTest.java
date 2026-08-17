@@ -180,6 +180,47 @@ class StandardToolsTest {
                 edit.execute(absent, contextIn(cwd)));
     }
 
+    /**
+     * Card 269, AC 2 and AC 3 for edit_file — the FIELD half, which the verify
+     * pass of 2026-08-17 found pinned by nothing: deleting the one line that
+     * publishes an edit's outcome left all 1460 core tests green, because the
+     * test above builds its context without a change sink and reads only the
+     * sentence. The sentence is the echo; the field is what the tool card, the
+     * export and card 262's guard actually read.
+     *
+     * <p>The no-match case is here on purpose too: it reports NO word at all.
+     * "I found nothing to replace" is a fact about the call, not about the file,
+     * and inventing an outcome for it would tell the loop the file is fine.
+     */
+    @Test
+    void editFileReportsWhatItDidAsAFieldAndSaysNothingWhenItFoundNothing(@TempDir Path cwd)
+            throws IOException {
+        Files.writeString(cwd.resolve("config.txt"), "port=8080\nhost=localhost\n");
+        Tool edit = tools(10).get("edit_file");
+        List<Tool.FileChange> reported = new ArrayList<>();
+
+        ObjectNode itself = JSON.createObjectNode();
+        itself.put("path", "config.txt");
+        itself.put("old_string", "port=8080");
+        itself.put("new_string", "port=8080");
+        edit.execute(itself, reportingContextIn(cwd, reported));
+
+        ObjectNode real = JSON.createObjectNode();
+        real.put("path", "config.txt");
+        real.put("old_string", "host=localhost");
+        real.put("new_string", "host=127.0.0.1");
+        edit.execute(real, reportingContextIn(cwd, reported));
+
+        ObjectNode absent = JSON.createObjectNode();
+        absent.put("path", "config.txt");
+        absent.put("old_string", "port=9999");
+        absent.put("new_string", "port=8080");
+        edit.execute(absent, reportingContextIn(cwd, reported));
+
+        assertEquals(List.of(Tool.FileChange.UNCHANGED, Tool.FileChange.CHANGED), reported,
+                "the replacement with itself, then the real one, and no word for the no-match");
+    }
+
     @Test
     void editFileReplacesAUniqueString(@TempDir Path cwd) throws IOException {
         Files.writeString(cwd.resolve("config.txt"), "host=localhost\nport=8080\n");
