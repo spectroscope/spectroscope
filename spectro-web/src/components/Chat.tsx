@@ -11,13 +11,14 @@ import type { CSSProperties, ReactNode } from "react";
 import type { ClientMessage, RunEvent } from "../events";
 import type { Turn, UiState } from "../state/reducer";
 import { groupTurns, groupTurnsV2 } from "../state/threads";
-import { agentAccent, cacheSplit, clockTime, formatDuration } from "../format";
+import { agentAccent, cacheSplit, clockTime, formatDuration, tokensPerSecond } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
 import { AttachmentThumbs } from "./AttachmentThumbs";
 import { MAX_PENDING_ATTACHMENTS } from "./attachmentCap";
 import type { PendingAttachment } from "./AttachmentPreview";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
+import { WorkingLine, showWorkingLine } from "./WorkingLine";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { liveReading, type LiveRoute } from "./liveTranscription";
@@ -412,7 +413,11 @@ export function Chat(props: {
             </div>
           </div>
         );
-      case "assistant":
+      case "assistant": {
+        // Card 245: this answer's generation speed — same source numbers as
+        // the segments beside it, so the row cannot contradict itself.
+        const tps =
+          turn.usage !== undefined ? tokensPerSecond(turn.usage.outputTokens, turn.durationMs) : null;
         return (
           <div key={`${vk}:${i}`} className={`assistant-turn${hitClass(i)}`}>
             {turn.agentId !== "main" && !inThread && (
@@ -458,6 +463,8 @@ export function Chat(props: {
                   )
                   .join("")}
                 {` · ${turn.usage.outputTokens} out`}
+                {/* Card 245: the speed, beside the tokens it is made of. */}
+                {tps !== null && ` · ${tps}`}
                 {turn.durationMs !== undefined && ` · ${formatDuration(turn.durationMs)}`}
                 {/* Card 87: the answer's wall-clock window + the model that made it. */}
                 {turn.endTs !== undefined &&
@@ -468,6 +475,7 @@ export function Chat(props: {
             )}
           </div>
         );
+      }
       case "tool": {
         const card = state.cards[turn.callId];
         return card !== undefined ? (
@@ -698,6 +706,10 @@ export function Chat(props: {
                 </section>
               ),
             )}
+            {/* Card 244: the sign of life at the live edge, for the stretches
+                no caret and no thinking dot covers (before the first delta,
+                and while a tool runs). The bottom-pin scroll carries it. */}
+            {showWorkingLine(state, liveView) && <WorkingLine startTs={state.runStartTs} />}
           </div>
         )}
       </div>

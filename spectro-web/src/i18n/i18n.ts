@@ -2168,6 +2168,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "disc.thinking.hint": { de: "nur Thinking-Blöcke aufgeklappt", en: "only thinking blocks expanded" },
   "chat.thinkingLive": { de: "denkt …", en: "thinking …" },
+  "chat.working": { de: "arbeitet …", en: "working …" },
   "chat.chars": { de: "{n} Zeichen", en: "{n} chars" },
   "tr.button": { de: "Übersetzung", en: "translation" },
   "tr.buttonTitle": {
@@ -2483,8 +2484,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.cacheRead": { de: "aus dem Cache", en: "cache read" },
   "chat.cacheWrite": { de: "in den Cache", en: "cache write" },
   "chat.usageTitle": {
-    de: "Tokens dieser Antwort (rein · Cache · raus), wie lange sie gedauert hat und welches Modell sie geschrieben hat",
-    en: "This answer's tokens (in · cache · out), how long it took, and the model that wrote it",
+    de: "Tokens dieser Antwort (rein · Cache · raus), ihr Tempo in Tokens pro Sekunde, wie lange sie gedauert hat und welches Modell sie geschrieben hat",
+    en: "This answer's tokens (in · cache · out), its speed in tokens per second, how long it took, and the model that wrote it",
   },
   "chat.historyAria": { de: "Verlauf des Agenten-Laufs", en: "Agent run history" },
   "info.spawned": { de: "Subagent {id} gestartet: {task}", en: "Subagent {id} spawned: {task}" },

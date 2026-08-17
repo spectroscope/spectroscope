@@ -2,7 +2,7 @@
 // answer footer with real wall-clock spans) must not read "1210 m 12 s".
 
 import { describe, expect, it } from "vitest";
-import { cacheSplit, formatDuration, formatRelMs } from "./format";
+import { cacheSplit, formatDuration, formatRelMs, tokensPerSecond } from "./format";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -75,6 +75,35 @@ describe("cacheSplit", () => {
     expect(cacheSplit({ cacheReadTokens: 0, cacheCreationTokens: 314 })).toEqual([
       { kind: "write", tokens: 314 },
     ]);
+  });
+});
+
+describe("tokensPerSecond (card 245)", () => {
+  it("reads whole tokens per second at speed", () => {
+    // 1237 tokens over 20 s — the cloud tier.
+    expect(tokensPerSecond(1237, 20000)).toBe("62 tok/s");
+  });
+
+  it("keeps a decimal below ten, where the digit is the story", () => {
+    // 30 tokens over 6.3 s — the local-model tier.
+    expect(tokensPerSecond(30, 6300)).toBe("4.8 tok/s");
+  });
+
+  it("never renders a rate that reads '10.0' — the boundary carries first", () => {
+    expect(tokensPerSecond(996, 100000)).toBe("10 tok/s");
+  });
+
+  it("refuses an unmeasured answer — no duration, no rate", () => {
+    expect(tokensPerSecond(30, undefined)).toBeNull();
+  });
+
+  it("refuses a zero or negative duration instead of printing Infinity", () => {
+    expect(tokensPerSecond(30, 0)).toBeNull();
+    expect(tokensPerSecond(30, -5)).toBeNull();
+  });
+
+  it("refuses zero output tokens — nothing generated has no speed", () => {
+    expect(tokensPerSecond(0, 2000)).toBeNull();
   });
 });
 

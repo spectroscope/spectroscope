@@ -44,6 +44,21 @@ export function cacheSplit(usage: {
   return segments;
 }
 
+/**
+ * Output tokens per second of one answer (card 245) — the output count over
+ * the measured generation window (first delta to the usage stamp). Null
+ * whenever the data cannot honestly carry a rate: no measured duration, a
+ * zero-length window, or nothing generated. Below ten the tenth digit is the
+ * story (the local-model tier); from ten up whole tokens suffice — decided on
+ * the ROUNDED value, so no answer ever reads "10.0 tok/s".
+ */
+export function tokensPerSecond(outputTokens: number, durationMs: number | undefined): string | null {
+  if (durationMs === undefined || durationMs <= 0 || outputTokens <= 0) return null;
+  const rate = outputTokens / (durationMs / 1000);
+  const tenth = Math.round(rate * 10) / 10;
+  return `${tenth >= 10 ? String(Math.round(rate)) : tenth.toFixed(1)} tok/s`;
+}
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** 412 -> "0.4 s", 12300 -> "12 s", 96000 -> "1 m 36 s", 72612000 -> "20 h 10 m". */

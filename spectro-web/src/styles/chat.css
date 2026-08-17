@@ -471,6 +471,20 @@
   font-family: var(--font-mono);
   color: var(--text-faint);
 }
+/* Card 244: the working line — the live edge's sign of life while nothing
+   else pulses (before the first delta, and while a tool runs). Reuses the
+   thinking dot, so reduced-motion stills it for free. */
+.working-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  color: var(--text-faint);
+  font-size: var(--fs-12);
+}
+.working-line .tabular {
+  font-family: var(--font-mono);
+}
 .thinking-live {
   margin-left: auto;
   display: inline-flex;

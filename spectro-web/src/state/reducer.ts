@@ -223,6 +223,9 @@ export interface UiState {
   running: boolean;
   /** Internal: only the root run's run_end may end "running". */
   rootRunId: string | null;
+  /** ts of the root run_start — the working line's elapsed timer (card 244).
+   *  Null while idle, after run_end and on any replayed archive. */
+  runStartTs: number | null;
   /** From run_start.provider (additive) — the header chip. */
   provider: string | null;
   /** stopReason of the last finished root run ("end_turn", "aborted", ...). */
@@ -309,6 +312,7 @@ export const initialState: UiState = {
   runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
   running: false,
   rootRunId: null,
+  runStartTs: null,
   provider: null,
   lastStopReason: null,
   images: [],
@@ -665,6 +669,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           ...state,
           running: true,
           rootRunId: event.runId,
+          runStartTs: event.ts,
           rootAgentId: event.agentId,
           runUsage: { inputTokens: 0, outputTokens: 0 },
           runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
@@ -877,6 +882,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         ...state,
         running: false,
         rootRunId: null,
+        runStartTs: null,
         thinkingActive: false,
         lastStopReason: event.stopReason,
       };
@@ -1019,5 +1025,12 @@ export const reduceAll = (s: UiState, events: RunEvent[]): UiState => events.red
 /** Normalize a replayed archive: nothing runs and no question is open — even
  *  if the stored session ended without a run_end (crash, abort, old file). */
 export function normalizeReplay(state: UiState): UiState {
-  return { ...state, running: false, rootRunId: null, thinkingActive: false, pendingPermissions: [] };
+  return {
+    ...state,
+    running: false,
+    rootRunId: null,
+    runStartTs: null,
+    thinkingActive: false,
+    pendingPermissions: [],
+  };
 }
