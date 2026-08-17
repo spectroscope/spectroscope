@@ -205,6 +205,70 @@
   margin: 0;
 }
 
+/* ---- Card 253: the focused row's description, beside the list ----
+   A SIBLING of .slash-pop, not a child: .wsg-pop scrolls (overflow-y), and a
+   box hanging out of a scrolling box is clipped by it — the same rule .plus-sub
+   states in workspace-gear.css. Compound selector for the same reason
+   .slash-pop needs one: that file loads later, so a bare .slash-tip would take
+   .wsg-pop's right: 0 and its 380px.
+
+   Bottom-anchored exactly like the list (.wsg-pop's bottom: calc(100% + 8px)),
+   so both boxes sit on the composer's top edge and grow upward — which makes
+   the popover no more exposed to the top of the window than the list it
+   explains, and its max-height a step tighter than the list's 70vh. */
+.wsg-pop.slash-tip {
+  /* The default width; slashTipBox overrides it through the inline custom
+     property when the room is tighter, and SLASH_TIP_W is this number. */
+  --slash-tip-w: 320px;
+  width: var(--slash-tip-w);
+  max-height: min(60vh, 400px);
+  gap: var(--sp-2);
+  /* Decoration: the pointer belongs to the row underneath. Without this the box
+     would swallow a hover the moment it covered a row edge, and the list would
+     flicker between focused rows as the mouse crossed it. And with the pointer
+     gone, a scrollbar here would be one nobody could use — so the box clips and
+     the clamp below is the visible end of the text. */
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* The documented side. Offset by the list's own width, so the two boxes keep
+   their gap without anything measuring the list in JS. */
+.wsg-pop.slash-tip--right {
+  left: calc(min(520px, 100%) + 8px);
+  right: auto;
+}
+
+/* The flip, when the window has no room on the right. Both ends are set
+   explicitly rather than inherited: the two modifiers never meet on one
+   element, and a half-reset box would hang off whichever edge it kept. */
+.wsg-pop.slash-tip--left {
+  right: calc(100% + 8px);
+  left: auto;
+}
+
+.slash-tip-name {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-13);
+}
+
+/* What the row could not do: wrap. The clamp is the bound — a description of
+   any length ends in an ellipsis instead of growing the box past the window,
+   and `anywhere` keeps one unbroken 400-character token from widening it. */
+.slash-tip-text {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 14;
+  overflow: hidden;
+}
+
 /* The box (owner 2026-08-09, Claude-style): it wears the chrome the bare
    textarea used to wear, spans the full reading column and seats the one
    action button at its bottom right. The textarea inside is naked — no
