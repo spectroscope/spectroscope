@@ -511,6 +511,51 @@ class OpenAiCompatProviderTest {
         assertTrue(transient_.getMessage().contains("503"));
     }
 
+    // ---- vision: the refusal is the only capability source here (card 252) ----
+
+    @Test
+    void anImageRefusalTeachesTheProviderThatThisModelCannotSee() {
+        // The owner's wedge, verbatim: deepseek answers 400 and names images.
+        // The OpenAI wire has no capability endpoint, so the server's own refusal
+        // is the only fact available — and it must be REMEMBERED, or the next
+        // prompt re-sends the same image and fails the same way, forever.
+        OpenAiCompatProvider provider = new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl, "deepseek-v4-flash", null));
+        assertEquals(LlmProvider.Vision.UNKNOWN, provider.vision(),
+                "before the send nothing is known — and nothing is claimed");
+        scriptedStatus = 400;
+        scriptedErrorBody = "{\"error\":{\"message\":\"The provided messages contain images, "
+                + "but deepseek-v4-flash does not support image inputs\"}}";
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> provider.stream(request(List.of(new ProviderMessage(
+                        ProviderMessage.Role.USER, List.of(
+                                new LlmProvider.ImageContent("image/png", "aWJt"),
+                                new TextContent("What is this?")))))).forEach(event -> { }));
+        assertTrue(refused.getMessage().startsWith("Model without vision"),
+                "the raw body is sharpened into something actionable, got: " + refused.getMessage());
+        assertEquals(LlmProvider.Vision.BLIND, provider.vision(),
+                "the harness learned it: the next request is fenced before the send");
+    }
+
+    @Test
+    void aBadRequestThatSaysNothingAboutImagesLeavesTheSightUnknown() {
+        // A 400 has many causes (a tool schema the server rejects, a context
+        // overflow). Marking a model blind on any of them would silently stop
+        // sending images to a model that can see them.
+        OpenAiCompatProvider provider = new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl, "gpt-4o", null));
+        scriptedStatus = 400;
+        scriptedErrorBody = "{\"error\":{\"message\":\"Invalid schema for function 'run_command'\"}}";
+
+        assertThrows(IllegalStateException.class,
+                () -> provider.stream(request(List.of(new ProviderMessage(
+                        ProviderMessage.Role.USER, List.of(
+                                new LlmProvider.ImageContent("image/png", "aWJt"),
+                                new TextContent("What is this?")))))).forEach(event -> { }));
+        assertEquals(LlmProvider.Vision.UNKNOWN, provider.vision());
+    }
+
     @Test
     void aTerminalStatusStaysNonTransientForTheRetryLayer() {
         scriptedStatus = 401;

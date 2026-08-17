@@ -142,6 +142,12 @@ export function buildTextFeed(events: readonly RunEvent[], extended = false): Fe
       case "image_generated":
         push("marker", e.agentId, `[image_generated ${e.provider} ${e.model}] ${e.prompt}`);
         break;
+      // Card 252. This feed is what people COPY out of a session, and a reader
+      // who pastes a transcript where a model shrugged at a screenshot has to be
+      // able to see that the screenshot never left the machine.
+      case "images_withheld":
+        push("marker", e.agentId, `[images_withheld ${e.images} · ${e.reason}]`);
+        break;
       case "error":
         closeThinking(e.agentId ?? "main");
         mode.set(e.agentId ?? "main", null);

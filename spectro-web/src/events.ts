@@ -184,6 +184,29 @@ export type RunEvent =
        *  stated nothing, and an empty string would read as one that answered. */
       reason?: string;
       ts: number;
+    } // additive
+  // Card 252: the harness kept an image back, because the model serving this
+  // session cannot see. Emitted once per run, at the turn where the fence first
+  // closed — the image lives in the history, so it closes again on every later
+  // turn of the same run.
+  //
+  // The attachment is NOT gone: run_start still carries it, the session file
+  // keeps it and the bubble above still shows the picture. Only the provider
+  // request was built without it. This line is the sole place that says so, and
+  // it carries facts rather than a sentence — the transcript is German or
+  // English by the reader's choice, and the server does not know which.
+  | {
+      type: "images_withheld";
+      agentId: string;
+      /** How many image blocks were kept back — prompt and resumed history alike. */
+      images: number;
+      /** The model that cannot see them. Absent when the provider reports no id;
+       *  an empty string would name a model whose name is "". */
+      model?: string;
+      /** Why: "no_vision" today. The follow-up rung (describing the image through
+       *  a vision provider) is a second value here, not a second event. */
+      reason: string;
+      ts: number;
     }; // additive
 
 // Client -> server frames (socket protocol, design/BUILD-PLAN.md). The server

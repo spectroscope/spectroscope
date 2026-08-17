@@ -10,6 +10,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.wire.LlmWireTap;
 
 import java.util.ArrayList;
@@ -22,6 +23,11 @@ import java.util.List;
  * happens IN MEMORY only — the JSONL file is never rewritten (JSONL-FORMAT.md).
  * Never throws: on failure the messages are returned unchanged and the event is
  * an ErrorEvent.
+ *
+ * <p>The summarizer's request goes through {@link VisionFence#fence} like any
+ * other (card 252): a model that cannot see never receives an image, not even
+ * from here. This is a second door to the same provider, and it was the one left
+ * open when the fence was first built only into the turn loop.</p>
  */
 public final class Compaction {
 
@@ -112,9 +118,17 @@ public final class Compaction {
                     List.of(new TextContent(SUMMARY_PROMPT))));
 
             StringBuilder summary = new StringBuilder();
+            // Card 252: the summarizer is a SECOND door to the same provider, and
+            // it opens on the same history — so it asks the same fence the turn
+            // loop asks. Handing an image to a model that cannot see it is what
+            // wedged the owner's session; doing it from here would only have moved
+            // the wedge later, to the turn that first crosses the threshold. The
+            // fence copies: `messages` and everything this method RETURNS keep
+            // their images, so the record and the kept window are untouched.
             ProviderRequest request = new ProviderRequest(
                     SUMMARY_SYSTEM,
-                    SessionStore.mergeAdjacentRoles(summaryInput),
+                    VisionFence.fence(provider,
+                            SessionStore.mergeAdjacentRoles(summaryInput)).messages(),
                     List.of(),      // summary call ALWAYS without tools
                     32000,          // generous maxTokens; no sampling parameters
                     ProviderRequest.Reasoning.DEFAULT,

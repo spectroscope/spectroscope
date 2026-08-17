@@ -55,14 +55,16 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.Plan.class,               name = "plan"),          // additive
     @JsonSubTypes.Type(value = RunEvent.LlmExchange.class,        name = "llm_exchange"),  // additive (card 184 leg 3)
     @JsonSubTypes.Type(value = RunEvent.BrowserAction.class,      name = "browser_action"), // additive (card 204)
-    @JsonSubTypes.Type(value = RunEvent.HookDecision.class,       name = "hook_decision") // additive (card 195)
+    @JsonSubTypes.Type(value = RunEvent.HookDecision.class,       name = "hook_decision"), // additive (card 195)
+    @JsonSubTypes.Type(value = RunEvent.ImagesWithheld.class,     name = "images_withheld") // additive (card 252)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
         RunEvent.PermissionDecision, RunEvent.ToolResult, RunEvent.AgentSpawn,
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
-        RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision {
+        RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
+        RunEvent.ImagesWithheld {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -470,6 +472,39 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     record HookDecision(String agentId, String callId, String toolName, String event,
                         String matcher, String command, long timeoutSeconds,
                         String verdict, String reason, long ts) implements RunEvent {}
+
+    /**
+     * Additive (card 252): the harness kept an image back because the serving
+     * model cannot see it. Emitted once per run, at the turn where the fence
+     * first closed — the image sits in the history, so a line per turn would
+     * bury the transcript in the same sentence.
+     *
+     * <p>It exists because the withholding is otherwise invisible in the one
+     * place it matters most. The attachment stays in the RECORD: {@code
+     * run_start} carries it, the session file keeps it, and the user's own
+     * bubble still shows the picture. Only the provider request is built
+     * without it. Without this line the operator sees a model answer a prompt
+     * about a screenshot it never received, with the screenshot on screen and
+     * nothing anywhere saying why.</p>
+     *
+     * <p>No sentence rides here, only the facts a sentence is built from — the
+     * web renders it from an i18n key in both languages, and a reopened session
+     * must not print English into a German transcript.</p>
+     *
+     * @param agentId the agent whose request was built without the images
+     * @param images  how many image blocks were kept back, prompt and resumed
+     *                history alike
+     * @param model   the model that cannot see them; null (omitted) when the
+     *                provider reports no id — an empty string would name a model
+     * @param reason  why they were kept back: {@code no_vision} today. The
+     *                follow-up rung (describing an image through a vision
+     *                provider and handing the text over) is a second value here,
+     *                not a second event.
+     * @param ts      epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record ImagesWithheld(String agentId, int images, String model, String reason, long ts)
+            implements RunEvent {}
 
     /**
      * Additive: what sits in the context window right now. Emitted

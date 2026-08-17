@@ -804,6 +804,7 @@ public final class SessionStore {
             case RunEvent.LlmExchange e -> e.agentId();
             case RunEvent.BrowserAction e -> e.agentId();
             case RunEvent.HookDecision e -> e.agentId();
+            case RunEvent.ImagesWithheld e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             case RunEvent.RunEnd e -> null;
         });

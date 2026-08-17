@@ -510,6 +510,22 @@ class OllamaProviderTest {
     }
 
     @Test
+    void theCapabilityProbeAnswersTheFenceBeforeAnythingIsSent() {
+        // Card 252: the probe already existed and only the provider consulted it,
+        // one layer BELOW the request builder — so the fence could not use it.
+        // Now the same /api/show answer is a question anyone may ask, and the
+        // agent asks it while building the request.
+        scriptedShowJson = "{\"capabilities\":[\"completion\",\"tools\"]}"; // no "vision"
+        assertEquals(LlmProvider.Vision.BLIND, provider().vision());
+        scriptedShowJson = "{\"capabilities\":[\"completion\",\"vision\"]}";
+        assertEquals(LlmProvider.Vision.SEES, provider().vision());
+        scriptedShowJson = null; // older ollama / unreachable: it says nothing
+        assertEquals(LlmProvider.Vision.UNKNOWN, provider().vision(),
+                "no answer is not a refusal — the image still goes out");
+        assertEquals(null, lastChatBody.get(), "asking never sends a chat request");
+    }
+
+    @Test
     void textOnlyRequestsSkipTheCapabilityProbe() {
         scriptedShowJson = "{\"capabilities\":[\"completion\"]}"; // would reject images
         scriptedNdjson = """

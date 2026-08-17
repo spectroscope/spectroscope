@@ -71,4 +71,12 @@ public final class SwitchableProvider implements LlmProvider {
     public String endpoint() {
         return delegate.get().endpoint();
     }
+
+    /** The CURRENT delegate's sight (card 252). Deliberately not remembered here:
+     *  switching to another model is switching the question, and a swap from a
+     *  blind model to a seeing one must un-fence the very next request. */
+    @Override
+    public Vision vision() {
+        return delegate.get().vision();
+    }
 }

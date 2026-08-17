@@ -2517,6 +2517,17 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Verlauf kompaktiert: {n} Turns zu {chars} Zeichen zusammengefasst",
     en: "History compacted: {n} turns summarized into {chars} characters",
   },
+  // Card 252: the honest line under a picture that stayed home. It says where
+  // the image IS, because the bubble above still shows it — "not sent" alone
+  // reads like the harness threw it away.
+  "info.imageWithheld": {
+    de: "Bild nicht gesendet: Dieses Modell kann keine Bilder sehen. Es bleibt im Verlauf.",
+    en: "Image not sent: this model cannot see images. It stays in the record.",
+  },
+  "info.imagesWithheld": {
+    de: "{n} Bilder nicht gesendet: Dieses Modell kann keine Bilder sehen. Sie bleiben im Verlauf.",
+    en: "{n} images not sent: this model cannot see images. They stay in the record.",
+  },
 
   // built-in model first-use notice (card 91; per-model since the catalogue)
   "lmn.title": {

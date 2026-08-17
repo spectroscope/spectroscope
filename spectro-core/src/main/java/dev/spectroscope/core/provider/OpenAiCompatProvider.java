@@ -24,6 +24,7 @@ import java.util.Deque;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -81,6 +82,15 @@ public final class OpenAiCompatProvider implements LlmProvider {
 
     /** Kept for the wire record's headers: the tap gets the REAL value, the recorder redacts. */
     private final String apiKey;
+
+    /** What this endpoint has TAUGHT us about the model's sight (card 252).
+     *  There is nothing to probe here: the OpenAI wire has no capability call —
+     *  {@code /v1/models} lists ids, not what they accept — so the server's own
+     *  refusal is the only fact available, and it arrives exactly once. Holding
+     *  it on the provider makes it session-scoped by construction (the server
+     *  builds one provider per session), which is the scope that matters: the
+     *  wedged session heals on the NEXT prompt, not at the next app start. */
+    private volatile Vision vision = Vision.UNKNOWN;
 
     /**
      * Builds the provider; the Bearer header is attached only when a key is configured.
@@ -428,23 +438,50 @@ public final class OpenAiCompatProvider implements LlmProvider {
     /**
      * Classifies an HTTP error status into the exception the caller should
      * throw — the same decision table as the Ollama provider's, minus its
-     * vision/thinking arms: a retryable status (per {@link RetryPolicy}) is
+     * thinking arm: a retryable status (per {@link RetryPolicy}) is
      * transient; everything else (401 bad key, 404 ...) is terminal and
      * deliberately NOT an IO type, because RetryPolicy classifies
      * IOExceptions transient and re-sending an identical doomed request
      * would only add latency.
      *
-     * @param status the HTTP status the server answered with
-     * @param detail the response body text
+     * <p>Card 252 adds the vision arm, and it is NARROWER than ollama's on
+     * purpose. Ollama treats any 400 on an image-bearing request as a blind
+     * model; here the body must actually name images, because this transport
+     * serves every OpenAI-compatible endpoint there is and a 400 from one of
+     * those is as likely to be a rejected tool schema or an overlong context.
+     * Marking a model blind on one of those would silently stop sending images
+     * to a model that can see them — the fence would then be lying, and in the
+     * one direction nobody would notice.</p>
+     *
+     * @param status    the HTTP status the server answered with
+     * @param detail    the response body text
+     * @param hasImages whether the failed request carried image content
      * @return the exception to throw — transient or terminal, never null
      */
-    private RuntimeException classifyHttpFailure(int status, String detail) {
+    private RuntimeException classifyHttpFailure(int status, String detail, boolean hasImages) {
+        String lowered = detail.toLowerCase(Locale.ROOT);
+        boolean namesImages = lowered.contains("image") || lowered.contains("vision")
+                || lowered.contains("multimodal");
+        if (hasImages && namesImages && status >= 400 && status < 500) {
+            vision = Vision.BLIND; // learned: the fence closes on the next request
+            return new IllegalStateException("Model without vision: \"" + model
+                    + "\" cannot process images — the server refused the request. "
+                    + "The attachment stays in the session; the next prompt goes out "
+                    + "without it. Server said: " + detail);
+        }
         String message = "OpenAI-compatible server HTTP " + status
                 + (detail.isBlank() ? "" : ": " + detail);
         if (RetryPolicy.retryableStatus(status)) {
             return new TransientProviderException(message);
         }
         return new IllegalStateException(message);
+    }
+
+    /** What this endpoint has taught us about the model's sight — UNKNOWN until
+     *  a refusal names images, because nothing here can be asked in advance. */
+    @Override
+    public Vision vision() {
+        return vision;
     }
 
     /** Reads SSE lines lazily and translates chunks into neutral events. */
@@ -485,6 +522,12 @@ public final class OpenAiCompatProvider implements LlmProvider {
             // tap records the same string, so recorded == posted by construction
             // and the record's "bytes" fidelity is true, not asserted.
             String bodyJson = toJson(toChatRequest(request));
+            // Card 252: computed from the NEUTRAL request, before the wire
+            // translation folds images into content parts — the failure arm needs
+            // to know whether this request was one an image could have broken.
+            boolean hasImages = request.messages().stream()
+                    .anyMatch(message -> message.content().stream()
+                            .anyMatch(ImageContent.class::isInstance));
             LlmWireTap.Exchange wire = request.tap() == null ? null
                     : request.tap().begin(new LlmWireTap.WireRequest(providerLabel(),
                             model, "http", "POST", url, requestHeaders(), "bytes",
@@ -505,7 +548,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
                                         clientResponse.getStatusCode().value(), "bytes",
                                         detail, false, null, System.currentTimeMillis()));
                                 throw classifyHttpFailure(
-                                        clientResponse.getStatusCode().value(), detail);
+                                        clientResponse.getStatusCode().value(), detail, hasImages);
                             }
                             // The close handle is the RAW body stream, NEVER the Spring
                             // response: Spring's close() DRAINS the remaining body first

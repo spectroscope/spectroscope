@@ -189,9 +189,13 @@ export function categoryOf(type: string): Category {
     // and pressing `other` off to clear the plumbing rows took every picture
     // with it. Nothing looked broken until the filter was used, and then the
     // pane confidently showed zero pictures for a file with 140.
+    // images_withheld joins them (card 252): it is a row ABOUT an attachment,
+    // and a reader pressing `image` to follow what happened to one is standing
+    // exactly where the answer is.
     case "image_generated":
     case "set_image_provider":
     case "attachment_image":
+    case "images_withheld":
       return "image";
     case "context_info":
     case "system_context":
@@ -837,6 +841,10 @@ function chainLabel(e: TraceEntry): string {
       return `hook ${String(p["verdict"] ?? "")}`;
     case "agent_spawn":
       return `spawn ${e.agentId ?? ""}`;
+    // The count is the row's content: "images_withheld" would say something was
+    // kept back and leave out how much of the prompt the model never saw.
+    case "images_withheld":
+      return `${String(p["images"] ?? "")} image(s) not sent`;
     default:
       return e.type;
   }

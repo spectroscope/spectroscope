@@ -833,6 +833,23 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         tone: "warn",
       });
 
+    // Card 252. The picture is still in the bubble above this line — the record
+    // keeps it, only the request went without it — so the line has to say what
+    // happened, not merely that something did. The model is not named here: it
+    // stands in the run's own meta row, and a name interpolated from a provider
+    // that reported none would print "null" into the chat.
+    case "images_withheld":
+      return addTurn(state, {
+        kind: "info",
+        text:
+          event.images > 1
+            ? `${event.images} images not sent: this model cannot see images. They stay in the record.`
+            : "Image not sent: this model cannot see images. It stays in the record.",
+        infoKey: event.images > 1 ? "info.imagesWithheld" : "info.imageWithheld",
+        infoVars: event.images > 1 ? { n: event.images } : {},
+        tone: "warn",
+      });
+
     case "usage": {
       const start = state.assistantTurnStart[event.agentId];
       return {
