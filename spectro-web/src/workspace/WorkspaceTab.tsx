@@ -11,6 +11,18 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { hlLangForPath, tokenize } from "./highlight";
 import { fileUrl, formatBytes, previewKind } from "./preview";
+import {
+  closeAllFiles,
+  closeFile,
+  emptyFileTabs,
+  fileTabLabel,
+  openFile,
+  selectFile,
+  setFileView,
+  sourceOffered,
+  type FileTabsState,
+} from "./fileTabs";
+import { SourceView } from "./SourceView";
 import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit } from "./wsSplit";
 import type { WorkspaceInfo } from "../state/reducer";
 import { listableBeforeTheFirstRun, paneState } from "./paneState";
@@ -177,6 +189,53 @@ function Preview({
   return <HighlightedText path={path} text={text} />;
 }
 
+/** Card 249: the source reading needs the bytes whatever the kind — html and
+ *  svg render via src elsewhere, but their SOURCE is fetched like text. */
+function SourcePane({
+  path,
+  sessionId,
+  prospective,
+}: {
+  path: string;
+  sessionId?: string;
+  prospective: boolean;
+}) {
+  const lang = useLang();
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<number | null>(null);
+
+  useEffect(() => {
+    setText(null);
+    setError(null);
+    let alive = true;
+    fetch(fileUrl(path, sessionId, prospective))
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((body) => {
+        if (alive) setText(body);
+      })
+      .catch((e) => {
+        if (alive) setError(Number((e as Error).message) || 0);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [path, sessionId, prospective]);
+
+  if (error !== null) {
+    return (
+      <p className="ws-note">
+        {error === 415
+          ? t(lang, "ws.binary")
+          : error === 413
+            ? t(lang, "ws.tooBig")
+            : t(lang, "ws.loadError")}
+      </p>
+    );
+  }
+  if (text === null) return <p className="ws-note">{t(lang, "ws.loading")}</p>;
+  return <SourceView path={path} text={text} />;
+}
+
 export function WorkspaceTab({
   workspace,
   onPickFolder,
@@ -196,7 +255,10 @@ export function WorkspaceTab({
   const [tree, setTree] = useState<FilesResponse | null>(null);
   const [outcome, setOutcome] = useState<FetchOutcome | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const [selected, setSelected] = useState<string | null>(null);
+  // Card 249: several files stay open as tabs; the active path doubles as the
+  // tree's highlight. The fold lives in workspace/fileTabs.ts.
+  const [files, setFiles] = useState<FileTabsState>(emptyFileTabs);
+  const selected = files.active;
 
   // Resizable tree/preview divider: `split` is the tree's % of the vertical space.
   const containerRef = useRef<HTMLDivElement>(null);
@@ -394,7 +456,7 @@ export function WorkspaceTab({
             open={open}
             onToggle={toggle}
             selected={selected}
-            onSelect={(node) => setSelected(node.path)}
+            onSelect={(node) => setFiles((s) => openFile(s, node.path))}
           />
         )}
         {tree.truncated && <p className="ws-note">{t(lang, "ws.truncated")}</p>}
@@ -411,16 +473,86 @@ export function WorkspaceTab({
         onKeyDown={onDividerKey}
       />
       <div className="ws-preview">
-        {selected === null ? (
+        {files.tabs.length === 0 ? (
           <p className="ws-note">{t(lang, "ws.hint")}</p>
         ) : (
           <>
-            <div className="ws-preview-head">
-              <span className="ws-preview-path mono" title={selected}>
-                {selected}
-              </span>
+            {/* Card 249: the open files as a closable tab row — the terminal
+                strip's idiom, keyed by path. */}
+            <div className="ws-tabs" role="tablist">
+              {files.tabs.map((tab) => (
+                <span
+                  key={tab.path}
+                  className={`ws-tab${files.active === tab.path ? " ws-tab--active" : ""}`}
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={files.active === tab.path}
+                    className="ws-tab-pick"
+                    title={tab.path}
+                    onClick={() => setFiles((s) => selectFile(s, tab.path))}
+                  >
+                    {fileTabLabel(tab)}
+                  </button>
+                  <button
+                    type="button"
+                    className="ws-tab-close"
+                    aria-label={t(lang, "ws.closeFile")}
+                    title={t(lang, "ws.closeFile")}
+                    onClick={() => setFiles((s) => closeFile(s, tab.path))}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {files.tabs.length > 1 && (
+                <button type="button" className="ws-close-all" onClick={() => setFiles(closeAllFiles)}>
+                  {t(lang, "ws.closeAll")}
+                </button>
+              )}
             </div>
-            <Preview path={selected} sessionId={sessionId} prospective={beforeTheRun} />
+            {/* Every open tab stays mounted, hidden behind the active one, so
+                a scrolled iframe or a folded region survives the switch; a
+                CLOSED tab unmounts and releases its content. */}
+            {files.tabs.map((tab) => (
+              <div
+                key={tab.path}
+                className="ws-tab-body"
+                style={files.active === tab.path ? undefined : { display: "none" }}
+              >
+                <div className="ws-preview-head">
+                  <span className="ws-preview-path mono" title={tab.path}>
+                    {tab.path}
+                  </span>
+                  {sourceOffered(tab.path) && (
+                    <span className="ws-view-toggle" role="group">
+                      <button
+                        type="button"
+                        className={`ws-view-chip${tab.view === "rendered" ? " ws-view-chip--on" : ""}`}
+                        aria-pressed={tab.view === "rendered"}
+                        onClick={() => setFiles((s) => setFileView(s, tab.path, "rendered"))}
+                      >
+                        {t(lang, "ws.rendered")}
+                      </button>
+                      <button
+                        type="button"
+                        className={`ws-view-chip${tab.view === "source" ? " ws-view-chip--on" : ""}`}
+                        aria-pressed={tab.view === "source"}
+                        onClick={() => setFiles((s) => setFileView(s, tab.path, "source"))}
+                      >
+                        {t(lang, "ws.source")}
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {tab.view === "source" && sourceOffered(tab.path) ? (
+                  <SourcePane path={tab.path} sessionId={sessionId} prospective={beforeTheRun} />
+                ) : (
+                  <Preview path={tab.path} sessionId={sessionId} prospective={beforeTheRun} />
+                )}
+              </div>
+            ))}
           </>
         )}
       </div>
