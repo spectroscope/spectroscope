@@ -25,6 +25,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -38,8 +39,15 @@ import java.util.stream.IntStream;
  */
 public final class SubagentManager {
 
+    /**
+     * How many children one {@code spawn_agents} call may start at once.
+     *
+     * <p>Unchanged by card 270, deliberately: nobody has measured whether the
+     * house test backend serves four concurrent completions usefully, and
+     * {@code konzept/ORCHESTRATION.md} §7 leaves the width an open owner call
+     * until someone does. It moves when a number says so, with the number.</p>
+     */
     public static final int MAX_PARALLEL_CHILDREN = 4;
-    public static final long CHILD_TIMEOUT_MS = 120_000L;
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -62,7 +70,7 @@ public final class SubagentManager {
             """);
 
     private final SubagentConfig config;
-    private final long childTimeoutMs;
+    private final ChildBudget budget;
 
     /** Per-type counters -> "explore-1", "worker-2". Synchronized access: parallel children draw concurrently. */
     private final Map<AgentType, Integer> counters = new EnumMap<>(AgentType.class);
@@ -84,23 +92,39 @@ public final class SubagentManager {
     private volatile CancelSignal currentParentSignal;
 
     /**
-     * Production entry: the default per-child timeout of {@link #CHILD_TIMEOUT_MS} ms.
+     * Production entry: the per-child budget the config carries, which is
+     * {@link ChildBudget#derivedFrom} over this session's measured exchanges
+     * unless the face named an override (card 270).
      *
      * @param config the parent-session wiring every child is built from
      */
     public SubagentManager(SubagentConfig config) {
-        this(config, CHILD_TIMEOUT_MS);
+        this.config = config;
+        this.budget = config.budget();
     }
 
     /**
-     * Visible for tests: the child timeout is the only knob worth turning there.
+     * Visible for tests: an explicit run budget, which wins over any
+     * measurement. The queue grace is still derived from it (see
+     * {@link ChildBudget#firstTokenGraceMs()}), because the point of card 270 is
+     * that the two clocks are different clocks — an override sets the price, not
+     * the shape.
      *
-     * @param config         the parent-session wiring every child is built from
-     * @param childTimeoutMs per-child wall-clock budget in milliseconds
+     * @param config      the parent-session wiring every child is built from
+     * @param runBudgetMs per-child budget in milliseconds, counted from the
+     *                    child's first token
      */
-    SubagentManager(SubagentConfig config, long childTimeoutMs) {
+    SubagentManager(SubagentConfig config, long runBudgetMs) {
         this.config = config;
-        this.childTimeoutMs = childTimeoutMs;
+        this.budget = ChildBudget.fixed(runBudgetMs);
+    }
+
+    /** The per-child budget this manager prices with — the derivation is
+     *  re-read on every spawn, so a session whose backend gets slower pays more
+     *  for its next child rather than for the one it already lost.
+     *  @return the live budget */
+    public ChildBudget budget() {
+        return budget;
     }
 
     /**
@@ -190,6 +214,14 @@ public final class SubagentManager {
      * over no web tools (headless, fleet) builds research children without
      * web reach, which is the unattended-lanes decision of card 205.
      *
+     * <p><b>Card 270 changed only the PRICE of a child, never its reach.</b>
+     * The card's other half — handing a child the parent's whole belt instead
+     * of the hand-listed standard set — is NOT on this branch: it makes five
+     * ungated tools reachable from a child, which is the owner's call to make
+     * and not a builder's. The belt a child gets here is exactly the belt it
+     * got before, so nothing a child could not reach yesterday it can reach
+     * today.</p>
+     *
      * @param type        decides the filter — worker keeps every base tool,
      *                    explore only the read set, research read set + web grant
      * @param childId     stamped into the child's report_status messages
@@ -274,22 +306,40 @@ public final class SubagentManager {
      */
     private String executeChild(AgentType type, String task, String childId,
                                 MergedEventStream parentQueue, CancelSignal parentSignal) {
-        // Cascading cancel + per-child timeout: the child gets its OWN signal.
+        // Cascading cancel + TWO per-child clocks: the child gets its OWN signal.
         // The parent's signal cancels it (Ctrl+C ends the whole tree; onCancel
         // fires immediately if the parent is already cancelled — no race at
-        // spawn time), and a scheduled task turns the SAME signal into the
-        // per-child timeout. Never a Thread.sleep race, never Future.get(timeout).
-        // The dedicated timedOut flag matters: closing the child's EventStream
+        // spawn time), and the scheduled tasks turn the SAME signal into the
+        // budget. Never a Thread.sleep race, never Future.get(timeout).
+        //
+        // Card 270, the shape that replaces the single literal:
+        //   * the QUEUE GRACE is armed here, at the spawn, and only asks whether
+        //     this backend ever started on this child. Four children are
+        //     submitted at once and nothing between them and the backend queues,
+        //     so on one loaded local model the third and fourth wait for real.
+        //   * the RUN BUDGET is armed on the child's FIRST TOKEN and asks whether
+        //     it is still getting anywhere. One clock could not tell those apart,
+        //     and on the owner's backend (median exchange 92.2 s) the literal
+        //     120 s was shorter than 7 of 15 measured exchanges.
+        //
+        // The named stop reason travels on the signal, so the child's own
+        // run_end says WHICH clock ran out instead of reading as a plain abort.
+        // The dedicated flag still matters: closing the child's EventStream
         // (try-with-resources below) also cancels the child signal per the
         // stage-3 contract, so the signal state alone cannot distinguish
-        // "finished normally" from "timed out".
+        // "finished normally" from "out of budget".
+        long graceMs = budget.firstTokenGraceMs();
+        long runBudgetMs = budget.runBudgetMs();
         CancelSignal childSignal = new CancelSignal();
         parentSignal.onCancel(childSignal::cancel);
-        AtomicBoolean timedOut = new AtomicBoolean(false);
-        ScheduledFuture<?> timeout = timeoutScheduler.schedule(() -> {
-            timedOut.set(true);
-            childSignal.cancel();
-        }, childTimeoutMs, TimeUnit.MILLISECONDS);
+        AtomicReference<String> stoppedBy = new AtomicReference<>();
+        ScheduledFuture<?> graceTimer = timeoutScheduler.schedule(() -> {
+            if (stoppedBy.compareAndSet(null, ChildBudget.STOP_NO_FIRST_TOKEN)) {
+                childSignal.cancel(ChildBudget.STOP_NO_FIRST_TOKEN);
+            }
+        }, graceMs, TimeUnit.MILLISECONDS);
+        AtomicReference<ScheduledFuture<?>> budgetTimer = new AtomicReference<>();
+        AtomicBoolean spoke = new AtomicBoolean(false);
 
         // A subagent is simply another Agent instance from our own core.
         Agent child = new Agent(AgentOptions.builder()
@@ -299,6 +349,7 @@ public final class SubagentManager {
                 .onPermission(config.onPermission())  // same broker; request.agentId() names the asker
                 .hooks(config.hooks())                // same guard — delegation must not bypass a blocking hook
                 .llmWire(config.llmWire())            // same wire record; the child binds its own agentId
+                .latency(budget.latency())            // a child's exchanges price the NEXT child (card 270)
                 .cwd(config.cwd())
                 .agentId(childId)
                 .parentId(config.parentAgentId())     // the tree edge — the graph tab draws exactly this
@@ -313,6 +364,19 @@ public final class SubagentManager {
             // events, which is fine on a virtual thread.
             for (RunEvent event : childEvents) {
                 parentQueue.put(event); // the merge, one line
+                if (isFirstTokenKind(event) && spoke.compareAndSet(false, true)
+                        && stoppedBy.get() == null) {
+                    // The child is producing: the queue is behind it, the budget
+                    // starts now. If the grace timer wins this instant anyway, its
+                    // CAS already stands and the finally below disarms whatever
+                    // was armed here — the boundary is a boundary, not a leak.
+                    graceTimer.cancel(false);
+                    budgetTimer.set(timeoutScheduler.schedule(() -> {
+                        if (stoppedBy.compareAndSet(null, ChildBudget.STOP_BUDGET_EXHAUSTED)) {
+                            childSignal.cancel(ChildBudget.STOP_BUDGET_EXHAUSTED);
+                        }
+                    }, runBudgetMs, TimeUnit.MILLISECONDS));
+                }
                 switch (event) {
                     case RunEvent.TurnStart ignored -> lastTurnText.setLength(0); // last turn = final answer
                     case RunEvent.TextDelta delta -> lastTurnText.append(delta.text());
@@ -326,12 +390,25 @@ public final class SubagentManager {
         } catch (RuntimeException failure) {
             return "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
         } finally {
-            timeout.cancel(false); // child finished: disarm the timeout
+            graceTimer.cancel(false); // child finished: disarm both clocks
+            ScheduledFuture<?> armed = budgetTimer.get();
+            if (armed != null) {
+                armed.cancel(false);
+            }
         }
 
-        if (timedOut.get()) {
-            return "ERROR: [" + childId + "] timeout after " + childTimeoutMs / 1000
-                    + " s — cut the subtask smaller.";
+        // Both messages name the clock AND its derivation: a requester told only
+        // "timeout" learns nothing it can act on, and the old sentence could even
+        // print "timeout after 0 s" for a sub-second test budget.
+        if (ChildBudget.STOP_BUDGET_EXHAUSTED.equals(stoppedBy.get())) {
+            return "ERROR: [" + childId + "] out of budget: " + runBudgetMs / 1000
+                    + " s of work since its first token (" + budget.derivation()
+                    + ") — cut the subtask smaller.";
+        }
+        if (ChildBudget.STOP_NO_FIRST_TOKEN.equals(stoppedBy.get())) {
+            return "ERROR: [" + childId + "] never produced a token within " + graceMs / 1000
+                    + " s of being started (" + budget.derivation()
+                    + ") — the backend did not begin on this child.";
         }
         if (parentSignal.isCancelled()) {
             return "ERROR: [" + childId + "] ended by cancellation of the parent run.";
@@ -374,6 +451,26 @@ public final class SubagentManager {
             }
         }
         return results;
+    }
+
+    /**
+     * Whether this event means the backend has started producing for the child —
+     * the moment the run budget's clock starts (card 270, criterion 1).
+     *
+     * <p>{@code turn_start} deliberately does not count: the agent loop emits it
+     * BEFORE the provider call, so counting it would put the clock back where the
+     * literal had it. A tool-calling model may produce no text at all, so a
+     * {@code tool_call} counts; a turn that produced only usage still means the
+     * backend answered, so that counts too.</p>
+     *
+     * @param event one forwarded child event
+     * @return true for the kinds that prove the child is out of the queue
+     */
+    private static boolean isFirstTokenKind(RunEvent event) {
+        return event instanceof RunEvent.TextDelta
+                || event instanceof RunEvent.ThinkingDelta
+                || event instanceof RunEvent.ToolCall
+                || event instanceof RunEvent.Usage;
     }
 
     /** Wall-clock epoch millis — the timestamp base every RunEvent emitter uses. */

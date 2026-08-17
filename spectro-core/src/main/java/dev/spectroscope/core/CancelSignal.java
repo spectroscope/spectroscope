@@ -17,6 +17,7 @@ public final class CancelSignal {
     private static final Logger log = LoggerFactory.getLogger(CancelSignal.class);
 
     private volatile boolean cancelled = false;
+    private volatile String reason = null;
     private final List<Runnable> listeners = new ArrayList<>();
 
     /**
@@ -27,10 +28,29 @@ public final class CancelSignal {
      * up the cancelling thread (which used to kill the WebSocket session, card 78).
      */
     public synchronized void cancel() {
+        cancel(null);
+    }
+
+    /**
+     * The same cancel, carrying WHY — so a run that was stopped by something
+     * other than a human can say so instead of reading as a plain abort
+     * (card 270: a child out of budget must not look like Ctrl+C).
+     *
+     * <p>The reason travels no further than the run's own {@code run_end}
+     * stopReason: it is a new VALUE on an existing field, never a new field, so
+     * the byte-frozen RunEvent shapes are untouched. A null reason keeps the
+     * pre-270 behaviour exactly — {@code "aborted"}.</p>
+     *
+     * @param why a short, stable, snake_case reason (e.g.
+     *            {@link dev.spectroscope.core.subagents.ChildBudget#STOP_BUDGET_EXHAUSTED}),
+     *            or null for a plain cancel
+     */
+    public synchronized void cancel(String why) {
         if (cancelled) {
-            return; // idempotent
+            return; // idempotent — the FIRST reason is the one that stopped the run
         }
         cancelled = true;
+        reason = why;
         // Copy the listener list so a listener that registers another one cannot break us.
         for (Runnable listener : new ArrayList<>(listeners)) {
             fireIsolated(listener);
@@ -51,6 +71,13 @@ public final class CancelSignal {
      *  @return true once {@link #cancel()} has been called */
     public boolean isCancelled() {
         return cancelled;
+    }
+
+    /** Why this signal was cancelled, when the canceller said.
+     *  @return the reason passed to {@link #cancel(String)}, or null for a plain
+     *          cancel and for a signal that is still live */
+    public String reason() {
+        return reason;
     }
 
     /**

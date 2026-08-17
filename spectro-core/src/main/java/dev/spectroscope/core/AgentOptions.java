@@ -31,12 +31,32 @@ import java.util.List;
  * @param thinking            TRUE requests the model's reasoning stream
  * @param hooks               external shell hooks around tool calls; null means no hooks
  * @param llmWire             the session's backend-to-LLM recorder; null records nothing
+ * @param latency             the session's shared window of measured exchange
+ *                            durations (card 270). Every completed provider
+ *                            stream of this agent lands in it, and
+ *                            {@code ChildBudget} derives a child's price from it —
+ *                            so the parent's own measurements are what pay for
+ *                            the children. Null measures nothing and changes no
+ *                            behaviour
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
                            List<ProviderMessage> initialMessages, String providerName,
                            Integer maxTokens, Integer compactionThreshold, Boolean introspection,
-                           Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire) {
+                           Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire,
+                           dev.spectroscope.core.provider.ExchangeLatency latency) {
+
+    /** Compat: the pre-270 arity. A caller without a latency window measures
+     *  nothing and behaves exactly as before. */
+    public AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
+                        Path cwd, PermissionBroker onPermission, String agentId, String parentId,
+                        List<ProviderMessage> initialMessages, String providerName,
+                        Integer maxTokens, Integer compactionThreshold, Boolean introspection,
+                        Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
+                initialMessages, providerName, maxTokens, compactionThreshold,
+                introspection, thinking, hooks, llmWire, null);
+    }
 
     /** Compat: the pre-wire arity. A caller without a recorder records nothing
      *  and behaves byte-identically to before (card 184's additive rule). */
@@ -47,7 +67,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                         Boolean thinking, HookRunner hooks) {
         this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
                 initialMessages, providerName, maxTokens, compactionThreshold,
-                introspection, thinking, hooks, null);
+                introspection, thinking, hooks, null, null);
     }
 
     /** Entry point of the fluent wiring — chain setters, finish with {@link Builder#build()}.
@@ -73,6 +93,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private Boolean thinking;
         private HookRunner hooks; // nullable → no hooks (a no-op in Agent.runGuarded)
         private LlmWireRecorder llmWire; // nullable, records nothing without one
+        private dev.spectroscope.core.provider.ExchangeLatency latency; // nullable, measures nothing
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -119,13 +140,21 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         /** The session's backend-to-LLM wire recorder (card 184).
          *  @param value the recorder the provider taps ride on; null records nothing */
         public Builder llmWire(LlmWireRecorder value) { this.llmWire = value; return this; }
+        /** The session's shared window of measured exchange durations (card 270)
+         *  — what a child's derived budget is priced from.
+         *  @param value the window every completed provider stream lands in;
+         *               null measures nothing */
+        public Builder latency(dev.spectroscope.core.provider.ExchangeLatency value) {
+            this.latency = value;
+            return this;
+        }
 
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
             return new AgentOptions(provider, systemPrompt, registry, cwd, onPermission,
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
-                    introspection, thinking, hooks, llmWire);
+                    introspection, thinking, hooks, llmWire, latency);
         }
     }
 }

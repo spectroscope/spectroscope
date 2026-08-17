@@ -1078,6 +1078,16 @@ public final class SessionConnection {
         // Loaded before the SubagentManager so children run the same guard as the parent.
         HookRunner hooks = HookRunner.load(sessionConfig.hooks());
 
+        // Card 270: ONE latency window per session, shared by the parent agent
+        // and every child. The parent's own exchanges are what price the
+        // children, which is the whole point — a child's budget is derived from
+        // the backend this session is actually talking to, not from a literal.
+        // The window is empty on the first prompt, so the first child of a
+        // session is priced at ChildBudget's floor and every later one on
+        // measurement.
+        dev.spectroscope.core.provider.ExchangeLatency latency =
+                new dev.spectroscope.core.provider.ExchangeLatency();
+
         subagents = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
                 .cwd(workspace)
@@ -1087,6 +1097,7 @@ public final class SessionConnection {
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(webTools)
+                .budget(dev.spectroscope.core.subagents.ChildBudget.derivedFrom(latency))
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -1108,6 +1119,7 @@ public final class SessionConnection {
                 .thinking(thinking.get()) // reasoning visibility; the header toggle applies on the next run
                 .hooks(hooks) // external pre/post_tool_use shell hooks (config-only)
                 .llmWire(llmWire) // the backend-to-LLM record rides the session's recorder (card 184)
+                .latency(latency) // the parent's own exchanges price its children (card 270)
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
