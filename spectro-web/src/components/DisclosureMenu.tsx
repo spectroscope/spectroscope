@@ -16,6 +16,7 @@ import type { KeyboardEventHandler, ReactNode } from "react";
 import { DISCLOSURE_LEVELS, setDisclosure, useDisclosure } from "../state/disclosure";
 import { CHAT_WIDTHS, setChatWidth, useChatWidth } from "../state/chatWidth";
 import { CHAT_VIEW_MODES, setChatView, useChatView } from "../state/chatView";
+import { setLiveTraceWanted, useLiveTraceWanted } from "../state/liveTrace";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -34,6 +35,7 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
   const level = useDisclosure();
   const width = useChatWidth();
   const chatView = useChatView();
+  const liveTrace = useLiveTraceWanted();
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -193,6 +195,33 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
                   </span>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Card 246: the live-trace switch ("das spart speicher"). OFF stops
+              the CLIENT retention only — the JSONL recording and the OTLP
+              export are server-side and keep running; the hint says so. */}
+          <div className="wsg-section">
+            <div className="wsg-section-head">
+              <span>{t(lang, "trace.live.title")}</span>
+            </div>
+            <div className="wsg-modes" role="group" aria-label={t(lang, "trace.live.title")}>
+              <div
+                role="menuitemcheckbox"
+                aria-checked={liveTrace}
+                className={`wsg-mode-row${liveTrace ? " wsg-mode-row--active" : ""}`}
+                onClick={() => setLiveTraceWanted(!liveTrace)}
+              >
+                <span className="wsg-mode-marker" aria-hidden="true">
+                  {liveTrace ? "›" : ""}
+                </span>
+                <span className="wsg-mode-body">
+                  <span className="wsg-mode-name mono">
+                    {t(lang, liveTrace ? "trace.live.on" : "trace.live.off")}
+                  </span>
+                  <span className="wsg-mode-hint">{t(lang, "trace.live.hint")}</span>
+                </span>
+              </div>
             </div>
           </div>
 

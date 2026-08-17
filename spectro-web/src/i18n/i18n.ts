@@ -1469,6 +1469,17 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Die Leitung ist still. Frames erscheinen hier, sobald der Socket sie trägt — in beide Richtungen.",
     en: "The wire is quiet. Frames appear here as soon as the socket carries them — in both directions.",
   },
+  "trace.liveOff": {
+    de: "Der Live-Trace ist aus — die JSONL-Aufzeichnung und der OTLP-Export laufen weiter. Einschalten im ⋮-Menü des Composers.",
+    en: "The live trace is off — the JSONL recording and the OTLP export keep running. Turn it on in the composer's ⋮ menu.",
+  },
+  "trace.live.title": { de: "Live-Trace", en: "live trace" },
+  "trace.live.on": { de: "an", en: "on" },
+  "trace.live.off": { de: "aus", en: "off" },
+  "trace.live.hint": {
+    de: "Aus: keine Frames im Speicher — Aufzeichnung und OTLP-Export laufen weiter",
+    en: "Off: no frames held in memory — the recording and the OTLP export keep running",
+  },
   "trace.noMatch": { de: "Keine Frames passen zum Filter.", en: "No frames match the current filter." },
   "trace.count": { de: "{v} von {t}", en: "{v} of {t}" },
   "trace.new": { de: "{n} neue ↓", en: "{n} new ↓" },

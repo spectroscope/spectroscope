@@ -13,10 +13,12 @@ import {
   recordOutgoing,
   recordResumeMarker,
   reduceAll,
+  stripLiveTrace,
   traceFromEvents,
   windowTrace,
 } from "./state/reducer";
 import type { UiState } from "./state/reducer";
+import { currentLiveTraceWanted, useLiveTraceWanted } from "./state/liveTrace";
 import { fetchLlmWireIndex, mergeLlmExchanges } from "./wire/llmWire";
 import { seedResumedLive, summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
@@ -474,7 +476,9 @@ export function App() {
   // This state is the one the socket grows without an end in sight, so it is
   // also the one whose trace is a window; every other fold here is finite.
   const onEvents = useCallback((batch: RunEvent[]) => {
-    setLive((s) => windowTrace(reduceAll(s, batch)));
+    // Card 246: the live-trace switch strips BEFORE the window — an off trace
+    // holds nothing, and the recording is the server's job, not this array's.
+    setLive((s) => windowTrace(stripLiveTrace(reduceAll(s, batch), currentLiveTraceWanted())));
     setLiveEvents((prev) => [...prev, ...batch]);
     labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
@@ -541,6 +545,13 @@ export function App() {
 
   // When a run finishes, a new JSONL file exists — refresh the sidebar list.
   const running = live.running;
+
+  // Card 246: the seams above only strip on the NEXT frame — flipping the
+  // switch off frees what the state already holds, right now.
+  const liveTraceWanted = useLiveTraceWanted();
+  useEffect(() => {
+    if (!liveTraceWanted) setLive((s) => stripLiveTrace(s, false));
+  }, [liveTraceWanted]);
   useEffect(() => {
     if (!running) setRefreshToken((n) => n + 1);
   }, [running]);
@@ -573,7 +584,8 @@ export function App() {
     if (sent) {
       // Outbound rows land in the same growing array as inbound ones, so they
       // are windowed by the same rule — a chatty sender cannot outgrow it.
-      setLive((s) => windowTrace(recordOutgoing(s, msg)));
+      // And stripped by the same switch (card 246): out rows are trace rows.
+      setLive((s) => windowTrace(stripLiveTrace(recordOutgoing(s, msg), currentLiveTraceWanted())));
       // Leveling beacons ride here rather than in each component: this is the one
       // place every client message passes, so a gate answered from the bar, the
       // lab or a fleet all report the same way, and a future sender gets it free.
@@ -2533,6 +2545,9 @@ export function App() {
                translation that is a fresh fold whose count is 0 while the rows
                beside it are still the windowed ones. */
               droppedRows={recordedView.traceDropped}
+              /* Card 246: only the LIVE record can be "off" — an archive was
+               folded whole and owes the reader its full trace regardless. */
+              liveTraceOff={replay === null && !liveTraceWanted}
               agentFilter={traceAgent}
               onAgentFilter={setTraceAgent}
               focusEvent={focusEvent}
