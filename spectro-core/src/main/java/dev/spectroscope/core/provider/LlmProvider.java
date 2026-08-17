@@ -59,6 +59,38 @@ public interface LlmProvider {
         return null;
     }
 
+    /**
+     * What this provider knows about its model's ability to SEE, asked BEFORE
+     * the request is built (card 252).
+     *
+     * <p>The wedge this answers: a pasted screenshot at a model without image
+     * support came back as an HTTP 400, and since the image lives in the agent's
+     * history it was re-sent on every later turn — so every later prompt failed
+     * the same way and the session was finished. The knowledge to prevent that
+     * existed already, one layer too low: ollama's {@code /api/show} probe sat
+     * inside {@code OllamaProvider} and fired only on an image-bearing request.
+     * This method lifts the same question to where the request is assembled.</p>
+     *
+     * <p><b>{@code UNKNOWN} means send.</b> Withholding on a guess would blind
+     * every vision-capable model the harness cannot interrogate, and there is no
+     * portable capability endpoint on the OpenAI wire — {@code /v1/models} lists
+     * ids, not what they accept. So the safe direction is the permissive one:
+     * only a provider that can actually answer {@code BLIND} — a capability
+     * probe, or the server's own refusal, remembered — makes the fence close.
+     * A static table of model names would be invented knowledge with a shelf
+     * life, and this house has paid for one of those before.</p>
+     *
+     * @return SEES, BLIND, or UNKNOWN when nothing is known; never null
+     */
+    default Vision vision() {
+        return Vision.UNKNOWN;
+    }
+
+    /** What is known about a model's sight. {@code UNKNOWN} is NOT {@code BLIND}:
+     *  the first sends the image and lets the provider answer, the second is the
+     *  only state that makes the harness keep an attachment back. */
+    enum Vision { SEES, BLIND, UNKNOWN }
+
     // ---- request ----------------------------------------------------------
 
     /**

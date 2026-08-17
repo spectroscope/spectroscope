@@ -164,6 +164,16 @@ final class EventRenderer {
                 System.out.println("\n" + ansi.sand("▣ image · " + image.provider()
                         + " (" + image.model() + ") · ~/.spectro/" + image.blobPath()));
             }
+            // Card 252: the CLI is a face too, and the withholding is only honest
+            // where it is visible — silence here would be a model answering about
+            // a screenshot the terminal shows it never got.
+            case RunEvent.ImagesWithheld withheld -> {
+                spinner.stop();
+                System.out.println("\n" + ansi.sand("▣ " + withheld.images()
+                        + (withheld.images() == 1 ? " image" : " images")
+                        + " not sent — this model cannot see"
+                        + (withheld.model() == null ? "" : " (" + withheld.model() + ")")));
+            }
             case RunEvent.Usage usage -> {
                 runInputTokens += usage.inputTokens();
                 runOutputTokens += usage.outputTokens();
@@ -279,6 +289,7 @@ final class EventRenderer {
             case RunEvent.LlmExchange e -> e.agentId();
             case RunEvent.BrowserAction e -> e.agentId();
             case RunEvent.HookDecision e -> e.agentId();
+            case RunEvent.ImagesWithheld e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             case RunEvent.RunEnd e -> null;
         };

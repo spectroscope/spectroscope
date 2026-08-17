@@ -66,6 +66,19 @@ public final class TracingProvider implements LlmProvider {
         return delegate.endpoint();
     }
 
+    /**
+     * Delegates: an observer must not answer a capability question on the
+     * observed thing's behalf. Under {@code --verbose} a swallowed answer here
+     * would leave card 252's fence open in exactly the mode an operator uses to
+     * watch what goes out.
+     *
+     * @return the wrapped provider's own verdict on its model's sight
+     */
+    @Override
+    public Vision vision() {
+        return delegate.vision();
+    }
+
     // ------------------------------------------------------------- ⇢ request
 
     /**

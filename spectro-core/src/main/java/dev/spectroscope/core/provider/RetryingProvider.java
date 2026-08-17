@@ -76,6 +76,14 @@ public final class RetryingProvider implements LlmProvider {
         return delegate.endpoint();
     }
 
+    /** Delegates: card 252's fence asks the provider the agent HOLDS, and every
+     *  session holds this wrapper. A default answer here would leave the fence
+     *  permanently open — the failure that looks like nothing was built at all. */
+    @Override
+    public Vision vision() {
+        return delegate.vision();
+    }
+
     /**
      * Returns a lazy iterable whose {@code iterator()} runs the retrying establishment.
      *

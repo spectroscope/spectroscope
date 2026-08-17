@@ -32,6 +32,8 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import dev.spectroscope.core.provider.LlmProvider;
+import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.session.Compaction;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.wire.LlmWireRecorder;
@@ -241,6 +243,11 @@ public final class Agent {
         // Input tokens of the last completed turn — the compaction trigger.
         int lastInputTokens = 0;
 
+        // Card 252: the withholding is stated once per run. The image lives in
+        // the history, so the fence closes again on every turn of a tool-using
+        // run, and one line per turn would bury the transcript in one sentence.
+        boolean saidTheImagesWereWithheld = false;
+
         // The backend-to-LLM record (card 184). Null means no record: every
         // request then travels tap-free, byte-identical to before.
         LlmWireRecorder recorder = options.llmWire();
@@ -292,8 +299,27 @@ public final class Agent {
                 // turn number turn_start carries; the provider records the real
                 // exchange through it and knows neither agent nor turn itself.
                 LlmWireTap tap = recorder == null ? null : recorder.bound(agentId, turn);
+                // Card 252, the fence. Asked per turn and only when there is
+                // something to withhold, so a text-only session never pays for
+                // it — and asked of the PROVIDER, because it is the only party
+                // that can know (ollama probes /api/show; an openai-compatible
+                // endpoint remembers its own refusal). UNKNOWN sends: see
+                // LlmProvider#vision for why the permissive direction is the safe
+                // one. The history itself is untouched — withhold() copies, so
+                // run_start, the session file and the user's bubble keep the image.
+                List<ProviderMessage> forProvider = List.copyOf(messages);
+                int withheldImages = VisionFence.imageCount(forProvider);
+                if (withheldImages > 0
+                        && options.provider().vision() == LlmProvider.Vision.BLIND) {
+                    forProvider = VisionFence.withhold(forProvider);
+                    if (!saidTheImagesWereWithheld) {
+                        saidTheImagesWereWithheld = true; // once per run, not per turn
+                        emit.accept(new RunEvent.ImagesWithheld(agentId, withheldImages,
+                                options.provider().modelName(), "no_vision", now()));
+                    }
+                }
                 ProviderRequest request = new ProviderRequest(options.systemPrompt(),
-                        List.copyOf(messages), advertisedTools, maxTokens,
+                        forProvider, advertisedTools, maxTokens,
                         effectiveReasoning(), effortOverride, signal, tap);
 
                 // Blocking for-each over the provider stream — text deltas are passed

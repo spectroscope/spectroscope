@@ -50,6 +50,13 @@ public final class OllamaProvider implements LlmProvider {
     private final String model;
     private final String baseUrl;
 
+    /** The probe's verdict, memoized (card 252). {@code /api/show} states a fact
+     *  about a pulled model, and a session holds one provider, so asking twice
+     *  cannot answer differently. UNKNOWN is never cached: an ollama that was
+     *  down, or too old to report capabilities, must not pin the model as
+     *  unknowable for the rest of the session. */
+    private volatile Vision vision = Vision.UNKNOWN;
+
     /**
      * Builds the provider and its HTTP plumbing; no request leaves here yet.
      *
@@ -245,6 +252,11 @@ public final class OllamaProvider implements LlmProvider {
         if (hasImages && (status == 400
                 || lowered.contains("image") || lowered.contains("vision")
                 || lowered.contains("multimodal"))) {
+            // Card 252: remember it. When /api/show said nothing (an older
+            // ollama), the chat call's own refusal is the only capability fact
+            // there is — and unremembered it would arrive again on every turn,
+            // which is exactly how the session got wedged.
+            vision = Vision.BLIND;
             return new IllegalStateException(noVisionMessage());
         }
         if (status >= 400 && status < 500 && lowered.contains("think")) {
@@ -657,21 +669,42 @@ public final class OllamaProvider implements LlmProvider {
     // ---- vision check ----------------------------------------------
 
     /**
-     * Fails fast when the configured model cannot see. Best effort: if /api/show
-     * yields no capability details (older Ollama, network hiccup), do not block —
-     * the chat call reports errors.
+     * What {@code /api/show} says about this model's sight — the capability
+     * knowledge card 252 lifts out of this class so the agent can consult it
+     * while BUILDING the request, instead of only here, one layer below it.
+     *
+     * <p>Best effort, unchanged in its failure behaviour: no answer (an older
+     * ollama that reports no capabilities, an unreachable server) is
+     * {@code UNKNOWN}, never {@code BLIND} — the chat call reports real
+     * errors, and a probe that could not run must not withhold an image.</p>
+     *
+     * @return SEES, BLIND, or UNKNOWN when the server said nothing useful
      */
-    private void assertVisionModel() {
+    @Override
+    public Vision vision() {
+        if (vision != Vision.UNKNOWN) {
+            return vision;
+        }
         List<String> capabilities;
         try {
             capabilities = api.show(new OllamaApi.ShowRequest(model)).capabilities();
         } catch (RuntimeException unavailable) {
-            return; // network problems are reported by the actual chat call
+            return Vision.UNKNOWN; // network problems are reported by the actual chat call
         }
         if (capabilities == null) {
-            return; // no capability details: do not block
+            return Vision.UNKNOWN; // no capability details: do not block
         }
-        if (!capabilities.contains("vision")) {
+        vision = capabilities.contains("vision") ? Vision.SEES : Vision.BLIND;
+        return vision;
+    }
+
+    /** Fails fast when the configured model cannot see — the belt behind card
+     *  252's fence. The agent normally withholds the image before it gets here,
+     *  but a face that drives this provider directly (the CLI, a sample, a
+     *  subagent built without the loop) still must not have its image silently
+     *  dropped by ollama's chat API. */
+    private void assertVisionModel() {
+        if (vision() == Vision.BLIND) {
             throw new IllegalStateException(noVisionMessage());
         }
     }

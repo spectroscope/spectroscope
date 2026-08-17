@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClientMessage, RunEvent } from "../events";
+import { dict } from "../i18n/i18n";
 import type { UiState } from "./reducer";
 import {
   initialState,
@@ -532,6 +533,73 @@ describe("reduce — forward compatibility and errors", () => {
       tone: "warn",
       infoKey: "info.compacted",
       infoVars: { n: 397 },
+    });
+  });
+});
+
+describe("reduce — images withheld (card 252)", () => {
+  // The refusal has to be READABLE, and it has to sit in the chat where the
+  // picture is: the bubble above still shows the screenshot, because the record
+  // keeps it. Without this line the operator watches a model answer about an
+  // image that is on screen and was never sent.
+  it("says the image was not sent, as a warn-toned info line", () => {
+    const state = reduce(initialState, {
+      type: "images_withheld",
+      agentId: "main",
+      images: 1,
+      model: "deepseek-v4-flash",
+      reason: "no_vision",
+      ts: 1,
+    });
+    expect(state.turns[0]).toEqual({
+      kind: "info",
+      text: "Image not sent: this model cannot see images. It stays in the record.",
+      tone: "warn",
+      infoKey: "info.imageWithheld",
+      infoVars: {},
+    });
+  });
+
+  it("names a key that both languages actually have", () => {
+    // The reducer writes these keys as plain strings, so a typo type-checks and
+    // ships: the chat would print "info.imageWithheld" at the one moment it has
+    // to be readable. Looked up through the reducer's own output, not from a
+    // list beside it — a list would go stale in the same edit that broke it.
+    for (const images of [1, 2]) {
+      const turn = reduce(initialState, {
+        type: "images_withheld",
+        agentId: "main",
+        images,
+        model: "deepseek-v4-flash",
+        reason: "no_vision",
+        ts: 1,
+      }).turns[0];
+      // Narrowed on the union's own tag: the key lives on the info arm, and
+      // reading it off `Turn` would be reading it off a user bubble too.
+      const key = turn.kind === "info" ? turn.infoKey : undefined;
+      const entry = dict[key ?? ""];
+      expect(entry, key).toBeDefined();
+      expect(entry.de).toContain("Bild");
+      expect(entry.en).toContain("cannot see");
+    }
+  });
+
+  it("counts them when a resumed history carried more than one", () => {
+    // German declines the noun, so the plural is its own string and not a
+    // number glued in front of the singular one.
+    const state = reduce(initialState, {
+      type: "images_withheld",
+      agentId: "main",
+      images: 3,
+      model: "deepseek-v4-flash",
+      reason: "no_vision",
+      ts: 1,
+    });
+    expect(state.turns[0]).toMatchObject({
+      kind: "info",
+      infoKey: "info.imagesWithheld",
+      infoVars: { n: 3 },
+      tone: "warn",
     });
   });
 });

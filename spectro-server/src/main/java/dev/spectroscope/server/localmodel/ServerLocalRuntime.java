@@ -207,6 +207,20 @@ public final class ServerLocalRuntime {
         public String providerName() {
             return "spectro-local";
         }
+
+        /** The live delegate's verdict (card 252). Wrapped, because resolving the
+         *  runtime can fail — a model deleted from disk, a runtime somebody else
+         *  restarted — and a capability question must not be the thing that ends
+         *  the run: the stream call right behind it raises that same failure with
+         *  the message written for it. */
+        @Override
+        public Vision vision() {
+            try {
+                return liveDelegate(modelId).vision();
+            } catch (RuntimeException unavailable) {
+                return Vision.UNKNOWN;
+            }
+        }
     }
 
     /**
