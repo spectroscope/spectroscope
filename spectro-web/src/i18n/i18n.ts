@@ -2136,7 +2136,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the reader can see and edit, not a hidden instruction — a skill is
   // instructions in the system prompt, so asking for it by name is all there is
   // to do, and doing it visibly is what lets the reader disagree.
-  "slash.invocation": { de: "Nutze den Skill {skill} hierfür:", en: "Use the {skill} skill for this:" },
   "slash.title": { de: "Skills", en: "Skills" },
   "slash.none": { de: "Kein Skill passt zu „{query}\u201c", en: "No skill matches \u201c{query}\u201d" },
   "slash.empty": { de: "Keine Skills installiert", en: "No skills installed" },

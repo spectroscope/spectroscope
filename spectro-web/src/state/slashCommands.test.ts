@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { invocationFor, matchSkills, slashQuery, type SkillOption } from "./slashCommands";
+import { matchSkills, slashQueryAt, tokenInsert, type SkillOption } from "./slashCommands";
 
 const skill = (name: string, over: Partial<SkillOption> = {}): SkillOption => ({
   name,
@@ -18,28 +18,26 @@ const LIBRARY: SkillOption[] = [
   skill("matt-pocock:code-review"),
 ];
 
-describe("when the composer is spelling a command", () => {
-  it("reads the query out of a draft that starts with a slash", () => {
-    expect(slashQuery("/")).toBe("");
-    expect(slashQuery("/hum")).toBe("hum");
-    expect(slashQuery("/superpowers:brain")).toBe("superpowers:brain");
+describe("where the caret is spelling a command (card 247: anywhere in the text)", () => {
+  it("reads the query out of a token being typed at the caret", () => {
+    expect(slashQueryAt("/", 1)).toEqual({ query: "", start: 0 });
+    expect(slashQueryAt("/hum", 4)).toEqual({ query: "hum", start: 0 });
+    expect(slashQueryAt("review /wri", 11)).toEqual({ query: "wri", start: 7 });
+    expect(slashQueryAt("a (/hum", 7)).toEqual({ query: "hum", start: 3 });
+    expect(slashQueryAt("go /superpowers:brain", 21)).toEqual({ query: "superpowers:brain", start: 3 });
   });
 
-  it("says nothing for a slash that is not at the start", () => {
-    // Hijacking a mid-sentence slash would make "and/or" impossible to type,
-    // which is the reason the rule is where it is rather than what it is.
-    expect(slashQuery("and/or")).toBeNull();
-    expect(slashQuery("write and/or read")).toBeNull();
-    expect(slashQuery(" /hum")).toBeNull();
-    expect(slashQuery("")).toBeNull();
-    expect(slashQuery("hello")).toBeNull();
+  it("says nothing for a slash glued to a word — and/or stays typable", () => {
+    expect(slashQueryAt("and/or", 6)).toBeNull();
+    expect(slashQueryAt("3/4", 3)).toBeNull();
+    expect(slashQueryAt("look at /tmp/x", 14)).toBeNull();
   });
 
-  it("stops being a command the moment the draft becomes a sentence", () => {
-    // "/humanize this paragraph" is a person writing, not a person picking.
-    expect(slashQuery("/hum this")).toBeNull();
-    expect(slashQuery("/ ")).toBeNull();
-    expect(slashQuery("/hum\nmore")).toBeNull();
+  it("stops offering once the caret has left the token", () => {
+    expect(slashQueryAt("/hum this", 9)).toBeNull();
+    expect(slashQueryAt("go /plan now", 12)).toBeNull();
+    expect(slashQueryAt("", 0)).toBeNull();
+    expect(slashQueryAt("hello", 5)).toBeNull();
   });
 });
 
@@ -93,23 +91,26 @@ describe("which skills a query offers", () => {
   });
 });
 
-describe("what picking one puts in the composer", () => {
-  it("writes a sentence the reader can read and edit", () => {
-    // A skill is instructions in the system prompt, not a callable, so this is
-    // a message asking for it by name. Visible and editable beats a hidden
-    // instruction the sender never sees.
-    const text = invocationFor(skill("humanizer:humanizer"), "en");
-    expect(text).toContain("humanizer:humanizer");
-    expect(text.startsWith("/")).toBe(false);
-    expect(text.endsWith(" ")).toBe(true); // the cursor lands after it, mid-sentence
+describe("what picking one puts in the composer (card 247: a token, in place)", () => {
+  it("splices the token over the query, slash kept, a space after", () => {
+    const picked = tokenInsert(
+      "review /wri and ship",
+      { query: "wri", start: 7 },
+      11,
+      skill("superpowers:writing-plans"),
+    );
+    expect(picked.text).toBe("review /superpowers:writing-plans and ship");
+    expect(picked.caret).toBe("review /superpowers:writing-plans ".length);
+  });
+
+  it("completes a bare slash at the end of a sentence", () => {
+    const picked = tokenInsert("first /", { query: "", start: 6 }, 7, skill("verification"));
+    expect(picked.text).toBe("first /verification ");
+    expect(picked.caret).toBe(picked.text.length);
   });
 
   it("names the skill exactly as the agent knows it, namespace and all", () => {
-    expect(invocationFor(skill("superpowers:brainstorming"), "en")).toContain("superpowers:brainstorming");
-    expect(invocationFor(skill("verification"), "en")).toContain("verification");
-  });
-
-  it("speaks the reader's language", () => {
-    expect(invocationFor(skill("verification"), "de")).not.toBe(invocationFor(skill("verification"), "en"));
+    const picked = tokenInsert("/b", { query: "b", start: 0 }, 2, skill("superpowers:brainstorming"));
+    expect(picked.text).toBe("/superpowers:brainstorming ");
   });
 });

@@ -47,6 +47,8 @@ import { useChatWidth } from "../state/chatWidth";
 import { WorkspaceChooser } from "./WorkspaceChooser";
 import { reportCount, useSearch } from "../state/search";
 import { chatHits, markSegments } from "./chatSearch";
+import { skillTokenSegments } from "../state/skillTokens";
+import { useSkills } from "../state/skillList";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -313,19 +315,34 @@ export function Chat(props: {
 
   // Card 78 #3: running no longer blocks — App queues the message and sends
   // it when the run ends (the chips above the composer show the waiting line).
-  // Card 183: `/` at the start of the composer completes an installed skill.
-  // The picker gets first refusal on every key, because it owns Enter while its
-  // list is open and the composer owns it the rest of the time.
-  const slash = useSlashPicker(draft, liveView, (text) => {
+  // Card 183/247: `/` completes an installed skill — anywhere in the text, so
+  // the picker needs to know where the caret is spelling. The picker gets
+  // first refusal on every key, because it owns Enter while its list is open
+  // and the composer owns it the rest of the time.
+  const [caret, setCaret] = useState(0);
+  const slash = useSlashPicker(draft, caret, liveView, (text, nextCaret) => {
     setDraft(text);
+    setCaret(nextCaret);
     const el = textareaRef.current;
     if (el !== null) {
       el.focus();
-      // The caret lands after the sentence, so the reader carries straight on
+      // The caret lands after the token, so the reader carries straight on
       // with what they actually wanted.
-      requestAnimationFrame(() => el.setSelectionRange(text.length, text.length));
+      requestAnimationFrame(() => el.setSelectionRange(nextCaret, nextCaret));
     }
   });
+
+  // Card 247: the names the transcript and the composer may color. The color
+  // means "the server will expand this", so it is fed by the same catalog the
+  // server resolves against — an unknown name stays prose in both places.
+  const turnsCarrySlash = useMemo(
+    () => state.turns.some((t) => t.kind === "user" && t.text.includes("/")),
+    [state.turns],
+  );
+  const skillOptions = useSkills(turnsCarrySlash || draft.includes("/"));
+  const knownSkills = useMemo(() => new Set(skillOptions.map((s) => s.name)), [skillOptions]);
+  const draftMarks = useMemo(() => skillTokenSegments(draft, knownSkills), [draft, knownSkills]);
+  const marksRef = useRef<HTMLDivElement>(null);
 
   const submit = (): void => {
     const text = draft.trim();
@@ -409,7 +426,17 @@ export function Chat(props: {
                       seg.text
                     ),
                   )
-                : turn.text}
+                : /* Card 247: known /skill tokens stand in the accent voice —
+                     the visible half of the server-side expansion. */
+                  skillTokenSegments(turn.text, knownSkills).map((seg, j) =>
+                    seg.skill !== null ? (
+                      <span key={j} className="skill-token">
+                        {seg.text}
+                      </span>
+                    ) : (
+                      seg.text
+                    ),
+                  )}
             </div>
           </div>
         );
@@ -818,6 +845,23 @@ export function Chat(props: {
                     `draft` — a guess must never be one Enter away from being
                     sent as if somebody had typed it. */}
                   <div className="composer-field">
+                    {/* Card 247: accent pills UNDER the known tokens — the
+                        ghost's mirror idiom, background only, so the real ink
+                        keeps its caret and selection. Scroll-synced from the
+                        textarea, which the ghost never needed. */}
+                    {draftMarks.some((seg) => seg.skill !== null) && (
+                      <div className="composer-marks" aria-hidden="true" ref={marksRef}>
+                        {draftMarks.map((seg, j) =>
+                          seg.skill !== null ? (
+                            <mark key={j} className="skill-pill">
+                              {seg.text}
+                            </mark>
+                          ) : (
+                            <span key={j}>{seg.text}</span>
+                          ),
+                        )}
+                      </div>
+                    )}
                     {voice.provisional !== "" && (
                       <div className="composer-ghost" aria-hidden="true" ref={ghostRef}>
                         <span className="said">{draft}</span>
@@ -837,7 +881,14 @@ export function Chat(props: {
                       aria-label={t(lang, "chat.placeholder")}
                       onChange={(e) => {
                         setDraft(e.target.value);
+                        setCaret(e.target.selectionStart ?? e.target.value.length);
                         autosize();
+                      }}
+                      onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                      onScroll={(e) => {
+                        // The pill layer must follow a scrolled draft (past the
+                        // ten-line cap) or the pills drift off their tokens.
+                        if (marksRef.current !== null) marksRef.current.scrollTop = e.currentTarget.scrollTop;
                       }}
                       onKeyDown={(e) => {
                         if (slash.handleKey(e)) return;

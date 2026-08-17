@@ -6,14 +6,14 @@
 // Enter and the picker has to get first refusal on it without the textarea
 // changing hands.
 //
-// Nothing here invents a wire verb. Picking writes an ordinary sentence into
-// the composer naming the skill, and the reader sends it, or edits it first, or
-// deletes it. A skill is instructions in the system prompt; asking for it by
-// name is the whole mechanism, and doing that visibly is what lets somebody
-// disagree with the completion before it reaches the agent.
+// Nothing here invents a wire verb. Picking splices a /token into the draft
+// (card 247) — several per message, anywhere in the text — and the reader
+// sends it, or edits it first, or deletes it. The server appends the named
+// skills' instructions for the model; doing the invocation visibly is what
+// lets somebody disagree with the completion before it reaches the agent.
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { invocationFor, matchSkills, slashQuery, type SkillOption } from "../state/slashCommands";
+import { matchSkills, slashQueryAt, tokenInsert, type SkillOption } from "../state/slashCommands";
 import { useSkills } from "../state/skillList";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -29,13 +29,20 @@ export interface SlashPicker {
  * The composer's slash completion.
  *
  * @param draft   the composer's text
+ * @param caret   the caret position inside it — the token being spelled lives there
  * @param enabled false where completing makes no sense (an archive, a replay)
- * @param onPick  hands back the text to put in the composer
+ * @param onPick  hands back the new draft and where the caret lands in it
  * @returns the popover and the key handler the composer must call first
  */
-export function useSlashPicker(draft: string, enabled: boolean, onPick: (text: string) => void): SlashPicker {
+export function useSlashPicker(
+  draft: string,
+  caret: number,
+  enabled: boolean,
+  onPick: (text: string, caret: number) => void,
+): SlashPicker {
   const lang = useLang();
-  const query = enabled ? slashQuery(draft) : null;
+  const at = enabled ? slashQueryAt(draft, caret) : null;
+  const query = at === null ? null : at.query;
   // Asked for the first time a reader types a slash, and not before: somebody
   // who never uses this costs no request at all.
   const skills = useSkills(query !== null);
@@ -64,7 +71,9 @@ export function useSlashPicker(draft: string, enabled: boolean, onPick: (text: s
   const active = options[index];
 
   const pick = (skill: SkillOption): void => {
-    onPick(invocationFor(skill, lang));
+    if (at === null) return;
+    const picked = tokenInsert(draft, at, caret, skill);
+    onPick(picked.text, picked.caret);
     setDismissed(false);
     setIndex(0);
   };

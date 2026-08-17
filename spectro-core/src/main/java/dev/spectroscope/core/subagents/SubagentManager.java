@@ -152,7 +152,8 @@ public final class SubagentManager {
         // EventStream into the shared queue. The children add themselves as
         // further producers from inside the spawn tools (runChild).
         Thread.ofVirtual().name("spectroscope-parent-pump").start(() -> {
-            try (EventStream parentEvents = parent.run(prompt, new RunOptions(parentSignal, attachments))) {
+            try (EventStream parentEvents = parent.run(prompt,
+                    new RunOptions(parentSignal, attachments, options.promptForModel()))) {
                 for (RunEvent event : parentEvents) {
                     merged.put(event);
                 }

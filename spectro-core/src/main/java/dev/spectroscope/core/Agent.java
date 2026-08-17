@@ -142,7 +142,8 @@ public final class Agent {
                 (runOptions.attachments() == null || runOptions.attachments().isEmpty())
                         ? null
                         : List.copyOf(runOptions.attachments());
-        return EventStream.start(signal, sink -> loop(prompt, attachments, signal, sink));
+        return EventStream.start(signal,
+                sink -> loop(prompt, runOptions.promptForModel(), attachments, signal, sink));
     }
 
     /**
@@ -172,12 +173,14 @@ public final class Agent {
     /**
      * The whole loop, running on the producer virtual thread. Terminates the stream on every path.
      *
-     * @param prompt      the user message that opens the run
-     * @param attachments images riding along with the prompt, or null for a text-only run
-     * @param signal      cooperative cancellation, checked at the loop's safe points
-     * @param emit        the event sink of the owning {@link EventStream}
+     * @param prompt         the user message that opens the run
+     * @param promptForModel the model's reading of it (card 247), or null for the prompt itself
+     * @param attachments    images riding along with the prompt, or null for a text-only run
+     * @param signal         cooperative cancellation, checked at the loop's safe points
+     * @param emit           the event sink of the owning {@link EventStream}
      */
-    private void loop(String prompt, List<RunEvent.Attachment> attachments, CancelSignal signal,
+    private void loop(String prompt, String promptForModel,
+                      List<RunEvent.Attachment> attachments, CancelSignal signal,
                       Consumer<RunEvent> emit) {
         String agentId = options.agentId();
         // The loop owns its producer thread, so the MDC set here
@@ -188,7 +191,7 @@ public final class Agent {
         org.slf4j.MDC.put("agentId", agentId);
         long startedAtNanos = System.nanoTime();
         try {
-            runLoop(prompt, attachments, signal, emit, agentId);
+            runLoop(prompt, promptForModel, attachments, signal, emit, agentId);
         } finally {
             // One operator line per run (the JSONL stays the source of truth).
             org.slf4j.LoggerFactory.getLogger(Agent.class).info("run finished in {} ms",
@@ -200,13 +203,15 @@ public final class Agent {
     /**
      * The loop body behind the MDC bracket — unchanged semantics.
      *
-     * @param prompt      the user message that opens the run
-     * @param attachments images riding along with the prompt, or null for a text-only run
-     * @param signal      cooperative cancellation, checked at the loop's safe points
-     * @param emit        the event sink of the owning {@link EventStream}
-     * @param agentId     this agent's id, already in the MDC
+     * @param prompt         the user message that opens the run
+     * @param promptForModel the model's reading of it (card 247), or null for the prompt itself
+     * @param attachments    images riding along with the prompt, or null for a text-only run
+     * @param signal         cooperative cancellation, checked at the loop's safe points
+     * @param emit           the event sink of the owning {@link EventStream}
+     * @param agentId        this agent's id, already in the MDC
      */
-    private void runLoop(String prompt, List<RunEvent.Attachment> attachments, CancelSignal signal,
+    private void runLoop(String prompt, String promptForModel,
+                         List<RunEvent.Attachment> attachments, CancelSignal signal,
                          Consumer<RunEvent> emit, String agentId) {
         String runId = UUID.randomUUID().toString();
         int maxTokens = options.maxTokens() != null ? options.maxTokens() : DEFAULT_MAX_TOKENS;
@@ -228,7 +233,9 @@ public final class Agent {
         if (attachments != null) {
             firstUserContent.addAll(dev.spectroscope.core.session.SessionStore.attachmentsToContent(attachments));
         }
-        firstUserContent.add(new TextContent(prompt));
+        // Card 247: the RECORD above carries what the user wrote; the model may
+        // get a second reading with the slash-skill bodies appended.
+        firstUserContent.add(new TextContent(promptForModel != null ? promptForModel : prompt));
         messages.add(new ProviderMessage(ProviderMessage.Role.USER, List.copyOf(firstUserContent)));
 
         // Input tokens of the last completed turn — the compaction trigger.

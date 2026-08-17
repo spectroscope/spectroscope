@@ -471,6 +471,12 @@
   font-family: var(--font-mono);
   color: var(--text-faint);
 }
+/* Card 247: a /skill token in a sent message — the accent voice, because the
+   color means "the server expanded this"; an unknown name stays plain ink. */
+.user-text .skill-token {
+  color: var(--accent);
+  font-weight: 500;
+}
 /* Card 244: the working line — the live edge's sign of life while nothing
    else pulses (before the first delta, and while a tool runs). Reuses the
    thinking dot, so reduced-motion stills it for free. */
