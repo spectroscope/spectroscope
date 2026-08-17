@@ -21,4 +21,22 @@ final class PermissionModes {
         }
         return null;
     }
+
+    /**
+     * Whether this mode has taken the human out of the loop (card 265).
+     *
+     * <p>It lives here rather than at the ask's call site so the two answers can
+     * never disagree: a mode that short-circuits {@link #decide} is a mode where
+     * nobody is being consulted, and a question put to that loop can only ever go
+     * unanswered. Somebody who set {@code auto} or {@code readonly} declared "do
+     * not bother me", and a question is a bother — so {@code ask_user_question}
+     * returns "unanswered" immediately, without parking. It is not answered on
+     * their behalf either; silence is the honest record.</p>
+     *
+     * @param mode the session's live permission mode; null means the default, ask
+     * @return true when no human decides anything in this mode
+     */
+    static boolean unattended(String mode) {
+        return decide(mode, null) != null;
+    }
 }

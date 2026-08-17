@@ -486,10 +486,18 @@ public final class Agent {
         // the context carries the loop's own event sink plus the call ids, so
         // artifact-producing tools (generate_image) can publish additive domain events;
         // view_image hands images to SHOW the model through the attach sink.
+        // Card 265: the loop provides the wait sink, because only the loop can
+        // subtract. A tool that parks on a PERSON inside execute (ask_user_question
+        // today) reports those milliseconds here, and they leave durationMs the
+        // same way card 111 took the gate's wait out of it — a four-minute answer
+        // must not be recorded as a four-minute tool call. Every existing tool
+        // reports nothing and is timed exactly as before.
+        java.util.concurrent.atomic.AtomicLong humanWaitMs = new java.util.concurrent.atomic.AtomicLong();
         long startedAt = now();
         String output = tool.execute(call.input(),
-                new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(), emit, attach));
-        long durationMs = now() - startedAt;
+                new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(), emit, attach,
+                        humanWaitMs::addAndGet));
+        long durationMs = Math.max(0, now() - startedAt - humanWaitMs.get());
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is
         // not a finding in this phase, and reporting one would invent a veto

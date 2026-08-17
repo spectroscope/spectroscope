@@ -129,6 +129,14 @@ public final class SpectroCli implements Runnable {
     private ToolRegistry registry;
     private SubagentManager subagents;
     private PermissionBroker askOnTerminal;
+
+    /**
+     * Card 265: who the {@code ask_user_question} tool asks on this face. Set
+     * only on the interactive path, and the tool is registered only when it is
+     * set — registration IS the fence, so a face with no console never advertises
+     * a verb nobody could answer.
+     */
+    private dev.spectroscope.core.Asker askQuestionOnTerminal;
     private Allowlist allowlist = Allowlist.fromEntries(List.of());
     // Config-only pre/post_tool_use shell hooks (provider-independent, like the allowlist).
     private HookRunner hooks = HookRunner.load(List.of());
@@ -250,6 +258,11 @@ public final class SpectroCli implements Runnable {
             gateAudit.record(request, "user", allowed, verdict);
             return allowed;
         };
+
+        // The question side of the same console (card 265). The renderer PRINTS the
+        // question when the event reaches it, exactly as it prints "run X? [y/N]";
+        // this only reads, so the two can never show different questions.
+        askQuestionOnTerminal = new ConsoleAsker(console);
 
         registerTools();
         agent = buildAgent(initialMessages);
@@ -464,6 +477,14 @@ public final class SpectroCli implements Runnable {
         // The main agent's plan. Permission-free, main-only (a worker's
         // plan would clobber the flat UI snapshot), so it is NOT added to childBase.
         registry.register(new UpdatePlanTool());
+        // Card 265: only where a person can answer. On this face that is the
+        // interactive REPL, which is the only caller that sets the asker — a
+        // `spectro run`, a cron fire and a node build their belts through
+        // HeadlessRunner and never reach this method at all.
+        if (askQuestionOnTerminal != null) {
+            registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(
+                    askQuestionOnTerminal));
+        }
         if (!skills.skills().isEmpty()) {
             registry.register(skills.useSkillTool());
         }

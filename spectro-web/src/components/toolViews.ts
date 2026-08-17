@@ -1442,6 +1442,11 @@ export function describeTool(
       return { kind: "task", op: "list", rows, wrote: "silent", result: "" };
     }
 
+    // Card 265: our OWN ask lands on the importer's renderer, deliberately. The
+    // input shape is the same by design and the tool's result carries the answer
+    // in the same "<question>"="<answer>" prose, so a native question and an
+    // imported one read identically and this card came for free.
+    case "ask_user_question":
     case "AskUserQuestion": {
       // The answers travel in the RESULT, as prose. A `__unparsedToolInput`
       // payload has no `questions` at all and lands in generic on purpose: it

@@ -56,7 +56,9 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.LlmExchange.class,        name = "llm_exchange"),  // additive (card 184 leg 3)
     @JsonSubTypes.Type(value = RunEvent.BrowserAction.class,      name = "browser_action"), // additive (card 204)
     @JsonSubTypes.Type(value = RunEvent.HookDecision.class,       name = "hook_decision"), // additive (card 195)
-    @JsonSubTypes.Type(value = RunEvent.ImagesWithheld.class,     name = "images_withheld") // additive (card 252)
+    @JsonSubTypes.Type(value = RunEvent.ImagesWithheld.class,     name = "images_withheld"), // additive (card 252)
+    @JsonSubTypes.Type(value = RunEvent.QuestionAsked.class,      name = "question_asked"),   // additive (card 265)
+    @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered") // additive (card 265)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -64,7 +66,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
-        RunEvent.ImagesWithheld {
+        RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -190,6 +192,70 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record PermissionDecision(String callId, boolean allowed, long ts) implements RunEvent {}
+
+    /**
+     * Additive (card 265): the run stopped and asked a person a question that is
+     * not a yes/no on a side effect. Emitted by the permission-free
+     * {@code ask_user_question} tool from inside its own call, before it parks.
+     *
+     * <p>Deliberately its own type rather than a {@link PermissionRequest} with a
+     * text field. The gate's verdict is a boolean and its whole vocabulary is
+     * allow/deny; a question has options and an answer in a person's own words,
+     * and a reader that only ever saw the boolean could not say what was asked.
+     * Old frontends skip the unknown type, which costs them the bar and nothing
+     * else — the {@code tool_call} for the same {@code callId} is already on the
+     * wire before this line.</p>
+     *
+     * @param agentId   the asking agent — the tool is main-only by registration
+     * @param callId    the tool invocation waiting on the answer; keys the response
+     * @param questions what was asked, in the importer's own shape, so a native
+     *                  question renders exactly like an imported one
+     * @param ts        epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record QuestionAsked(String agentId, String callId, List<AskedQuestion> questions,
+                         long ts) implements RunEvent {}
+
+    /** One question of an ask; a plain value record like {@link PlanStep}, NOT a subtype.
+     *  @param question    the question in the model's words, rendered as plain text
+     *  @param header      a short label above it; null (omitted) when none was given
+     *  @param multiSelect whether more than one option may be chosen
+     *  @param options     the offered choices, in the order they were offered */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record AskedQuestion(String question, String header, boolean multiSelect,
+                         List<QuestionOption> options) {}
+
+    /** One offered choice of an {@link AskedQuestion}.
+     *  @param label       the choice as the person sees and picks it
+     *  @param description one line of help; null (omitted) when none was given */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record QuestionOption(String label, String description) {}
+
+    /**
+     * Additive (card 265): the answer closing a {@link QuestionAsked} — or the
+     * record that no answer ever came.
+     *
+     * <p><b>Nothing here is ever invented.</b> Four independent paths release a
+     * parked question (a cancelled run, a socket that went away, an unattended
+     * permission mode, no asker at all) and every one of them lands here with
+     * {@code cancelled} true and an empty {@code answers} list. A fabricated
+     * answer in a session file cannot be told apart from a real one afterwards,
+     * and the trace is the product.</p>
+     *
+     * @param callId    which {@link QuestionAsked} this answers
+     * @param answers   one entry per question asked, in the order they were
+     *                  asked; empty exactly when {@code cancelled}
+     * @param cancelled true when the question was released without an answer
+     * @param waitMs    how long the run stood parked on the person — card 111's
+     *                  split, one surface further: the same milliseconds are
+     *                  SUBTRACTED from the tool's {@code durationMs}, so a slow
+     *                  human never paints the tool as slow. Absent (null,
+     *                  omitted) when nothing was ever measured
+     * @param ts        epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record QuestionAnswered(String callId, List<String> answers, boolean cancelled,
+                            Long waitMs, long ts) implements RunEvent {}
 
     /**
      * A tool finished; the output goes back to the model in the next user message.

@@ -6,6 +6,7 @@ import dev.spectroscope.core.events.RunEvent;
 
 import java.nio.file.Path;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
 
 /** A registrable capability the agent can call. Never throws: failures return as a String prefixed "ERROR: ". */
 public interface Tool {
@@ -33,16 +34,31 @@ public interface Tool {
      * own event sink plus the ids of the call) — the two-arg constructor keeps every
      * earlier tool and test compiling unchanged.
      *
-     * @param cwd     the sandbox root every path tool resolves against
-     * @param signal  the run's cancel signal — long-running tools should honor it
-     * @param agentId the calling agent, stamped into emitted events
-     * @param callId  the tool_call id, correlating emitted events with this call
-     * @param emit    sink into the run's event stream for additive domain events
+     * @param cwd        the sandbox root every path tool resolves against
+     * @param signal     the run's cancel signal — long-running tools should honor it
+     * @param agentId    the calling agent, stamped into emitted events
+     * @param callId     the tool_call id, correlating emitted events with this call
+     * @param emit       sink into the run's event stream for additive domain events
+     * @param attach     sink for images/documents the model should SEE
+     * @param waitReport sink for milliseconds spent PARKED ON A PERSON, which the
+     *                   loop then subtracts from this call's {@code durationMs}
+     *                   (card 265). A tool that never reports one is timed exactly
+     *                   as before, so every existing tool's number is untouched.
+     *
+     *                   <p>Card 111 split the gate's two clocks because a slow
+     *                   operator must never paint the tool as slow. A question
+     *                   parks INSIDE {@code execute}, one layer below the gate, so
+     *                   the loop cannot see that wait and cannot subtract it
+     *                   unless the tool says so — hence a sink rather than a
+     *                   return value, and hence the loop providing it. Generic on
+     *                   purpose: any later tool that waits on a person gets
+     *                   honest numbers for free.</p>
      */
     record ToolContext(Path cwd, CancelSignal signal,
                        String agentId, String callId,          // from additive
                        Consumer<RunEvent> emit,                // from additive
-                       Consumer<Attachment> attach) {          // view_image/view_file, additive
+                       Consumer<Attachment> attach,            // view_image/view_file, additive
+                       LongConsumer waitReport) {              // human wait, additive (card 265)
 
         /**
          * The pre-bonus-4 shape: agentId "main", no callId, a no-op emit sink.
@@ -67,6 +83,22 @@ public interface Tool {
         public ToolContext(Path cwd, CancelSignal signal,
                            String agentId, String callId, Consumer<RunEvent> emit) {
             this(cwd, signal, agentId, callId, emit, attachment -> { });
+        }
+
+        /**
+         * The pre-card-265 shape (no wait sink) — every earlier tool and test
+         * keeps compiling, and a reported wait it can never report is a no-op.
+         *
+         * @param cwd     the sandbox root every path tool resolves against
+         * @param signal  the run's cancel signal
+         * @param agentId the calling agent, stamped into emitted events
+         * @param callId  the tool_call id, correlating emitted events with this call
+         * @param emit    sink into the run's event stream for additive domain events
+         * @param attach  sink for images/documents the model should SEE
+         */
+        public ToolContext(Path cwd, CancelSignal signal, String agentId, String callId,
+                           Consumer<RunEvent> emit, Consumer<Attachment> attach) {
+            this(cwd, signal, agentId, callId, emit, attach, millis -> { });
         }
     }
 

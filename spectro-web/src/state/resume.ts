@@ -28,7 +28,16 @@ import { windowTrace, type UiState } from "./reducer";
  * 50 000-frame stream folds in 179.8 ms windowed and 2998.9 ms uncapped.
  */
 export function seedResumedLive(folded: UiState): UiState {
-  return windowTrace(folded);
+  // Card 265: a resume re-folds a STORED history into live state, and the server
+  // never re-parks the calls in it. A question left hanging in that history
+  // therefore has nobody on the other end — an answer sent for it is dropped by
+  // callId and the bar would sit there for the rest of the session.
+  //
+  // Copied only when there IS something to clear: this function's own contract is
+  // that a session which fits comes back object for object, and its test asserts
+  // identity rather than equality.
+  const withoutAsks = folded.pendingAsks.length === 0 ? folded : { ...folded, pendingAsks: [] };
+  return windowTrace(withoutAsks);
 }
 
 export interface ResumeSummary {

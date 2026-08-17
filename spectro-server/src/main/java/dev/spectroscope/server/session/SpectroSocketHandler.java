@@ -122,6 +122,12 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
                             frame.path("callId").asText(), frame.path("allowed").asBoolean(),
                             frame.path("remember").asBoolean(false),
                             frame.path("persist").asBoolean(false));
+            // Card 265: the answer to a parked question. Its own frame, not a
+            // wider permission_response — that one carries allowlist work
+            // ("remember", "persist") which answering a question must not trigger.
+            case "question_response" -> connection.onQuestionResponse(
+                    frame.path("callId").asText(), answersOf(frame.path("answers")),
+                    frame.path("cancelled").asBoolean(false));
             case "abort" -> connection.onAbort();
             case "set_image_provider" ->                       // additive
                     connection.onSetImageProvider(frame.path("provider").asText());
@@ -139,6 +145,23 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
                     connection.onSetPermissionMode(frame.path("mode").asText(""));
             default -> connection.sendError("Unknown message type.");
         }
+    }
+
+    /**
+     * The answers of a {@code question_response} frame, read defensively — the
+     * frame is untrusted input like every other, and a malformed answers array is
+     * an empty list rather than a throw on the socket thread.
+     *
+     * @param answers the frame's {@code answers} node, of any shape
+     * @return one string per answer, in order; empty when the node holds none
+     */
+    private static java.util.List<String> answersOf(JsonNode answers) {
+        if (!answers.isArray()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> out = new java.util.ArrayList<>();
+        answers.forEach(answer -> out.add(answer.asText("")));
+        return java.util.List.copyOf(out);
     }
 
     /**

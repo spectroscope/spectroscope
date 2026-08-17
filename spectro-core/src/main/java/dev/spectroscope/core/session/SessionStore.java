@@ -805,7 +805,11 @@ public final class SessionStore {
             case RunEvent.BrowserAction e -> e.agentId();
             case RunEvent.HookDecision e -> e.agentId();
             case RunEvent.ImagesWithheld e -> e.agentId();
+            case RunEvent.QuestionAsked e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
+            // Card 265: the answer joins its question by callId, exactly as a
+            // permission_decision joins its request — neither carries an agent.
+            case RunEvent.QuestionAnswered e -> null;
             case RunEvent.RunEnd e -> null;
         });
     }

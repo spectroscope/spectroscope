@@ -203,6 +203,35 @@ final class EventRenderer {
                                 : " · " + compact(hook.reason(), TOOL_OUTPUT_PREVIEW_CHARS)))
                         : ansi.sand(head + " after " + hook.timeoutSeconds() + "s — the call ran anyway")));
             }
+            // Card 265: the run is asking. Printed HERE and not by the asker, the
+            // same split as the gate above — one writer, so the terminal can
+            // never show a different question from the one that was asked.
+            case RunEvent.QuestionAsked ask -> {
+                spinner.stop();
+                for (RunEvent.AskedQuestion asked : ask.questions()) {
+                    System.out.println("\n" + ansi.sand("? " + (asked.header() == null
+                            ? asked.question() : asked.header() + " · " + asked.question())));
+                    int number = 1;
+                    for (RunEvent.QuestionOption option : asked.options()) {
+                        System.out.println("  " + ansi.bold("[" + number++ + "] ") + option.label()
+                                + (option.description() == null ? ""
+                                        : ansi.dim("  " + option.description())));
+                    }
+                }
+                System.out.print(ansi.sand("  your answer (a number, your own words,"
+                        + " or enter to skip) "));
+                System.out.flush();
+            }
+            case RunEvent.QuestionAnswered answered -> {
+                // The wait is stated out loud, because it is the number nobody
+                // else draws: how long the machine stood waiting for you.
+                String waited = answered.waitMs() == null ? ""
+                        : " · waited " + (answered.waitMs() / 1000) + "s";
+                System.out.println(answered.cancelled()
+                        ? "  " + ansi.dim("· unanswered" + waited)
+                        : "  " + ansi.green("✓ ") + String.join(", ", answered.answers())
+                                + ansi.dim(waited));
+            }
             case RunEvent.Plan plan -> {
                 spinner.stop();
                 System.out.println("\n" + ansi.sand("◇ plan (" + plan.steps().size() + " steps)"));
@@ -290,7 +319,11 @@ final class EventRenderer {
             case RunEvent.BrowserAction e -> e.agentId();
             case RunEvent.HookDecision e -> e.agentId();
             case RunEvent.ImagesWithheld e -> e.agentId();
+            case RunEvent.QuestionAsked e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
+            // Card 265: the answer joins its question by callId and carries no
+            // agent, exactly like the verdict that closes a permission request.
+            case RunEvent.QuestionAnswered e -> null;
             case RunEvent.RunEnd e -> null;
         };
     }

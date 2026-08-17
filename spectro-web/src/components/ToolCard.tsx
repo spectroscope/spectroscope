@@ -120,6 +120,16 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
         )}
         <span className={`tool-status status-${denied ? "denied" : card.status}`}>{statusLabel}</span>
         {duration !== null && <span className="badge tabular">{duration}</span>}
+        {/* Card 265: the human wait, kept APART from the badge beside it. The tool
+            worked for 0.0 s and the machine stood still for three minutes, and
+            both numbers are true — which is the whole point of card 111's split
+            and, until now, a number the session file carried and no surface
+            showed (gateWaitMs has had no reader since it shipped). */}
+        {card.askWaitMs !== undefined && (
+          <span className="badge tabular tool-waited">
+            {t(lang, "ask.waited", { d: formatDuration(card.askWaitMs) })}
+          </span>
+        )}
         <svg
           className={`chevron${open ? " open" : ""}`}
           viewBox="0 0 16 16"
