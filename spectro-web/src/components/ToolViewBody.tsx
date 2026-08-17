@@ -12,7 +12,7 @@
 // genuinely code.
 
 import { useMemo, useState } from "react";
-import type { AskedQuestion, QuestionOption, ToolView, WorkflowRun } from "./toolViews";
+import type { AskedQuestion, FileChange, QuestionOption, ToolView, WorkflowRun } from "./toolViews";
 import { breakShellChain } from "./shellChain";
 import { describeTool, runStats, splitInput } from "./toolViews";
 import type { ToolResultDetail } from "../import/toolResultDetail";
@@ -46,6 +46,19 @@ function Region(props: { label: string; meta?: string; faces?: React.ReactNode; 
       </div>
       {props.children}
     </div>
+  );
+}
+
+/**
+ * What the write actually did to the file (card 269), as the operator's half of
+ * the news the model got. Nothing when the record claimed nothing — an absent
+ * word is not "unchanged", and a chip invented here would report a fact the run
+ * never established.
+ */
+function ChangeChip(props: { change: FileChange | null; lang: Lang }) {
+  if (props.change === null) return null;
+  return (
+    <span className={`change-chip change-${props.change}`}>{t(props.lang, `tv.change.${props.change}`)}</span>
   );
 }
 
@@ -309,7 +322,11 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
     case "write":
       return (
         <>
-          <Region label={t(lang, "tv.wrote")} meta={view.result}>
+          <Region
+            label={t(lang, "tv.wrote")}
+            meta={view.result}
+            faces={<ChangeChip change={view.changed} lang={lang} />}
+          >
             <div className="tv-path mono">{view.path}</div>
           </Region>
           {/* The same two faces as a read: the content of a write is a file body
@@ -322,7 +339,11 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
     case "edit":
       return (
         <>
-          <Region label={t(lang, "tv.edited")} meta={view.result}>
+          <Region
+            label={t(lang, "tv.edited")}
+            meta={view.result}
+            faces={<ChangeChip change={view.changed} lang={lang} />}
+          >
             <div className="tv-path mono">{view.path}</div>
             {/* Where it landed. The two panes are the call's own strings and
                 float with no position otherwise: 7,525 of 7,627 Edit results in
@@ -751,6 +772,10 @@ export function ToolViewBody(props: {
    *  reading. Absent on every live call, and a card without one renders exactly
    *  as it did. */
   detail?: ToolResultDetail | null;
+  /** What the result said the write DID to the file (card 269) — the operator's
+   *  copy of the news the model got. Only the structured face shows it: json and
+   *  raw are the pair as it stands. */
+  fileChange?: string;
 }) {
   const lang = useLang();
 
@@ -761,7 +786,14 @@ export function ToolViewBody(props: {
   if (props.mode === "structured") {
     return (
       <Structured
-        view={describeTool(props.name, props.input, props.output, props.isError, props.detail)}
+        view={describeTool(
+          props.name,
+          props.input,
+          props.output,
+          props.isError,
+          props.detail,
+          props.fileChange,
+        )}
         name={props.name}
         lang={lang}
       />

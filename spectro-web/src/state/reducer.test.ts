@@ -314,6 +314,49 @@ describe("reduce — tool call and result pairing", () => {
     });
   });
 
+  // Card 269: the word the write reported travels to the card, so the operator
+  // reads the same news the model does. As a FIELD — the sentence beside it is
+  // prose, and prose is what a reworded or translated line stops being.
+  it("carries what the write did to the file onto the card", () => {
+    const write: RunEvent = {
+      type: "tool_call",
+      agentId: "main",
+      callId: "c2",
+      name: "write_file",
+      input: { path: "src/particleEngine.js", content: "x\n" },
+      ts: 3,
+    };
+    const unchanged: RunEvent = {
+      type: "tool_result",
+      agentId: "main",
+      callId: "c2",
+      output:
+        "Wrote: src/particleEngine.js (2 bytes) — unchanged (the file already contained exactly these bytes)",
+      isError: false,
+      durationMs: 3,
+      fileChange: "unchanged",
+      ts: 4,
+    };
+    const state = reduceAll(initialState, [happyPath[0]!, write, unchanged]);
+    expect(state.cards["c2"]?.fileChange).toBe("unchanged");
+  });
+
+  it("leaves the word off a card whose tool touched no file", () => {
+    const result: RunEvent = {
+      type: "tool_result",
+      agentId: "main",
+      callId: "c1",
+      output: "total 8",
+      isError: false,
+      durationMs: 1,
+      ts: 4,
+    };
+    const state = reduceAll(initialState, [happyPath[0]!, call, result]);
+    // Absent is not "unchanged": a listing claimed nothing about any file, and
+    // a card that showed a chip here would be inventing news.
+    expect(state.cards["c1"]?.fileChange).toBeUndefined();
+  });
+
   it("marks failed tools as error", () => {
     const failure: RunEvent = {
       type: "tool_result",

@@ -10,10 +10,12 @@ import dev.spectroscope.core.provider.RetryPolicy;
 import dev.spectroscope.core.provider.RetryingProvider;
 import dev.spectroscope.core.provider.TransientProviderException;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -302,6 +304,71 @@ class AgentTest {
                 .filter(RunEvent.ToolResult.class::isInstance)
                 .map(RunEvent.ToolResult.class::cast)
                 .findFirst().orElseThrow();
+    }
+
+    // ------------------------------------------- card 269: the write that changed nothing
+
+    /**
+     * The whole chain, through the REAL write_file: the tool compares what it is
+     * about to write against what is there, the loop carries the word out, and
+     * the recorded result states it as a field. A test with a hand-made tool
+     * would pin the plumbing and miss the tool.
+     *
+     * <p>Read off the WIRE, not off an accessor, so this test could be seen
+     * failing before the field existed.
+     */
+    @Test
+    void theLoopRecordsWhatAWriteActuallyDidToTheFile(@TempDir Path cwd) {
+        JsonNode sameCall = JSON.createObjectNode().put("path", "pi.py").put("content", "import math\n");
+        FakeProvider provider = FakeProvider.scripted(
+                List.of(new LlmProvider.PToolCall("c1", "write_file", sameCall),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)),
+                List.of(new LlmProvider.PToolCall("c2", "write_file", sameCall),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)),
+                List.of(new LlmProvider.PTextDelta("done"),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("test")
+                .registry(registry)
+                .cwd(cwd)
+                .onPermission(request -> true)
+                .build());
+
+        List<RunEvent.ToolResult> results = collect(agent).stream()
+                .filter(RunEvent.ToolResult.class::isInstance)
+                .map(RunEvent.ToolResult.class::cast)
+                .toList();
+
+        assertEquals(2, results.size());
+        assertEquals("created", JSON.valueToTree(results.getFirst()).path("fileChange").asText());
+        assertEquals("unchanged", JSON.valueToTree(results.getLast()).path("fileChange").asText(),
+                "the second write moved no byte and the record has to say so");
+    }
+
+    @Test
+    void aToolThatTouchesNoFileLeavesTheWordOffTheRecord(@TempDir Path cwd) {
+        JsonNode listing = JSON.createObjectNode().put("path", ".");
+        FakeProvider provider = FakeProvider.scripted(
+                List.of(new LlmProvider.PToolCall("c1", "list_dir", listing),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)),
+                List.of(new LlmProvider.PTextDelta("done"),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("test")
+                .registry(registry)
+                .cwd(cwd)
+                .onPermission(request -> true)
+                .build());
+
+        RunEvent.ToolResult result = firstToolResult(collect(agent));
+        assertFalse(JSON.valueToTree(result).has("fileChange"),
+                "a listing changed no file, and silence is the honest answer");
     }
 
     // ------------------------------------------ card 111: gate wait vs execution

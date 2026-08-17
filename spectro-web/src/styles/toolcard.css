@@ -76,6 +76,21 @@
 .gate-chip.gate-allowed { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
 .gate-chip.gate-denied  { color: var(--error); border-color: var(--error); background: var(--error-soft); }
 
+/* Card 269: what the write DID to the file. Quiet for the two ordinary
+   outcomes, and warn for the one worth stopping on — a run that keeps writing
+   the same bytes is a run going nowhere, and that is the whole point of it. */
+.change-chip {
+  font-size: var(--fs-11);
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0 var(--sp-2);
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+.change-chip.change-created { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.change-chip.change-unchanged { color: var(--warn); border-color: var(--warn); }
+
 /* Subagent thread: a child's turns nest under one pastel-edged container. */
 .chat-thread {
   margin-left: var(--sp-4);

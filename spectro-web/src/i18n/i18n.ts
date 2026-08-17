@@ -2688,6 +2688,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tv.content": { de: "Inhalt", en: "Content" },
   "tv.wrote": { de: "Geschrieben", en: "Wrote" },
   "tv.edited": { de: "Bearbeitet", en: "Edited" },
+  // Card 269: what the write DID. The operator's copy of the news the model
+  // got — and the reason the chip exists is the third word, not the first two.
+  "tv.change.created": { de: "neu", en: "created" },
+  "tv.change.changed": { de: "geändert", en: "changed" },
+  "tv.change.unchanged": { de: "unverändert", en: "unchanged" },
   "tv.before": { de: "vorher", en: "before" },
   "tv.after": { de: "nachher", en: "after" },
   "tv.listing": { de: "Verzeichnis", en: "Directory" },

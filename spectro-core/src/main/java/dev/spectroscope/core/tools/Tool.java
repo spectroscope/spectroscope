@@ -42,7 +42,8 @@ public interface Tool {
     record ToolContext(Path cwd, CancelSignal signal,
                        String agentId, String callId,          // from additive
                        Consumer<RunEvent> emit,                // from additive
-                       Consumer<Attachment> attach) {          // view_image/view_file, additive
+                       Consumer<Attachment> attach,            // view_image/view_file, additive
+                       Consumer<FileChange> report) {          // card 269, additive
 
         /**
          * The pre-bonus-4 shape: agentId "main", no callId, a no-op emit sink.
@@ -67,6 +68,55 @@ public interface Tool {
         public ToolContext(Path cwd, CancelSignal signal,
                            String agentId, String callId, Consumer<RunEvent> emit) {
             this(cwd, signal, agentId, callId, emit, attachment -> { });
+        }
+
+        /**
+         * The pre-card-269 shape (no change sink) — a tool that reports what it
+         * did to a file reports it into the void here, exactly as before.
+         *
+         * @param cwd     the sandbox root every path tool resolves against
+         * @param signal  the run's cancel signal
+         * @param agentId the calling agent, stamped into emitted events
+         * @param callId  the tool_call id, correlating emitted events with this call
+         * @param emit    sink into the run's event stream for additive domain events
+         * @param attach  sink for images and documents the model should SEE
+         */
+        public ToolContext(Path cwd, CancelSignal signal, String agentId, String callId,
+                           Consumer<RunEvent> emit, Consumer<Attachment> attach) {
+            this(cwd, signal, agentId, callId, emit, attach, change -> { });
+        }
+    }
+
+    /**
+     * What a mutating file tool DID, as one word the loop records on the
+     * {@code tool_result} (card 269).
+     *
+     * <p>The measured need: a model in a loop wrote the same bytes 31 times and
+     * asked, in its own words, whether anything had moved — then spent a whole
+     * turn on a {@code read_file} to learn what the write already knew. The tool
+     * result is the one channel every model reads on every turn, with no prompt
+     * discipline required, which is why the answer belongs here rather than in a
+     * watcher beside the run.
+     *
+     * <p>{@code null} — the absence of any of these — is a real and common
+     * answer: it means the tool changed no file, or could not tell. Absence is
+     * never a synonym for {@link #UNCHANGED}.
+     */
+    enum FileChange {
+        /** The path did not exist before this call. */
+        CREATED,
+        /** The path existed and its bytes are now different. */
+        CHANGED,
+        /** The path existed and holds byte-for-byte what it already held. */
+        UNCHANGED;
+
+        /**
+         * The lowercase word that travels on the wire and keys the UI.
+         *
+         * @return {@code created}, {@code changed} or {@code unchanged}
+         */
+        public String wireName() {
+            return name().toLowerCase(java.util.Locale.ROOT);
         }
     }
 

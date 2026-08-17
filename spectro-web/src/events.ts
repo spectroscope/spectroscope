@@ -43,6 +43,11 @@ export type RunEvent =
       output: string;
       isError: boolean;
       durationMs: number;
+      /** What a mutating file tool DID (card 269, additive): "created",
+       *  "changed" or "unchanged". Absent for every tool that touched no file
+       *  and on every session recorded before the field — and absent is NOT a
+       *  synonym for "unchanged", it is the absence of any claim. */
+      fileChange?: string;
       ts: number;
     }
   | { type: "agent_spawn"; agentId: string; parentId: string; task: string; ts: number }

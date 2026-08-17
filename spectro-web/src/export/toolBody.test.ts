@@ -16,7 +16,7 @@ const NOW = Date.UTC(2026, 6, 27, 12, 3, 0);
 const ts = Date.UTC(2026, 6, 27, 11, 0, 0);
 
 /** One tool call and its result, rendered, cut down to the card itself. */
-function card(name: string, input: unknown, output?: string, isError = false): string {
+function card(name: string, input: unknown, output?: string, isError = false, fileChange?: string): string {
   const events: RunEvent[] = [{ type: "tool_call", agentId: "main", callId: "c1", name, input, ts }];
   if (output !== undefined) {
     events.push({
@@ -26,6 +26,7 @@ function card(name: string, input: unknown, output?: string, isError = false): s
       output,
       isError,
       durationMs: 3,
+      fileChange,
       ts,
     });
   }
@@ -126,6 +127,28 @@ describe("the shapes that are not files", () => {
     const html = body(card("write_file", { path: "notes.md", content: "# Title\n\nbody\n" }, "wrote"));
     expect(html).toContain('<div class="x-io">wrote');
     expect(html).toContain("# Title\n\nbody");
+  });
+
+  // Card 269. The word goes to both renderers or to neither (html.ts says so in
+  // its own comment): a saved file that dropped the news that the run keeps
+  // writing the same bytes would be a second, kinder reading of the same call.
+  it("says in the file too that the write changed nothing", () => {
+    const html = body(
+      card(
+        "write_file",
+        { path: "src/particleEngine.js", content: "x\n" },
+        "Wrote: src/particleEngine.js (2 bytes) — unchanged (the file already contained exactly these bytes)",
+        false,
+        "unchanged",
+      ),
+    );
+    expect(html).toContain('class="x-tv-note x-tv-change x-tv-change--unchanged"');
+    expect(html).toContain(">unchanged</p>");
+  });
+
+  it("claims nothing in the file when the record claimed nothing", () => {
+    const html = body(card("write_file", { path: "a.js", content: "x\n" }, "Wrote: a.js (2 bytes)"));
+    expect(html).not.toContain("x-tv-change");
   });
 
   it("draws a fan-out as one block per child", () => {

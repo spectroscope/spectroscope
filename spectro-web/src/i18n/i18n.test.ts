@@ -52,6 +52,13 @@ describe("i18n dict", () => {
     for (const k of ["agents", "failed", "skipped", "empty", "tokens", "tools", "elapsed"]) {
       expect(dict[`tv.run.${k}`], `tv.run.${k}`).toBeDefined();
     }
+    // What a write DID to the file (card 269). Reached only as
+    // `tv.change.${FileChange}`, so the one chip that tells an operator his
+    // agent is writing the same bytes over and over would otherwise ship as
+    // the bare key — in the exact situation where nobody is reading closely.
+    for (const c of ["created", "changed", "unchanged"]) {
+      expect(dict[`tv.change.${c}`], `tv.change.${c}`).toBeDefined();
+    }
     // The session list's density (card 214). Both the value's word and its hint
     // are reached only as `dens.${Density}`, so a third value added to the store
     // without its strings would print the bare key inside the one panel the rail

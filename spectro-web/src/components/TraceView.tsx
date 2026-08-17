@@ -896,8 +896,11 @@ function ImageSection({ section }: { section: Extract<DetailSection, { kind: "im
   );
 }
 
-/** One section of the structured face; the shapes come from eventDetail.ts. */
-function DetailSectionView({ section, lang }: { section: DetailSection; lang: Lang }) {
+/** One section of the structured face; the shapes come from eventDetail.ts.
+ *  Exported for the render pin in changeChip.test.tsx — the trace is the second
+ *  place this body is reached from, and card 269's word went missing on exactly
+ *  that reach while every source-level guard stayed green. */
+export function DetailSectionView({ section, lang }: { section: DetailSection; lang: Lang }) {
   switch (section.kind) {
     case "tool":
       // The very body the chat's tool card renders — one structured tool view
@@ -911,6 +914,7 @@ function DetailSectionView({ section, lang }: { section: DetailSection; lang: La
           isError={section.isError}
           denied={false}
           detail={section.detail}
+          {...(section.fileChange === undefined ? {} : { fileChange: section.fileChange })}
         />
       );
 

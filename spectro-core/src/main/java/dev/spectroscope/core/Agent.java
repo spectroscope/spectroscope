@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -438,7 +439,7 @@ public final class Agent {
                             }));
                     boolean isError = outcome.output().startsWith("ERROR: ");
                     emit.accept(new ToolResult(agentId, call.callId(), outcome.output(), isError,
-                            outcome.durationMs(), outcome.gateWaitMs(), now()));
+                            outcome.durationMs(), outcome.gateWaitMs(), outcome.fileChange(), now()));
                     // Denial/error goes back to the model as a tool_result for self-correction.
                     results.add(new ToolResultContent(call.callId(), outcome.output(), isError));
                 }
@@ -466,8 +467,20 @@ public final class Agent {
      * @param output     the tool output, or an {@code ERROR: } string
      * @param durationMs execution time only — 0 when the tool never ran
      * @param gateWaitMs time parked at the permission gate; null when no gate was involved
+     * @param fileChange what the tool did to a file (card 269), or null when it
+     *                   touched none and when it never ran at all
      */
-    private record GuardedResult(String output, long durationMs, Long gateWaitMs) {}
+    private record GuardedResult(String output, long durationMs, Long gateWaitMs, String fileChange) {
+
+        /** The pre-card-269 shape: an outcome that claims nothing about any file.
+         *
+         * @param output     the tool output, or an {@code ERROR: } string
+         * @param durationMs execution time only
+         * @param gateWaitMs time parked at the gate, or null */
+        GuardedResult(String output, long durationMs, Long gateWaitMs) {
+            this(output, durationMs, gateWaitMs, null);
+        }
+    }
 
     /**
      * Looks the tool up and runs it behind the permission handshake. Unknown tools and
@@ -532,10 +545,15 @@ public final class Agent {
         // the context carries the loop's own event sink plus the call ids, so
         // artifact-producing tools (generate_image) can publish additive domain events;
         // view_image hands images to SHOW the model through the attach sink.
+        // Card 269: what a mutating file tool did travels beside the output, on
+        // the call's own sink — the tool knows it in the same breath as the
+        // write, and every other reader would otherwise have to parse prose.
+        // A tool that reports nothing leaves this null, which is not "unchanged".
+        AtomicReference<Tool.FileChange> reported = new AtomicReference<>();
         long startedAt = now();
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
-                        planLedger(emit), attach));
+                        planLedger(emit), attach, reported::set));
         long durationMs = now() - startedAt;
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is
@@ -545,7 +563,9 @@ public final class Agent {
             emitHookRuns(options.hooks().postToolUse(call.name(), call.input(), output,
                     options.cwd(), signal), call, agentId, emit);
         }
-        return new GuardedResult(output, durationMs, gateWaitMs);
+        Tool.FileChange change = reported.get();
+        return new GuardedResult(output, durationMs, gateWaitMs,
+                change == null ? null : change.wireName());
     }
 
     /**
