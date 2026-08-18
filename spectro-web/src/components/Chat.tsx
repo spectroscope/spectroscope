@@ -19,6 +19,16 @@ import {
   toggleFold,
   type ChildFolds,
 } from "../state/childFold";
+import {
+  followScroll,
+  isReaderScrollKey,
+  keyPull,
+  pinAfterGesture,
+  pinAfterScroll,
+  scrollCause,
+  wheelPull,
+  type ReaderPull,
+} from "../state/scrollPin";
 import { agentAccent, cacheSplit, clockTime, formatDuration, tokensPerSecond } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
@@ -70,8 +80,8 @@ export interface ChildFoldControls {
   toggle: (agentId: string) => void;
 }
 
-// Composer + scroll tuning, named so every line reads aloud.
-const SCROLL_PIN_THRESHOLD_PX = 120; // this close to the bottom counts as "pinned"
+// Composer tuning, named so every line reads aloud. The scroll pin's own
+// numbers moved to state/scrollPin.ts with the rule that reads them (card 257).
 /** Where the draft stops growing: ten full lines. The textarea's line-height
  *  is pinned to 22px in modal-composer.css (an integer on purpose — the
  *  inherited 1.55 × 14px = 21.7px would round per line and land the cap
@@ -236,22 +246,125 @@ export function Chat(props: {
     setVoiceNoticeOpen(false);
   };
 
-  // Keep the view pinned to the bottom while streaming — but only if the
-  // reader has not scrolled up to study something.
+  // Card 257: the reader owns the pin. A scroll event says nothing about WHO
+  // scrolled — our own scrollTo fires the same one a wheel does — so the three
+  // records below (when the reader last reached for the box, where it stood,
+  // which way they pulled) are what state/scrollPin.ts decides from.
+  /** When the reader last reached for the transcript. */
+  const readerIntentAt = useRef<number | null>(null);
+  /** Where the box stood at the previous scroll event. The DIRECTION it then
+   *  moved is what tells a reader pulling away from the live edge apart from
+   *  our own follow travelling toward it — a first version of this card
+   *  compared clocks instead, and a bench measurement killed it: a stream
+   *  commands scrolls many times a second, so a wheel notch that landed
+   *  between two of them was credited to the app. */
+  const lastScrollTop = useRef(0);
+  /** Which way the reader's last gesture pulled. It gates the re-arm: an
+   *  animation this view had already started keeps travelling after the reader
+   *  pulls out of it, and reaching the bottom would otherwise put the pin back
+   *  on for them. */
+  const lastPull = useRef<ReaderPull>("unknown");
+  /** A wheel, a touch drag, a scrollbar drag, a scrolling key: from here the
+   *  reader is driving, until the scrolling settles.
+   *
+   *  <p>A gesture that pulls AWAY from the live edge takes the pin off right
+   *  here, before the browser has scrolled anything. Waiting for the scroll
+   *  event loses a race that was measured: the event reports the position at
+   *  the end of the frame, and while a run streams this view commands its own
+   *  scrollTo many times a second — land in the same frame as one of those and
+   *  the reader's notch is simply gone. A drag on the scrollbar has no
+   *  direction to read, so it stays with the scroll-event rule.</p>
+   *
+   *  Stable identity — the key listener below depends on it.
+   *  @param pull which way this gesture pulls, when that is knowable */
+  const noteReaderIntent = useCallback((pull: ReaderPull = "unknown"): void => {
+    const el = scrollRef.current;
+    readerIntentAt.current = performance.now();
+    lastPull.current = pull;
+    if (el === null) return;
+    pinnedRef.current = pinAfterGesture({
+      pinned: pinnedRef.current,
+      pull,
+      distanceFromBottom: el.scrollHeight - el.scrollTop - el.clientHeight,
+    });
+  }, []);
+  const onWheel = useCallback(
+    (e: React.WheelEvent): void => noteReaderIntent(wheelPull(e.deltaY)),
+    [noteReaderIntent],
+  );
+  const onTouchOrDrag = useCallback((): void => noteReaderIntent(), [noteReaderIntent]);
+  /** A deliberate control — jump to end, jump to start, a search hit, a sent
+   *  message — sets the pin outright, and drops the reader's stamp with it so
+   *  its OWN animation cannot be read back as the reader disagreeing with it.
+   *  This is the shape the jump-to-end button already had; the card asked for
+   *  it to be generalised, and every deliberate setter now goes through here. */
+  const setPin = (armed: boolean): void => {
+    pinnedRef.current = armed;
+    readerIntentAt.current = null;
+    lastPull.current = "unknown";
+  };
+
   const handleScroll = (): void => {
     const el = scrollRef.current;
     if (el === null) return;
-    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_PIN_THRESHOLD_PX;
+    const intent = readerIntentAt.current;
+    const cause = scrollCause(intent === null ? null : performance.now() - intent);
+    // Momentum keeps firing after the fingers are gone, and each of those
+    // events is still the reader's: pushing the window on means a long fling
+    // that ends at the bottom re-arms the pin instead of dying halfway.
+    if (cause === "reader") readerIntentAt.current = performance.now();
+    const movedUp = el.scrollTop < lastScrollTop.current;
+    lastScrollTop.current = el.scrollTop;
+    pinnedRef.current = pinAfterScroll({
+      pinned: pinnedRef.current,
+      cause,
+      lastPull: lastPull.current,
+      movedUp,
+      distanceFromBottom: el.scrollHeight - el.scrollTop - el.clientHeight,
+    });
   };
 
+  // The keys are not on the box: it carries no tabindex, so a press lands on
+  // whatever the reader last clicked, and the browser scrolls the box that
+  // click sits in. Two exclusions follow from that, and both are needed now
+  // that an upward key takes the pin off by itself: anything typed into a field
+  // is editing — arrowing through a draft is not leaving the live edge — and a
+  // press aimed somewhere else entirely (walking the session list with the
+  // arrows) is not aimed at the transcript at all.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const target = e.target as HTMLElement | null;
+      const inEditable =
+        target !== null && (target.isContentEditable || /^(input|textarea|select)$/i.test(target.tagName));
+      const atTranscript =
+        target === null || target === document.body || (scrollRef.current?.contains(target) ?? false);
+      if (atTranscript && isReaderScrollKey(e.key, inEditable)) noteReaderIntent(keyPull(e.key));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [noteReaderIntent]);
+
+  // The live edge also moves when nothing renders: the composer growing to a
+  // second line, or the window resizing, shrinks the box under a pinned reader
+  // and drops the last line out of sight. No state changes for either, so the
+  // growth effect below cannot see it.
   useEffect(() => {
     const el = scrollRef.current;
-    const newTurn = state.turns.length !== prevTurnCount.current;
-    prevTurnCount.current = state.turns.length;
-    if (el === null || !pinnedRef.current) return;
-    // Smooth for new turns, instant while a turn streams (no scroll jitter).
-    el.scrollTo({ top: el.scrollHeight, behavior: newTurn ? "smooth" : "auto" });
-  });
+    if (el === null || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // A different reading is a different pin. pinnedRef is seeded once at mount
+  // and App swaps props on this component instead of remounting it, so without
+  // this a reader who scrolled up in the live view opens an archive already
+  // disarmed — and comes back to a live run that never follows again.
+  useEffect(() => {
+    setPin(liveView);
+  }, [props.viewKey, liveView]);
 
   // The view this render belongs to — "live", a replay id, a fleet room.
   // Lifted above the fold state (card 271): the fold is remembered per VIEW,
@@ -279,10 +392,14 @@ export function Chat(props: {
     setChildFolds((open) => toggleFold(open, vk, agentId));
   };
 
-  // BEFORE the browser paints, and before the bottom-pin effect above runs:
-  // a reader who is reading keeps the chip where it was, and a reader pinned to
-  // the live edge is left to that effect (foldScrollDelta returns zero for
-  // them, so the two rules never pull at the same pixel).
+  // BEFORE the browser paints, and before the bottom-pin effect below runs
+  // (a layout effect always does): a reader who is reading keeps the chip where
+  // it was, and a reader pinned to the live edge is left to that effect
+  // (foldScrollDelta returns zero for them, so the two rules never pull at the
+  // same pixel). Card 257 absorbed this rule UNCHANGED: it still reads the pin
+  // and never sets it, and the correction below is safe under the new scroll
+  // rule for the same reason it was written — it only runs for a reader who is
+  // already disarmed, so no pin can be moved by it.
   useLayoutEffect(() => {
     const anchor = foldAnchor.current;
     foldAnchor.current = null;
@@ -297,6 +414,23 @@ export function Chat(props: {
     });
     if (delta !== 0) el.scrollTop += delta;
   }, [childFolds]);
+
+  // Follow the live edge when the transcript GROWS — and only then. The old
+  // shape had no dependency array at all, so it re-asserted the bottom after
+  // every render, including a keystroke in the composer; while a run streams
+  // that is many per second, which left the reader about one frame to escape.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const newTurn = state.turns.length !== prevTurnCount.current;
+    prevTurnCount.current = state.turns.length;
+    // childFolds is a dependency because opening a fold grows the transcript as
+    // surely as a token does — and card 271's rule stands aside for a pinned
+    // reader precisely because THIS effect puts them back on the same render.
+    void childFolds;
+    const how = followScroll({ pinned: pinnedRef.current, newTurn });
+    if (el === null || how === "none") return;
+    el.scrollTo({ top: el.scrollHeight, behavior: how });
+  }, [state, childFolds]);
 
   // In-view search (state/search.ts): this view walks its own turns. One hit is
   // one matching TURN — the reasoning for that and for leaving thinking blocks
@@ -354,7 +488,7 @@ export function Chat(props: {
     // Someone stepping through hits is READING, not following the stream:
     // release the live-edge pin (card 78 #5) before the jump, or the next
     // streamed token drags them straight back down to the bottom.
-    pinnedRef.current = false;
+    setPin(false);
     el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [currentHit]);
 
@@ -417,6 +551,9 @@ export function Chat(props: {
   const submit = (): void => {
     const text = draft.trim();
     if (text === "" || !liveView) return;
+    // Sending is the reader asking for an answer, so the view goes back to
+    // watching for it — the same deliberate act the jump-to-end button is.
+    setPin(true);
     props.onSend(text, attachments.pending.length > 0 ? attachments.pending : undefined);
     setDraft("");
     attachments.clear();
@@ -663,8 +800,8 @@ export function Chat(props: {
         title={t(lang, "trace.toStart")}
         aria-label={t(lang, "trace.toStart")}
         onClick={() => {
+          setPin(false);
           scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-          pinnedRef.current = false;
         }}
       >
         <svg
@@ -688,9 +825,9 @@ export function Chat(props: {
         title={t(lang, "trace.toEnd")}
         aria-label={t(lang, "trace.toEnd")}
         onClick={() => {
+          setPin(true);
           const el = scrollRef.current;
           if (el !== null) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-          pinnedRef.current = true;
         }}
       >
         <svg
@@ -722,6 +859,9 @@ export function Chat(props: {
         className="chat-scroll"
         ref={scrollRef}
         onScroll={handleScroll}
+        onWheel={onWheel}
+        onTouchMove={onTouchOrDrag}
+        onPointerDown={onTouchOrDrag}
         role="log"
         aria-live="off"
         aria-label={t(lang, "chat.historyAria")}
