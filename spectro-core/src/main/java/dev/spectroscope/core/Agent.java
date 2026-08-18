@@ -32,6 +32,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import dev.spectroscope.core.progress.ProgressGuard;
 import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.session.Compaction;
 import dev.spectroscope.core.session.CompactionThreshold;
@@ -265,6 +266,12 @@ public final class Agent {
                 options.compactionThreshold(), () -> options.provider().contextWindow());
         int compactionThreshold = compaction.tokens();
         int summaryBudget = CompactionThreshold.summaryBudget(compaction);
+        // Card 262: the harness's own eye on a run that is going nowhere. Null
+        // on every face where nobody could answer its question — registration is
+        // the fence here exactly as it is for card 265's ask, and a guard that
+        // can only narrate while the hour keeps burning is the one thing the
+        // owner ruled out.
+        ProgressGuard progress = options.progressGuard();
 
         // A SwitchableProvider reports its live name; everyone else falls back to
         // the build-time label — so a mid-session provider switch is recorded right.
@@ -302,6 +309,30 @@ public final class Agent {
         try {
             for (int turn = 1; turn <= MAX_TURNS; turn++) {
                 emit.accept(new TurnStart(agentId, turn, now()));
+
+                // Card 262, detector 3: the only one of the three with no tool
+                // call to hang on, so the loop asks it itself — once per turn,
+                // before the provider is called, against the ledger card 264
+                // already keeps. Silent unless it was armed, and silent by
+                // construction on a model that keeps no plan.
+                if (progress != null) {
+                    java.util.Optional<ProgressGuard.Strike> stalled = progress.observeTurn(lastPlan);
+                    if (stalled.isPresent()) {
+                        ProgressGuard.Response answer =
+                                progress.intervene(stalled.get(), agentId, emit, signal);
+                        if (answer.intervention() == ProgressGuard.Intervention.END) {
+                            emit.accept(new RunEnd(runId, ProgressGuard.STOP_REASON, now()));
+                            return;
+                        }
+                        if (answer.guidance() != null) {
+                            // Between turns there is no tool result to ride, so
+                            // the operator's words go in as their own user turn —
+                            // the same place the answer to a question lands.
+                            messages.add(new ProviderMessage(ProviderMessage.Role.USER,
+                                    List.of(new TextContent(answer.guidance()))));
+                        }
+                    }
+                }
 
                 // context introspection, opt-in via the options.
                 if (Boolean.TRUE.equals(options.introspection())) {
@@ -454,7 +485,41 @@ public final class Agent {
                 // to SHOW the model — they ride the tool-results message as provider
                 // content (after the results; the mappers keep the API order).
                 List<ProviderContent> attachedContent = new ArrayList<>();
+                // Card 262: what the person said when the guard fired AFTER a call
+                // had already run. It rides the same user message, behind the
+                // results — the one place the model is certain to read next turn.
+                List<ProviderContent> operatorNotes = new ArrayList<>();
+                boolean operatorEndedTheRun = false;
                 for (PToolCall call : toolCalls) {
+                    if (operatorEndedTheRun) {
+                        // Every call of the round still needs a result. An
+                        // assistant message holding a tool_call nobody answered
+                        // is a 400 from every strict backend on the NEXT run, and
+                        // the run being over does not make the history go away.
+                        results.add(ended(agentId, call, emit));
+                        continue;
+                    }
+                    if (progress != null) {
+                        java.util.Optional<ProgressGuard.Strike> starting =
+                                progress.observeCall(call.name(), call.input());
+                        if (starting.isPresent()) {
+                            ProgressGuard.Response answer =
+                                    progress.intervene(starting.get(), agentId, emit, signal);
+                            if (answer.intervention() != ProgressGuard.Intervention.CARRY_ON) {
+                                // The call does not run: catching the fourth copy
+                                // after it has landed would be a report, not a
+                                // guard. Not an ERROR either — a person's decision
+                                // is not a tool failure and must not invite a retry.
+                                emit.accept(new ToolResult(agentId, call.callId(),
+                                        answer.guidance(), false, 0, null, null, now()));
+                                results.add(new ToolResultContent(call.callId(),
+                                        answer.guidance(), false));
+                                operatorEndedTheRun =
+                                        answer.intervention() == ProgressGuard.Intervention.END;
+                                continue;
+                            }
+                        }
+                    }
                     GuardedResult outcome = executeToolCall(call, agentId, signal, emit,
                             attachment -> attachedContent.add(switch (attachment) {
                                 case Tool.AttachedImage image -> new ImageContent(
@@ -468,9 +533,27 @@ public final class Agent {
                             outcome.durationMs(), outcome.gateWaitMs(), outcome.fileChange(), now()));
                     // Denial/error goes back to the model as a tool_result for self-correction.
                     results.add(new ToolResultContent(call.callId(), outcome.output(), isError));
+                    if (progress != null) {
+                        java.util.Optional<ProgressGuard.Strike> failing =
+                                progress.observeResult(call.name(), call.input(), isError);
+                        if (failing.isPresent()) {
+                            ProgressGuard.Response answer =
+                                    progress.intervene(failing.get(), agentId, emit, signal);
+                            if (answer.guidance() != null) {
+                                operatorNotes.add(new TextContent(answer.guidance()));
+                            }
+                            operatorEndedTheRun =
+                                    answer.intervention() == ProgressGuard.Intervention.END;
+                        }
+                    }
                 }
                 results.addAll(attachedContent);
+                results.addAll(operatorNotes);
                 messages.add(new ProviderMessage(ProviderMessage.Role.USER, results));
+                if (operatorEndedTheRun) {
+                    emit.accept(new RunEnd(runId, ProgressGuard.STOP_REASON, now()));
+                    return;
+                }
             }
             // The brake keeps its own name even with the plan open: the verdict
             // is logged either way, and losing "this run hit turn 15" would
@@ -484,6 +567,23 @@ public final class Agent {
             emit.accept(new ErrorEvent(agentId, error.getMessage(), now()));
             emit.accept(new RunEnd(runId, "error", now()));
         }
+    }
+
+    /**
+     * Answers a call the operator's decision beat to it (card 262).
+     *
+     * <p>Only the shape matters: the round is over, but the history is not, and
+     * a tool_call without a tool_result is a 400 on the next request.</p>
+     *
+     * @param agentId the agent the round ran under
+     * @param call    the call that never ran
+     * @param emit    the loop's event sink
+     * @return the content that closes the call in the history
+     */
+    private ToolResultContent ended(String agentId, PToolCall call, Consumer<RunEvent> emit) {
+        String note = "The person watching this run ended it before this step ran.";
+        emit.accept(new ToolResult(agentId, call.callId(), note, false, 0, null, null, now()));
+        return new ToolResultContent(call.callId(), note, false);
     }
 
     /**
@@ -783,6 +883,23 @@ public final class Agent {
     private static String abortStopReason(CancelSignal signal) {
         String named = signal.reason();
         return named == null || named.isBlank() ? "aborted" : named;
+    }
+
+    /**
+     * The progress guard this agent runs with, or null when nothing is watching
+     * (card 262).
+     *
+     * <p>Exists for one reason: the fence for the guard is the WIRING, exactly
+     * as the fence for card 265's ask is the registration, and "this face wires
+     * a guard" has to be readable off the agent a real {@code buildAgentOnce}
+     * built rather than off one a test assembled by hand. Card 222's review
+     * finding F4 was precisely that — a whole family deleted from the live
+     * registration with the full gate green, because every test built its own.</p>
+     *
+     * @return the guard, or null
+     */
+    public dev.spectroscope.core.progress.ProgressGuard progressGuard() {
+        return options.progressGuard();
     }
 
     /**

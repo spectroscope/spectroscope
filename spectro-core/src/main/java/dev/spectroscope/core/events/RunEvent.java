@@ -58,7 +58,8 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.HookDecision.class,       name = "hook_decision"), // additive (card 195)
     @JsonSubTypes.Type(value = RunEvent.ImagesWithheld.class,     name = "images_withheld"), // additive (card 252)
     @JsonSubTypes.Type(value = RunEvent.QuestionAsked.class,      name = "question_asked"),   // additive (card 265)
-    @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered") // additive (card 265)
+    @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered"), // additive (card 265)
+    @JsonSubTypes.Type(value = RunEvent.NoProgress.class,         name = "no_progress")       // additive (card 262)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -66,7 +67,8 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
-        RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered {
+        RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
+        RunEvent.NoProgress {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -598,6 +600,46 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ImagesWithheld(String agentId, int images, String model, String reason, long ts)
             implements RunEvent {}
+
+    /**
+     * Additive: the harness noticed that nothing is moving (card 262).
+     *
+     * <p>Emitted the moment a detector fires, BEFORE the question that follows
+     * it, so the transcript carries the observation even if the run is
+     * cancelled while the question is parked. Never a silent abort: the line is
+     * on the wire whatever the operator then decides, and whatever happens when
+     * nobody answers.</p>
+     *
+     * <p><b>Facts and a sentence, both.</b> {@code detector}, {@code count} and
+     * {@code details} are the facts a localized surface builds its own wording
+     * from — {@link ImagesWithheld} learned that the hard way, and a reopened
+     * session must not print English into a German transcript. {@code evidence}
+     * is the ready-made English sentence for every surface that has no
+     * dictionary at all: the CLI transcript, the log line, a session file a
+     * human opens in an editor. A guard that says "no progress" without naming
+     * what it saw is a guess wearing a warning's clothes, and that has to hold
+     * in the places where no UI is watching.</p>
+     *
+     * @param agentId  the agent whose run stopped moving
+     * @param detector which net caught it — {@code identical_writes},
+     *                 {@code repeated_failure} or {@code stalled_plan}. Pin on
+     *                 this, never on {@code evidence}: the prose is written for
+     *                 a person and may be reworded, this may not
+     * @param count    how many times the thing happened — three identical
+     *                 writes, three failures in a row, five unmoved turns
+     * @param details  the supporting facts, per detector. {@code identical_writes}:
+     *                 the paths that already carry those bytes, and LAST the new
+     *                 path the run was about to write. {@code repeated_failure}:
+     *                 one entry, the call as it was issued. {@code stalled_plan}:
+     *                 the plan steps still open. Null (omitted) when a detector
+     *                 has none
+     * @param evidence the same thing as one English sentence, for the surfaces
+     *                 with no dictionary
+     * @param ts       epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record NoProgress(String agentId, String detector, int count, List<String> details,
+                      String evidence, long ts) implements RunEvent {}
 
     /**
      * Additive: what sits in the context window right now. Emitted

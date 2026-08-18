@@ -806,6 +806,10 @@ public final class SessionStore {
             case RunEvent.HookDecision e -> e.agentId();
             case RunEvent.ImagesWithheld e -> e.agentId();
             case RunEvent.QuestionAsked e -> e.agentId();
+            // Card 262: the guard watches one agent's loop, so its observation
+            // belongs to that agent — a child's stall must not read as a stall
+            // of the run that spawned it.
+            case RunEvent.NoProgress e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             // Card 265: the answer joins its question by callId, exactly as a
             // permission_decision joins its request — neither carries an agent.

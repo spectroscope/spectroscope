@@ -163,6 +163,23 @@ import java.util.function.Function;
  *                            scope may not set it — the switch that widens an
  *                            unattended run must not live in the folder the
  *                            agent writes into). Env {@code SPECTRO_HEADLESS_MCP}
+ * @param progressGuardWrites how many DISTINCT earlier paths must already carry
+ *                            the exact bytes a write is about to repeat before
+ *                            the harness says so and asks (card 262). Default
+ *                            <b>3</b>; <b>0 turns the detector off</b>. The
+ *                            measured loop wrote the same 283 bytes to 31 paths
+ * @param progressGuardFailures how many times in a row one call with
+ *                            byte-identical input must fail before the harness
+ *                            says so and asks. Default <b>3</b>, and the 3 is
+ *                            load-bearing: a flaky test that fails twice and
+ *                            then passes must stay silent. 0 turns it off
+ * @param progressGuardPlanTurns how many consecutive turns a plan must sit
+ *                            unchanged, with a step still open, before the
+ *                            harness says so and asks. Default <b>0 — OFF</b>:
+ *                            it needs a plan that exists and is maintained, and
+ *                            the weak local models this guard was cut for keep
+ *                            none. Built, tested, and off until an operator
+ *                            turns it on
  */
 public record SpectroConfig(
         String provider,
@@ -190,7 +207,70 @@ public record SpectroConfig(
         String lmstudioBaseUrl,
         String searxngUrl,
         boolean allowLocalhost,
-        boolean headlessMcp) {
+        boolean headlessMcp,
+        int progressGuardWrites,
+        int progressGuardFailures,
+        int progressGuardPlanTurns) {
+
+    /**
+     * Compat: the pre-card-262 arity, which knew no progress guard. Every caller
+     * that built a config positionally keeps compiling and gets the shipped
+     * defaults — both cheap detectors armed, the plan net off.
+     *
+     * @param provider            "anthropic", "ollama" or "openai"
+     * @param model               model id for the chosen provider
+     * @param baseUrl             base URL for ollama/openai
+     * @param compactionThreshold input-token threshold, or null to derive it
+     * @param permissionMode      "ask", "auto" or "readonly"
+     * @param autoApprove         permission allowlist
+     * @param imageProvider       the image backend
+     * @param thinking            whether the reasoning stream is requested
+     * @param mcpServers          the configured MCP servers
+     * @param maxRetries          provider retry count
+     * @param promptCaching       whether prompt caching is on
+     * @param hooks               the configured shell hooks
+     * @param workspace           the workspace directory, or null for a temp one
+     * @param logLevel            file-diagnostics level
+     * @param imageModel          the image model id
+     * @param sttModel            the speech model id
+     * @param sttProvider         the speech backend
+     * @param sttLanguage         the dictation language
+     * @param chromeBinary        an explicit Chrome path
+     * @param otlpEndpoint        the OTLP collector, or null
+     * @param otlpBasicAuth       its credentials, or null
+     * @param ollamaBaseUrl       the ollama base URL, or null
+     * @param lmstudioBaseUrl     the LM Studio base URL, or null
+     * @param searxngUrl          the SearXNG instance, or null
+     * @param allowLocalhost      whether the net fence permits localhost
+     * @param headlessMcp         whether an unattended run may mount MCP servers
+     */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp,
+                DEFAULT_PROGRESS_WRITES, DEFAULT_PROGRESS_FAILURES, DEFAULT_PROGRESS_PLAN_TURNS);
+    }
+
+    /** The shipped {@code progressGuardWrites}: the same bytes under a third new
+     *  name is where "a second copy" stops explaining it. */
+    public static final int DEFAULT_PROGRESS_WRITES = 3;
+    /** The shipped {@code progressGuardFailures}: above the two a flaky test is
+     *  allowed, and the counter resets on any success of the same call. */
+    public static final int DEFAULT_PROGRESS_FAILURES = 3;
+    /** The shipped {@code progressGuardPlanTurns}: 0, meaning off. The reason is
+     *  on card 262 and in {@code ProgressSettings} — it needs a maintained plan,
+     *  and the runs it was cut for keep none. */
+    public static final int DEFAULT_PROGRESS_PLAN_TURNS = 0;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -259,7 +339,11 @@ public record SpectroConfig(
             null, null, // ollamaBaseUrl/lmstudioBaseUrl: unset — the legacy baseUrl chain decides
             null, // searxngUrl: no instance — web_search resolves its tier without one
             false, // allowLocalhost: the net fence refuses loopback until somebody says otherwise
-            false); // headlessMcp: an unattended run mounts no MCP server until an operator opts in
+            false, // headlessMcp: an unattended run mounts no MCP server until an operator opts in
+            // Card 262, the progress guard: identical bytes under a new name and
+            // a call failing on unchanged input both speak at three; the plan net
+            // ships off, because it needs a plan the weak models never write.
+            3, 3, 0);
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -578,7 +662,9 @@ public record SpectroConfig(
                         base.sttLanguage(), base.chromeBinary(),
                         base.otlpEndpoint(), base.otlpBasicAuth(),
                         base.ollamaBaseUrl(), base.lmstudioBaseUrl(), base.searxngUrl(),
-                        base.allowLocalhost(), base.headlessMcp());
+                        base.allowLocalhost(), base.headlessMcp(),
+                        base.progressGuardWrites(), base.progressGuardFailures(),
+                        base.progressGuardPlanTurns());
             }
         }
         return base;
@@ -628,7 +714,10 @@ public record SpectroConfig(
             new FieldProbe("lmstudioBaseUrl", p -> p.lmstudioBaseUrl),
             new FieldProbe("searxngUrl", p -> p.searxngUrl),
             new FieldProbe("allowLocalhost", p -> p.allowLocalhost),
-            new FieldProbe("headlessMcp", p -> p.headlessMcp));
+            new FieldProbe("headlessMcp", p -> p.headlessMcp),
+            new FieldProbe("progressGuardWrites", p -> p.progressGuardWrites),
+            new FieldProbe("progressGuardFailures", p -> p.progressGuardFailures),
+            new FieldProbe("progressGuardPlanTurns", p -> p.progressGuardPlanTurns));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -751,7 +840,8 @@ public record SpectroConfig(
                 maxRetries, promptCaching, hooks,
                 workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
-                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp);
+                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1461,6 +1551,11 @@ public record SpectroConfig(
         public String searxngUrl;
         public Boolean allowLocalhost;
         public Boolean headlessMcp;
+        // Card 262: three counts, and zero is the off switch for each — one knob
+        // per detector rather than a knob and a flag that can disagree.
+        public Integer progressGuardWrites;
+        public Integer progressGuardFailures;
+        public Integer progressGuardPlanTurns;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1500,6 +1595,12 @@ public record SpectroConfig(
             out.searxngUrl = Optional.ofNullable(higher.searxngUrl).orElse(searxngUrl);
             out.allowLocalhost = Optional.ofNullable(higher.allowLocalhost).orElse(allowLocalhost);
             out.headlessMcp = Optional.ofNullable(higher.headlessMcp).orElse(headlessMcp);
+            out.progressGuardWrites =
+                    Optional.ofNullable(higher.progressGuardWrites).orElse(progressGuardWrites);
+            out.progressGuardFailures =
+                    Optional.ofNullable(higher.progressGuardFailures).orElse(progressGuardFailures);
+            out.progressGuardPlanTurns =
+                    Optional.ofNullable(higher.progressGuardPlanTurns).orElse(progressGuardPlanTurns);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1542,7 +1643,10 @@ public record SpectroConfig(
                     Optional.ofNullable(lmstudioBaseUrl).orElse(DEFAULTS.lmstudioBaseUrl()),
                     Optional.ofNullable(searxngUrl).orElse(DEFAULTS.searxngUrl()),
                     Optional.ofNullable(allowLocalhost).orElse(DEFAULTS.allowLocalhost()),
-                    Optional.ofNullable(headlessMcp).orElse(DEFAULTS.headlessMcp()));
+                    Optional.ofNullable(headlessMcp).orElse(DEFAULTS.headlessMcp()),
+                    Optional.ofNullable(progressGuardWrites).orElse(DEFAULTS.progressGuardWrites()),
+                    Optional.ofNullable(progressGuardFailures).orElse(DEFAULTS.progressGuardFailures()),
+                    Optional.ofNullable(progressGuardPlanTurns).orElse(DEFAULTS.progressGuardPlanTurns()));
         }
 
         /**

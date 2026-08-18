@@ -759,6 +759,19 @@ public final class SpectroCli implements Runnable {
                 .hooks(hooks)        // external pre/post_tool_use shell hooks (config-only)
                 .llmWire(llmWire)    // the backend-to-LLM record rides the session's recorder (card 184)
                 .latency(latency)    // this REPL's own exchanges price its children (card 270)
+                // Card 262: the progress guard, and only where a person can
+                // answer its question. The REPL sets the asker; a `spectro run`,
+                // a cron fire and a node never reach this method, so they carry
+                // no guard — registration is the fence, the same one card 265's
+                // ask uses. A guard that could only narrate while the hour keeps
+                // burning is the outcome the owner explicitly ruled out.
+                .progressGuard(askQuestionOnTerminal == null ? null
+                        : new dev.spectroscope.core.progress.ProgressGuard(
+                                new dev.spectroscope.core.progress.ProgressSettings(
+                                        config.progressGuardWrites(),
+                                        config.progressGuardFailures(),
+                                        config.progressGuardPlanTurns()),
+                                askQuestionOnTerminal))
                 .onPermission(askOnTerminal)
                 .build());
     }

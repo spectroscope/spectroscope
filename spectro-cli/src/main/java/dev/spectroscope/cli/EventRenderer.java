@@ -370,6 +370,9 @@ final class EventRenderer {
             case RunEvent.HookDecision e -> e.agentId();
             case RunEvent.ImagesWithheld e -> e.agentId();
             case RunEvent.QuestionAsked e -> e.agentId();
+            // Card 262: the guard watches one agent's loop; its observation is
+            // attributed to that agent so a child's stall reads as the child's.
+            case RunEvent.NoProgress e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             // Card 265: the answer joins its question by callId and carries no
             // agent, exactly like the verdict that closes a permission request.

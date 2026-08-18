@@ -1212,11 +1212,30 @@ public final class SessionConnection {
                 .hooks(hooks) // external pre/post_tool_use shell hooks (config-only)
                 .llmWire(llmWire) // the backend-to-LLM record rides the session's recorder (card 184)
                 .latency(latency) // the parent's own exchanges price its children (card 270)
+                // Card 262: this face has a person attached (a browser holding a
+                // socket), so the guard can do what the owner decided — warn AND
+                // pause — through the very asker card 265 built. It reuses that
+                // park rather than inventing a second waiting mechanism, because
+                // two of those can disagree about who is waiting.
+                .progressGuard(new dev.spectroscope.core.progress.ProgressGuard(
+                        new dev.spectroscope.core.progress.ProgressSettings(
+                                active.progressGuardWrites(),
+                                active.progressGuardFailures(),
+                                active.progressGuardPlanTurns()),
+                        asker))
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
         // effort level.
         applyReasoning(agent);
+    }
+
+    /** This session's agent, for the tests that pin what the live build wired
+     *  onto it rather than what a test wired onto one of its own.
+     *  @return the agent {@link #buildAgentOnce} built, or null before the first
+     *          prompt */
+    Agent agent() {
+        return agent;
     }
 
     /** The tool belt this session's agent carries, for the test that pins the
