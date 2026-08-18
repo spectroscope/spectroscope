@@ -1187,6 +1187,9 @@ public final class SessionConnection {
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(webTools)
                 .budget(dev.spectroscope.core.subagents.ChildBudget.derivedFrom(latency))
+                // card 263 AC 3: the same number the parent agent is built with
+                // below, so the operator's instruction governs the whole tree
+                .compactionThreshold(active.compactionThreshold())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -1396,9 +1399,18 @@ public final class SessionConnection {
      * now" — every setting a tool here reads is read again on the call. What
      * this method does NOT cover is listed on the card and said on the settings
      * page: the workspace, the MCP servers, the shell hooks, the system prompt
-     * and its skills, and the compaction threshold are settled when the agent is
-     * built and stay settled, because changing them mid-session would mean
-     * killing processes or rewriting a conversation that already happened.</p>
+     * and its skills, and the CONFIGURED compaction threshold are settled when
+     * the agent is built and stay settled, because changing them mid-session
+     * would mean killing processes or rewriting a conversation that already
+     * happened.</p>
+     *
+     * <p>Half of that last one moved with card 263 and the sentence above would
+     * otherwise be the harder kind of stale — true enough to believe. What the
+     * operator TYPED is still read once, at {@code buildAgentOnce}. What is
+     * DERIVED when they typed nothing is re-computed at the head of every run
+     * from the window the backend reports, so a backend that loads a different
+     * model mid-session changes the threshold on the next run and not on this
+     * one.</p>
      *
      * <p>Package-private so a test can hold this belt without a provider and a
      * whole run: the tier a tool USED is only assertable on the tool object the

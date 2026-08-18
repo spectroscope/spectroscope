@@ -621,6 +621,9 @@ public final class SpectroCli implements Runnable {
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(List.of(webSearch, webFetch, browsePage))
                 .budget(dev.spectroscope.core.subagents.ChildBudget.derivedFrom(latency))
+                // card 263 AC 3: the operator's threshold governs the tree, not
+                // just its root — the same value the parent agent is built with
+                .compactionThreshold(config.compactionThreshold())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);

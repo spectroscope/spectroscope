@@ -377,6 +377,10 @@ public final class SubagentManager {
                 .cwd(config.cwd())
                 .agentId(childId)
                 .parentId(config.parentAgentId())     // the tree edge — the graph tab draws exactly this
+                // AC 3 of card 263 governs the TREE, not just its root: an
+                // operator who typed a threshold means it for the children too,
+                // and null still lets them derive it from the shared provider.
+                .compactionThreshold(config.compactionThreshold())
                 .build());
 
         StringBuilder lastTurnText = new StringBuilder();

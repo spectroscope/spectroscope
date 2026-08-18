@@ -90,6 +90,36 @@ public final class Compaction {
     public static Result maybeCompact(LlmProvider provider, List<ProviderMessage> messages,
                                       int lastInputTokens, int threshold, String agentId,
                                       CancelSignal signal, LlmWireTap tap) {
+        return maybeCompact(provider, messages, lastInputTokens, threshold, agentId, signal, tap,
+                dev.spectroscope.core.Agent.DEFAULT_MAX_TOKENS);
+    }
+
+    /**
+     * The canonical form, with the summarizer's own completion budget stated
+     * rather than assumed (card 263, review pass).
+     *
+     * <p>That budget used to be a literal 32,000 here, which was harmless only
+     * because compaction never fired on a small model: the threshold was a flat
+     * 100,000. Deriving the threshold from the window is what made the path
+     * reachable — on a model loaded at 8,192 the trip is at 6,144, and this one
+     * call would have asked for four times the whole window. Compaction never
+     * throws, so the visible result would have been an {@code ErrorEvent} every
+     * other turn instead of a crash. {@link CompactionThreshold#summaryBudget}
+     * sizes it against the reserve the threshold kept back.</p>
+     *
+     * @param provider          the SAME provider the run uses (model lives in it)
+     * @param messages          the current history
+     * @param lastInputTokens   input tokens of the last turn (from the usage event)
+     * @param threshold         compaction threshold in input tokens
+     * @param agentId           the agentId for the compaction event ("main")
+     * @param signal            cooperative cancel (may be null)
+     * @param tap               where the summarizer call records its exchange; null records nothing
+     * @param summaryMaxTokens  what the summarizer's own completion may spend
+     * @return a Result exactly as the tap-free signature describes it
+     */
+    public static Result maybeCompact(LlmProvider provider, List<ProviderMessage> messages,
+                                      int lastInputTokens, int threshold, String agentId,
+                                      CancelSignal signal, LlmWireTap tap, int summaryMaxTokens) {
         int keep = DEFAULT_KEEP_MESSAGES;
         if (lastInputTokens < threshold) {
             return new Result(messages, null);
@@ -129,8 +159,8 @@ public final class Compaction {
                     SUMMARY_SYSTEM,
                     VisionFence.fence(provider,
                             SessionStore.mergeAdjacentRoles(summaryInput)).messages(),
-                    List.of(),      // summary call ALWAYS without tools
-                    32000,          // generous maxTokens; no sampling parameters
+                    List.of(),          // summary call ALWAYS without tools
+                    summaryMaxTokens,   // sized against the window; no sampling parameters
                     ProviderRequest.Reasoning.DEFAULT,
                     null,           // no effort request either
                     signal,

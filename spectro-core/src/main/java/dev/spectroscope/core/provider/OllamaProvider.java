@@ -62,6 +62,12 @@ public final class OllamaProvider implements LlmProvider {
      *  {@code /api/ps} before the first turn is a moment, not a verdict. */
     private volatile int contextWindow;
 
+    /** Set once the server has denied the route outright — a 4xx, which an
+     *  ollama old enough to predate {@code /api/ps} answers. That verdict does
+     *  not expire; a timeout or a 5xx does not set it, because neither says
+     *  anything about whether the route exists. */
+    private volatile boolean capabilityRouteAbsent;
+
     /** A SECOND client for capability questions only, with a read timeout the
      *  chat client must never have — that one streams NDJSON, and a deadline on
      *  it would cut long answers off mid-sentence. */
@@ -154,6 +160,9 @@ public final class OllamaProvider implements LlmProvider {
         if (known > 0) {
             return known;
         }
+        if (capabilityRouteAbsent) {
+            return 0;
+        }
         int probed = probeContextWindow();
         if (probed > 0) {
             contextWindow = probed;
@@ -169,6 +178,9 @@ public final class OllamaProvider implements LlmProvider {
             String body = capabilities.get().uri(baseUrl + "/api/ps")
                     .retrieve().body(String.class);
             return body == null ? 0 : loadedWindow(JSON.readTree(body), model);
+        } catch (org.springframework.web.client.HttpClientErrorException definitive) {
+            capabilityRouteAbsent = true;
+            return 0;
         } catch (Exception nothingLearned) {
             return 0;
         }

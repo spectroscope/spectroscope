@@ -95,11 +95,17 @@ cheap, and introspection shows you both at work.</p>
       because the very next call after the trip is the summarizer, which re-sends
       the history <em>and</em> asks for a completion on top. A backend that states
       no window — anthropic, any plain OpenAI-compatible server — keeps the old
-      100&thinsp;000. An explicit setting always wins. The measure is honest under caching:
+      100&thinsp;000, and a server that answers "no such endpoint" is not asked
+      again for the rest of the session. An explicit setting always wins — and
+      costs no round trip at all, because there is nothing the backend could say
+      that would change it. Children inherit that setting, so one number governs
+      the whole tree. The measure is honest under caching:
       <code>inputTokens + cacheRead + cacheCreation</code>, because cached tokens still
       occupy the window even though the provider bills them separately.</li>
   <li><strong>Mechanism:</strong> everything except the last four messages is summarized by
-      the same provider (note-taker system prompt, summary-only instruction, no tools);
+      the same provider (note-taker system prompt, summary-only instruction, no tools,
+      and a completion budget sized to the quarter of the window that was kept back —
+      on a model loaded with 8&thinsp;192 tokens it asks for 2&thinsp;048, not 32&thinsp;000);
       the new history is one summary message plus the recent four, with a cut repair so no
       tool result loses its call. A failed summary is an <code>error</code> event and an
       unchanged history — never a broken run.</li>

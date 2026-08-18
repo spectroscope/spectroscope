@@ -11,6 +11,7 @@ import dev.spectroscope.core.wire.LlmWireTap;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -97,6 +98,14 @@ public final class OpenAiCompatProvider implements LlmProvider {
      *  first run starts and the right answer a minute later. */
     private volatile int contextWindow;
 
+    /** Set once the server has said, in so many words, that it does not serve
+     *  this route — a 4xx. That answer does not expire, and remembering it is
+     *  what keeps every endpoint which structurally cannot answer (openai,
+     *  openrouter, llama.cpp, vLLM, the gemini gateway) from being re-probed on
+     *  every run and every child run for the life of the session. A timeout or
+     *  a 5xx is NOT this: those say nothing about the route. */
+    private volatile boolean capabilityRouteAbsent;
+
     /** A SECOND client for capability questions only, with a read timeout the
      *  chat client must never have — that one streams, and a deadline on it
      *  would cut long answers off mid-sentence. Two seconds is a local listing's
@@ -132,9 +141,15 @@ public final class OpenAiCompatProvider implements LlmProvider {
                         .connectTimeout(java.time.Duration.ofSeconds(2))
                         .build());
         probeFactory.setReadTimeout(java.time.Duration.ofSeconds(2));
-        this.capabilities = RestClient.builder()
-                .requestFactory(probeFactory)
-                .build();
+        // The SAME key the chat wire carries. Without it, LM Studio with its
+        // API-key setting on, a vLLM started with --api-key or a LiteLLM proxy
+        // answers 401 to the probe, the blanket catch below swallows it, and the
+        // run lands on the fallback with nothing said anywhere.
+        RestClient.Builder probeBuilder = RestClient.builder().requestFactory(probeFactory);
+        if (options.apiKey() != null && !options.apiKey().isBlank()) {
+            probeBuilder.defaultHeader("Authorization", "Bearer " + options.apiKey());
+        }
+        this.capabilities = probeBuilder.build();
         this.model = options.model();
         this.baseUrl = options.baseUrl();
         this.dialect = options.dialect();
@@ -180,6 +195,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
         if (known > 0) {
             return known;
         }
+        if (capabilityRouteAbsent) {
+            return 0;
+        }
         int probed = probeContextWindow();
         if (probed > 0) {
             contextWindow = probed;
@@ -197,6 +215,12 @@ public final class OpenAiCompatProvider implements LlmProvider {
                     .retrieve()
                     .body(String.class);
             return body == null ? 0 : loadedWindow(JSON.readTree(body), model);
+        } catch (HttpClientErrorException definitive) {
+            // The server answered, and its answer is "no such route here". That
+            // is a verdict, not a moment — unlike an empty listing, which is
+            // what a just-in-time backend says before it has loaded anything.
+            capabilityRouteAbsent = true;
+            return 0;
         } catch (Exception nothingLearned) {
             return 0;
         }

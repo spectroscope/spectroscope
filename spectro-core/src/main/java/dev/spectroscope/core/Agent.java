@@ -190,11 +190,16 @@ public final class Agent {
     public Optional<RunEvent> compactNow() {
         // Between runs there is no turn number, so the wire binding carries null.
         LlmWireRecorder recorder = options.llmWire();
+        // The TRIGGER is forced, the BUDGET is not: /compact on a model loaded
+        // with 8,192 must not ask the summarizer for 32,000 tokens either.
+        CompactionThreshold.Derived compaction = CompactionThreshold.derive(
+                options.compactionThreshold(), () -> options.provider().contextWindow());
         Compaction.Result result = Compaction.maybeCompact(
                 options.provider(), List.copyOf(messages),
                 Integer.MAX_VALUE, 1, // force: pretend the context is over any threshold
                 options.agentId(), new CancelSignal(),
-                recorder == null ? null : recorder.bound(options.agentId(), null, "compaction"));
+                recorder == null ? null : recorder.bound(options.agentId(), null, "compaction"),
+                CompactionThreshold.summaryBudget(compaction));
         if (result.event() instanceof RunEvent.Compaction) {
             messages.clear();
             messages.addAll(result.messages());
@@ -252,9 +257,14 @@ public final class Agent {
         // per turn, so asking there would put it on the hot path. A mid-session
         // model switch is picked up by the next run, which is the same grain
         // the ring's caption is read at.
+        // Asked LAZILY: an explicit threshold decides on its own, and evaluating
+        // the provider's answer as an argument spent the probe anyway and threw
+        // it away — 330 ms against api.openai.com, 2,001 ms against a host that
+        // black-holes the connection, all of it before run_start is emitted.
         CompactionThreshold.Derived compaction = CompactionThreshold.derive(
-                options.compactionThreshold(), options.provider().contextWindow());
+                options.compactionThreshold(), () -> options.provider().contextWindow());
         int compactionThreshold = compaction.tokens();
+        int summaryBudget = CompactionThreshold.summaryBudget(compaction);
 
         // A SwitchableProvider reports its live name; everyone else falls back to
         // the build-time label — so a mid-session provider switch is recorded right.
@@ -305,7 +315,8 @@ public final class Agent {
                 Compaction.Result compacted = Compaction.maybeCompact(
                         options.provider(), List.copyOf(messages), lastInputTokens,
                         compactionThreshold, agentId, signal,
-                        recorder == null ? null : recorder.bound(agentId, turn, "compaction"));
+                        recorder == null ? null : recorder.bound(agentId, turn, "compaction"),
+                        summaryBudget);
                 if (compacted.event() != null) {
                     messages.clear();
                     messages.addAll(compacted.messages());

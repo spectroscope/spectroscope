@@ -3,6 +3,7 @@ package dev.spectroscope.core.session;
 import dev.spectroscope.core.Agent;
 
 import java.util.Locale;
+import java.util.function.IntSupplier;
 
 /**
  * Where the compaction trigger's number comes from (card 263) — the pure half,
@@ -56,6 +57,11 @@ public final class CompactionThreshold {
     /** …out of this many. See the class note for why the reserve is a quarter. */
     private static final int WINDOW_SHARE = 4;
 
+    /** The smallest completion a summary can plausibly be written in. A window
+     *  so small that its reserve is under this has bigger problems than the
+     *  summarizer; asking for zero tokens would just fail the call. */
+    private static final int MIN_SUMMARY_TOKENS = 512;
+
     /** Which fact produced the threshold — carried on {@code context_info} so
      *  the gauge's caption and the harness's behaviour cannot disagree again. */
     public enum Source {
@@ -101,7 +107,7 @@ public final class CompactionThreshold {
      * @return the threshold to compact at, and which fact produced it
      */
     public static Derived derive(Integer override, int reportedWindow) {
-        if (override != null && override > 0) {
+        if (isSet(override)) {
             return new Derived(override, Source.OVERRIDE);
         }
         if (reportedWindow > 0) {
@@ -111,5 +117,75 @@ public final class CompactionThreshold {
             return new Derived((int) Math.max(1L, share), Source.WINDOW);
         }
         return new Derived(FALLBACK_THRESHOLD, Source.FALLBACK);
+    }
+
+    /**
+     * The same decision, but the backend is only ASKED when its answer can still
+     * change the outcome.
+     *
+     * <p>Why this form exists at all: {@code derive(override, provider
+     * .contextWindow())} evaluates its argument before the call, so a session
+     * that already had an explicit threshold still paid the capability probe on
+     * every run and threw the answer away. Measured with the shipped classes on
+     * this machine, that discarded call costs 330 ms against
+     * {@code api.openai.com} and 2,001 ms against a host that black-holes the
+     * connection — and it is spent BEFORE {@code run_start} is emitted, so it is
+     * dead air in the UI rather than a visible wait.</p>
+     *
+     * <p>The zero-is-unset rule is not repeated here on purpose: it lives once,
+     * in {@link #isSet}, so the probe cannot be skipped by a value the
+     * derivation then refuses.</p>
+     *
+     * @param override       the configured {@code compactionThreshold}, exactly as
+     *                       {@link #derive(Integer, int)} reads it
+     * @param reportedWindow how to ask the provider — called at most once, and
+     *                       not at all when the override already decides
+     * @return the threshold to compact at, and which fact produced it
+     */
+    public static Derived derive(Integer override, IntSupplier reportedWindow) {
+        if (isSet(override)) {
+            return new Derived(override, Source.OVERRIDE);
+        }
+        return derive(null, reportedWindow.getAsInt());
+    }
+
+    /**
+     * What the compaction summarizer may spend on its own completion.
+     *
+     * <p>The summarizer asked for a flat {@link Agent#DEFAULT_MAX_TOKENS}
+     * whatever the window. That was harmless while the threshold was a literal
+     * 100,000 — on a small model compaction simply never fired — and this card
+     * is what makes the path reachable: a model loaded at 8,192 now compacts at
+     * 6,144, and the one call the reserve exists to hold would ask for four
+     * times the entire window. Compaction never throws, so the visible outcome
+     * would have been an {@code ErrorEvent} roughly every other turn, in exactly
+     * the configuration AC 4 was written for.</p>
+     *
+     * <p>The budget IS the reserve: the threshold is three quarters of the
+     * window, so a third of the threshold is the quarter kept back. It is only
+     * ever clamped DOWN — a run whose window is unknown, or whose threshold the
+     * operator typed, keeps the full budget, because neither says anything about
+     * how much room is left.</p>
+     *
+     * @param derived what {@link #derive(Integer, int)} decided for this run
+     * @return the {@code maxTokens} for the summarizer's request
+     */
+    public static int summaryBudget(Derived derived) {
+        if (derived.source() != Source.WINDOW) {
+            return Agent.DEFAULT_MAX_TOKENS;
+        }
+        long reserve = derived.tokens() / (long) CONVERSATION_SHARE;
+        return (int) Math.min(Agent.DEFAULT_MAX_TOKENS,
+                Math.max(MIN_SUMMARY_TOKENS, reserve));
+    }
+
+    /**
+     * Whether a configured threshold is a number the harness may obey.
+     *
+     * @param override the configured value, possibly null
+     * @return true only for a positive setting; zero and below read as unset
+     */
+    private static boolean isSet(Integer override) {
+        return override != null && override > 0;
     }
 }

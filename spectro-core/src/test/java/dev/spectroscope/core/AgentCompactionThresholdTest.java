@@ -31,6 +31,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Timeout(value = 10, unit = TimeUnit.SECONDS)
 class AgentCompactionThresholdTest {
 
+    /** The agent's own system prompt — the doubles tell a turn from the
+     *  compaction summarizer by it, and nothing else in the run says "test". */
+    private static final String AGENT_SYSTEM_PROMPT = "test";
+
+    /** Compaction keeps the last four messages and refuses to run on a history
+     *  of six or fewer, so a run that is supposed to compact needs a resumed
+     *  session's worth of history under it. */
+    private static List<LlmProvider.ProviderMessage> seededHistory() {
+        List<LlmProvider.ProviderMessage> history = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            history.add(new LlmProvider.ProviderMessage(LlmProvider.ProviderMessage.Role.USER,
+                    List.of(new LlmProvider.TextContent("earlier question " + i))));
+            history.add(new LlmProvider.ProviderMessage(LlmProvider.ProviderMessage.Role.ASSISTANT,
+                    List.of(new LlmProvider.TextContent("earlier answer " + i))));
+        }
+        return history;
+    }
+
     /** A provider with a window and one scripted turn; records the requests. */
     private static final class SizedProvider implements LlmProvider {
         private final int window;
@@ -63,13 +81,20 @@ class AgentCompactionThresholdTest {
     private static Agent agent(LlmProvider provider, Integer configured, ToolRegistry registry) {
         return new Agent(AgentOptions.builder()
                 .provider(provider)
-                .systemPrompt("test")
+                .initialMessages(seededHistory())
+                .systemPrompt(AGENT_SYSTEM_PROMPT)
                 .registry(registry)
                 .cwd(Path.of("."))
                 .onPermission(request -> true)
                 .introspection(true)
                 .compactionThreshold(configured)
                 .build());
+    }
+
+    private static ToolRegistry withNoop() {
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new NoopTool());
+        return registry;
     }
 
     private static List<RunEvent> collect(Agent agent) {
@@ -120,27 +145,80 @@ class AgentCompactionThresholdTest {
     }
 
     @Test
-    void aTinyWindowMakesTheLoopCompactWhereTheOldConstantNeverWould() {
-        // The other direction of AC 4, measured on the TRIGGER and not on the
-        // caption: a model loaded at 8,192 has a threshold of 6,144, and a turn
-        // reporting 7,000 input tokens is over it. Under the old constant those
-        // 7,000 were nowhere near 100,000 and nothing happened — while the
-        // server was already 800 tokens from the end of its window.
-        SizedProvider small = new SizedProvider(8_192, 7_000);
-        Agent agent = agent(small, null);
+    void aTinyWindowMakesTheLoopSummarizeWhereTheOldConstantNeverWould() {
+        // AC 4's other direction, measured on the SUMMARIZER and not on the
+        // caption. The test this replaces claimed the loop compacts and never
+        // watched it: it read the threshold off context_info and then asserted
+        // two constant comparisons. Under a Compaction.maybeCompact mutated to
+        // never fire, that class stayed 5/5 green while seven other tests in
+        // core went red — the house rule is to replace such a test, not loosen
+        // it. So: a model loaded at 8,192 compacts at 6,144, a turn reporting
+        // 7,000 input tokens is over it, and the proof is the summarizer's own
+        // call arriving at the provider.
+        CompactingProvider small = new CompactingProvider(8_192, 7_000);
 
-        List<RunEvent> first = collect(agent);
-        assertEquals(6_144, firstInfo(first).threshold());
+        List<RunEvent> events = collect(agent(small, null, withNoop()));
 
-        // Second run on the same agent: the history now carries the first
-        // exchange, and the turn opens with lastInputTokens still at 0 — so the
-        // proof that the trigger MOVED has to be read off the threshold the
-        // summarizer is handed. compactNow forces it; what this pins is that a
-        // 7,000-token turn is above the derived line and below the old one.
-        assertTrue(7_000 > firstInfo(first).threshold(),
-                "7,000 input tokens are OVER an 8k model's derived threshold");
-        assertTrue(7_000 < CompactionThreshold.FALLBACK_THRESHOLD,
-                "and were comfortably under the constant this card removes");
+        assertEquals(6_144, firstInfo(events).threshold());
+        assertTrue(events.stream().anyMatch(RunEvent.Compaction.class::isInstance),
+                "7,000 input tokens over a 6,144 line must actually summarize");
+        assertEquals(1, small.summaries.size(), "exactly one summarizer call");
+    }
+
+    @Test
+    void theSameRunOnTheOldConstantNeverSummarizesAtAll() {
+        // The negative twin, and the whole point of the card: the identical run
+        // against a backend that states nothing lands on 100,000 and the very
+        // same 7,000-token turn passes unnoticed — which is what the owner's
+        // 8k-model sessions did until the server truncated them silently.
+        CompactingProvider silent = new CompactingProvider(0, 7_000);
+
+        List<RunEvent> events = collect(agent(silent, null, withNoop()));
+
+        assertEquals(CompactionThreshold.FALLBACK_THRESHOLD, firstInfo(events).threshold());
+        assertTrue(events.stream().noneMatch(RunEvent.Compaction.class::isInstance),
+                "under the old constant the same turn is nowhere near the line");
+        assertEquals(0, silent.summaries.size());
+    }
+
+    @Test
+    void theSummarizerIsNeverAskedForMoreThanTheWindowItMustFitIn() {
+        // Review finding: the summarizer's request carried a literal 32,000
+        // maxTokens. On the 8k model above the reserve is 2,048, so the one call
+        // the reserve exists to hold asked for four times the whole window.
+        // Compaction never throws, so that degrades into an ErrorEvent every
+        // other turn — silently, in exactly the configuration AC 4 exists for.
+        CompactingProvider small = new CompactingProvider(8_192, 7_000);
+        collect(agent(small, null, withNoop()));
+
+        assertEquals(2_048, small.summaries.getFirst().maxTokens(),
+                "the summarizer gets the reserve the threshold kept back");
+
+        // And the clamp only ever takes budget away: on the owner's own window
+        // the summarizer keeps the full default completion budget.
+        CompactingProvider big = new CompactingProvider(204_288, 160_000);
+        collect(agent(big, null, withNoop()));
+
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, big.summaries.getFirst().maxTokens());
+    }
+
+    @Test
+    void anExplicitThresholdIsNotPaidForWithAProbeTheRunThrowsAway() {
+        // AC 3's lever, priced. `derive(override, provider.contextWindow())`
+        // evaluated the argument eagerly, so an operator who set a threshold
+        // still paid the capability round trip on every run — measured with the
+        // shipped classes: 330 ms against api.openai.com, 2,001 ms against a
+        // black-holed host — and it is spent BEFORE run_start is emitted, so it
+        // is dead air rather than a visible wait. And on every child run too:
+        // a spawn builds its own Agent and enters the same loop.
+        CountingProvider counting = new CountingProvider();
+
+        List<RunEvent> events = collect(agent(counting, 42_000, withNoop()));
+
+        assertEquals(42_000, firstInfo(events).threshold());
+        assertEquals("override", firstInfo(events).thresholdSource());
+        assertEquals(0, counting.asked,
+                "an override decides alone — the backend must not be asked at all");
     }
 
     @Test
@@ -184,6 +262,50 @@ class AgentCompactionThresholdTest {
 
         public String execute(JsonNode input, ToolContext context) {
             return "done";
+        }
+    }
+
+    /**
+     * A two-turn run with a stated window and a stated input-token report, which
+     * keeps every request it was handed apart: the TURN calls (system prompt
+     * "test") from the compaction summarizer's own call (its own note-taker
+     * system prompt). The summarizer must answer with text, or Compaction treats
+     * a blank summary as "nothing happened" and emits no event.
+     */
+    private static final class CompactingProvider implements LlmProvider {
+        private static final ObjectMapper JSON = new ObjectMapper();
+        private final int window;
+        private final int reportedInputTokens;
+        private final List<ProviderRequest> summaries = new ArrayList<>();
+        private boolean toolTurnSpent;
+
+        CompactingProvider(int window, int reportedInputTokens) {
+            this.window = window;
+            this.reportedInputTokens = reportedInputTokens;
+        }
+
+        @Override
+        public int contextWindow() {
+            return window;
+        }
+
+        @Override
+        public Iterable<ProviderEvent> stream(ProviderRequest request) {
+            if (!AGENT_SYSTEM_PROMPT.equals(request.system())) {
+                summaries.add(request);
+                return List.of(new PTextDelta("the story so far"),
+                        new PStop(PStop.StopReason.END_TURN));
+            }
+            if (!toolTurnSpent) {
+                toolTurnSpent = true;
+                return List.of(
+                        new PToolCall("c1", "noop", JSON.createObjectNode()),
+                        new PUsage(reportedInputTokens, 3),
+                        new PStop(PStop.StopReason.TOOL_USE));
+            }
+            return List.of(new PTextDelta("ok"),
+                    new PUsage(reportedInputTokens, 3),
+                    new PStop(PStop.StopReason.END_TURN));
         }
     }
 

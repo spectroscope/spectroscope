@@ -152,5 +152,12 @@ class ContextWindowShapesTest {
                 OpenAiCompatProvider.capabilityUrl("http://localhost:1234/v1"));
         assertEquals("https://api.openai.com/api/v1/models",
                 OpenAiCompatProvider.capabilityUrl("https://api.openai.com"));
+        // The comment above names gemini and the strip has a branch of its own
+        // for it, because the generic /v\d+$ rule does not match "openai".
+        // Until this line the one branch that exists solely for gemini was
+        // covered by nobody: deleting it left the suite green.
+        assertEquals("https://generativelanguage.googleapis.com/api/v1/models",
+                OpenAiCompatProvider.capabilityUrl(
+                        "https://generativelanguage.googleapis.com/v1beta/openai"));
     }
 }

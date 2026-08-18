@@ -118,6 +118,97 @@ class CompactionThresholdTest {
     }
 
     @Test
+    void anExplicitThresholdIsNeverPaidForWithARoundTrip() {
+        // Review finding: `derive(override, provider.contextWindow())` evaluates
+        // the argument eagerly — Java has no short circuit there — so an operator
+        // who used the AC 3 lever still paid the probe on every run and the answer
+        // was thrown away. Measured against a black-holed host that is 2,001 ms of
+        // dead air BEFORE run_start is emitted. The lazy form asks nothing.
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        Derived derived = CompactionThreshold.derive(50_000, () -> {
+            asked.incrementAndGet();
+            return 204_288;
+        });
+
+        assertEquals(50_000, derived.tokens());
+        assertEquals(Source.OVERRIDE, derived.source());
+        assertEquals(0, asked.get(), "an override must not cost a capability round trip");
+    }
+
+    @Test
+    void withoutAnOverrideTheBackendIsAskedExactlyOnce() {
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        Derived derived = CompactionThreshold.derive(null, () -> {
+            asked.incrementAndGet();
+            return 204_288;
+        });
+
+        assertEquals(153_216, derived.tokens());
+        assertEquals(1, asked.get());
+    }
+
+    @Test
+    void aZeroOverrideIsUnsetAndStillAsksTheBackend() {
+        // The zero-is-unset rule lives in ONE place. If the lazy form kept its
+        // own copy of it, the two could drift and a 0 would skip the probe and
+        // then be refused, landing every such session on the fallback.
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        Derived derived = CompactionThreshold.derive(0, () -> {
+            asked.incrementAndGet();
+            return 8_192;
+        });
+
+        assertEquals(Source.WINDOW, derived.source());
+        assertEquals(6_144, derived.tokens());
+        assertEquals(1, asked.get());
+    }
+
+    @Test
+    void theSummarizerIsGivenTheReserveItWasSizedFor() {
+        // Review finding: the summarizer's request hardcoded 32,000 maxTokens.
+        // On a model loaded at 8,192 the derived threshold is 6,144 and the
+        // reserve is 2,048 — so the ONE call the reserve exists to hold asked
+        // for four times the whole window. Before this card that path was
+        // unreachable there (nothing ever compacted at 100,000); lowering the
+        // threshold is what made it reachable.
+        assertEquals(2_048, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(null, 8_192)),
+                "the budget is the reserve: 8,192 - 6,144");
+        assertEquals(1_024, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(null, 4_096)),
+                "and it tracks the window down: 4,096 - 3,072");
+        // The floor, and it has to be measured where ONLY the floor can produce
+        // the number: a quarter of 1,024 is 256, so a green 512 here is the
+        // floor and nothing else. (Biting this the first time found the trap —
+        // written against a 2,048 window the assertion passed with the floor
+        // removed, because a quarter of 2,048 IS 512.)
+        assertEquals(512, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(null, 1_024)),
+                "never below a floor a summary can be written in at all");
+    }
+
+    @Test
+    void aBigWindowKeepsTheFullCompletionBudgetAndDoesNotGrowPastIt() {
+        // The clamp only ever takes budget AWAY. 204,288 has a 51,072 reserve;
+        // handing the summarizer more than the run's own turns may spend would
+        // be a second, unrelated change.
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(null, 204_288)));
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(null, 0)),
+                "nothing known about the window means nothing to clamp against");
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(5_000, 0)),
+                "an operator's threshold says nothing about the window either");
+    }
+
+    @Test
     void aHugeWindowDoesNotOverflowIntoANegativeThreshold() {
         // max_context_length on the owner's backend is 1,048,576 today, and a
         // window times three overflows a signed int above 715 million. The

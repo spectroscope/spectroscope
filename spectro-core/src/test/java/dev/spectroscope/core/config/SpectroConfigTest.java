@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -59,6 +60,29 @@ class SpectroConfigTest {
                 "an unset threshold stays unset, so the harness can derive it");
         assertEquals("ask", config.permissionMode());
         assertEquals(List.of(), config.autoApprove());
+    }
+
+    @Test
+    void anUnsetThresholdIsReportedAsUnsetToTheSettingsFaceAsWell(@TempDir Path projectDir) {
+        // The review's open question about the settings popover, measured
+        // instead of read: making the field nullable changes what
+        // GET /api/settings reports for it, and this is that report. `effective`
+        // carries null and no layer claims the field, which is the popover's
+        // documented "not set" path — the same one imageModel and sttModel have
+        // always taken (workspaceGear.formatOverrideValue answers "" for null so
+        // the row can say "not set" in the reader's own language). What the
+        // harness is really compacting at is then the context ring's business.
+        SpectroConfig.Resolved resolved = SpectroConfig.loadResolved(
+                SpectroConfig.Overrides.none(), projectDir, null, Map.of());
+
+        assertNull(resolved.config().compactionThreshold());
+        // Measured, not assumed: the provenance still names the defaults layer.
+        // That is the honest reading — the DEFAULT is now "unset" rather than
+        // 100,000 — and it keeps the row from losing its origin chip while its
+        // value goes empty.
+        assertEquals("defaults", resolved.origins().get("compactionThreshold").winner());
+        assertEquals(List.of(), resolved.origins().get("compactionThreshold").shadowed(),
+                "nothing shadows a default nobody overrode");
     }
 
     @Test
