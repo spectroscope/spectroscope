@@ -129,6 +129,10 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
                     frame.path("callId").asText(), answersOf(frame.path("answers")),
                     frame.path("cancelled").asBoolean(false));
             case "abort" -> connection.onAbort();
+            // Card 261: the browser's liveness probe. Answered here on the
+            // socket thread and NOT forwarded to the connection's run state —
+            // the whole value of the probe is that a busy agent cannot delay it.
+            case "ping" -> connection.sendPong();
             case "set_image_provider" ->                       // additive
                     connection.onSetImageProvider(frame.path("provider").asText());
             case "set_thinking" ->                             // thinking, additive

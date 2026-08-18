@@ -81,6 +81,13 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // byte-frozen while the UI learns something new.
   "live_sessions",
   "session_busy",
+  // Card 261. The answer to the transport's liveness probe, and the shortest
+  // life of any frame here: ws.ts swallows it at the socket boundary, so it
+  // never reaches a reducer, let alone a writer. It is listed anyway because
+  // this list is the standing answer to "may a file hold this", and for a
+  // heartbeat the answer is no — a stored "the socket was alive at 14:02" is a
+  // claim about a connection nobody can reopen.
+  "pong",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

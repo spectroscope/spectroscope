@@ -210,7 +210,21 @@ function createWindow(port: number, hash?: string): BrowserWindow {
     height: 800,
     // The renderer is the stage-8 UI, served by Spring Boot. It is an ordinary web page and
     // talks to the server over WebSocket — the shell exposes no Node API to it.
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      // Card 261. The transport folds its event buffer on an animation frame
+      // OR a 250 ms timer, whichever comes first, so a window nobody is looking
+      // at still gets its batches. Chromium's default throttling would clamp
+      // that timer to a second in a hidden window and to about a minute after
+      // five minutes hidden — which turns the floor into a ceiling on exactly
+      // the machine this was fixed for. browserPane.ts turns it off for the
+      // session pane for the same reason; this is the window with the live run
+      // in it. The cost is battery on a minimised window; the alternative is
+      // the operator coming back to a view that is minutes behind his own
+      // session file.
+      backgroundThrottling: false,
+    },
   });
 
   // Card 201: stamp this window so the page can tell it apart from any OTHER
