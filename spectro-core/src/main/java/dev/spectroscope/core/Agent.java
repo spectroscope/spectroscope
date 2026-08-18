@@ -32,6 +32,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import dev.spectroscope.core.loop.ContinuationLeash;
 import dev.spectroscope.core.progress.ProgressGuard;
 import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.session.Compaction;
@@ -59,7 +60,12 @@ public final class Agent {
      *  the plan verdict (card 264). Same logger name as before, named once. */
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Agent.class);
 
-    private static final int MAX_TURNS = 15;         // runaway-loop brake
+    /** The runaway-loop brake, in turns per run, when nothing configures it.
+     *  Was a private constant until card 266; a continuation effectively raises
+     *  the ceiling, and a ceiling that is the product of two numbers — only one
+     *  of them visible — is not a ceiling anybody can reason about. It joins
+     *  {@code maxTokens} and {@code compactionThreshold} in {@link AgentOptions}. */
+    public static final int DEFAULT_MAX_TURNS = 15;
 
     /** The completion budget one turn spends when nothing configures it.
      *  Public because {@link dev.spectroscope.core.session.CompactionThreshold}
@@ -271,6 +277,21 @@ public final class Agent {
         // the fence here exactly as it is for card 265's ask, and a guard that
         // can only narrate while the hour keeps burning is the one thing the
         // owner ruled out.
+        int maxTurns = options.maxTurns() != null ? options.maxTurns() : DEFAULT_MAX_TURNS;
+        // Card 266: the harness's leash on a run that stops with its own plan
+        // still open. Null on every unattended face, because a face that
+        // continues by itself multiplies a bill with nobody watching —
+        // konzept/ORCHESTRATION.md refusal 5 keeps executing verbs off
+        // unattended faces for exactly that reason, and the WIRING is the fence
+        // here as it is there.
+        ContinuationLeash leash = options.continuationLeash();
+        if (leash != null) {
+            // The count and the fingerprint are sentences about THIS run, for
+            // the same reason the guard's memory is: one agent serves every
+            // prompt of a browser session, so a budget that outlived the run
+            // would leave the second prompt of an evening with nothing left.
+            leash.startRun();
+        }
         ProgressGuard progress = options.progressGuard();
         if (progress != null) {
             // Its memory and its stand-down are sentences about THIS run. One
@@ -314,7 +335,11 @@ public final class Agent {
         LlmWireRecorder recorder = options.llmWire();
 
         try {
-            for (int turn = 1; turn <= MAX_TURNS; turn++) {
+            // Card 266: continuations re-enter THIS for, they do not restart
+            // it — so a continuation can never buy itself more turns, and the
+            // real ceiling stays one number an operator can read.
+            int productiveCalls = 0;
+            for (int turn = 1; turn <= maxTurns; turn++) {
                 emit.accept(new TurnStart(agentId, turn, now()));
 
                 // Card 262, detector 3: the only one of the three with no tool
@@ -491,7 +516,50 @@ public final class Agent {
                     // turn — which is right — but calling that "end_turn" with
                     // steps still open was the app reporting a clean finish for
                     // a run that walked away mid-plan.
-                    emit.accept(new RunEnd(runId, verdictStop(stopReasonName(stopReason)), now()));
+                    String reason = stopReasonName(stopReason);
+                    // Card 266: and this is what the harness DOES about that
+                    // verdict. Only where card 264 renames, i.e. a voluntary
+                    // end_turn with the plan open. max_tokens, max_turns,
+                    // aborted and error all already say that something else
+                    // ended the run, and re-entering one of those would spend
+                    // the same enormous context again on the same wall.
+                    //
+                    // Below the cap, not at it: consulting the leash on the last
+                    // permitted turn would record a continuation the run can
+                    // never take, which is a line that lies.
+                    //
+                    // The cancel check is belt and braces and NO TEST REACHES
+                    // IT — said out loud rather than left to look pinned. The
+                    // loop's own abort exit thirty lines above already returns
+                    // on `signal.isCancelled()`, so the only window this covers
+                    // is the microseconds spent assembling the assistant
+                    // message. It stays because a later refactor that moves
+                    // that exit would otherwise let the harness silently
+                    // re-enter a run the operator stopped.
+                    if (leash != null && !signal.isCancelled()
+                            && "end_turn".equals(reason) && turn < maxTurns) {
+                        Optional<ContinuationLeash.Verdict> held = leash.consider(
+                                lastPlan, ContinuationLeash.signature(lastPlan, productiveCalls));
+                        if (held.isPresent()) {
+                            ContinuationLeash.Verdict verdict = held.get();
+                            emit.accept(new RunEvent.Continuation(agentId,
+                                    verdict.decision().wireName(), verdict.continuation(),
+                                    verdict.budget(), PlanVerdict.openSteps(lastPlan),
+                                    PlanVerdict.totalSteps(lastPlan), lastInputTokens,
+                                    verdict.evidence(), now()));
+                            if (verdict.decision() == ContinuationLeash.Decision.CONTINUED) {
+                                // The same fold card 262 uses: the history ends
+                                // with the assistant's answer here, so this adds
+                                // a user message — and where it does not, the
+                                // text joins the last one rather than standing
+                                // beside it, because the request path never
+                                // merges adjacent roles.
+                                appendUserText(messages, verdict.message());
+                                continue;
+                            }
+                        }
+                    }
+                    emit.accept(new RunEnd(runId, endReason(verdictStop(reason), leash), now()));
                     return;
                 }
 
@@ -545,6 +613,14 @@ public final class Agent {
                                         document.name());
                             }));
                     boolean isError = outcome.output().startsWith("ERROR: ");
+                    if (!isError) {
+                        // Card 266's half of the shared progress signal. A call
+                        // the guard refused above never reaches this line, and a
+                        // call that errored is not counted — so neither buys the
+                        // run another turn, and a continuation cannot launder
+                        // card 262's spin into progress.
+                        productiveCalls++;
+                    }
                     emit.accept(new ToolResult(agentId, call.callId(), outcome.output(), isError,
                             outcome.durationMs(), outcome.gateWaitMs(), outcome.fileChange(), now()));
                     // Denial/error goes back to the model as a tool_result for self-correction.
@@ -574,7 +650,7 @@ public final class Agent {
             // The brake keeps its own name even with the plan open: the verdict
             // is logged either way, and losing "this run hit turn 15" would
             // trade one silence for another.
-            emit.accept(new RunEnd(runId, verdictStop("max_turns"), now()));
+            emit.accept(new RunEnd(runId, endReason(verdictStop("max_turns"), leash), now()));
         } catch (RuntimeException error) {
             if (signal.isCancelled()) {
                 emit.accept(new RunEnd(runId, abortStopReason(signal), now()));
@@ -583,6 +659,32 @@ public final class Agent {
             emit.accept(new ErrorEvent(agentId, error.getMessage(), now()));
             emit.accept(new RunEnd(runId, "error", now()));
         }
+    }
+
+    /**
+     * The stop reason a run that was HELD records, and the line that says so
+     * (card 266, criterion 4).
+     *
+     * <p>Only card 264's plain {@code unfinished} is displaced, and only when
+     * the leash actually held this run. A run that finished after being
+     * continued keeps {@code end_turn} — the continuation worked, and saying
+     * otherwise would punish the mechanic for succeeding. {@code max_turns},
+     * {@code max_tokens}, {@code aborted} and {@code error} keep their own
+     * names, exactly as card 264 left them: losing "this run hit the cap" would
+     * trade one silence for another.</p>
+     *
+     * @param recorded what the exit would have written
+     * @param leash    the run's leash, or null
+     * @return the stop reason to record
+     */
+    private String endReason(String recorded, ContinuationLeash leash) {
+        if (leash == null || leash.continuations() == 0) {
+            return recorded;
+        }
+        log.info("continuation leash held this run {} times, and it ended {}",
+                leash.continuations(), PlanVerdict.report(lastPlan));
+        return PlanVerdict.UNFINISHED_STOP_REASON.equals(recorded)
+                ? ContinuationLeash.STOP_REASON : recorded;
     }
 
     /**
@@ -941,6 +1043,21 @@ public final class Agent {
      */
     public dev.spectroscope.core.progress.ProgressGuard progressGuard() {
         return options.progressGuard();
+    }
+
+    /**
+     * The leash this agent runs with, or null when nothing keeps an unfinished
+     * run going (card 266).
+     *
+     * <p>Same reason as {@link #progressGuard()}: the fence is the WIRING, and
+     * "this face continues its runs" has to be readable off the agent a real
+     * {@code buildAgentOnce} built rather than off one a test assembled by
+     * hand. Card 222's review finding F4 is the precedent.</p>
+     *
+     * @return the leash, or null
+     */
+    public dev.spectroscope.core.loop.ContinuationLeash continuationLeash() {
+        return options.continuationLeash();
     }
 
     /**

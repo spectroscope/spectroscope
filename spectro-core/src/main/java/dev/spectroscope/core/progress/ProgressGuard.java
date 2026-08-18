@@ -379,14 +379,11 @@ public final class ProgressGuard {
             return Optional.empty();
         }
         int open = PlanVerdict.openSteps(plan);
-        // Separated with printable escapes rather than raw control bytes: the
-        // separator has to be readable in the source, and "completed" + "do x"
-        // must not equal "complete" + "ddo x" — a signature that cannot tell
-        // two plans apart is a stall detector that misses a plan changing.
-        String signature = plan.steps().stream()
-                .map(step -> step.status() + "\t" + step.text())
-                .reduce((a, b) -> a + "\n" + b)
-                .orElse("");
+        // ONE definition of "the plan has not advanced", shared with card 266's
+        // leash (PlanVerdict.planSignature). Two spellings of unchanged would
+        // mean a run this guard calls stalled and the leash calls progress, in
+        // the same turn, off the same ledger.
+        String signature = PlanVerdict.planSignature(plan);
         if (!signature.equals(planSignature)) {
             planSignature = signature;
             planUnchangedTurns = 0;

@@ -59,7 +59,8 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.ImagesWithheld.class,     name = "images_withheld"), // additive (card 252)
     @JsonSubTypes.Type(value = RunEvent.QuestionAsked.class,      name = "question_asked"),   // additive (card 265)
     @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered"), // additive (card 265)
-    @JsonSubTypes.Type(value = RunEvent.NoProgress.class,         name = "no_progress")       // additive (card 262)
+    @JsonSubTypes.Type(value = RunEvent.NoProgress.class,         name = "no_progress"),      // additive (card 262)
+    @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation")      // additive (card 266)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -68,7 +69,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
         RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
-        RunEvent.NoProgress {
+        RunEvent.NoProgress, RunEvent.Continuation {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -600,6 +601,41 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ImagesWithheld(String agentId, int images, String model, String reason, long ts)
             implements RunEvent {}
+
+    /**
+     * Additive: the harness decided whether to keep an unfinished run going
+     * (card 266).
+     *
+     * <p>One line per DECISION, not per continuation, because the two refusals
+     * are the facts an operator most needs afterwards: a run that quietly
+     * stopped being continued is the same silence card 264 was cut to end. The
+     * value in {@code decision} is what a reader keys off — never the prose in
+     * {@code evidence}, which is written for a person and may be reworded.</p>
+     *
+     * @param agentId      the agent whose run stopped with steps open
+     * @param decision     {@code continued}, {@code budget_exhausted} or
+     *                     {@code no_progress} — the three outcomes of
+     *                     {@code ContinuationLeash.Decision}
+     * @param continuation which continuation this is, 1-based; on a refusal, how
+     *                     many had already been spent
+     * @param budget       the leash's budget for this run, so the count is
+     *                     readable as "2 of 3" without a second lookup
+     * @param openSteps    how many plan steps were still open at the exit
+     * @param totalSteps   how many steps the plan had
+     * @param inputTokens  what the run's LAST exchange reported as input tokens —
+     *                     the floor of what this continuation's own exchange
+     *                     costs. The non-functional criterion of card 266 asks
+     *                     the price to be stated per continuation, and this is
+     *                     the only honest number the loop holds. 0 when the
+     *                     provider reported no usage
+     * @param evidence     the same decision as one English sentence, for the
+     *                     surfaces with no dictionary
+     * @param ts           epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record Continuation(String agentId, String decision, int continuation, int budget,
+                        int openSteps, int totalSteps, int inputTokens, String evidence,
+                        long ts) implements RunEvent {}
 
     /**
      * Additive: the harness noticed that nothing is moving (card 262).

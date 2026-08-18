@@ -4916,8 +4916,16 @@ hops.</p>
           included, as data the model can read and react to.</li>
     </ol>
   </li>
-  <li><strong>Turn 15 exceeded</strong> → <code>run_end {stopReason:"max_turns"}</code> — the
-      runaway brake.</li>
+  <li><strong>The plan is still open and the leash has budget</strong> → the harness writes
+      its own message naming the steps that are still open and starts <em>another turn in
+      the same loop</em>, recording <code>continuation {decision:"continued"}</code>. Two
+      things it will not do: continue a run that has nothing to show since the last
+      continuation (<code>decision:"no_progress"</code>), and continue past its budget
+      (<code>decision:"budget_exhausted"</code>, and the run then ends as
+      <code>unfinished_after_continuations</code>). A continuation never resets the turn
+      counter, so the cap below is the whole ceiling.</li>
+  <li><strong>The turn cap exceeded</strong> → <code>run_end {stopReason:"max_turns"}</code> —
+      the runaway brake. <code>15</code> as shipped, settable per agent.</li>
   <li><strong>Any exception</strong> → <code>error</code> + <code>run_end {stopReason:"error"}</code>
       (or <code>aborted</code> if the signal fired). The stream terminates on every path.</li>
 </ol>
@@ -5066,7 +5074,7 @@ and speaks the protocol end to end.</p>
 <!-- ============================== CH 30 ============================== -->
 <h1 data-ch="30" id="ch-config"><span class="ch-num">Chapter 30</span>Configuration reference</h1>
 
-<p class="lead">Seven layers, 30 keys (three of them whole-block), plus a small
+<p class="lead">Seven layers, 31 keys (three of them whole-block), plus a small
 handful of true environment-only secrets. Missing files are fine at every layer;
 malformed JSON fails loudly — a broken config is a programming error, not a fallback
 case.</p>
@@ -5243,6 +5251,7 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>progressGuardWrites</code></td><td>int · <code>3</code></td><td>—</td><td>the progress guard's first detector (card 262): how many DISTINCT earlier paths must already carry the exact bytes a write is about to repeat before the run says what it saw and asks the operator — carry on, change course, or end it. <code>0</code> turns the detector off. Cut from a measured hour in which a local model wrote the same 283 bytes to 31 paths while the harness said nothing. Content shorter than 64 characters is never compared, so a scaffold's empty <code>__init__.py</code> files cannot trip it</td></tr>
   <tr><td><code>progressGuardFailures</code></td><td>int · <code>3</code></td><td>—</td><td>the second detector: how many times in a row ONE call with byte-identical input must fail before the same question is asked. The counter resets on any success of that same call, so a flaky test that fails twice and then passes stays silent. <code>0</code> turns it off</td></tr>
   <tr><td><code>progressGuardPlanTurns</code></td><td>int · <code>0</code> (off)</td><td>—</td><td>the third net: how many consecutive turns a plan may sit unchanged, with a step still open, before the same question is asked. <b>Off as shipped</b> — it needs a plan that exists and is maintained, and a model whose profile says it was not trained for tool use is handed no tool belt and writes none. A plan whose steps are all completed never stalls</td></tr>
+  <tr><td><code>continuationBudget</code></td><td>int · <code>3</code></td><td>—</td><td>how many times ONE run may be restarted by the harness after it stopped with its own plan still open (card 266). The harness writes the continuation itself and names the steps that are open, so no cooperation from the model is required — which is the point, because the models this was built for cannot call a tool to ask for another turn. It refuses to continue a run that has nothing to show since the last continuation, and it never resets the turn cap, so the real ceiling stays one number. <code>0</code> turns the leash off. Attended faces only: the browser session and the interactive REPL wire it, <code>spectro run</code> and cron do not</td></tr>
   <tr><td><code>maxRetries</code></td><td>int · <code>2</code></td><td><code>SPECTRO_MAX_RETRIES</code></td><td>transient retry budget; 0 disables; garbage values fail readably</td></tr>
   <tr><td><code>promptCaching</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_PROMPT_CACHING</code></td><td>Anthropic cache_control breakpoints; no-op elsewhere</td></tr>
   <tr><td><code>logLevel</code></td><td><code>error</code>|<code>warn</code>|<code>info</code>|<code>debug</code>|<code>trace</code> · <code>info</code></td><td><code>SPECTRO_LOG_LEVEL</code></td><td>operator-log detail (chapter 31); process-global — one log file per JVM, refused in a workspace scope, user scope only</td></tr>

@@ -267,6 +267,15 @@ final class EventRenderer {
                 System.out.println("\n" + ansi.coral("◈ no progress · " + stalled.detector()
                         + " ×" + stalled.count()) + " " + stalled.evidence());
             }
+            // Card 266: the harness holding an unfinished run — or refusing to.
+            // Same writer as the guard's line above, so the terminal can never
+            // say something other than what went on the wire. Coral for the same
+            // reason: this is a line a reader is meant to stop at.
+            case RunEvent.Continuation held -> {
+                spinner.stop();
+                System.out.println("\n" + ansi.coral("◈ " + held.decision().replace('_', ' '))
+                        + " " + held.evidence());
+            }
             default -> { }
         }
     }
@@ -383,6 +392,9 @@ final class EventRenderer {
             // Card 262: the guard watches one agent's loop; its observation is
             // attributed to that agent so a child's stall reads as the child's.
             case RunEvent.NoProgress e -> e.agentId();
+            // Card 266: the leash holds ONE agent's loop, so a child's
+            // continuation reads as the child's.
+            case RunEvent.Continuation e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             // Card 265: the answer joins its question by callId and carries no
             // agent, exactly like the verdict that closes a permission request.

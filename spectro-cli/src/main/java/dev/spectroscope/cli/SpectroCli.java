@@ -789,6 +789,15 @@ public final class SpectroCli implements Runnable {
                                         config.progressGuardFailures(),
                                         config.progressGuardPlanTurns()),
                                 askQuestionOnTerminal))
+                // Card 266: the leash, on the same fence and for the same
+                // reason. An unattended face that continues by itself
+                // multiplies a bill with nobody watching, which is what
+                // konzept/ORCHESTRATION.md refusal 5 keeps off unattended
+                // faces. A person sits at this console; `spectro run` and a
+                // cron fire never reach this method.
+                .continuationLeash(askQuestionOnTerminal == null ? null
+                        : new dev.spectroscope.core.loop.ContinuationLeash(
+                                config.continuationBudget()))
                 .onPermission(askOnTerminal)
                 .build());
     }

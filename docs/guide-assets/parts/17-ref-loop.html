@@ -37,8 +37,16 @@ hops.</p>
           included, as data the model can read and react to.</li>
     </ol>
   </li>
-  <li><strong>Turn 15 exceeded</strong> → <code>run_end {stopReason:"max_turns"}</code> — the
-      runaway brake.</li>
+  <li><strong>The plan is still open and the leash has budget</strong> → the harness writes
+      its own message naming the steps that are still open and starts <em>another turn in
+      the same loop</em>, recording <code>continuation {decision:"continued"}</code>. Two
+      things it will not do: continue a run that has nothing to show since the last
+      continuation (<code>decision:"no_progress"</code>), and continue past its budget
+      (<code>decision:"budget_exhausted"</code>, and the run then ends as
+      <code>unfinished_after_continuations</code>). A continuation never resets the turn
+      counter, so the cap below is the whole ceiling.</li>
+  <li><strong>The turn cap exceeded</strong> → <code>run_end {stopReason:"max_turns"}</code> —
+      the runaway brake. <code>15</code> as shipped, settable per agent.</li>
   <li><strong>Any exception</strong> → <code>error</code> + <code>run_end {stopReason:"error"}</code>
       (or <code>aborted</code> if the signal fired). The stream terminates on every path.</li>
 </ol>

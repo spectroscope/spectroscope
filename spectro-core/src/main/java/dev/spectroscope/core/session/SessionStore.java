@@ -810,6 +810,10 @@ public final class SessionStore {
             // belongs to that agent — a child's stall must not read as a stall
             // of the run that spawned it.
             case RunEvent.NoProgress e -> e.agentId();
+            // Card 266: the leash holds ONE agent's loop, so the decision to
+            // keep it going belongs to that agent — a child's continuation must
+            // not read as a continuation of the run that spawned it.
+            case RunEvent.Continuation e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             // Card 265: the answer joins its question by callId, exactly as a
             // permission_decision joins its request — neither carries an agent.

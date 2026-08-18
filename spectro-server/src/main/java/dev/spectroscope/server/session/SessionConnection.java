@@ -1012,6 +1012,7 @@ public final class SessionConnection {
         try {
             // Everything below is exactly what the CLI builds — nothing new in the core.
             buildAgentOnce();
+            refreshContinuationBudget(); // card 266: the operator's number, per prompt
             sendWorkspaceInfo();
 
             // The run goes through the SubagentManager: parent and child
@@ -1223,11 +1224,39 @@ public final class SessionConnection {
                                 active.progressGuardFailures(),
                                 active.progressGuardPlanTurns()),
                         asker))
+                // Card 266: a browser holds this socket, so somebody is
+                // watching the bill — the owner's first call names the attended
+                // face as the one that continues. The budget is re-read per
+                // PROMPT below, not only here, because the agent is built once
+                // per session and a number readable only at build time would
+                // need a reconnect to change.
+                .continuationLeash(new dev.spectroscope.core.loop.ContinuationLeash(
+                        active.continuationBudget()))
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
         // effort level.
         applyReasoning(agent);
+    }
+
+    /**
+     * Re-reads the operator's continuation budget onto the live leash (card 266,
+     * criterion 7).
+     *
+     * <p>Called at the top of every prompt. {@code buildAgentOnce} runs once per
+     * browser session, so a budget read only there could not be changed without
+     * a reconnect — which is a rebuild by another name. The settings panel
+     * already writes this key through {@code SettingsWriter}; this is what makes
+     * the number it wrote govern the very next run.</p>
+     */
+    void refreshContinuationBudget() {
+        if (agent == null || agent.continuationLeash() == null) {
+            return;
+        }
+        SpectroConfig active = activeConfig.get();
+        if (active != null) {
+            agent.continuationLeash().setBudget(active.continuationBudget());
+        }
     }
 
     /** This session's agent, for the tests that pin what the live build wired
