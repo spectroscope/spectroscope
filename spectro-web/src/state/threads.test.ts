@@ -125,6 +125,73 @@ describe("groupTurnsV2", () => {
     expect(chip.workIds).toEqual(["w1", "w2", "w3"]);
   });
 
+  // ---- card 271: the chip must be able to give the child's words back -------
+
+  it("the chip carries the child's own turns, later bursts included", () => {
+    const chip = blocks[2] as Extract<ChatBlockV2, { kind: "chip" }>;
+    expect(Object.keys(chip.threads)).toEqual(["worker-1"]);
+    // 2,3,4 is the first burst; 6 is the one main interrupted. Today's grouping
+    // drops 6 on the floor, and that is the whole defect card 271 names.
+    expect(chip.threads["worker-1"].map((it) => it.index)).toEqual([2, 3, 4, 6]);
+  });
+
+  it("what the chip carries is what v1 nests FOR THAT CHILD, turn for turn", () => {
+    // The reuse rule as an assertion. v1 splits this child across TWO thread
+    // blocks because main streamed between its bursts; v2 keeps one list. For
+    // the fold to render "as v1 renders it", the two must agree about which
+    // turns are the child's — not merely about how many.
+    //
+    // PER CHILD, and the name says so, because a flat comparison across every
+    // child is FALSE and measuring it is how that was learned: on the owner's
+    // real three-child archive the two lists hold the same 66 turns in a
+    // different order. v1 interleaves the children in stream order; the chip
+    // gives each its own section. Within one child both are ascending and
+    // identical, which is the claim the fold actually rests on.
+    const v1Items = groupTurns(turns, cards, [worker])
+      .filter((b): b is Extract<ChatBlock, { kind: "thread" }> => b.kind === "thread")
+      .flatMap((b) => b.items);
+    const chip = blocks[2] as Extract<ChatBlockV2, { kind: "chip" }>;
+    expect(chip.threads["worker-1"]).toEqual(v1Items);
+  });
+
+  it("with several children interleaved, each child still matches its own v1 blocks", () => {
+    // The case the single-child fixture above cannot reach, and the one the
+    // real archive is made of.
+    const roster: AgentInfo[] = [worker, { ...worker, id: "worker-2", label: "review", task: "Read it" }];
+    const mixed: Turn[] = [
+      { kind: "user", text: "go" },
+      { kind: "assistant", agentId: "worker-1", text: "a1", thinking: "" },
+      { kind: "assistant", agentId: "worker-2", text: "b1", thinking: "" },
+      { kind: "assistant", agentId: "worker-1", text: "a2", thinking: "" },
+      { kind: "assistant", agentId: "main", text: "meanwhile", thinking: "" },
+      { kind: "assistant", agentId: "worker-2", text: "b2", thinking: "" },
+    ];
+    const chip = groupTurnsV2(mixed, {}, roster)[1] as Extract<ChatBlockV2, { kind: "chip" }>;
+    for (const id of ["worker-1", "worker-2"]) {
+      const v1ForChild = groupTurns(mixed, {}, roster)
+        .filter((b): b is Extract<ChatBlock, { kind: "thread" }> => b.kind === "thread" && b.agentId === id)
+        .flatMap((b) => b.items);
+      expect(chip.threads[id]).toEqual(v1ForChild);
+    }
+    // And the ordering difference is deliberate, not accidental: v1 hands back
+    // the children interleaved, the chip hands back one list each.
+    expect(chip.threads["worker-1"].map((it) => it.index)).toEqual([1, 3]);
+    expect(chip.threads["worker-2"].map((it) => it.index)).toEqual([2, 5]);
+  });
+
+  it("a fan-out chip keeps each child's turns under its own id", () => {
+    const fan: Turn[] = [
+      { kind: "user", text: "review" },
+      { kind: "assistant", agentId: "w1", text: "", thinking: "a" },
+      { kind: "assistant", agentId: "w2", text: "", thinking: "b" },
+      { kind: "assistant", agentId: "main", text: "back", thinking: "" },
+      { kind: "assistant", agentId: "w1", text: "more", thinking: "" },
+    ];
+    const chip = groupTurnsV2(fan, {})[1] as Extract<ChatBlockV2, { kind: "chip" }>;
+    expect(chip.threads["w1"].map((it) => it.index)).toEqual([1, 4]);
+    expect(chip.threads["w2"].map((it) => it.index)).toEqual([2]);
+  });
+
   it("a transcript with no children is untouched", () => {
     const only: Turn[] = [{ kind: "user", text: "hi" }];
     expect(groupTurnsV2(only, {})).toEqual([{ kind: "turn", turn: only[0], index: 0 }]);

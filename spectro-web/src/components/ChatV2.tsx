@@ -14,10 +14,26 @@
 // Whether a summary may stay neutral while the work behind it was refused is an
 // owner call (concept section 8, call 4), and a prototype must not answer it by
 // accident. The panel carries the denial, loudly.
+//
+// CARD 271 — THE CHIP HAS TWO JOBS AND TWO SURFACES.
+//
+// The card left this open with a recommendation, and building it confirmed the
+// recommendation: the chip BODY unfolds the child in place, and the jump to the
+// panel keeps its own button. One control doing two things silently is how the
+// present confusion started — the chip already led somewhere, it led to the
+// bill, and a reader who clicked it looking for the child's words concluded
+// that nothing was logged. Splitting them also gives each an honest name in
+// both languages, which one control could not have.
+//
+// The body is the LARGER target and the default reach, because the words are
+// what a reader is looking for nine times out of ten; the jump is a small
+// square at the trailing edge. Neither is a hover-only affordance — both are
+// real buttons in the tab order, and the fold's state is on the body as
+// aria-expanded rather than in its label.
 
 import { useMemo } from "react";
 import type { ComponentProps, CSSProperties } from "react";
-import { Chat } from "./Chat";
+import { Chat, type ChildFoldControls } from "./Chat";
 import type { WorkItem } from "../state/work";
 import { elapsedLabel, tokenLabel } from "./workLevels";
 import { agentAccent } from "../format";
@@ -50,30 +66,49 @@ export function ChatV2(
     <Chat
       {...props}
       grouping="v2"
-      renderChip={(workIds) => (
+      renderChip={(workIds, _index, fold: ChildFoldControls) => (
         <div className="work-chip" role="group">
           {workIds.map((id) => {
             const item = byId.get(id);
             const span = item === undefined ? null : elapsedLabel(item.firstTs, item.lastTs);
+            const open = fold.isOpen(id);
             return (
-              <button
-                key={id}
-                type="button"
-                className={`work-chip-btn${item !== undefined ? ` work-chip-btn--${item.state}` : ""}`}
-                style={{ "--agent-color": agentAccent(id) } as CSSProperties}
-                title={t(lang, "work.chipOpen")}
-                onClick={() => props.onOpenWork?.(id)}
-              >
-                <span className="work-chip-dot" aria-hidden="true" />
-                <span className="mono">{item?.name ?? id}</span>
-                {/* Only what the fold measured. An item the fold never saw
-                    (a turn whose agent left no other frame) shows its id and
-                    nothing else, rather than a row of zeros. */}
-                {item !== undefined && item.inTokens + item.outTokens > 0 && (
-                  <span className="tabular">{tokenLabel(item.inTokens + item.outTokens)}</span>
-                )}
-                {span !== null && <span className="tabular">{span}</span>}
-              </button>
+              <span key={id} className="work-chip-pair">
+                <button
+                  type="button"
+                  className={`work-chip-btn${item !== undefined ? ` work-chip-btn--${item.state}` : ""}`}
+                  style={{ "--agent-color": agentAccent(id) } as CSSProperties}
+                  title={t(lang, open ? "work.chipFoldClose" : "work.chipFoldOpen")}
+                  aria-expanded={open}
+                  onClick={() => fold.toggle(id)}
+                >
+                  <span className="work-chip-dot" aria-hidden="true" />
+                  <span className="mono">{item?.name ?? id}</span>
+                  {/* Only what the fold measured. An item the fold never saw
+                      (a turn whose agent left no other frame) shows its id and
+                      nothing else, rather than a row of zeros. */}
+                  {item !== undefined && item.inTokens + item.outTokens > 0 && (
+                    <span className="tabular">{tokenLabel(item.inTokens + item.outTokens)}</span>
+                  )}
+                  {span !== null && <span className="tabular">{span}</span>}
+                  {/* The state of the fold, drawn rather than written: a label
+                      that changed with it would move the chip's width on every
+                      click. */}
+                  <span
+                    className={`work-chip-caret${open ? " work-chip-caret--open" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                <button
+                  type="button"
+                  className="work-chip-jump"
+                  title={t(lang, "work.chipOpen")}
+                  aria-label={t(lang, "work.chipOpen")}
+                  onClick={() => props.onOpenWork?.(id)}
+                >
+                  <span aria-hidden="true">&#8599;</span>
+                </button>
+              </span>
             );
           })}
         </div>

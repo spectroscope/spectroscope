@@ -6,11 +6,19 @@
 // -> thumbnails on the sent turn) and useVoiceInput (MediaRecorder -> POST /api/transcribe
 // -> the transcript lands IN THE INPUT, never straight at the agent).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ClientMessage, RunEvent } from "../events";
 import type { Turn, UiState } from "../state/reducer";
 import { groupTurns, groupTurnsV2 } from "../state/threads";
+import {
+  NO_FOLDS_OPEN,
+  foldScrollDelta,
+  foldedTurns,
+  isFoldOpen,
+  toggleFold,
+  type ChildFolds,
+} from "../state/childFold";
 import { agentAccent, cacheSplit, clockTime, formatDuration, tokensPerSecond } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
@@ -51,6 +59,16 @@ import { skillTokenSegments } from "../state/skillTokens";
 import { useSkills } from "../state/skillList";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+
+/** What a v2 chip may do about its own fold (card 271) — the whole surface, so
+ *  the chip stays a control and Chat stays the only renderer of turns. */
+export interface ChildFoldControls {
+  /** @param agentId the child @return true when its turns are showing */
+  isOpen: (agentId: string) => boolean;
+  /** Turn one child over. Measures the chip first so the reader is not moved.
+   *  @param agentId the child */
+  toggle: (agentId: string) => void;
+}
 
 // Composer + scroll tuning, named so every line reads aloud.
 const SCROLL_PIN_THRESHOLD_PX = 120; // this close to the bottom counts as "pinned"
@@ -126,10 +144,17 @@ export function Chat(props: {
    *  that stands where they were. ChatV2 is the only caller that passes it, so
    *  a v2 bug cannot reach the view the owner uses every day. */
   grouping?: "v1" | "v2";
-  /** v2 only: the chip that replaces a child's turns. Given the work ids that
-   *  start here; ChatV2 owns what it looks like, because it owns the panel it
-   *  points at. */
-  renderChip?: (workIds: string[], index: number) => ReactNode;
+  /** v2 only: the chip that stands where a child's turns were. Given the work
+   *  ids that start here; ChatV2 owns what it looks like, because it owns the
+   *  panel it points at.
+   *
+   *  <p>Card 271: the chip also opens. It cannot render the turns itself —
+   *  {@code renderTurn} is a closure over this component's language, search
+   *  hits, disclosure level and card store, and the card's reuse rule forbids a
+   *  second renderer — so Chat renders the body and hands the chip only the two
+   *  things it needs to be a control: whether this child is open, and how to
+   *  turn it over. ChatV2 decides what that looks like.</p> */
+  renderChip?: (workIds: string[], index: number, fold: ChildFoldControls) => ReactNode;
 }) {
   const { state, liveView } = props;
   const lang = useLang();
@@ -227,6 +252,51 @@ export function Chat(props: {
     // Smooth for new turns, instant while a turn streams (no scroll jitter).
     el.scrollTo({ top: el.scrollHeight, behavior: newTurn ? "smooth" : "auto" });
   });
+
+  // The view this render belongs to — "live", a replay id, a fleet room.
+  // Lifted above the fold state (card 271): the fold is remembered per VIEW,
+  // because ids repeat and App swaps props on this component instead of
+  // remounting it when the reader opens an archive.
+  const vk = props.viewKey ?? "live";
+  // Card 271: which children this reader has opened. Held here rather than in a
+  // module store because the scroll container is here, and opening a fold has
+  // to be measured around — see foldScrollDelta. v1 never renders a chip block,
+  // so it never reaches any of this.
+  const [childFolds, setChildFolds] = useState<ChildFolds>(NO_FOLDS_OPEN);
+  // What the chip looked like just before the toggle, so the layout effect can
+  // put it back. Null on every render that was not a toggle.
+  const foldAnchor = useRef<{ index: number; top: number; pinned: boolean } | null>(null);
+
+  const chipRow = (index: number): Element | null =>
+    scrollRef.current?.querySelector(`[data-chip-index="${index}"]`) ?? null;
+
+  const toggleChildFold = (agentId: string, blockIndex: number): void => {
+    const row = chipRow(blockIndex);
+    foldAnchor.current =
+      row === null
+        ? null
+        : { index: blockIndex, top: row.getBoundingClientRect().top, pinned: pinnedRef.current };
+    setChildFolds((open) => toggleFold(open, vk, agentId));
+  };
+
+  // BEFORE the browser paints, and before the bottom-pin effect above runs:
+  // a reader who is reading keeps the chip where it was, and a reader pinned to
+  // the live edge is left to that effect (foldScrollDelta returns zero for
+  // them, so the two rules never pull at the same pixel).
+  useLayoutEffect(() => {
+    const anchor = foldAnchor.current;
+    foldAnchor.current = null;
+    const el = scrollRef.current;
+    if (anchor === null || el === null) return;
+    const row = chipRow(anchor.index);
+    if (row === null) return;
+    const delta = foldScrollDelta({
+      pinned: anchor.pinned,
+      topBefore: anchor.top,
+      topAfter: row.getBoundingClientRect().top,
+    });
+    if (delta !== 0) el.scrollTop += delta;
+  }, [childFolds]);
 
   // In-view search (state/search.ts): this view walks its own turns. One hit is
   // one matching TURN — the reasoning for that and for leaving thinking blocks
@@ -390,7 +460,6 @@ export function Chat(props: {
     [grouping, state.turns, state.cards, state.agents],
   );
 
-  const vk = props.viewKey ?? "live";
   const renderTurn = (turn: Turn, i: number, inThread = false) => {
     switch (turn.kind) {
       case "user":
@@ -705,10 +774,32 @@ export function Chat(props: {
               b.kind === "turn" ? (
                 renderTurn(b.turn, b.index)
               ) : b.kind === "chip" ? (
-                /* v2: the child's turns are in the panel, not in the scroll.
-                   The chip is the place they left, and the way back to them. */
-                <div key={`${vk}:chip-${b.index}`} className="work-chip-row">
-                  {props.renderChip?.(b.workIds, b.index)}
+                /* v2: the chip stands where the child worked. Card 271 gave it
+                   a body — open, it renders that child's own turns HERE, with
+                   the same renderTurn(turn, index, true) v1 nests them with, so
+                   a child reads identically in both modes. `data-chip-index` is
+                   how the layout effect finds this row again to put it back
+                   where the reader had it. */
+                <div key={`${vk}:chip-${b.index}`} className="work-chip-row" data-chip-index={b.index}>
+                  {/* The controls are bound to THIS block, so a chip never has
+                      to know its own position to be measured around. The chip
+                      is a control and nothing else: it cannot reach renderTurn,
+                      and card 271's reuse rule says it must not grow its own. */}
+                  {props.renderChip?.(b.workIds, b.index, {
+                    isOpen: (agentId) => isFoldOpen(childFolds, vk, agentId),
+                    toggle: (agentId) => toggleChildFold(agentId, b.index),
+                  })}
+                  {foldedTurns(b.threads, b.workIds, childFolds, vk).map((fold) => (
+                    <section
+                      key={`${vk}:fold-${fold.agentId}`}
+                      className="chat-thread chat-thread--folded"
+                      style={{ "--agent-color": agentAccent(fold.agentId) } as CSSProperties}
+                    >
+                      <div className="chat-thread-body">
+                        {fold.items.map((it) => renderTurn(it.turn, it.index, true))}
+                      </div>
+                    </section>
+                  ))}
                 </div>
               ) : (
                 <section

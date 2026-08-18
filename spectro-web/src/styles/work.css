@@ -52,6 +52,64 @@
   background: var(--error);
 }
 
+/* ---- card 271: the chip opens ------------------------------------------ */
+
+/* The body and the jump sit together and read as one object; only the trailing
+   square leaves the transcript. */
+.work-chip-pair {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.work-chip-pair .work-chip-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.work-chip-jump {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.4rem;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 3px 3px 0;
+  cursor: pointer;
+}
+
+.work-chip-jump:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* The fold's state, drawn. A caret rather than a word, because a label that
+   changed with the state would move the chip's width on every click. */
+.work-chip-caret {
+  width: 0;
+  height: 0;
+  margin-left: 0.1rem;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 4px solid var(--text-faint);
+  transform: rotate(-90deg);
+}
+
+.work-chip-caret--open {
+  transform: rotate(0deg);
+  border-top-color: var(--agent-color, var(--text-dim));
+}
+
+/* The opened child. It IS the v1 thread container — same class, same rules, so
+   a child reads identically in both modes (card 271's reuse rule). The modifier
+   only says where it sits: under a chip rather than in the main line, with the
+   head omitted because the chip above it already names the agent. */
+.chat-thread--folded {
+  margin-top: 0.5rem;
+  margin-left: 0;
+}
+
 /* ---- the panel --------------------------------------------------------- */
 
 .work-panel {
