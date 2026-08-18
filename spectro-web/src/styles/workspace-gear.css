@@ -406,6 +406,37 @@
   left: 242px;
   right: auto;
   width: 360px;
+  /* Card 260. The popover is the FRAME, not the scroller — .wsg-pop's own
+     overflow-y never scrolled anything here, because its single child
+     .wsg-modes declares `overflow: hidden` for its corners, and a flex item
+     that is itself a scroll container has an automatic minimum size of zero:
+     the list was shrunk to fit and clipped instead of overflowing. Measured
+     live 2026-08-18 at 1280x800 with 36 installed skills: 2277px of rows in a
+     444px box, popover scrollHeight === clientHeight, 8 rows reachable, 28
+     skills and both footer rows not. Taking the scrollbar off the frame keeps
+     it from appearing twice once the well below has one. */
+  overflow: hidden;
+}
+
+/* The entries scroll, the rows that lead OUT of the menu stay put. The well
+   carries no height of its own: it takes what the footer leaves inside the
+   popover's 70vh/480px, so the bound stays in one place. */
+.plus-items {
+  min-height: 0;
+}
+
+.plus-scroll {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Everything beside the well refuses to shrink, so the height the popover is
+   short by comes off the list — never off the reach sentence or Manage/Browse,
+   which were the first things to go when the whole group shrank together. */
+.plus-items > .plus-sep,
+.plus-items > .settings-note,
+.plus-items > [role="menuitem"] {
+  flex: none;
 }
 
 .plus-row {

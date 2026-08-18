@@ -21,17 +21,17 @@
 // guard as the settings page's own.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { KeyboardEventHandler, ReactNode } from "react";
+import type { KeyboardEventHandler, ReactNode, RefObject } from "react";
 import type { WorkspaceInfo } from "../state/reducer";
 import { fetchSettings, putSettings, type SettingsView } from "../state/serverSettings";
 import { skillPath } from "../state/skillInstall";
 import { mcpModel, toggledMcpBlock, type McpScope } from "./plusMenu";
 import { ReachBlock } from "./settingsReach";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 /** One /api/skills row — the same shape SkillsSettings reads. */
-interface SkillRow {
+export interface SkillRow {
   name: string;
   folder: string;
   pack: string | null;
@@ -41,6 +41,18 @@ interface SkillRow {
 }
 
 type SubMenu = "skills" | "mcp";
+
+/** The row focus/active classes, shared by every menu row in this file. */
+const rowClass = (focused: boolean, active = false): string =>
+  `wsg-mode-row plus-row${focused ? " wsg-mode-row--focus" : ""}${active ? " wsg-mode-row--active" : ""}`;
+
+const switchGlyph = (on: boolean): ReactNode => (
+  <span className={`thinking-toggle plus-row-switch${on ? " thinking-toggle--on" : ""}`} aria-hidden="true">
+    <span className="thinking-toggle-track">
+      <span className="thinking-toggle-knob" />
+    </span>
+  </span>
+);
 
 /** The settings sections the Manage/Browse rows open — route.ts literals. */
 export type PlusMenuSection = "skills" | "skills-catalogue" | "mcp";
@@ -118,6 +130,19 @@ export function PlusMenu({
     if (sub === null) rootListRef.current?.focus();
     else subListRef.current?.focus();
   }, [open, sub]);
+
+  // Card 260: the arrow keys move an INDEX, not the browser's focus — the group
+  // holds focus and the current row is marked with a class. So nothing scrolls
+  // on its own, and the moment the entries got a bounded well the keyboard
+  // could walk to a row nobody can see. `block: "nearest"` moves the nearest
+  // scrollable ancestor by the least it can, which is the well and never the
+  // page: a row already in view costs no scroll at all, so a mouse hover (which
+  // sets the same index) does not yank the list under the pointer.
+  useEffect(() => {
+    if (!open || sub === null) return;
+    const row = subListRef.current?.querySelector(`[data-sub-index="${subIdx}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }, [open, sub, subIdx, skills, view]);
 
   const openSub = (which: SubMenu): void => {
     setSub(which);
@@ -214,21 +239,6 @@ export function PlusMenu({
     }
   };
 
-  /** The row focus/active classes, shared by every menu row here. */
-  const rowClass = (focused: boolean, active = false): string =>
-    `wsg-mode-row plus-row${focused ? " wsg-mode-row--focus" : ""}${active ? " wsg-mode-row--active" : ""}`;
-
-  const switchGlyph = (on: boolean): ReactNode => (
-    <span className={`thinking-toggle plus-row-switch${on ? " thinking-toggle--on" : ""}`} aria-hidden="true">
-      <span className="thinking-toggle-track">
-        <span className="thinking-toggle-knob" />
-      </span>
-    </span>
-  );
-
-  const loadingLine = <p className="settings-note plus-note">…</p>;
-  const failedLine = <p className="settings-note plus-note">{t(lang, "doc.unreachable")}</p>;
-
   return (
     <div className="wsg-anchor plus-anchor" ref={ref}>
       <button
@@ -294,133 +304,210 @@ export function PlusMenu({
       )}
 
       {open && sub !== null && (
-        <div
-          className="wsg-pop plus-sub"
-          role="menu"
-          aria-label={t(lang, sub === "skills" ? "plus.skills" : "plus.mcp")}
-        >
-          <div
-            className="wsg-modes plus-items"
-            role="group"
-            aria-label={t(lang, sub === "skills" ? "plus.skills" : "plus.mcp")}
-            tabIndex={0}
-            ref={subListRef}
-            onKeyDown={onSubKeyDown}
-          >
-            {sub === "skills" && (
-              <ReachBlock lang={lang} fields={["skills"]}>
-                {skills === "failed" ? (
-                  failedLine
-                ) : skills === null ? (
-                  loadingLine
-                ) : skills.length === 0 ? (
-                  <p className="settings-note plus-note">{t(lang, "skset.empty")}</p>
-                ) : (
-                  skills.map((row, i) => (
-                    <div
-                      key={`${row.source}:${row.name}`}
-                      role="menuitemcheckbox"
-                      aria-checked={!row.disabled}
-                      className={rowClass(i === subIdx)}
-                      title={t(lang, row.disabled ? "skset.enable" : "skset.disable")}
-                      onMouseEnter={() => setSubIdx(i)}
-                      onClick={() => toggleSkill(row)}
-                    >
-                      {switchGlyph(!row.disabled)}
-                      <span className="wsg-mode-body">
-                        <span className="wsg-mode-name mono">{row.name}</span>
-                        <span className="wsg-mode-hint plus-desc">{row.description}</span>
-                      </span>
-                    </div>
-                  ))
-                )}
-              </ReachBlock>
-            )}
-
-            {sub === "mcp" && (
-              <ReachBlock lang={lang} fields={["mcpServers"]}>
-                {view === "failed" ? (
-                  failedLine
-                ) : mcp === null ? (
-                  loadingLine
-                ) : mcp.rows.length === 0 ? (
-                  <p className="settings-note plus-note">{t(lang, "mcpset.empty")}</p>
-                ) : (
-                  mcp.rows.map((row, i) => (
-                    <div
-                      key={row.name}
-                      role="menuitemcheckbox"
-                      aria-checked={row.enabled}
-                      aria-disabled={!mcpWritable}
-                      className={rowClass(i === subIdx)}
-                      title={t(lang, row.enabled ? "skset.disable" : "skset.enable")}
-                      onMouseEnter={() => setSubIdx(i)}
-                      onClick={() => toggleServer(row.name)}
-                    >
-                      {switchGlyph(row.enabled)}
-                      <span className="wsg-mode-body">
-                        <span className="wsg-mode-name mono">{row.name}</span>
-                        {/* What turning it on runs — "npx -y tavily-mcp".
-                                  A person sees the command before the switch. */}
-                        <span className="wsg-mode-hint plus-desc mono">{row.target}</span>
-                      </span>
-                    </div>
-                  ))
-                )}
-                {mcp !== null && mcp.rows.length > 0 && !mcpWritable && (
-                  <p className="settings-note plus-note">
-                    {t(lang, "plus.mcpReadOnly", {
-                      layer:
-                        view !== null && view !== "failed"
-                          ? (view.origins["mcpServers"]?.winner ?? "?")
-                          : "?",
-                    })}
-                  </p>
-                )}
-              </ReachBlock>
-            )}
-
-            <div className="plus-sep" role="separator" aria-hidden="true" />
-
-            {sub === "skills" && (
-              <>
-                <div
-                  role="menuitem"
-                  className={rowClass(subIdx === subItems.length - 2)}
-                  onMouseEnter={() => setSubIdx(subItems.length - 2)}
-                  onClick={() => pick("skills")}
-                >
-                  <span className="wsg-mode-body">
-                    <span className="wsg-mode-name">{t(lang, "plus.manageSkills")}</span>
-                  </span>
-                </div>
-                <div
-                  role="menuitem"
-                  className={rowClass(subIdx === subItems.length - 1)}
-                  onMouseEnter={() => setSubIdx(subItems.length - 1)}
-                  onClick={() => pick("skills-catalogue")}
-                >
-                  <span className="wsg-mode-body">
-                    <span className="wsg-mode-name">{t(lang, "plus.browseSkills")}</span>
-                  </span>
-                </div>
-              </>
-            )}
-            {sub === "mcp" && (
-              <div
-                role="menuitem"
-                className={rowClass(subIdx === subItems.length - 1)}
-                onMouseEnter={() => setSubIdx(subItems.length - 1)}
-                onClick={() => pick("mcp")}
-              >
-                <span className="wsg-mode-body">
-                  <span className="wsg-mode-name">{t(lang, "plus.manageMcp")}</span>
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
+        <PlusSubmenu
+          lang={lang}
+          sub={sub}
+          skills={skills}
+          view={view}
+          mcpWritable={mcpWritable}
+          subIdx={subIdx}
+          itemCount={subItems.length}
+          listRef={subListRef}
+          onKeyDown={onSubKeyDown}
+          onFocusRow={setSubIdx}
+          onToggleSkill={toggleSkill}
+          onToggleServer={toggleServer}
+          onPick={pick}
+        />
       )}
+    </div>
+  );
+}
+
+/**
+ * The second popover: one submenu's switches, and the rows that lead out of it.
+ *
+ * Card 260: the entry rows live in `.plus-scroll`, a well of their own, and the
+ * footer — the reach sentence, the separator, Manage/Browse — is a sibling of
+ * it. Before that everything sat in one `.wsg-modes` group, and since that
+ * group declares `overflow: hidden` for its corners it SHRANK inside the
+ * bounded popover instead of overflowing it: 36 installed skills drew 2277px of
+ * rows into a 444px box, 28 of them plus both footer rows unreachable, and the
+ * popover's own `overflow-y: auto` had nothing left to scroll. The well is the
+ * only scroller now, and it is the same well for both lists.
+ *
+ * Exported so a render test can hold it open. The panel draws itself from
+ * fetched state, and this suite has no DOM to open it with — but it renders,
+ * and which box a row sits in is a claim about markup.
+ */
+export function PlusSubmenu({
+  lang,
+  sub,
+  skills,
+  view,
+  mcpWritable,
+  subIdx,
+  itemCount,
+  listRef,
+  onKeyDown,
+  onFocusRow,
+  onToggleSkill,
+  onToggleServer,
+  onPick,
+}: {
+  lang: Lang;
+  sub: SubMenu;
+  skills: SkillRow[] | null | "failed";
+  view: SettingsView | null | "failed";
+  /** Whether a toggle here has a writable owning layer to land in. */
+  mcpWritable: boolean;
+  /** The arrow keys' current position in the index space below. */
+  subIdx: number;
+  /** How many items the arrow keys count over — entries plus the footer rows.
+   *  Passed rather than recomputed: the parent's `subItems` is what Enter
+   *  activates, and two derivations of the same list drift. */
+  itemCount: number;
+  listRef: RefObject<HTMLDivElement | null>;
+  onKeyDown: KeyboardEventHandler<HTMLDivElement>;
+  onFocusRow: (index: number) => void;
+  onToggleSkill: (row: SkillRow) => void;
+  onToggleServer: (name: string) => void;
+  onPick: (section: PlusMenuSection) => void;
+}) {
+  const mcp = view === "failed" ? null : mcpModel(view);
+  const loadingLine = <p className="settings-note plus-note">…</p>;
+  const failedLine = <p className="settings-note plus-note">{t(lang, "doc.unreachable")}</p>;
+  const label = t(lang, sub === "skills" ? "plus.skills" : "plus.mcp");
+
+  return (
+    <div className="wsg-pop plus-sub" role="menu" aria-label={label}>
+      <div
+        className="wsg-modes plus-items"
+        role="group"
+        aria-label={label}
+        tabIndex={0}
+        ref={listRef}
+        onKeyDown={onKeyDown}
+      >
+        {sub === "skills" && (
+          <ReachBlock lang={lang} fields={["skills"]}>
+            <div className="plus-scroll">
+              {skills === "failed" ? (
+                failedLine
+              ) : skills === null ? (
+                loadingLine
+              ) : skills.length === 0 ? (
+                <p className="settings-note plus-note">{t(lang, "skset.empty")}</p>
+              ) : (
+                skills.map((row, i) => (
+                  <div
+                    key={`${row.source}:${row.name}`}
+                    role="menuitemcheckbox"
+                    aria-checked={!row.disabled}
+                    data-sub-index={i}
+                    className={rowClass(i === subIdx)}
+                    title={t(lang, row.disabled ? "skset.enable" : "skset.disable")}
+                    onMouseEnter={() => onFocusRow(i)}
+                    onClick={() => onToggleSkill(row)}
+                  >
+                    {switchGlyph(!row.disabled)}
+                    <span className="wsg-mode-body">
+                      <span className="wsg-mode-name mono">{row.name}</span>
+                      <span className="wsg-mode-hint plus-desc">{row.description}</span>
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </ReachBlock>
+        )}
+
+        {sub === "mcp" && (
+          <ReachBlock lang={lang} fields={["mcpServers"]}>
+            <div className="plus-scroll">
+              {view === "failed" ? (
+                failedLine
+              ) : mcp === null ? (
+                loadingLine
+              ) : mcp.rows.length === 0 ? (
+                <p className="settings-note plus-note">{t(lang, "mcpset.empty")}</p>
+              ) : (
+                mcp.rows.map((row, i) => (
+                  <div
+                    key={row.name}
+                    role="menuitemcheckbox"
+                    aria-checked={row.enabled}
+                    aria-disabled={!mcpWritable}
+                    data-sub-index={i}
+                    className={rowClass(i === subIdx)}
+                    title={t(lang, row.enabled ? "skset.disable" : "skset.enable")}
+                    onMouseEnter={() => onFocusRow(i)}
+                    onClick={() => onToggleServer(row.name)}
+                  >
+                    {switchGlyph(row.enabled)}
+                    <span className="wsg-mode-body">
+                      <span className="wsg-mode-name mono">{row.name}</span>
+                      {/* What turning it on runs — "npx -y tavily-mcp".
+                          A person sees the command before the switch. */}
+                      <span className="wsg-mode-hint plus-desc mono">{row.target}</span>
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+            {mcp !== null && mcp.rows.length > 0 && !mcpWritable && (
+              <p className="settings-note plus-note">
+                {t(lang, "plus.mcpReadOnly", {
+                  layer:
+                    view !== null && view !== "failed" ? (view.origins["mcpServers"]?.winner ?? "?") : "?",
+                })}
+              </p>
+            )}
+          </ReachBlock>
+        )}
+
+        <div className="plus-sep" role="separator" aria-hidden="true" />
+
+        {sub === "skills" && (
+          <>
+            <div
+              role="menuitem"
+              data-sub-index={itemCount - 2}
+              className={rowClass(subIdx === itemCount - 2)}
+              onMouseEnter={() => onFocusRow(itemCount - 2)}
+              onClick={() => onPick("skills")}
+            >
+              <span className="wsg-mode-body">
+                <span className="wsg-mode-name">{t(lang, "plus.manageSkills")}</span>
+              </span>
+            </div>
+            <div
+              role="menuitem"
+              data-sub-index={itemCount - 1}
+              className={rowClass(subIdx === itemCount - 1)}
+              onMouseEnter={() => onFocusRow(itemCount - 1)}
+              onClick={() => onPick("skills-catalogue")}
+            >
+              <span className="wsg-mode-body">
+                <span className="wsg-mode-name">{t(lang, "plus.browseSkills")}</span>
+              </span>
+            </div>
+          </>
+        )}
+        {sub === "mcp" && (
+          <div
+            role="menuitem"
+            data-sub-index={itemCount - 1}
+            className={rowClass(subIdx === itemCount - 1)}
+            onMouseEnter={() => onFocusRow(itemCount - 1)}
+            onClick={() => onPick("mcp")}
+          >
+            <span className="wsg-mode-body">
+              <span className="wsg-mode-name">{t(lang, "plus.manageMcp")}</span>
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
