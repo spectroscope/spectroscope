@@ -257,6 +257,16 @@ final class EventRenderer {
                     System.out.println("  " + mark + " " + step.text());
                 }
             }
+            // Card 262: the guard saw the run stop moving. Printed HERE and not
+            // by the guard, the same split as the gate and the question above —
+            // one writer, so the terminal can never say something other than
+            // what went on the wire. Coral, because unlike a compaction or a
+            // plan this is the line a reader is meant to stop at.
+            case RunEvent.NoProgress stalled -> {
+                spinner.stop();
+                System.out.println("\n" + ansi.coral("◈ no progress · " + stalled.detector()
+                        + " ×" + stalled.count()) + " " + stalled.evidence());
+            }
             default -> { }
         }
     }

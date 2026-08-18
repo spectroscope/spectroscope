@@ -364,18 +364,32 @@ class ProgressGuardTest {
                 "the operator's own words must reach the model; was: " + response.guidance());
     }
 
+    /**
+     * Review finding F5, and a decision this branch made explicitly instead of
+     * inheriting it. This test replaces {@code nobodyToAskLeavesTheRunGoingAndNeverAsksTwice},
+     * whose claim was wrong rather than merely unpinned: an unanswered strike
+     * used to stand the detector down, so in permission mode {@code auto} or
+     * {@code readonly} — where {@code ParkingAsker} returns null before it parks
+     * — the owner's "warn AND pause" degraded to "warn ONCE, for the whole run",
+     * and the 31-copy loop this card was cut from would have produced a single
+     * line and then silence.
+     *
+     * <p>The stand-down is what a PERSON's "carry on" buys, because a person
+     * looked. Nobody at all buys a re-arm: the net stays up and the loop has to
+     * earn a full N again before it speaks. The cost is stated rather than
+     * hidden — an unattended run that really does repeat itself writes a line
+     * every N events instead of one, which is a transcript that shows the loop
+     * continuing instead of a transcript that mentions it once.</p>
+     */
     @Test
-    void nobodyToAskLeavesTheRunGoingAndNeverAsksTwice() {
-        // A face with no person, a closed socket, an unattended mode: all arrive
-        // as null. Ending a run on nobody's word would be the silent abort
-        // criterion 3 forbids; asking again every three copies is the nagging
-        // that gets a guard switched off.
+    void nobodyToAskLeavesTheRunGoingAndLeavesTheNetUP() {
         List<RunEvent> events = new ArrayList<>();
         ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(), Asker.none());
         Strike strike = new Strike(Detector.IDENTICAL_WRITES, 3, "three copies");
         Response response = guard.intervene(strike, "main", events::add, new CancelSignal());
 
-        assertEquals(Intervention.CARRY_ON, response.intervention());
+        assertEquals(Intervention.CARRY_ON, response.intervention(),
+                "ending a run on nobody's word would be the silent abort criterion 3 forbids");
         assertTrue(events.stream().anyMatch(RunEvent.NoProgress.class::isInstance),
                 "unanswered or not, the observation is on the wire");
         RunEvent.QuestionAnswered answer = events.stream()
@@ -385,12 +399,35 @@ class ProgressGuardTest {
         assertTrue(answer.cancelled(),
                 "nobody answered — recorded as cancelled, never as an invented reply");
 
-        // And the detector is now down: the same evidence must not speak again.
-        for (int i = 4; i <= 12; i++) {
+        // The net is still up, and it costs a full N to speak again.
+        for (int i = 1; i <= 3; i++) {
             assertTrue(guard.observeCall("write_file",
                             ParticleLoopFixture.write("src/e" + i + ".js", ParticleLoopFixture.ENGINE))
                             .isEmpty(),
-                    "a detector answered for stays down for the run; copy " + i);
+                    "copy " + i + " of the next N is not a strike on its own");
+        }
+        assertTrue(guard.observeCall("write_file",
+                        ParticleLoopFixture.write("src/e4.js", ParticleLoopFixture.ENGINE))
+                        .isPresent(),
+                "nobody said carry on, because nobody was there — an unattended run that"
+                        + " keeps looping keeps saying so");
+    }
+
+    /** The other direction of the same decision: a PERSON saying carry on does
+     *  buy the silence, for the rest of the run. Without this pin the one above
+     *  is green for a guard that never stands anything down at all. */
+    @Test
+    void aPersonSayingCarryOnBuysTheSilenceNobodyAtAllCannot() {
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(),
+                question -> new Asker.Answer(List.of(ProgressGuard.CARRY_ON_LABEL)));
+        guard.intervene(new Strike(Detector.IDENTICAL_WRITES, 3, "three copies"), "main",
+                event -> { }, new CancelSignal());
+
+        for (int i = 1; i <= 12; i++) {
+            assertTrue(guard.observeCall("write_file",
+                            ParticleLoopFixture.write("src/p" + i + ".js", ParticleLoopFixture.ENGINE))
+                            .isEmpty(),
+                    "the person looked and said it is fine; copy " + i + " must stay quiet");
         }
     }
 
@@ -458,6 +495,135 @@ class ProgressGuardTest {
         guard.observeResult("run_command", input, true);
         assertTrue(guard.observeResult("run_command", input, true).isPresent(),
                 "the OTHER detector is still standing");
+    }
+
+    /**
+     * Review finding F4: the 64-character floor is a stated decision (card 262,
+     * decision 6) and every value from 1 upward passed the whole gate — the only
+     * test near it wrote empty content, which is under any floor at all. This
+     * pins the boundary itself, which is the assertion that makes the decision
+     * survive a later edit.
+     */
+    @Test
+    void theFloorSitsAtSixtyFourCharactersAndTheBoundaryIsPinned() {
+        // LITERALS on purpose. Written as MIN_CONTENT_CHARS - 1 and
+        // MIN_CONTENT_CHARS this test moves with the constant and is green for
+        // every value of it, which pins nothing at all.
+        assertEquals(64, ProgressSettings.MIN_CONTENT_CHARS,
+                "the floor is a stated decision, not a tuning knob");
+        String justUnder = "x".repeat(63);
+        ProgressGuard shy = guard();
+        for (int i = 1; i <= 8; i++) {
+            assertTrue(shy.observeCall("write_file",
+                            ParticleLoopFixture.write("src/u" + i + ".js", justUnder)).isEmpty(),
+                    "63 characters is below the floor and stays below it, copy " + i);
+        }
+
+        String atTheFloor = "y".repeat(64);
+        ProgressGuard watching = guard();
+        for (int i = 1; i <= 3; i++) {
+            assertTrue(watching.observeCall("write_file",
+                    ParticleLoopFixture.write("src/f" + i + ".js", atTheFloor)).isEmpty());
+        }
+        assertTrue(watching.observeCall("write_file",
+                        ParticleLoopFixture.write("src/f4.js", atTheFloor)).isPresent(),
+                "64 characters is the first content the detector looks at");
+    }
+
+    /**
+     * Review finding F8: one CHANGE_COURSE sentence was handed to the model for
+     * all three detectors, and it said "the person stopped that step" — untrue
+     * for detector 2, whose call has already run and whose result is already in
+     * the history, and meaningless for detector 3, where there is no step at all.
+     * A guard that tells the model something false about its own transcript is
+     * worse than one that says nothing.
+     */
+    @Test
+    void eachDetectorsGuidanceSaysWhatActuallyHappenedToTheCall() {
+        String writes = steered(Detector.IDENTICAL_WRITES);
+        String failure = steered(Detector.REPEATED_FAILURE);
+        String plan = steered(Detector.STALLED_PLAN);
+
+        assertTrue(writes.contains("did not run"),
+                "detector 1 fires BEFORE the call and the call is dropped; was: " + writes);
+        assertTrue(failure.contains("already ran"),
+                "detector 2 fires after the result is in the history — nothing was stopped;"
+                        + " was: " + failure);
+        assertFalse(failure.contains("did not run"),
+                "the call did run; telling the model otherwise contradicts its own"
+                        + " tool_result. Was: " + failure);
+        assertTrue(plan.contains("plan"),
+                "detector 3 fires between turns, where there is no call to talk about;"
+                        + " was: " + plan);
+        assertFalse(plan.contains("did not run"), "no call was stopped; was: " + plan);
+        assertEquals(3, java.util.Set.of(writes, failure, plan).size(),
+                "three different situations, three different sentences");
+        for (String guidance : List.of(writes, failure, plan)) {
+            assertTrue(guidance.contains("do it another way"),
+                    "the operator's own words reach the model whichever net fired");
+        }
+    }
+
+    /**
+     * Review finding F10: the memory bound was never exercised. Eviction is
+     * oldest-first and costs exactly one thing — the ability to notice a repeat
+     * older than {@link ProgressGuard#MEMORY} distinct contents — and that cost
+     * is only honest if somebody measured it.
+     */
+    @Test
+    void theOldestContentIsForgottenPastTheMemoryBound() {
+        ProgressGuard guard = guard();
+        String ancient = "o".repeat(80);
+        guard.observeCall("write_file", ParticleLoopFixture.write("src/old1.js", ancient));
+        guard.observeCall("write_file", ParticleLoopFixture.write("src/old2.js", ancient));
+        for (int i = 0; i < ProgressGuard.MEMORY; i++) {
+            guard.observeCall("write_file",
+                    ParticleLoopFixture.write("src/filler" + i + ".js", "f" + i + "-".repeat(80)));
+        }
+
+        assertTrue(guard.observeCall("write_file",
+                ParticleLoopFixture.write("src/old3.js", ancient)).isEmpty());
+        assertTrue(guard.observeCall("write_file",
+                        ParticleLoopFixture.write("src/old4.js", ancient)).isEmpty(),
+                "with the two ancient paths still remembered this would be the third copy"
+                        + " and would fire — 512 distinct contents later they are gone,"
+                        + " and that is the price of not growing forever");
+    }
+
+    /**
+     * The other half of F10: the evidence sentence joined every remembered path
+     * with no limit. Three paths is a sentence; an operator who set the threshold
+     * to 60 got a paragraph on the wire. The structured facts keep every path —
+     * that is what {@code details} is for.
+     */
+    @Test
+    void theEvidenceStaysASentenceWhenTheOperatorSetsAHugeThreshold() {
+        ProgressGuard guard = new ProgressGuard(new ProgressSettings(60, 0, 0), Asker.none());
+        String content = "z".repeat(80);
+        for (int i = 1; i <= 60; i++) {
+            assertTrue(guard.observeCall("write_file",
+                    ParticleLoopFixture.write("src/aFairlyLongModuleName" + i + ".js", content))
+                    .isEmpty());
+        }
+        Strike strike = guard.observeCall("write_file",
+                        ParticleLoopFixture.write("src/aFairlyLongModuleName61.js", content))
+                .orElseThrow(() -> new AssertionError("60 paths and the 61st did not fire"));
+
+        assertTrue(strike.evidence().length() <= 400,
+                "the sentence goes to a terminal and an ask bar; it was "
+                        + strike.evidence().length() + " characters");
+        assertEquals(61, strike.details().size(),
+                "and nothing is lost — the unprosed facts carry every path");
+    }
+
+    /** One intervention per detector, steered with the same words.
+     *  @param detector the net that fired
+     *  @return the guidance handed to the model */
+    private static String steered(Detector detector) {
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(),
+                question -> new Asker.Answer(List.of("do it another way")));
+        return guard.intervene(new Strike(detector, 3, "what the harness saw."), "main",
+                event -> { }, new CancelSignal()).guidance();
     }
 
     /** A plan event from alternating text/status pairs.

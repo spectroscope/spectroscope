@@ -272,6 +272,13 @@ public final class Agent {
         // can only narrate while the hour keeps burning is the one thing the
         // owner ruled out.
         ProgressGuard progress = options.progressGuard();
+        if (progress != null) {
+            // Its memory and its stand-down are sentences about THIS run. One
+            // agent serves every prompt of a browser session, so without this
+            // reset four honest prompts add up to a strike and one "carry on"
+            // deafens the session. Both were measured in this branch's review.
+            progress.startRun();
+        }
 
         // A SwitchableProvider reports its live name; everyone else falls back to
         // the build-time label — so a mid-session provider switch is recorded right.

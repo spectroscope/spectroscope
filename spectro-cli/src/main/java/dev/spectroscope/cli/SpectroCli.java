@@ -356,6 +356,23 @@ public final class SpectroCli implements Runnable {
     }
 
     /**
+     * The agent this face assembled — the same evidence as {@link #belt()}, for
+     * the things that hang off {@code AgentOptions} rather than off the registry.
+     *
+     * <p>Card 262's review found the hole this closes: the whole
+     * {@code .progressGuard(...)} clause could be deleted from {@link #buildAgent}
+     * and the entire Java gate stayed green, because nothing could read what the
+     * REPL actually built. The server face already had that reader
+     * ({@code SessionProgressGuardTest}); this is its twin. Card 222's finding F4
+     * a third time.</p>
+     *
+     * @return the live agent, or null before the first assembly
+     */
+    Agent agent() {
+        return agent;
+    }
+
+    /**
      * The belt this face hands its CHILDREN — the same evidence, for the other
      * half of the fence.
      *

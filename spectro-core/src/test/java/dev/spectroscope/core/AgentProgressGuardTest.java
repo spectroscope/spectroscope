@@ -72,10 +72,49 @@ class AgentProgressGuardTest {
         }
 
         FakeProvider write(String callId, String path) {
-            ObjectNode input = JSON.createObjectNode().put("path", path).put("content", BODY);
+            return write(callId, path, BODY);
+        }
+
+        FakeProvider write(String callId, String path, String content) {
+            ObjectNode input = JSON.createObjectNode().put("path", path).put("content", content);
             turns.add(List.of(new PToolCall(callId, "write_file", input),
                     new PStop(PStop.StopReason.TOOL_USE)));
             return this;
+        }
+
+        /** One call to a tool that always comes back an error, with byte-identical
+         *  input every time — detector 2's shape. */
+        FakeProvider failingCall(String callId) {
+            ObjectNode input = JSON.createObjectNode()
+                    .put("command", "node --test test/particle.test.js");
+            turns.add(List.of(new PToolCall(callId, "always_fails", input),
+                    new PStop(PStop.StopReason.TOOL_USE)));
+            return this;
+        }
+    }
+
+    /** A tool whose every call fails the same way — the loop reads the ERROR
+     *  prefix, so this is exactly what a test command that never passes looks
+     *  like from the loop's side. */
+    private static final class AlwaysFails implements dev.spectroscope.core.tools.Tool {
+        @Override public String name() {
+            return "always_fails";
+        }
+
+        @Override public String description() {
+            return "runs something that never passes";
+        }
+
+        @Override public JsonNode inputSchema() {
+            return JSON.createObjectNode().put("type", "object");
+        }
+
+        @Override public boolean needsPermission() {
+            return false;
+        }
+
+        @Override public String execute(JsonNode input, ToolContext context) {
+            return "ERROR: 1 test failed — expected 0.2, got 0.18432";
         }
     }
 
@@ -240,8 +279,17 @@ class AgentProgressGuardTest {
         assertTrue(Files.exists(cwd.resolve("src/particleEngine4.js")));
     }
 
+    /**
+     * Review finding F3: this test used to be called
+     * {@code theStalledPlanNetIsAskedAtTheTOPOfATurn} and its body could not tell
+     * the top of a turn from anywhere else in it — the reviewer moved the whole
+     * detector-3 block to AFTER the request was built and it stayed green.
+     * Replaced, not loosened: this one keeps the claim it can actually measure,
+     * and {@link #theStalledPlansSteerRidesTheRequestOfTheSAMETurn} measures the
+     * placement.
+     */
     @Test
-    void theStalledPlanNetIsAskedAtTheTOPOfATurn(@TempDir Path cwd) {
+    void aStalledPlanIsCaughtAndTheOperatorCanEndTheRun(@TempDir Path cwd) {
         // Detector 3 has no tool call to hang on, so the loop has to ask it
         // itself, once per turn, before the provider is called. Armed here on
         // purpose: its shipped default is off.
@@ -278,6 +326,71 @@ class AgentProgressGuardTest {
                 .orElseThrow(() -> new AssertionError("the plan never moved and nobody said so"));
         assertEquals("stalled_plan", said.detector());
         assertEquals("no_progress", stopReason(events));
+    }
+
+    /**
+     * The placement itself, measured instead of asserted by name. Detector 3 is
+     * asked at the TOP of a turn, so the operator's steer rides the request of
+     * THAT turn — not the next one. A block that sits after the request is built
+     * costs the run a whole turn of the thing the operator just stopped, and the
+     * old test's name claimed this while its body could not see it.
+     */
+    @Test
+    void theStalledPlansSteerRidesTheRequestOfTheSAMETurn(@TempDir Path cwd) {
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        registry.register(new dev.spectroscope.core.tools.UpdatePlanTool());
+        FakeProvider provider = new FakeProvider();
+        for (int i = 1; i <= 6; i++) {
+            provider.write("p" + i, "src/step" + i + ".js", "// step " + i + "\n");
+        }
+        ProgressGuard guard = new ProgressGuard(new ProgressSettings(0, 0, 2),
+                question -> new Asker.Answer(List.of("try a different step")));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider).systemPrompt("test").registry(registry).cwd(cwd)
+                .onPermission(request -> true).progressGuard(guard).build());
+        provider.turns.addFirst(List.of(
+                new LlmProvider.PToolCall("plan1", "update_plan", planInput()),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)));
+        List<RunEvent> events = new ArrayList<>();
+        try (EventStream stream = agent.run("go", new RunOptions(new CancelSignal(), List.of()))) {
+            stream.forEach(events::add);
+        }
+
+        // Which turn was the guard asked in? The last turn_start before the line.
+        int turnOfTheStrike = 0;
+        int turn = 0;
+        for (RunEvent event : events) {
+            if (event instanceof RunEvent.TurnStart start) {
+                turn = start.turn();
+            }
+            if (event instanceof RunEvent.NoProgress && turnOfTheStrike == 0) {
+                turnOfTheStrike = turn;
+            }
+        }
+        assertTrue(turnOfTheStrike > 0, "the plan never moved and nobody said so");
+        long turnStarts = events.stream().filter(RunEvent.TurnStart.class::isInstance).count();
+        assertEquals(turnStarts, provider.requests.size(),
+                "one request per turn is what makes the index below a turn number;"
+                        + " if that ever stops holding this test must fail loudly");
+
+        assertTrue(said(provider.requests.get(turnOfTheStrike - 1), "try a different step"),
+                "the steer must ride the request of turn " + turnOfTheStrike + " itself —"
+                        + " a guard asked after the request was built spends the very turn"
+                        + " the operator just stopped");
+        for (int i = 0; i < turnOfTheStrike - 1; i++) {
+            assertFalse(said(provider.requests.get(i), "try a different step"),
+                    "nothing was said before the guard fired, so request " + (i + 1)
+                            + " cannot carry the steer");
+        }
+    }
+
+    /** Whether one provider request carries the given text anywhere in its messages. */
+    private static boolean said(LlmProvider.ProviderRequest request, String text) {
+        return request.messages().stream()
+                .flatMap(message -> message.content().stream())
+                .anyMatch(content -> content instanceof LlmProvider.TextContent value
+                        && value.text().contains(text));
     }
 
     @Test
@@ -383,6 +496,151 @@ class AgentProgressGuardTest {
                 previous = message.role();
             }
         }
+    }
+
+    // ---- the guard's memory belongs to the RUN, not to the agent -----------
+
+    /**
+     * Review finding F1, the measured one. A browser session builds its agent
+     * ONCE ({@code SessionConnection.buildAgentOnce}) and runs every prompt
+     * through it, and the REPL does the same between rebuilds. So an agent-lived
+     * memory turns four honest prompts into a strike — which is criterion 5
+     * broken by construction, on the one face the guard actually ships on.
+     */
+    @Test
+    void fourSeparatePromptsWithOneWriteEachNeverTripTheGuard(@TempDir Path cwd) {
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        FakeProvider provider = new FakeProvider();
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(),
+                question -> new Asker.Answer(List.of(ProgressGuard.END_LABEL)));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider).systemPrompt("test").registry(registry).cwd(cwd)
+                .onPermission(request -> true).progressGuard(guard).build());
+
+        List<RunEvent> all = new ArrayList<>();
+        for (int i = 1; i <= 4; i++) {
+            // Four finished tasks, one file each, and the same boilerplate body —
+            // a licence header, a barrel file, a copied fixture. Honest work.
+            provider.write("c" + i, "src/module" + i + "/index.js");
+            try (EventStream stream = agent.run("task " + i,
+                    new RunOptions(new CancelSignal(), List.of()))) {
+                stream.forEach(all::add);
+            }
+        }
+
+        assertEquals(0L, all.stream().filter(RunEvent.NoProgress.class::isInstance).count(),
+                "each prompt wrote ONE copy and finished; a guard that adds four runs"
+                        + " together pauses honest work, which criterion 5 forbids");
+        assertTrue(Files.exists(cwd.resolve("src/module4/index.js")),
+                "and nothing was stopped");
+    }
+
+    /**
+     * The other half of F1, and the more dangerous one: "carry on" is a sentence
+     * about THIS run. An agent-lived stand-down makes one wave-through deafen the
+     * whole browser session, so the next prompt's genuine loop runs unwatched.
+     */
+    @Test
+    void aFreshRunSpeaksAgainAfterTheLastOneWasWavedThrough(@TempDir Path cwd) {
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        FakeProvider provider = new FakeProvider()
+                .write("a1", "src/one.js").write("a2", "src/two.js")
+                .write("a3", "src/three.js").write("a4", "src/four.js");
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(),
+                question -> new Asker.Answer(List.of(ProgressGuard.CARRY_ON_LABEL)));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider).systemPrompt("test").registry(registry).cwd(cwd)
+                .onPermission(request -> true).progressGuard(guard).build());
+
+        List<RunEvent> first = new ArrayList<>();
+        try (EventStream stream = agent.run("first task",
+                new RunOptions(new CancelSignal(), List.of()))) {
+            stream.forEach(first::add);
+        }
+        assertEquals(1L, first.stream().filter(RunEvent.NoProgress.class::isInstance).count(),
+                "the first run's loop was caught once and waved through");
+
+        // A brand-new task, DIFFERENT bytes, its own four-copy loop.
+        String other = BODY.replace("0.9", "0.8");
+        for (int i = 1; i <= 4; i++) {
+            provider.write("b" + i, "src/other" + i + ".js", other);
+        }
+        List<RunEvent> second = new ArrayList<>();
+        try (EventStream stream = agent.run("second task",
+                new RunOptions(new CancelSignal(), List.of()))) {
+            stream.forEach(second::add);
+        }
+
+        assertEquals(1L, second.stream().filter(RunEvent.NoProgress.class::isInstance).count(),
+                "\"carry on\" was said about the LAST run; a new run gets a fresh net,"
+                        + " or one wave-through deafens the whole session");
+    }
+
+    // ---- detector 2 inside the loop, not only in the detector's own test ----
+
+    /**
+     * Review finding F2: the whole {@code observeResult} block could be deleted
+     * from the loop and the full gate stayed green. Detector 2 is the net that
+     * catches the measured loop when the model varies the filename, so its wiring
+     * is worth its own reader — card 222's finding F4, again.
+     */
+    @Test
+    void theRepeatedFailureNetSteersTheModelFromInsideTheLoop(@TempDir Path cwd) {
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        registry.register(new AlwaysFails());
+        FakeProvider provider = new FakeProvider()
+                .failingCall("f1").failingCall("f2").failingCall("f3");
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(),
+                question -> new Asker.Answer(List.of("the expected value is wrong, fix the test")));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider).systemPrompt("test").registry(registry).cwd(cwd)
+                .onPermission(request -> true).progressGuard(guard).build());
+        List<RunEvent> events = new ArrayList<>();
+        try (EventStream stream = agent.run("go", new RunOptions(new CancelSignal(), List.of()))) {
+            stream.forEach(events::add);
+        }
+
+        RunEvent.NoProgress said = events.stream()
+                .filter(RunEvent.NoProgress.class::isInstance)
+                .map(RunEvent.NoProgress.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "the same call failed three times and the loop said nothing"));
+        assertEquals("repeated_failure", said.detector());
+        assertEquals(3, said.count());
+        boolean steered = provider.requests.stream()
+                .flatMap(request -> request.messages().stream())
+                .flatMap(message -> message.content().stream())
+                .anyMatch(content -> content instanceof LlmProvider.TextContent text
+                        && text.text().contains("the expected value is wrong, fix the test"));
+        assertTrue(steered, "the operator's words never reached the model at all");
+    }
+
+    /** The END half of the same wiring: the run stops under the guard's own name. */
+    @Test
+    void theRepeatedFailureNetCanEndTheRunUnderTheGuardsOwnName(@TempDir Path cwd) {
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        registry.register(new AlwaysFails());
+        FakeProvider provider = new FakeProvider()
+                .failingCall("f1").failingCall("f2").failingCall("f3").failingCall("f4");
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(),
+                question -> new Asker.Answer(List.of(ProgressGuard.END_LABEL)));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider).systemPrompt("test").registry(registry).cwd(cwd)
+                .onPermission(request -> true).progressGuard(guard).build());
+        List<RunEvent> events = new ArrayList<>();
+        try (EventStream stream = agent.run("go", new RunOptions(new CancelSignal(), List.of()))) {
+            stream.forEach(events::add);
+        }
+
+        assertEquals("no_progress", stopReason(events),
+                "the operator ended it at the guard's question; the run says so");
+        assertEquals(3, events.stream().filter(RunEvent.ToolCall.class::isInstance).count(),
+                "and the fourth call never happened");
     }
 
     /** An update_plan input with one open step. */

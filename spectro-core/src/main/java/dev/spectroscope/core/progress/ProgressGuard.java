@@ -58,12 +58,16 @@ import java.util.function.Consumer;
  * virtual thread. A second waiting mechanism beside it would be two things that
  * can disagree about who is waiting.</p>
  *
- * <p><b>Nobody to ask is not a licence to abort.</b> An asker that answers
- * {@code null} — a closed socket, an unattended permission mode, a face with no
- * person — leaves the run going and stands that detector down for the rest of
- * the run. Stopping a run on nobody's word would be the silent abort criterion 3
- * forbids, and asking again every three copies would be the nagging that gets a
- * guard switched off.</p>
+ * <p><b>Nobody to ask is not a licence to abort, and it is not a "carry on"
+ * either.</b> An asker that answers {@code null} — a closed socket, an
+ * unattended permission mode, a face with no person — leaves the run going:
+ * stopping a run on nobody's word would be the silent abort criterion 3 forbids.
+ * But the detector stays UP and only its memory is cleared. Treating an absent
+ * person as an approving one turned the owner's "warn AND pause" into "warn once
+ * and go deaf" in permission mode {@code auto} — plausibly the mode the measured
+ * loop ran in — so an hour of copies would have left ONE line. The cost is
+ * stated: an unattended run that really does repeat itself writes a line every N
+ * events rather than one, which is a transcript that shows the loop continuing.</p>
  *
  * <p><b>What a "carry on" and a "change course" cost afterwards</b>, because
  * they are not the same promise. Carry on stands that detector down for the rest
@@ -72,6 +76,14 @@ import java.util.function.Consumer;
  * course only CLEARS that detector's memory: the model has been steered, and if
  * it walks straight back into the same loop it has to earn a full N again before
  * the person is bothered a second time.</p>
+ *
+ * <p><b>Everything it remembers belongs to the RUN, not to the agent</b>, and
+ * that is the whole of {@link #startRun()}. One agent serves many prompts — a
+ * browser session builds its agent once and never again, and the REPL rebuilds
+ * only on {@code /think} — so a memory that outlived the run would add four
+ * honest prompts into a strike (criterion 5 broken by construction), and one
+ * "carry on" would deafen the detector for the whole session. Both were measured
+ * in this branch's review before the reset existed.</p>
  *
  * <p>Not thread-safe, and it does not need to be: one guard belongs to one
  * agent's loop, which is sequential by construction.</p>
@@ -133,7 +145,9 @@ public final class ProgressGuard {
 
     /** What the person watching decided. */
     public enum Intervention {
-        /** Keep going, unchanged. The detector stands down for the rest of the run. */
+        /** Keep going, unchanged. When a PERSON said it, that detector stands
+         *  down for the rest of the run; when nobody was there to say it, only
+         *  the detector's memory is cleared and the net stays up. */
         CARRY_ON,
         /** Do not do that; here is what to do instead. The call is not executed. */
         CHANGE_COURSE,
@@ -172,16 +186,20 @@ public final class ProgressGuard {
      */
     public static final String STOP_REASON = "no_progress";
 
-    /** How much of one detector's memory is kept. A long-running session writes
-     *  thousands of files, and a guard that remembers all of them forever is a
-     *  leak in the one object that lives as long as the agent. Eviction is
+    /** How much of one detector's memory is kept. {@link #startRun()} empties it
+     *  between runs, but one run can itself write thousands of files, and a
+     *  guard that remembers all of them is a leak inside it. Eviction is
      *  oldest-first and costs only the ability to notice a repeat older than
      *  this many distinct contents — which is not the failure mode this guards. */
-    private static final int MEMORY = 512;
+    static final int MEMORY = 512;
 
     /** The question must stay readable under time pressure; card 265 caps its
      *  own tool at 500 characters and this question travels the same bar. */
     private static final int MAX_QUESTION_CHARS = 500;
+
+    /** How much of the "already written to" list the SENTENCE carries. The
+     *  structured details carry all of them; this is the prose budget. */
+    private static final int MAX_PATH_LIST_CHARS = 160;
 
     private final ProgressSettings settings;
     private final Asker asker;
@@ -215,6 +233,26 @@ public final class ProgressGuard {
      *  @return the settings it was built with */
     public ProgressSettings settings() {
         return settings;
+    }
+
+    /**
+     * Forgets everything the last run taught it. Called by the loop at the top
+     * of every run, before {@code run_start} goes out.
+     *
+     * <p>The four memories AND the stand-down, because both halves are sentences
+     * about one run: "the same bytes three times" is a claim about a task, and
+     * "carry on" is a person answering about the task in front of them. An agent
+     * is not a task — {@code SessionConnection.buildAgentOnce} returns the same
+     * agent for every prompt of a browser session — so without this a session's
+     * fourth honest write is a strike and its first wave-through is permanent.</p>
+     */
+    public void startRun() {
+        pathsByContent.clear();
+        sizeByContent.clear();
+        failuresInARow.clear();
+        planSignature = null;
+        planUnchangedTurns = 0;
+        stoodDown.clear();
     }
 
     /**
@@ -263,10 +301,14 @@ public final class ProgressGuard {
             List<String> details = new ArrayList<>(earlier);
             details.add(path); // last entry is the copy that was starting
             int bytes = sizeByContent.getOrDefault(digest, content.length());
+            // Clipped, both halves: the threshold is the operator's number, and
+            // at 60 the joined list is a paragraph on a wire that feeds a
+            // terminal line and an ask bar. Nothing is lost — `details` carries
+            // every path unprosed, which is what it is for.
             return Optional.of(new Strike(Detector.IDENTICAL_WRITES, earlier.size(),
                     "The same " + bytes + " bytes have already gone to " + earlier.size()
-                            + " paths (" + String.join(", ", earlier)
-                            + "), and another copy is starting: " + path + ".",
+                            + " paths (" + clip(String.join(", ", earlier), MAX_PATH_LIST_CHARS)
+                            + "), and another copy is starting: " + clip(path) + ".",
                     details));
         }
         earlier.add(path);
@@ -409,8 +451,21 @@ public final class ProgressGuard {
                 waitedMs, System.currentTimeMillis()));
 
         Response response = decide(strike, answers);
+        if (answer == null) {
+            // NOBODY was there — a closed socket, an unattended permission mode,
+            // a face with no person. That is not somebody saying "carry on", and
+            // treating it as one turned "warn AND pause" into "warn once and go
+            // deaf" in exactly the mode the measured loop plausibly ran in. The
+            // net stays up and the memory goes, so the loop has to earn a full N
+            // again: an unattended run that really is looping keeps saying so,
+            // every N events, instead of mentioning it once in an hour.
+            forget(strike.detector());
+            return response;
+        }
         switch (response.intervention()) {
-            // Answered for: this detector has had its say and stays quiet.
+            // Answered for BY A PERSON: they looked, so this detector has had its
+            // say and stays quiet for the rest of the run. A skipped question
+            // counts — the bar was in front of them.
             case CARRY_ON -> stoodDown.add(strike.detector());
             // Steered: the memory goes, the net stays. A model that walks back
             // into the same loop earns a full N again before anyone is bothered.
@@ -459,11 +514,49 @@ public final class ProgressGuard {
                             + strike.evidence());
         }
         return new Response(Intervention.CHANGE_COURSE,
-                "The person watching this run stopped that step. What the harness saw: "
-                        + strike.evidence() + " They said: \"" + said + "\"."
-                        + " Do something different — change the assertion or change the"
-                        + " implementation. Writing the same bytes again is not a different"
-                        + " action.");
+                whatHappened(strike) + " What the harness saw: " + strike.evidence()
+                        + " They said: \"" + said + "\"." + remedy(strike));
+    }
+
+    /**
+     * What actually happened to the call, per detector — and it differs, which
+     * is why one shared sentence was a defect rather than a wording choice.
+     * Detector 1 fires BEFORE the call and the call is dropped; detector 2 fires
+     * after the result is already in the history, so nothing was stopped and
+     * saying otherwise contradicts the transcript the model can see; detector 3
+     * fires between turns, where there is no call at all.
+     *
+     * @param strike what fired
+     * @return the sentence stating the situation
+     */
+    private static String whatHappened(Strike strike) {
+        return switch (strike.detector()) {
+            case IDENTICAL_WRITES -> "The person watching this run stopped that write:"
+                    + " it did not run.";
+            case REPEATED_FAILURE -> "That call already ran and failed " + strike.count()
+                    + " times in a row with byte-identical input — its result is in the"
+                    + " history above, and nothing was stopped.";
+            case STALLED_PLAN -> "The person watching this run stepped in between turns:"
+                    + " no call was stopped, and the plan has not moved.";
+        };
+    }
+
+    /**
+     * What to do instead, per detector, for the same reason.
+     *
+     * @param strike what fired
+     * @return the closing sentence handed to the model
+     */
+    private static String remedy(Strike strike) {
+        return switch (strike.detector()) {
+            case IDENTICAL_WRITES -> " Do something different: writing the same bytes"
+                    + " under another name is not a different action.";
+            case REPEATED_FAILURE -> " Do something different: that call fails the same"
+                    + " way every time it is run unchanged. Change the assertion or change"
+                    + " the implementation.";
+            case STALLED_PLAN -> " Do something different: move a step of the plan, or"
+                    + " replace the plan with one you can move.";
+        };
     }
 
     /** Drops one detector's memory after the operator steered the run.
@@ -511,7 +604,15 @@ public final class ProgressGuard {
      *  @param text the fact
      *  @return the text, or its first 120 characters with an ellipsis */
     private static String clip(String text) {
-        return text.length() <= 120 ? text : text.substring(0, 119) + "…";
+        return clip(text, 120);
+    }
+
+    /** Clips one fact to an explicit budget.
+     *  @param text the fact
+     *  @param max  the most characters the sentence can spend on it
+     *  @return the text, or its first {@code max} characters with an ellipsis */
+    private static String clip(String text, int max) {
+        return text.length() <= max ? text : text.substring(0, max - 1) + "…";
     }
 
     /** The hash detector 1 compares on. SHA-256 because the alternative is
