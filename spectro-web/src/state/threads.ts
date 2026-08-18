@@ -67,18 +67,41 @@ function ownerOf(turn: Turn, cards: Record<string, ToolCard>, root: string): str
  * each", because with four parallel children each child appears as several
  * blocks scattered down the scroll.
  *
- * So in v2 the child turns are not rendered at all. At the point where a child
+ * So in v2 the child turns leave the MAIN LINE. At the point where a child
  * first speaks, the transcript keeps a CHIP naming it; adjacent chips merge, so
- * a fan-out of four leaves one chip rather than four. Every later burst from an
- * already-chipped child is dropped, because the panel on the right is where its
- * state lives — and nothing is lost, since the trace still holds every frame.
+ * a fan-out of four leaves one chip rather than four, and a later burst from an
+ * already-chipped child adds no second chip.
+ *
+ * <p>Card 271: the chip CARRIES those turns rather than dropping them. Until
+ * this card the grouping returned ids alone and the words existed nowhere on
+ * screen — not in the transcript, and not in the panel either, because a
+ * WorkItem holds numbers and one status line and has no field for text. The
+ * turns were never lost on disk; they were lost between the reducer and the
+ * render, in this function, on the line that used to read `return`.</p>
+ *
+ * <p>This is NOT a second fold of the stream. The walk is the same single pass
+ * over the same `turns`; it simply keeps what it was throwing away, so a chip's
+ * `threads[childId]` is turn-for-turn identical to the items v1 nests into its
+ * thread blocks — which is what lets the fold reuse v1's renderer instead of
+ * growing a second one. `threads.test.ts` asserts that identity rather than
+ * trusting it.</p>
  *
  * The two groupings sit in one file on purpose: they can be diffed by eye.
  */
 export type ChatBlockV2 =
   | { kind: "turn"; turn: Turn; index: number }
-  /** One or more children starting here. `index` is the first turn they took. */
-  | { kind: "chip"; workIds: string[]; index: number };
+  /** One or more children starting here. `index` is the first turn they took.
+   *  `threads` holds every turn each of them takes — later bursts included, so
+   *  the key is the child's id and not the position in `workIds`. */
+  | {
+      kind: "chip";
+      workIds: string[];
+      index: number;
+      threads: Record<string, ThreadItem[]>;
+    };
+
+/** The chip variant, named because the walk below has to mutate one. */
+type ChipBlock = Extract<ChatBlockV2, { kind: "chip" }>;
 
 export function groupTurnsV2(
   turns: Turn[],
@@ -87,21 +110,36 @@ export function groupTurnsV2(
 ): ChatBlockV2[] {
   const root = rootOf(agents);
   const blocks: ChatBlockV2[] = [];
-  const chipped = new Set<string>();
+  // Which chip announced a given child. A Set of names was enough while later
+  // bursts were discarded; now they have to find their way back to the block
+  // that speaks for them, which can be far above the current position.
+  const announcedBy = new Map<string, ChipBlock>();
   turns.forEach((turn, index) => {
     const owner = ownerOf(turn, cards, root);
     if (owner === root) {
       blocks.push({ kind: "turn", turn, index });
       return;
     }
-    if (chipped.has(owner)) return; // already announced; its state lives right
-    chipped.add(owner);
+    const already = announcedBy.get(owner);
+    if (already !== undefined) {
+      already.threads[owner].push({ turn, index });
+      return;
+    }
     const last = blocks[blocks.length - 1];
     if (last !== undefined && last.kind === "chip") {
       last.workIds.push(owner);
+      last.threads[owner] = [{ turn, index }];
+      announcedBy.set(owner, last);
       return;
     }
-    blocks.push({ kind: "chip", workIds: [owner], index });
+    const chip: ChipBlock = {
+      kind: "chip",
+      workIds: [owner],
+      index,
+      threads: { [owner]: [{ turn, index }] },
+    };
+    blocks.push(chip);
+    announcedBy.set(owner, chip);
   });
   return blocks;
 }

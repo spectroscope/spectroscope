@@ -2007,6 +2007,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "work.noTrace": { de: "kein Frame dahinter", en: "no frame behind this" },
   "work.chip": { de: "{n} nebenher", en: "{n} alongside" },
   "work.chipOpen": { de: "im Arbeits-Panel zeigen", en: "show in the work panel" },
+  // Card 271: the chip body opens the child in place; the arrow beside it still
+  // goes to the panel. Two jobs, two labels — one control could not have said
+  // both, which is why a reader who clicked for the words got the bill.
+  "work.chipFoldOpen": { de: "die Turns dieses Agenten zeigen", en: "show this agent's turns" },
+  "work.chipFoldClose": { de: "die Turns dieses Agenten einklappen", en: "fold this agent's turns away" },
   "work.triggerNone": {
     de: "Getriggerte Node-Läufe (Karte 72) trägt der Draht bereits; keine aufgezeichnete Session hier hat einen. Sobald eine kommt, steht sie hier.",
     en: "Triggered node runs (card 72) are already on the wire; no recorded session here has one. The first one that arrives shows up here.",
