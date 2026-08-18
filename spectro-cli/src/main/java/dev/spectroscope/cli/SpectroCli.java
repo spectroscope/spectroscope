@@ -127,6 +127,8 @@ public final class SpectroCli implements Runnable {
     private Path workspace;
     private String systemPrompt;
     private ToolRegistry registry;
+    /** What children of this face inherit — see {@link #childBelt()}. */
+    private List<Tool> childBelt = List.of();
     private SubagentManager subagents;
     private PermissionBroker askOnTerminal;
 
@@ -351,6 +353,22 @@ public final class SpectroCli implements Runnable {
         return registry;
     }
 
+    /**
+     * The belt this face hands its CHILDREN — the same evidence, for the other
+     * half of the fence.
+     *
+     * <p>Card 270 made this the parent's own assembly instead of a hand-listed
+     * subset, and decided at the same seam that {@code update_plan} and
+     * {@code ask_user_question} stay off it: both are registered on the REGISTRY
+     * below and never added to {@code shared}. That is a fence made of one
+     * line's position, which is exactly the kind only a reader can prove.</p>
+     *
+     * @return the child belt {@link #registerTools} assembled, empty before it ran
+     */
+    List<Tool> childBelt() {
+        return childBelt;
+    }
+
     /** Whether this provider's API key is present in the environment. A local
      *  provider (ollama, lmstudio) carries no key requirement, so it counts as
      *  present. */
@@ -533,10 +551,12 @@ public final class SpectroCli implements Runnable {
         // Card 199: both browser-class tools take the net fence built from
         // allowLocalhost — file URLs, RFC-1918 and the 100.64/10 tailnet are
         // refused, loopback only on the deliberate opt-in for the verify loop.
-        // The three are locals because they are registered TWICE-reachable (card
-        // 205): once here for the main agent, and once as the research role's web
-        // grant below — the SAME instances, so a child's call passes the same
-        // fence, broker and tiers as the parent's.
+        // The three are locals because they are handed over TWICE (card 205, and
+        // card 270 widened the first half): once onto `shared`, which is both the
+        // main agent's registry AND the belt every worker child inherits, and
+        // once as the research role's explicit grant below — the SAME instances,
+        // so a child's call passes the same fence, broker and tiers as the
+        // parent's.
         Tool webSearch = WebSearchTool.fromConfig(config);
         Tool webFetch = new WebFetchTool(new DefaultHttpFetcher(),
                 dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost()));
@@ -579,14 +599,22 @@ public final class SpectroCli implements Runnable {
         // The main agent's plan. Permission-free, main-only (a worker's
         // plan would clobber the flat UI snapshot), so it is NOT in `shared`.
         registry.register(new UpdatePlanTool());
-        // Card 205: the research role's web grant — the parent's own three web
-        // tools, handed to RESEARCH children only. Same instances, same gate.
+        // Card 205's grant, and card 270 changed what it MEANS here. The three web
+        // tools are now on `shared`, so EVERY worker child carries them — the
+        // widening that matters most, because it is the one that leaves the
+        // machine. A worker child has network egress it did not have before card
+        // 270, under the same NetFence, the same broker and the same card-199
+        // tiers as the parent's own calls, but it has it.
+        //
+        // What `webTools` still does is narrower and unchanged: it is the grant
+        // that reaches a RESEARCH child PAST its keep-list, which would otherwise
+        // filter the trio out. Same instances either way.
         subagents = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
                 .cwd(workspace)
                 .parentAgentId(MAIN_AGENT_ID)
                 .onPermission(askOnTerminal)
-                .baseTools(List.copyOf(shared)) // card 270: the parent's own belt
+                .baseTools(childBelt = List.copyOf(shared)) // card 270: the parent's own belt
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(List.of(webSearch, webFetch, browsePage))

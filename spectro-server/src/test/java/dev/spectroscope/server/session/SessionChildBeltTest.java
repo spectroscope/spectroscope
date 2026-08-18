@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.provider.LlmProvider.ToolSpec;
+import dev.spectroscope.core.tools.Tool;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -162,7 +164,7 @@ class SessionChildBeltTest {
     }
 
     @Test
-    void aChildReachesTheOperatorsMcpServerAndTheBrowserFamily(@TempDir Path workspace)
+    void aChildReachesTheOperatorsMcpServerAndABrowserReader(@TempDir Path workspace)
             throws Exception {
         String mcpUrl = startMcpServer();
         String backendUrl = startScriptedBackend();
@@ -178,18 +180,31 @@ class SessionChildBeltTest {
             assertThat(frames)
                     .as("test premise: a child actually ran")
                     .contains("agent_spawn");
-            assertThat(frames)
-                    .as("test premise: the PARENT holds the operator's MCP tool")
-                    .contains("mcp__notes__ping");
+            // The premise that used to stand here read `frames` for the tool's
+            // NAME and called it proof that the PARENT holds it — but the string
+            // it found was the CHILD's own tool_call frame, which the script
+            // emits unconditionally. It measured nothing and named the wrong
+            // agent. The belt itself is the honest premise, and it is asserted
+            // in aChildIsNotHandedTheVerbsThatBelongToTheMainAgentAlone, which
+            // reads connection.childBelt() and connection.belt() directly.
 
             assertThat(childResultFor(frames, "mcp__notes__ping"))
                     .as("card 270: the MCP tools the operator configured reach a child")
                     .contains("pong from the operator's own server")
                     .doesNotContain("unknown tool");
             assertThat(childResultFor(frames, "browser_read_page"))
-                    .as("card 270: the browser family reaches a child — a detached browser "
+                    .as("card 270: a browser tool reaches a child — a detached browser "
                             + "is an answer, an unknown tool is a missing hand")
                     .doesNotContain("unknown tool");
+            // The script drives ONE of the seven, so the name says "a reader".
+            // That one call proves the MECHANISM; the family's membership is a
+            // different claim and is asserted over the belt rather than guessed
+            // from a single call.
+            assertThat(connection.childBelt().stream().map(Tool::name).toList())
+                    .as("and the whole family arrived, not just the one the script called")
+                    .contains("browser_navigate", "browser_read_page", "browser_find",
+                            "browser_eval", "browser_resize", "browser_read_console",
+                            "launch_start", "launch_list", "launch_logs");
 
             assertThat(askersAt(socket))
                     .as("security criterion: a child's guarded tool really asks, and the "
@@ -202,8 +217,15 @@ class SessionChildBeltTest {
     }
 
     @Test
-    void aDeniedChildCallIsRefusedExactlyLikeADeniedParentCall(@TempDir Path workspace)
+    void aDeniedChildCallComesBackWithTheGatesOwnRefusal(@TempDir Path workspace)
             throws Exception {
+        // Renamed, not loosened. It used to claim "exactly like a denied PARENT
+        // call" while its only assertion read childResultFor(...), which filters
+        // on agentId().startsWith("worker") — the parent's single tool call in
+        // this script is spawn_agent, which is permission-free, so there was no
+        // parent refusal to compare against and none was ever measured. What it
+        // does measure is real and worth keeping: the child's denied call comes
+        // back with the gate's own sentence rather than silence.
         String mcpUrl = startMcpServer();
         String backendUrl = startScriptedBackend();
         FakeSocket socket = new FakeSocket("ws-270-deny", "ws://localhost/ws");
@@ -222,6 +244,64 @@ class SessionChildBeltTest {
             gate.interrupt();
             connection.onClose();
         }
+    }
+
+    @Test
+    void aChildIsNotHandedTheVerbsThatBelongToTheMainAgentAlone(@TempDir Path workspace)
+            throws Exception {
+        // Card 270's belt half widened a child to the parent's whole assembly.
+        // Three things were deliberately kept OFF it, and every one of them is a
+        // fence made of a single line's POSITION in buildAgentOnce — nothing a
+        // reader of the diff can tell from an accident. Before this test, moving
+        // any of those lines onto childBase left 2651 tests green:
+        //
+        //   update_plan       — a child writing the flat UI plan snapshot would
+        //                       clobber the operator's own view (card 270).
+        //   ask_user_question — decided at the merge of this half, after card 265
+        //                       landed: a child raising its own question parks the
+        //                       operator behind a spawn they never approved.
+        //   spawn_agent/s     — depth stays 1 by construction.
+        String backendUrl = startScriptedBackend();
+        FakeSocket socket = new FakeSocket("ws-270-main-only", "ws://localhost/ws");
+        SpectroConfig config = configuredIn(workspace, backendUrl, startMcpServer());
+        SessionConnection connection = new SessionConnection(socket, JSON, config, null);
+        connection.start();
+        try {
+            connection.onUserMessage("Build the belt.", null);
+            awaitBelt(connection);
+
+            List<String> childNames = connection.childBelt().stream().map(Tool::name).toList();
+            assertThat(childNames)
+                    .as("the verbs that belong to the main agent alone never reach a child")
+                    .doesNotContain("update_plan", "ask_user_question", "spawn_agent",
+                            "spawn_agents");
+
+            List<String> parentNames = connection.belt().specs().stream()
+                    .map(ToolSpec::name).toList();
+            assertThat(parentNames)
+                    .as("test premise: the parent really does hold them, so the absence "
+                            + "above is a decision and not an empty session")
+                    .contains("update_plan", "ask_user_question", "spawn_agent");
+
+            assertThat(childNames)
+                    .as("and what the card DID widen is on it — the belt is not simply short")
+                    .contains("browser_read_page", "launch_list", "mcp__notes__ping",
+                            "web_fetch", "generate_image");
+        } finally {
+            connection.onClose();
+        }
+    }
+
+    /** Polls until the session has assembled its belts (the build is lazy, on
+     *  the first prompt).
+     *  @param connection the session under test */
+    private static void awaitBelt(SessionConnection connection) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline) {
+            if (!connection.childBelt().isEmpty() && connection.belt() != null) return;
+            Thread.sleep(25);
+        }
+        throw new AssertionError("the session never assembled a belt");
     }
 
     /** The workspace-scoped configuration both tests start from. */

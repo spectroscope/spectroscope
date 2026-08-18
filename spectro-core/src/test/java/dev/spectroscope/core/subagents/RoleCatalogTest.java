@@ -2,6 +2,7 @@ package dev.spectroscope.core.subagents;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -96,8 +97,15 @@ class RoleCatalogTest {
         assertTrue(worker.tools().contains("launch_start"), worker.tools().toString());
         assertEquals(List.of(), worker.withholds(),
                 "a worker gives nothing up — and that is a decision, readable here");
-        assertEquals(WIDE_BELT.size() + 1, worker.tools().size(),
-                "the whole belt plus report_status");
+        // Exact, like every sibling role's assertion — a size check holds through
+        // one drop plus one duplicate, and toolsOf never dedupes. Order matters
+        // too: report_status is last, and the worker is the one role that
+        // carries the belt whole, so it is the one whose order nothing else
+        // would catch.
+        List<String> expected = new ArrayList<>(WIDE_BELT);
+        expected.add("report_status");
+        assertEquals(expected, worker.tools(),
+                "the whole belt, in the face's own registration order, report_status last");
     }
 
     @Test
@@ -131,19 +139,13 @@ class RoleCatalogTest {
         assertTrue(research.withholds().contains("write_file"), research.withholds().toString());
     }
 
-    @Test
-    void theRoleProfileToolListIsTheOneTheLiveRegistryIsBuiltFrom() {
-        // Both faces read RoleCatalog.beltPolicy. This pins that they read it the
-        // SAME way: the introspection list per role equals the policy applied to
-        // the belt, tool for tool and in order.
-        for (AgentType type : AgentType.values()) {
-            assertEquals(RoleCatalog.toolsOf(type, WIDE_BELT),
-                    RoleCatalog.roleProfiles(WIDE_BELT).stream()
-                            .filter(profile -> profile.type().equals(type.id()))
-                            .findFirst().orElseThrow().tools(),
-                    "role " + type.id());
-        }
-    }
+    // theRoleProfileToolListIsTheOneTheLiveRegistryIsBuiltFrom was REMOVED, not
+    // renamed: its name claimed the live registry and its body compared
+    // RoleCatalog.toolsOf to RoleCatalog.roleProfiles — which computes its lists
+    // by calling toolsOf. A function measured against itself. What it claimed is
+    // now measured where it can fail, in
+    // SubagentManagerTest#aChildsLiveRegistryIsTheListRoleCatalogAdvertisesForItsRole,
+    // which reads the specs a child is really advertised.
 
     @Test
     void researchToolDescriptionNamesTheGateAndTheSkill() {

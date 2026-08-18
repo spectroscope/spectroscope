@@ -226,16 +226,26 @@ public final class SubagentManager {
      * over no web tools (headless, fleet) builds research children without web
      * reach, which is the unattended-lanes decision of card 205.</p>
      *
-     * <p><b>The owner's answer, 2026-08-18.</b> Five of the newly reachable
-     * tools are constructed ungated — {@code browser_read_page}
-     * ({@code BrowserTools.java:432}), {@code browser_find} ({@code :473}),
-     * {@code browser_read_console} ({@code :514}), {@code launch_list}
-     * ({@code LaunchTools.java:135}) and {@code launch_logs} ({@code :426}) all
-     * pass {@code gated=false}, and a child holds the parent's OWN instances, so
-     * a child reads the operator's attached page and console with no prompt. The
-     * owner was asked that exact question and accepted it ungated: a child reads
-     * the screen exactly as the parent already does. Recorded here rather than
-     * only in the card, because this is the file a reader lands in.</p>
+     * <p><b>The owner's answer, 2026-08-18.</b> Five of the newly reachable tools
+     * are constructed with {@code gated=false}: {@code browser_read_page},
+     * {@code browser_find}, {@code browser_read_console}, {@code launch_list}
+     * and {@code launch_logs}. A child holds the parent's OWN instances, so a
+     * child reads the operator's attached page and console with no prompt at
+     * all. The owner was asked that exact question and accepted it ungated: a
+     * child reads the screen exactly as the parent already does.</p>
+     *
+     * <p>No line numbers here on purpose — they drift, and this list does not
+     * need them: {@code BrowserToolsTest} and {@code LaunchToolsTest} assert
+     * {@code needsPermission()} false for exactly these five and true for the
+     * other seven, so the claim is pinned rather than cited. Recorded in this
+     * file rather than only in the card, because this is where a reader lands
+     * when they ask what a child may do.</p>
+     *
+     * <p><b>What else the same widening handed over</b>, since the owner was
+     * asked about the screen and not about the rest: a worker child now also
+     * carries {@code generate_image}, the three web tools — so it has network
+     * egress it did not have before this card — and every MCP server the
+     * operator configured. All gated per call, all newly reachable.</p>
      *
      * @param type        the child profile whose policy decides the filter
      * @param childId     stamped into the child's report_status messages

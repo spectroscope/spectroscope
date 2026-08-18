@@ -152,6 +152,8 @@ public final class SessionConnection {
      *  twelve browser/launch tools from every real session with the whole gate
      *  staying green. Holding it is what makes that call site assertable. */
     private volatile ToolRegistry belt;
+    /** What children of this session inherit — see {@link #childBelt()}. */
+    private volatile List<Tool> childBelt = List.of();
 
     /** The last refusal {@link #liveConfig()} reported, so a settings file the
      *  session may not read is announced when it breaks and not once per tool
@@ -1180,7 +1182,7 @@ public final class SessionConnection {
                 .cwd(workspace)
                 .parentAgentId("main")
                 .onPermission(broker)
-                .baseTools(List.copyOf(childBase))
+                .baseTools(childBelt = List.copyOf(childBase))
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(webTools)
@@ -1220,6 +1222,26 @@ public final class SessionConnection {
      *          first prompt */
     ToolRegistry belt() {
         return belt;
+    }
+
+    /**
+     * The belt this session hands its CHILDREN — the other half of the same
+     * evidence, and the half card 270 left unreadable.
+     *
+     * <p>Card 270 widened this from a hand-listed {@code StandardTools.all()}
+     * plus {@code use_skill} to the parent's whole assembly, and decided at the
+     * same seam that {@code update_plan} and {@code ask_user_question} stay off
+     * it. Both are decisions made by REGISTRATION — a line's position in
+     * {@link #buildAgentOnce} and nothing else — so like the parent's fence they
+     * are only provable by reading what the face actually built. Without this
+     * reader, one moved line hands every worker child the power to park the
+     * operator behind a question of its own, with the whole suite green.</p>
+     *
+     * @return the child belt {@link #buildAgentOnce} assembled, empty before the
+     *         first prompt
+     */
+    List<Tool> childBelt() {
+        return childBelt;
     }
 
     /**

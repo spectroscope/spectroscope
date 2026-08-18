@@ -107,9 +107,24 @@ public final class RoleCatalog {
      * {@code update_plan} is main-only because a child writing the flat UI plan
      * snapshot would clobber it.</p>
      *
-     * <p>Empty is a decision, not an oversight, and it is the sentence a reader
-     * should be able to find: <b>a worker child can do anything this session's
-     * agent can do, under the same permission gate and the same allowlist.</b></p>
+     * <p>Empty is a decision, not an oversight. The sentence a reader should be
+     * able to find, with its exceptions rather than without them: <b>a worker
+     * child holds this session's whole belt, under the same permission gate and
+     * the same allowlist — everything except the verbs that are main-only by
+     * construction.</b> Those are three, and none of them is a withholding:</p>
+     *
+     * <ul>
+     *   <li>the spawn verbs and the five dev verbs, registered into the PARENT
+     *       registry only, so depth stays 1;</li>
+     *   <li>{@code update_plan}, because a child writing the flat UI plan
+     *       snapshot would clobber the operator's view;</li>
+     *   <li>{@code ask_user_question} (card 265), decided when this half was
+     *       merged: a child's question would park the operator behind a spawn
+     *       they never approved, and on the CLI face the asker is the REPL's own
+     *       console. Pinned on both faces —
+     *       {@code SessionChildBeltTest#aChildIsNotHandedTheVerbsThatBelongToTheMainAgentAlone}
+     *       and its CLI sibling in {@code SpectroCliAskerTest}.</li>
+     * </ul>
      */
     static final Set<String> WORKER_WITHHOLDS = Set.of();
 
@@ -262,7 +277,10 @@ public final class RoleCatalog {
      * The subagent role profiles for the System-Kontext view. childBaseToolNames
      * is the belt the face hands to children — since card 270 that is the SAME
      * supplier step the parent's own belt comes from, so the browser family, the
-     * launch family and the operator's MCP tools are in it. Explore is filtered
+     * launch family and — in a LIVE session — the operator's MCP tools are in it.
+     * The one caller of this method, {@code ContextDescriber}, serves a
+     * STATELESS endpoint: no session has been dialled, so it can hand over no
+     * MCP names and says so itself. Explore is filtered
      * to its read-only keep list, worker carries the belt whole, and both get
      * report_status. Dev tools run as workers with a role preamble + a skill —
      * except research (card 205), which runs on the read set plus the gated web
@@ -271,9 +289,18 @@ public final class RoleCatalog {
      * so its research children hold none — the unattended lanes stay closed.
      *
      * <p>Every list here comes out of {@link #beltPolicy}, the same lookup the
-     * live registry is built from, so what this view shows is what the child
-     * gets — including {@link RoleProfile#withholds()}, which answers "what did
-     * this role give up" without a reader tracing a second file.</p>
+     * live registry is built from — pinned by
+     * {@code SubagentManagerTest#aChildsLiveRegistryIsTheListRoleCatalogAdvertisesForItsRole},
+     * which reads the specs a child is really advertised rather than comparing
+     * this method to itself.</p>
+     *
+     * <p>{@link RoleProfile#withholds()} answers "what did this role give up"
+     * without a reader tracing a second file — <b>on the payload</b>. It is
+     * computed here and shipped on {@code /api/context}, and
+     * {@code SystemContextTab.tsx} does not read it: the consumer is
+     * structurally typed and simply drops the field. So criterion 4's readable
+     * half exists in Java and in the JSON, and not yet on a screen. Rendering it
+     * is follow-up work, named here rather than promised.</p>
      *
      * @param childBaseToolNames names of the base tools a child may inherit
      * @return one profile per role: explore, worker, then the five role tools
