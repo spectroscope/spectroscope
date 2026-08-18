@@ -343,6 +343,48 @@ class AgentProgressGuardTest {
                 "every tool_call of the ended round carries a tool_result");
     }
 
+    @Test
+    void theStalledPlansSteerNeverPutsTwoUserMessagesInARow(@TempDir Path cwd) {
+        // The request path does NOT merge adjacent roles — mergeAdjacentRoles is
+        // only ever applied when a session is read back or compacted. A turn
+        // starts right after the previous turn's tool-results USER message, so a
+        // steer added BESIDE it would reach Anthropic as "roles must alternate",
+        // and the guard would break the run it exists to save.
+        ToolRegistry registry = new ToolRegistry();
+        StandardTools.all().forEach(registry::register);
+        registry.register(new dev.spectroscope.core.tools.UpdatePlanTool());
+        FakeProvider provider = new FakeProvider();
+        for (int i = 1; i <= 6; i++) {
+            provider.write("p" + i, "src/step" + i + ".js");
+        }
+        ProgressGuard guard = new ProgressGuard(new ProgressSettings(0, 0, 2),
+                question -> new Asker.Answer(List.of("try a different step")));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider).systemPrompt("test").registry(registry).cwd(cwd)
+                .onPermission(request -> true).progressGuard(guard).build());
+        provider.turns.addFirst(List.of(
+                new LlmProvider.PToolCall("plan1", "update_plan", planInput()),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)));
+        try (EventStream stream = agent.run("go", new RunOptions(new CancelSignal(), List.of()))) {
+            stream.forEach(event -> { });
+        }
+
+        boolean steered = provider.requests.stream()
+                .flatMap(request -> request.messages().stream())
+                .flatMap(message -> message.content().stream())
+                .anyMatch(content -> content instanceof LlmProvider.TextContent text
+                        && text.text().contains("try a different step"));
+        assertTrue(steered, "the operator's words never reached the model at all");
+        for (LlmProvider.ProviderRequest request : provider.requests) {
+            LlmProvider.ProviderMessage.Role previous = null;
+            for (LlmProvider.ProviderMessage message : request.messages()) {
+                assertFalse(message.role() == previous,
+                        "two " + message.role() + " messages in a row went to the provider");
+                previous = message.role();
+            }
+        }
+    }
+
     /** An update_plan input with one open step. */
     private static JsonNode planInput() {
         ObjectNode step = JSON.createObjectNode()

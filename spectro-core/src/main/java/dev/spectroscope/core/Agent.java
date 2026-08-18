@@ -326,10 +326,19 @@ public final class Agent {
                         }
                         if (answer.guidance() != null) {
                             // Between turns there is no tool result to ride, so
-                            // the operator's words go in as their own user turn —
-                            // the same place the answer to a question lands.
-                            messages.add(new ProviderMessage(ProviderMessage.Role.USER,
-                                    List.of(new TextContent(answer.guidance()))));
+                            // the operator's words go in as user content — the
+                            // same place the answer to a question lands.
+                            //
+                            // APPENDED to the last user message when there is
+                            // one, never added beside it. The previous turn ends
+                            // with exactly such a message (the tool results), and
+                            // the request path does NOT merge adjacent roles —
+                            // mergeAdjacentRoles is only ever applied when a
+                            // session is read back or compacted. Two user
+                            // messages in a row would reach Anthropic as
+                            // "roles must alternate", i.e. the guard would break
+                            // the run it was trying to save.
+                            appendUserText(messages, answer.guidance());
                         }
                     }
                 }
@@ -567,6 +576,31 @@ public final class Agent {
             emit.accept(new ErrorEvent(agentId, error.getMessage(), now()));
             emit.accept(new RunEnd(runId, "error", now()));
         }
+    }
+
+    /**
+     * Adds one line of text to the history as user content, folded into the last
+     * user message when the history already ends with one (card 262).
+     *
+     * <p>Not tidiness: the request path never merges adjacent roles — that is
+     * only done when a session is read back or compacted — so two user messages
+     * in a row travel to the provider exactly as written, and Anthropic answers
+     * "roles must alternate".</p>
+     *
+     * @param messages the running history, modified in place
+     * @param text     what to say
+     */
+    private static void appendUserText(List<ProviderMessage> messages, String text) {
+        if (!messages.isEmpty() && messages.getLast().role() == ProviderMessage.Role.USER) {
+            ProviderMessage last = messages.getLast();
+            List<ProviderContent> content = new ArrayList<>(last.content());
+            content.add(new TextContent(text));
+            messages.set(messages.size() - 1,
+                    new ProviderMessage(ProviderMessage.Role.USER, List.copyOf(content)));
+            return;
+        }
+        messages.add(new ProviderMessage(ProviderMessage.Role.USER,
+                List.of(new TextContent(text))));
     }
 
     /**
