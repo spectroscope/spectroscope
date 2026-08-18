@@ -19,8 +19,13 @@ import java.util.List;
  * @param parentAgentId agentId of the parent agent (CLI: "main")
  * @param onPermission  the same blocking y/N broker the parent uses;
  *                      request.agentId() tells the prompt who is asking
- * @param baseTools     standard tools WITHOUT the spawn tools — children must
- *                      never be able to spawn (nesting depth 1 by construction)
+ * @param baseTools     the belt a child inherits, WITHOUT the spawn tools —
+ *                      children must never be able to spawn (nesting depth 1 by
+ *                      construction). Since card 270 the faces build this from
+ *                      the SAME supplier step the parent's own belt comes from
+ *                      (settings belt + MCP), so a tool added to the parent
+ *                      cannot silently miss the children; what a role gives up
+ *                      out of it is declared in {@link RoleCatalog#beltPolicy}
  * @param hooks         the same pre/post_tool_use hooks the parent runs — a
  *                      hook that blocks a tool must also block it on a child,
  *                      or delegation becomes a bypass (nullable → none)

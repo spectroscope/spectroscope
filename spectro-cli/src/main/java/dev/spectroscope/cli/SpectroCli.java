@@ -508,13 +508,23 @@ public final class SpectroCli implements Runnable {
      *  dev tools. Sets the registry/subagents/mcp fields.
      *
      *  <p>Package-private (card 265): the ask's fence lives in here, and the belt
-     *  it produces is the only honest evidence of what this face advertises.</p> */
+     *  it produces is the only honest evidence of what this face advertises.</p>
+     *
+     *  <p>Card 270: the list is built ONCE, in {@code shared}, and both consumers
+     *  read it — the main agent's registry and the belt the children inherit. The
+     *  two used to be assembled separately, and the child's copy was
+     *  {@code StandardTools.all()} plus {@code use_skill}: no image tool, no web
+     *  tools, and not one of the MCP servers the operator had configured. A tool
+     *  added here now reaches the children or nobody.</p> */
     void registerTools() {
         registry = new ToolRegistry();
-        StandardTools.all().forEach(registry::register);
+        // The belt both the main agent and the children get, in registration
+        // order. update_plan and the spawn/dev verbs are added to the REGISTRY
+        // only, further down — they are main-only by decision, not by accident.
+        List<Tool> shared = new ArrayList<>(StandardTools.all());
         // the provider is created lazily per call — a missing API key only
         // matters (and errors readably) when the model actually asks for an image.
-        registry.register(new GenerateImageTool(config::imageProviderFromConfig,
+        shared.add(new GenerateImageTool(config::imageProviderFromConfig,
                 ImageStore.inUserHome(),
                 llmWire)); // image calls land on the session's llm-wire record (card 184)
         // Real tool: fetch a web page as readable text. Network egress is a side
@@ -535,25 +545,27 @@ public final class SpectroCli implements Runnable {
         Tool browsePage = new BrowsePageTool(
                 () -> BrowsePageTool.findChrome(config.chromeEnv()), new DefaultChromeRunner(),
                 dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost()));
-        registry.register(webFetch);
+        shared.add(webFetch);
         // web_search branch: the ONE tier WebSearchTiers resolves from the
         // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
-        registry.register(webSearch);
-        registry.register(browsePage);
-        // The main agent's plan. Permission-free, main-only (a worker's
-        // plan would clobber the flat UI snapshot), so it is NOT added to childBase.
-        registry.register(new UpdatePlanTool());
-        // Card 265: only where a person can answer. On this face that is the
-        // interactive REPL, which is the only caller that sets the asker — a
-        // `spectro run`, a cron fire and a node build their belts through
-        // HeadlessRunner and never reach this method at all.
+        shared.add(webSearch);
+        shared.add(browsePage);
+        // Card 265, and a seam card 270 had to decide: only where a person can
+        // answer. On this face that is the interactive REPL, which is the only
+        // caller that sets the asker — a `spectro run`, a cron fire and a node
+        // build their belts through HeadlessRunner and never reach this method at
+        // all. It is registered on the REGISTRY and not on `shared`, so it is
+        // main-only exactly like update_plan: a child that could raise its own
+        // question would interrupt the operator on behalf of a spawn the operator
+        // never saw. Card 270 measured the belt before card 265 existed, so this
+        // withholding is a decision made at the merge, not one it carried.
         if (askQuestionOnTerminal != null) {
             registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(
                     askQuestionOnTerminal));
         }
         if (!skills.skills().isEmpty()) {
-            registry.register(skills.useSkillTool());
+            shared.add(skills.useSkillTool());
         }
         // MCP is just another tool SOURCE. Connect eagerly to every
         // configured server and register each remote tool as mcp__<server>__<tool>
@@ -561,13 +573,12 @@ public final class SpectroCli implements Runnable {
         // and the tool_call/tool_result events flow unchanged (no new event type).
         // Registered once here; independent of the in-app provider switch.
         mcp = McpServerRegistry.load(config.mcpServers(), projectDir);
-        mcp.tools().forEach(registry::register);
-        // Children get the standard tools PLUS use_skill (when skills exist), so a
-        // dev-tool child can actually load the skill its role prompt points at.
-        List<Tool> childBase = new ArrayList<>(StandardTools.all());
-        if (!skills.skills().isEmpty()) {
-            childBase.add(skills.useSkillTool());
-        }
+        shared.addAll(mcp.tools());
+
+        shared.forEach(registry::register);
+        // The main agent's plan. Permission-free, main-only (a worker's
+        // plan would clobber the flat UI snapshot), so it is NOT in `shared`.
+        registry.register(new UpdatePlanTool());
         // Card 205: the research role's web grant — the parent's own three web
         // tools, handed to RESEARCH children only. Same instances, same gate.
         subagents = new SubagentManager(SubagentConfig.builder()
@@ -575,7 +586,7 @@ public final class SpectroCli implements Runnable {
                 .cwd(workspace)
                 .parentAgentId(MAIN_AGENT_ID)
                 .onPermission(askOnTerminal)
-                .baseTools(List.copyOf(childBase))
+                .baseTools(List.copyOf(shared)) // card 270: the parent's own belt
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(List.of(webSearch, webFetch, browsePage))

@@ -205,42 +205,56 @@ public final class SubagentManager {
     }
 
     /**
-     * Permission profile by construction: explore gets the read tools only,
-     * worker all base tools, research the read set plus use_skill plus the
-     * session's web tools (card 205). The web tools are the parent's OWN
-     * instances out of {@link SubagentConfig#webTools()}, so every child call
-     * passes the same permission broker and the same card-199 tiers as a
-     * parent call — the role grants reach, never approval. A face that hands
-     * over no web tools (headless, fleet) builds research children without
-     * web reach, which is the unattended-lanes decision of card 205.
+     * Permission profile by construction, from the role's own declared policy
+     * ({@link RoleCatalog#beltPolicy}): a worker carries the belt whole, explore
+     * only its read keep-list, research the read set plus the session's web
+     * grant (card 205).
      *
-     * <p><b>Card 270 changed only the PRICE of a child, never its reach.</b>
-     * The card's other half — handing a child the parent's whole belt instead
-     * of the hand-listed standard set — is NOT on this branch: it makes five
-     * ungated tools reachable from a child, which is the owner's call to make
-     * and not a builder's. The belt a child gets here is exactly the belt it
-     * got before, so nothing a child could not reach yesterday it can reach
-     * today.</p>
+     * <p><b>Card 270 changed what the belt IS, not what a role does to it.</b>
+     * The faces now hand children the same supplier step the parent's own belt
+     * comes from — so the browser family, the launch family and every MCP server
+     * the operator configured arrive here, and a worker child holds them. Before
+     * this card the belt was hand-listed as {@code StandardTools.all()} plus
+     * {@code use_skill} in two faces, and the families registered one line later
+     * reached the parent only; a {@code test} child advertised verification and
+     * held no way to open a page.</p>
      *
-     * @param type        decides the filter — worker keeps every base tool,
-     *                    explore only the read set, research read set + web grant
+     * <p>What did not change, and must not: a role WIDENS nothing. Every tool
+     * here is one of the parent's own instances, so a child's call passes the
+     * same permission broker, the same allowlist and the same card-199 tiers as
+     * the parent's — the belt grants reach, never approval. A face that hands
+     * over no web tools (headless, fleet) builds research children without web
+     * reach, which is the unattended-lanes decision of card 205.</p>
+     *
+     * <p><b>The owner's answer, 2026-08-18.</b> Five of the newly reachable
+     * tools are constructed ungated — {@code browser_read_page}
+     * ({@code BrowserTools.java:432}), {@code browser_find} ({@code :473}),
+     * {@code browser_read_console} ({@code :514}), {@code launch_list}
+     * ({@code LaunchTools.java:135}) and {@code launch_logs} ({@code :426}) all
+     * pass {@code gated=false}, and a child holds the parent's OWN instances, so
+     * a child reads the operator's attached page and console with no prompt. The
+     * owner was asked that exact question and accepted it ungated: a child reads
+     * the screen exactly as the parent already does. Recorded here rather than
+     * only in the card, because this is the file a reader lands in.</p>
+     *
+     * @param type        the child profile whose policy decides the filter
      * @param childId     stamped into the child's report_status messages
      * @param parentQueue where report_status publishes its status events
-     * @return the child's registry: profile-filtered base tools plus report_status, never the spawn tools
+     * @return the child's registry: policy-filtered belt plus report_status, never the spawn tools
      */
     private ToolRegistry registryFor(AgentType type, String childId, MergedEventStream parentQueue) {
-        Set<String> keep = switch (type) {
-            case WORKER -> null; // null = every base tool
-            case EXPLORE -> RoleCatalog.EXPLORE_TOOL_NAMES;
-            case RESEARCH -> RoleCatalog.RESEARCH_BASE_TOOL_NAMES;
-        };
+        RoleCatalog.BeltPolicy policy = RoleCatalog.beltPolicy(type);
         ToolRegistry registry = new ToolRegistry();
         config.baseTools().stream()
-                .filter(tool -> keep == null || keep.contains(tool.name()))
+                .filter(tool -> policy.holds(tool.name()))
                 .forEach(registry::register);
-        if (type == AgentType.RESEARCH) {
-            config.webTools().forEach(registry::register);
-        }
+        // The role's explicit grant out of the session's own instances — the
+        // card-205 web trio, in the card's order. Registering a name the belt
+        // already carried is a no-op replacement with the SAME instance.
+        Set<String> granted = Set.copyOf(policy.grant());
+        config.webTools().stream()
+                .filter(tool -> granted.contains(tool.name()))
+                .forEach(registry::register);
         // Every child (all types) may report progress — the A2A status channel.
         registry.register(new ReportStatusTool(childId, parentQueue));
         return registry;
