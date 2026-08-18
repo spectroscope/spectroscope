@@ -94,7 +94,9 @@ public final class SpectroCli implements Runnable {
     @Option(names = "--base-url", description = "Provider base URL (overrides the config).")
     String baseUrlFlag;
 
-    @Option(names = "--compaction-threshold", description = "Compaction threshold in input tokens.")
+    @Option(names = "--compaction-threshold",
+            description = "Compaction threshold in input tokens "
+                    + "(default: derived from the model's loaded context window).")
     Integer compactionThresholdFlag;
 
     @Option(names = "--workspace",

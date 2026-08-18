@@ -49,7 +49,16 @@ import java.util.function.Function;
  * @param provider            "anthropic", "ollama" or "openai" (LM Studio &amp; friends)
  * @param model               model id for the chosen provider
  * @param baseUrl             base URL for ollama/openai (ignored for anthropic)
- * @param compactionThreshold input-token threshold that triggers compaction
+ * @param compactionThreshold input-token threshold that triggers compaction, or
+ *                            {@code null} when nobody set one — then the harness
+ *                            DERIVES it from the window the backend says it
+ *                            loaded (card 263,
+ *                            {@link dev.spectroscope.core.session.CompactionThreshold}).
+ *                            The default used to be a literal 100,000 here, and
+ *                            that is the whole reason a session on a 204,288-token
+ *                            model summarized itself away at 100,000: with an int
+ *                            there was no way to tell "the operator typed this"
+ *                            from "nobody said anything".
  * @param permissionMode      "ask", "auto" or "readonly"
  * @param autoApprove         permission allowlist in card 199's grammar,
  *                            {@code <tool>[#<tier>][:<valuePrefix>]} — e.g.
@@ -159,7 +168,7 @@ public record SpectroConfig(
         String provider,
         String model,
         String baseUrl,
-        int compactionThreshold,
+        Integer compactionThreshold,
         String permissionMode,
         List<String> autoApprove,
         String imageProvider,
@@ -237,7 +246,8 @@ public record SpectroConfig(
     static final Set<String> KNOWN_PERMISSION_MODES = Set.of("ask", "auto", "readonly");
 
     private static final SpectroConfig DEFAULTS = new SpectroConfig(
-            "anthropic", "claude-opus-4-8", "http://localhost:11434", 100_000, "ask", List.of(),
+            // compactionThreshold null: unset, so the harness derives it (card 263)
+            "anthropic", "claude-opus-4-8", "http://localhost:11434", null, "ask", List.of(),
             "gemini", true, List.of(), 2, true, List.of(), // 2 retries; caching on; no hooks
             null, // workspace: per-session temp folder unless configured
             "info", // logLevel: file diagnostics at info; console stays WARN-quiet
@@ -1504,6 +1514,12 @@ public record SpectroConfig(
                     Optional.ofNullable(provider).orElse(DEFAULTS.provider()),
                     Optional.ofNullable(model).orElse(DEFAULTS.model()),
                     Optional.ofNullable(baseUrl).orElse(DEFAULTS.baseUrl()),
+                    // Card 263: DEFAULTS holds null here, so an unset threshold
+                    // stays unset and the harness derives it. Written as the same
+                    // fold as every sibling field on purpose — the version that
+                    // returned `compactionThreshold` directly made the DEFAULTS
+                    // entry dead, and a dead default is one a later hand restores
+                    // to 100_000 without a single test going red.
                     Optional.ofNullable(compactionThreshold).orElse(DEFAULTS.compactionThreshold()),
                     Optional.ofNullable(permissionMode).orElse(DEFAULTS.permissionMode()),
                     Optional.ofNullable(autoApprove).orElse(DEFAULTS.autoApprove()),

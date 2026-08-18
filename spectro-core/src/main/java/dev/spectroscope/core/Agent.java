@@ -34,6 +34,7 @@ import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
 import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.session.Compaction;
+import dev.spectroscope.core.session.CompactionThreshold;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.wire.LlmWireRecorder;
 import dev.spectroscope.core.wire.LlmWireTap;
@@ -58,7 +59,13 @@ public final class Agent {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Agent.class);
 
     private static final int MAX_TURNS = 15;         // runaway-loop brake
-    private static final int DEFAULT_MAX_TOKENS = 32_000;
+
+    /** The completion budget one turn spends when nothing configures it.
+     *  Public because {@link dev.spectroscope.core.session.CompactionThreshold}
+     *  is defined AGAINST it (card 263): the share of the context window kept
+     *  back has to hold one of these, and a second copy of the number in the
+     *  derivation would drift the day this one moves. */
+    public static final int DEFAULT_MAX_TOKENS = 32_000;
 
     private final AgentOptions options;
     // Multi-turn history lives in the agent, across runs on the same instance.
@@ -240,8 +247,14 @@ public final class Agent {
                          Consumer<RunEvent> emit, String agentId) {
         String runId = UUID.randomUUID().toString();
         int maxTokens = options.maxTokens() != null ? options.maxTokens() : DEFAULT_MAX_TOKENS;
-        int compactionThreshold = options.compactionThreshold() != null
-                ? options.compactionThreshold() : 100_000;
+        // Card 263: ONCE per run, before the first token flows — the provider's
+        // window question can cost a round trip, and context_info is emitted
+        // per turn, so asking there would put it on the hot path. A mid-session
+        // model switch is picked up by the next run, which is the same grain
+        // the ring's caption is read at.
+        CompactionThreshold.Derived compaction = CompactionThreshold.derive(
+                options.compactionThreshold(), options.provider().contextWindow());
+        int compactionThreshold = compaction.tokens();
 
         // A SwitchableProvider reports its live name; everyone else falls back to
         // the build-time label — so a mid-session provider switch is recorded right.
@@ -252,6 +265,8 @@ public final class Agent {
         emit.accept(new RunStart(runId, agentId, options.parentId(), prompt,
                 providerLabel, options.provider().modelName(), attachments, now()));
         log.info("run {} started (provider {})", runId, providerLabel);
+        log.info("compacting at {} input tokens ({})",
+                compactionThreshold, compaction.source().wireName());
         // images BEFORE the text — the same order the Anthropic mapping expects.
         List<ProviderContent> firstUserContent = new ArrayList<>();
         if (attachments != null) {
@@ -280,7 +295,7 @@ public final class Agent {
 
                 // context introspection, opt-in via the options.
                 if (Boolean.TRUE.equals(options.introspection())) {
-                    emit.accept(contextInfo(turn, messages));
+                    emit.accept(contextInfo(turn, messages, compaction));
                 }
 
                 // Compaction hook: a no-op below the threshold. The event
@@ -598,11 +613,16 @@ public final class Agent {
      * prompt, tool schemas, conversation. Everything is chars/4; the real token
      * truth arrives afterwards with the usage event.
      *
-     * @param turn     the turn the estimate precedes (1-based)
-     * @param messages the history that will ride along with the next request
+     * @param turn       the turn the estimate precedes (1-based)
+     * @param messages   the history that will ride along with the next request
+     * @param compaction the threshold this run derived ONCE, plus the fact behind
+     *                   it — handed in rather than re-derived, so the number the
+     *                   gauge reads and the number the summarizer is triggered by
+     *                   cannot drift apart (card 263)
      * @return the additive {@code context_info} event, ready to emit
      */
-    private ContextInfo contextInfo(int turn, List<ProviderMessage> messages) {
+    private ContextInfo contextInfo(int turn, List<ProviderMessage> messages,
+                                    CompactionThreshold.Derived compaction) {
         int systemChars = options.systemPrompt().length();
         int schemaChars = options.registry().specs().stream()
                 .mapToInt(spec -> spec.name().length() + spec.description().length()
@@ -620,10 +640,9 @@ public final class Agent {
                 part("tool schemas", schemaChars, schemaText),
                 part("conversation", conversationChars, renderConversation(messages)));
         int estimatedTokens = parts.stream().mapToInt(ContextPart::estTokens).sum();
-        int threshold = options.compactionThreshold() != null
-                ? options.compactionThreshold() : 100_000;
         return new ContextInfo(options.agentId(), turn, messages.size(),
-                estimatedTokens, threshold, parts, now());
+                estimatedTokens, compaction.tokens(), parts, now(),
+                compaction.source().wireName());
     }
 
     /** Context-part texts are capped for the wire — a whole conversation can be

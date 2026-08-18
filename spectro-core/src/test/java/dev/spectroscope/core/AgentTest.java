@@ -804,7 +804,11 @@ class AgentTest {
                     info.parts().stream().map(RunEvent.ContextPart::label).toList());
             assertEquals(info.parts().stream().mapToInt(RunEvent.ContextPart::estTokens).sum(),
                     info.estimatedTokens(), "estimatedTokens must be the sum of its parts");
-            assertEquals(100_000, info.threshold(), "threshold defaults to 100000");
+            // Card 263: the fake provider reports no window and nothing is
+            // configured, so this is the FALLBACK arm — the only one that is
+            // still 100,000, and it says so on the event now.
+            assertEquals(100_000, info.threshold(), "a provider that knows nothing lands on 100000");
+            assertEquals("fallback", info.thresholdSource(), "and the event names that arm");
         }
         // Card 86 follow-up: the parts carry their CONTENT — what actually
         // rides to the provider, readable in the trace's Insight view.

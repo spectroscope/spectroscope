@@ -86,8 +86,16 @@ cheap, and introspection shows you both at work.</p>
 
 <ul>
   <li><strong>Trigger:</strong> the last turn's context size vs.
-      <code>compactionThreshold</code> (default 100&thinsp;000 input tokens) — checked at the
-      start of each turn. The measure is honest under caching:
+      <code>compactionThreshold</code> — checked at the start of each turn. The
+      threshold is <strong>derived</strong> when nobody sets one: three quarters
+      of the window the backend says it loaded (LM Studio answers
+      <code>loaded_instances[].config.context_length</code> on its own
+      <code>/api/v1/models</code>, ollama answers <code>context_length</code> on
+      <code>/api/ps</code>), asked once per run. The last quarter is kept back
+      because the very next call after the trip is the summarizer, which re-sends
+      the history <em>and</em> asks for a completion on top. A backend that states
+      no window — anthropic, any plain OpenAI-compatible server — keeps the old
+      100&thinsp;000. An explicit setting always wins. The measure is honest under caching:
       <code>inputTokens + cacheRead + cacheCreation</code>, because cached tokens still
       occupy the window even though the provider bills them separately.</li>
   <li><strong>Mechanism:</strong> everything except the last four messages is summarized by

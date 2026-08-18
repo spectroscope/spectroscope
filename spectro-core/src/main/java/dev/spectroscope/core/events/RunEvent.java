@@ -611,10 +611,31 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param threshold       the compaction threshold the estimate is measured against
      * @param parts           the labeled slices (system prompt, tool schemas, conversation)
      * @param ts              epoch millis of emission
+     * @param thresholdSource which fact produced the threshold (additive, card
+     *                        263): {@code override} when an explicit setting won,
+     *                        {@code window} when the backend stated the window
+     *                        the loaded instance serves, {@code fallback} when
+     *                        nothing could be learned. Null in pre-263 sessions,
+     *                        and dropped from the wire when null
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ContextInfo(String agentId, int turn, int messages, int estimatedTokens,
-                       int threshold, List<ContextPart> parts, long ts) implements RunEvent {}
+                       int threshold, List<ContextPart> parts, long ts,
+                       String thresholdSource) implements RunEvent {
+
+        /** Pre-card-263 shape: a threshold with no stated provenance.
+         *  @param agentId        the agent the estimate belongs to
+         *  @param turn           the turn the estimate precedes (1-based)
+         *  @param messages       how many history entries ride along
+         *  @param estimatedTokens the chars/4 sum of the parts
+         *  @param threshold      the compaction trigger's level
+         *  @param parts          the labeled slices behind the estimate
+         *  @param ts             epoch millis of emission */
+        public ContextInfo(String agentId, int turn, int messages, int estimatedTokens,
+                           int threshold, List<ContextPart> parts, long ts) {
+            this(agentId, turn, messages, estimatedTokens, threshold, parts, ts, null);
+        }
+    }
 
     /** One labeled slice of the context estimate; not a RunEvent itself, like {@link Attachment}.
      *  @param label     what the slice covers (e.g. "system prompt")

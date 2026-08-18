@@ -51,7 +51,12 @@ class SpectroConfigTest {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir);
         assertEquals("anthropic", config.provider());
         assertEquals("claude-opus-4-8", config.model());
-        assertEquals(100_000, config.compactionThreshold());
+        // Card 263: with nothing configured the threshold is UNSET, not 100,000.
+        // The constant moved out of the config and into the derivation, where
+        // "nobody said anything" can finally be told apart from "the operator
+        // typed 100000" — the distinction the old int made impossible.
+        assertNull(config.compactionThreshold(),
+                "an unset threshold stays unset, so the harness can derive it");
         assertEquals("ask", config.permissionMode());
         assertEquals(List.of(), config.autoApprove());
     }

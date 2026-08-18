@@ -79,6 +79,20 @@ public final class TracingProvider implements LlmProvider {
         return delegate.vision();
     }
 
+    /**
+     * Delegates (card 263): an observer must not answer a capability question
+     * on the observed thing's behalf. A swallowed answer here would put
+     * {@code --verbose} runs back on the 100,000 constant while everything else
+     * derived its threshold — the worst kind of difference, one only visible in
+     * the mode an operator uses to look.
+     *
+     * @return the wrapped provider's own context window
+     */
+    @Override
+    public int contextWindow() {
+        return delegate.contextWindow();
+    }
+
     // ------------------------------------------------------------- ⇢ request
 
     /**

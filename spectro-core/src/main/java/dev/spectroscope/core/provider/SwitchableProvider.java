@@ -79,4 +79,13 @@ public final class SwitchableProvider implements LlmProvider {
     public Vision vision() {
         return delegate.get().vision();
     }
+
+    /** The CURRENT delegate's window (card 263). Deliberately not remembered
+     *  here: swapping the model swaps the question, and an operator who moves
+     *  from a 200k local model to an 8k one must compact on the small window
+     *  from the next run. */
+    @Override
+    public int contextWindow() {
+        return delegate.get().contextWindow();
+    }
 }
