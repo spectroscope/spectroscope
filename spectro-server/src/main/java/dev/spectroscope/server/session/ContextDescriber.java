@@ -64,9 +64,15 @@ final class ContextDescriber {
                 .map(skill -> new ContextInfo.SkillInfo(skill.name(), skill.description()))
                 .toList();
 
-        return new ContextInfo(systemPrompt, mainAgentTools(config, standardTools, skills), skillCatalog,
+        // ONE assembly, two readers — the same shape the faces themselves took in
+        // card 270. Two calls would also have been correct today, but they would
+        // be two chances for the parent's view and the child's view of this
+        // endpoint to describe different belts, which is the exact drift
+        // criterion 3 exists to close.
+        List<Tool> settingsBelt = SettingsToolBelt.assemble(SettingsToolBelt.describeSeams(config)).tools();
+        return new ContextInfo(systemPrompt, mainAgentTools(settingsBelt, standardTools, skills), skillCatalog,
                 mcpServerNames, config.thinking(), config.provider(), config.model(),
-                RoleCatalog.roleProfiles(childBaseToolNames(standardTools, skills)));
+                RoleCatalog.roleProfiles(childBaseToolNames(settingsBelt, standardTools, skills)));
     }
 
     /**
@@ -98,10 +104,9 @@ final class ContextDescriber {
      * @param skills the installed skill library — decides whether use_skill appears
      * @return name/description/needsPermission triples in exact registration order
      */
-    private static List<ContextInfo.ToolInfo> mainAgentTools(SpectroConfig config,
+    private static List<ContextInfo.ToolInfo> mainAgentTools(List<Tool> settingsBelt,
             List<Tool> standardTools, SkillLibrary skills) {
-        List<Tool> extras = new ArrayList<>(
-                SettingsToolBelt.assemble(SettingsToolBelt.describeSeams(config)).tools());
+        List<Tool> extras = new ArrayList<>(settingsBelt);
         extras.add(new UpdatePlanTool());
         // Card 265: registered right beside the plan tool in
         // SessionConnection.buildAgentOnce, so it belongs on both faces or on
@@ -121,17 +126,37 @@ final class ContextDescriber {
     }
 
     /**
-     * The base tools a child inherits: the standard set plus use_skill.
+     * The belt a child inherits: the standard set, the settings belt, then
+     * use_skill — the same steps and the same order
+     * {@link SessionConnection#buildAgentOnce} hands to {@code SubagentConfig}
+     * since card 270.
      *
+     * <p>THREE things it deliberately does NOT list, and all are honest absences
+     * rather than drift. {@code update_plan} is main-only, and so is
+     * {@code ask_user_question} (card 265, kept off the child belt when card
+     * 270's belt half merged: a child's question would park the operator behind
+     * a spawn they never approved). And the MCP tools are
+     * missing because this endpoint is STATELESS: no session exists, so no server
+     * has been dialled and nobody can say what its {@code tools/list} would
+     * return. A live session's children do hold them — the role profiles here
+     * describe the belt this face can know, which is why the live belt is
+     * asserted where it is built ({@code SessionChildBeltTest}) and not from
+     * this list.</p>
+     *
+     * @param settingsBelt the belt {@link #describe} assembled ONCE — the same
+     *                     list the main-agent view above is built from, so the
+     *                     two cannot describe different belts
      * @param standardTools the shared standard set
      * @param skills the installed skill library — empty drops use_skill from the profile
      */
-    private static List<String> childBaseToolNames(List<Tool> standardTools, SkillLibrary skills) {
+    private static List<String> childBaseToolNames(List<Tool> settingsBelt,
+            List<Tool> standardTools, SkillLibrary skills) {
         Stream<String> standard = standardTools.stream().map(Tool::name);
+        Stream<String> beltNames = settingsBelt.stream().map(Tool::name);
         Stream<String> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()
                 : Stream.of(skills.useSkillTool().name());
-        return Stream.concat(standard, useSkill).toList();
+        return Stream.of(standard, beltNames, useSkill).flatMap(names -> names).toList();
     }
 
     /**

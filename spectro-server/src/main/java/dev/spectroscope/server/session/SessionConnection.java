@@ -152,6 +152,8 @@ public final class SessionConnection {
      *  twelve browser/launch tools from every real session with the whole gate
      *  staying green. Holding it is what makes that call site assertable. */
     private volatile ToolRegistry belt;
+    /** What children of this session inherit — see {@link #childBelt()}. */
+    private volatile List<Tool> childBelt = List.of();
 
     /** The last refusal {@link #liveConfig()} reported, so a settings file the
      *  session may not read is announced when it breaks and not once per tool
@@ -1101,9 +1103,13 @@ public final class SessionConnection {
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);
-        // The returned trio is the research role's web grant (card 205) — the
-        // SAME instances the belt carries, so a child call passes the same gate.
-        List<Tool> webTools = registerSettingsTools(registry);
+        // ONE supplier step, two consumers (card 270, criterion 3): the settings
+        // belt is assembled once and its tools go on the parent registry AND into
+        // the belt the children inherit. The returned trio inside it is the
+        // research role's web grant (card 205) — the SAME instances, so a child
+        // call passes the same gate.
+        SettingsToolBelt.Belt settingsBelt = registerSettingsTools(registry);
+        List<Tool> webTools = settingsBelt.webGrant();
         // The plan tool is main-only (see SpectroCli) — the flat UI plan
         // snapshot must not be clobbered by a subagent. describeContext lists it
         // from its own instance; this registration only feeds the live agent.
@@ -1127,9 +1133,32 @@ public final class SessionConnection {
         // switch never rebuilds this registry, so it stays independent of that.
         mcp = McpServerRegistry.load(sessionConfig.mcpServers(), projectDir);
         mcp.tools().forEach(registry::register);
-        // Children get the standard tools PLUS use_skill (when skills exist), so a
-        // dev-tool child can actually load the skill its role prompt points at.
+        // Card 270: the child's belt is the PARENT's belt, assembled from the same
+        // steps and in the same order — standard tools, the settings belt
+        // (browser family, launch family, generate_image, the web trio), the MCP
+        // tools the operator configured, and use_skill when skills exist.
+        //
+        // Before this card it was hand-listed here as StandardTools.all() plus
+        // use_skill, and everything registered in the four lines above reached the
+        // PARENT only. A `test` child advertised verification and held no way to
+        // open a page; a child could not touch a single MCP server the operator
+        // had configured. The baseline session in konzept/ORCHESTRATION.md §2
+        // caught the model reasoning its way to exactly that and declining the
+        // role — correctly.
+        //
+        // Every entry is one of the parent's OWN tool instances, so a child's call
+        // passes the same broker, the same allowlist and the same card-199 tiers
+        // as the parent's. What a role gives up out of this belt is declared in
+        // RoleCatalog.beltPolicy and readable from RoleCatalog.roleProfiles —
+        // explore keeps its read-only keep-list, a worker carries the belt whole.
+        //
+        // update_plan is deliberately NOT here: the flat UI plan snapshot is
+        // main-only and a child writing it would clobber the operator's view.
+        // Neither are the spawn and dev verbs, registered below — depth stays 1
+        // by construction.
         List<Tool> childBase = new ArrayList<>(StandardTools.all());
+        childBase.addAll(settingsBelt.tools());
+        childBase.addAll(mcp.tools());
         if (!skills.skills().isEmpty()) {
             childBase.add(skills.useSkillTool());
         }
@@ -1153,7 +1182,7 @@ public final class SessionConnection {
                 .cwd(workspace)
                 .parentAgentId("main")
                 .onPermission(broker)
-                .baseTools(List.copyOf(childBase))
+                .baseTools(childBelt = List.copyOf(childBase))
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(webTools)
@@ -1193,6 +1222,26 @@ public final class SessionConnection {
      *          first prompt */
     ToolRegistry belt() {
         return belt;
+    }
+
+    /**
+     * The belt this session hands its CHILDREN — the other half of the same
+     * evidence, and the half card 270 left unreadable.
+     *
+     * <p>Card 270 widened this from a hand-listed {@code StandardTools.all()}
+     * plus {@code use_skill} to the parent's whole assembly, and decided at the
+     * same seam that {@code update_plan} and {@code ask_user_question} stay off
+     * it. Both are decisions made by REGISTRATION — a line's position in
+     * {@link #buildAgentOnce} and nothing else — so like the parent's fence they
+     * are only provable by reading what the face actually built. Without this
+     * reader, one moved line hands every worker child the power to park the
+     * operator behind a question of its own, with the whole suite green.</p>
+     *
+     * @return the child belt {@link #buildAgentOnce} assembled, empty before the
+     *         first prompt
+     */
+    List<Tool> childBelt() {
+        return childBelt;
     }
 
     /**
@@ -1356,11 +1405,14 @@ public final class SessionConnection {
      * session actually carries.</p>
      *
      * @param registry the session's registry, already carrying the standard tools
-     * @return the three web tools (web_search, web_fetch, browse_page) it put on
-     *         the belt — the research role's web grant (card 205), so children
-     *         run on the SAME instances and the same gate as the parent
+     * @return the assembled belt: every tool it put on the registry, plus the
+     *         three web tools (web_search, web_fetch, browse_page) called out as
+     *         the research role's web grant (card 205). Card 270 needs the whole
+     *         list rather than the trio alone — the belt a child inherits IS this
+     *         belt, so returning only part of it was how the browser and launch
+     *         families came to be missing from every child
      */
-    List<Tool> registerSettingsTools(ToolRegistry registry) {
+    SettingsToolBelt.Belt registerSettingsTools(ToolRegistry registry) {
         // Built lazily per call, through ONE method, so a test can hold the
         // answer without a picture being generated: card 222's review finding
         // F6 measured that reverting the model half of this to the connect-time
@@ -1404,8 +1456,9 @@ public final class SessionConnection {
                 // session starts dies when that session's socket does (card 202).
                 launches));
         belt.tools().forEach(registry::register);
-        // Card 205: the research role's web grant, in the card's order.
-        return belt.webGrant();
+        // The whole belt back: the parent registry just took it, and card 270's
+        // child base takes the same instances.
+        return belt;
     }
 
     /**

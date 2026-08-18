@@ -2,6 +2,7 @@ package dev.spectroscope.core.subagents;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -70,6 +71,81 @@ class RoleCatalogTest {
         assertTrue(!research.readOnly(),
                 "network egress is a side effect — this role must not wear the read-only badge");
     }
+
+    // ---- card 270: what a role WITHHOLDS is stated in the role ---------------
+
+    /** The belt a real server session hands its children since card 270: the
+     *  standard set, the settings belt (browser and launch families among them),
+     *  the operator's MCP tools, use_skill. */
+    private static final List<String> WIDE_BELT = List.of(
+            "list_dir", "read_file", "glob", "grep", "write_file", "edit_file", "run_command",
+            "generate_image", "web_fetch", "web_search", "browse_page",
+            "browser_navigate", "browser_read_page", "browser_eval",
+            "launch_start", "launch_list",
+            "mcp__notes__search_notes", "use_skill");
+
+    @Test
+    void aWorkerCarriesTheParentsBeltWholeAndWithholdsNothing() {
+        RoleCatalog.RoleProfile worker = RoleCatalog.roleProfiles(WIDE_BELT).stream()
+                .filter(profile -> profile.type().equals("worker")).findFirst().orElseThrow();
+
+        // The sentence card 270 exists for: a worker child has the same hands as
+        // its parent. The browser family and the operator's MCP server are the
+        // two the baseline model correctly judged missing.
+        assertTrue(worker.tools().contains("browser_navigate"), worker.tools().toString());
+        assertTrue(worker.tools().contains("mcp__notes__search_notes"), worker.tools().toString());
+        assertTrue(worker.tools().contains("launch_start"), worker.tools().toString());
+        assertEquals(List.of(), worker.withholds(),
+                "a worker gives nothing up — and that is a decision, readable here");
+        // Exact, like every sibling role's assertion — a size check holds through
+        // one drop plus one duplicate, and toolsOf never dedupes. Order matters
+        // too: report_status is last, and the worker is the one role that
+        // carries the belt whole, so it is the one whose order nothing else
+        // would catch.
+        List<String> expected = new ArrayList<>(WIDE_BELT);
+        expected.add("report_status");
+        assertEquals(expected, worker.tools(),
+                "the whole belt, in the face's own registration order, report_status last");
+    }
+
+    @Test
+    void exploreKeepsAnAllowListSoANewFamilyDoesNotReachItByAccident() {
+        RoleCatalog.RoleProfile explore = RoleCatalog.roleProfiles(WIDE_BELT).stream()
+                .filter(profile -> profile.type().equals("explore")).findFirst().orElseThrow();
+
+        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "report_status"),
+                explore.tools());
+        assertTrue(explore.readOnly());
+        // The readable half: what the role gave up, named, out of the belt it was
+        // actually handed — so "what can this child do" is one lookup, not two files.
+        assertTrue(explore.withholds().contains("browser_eval"), explore.withholds().toString());
+        assertTrue(explore.withholds().contains("run_command"), explore.withholds().toString());
+        assertTrue(explore.withholds().contains("mcp__notes__search_notes"),
+                "the widened belt reaches explore only through its keep list: "
+                        + explore.withholds());
+    }
+
+    @Test
+    void researchStillReadsAndReachesTheWebAndNothingElse() {
+        RoleCatalog.RoleProfile research = RoleCatalog.roleProfiles(WIDE_BELT).stream()
+                .filter(profile -> profile.type().equals("research")).findFirst().orElseThrow();
+
+        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "use_skill",
+                        "web_search", "web_fetch", "browse_page", "report_status"),
+                research.tools());
+        assertTrue(research.withholds().contains("browser_navigate"),
+                "widening the belt must not turn the research role into a browser role: "
+                        + research.withholds());
+        assertTrue(research.withholds().contains("write_file"), research.withholds().toString());
+    }
+
+    // theRoleProfileToolListIsTheOneTheLiveRegistryIsBuiltFrom was REMOVED, not
+    // renamed: its name claimed the live registry and its body compared
+    // RoleCatalog.toolsOf to RoleCatalog.roleProfiles — which computes its lists
+    // by calling toolsOf. A function measured against itself. What it claimed is
+    // now measured where it can fail, in
+    // SubagentManagerTest#aChildsLiveRegistryIsTheListRoleCatalogAdvertisesForItsRole,
+    // which reads the specs a child is really advertised.
 
     @Test
     void researchToolDescriptionNamesTheGateAndTheSkill() {

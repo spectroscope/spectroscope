@@ -1,6 +1,7 @@
 package dev.spectroscope.cli;
 
 import dev.spectroscope.core.config.SettingsWriter;
+import dev.spectroscope.core.tools.Tool;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,6 +12,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -100,6 +102,47 @@ class SpectroCliAskerTest {
 
             assertFalse(carriesTheAsk(cli),
                     "no console attached, no question — the belt is the fence");
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
+
+    @Test
+    void aChildOfThisFaceIsNotHandedTheVerbsThatBelongToTheMainAgentAlone(@TempDir Path workspace)
+            throws IOException {
+        // Card 270's belt half handed children this face's WHOLE assembly, and
+        // decided at the same seam that two verbs stay off it. Both fences are
+        // made of one line's position in registerTools — update_plan and the ask
+        // go on the REGISTRY, never onto `shared` — and until this test moving
+        // either line left the entire Java gate green. That is card 222's
+        // finding F4 again, on the child's side of the same door.
+        //
+        // The ask matters twice here: a child that could raise its own question
+        // would park the operator behind a spawn they never approved, and on
+        // this face the asker is the REPL's console, which a child's loop does
+        // not own.
+        String previous = saveForUser("{\"provider\": \"ollama\", \"model\": \"qwen3:latest\"}");
+        try {
+            SpectroCli cli = parsed(workspace);
+            cli.anchorAt(workspace);
+            // The REAL interactive assembly, the same one theInteractiveBeltCarriesTheAsk
+            // drives — so the parent genuinely holds the ask and the child's
+            // absence below is a decision rather than an unbuilt face.
+            cli.openInteractiveSession(new BufferedReader(new StringReader("")));
+
+            List<String> childNames = cli.childBelt().stream().map(Tool::name).toList();
+            assertFalse(childNames.contains(ASK),
+                    "a child of this face cannot raise its own question");
+            assertFalse(childNames.contains("update_plan"),
+                    "a child writing the flat UI plan snapshot would clobber the operator's view");
+            assertFalse(childNames.contains("spawn_agent"),
+                    "depth stays 1 by construction");
+
+            assertTrue(carriesTheAsk(cli),
+                    "test premise: the PARENT holds the ask, so the absence above is a "
+                            + "decision and not an unbuilt belt");
+            assertTrue(childNames.contains("web_fetch"),
+                    "and what card 270 DID widen is on it — the belt is not simply short");
         } finally {
             restoreUserSettings(previous);
         }

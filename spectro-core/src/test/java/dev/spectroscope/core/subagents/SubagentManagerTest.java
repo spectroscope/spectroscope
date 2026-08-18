@@ -12,6 +12,7 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.provider.ExchangeLatency;
 import dev.spectroscope.core.provider.LlmProvider;
+import dev.spectroscope.core.provider.LlmProvider.ToolSpec;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
 import org.junit.jupiter.api.Test;
@@ -45,10 +46,17 @@ class SubagentManagerTest {
     private static class RoutingProvider implements LlmProvider {
         final Queue<List<ProviderEvent>> parentTurns = new ConcurrentLinkedQueue<>();
         final Queue<List<ProviderEvent>> childTurns = new ConcurrentLinkedQueue<>();
+        /** What the CHILD was really advertised, in registration order. The
+         *  belt a child holds is only observable here: registryFor is private,
+         *  and the request is the one thing that leaves it. */
+        final List<List<String>> childToolNames = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         @Override
         public Iterable<ProviderEvent> stream(ProviderRequest request) {
             boolean isChild = request.system().contains("subagent");
+            if (isChild) {
+                childToolNames.add(request.tools().stream().map(ToolSpec::name).toList());
+            }
             List<ProviderEvent> turn = (isChild ? childTurns : parentTurns).poll();
             if (turn == null) {
                 throw new IllegalStateException("no scripted turn left (child=" + isChild + ")");
@@ -276,8 +284,22 @@ class SubagentManagerTest {
         assertEquals("ok", webResult.output());
     }
 
+    /**
+     * A worker holds no tool the belt did not hand it — the card-205 web grant
+     * is a GRANT out of {@code webTools()}, not a belt entry, so a face that
+     * carries the trio only as the grant reaches research children and nobody
+     * else.
+     *
+     * <p>Card 270 sharpened what this test does and does not say. Since the
+     * server and CLI faces now hand children the parent's whole belt, a real
+     * worker child on those faces DOES hold web_search — because the belt
+     * carries it, which is the point of the card. What stays true, and is what
+     * this pins, is that the role adds nothing of its own: a tool absent from
+     * the belt is absent from the child. {@code SessionChildBeltTest} in
+     * spectro-server pins the other half, at the door where the belt is built.</p>
+     */
     @Test
-    void workerChildrenAreRefusedTheWebByConstruction() {
+    void aWorkerHoldsNoToolTheBeltDidNotHandIt() {
         RoutingProvider provider = new RoutingProvider();
         provider.parentTurns.add(toolTurn("c1", "spawn_agent",
                 json("""
@@ -408,6 +430,77 @@ class SubagentManagerTest {
                 "children must run concurrently, not sequentially");
         assertTrue(result.output().contains("--- Subagent 1 ---"));
         assertTrue(result.output().contains("--- Subagent 2 ---"));
+    }
+
+    // ---- card 270: widening the belt must not widen the GATE ----------------
+
+    /** A guarded tool — the shape every family card 270 lets through to a child
+     *  has: the browser family, the launch family, an MCP tool. */
+    private static Tool guardedTool(String name) {
+        return new Tool() {
+            public String name() { return name; }
+            public String description() { return "guarded"; }
+            public JsonNode inputSchema() { return JSON.createObjectNode(); }
+            public boolean needsPermission() { return true; }
+            public String execute(JsonNode input, ToolContext context) { return "ran"; }
+        };
+    }
+
+    @Test
+    void aChildsGuardedToolReallyAsksAndTheGateHearsTheChildsOwnName() {
+        RoutingProvider provider = new RoutingProvider();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Drive the browser"}""")));
+        provider.parentTurns.add(textTurn("Refused."));
+        provider.childTurns.add(toolTurn("g1", "browser_navigate",
+                json("""
+                        {"url":"https://example.invalid/"}""")));
+        provider.childTurns.add(textTurn("I was not allowed."));
+
+        // The broker records WHO asked and refuses. The parent's own spawn_agent
+        // is permission-free, so anything this broker hears came from a child.
+        List<String> asked = new java.util.ArrayList<>();
+        SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(request -> {
+                    asked.add(request.agentId() + "|" + request.name());
+                    return false;
+                })
+                .baseTools(List.of(fakeReadTool("list_dir"), guardedTool("browser_navigate")))
+                .build(), 30_000);
+        ToolRegistry registry = new ToolRegistry();
+        manager.tools().forEach(registry::register);
+        Agent parent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("You are the parent.")
+                .registry(registry)
+                .cwd(Path.of("."))
+                .agentId("main")
+                .onPermission(request -> true)
+                .build());
+
+        List<RunEvent> events = new ArrayList<>();
+        try (EventStream stream = manager.run(parent, "Delegate a browser call",
+                new RunOptions(new CancelSignal(), null))) {
+            stream.forEach(events::add);
+        }
+
+        assertEquals(List.of("worker-1|browser_navigate"), asked,
+                "a widened belt is only honest if the gate still fires, under the CHILD's name");
+        RunEvent.ToolResult childResult = events.stream()
+                .filter(RunEvent.ToolResult.class::isInstance)
+                .map(RunEvent.ToolResult.class::cast)
+                .filter(result -> "worker-1".equals(result.agentId()))
+                .findFirst().orElseThrow();
+        assertTrue(childResult.isError());
+        assertTrue(childResult.output().contains("denied"), childResult.output());
+        assertTrue(events.stream()
+                        .anyMatch(event -> event instanceof RunEvent.PermissionRequest request
+                                && "worker-1".equals(request.agentId())),
+                "and the refusal is on the record as a permission_request the child raised");
     }
 
     // ---- card 270: the price of a child ------------------------------------
@@ -818,5 +911,86 @@ class SubagentManagerTest {
                 .map(RunEvent.ToolResult.class::cast)
                 .filter(result -> "main".equals(result.agentId()))
                 .findFirst().orElseThrow();
+    }
+
+    // ---- card 270: one policy, two readers — measured on the LIVE registry ----
+
+    /** The shape a real face hands its children: standard tools, the settings
+     *  belt's families, an operator's MCP tool, use_skill. Names only — what a
+     *  role does to them is the policy under test. */
+    private static final List<String> WIDE_BELT = List.of(
+            "list_dir", "read_file", "glob", "grep", "write_file", "edit_file", "run_command",
+            "generate_image", "web_fetch", "web_search", "browse_page",
+            "browser_navigate", "browser_read_page", "browser_eval",
+            "launch_start", "launch_list",
+            "mcp__notes__search_notes", "use_skill");
+
+    @Test
+    void aChildsLiveRegistryIsTheListRoleCatalogAdvertisesForItsRole() {
+        // This REPLACES theRoleProfileToolListIsTheOneTheLiveRegistryIsBuiltFrom,
+        // which carried that claim in its name and could not measure it: it
+        // compared RoleCatalog.toolsOf to RoleCatalog.roleProfiles, and
+        // roleProfiles computes its lists BY CALLING toolsOf. A function
+        // compared to itself. The whole correctness argument of card 270 is
+        // "one policy, two readers", so the reader that matters — the registry a
+        // child really runs with — is the one that has to be read.
+        //
+        // registryFor is private and returns nothing observable, so the child's
+        // belt is measured where it actually leaves: the provider request. That
+        // is also the only place that would notice a tool registered but never
+        // advertised.
+        //
+        // WHAT THIS DOES NOT PIN, so nobody mistakes it for more than it is: the
+        // CONTENT of the policy. Both sides of the comparison read
+        // RoleCatalog.beltPolicy, so widening WORKER_WITHHOLDS moves them
+        // together and this stays green — measured. The content is held next
+        // door, in RoleCatalogTest#aWorkerCarriesTheParentsBeltWholeAndWithholdsNothing
+        // (asserting the empty withhold list) and its two siblings; that bite
+        // turns those red. Two claims, two tests, both able to fail.
+        for (AgentType type : AgentType.values()) {
+            RoutingProvider provider = new RoutingProvider();
+            // RESEARCH is not a spawn type — it is a DEV role, reached through its
+            // own verb (RoleCatalog.DEV_SPECS). Driving it any other way would
+            // silently skip the one role whose belt is narrowed by a grant.
+            provider.parentTurns.add(type == AgentType.RESEARCH
+                    ? toolTurn("c1", "research", json("{\"task\":\"look around\"}"))
+                    : toolTurn("c1", "spawn_agent",
+                            json("{\"type\":\"%s\",\"task\":\"look around\"}".formatted(type.id()))));
+            provider.parentTurns.add(textTurn("done"));
+            provider.childTurns.add(textTurn("ready"));
+
+            SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                    .provider(provider)
+                    .cwd(Path.of("."))
+                    .parentAgentId("main")
+                    .onPermission(request -> true)
+                    .baseTools(WIDE_BELT.stream().map(SubagentManagerTest::fakeReadTool).toList())
+                    // The card-205 grant, the same three instances a face hands over.
+                    .webTools(List.of(fakeReadTool("web_search"), fakeReadTool("web_fetch"),
+                            fakeReadTool("browse_page")))
+                    .build(), 30_000);
+            ToolRegistry registry = new ToolRegistry();
+            manager.tools().forEach(registry::register);
+            manager.devTools().forEach(registry::register);
+            Agent parent = new Agent(AgentOptions.builder()
+                    .provider(provider)
+                    .systemPrompt("You are the parent.")
+                    .registry(registry)
+                    .cwd(Path.of("."))
+                    .agentId("main")
+                    .onPermission(request -> true)
+                    .build());
+
+            List<RunEvent> events = new ArrayList<>();
+            try (EventStream stream = manager.run(parent, "Delegate one " + type.id(),
+                    new RunOptions(new CancelSignal(), null))) {
+                stream.forEach(events::add);
+            }
+
+            assertEquals(1, provider.childToolNames.size(),
+                    "test premise: exactly one child ran for " + type.id());
+            assertEquals(RoleCatalog.toolsOf(type, WIDE_BELT), provider.childToolNames.get(0),
+                    "role " + type.id() + ": what RoleCatalog advertises is what the child holds");
+        }
     }
 }

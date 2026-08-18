@@ -127,6 +127,8 @@ public final class SpectroCli implements Runnable {
     private Path workspace;
     private String systemPrompt;
     private ToolRegistry registry;
+    /** What children of this face inherit — see {@link #childBelt()}. */
+    private List<Tool> childBelt = List.of();
     private SubagentManager subagents;
     private PermissionBroker askOnTerminal;
 
@@ -351,6 +353,22 @@ public final class SpectroCli implements Runnable {
         return registry;
     }
 
+    /**
+     * The belt this face hands its CHILDREN — the same evidence, for the other
+     * half of the fence.
+     *
+     * <p>Card 270 made this the parent's own assembly instead of a hand-listed
+     * subset, and decided at the same seam that {@code update_plan} and
+     * {@code ask_user_question} stay off it: both are registered on the REGISTRY
+     * below and never added to {@code shared}. That is a fence made of one
+     * line's position, which is exactly the kind only a reader can prove.</p>
+     *
+     * @return the child belt {@link #registerTools} assembled, empty before it ran
+     */
+    List<Tool> childBelt() {
+        return childBelt;
+    }
+
     /** Whether this provider's API key is present in the environment. A local
      *  provider (ollama, lmstudio) carries no key requirement, so it counts as
      *  present. */
@@ -508,13 +526,23 @@ public final class SpectroCli implements Runnable {
      *  dev tools. Sets the registry/subagents/mcp fields.
      *
      *  <p>Package-private (card 265): the ask's fence lives in here, and the belt
-     *  it produces is the only honest evidence of what this face advertises.</p> */
+     *  it produces is the only honest evidence of what this face advertises.</p>
+     *
+     *  <p>Card 270: the list is built ONCE, in {@code shared}, and both consumers
+     *  read it — the main agent's registry and the belt the children inherit. The
+     *  two used to be assembled separately, and the child's copy was
+     *  {@code StandardTools.all()} plus {@code use_skill}: no image tool, no web
+     *  tools, and not one of the MCP servers the operator had configured. A tool
+     *  added here now reaches the children or nobody.</p> */
     void registerTools() {
         registry = new ToolRegistry();
-        StandardTools.all().forEach(registry::register);
+        // The belt both the main agent and the children get, in registration
+        // order. update_plan and the spawn/dev verbs are added to the REGISTRY
+        // only, further down — they are main-only by decision, not by accident.
+        List<Tool> shared = new ArrayList<>(StandardTools.all());
         // the provider is created lazily per call — a missing API key only
         // matters (and errors readably) when the model actually asks for an image.
-        registry.register(new GenerateImageTool(config::imageProviderFromConfig,
+        shared.add(new GenerateImageTool(config::imageProviderFromConfig,
                 ImageStore.inUserHome(),
                 llmWire)); // image calls land on the session's llm-wire record (card 184)
         // Real tool: fetch a web page as readable text. Network egress is a side
@@ -523,10 +551,12 @@ public final class SpectroCli implements Runnable {
         // Card 199: both browser-class tools take the net fence built from
         // allowLocalhost — file URLs, RFC-1918 and the 100.64/10 tailnet are
         // refused, loopback only on the deliberate opt-in for the verify loop.
-        // The three are locals because they are registered TWICE-reachable (card
-        // 205): once here for the main agent, and once as the research role's web
-        // grant below — the SAME instances, so a child's call passes the same
-        // fence, broker and tiers as the parent's.
+        // The three are locals because they are handed over TWICE (card 205, and
+        // card 270 widened the first half): once onto `shared`, which is both the
+        // main agent's registry AND the belt every worker child inherits, and
+        // once as the research role's explicit grant below — the SAME instances,
+        // so a child's call passes the same fence, broker and tiers as the
+        // parent's.
         Tool webSearch = WebSearchTool.fromConfig(config);
         Tool webFetch = new WebFetchTool(new DefaultHttpFetcher(),
                 dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost()));
@@ -535,25 +565,27 @@ public final class SpectroCli implements Runnable {
         Tool browsePage = new BrowsePageTool(
                 () -> BrowsePageTool.findChrome(config.chromeEnv()), new DefaultChromeRunner(),
                 dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost()));
-        registry.register(webFetch);
+        shared.add(webFetch);
         // web_search branch: the ONE tier WebSearchTiers resolves from the
         // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
-        registry.register(webSearch);
-        registry.register(browsePage);
-        // The main agent's plan. Permission-free, main-only (a worker's
-        // plan would clobber the flat UI snapshot), so it is NOT added to childBase.
-        registry.register(new UpdatePlanTool());
-        // Card 265: only where a person can answer. On this face that is the
-        // interactive REPL, which is the only caller that sets the asker — a
-        // `spectro run`, a cron fire and a node build their belts through
-        // HeadlessRunner and never reach this method at all.
+        shared.add(webSearch);
+        shared.add(browsePage);
+        // Card 265, and a seam card 270 had to decide: only where a person can
+        // answer. On this face that is the interactive REPL, which is the only
+        // caller that sets the asker — a `spectro run`, a cron fire and a node
+        // build their belts through HeadlessRunner and never reach this method at
+        // all. It is registered on the REGISTRY and not on `shared`, so it is
+        // main-only exactly like update_plan: a child that could raise its own
+        // question would interrupt the operator on behalf of a spawn the operator
+        // never saw. Card 270 measured the belt before card 265 existed, so this
+        // withholding is a decision made at the merge, not one it carried.
         if (askQuestionOnTerminal != null) {
             registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(
                     askQuestionOnTerminal));
         }
         if (!skills.skills().isEmpty()) {
-            registry.register(skills.useSkillTool());
+            shared.add(skills.useSkillTool());
         }
         // MCP is just another tool SOURCE. Connect eagerly to every
         // configured server and register each remote tool as mcp__<server>__<tool>
@@ -561,21 +593,28 @@ public final class SpectroCli implements Runnable {
         // and the tool_call/tool_result events flow unchanged (no new event type).
         // Registered once here; independent of the in-app provider switch.
         mcp = McpServerRegistry.load(config.mcpServers(), projectDir);
-        mcp.tools().forEach(registry::register);
-        // Children get the standard tools PLUS use_skill (when skills exist), so a
-        // dev-tool child can actually load the skill its role prompt points at.
-        List<Tool> childBase = new ArrayList<>(StandardTools.all());
-        if (!skills.skills().isEmpty()) {
-            childBase.add(skills.useSkillTool());
-        }
-        // Card 205: the research role's web grant — the parent's own three web
-        // tools, handed to RESEARCH children only. Same instances, same gate.
+        shared.addAll(mcp.tools());
+
+        shared.forEach(registry::register);
+        // The main agent's plan. Permission-free, main-only (a worker's
+        // plan would clobber the flat UI snapshot), so it is NOT in `shared`.
+        registry.register(new UpdatePlanTool());
+        // Card 205's grant, and card 270 changed what it MEANS here. The three web
+        // tools are now on `shared`, so EVERY worker child carries them — the
+        // widening that matters most, because it is the one that leaves the
+        // machine. A worker child has network egress it did not have before card
+        // 270, under the same NetFence, the same broker and the same card-199
+        // tiers as the parent's own calls, but it has it.
+        //
+        // What `webTools` still does is narrower and unchanged: it is the grant
+        // that reaches a RESEARCH child PAST its keep-list, which would otherwise
+        // filter the trio out. Same instances either way.
         subagents = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
                 .cwd(workspace)
                 .parentAgentId(MAIN_AGENT_ID)
                 .onPermission(askOnTerminal)
-                .baseTools(List.copyOf(childBase))
+                .baseTools(childBelt = List.copyOf(shared)) // card 270: the parent's own belt
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(List.of(webSearch, webFetch, browsePage))
