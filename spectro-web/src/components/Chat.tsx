@@ -23,9 +23,12 @@ import {
   followScroll,
   isReaderScrollKey,
   keyPull,
+  nextPull,
+  onScrollbar,
   pinAfterGesture,
   pinAfterScroll,
   scrollCause,
+  touchPull,
   wheelPull,
   type ReaderPull,
 } from "../state/scrollPin";
@@ -280,7 +283,7 @@ export function Chat(props: {
   const noteReaderIntent = useCallback((pull: ReaderPull = "unknown"): void => {
     const el = scrollRef.current;
     readerIntentAt.current = performance.now();
-    lastPull.current = pull;
+    lastPull.current = nextPull(lastPull.current, pull);
     if (el === null) return;
     pinnedRef.current = pinAfterGesture({
       pinned: pinnedRef.current,
@@ -292,7 +295,39 @@ export function Chat(props: {
     (e: React.WheelEvent): void => noteReaderIntent(wheelPull(e.deltaY)),
     [noteReaderIntent],
   );
-  const onTouchOrDrag = useCallback((): void => noteReaderIntent(), [noteReaderIntent]);
+  /** A press on the scrollbar is the reader taking the position control in
+   *  hand; a press on the content is intent with nothing said about direction.
+   *  Measured, not assumed: a thumb drag delivers pointerdown and pointerup and
+   *  NOTHING in between, so waiting for a direction means waiting forever —
+   *  and left on the scroll-event rule the drag had to win a tug-of-war against
+   *  the follow (35 events, 2.2s, kanban/evidence/card-257). */
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent): void => {
+      const el = scrollRef.current;
+      const grabbed = el !== null && onScrollbar(e.clientX, el.getBoundingClientRect().left, el.clientWidth);
+      noteReaderIntent(grabbed ? "grab" : "unknown");
+    },
+    [noteReaderIntent],
+  );
+  /** Where the finger was at the last touchmove, so the next one has a
+   *  direction to report. */
+  const lastTouchY = useRef<number | null>(null);
+  const onTouchStart = useCallback(
+    (e: React.TouchEvent): void => {
+      lastTouchY.current = e.touches[0]?.clientY ?? null;
+      noteReaderIntent();
+    },
+    [noteReaderIntent],
+  );
+  const onTouchMove = useCallback(
+    (e: React.TouchEvent): void => {
+      const y = e.touches[0]?.clientY ?? null;
+      const from = lastTouchY.current;
+      lastTouchY.current = y;
+      noteReaderIntent(from === null || y === null ? "unknown" : touchPull(y - from));
+    },
+    [noteReaderIntent],
+  );
   /** A deliberate control — jump to end, jump to start, a search hit, a sent
    *  message — sets the pin outright, and drops the reader's stamp with it so
    *  its OWN animation cannot be read back as the reader disagreeing with it.
@@ -358,12 +393,26 @@ export function Chat(props: {
     return () => ro.disconnect();
   }, []);
 
-  // A different reading is a different pin. pinnedRef is seeded once at mount
-  // and App swaps props on this component instead of remounting it, so without
-  // this a reader who scrolled up in the live view opens an archive already
-  // disarmed — and comes back to a live run that never follows again.
+  // A different reading is a different pin, and a different place to stand.
+  // pinnedRef is seeded once at mount and App swaps props on this component
+  // instead of remounting it, so without this a reader who scrolled up in the
+  // live view opens an archive already disarmed — and comes back to a live run
+  // that never follows again.
+  //
+  // Seeding the pin ALONE left a hole: the follow effect stands down for a
+  // disarmed reader, so an archive opened on whatever scrollTop the previous
+  // view happened to have, clamped into an unrelated transcript. The position
+  // is therefore seeded too — a live view opens at its edge, a record is read
+  // from the top — along with the two records that would otherwise carry the
+  // previous reading's numbers into this one.
   useEffect(() => {
     setPin(liveView);
+    prevTurnCount.current = 0;
+    lastScrollTop.current = 0;
+    const el = scrollRef.current;
+    if (el === null) return;
+    el.scrollTo({ top: liveView ? el.scrollHeight : 0, behavior: "auto" });
+    lastScrollTop.current = el.scrollTop;
   }, [props.viewKey, liveView]);
 
   // The view this render belongs to — "live", a replay id, a fleet room.
@@ -423,13 +472,15 @@ export function Chat(props: {
     const el = scrollRef.current;
     const newTurn = state.turns.length !== prevTurnCount.current;
     prevTurnCount.current = state.turns.length;
-    // childFolds is a dependency because opening a fold grows the transcript as
-    // surely as a token does — and card 271's rule stands aside for a pinned
-    // reader precisely because THIS effect puts them back on the same render.
-    void childFolds;
     const how = followScroll({ pinned: pinnedRef.current, newTurn });
     if (el === null || how === "none") return;
     el.scrollTo({ top: el.scrollHeight, behavior: how });
+    // childFolds is a dependency because opening a fold grows the transcript as
+    // surely as a token does — and card 271's rule stands aside for a pinned
+    // reader precisely because THIS effect puts them back on the same render.
+    // It is named in the array below and nowhere in this body: eslint's
+    // exhaustive-deps does not ask for a reference, so the `void childFolds;`
+    // that used to sit here guarded nothing and read as though it did.
   }, [state, childFolds]);
 
   // In-view search (state/search.ts): this view walks its own turns. One hit is
@@ -860,8 +911,9 @@ export function Chat(props: {
         ref={scrollRef}
         onScroll={handleScroll}
         onWheel={onWheel}
-        onTouchMove={onTouchOrDrag}
-        onPointerDown={onTouchOrDrag}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onPointerDown={onPointerDown}
         role="log"
         aria-live="off"
         aria-label={t(lang, "chat.historyAria")}

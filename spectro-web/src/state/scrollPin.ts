@@ -41,7 +41,7 @@
 export type ScrollCause = "reader" | "app";
 
 /**
- * Which way a gesture pulls: away from the live edge, toward it, or neither.
+ * What a gesture says about where the reader is going.
  *
  * <p>Read from the GESTURE and not from the scroll that follows it. A scroll
  * event reports where the box stood at the end of the frame, so an app scrollTo
@@ -49,8 +49,13 @@ export type ScrollCause = "reader" | "app";
  * measured on the bench, with the reader's wheel simply vanishing. The wheel's
  * own delta is known before the browser has applied anything, so a pin taken
  * off here cannot lose that race.</p>
+ *
+ * <p>"unknown" is the absence of news, not news of standing still: a click in
+ * the transcript is the reader reaching for it without saying where they are
+ * headed. "grab" is the reader taking hold of the scrollbar, which says they
+ * are navigating without saying which way — see {@link nextPull}.</p>
  */
-export type ReaderPull = "away" | "toward" | "unknown";
+export type ReaderPull = "away" | "toward" | "unknown" | "grab";
 
 /** What a growth event may do to the scroll position. */
 export type FollowScroll = "none" | "auto" | "smooth";
@@ -143,7 +148,13 @@ export function pinAfterGesture(input: {
   pull: ReaderPull;
   distanceFromBottom: number;
 }): boolean {
-  if (input.pull === "away") return false;
+  // A grab is a disarm on its own. Measured rather than assumed: a scrollbar
+  // thumb drag delivers pointerdown and pointerup and NOTHING in between, so
+  // there is no direction to read while it happens, and left on the
+  // scroll-event path it had to win a tug-of-war against the follow — 35
+  // scroll events and 2228ms of being pulled back to the edge before a 24px
+  // drag held (kanban/evidence/card-257).
+  if (input.pull === "away" || input.pull === "grab") return false;
   // Toward the edge AND already at it: the way back for a reader whose last
   // pull was away. They are sitting at the bottom, so wheeling down moves
   // nothing and no scroll event would ever come to re-arm on.
@@ -164,6 +175,61 @@ export function followScroll(input: { pinned: boolean; newTurn: boolean }): Foll
   // turn is worth a glide, and the cause rule above keeps that animation's own
   // scroll events from being read back as the reader disagreeing with it.
   return input.newTurn ? "smooth" : "auto";
+}
+
+/**
+ * The pull on record after a gesture — which is not simply the new one.
+ *
+ * <p>The recorded "away" is the only thing standing between a disarmed reader
+ * and a follow that reaches the live edge and arms the pin again on their
+ * behalf ({@link pinAfterScroll}). A gesture that carries no direction must
+ * therefore not erase it: a click in the transcript, to select a word or open
+ * a fold, says the reader is here, not that they have changed their mind.</p>
+ *
+ * <p>It cannot simply ignore every directionless gesture either. A reader who
+ * wheels back down has to be able to clear their own "away", or the pin could
+ * never be re-armed by hand again — so a gesture that DOES know its direction
+ * overwrites, and a grab of the scrollbar resets to "unknown" so that wherever
+ * the reader drops the thumb decides.</p>
+ *
+ * @param current the pull on record
+ * @param gesture what this gesture says
+ * @return the pull to record now
+ */
+export function nextPull(current: ReaderPull, gesture: ReaderPull): ReaderPull {
+  if (gesture === "grab") return "unknown";
+  return gesture === "unknown" ? current : gesture;
+}
+
+/**
+ * A touch drag, as a pull.
+ *
+ * <p>The sign is the opposite of a scrollbar thumb's: a finger moving DOWN
+ * drags the content down, which carries the box away from the live edge.</p>
+ *
+ * @param dy how far the finger has moved since the last touchmove
+ * @return which way the reader is pulling
+ */
+export function touchPull(dy: number): ReaderPull {
+  if (dy > 0) return "away";
+  return dy < 0 ? "toward" : "unknown";
+}
+
+/**
+ * Whether a press landed on the box's own scrollbar rather than its content.
+ *
+ * <p>clientWidth excludes the scrollbar while the bounding rect includes it, so
+ * the gap between them is the bar. Where a platform draws OVERLAY scrollbars
+ * that gap is zero, this can never fire, and such a drag stays on the
+ * scroll-event rule — a known limit, pinned in the tests rather than left to be
+ * discovered.</p>
+ *
+ * @param clientX     where the press landed
+ * @param boxLeft     the box's left edge
+ * @param clientWidth the box's width WITHOUT its scrollbar
+ */
+export function onScrollbar(clientX: number, boxLeft: number, clientWidth: number): boolean {
+  return clientX >= boxLeft + clientWidth;
 }
 
 /**

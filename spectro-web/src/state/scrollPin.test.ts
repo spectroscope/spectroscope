@@ -5,6 +5,10 @@
 import { describe, expect, it } from "vitest";
 import {
   followScroll,
+  nextPull,
+  onScrollbar,
+  touchPull,
+  type ReaderPull,
   isReaderScrollKey,
   keyPull,
   pinAfterGesture,
@@ -305,5 +309,127 @@ describe("which keys are the reader reaching for the transcript", () => {
     // pin — the composer is not the transcript.
     expect(isReaderScrollKey("ArrowUp", true)).toBe(false);
     expect(isReaderScrollKey(" ", true)).toBe(false);
+  });
+});
+
+describe("a gesture with no direction must not erase the one on record", () => {
+  // The review's finding, and it is the owner's own symptom by another route:
+  // every gesture used to overwrite the recorded pull, "unknown" included. A
+  // reader who wheels up (pin off, pull "away") and then CLICKS in the
+  // transcript — to select a word, to open a fold — had the away flag wiped,
+  // and the away flag is the only thing standing between them and a follow
+  // that reaches the bottom and arms the pin again on their behalf.
+  //
+  // Measured in the browser before the fix: the wheel left lastPull "away",
+  // and a single click left it "unknown" (kanban/evidence/card-257).
+
+  it("a bare press keeps the away the wheel put on record", () => {
+    expect(nextPull("away", "unknown")).toBe("away");
+  });
+
+  it("a bare press keeps a toward on record too", () => {
+    expect(nextPull("toward", "unknown")).toBe("toward");
+  });
+
+  it("a gesture that DOES know its direction overwrites the old one", () => {
+    // The other half, and the reason the fix cannot simply be "ignore unknown
+    // pulls": a reader who wheels back down must be able to clear their own
+    // away, or the pin can never be re-armed by hand again.
+    expect(nextPull("away", "toward")).toBe("toward");
+    expect(nextPull("toward", "away")).toBe("away");
+  });
+
+  it("the click that wiped the away no longer lets a landing re-arm the pin", () => {
+    // The whole scenario, end to end, against the rule as the component asks it.
+    const afterWheelUp = pinAfterGesture({ pinned: true, pull: "away", distanceFromBottom: 0 });
+    expect(afterWheelUp).toBe(false);
+    let pull: ReaderPull = "away";
+    pull = nextPull(pull, "unknown"); // the click
+    expect(
+      pinAfterScroll({
+        pinned: afterWheelUp,
+        cause: "reader",
+        lastPull: pull,
+        movedUp: false,
+        distanceFromBottom: 0,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("a touch drag carries a direction, the same as a wheel", () => {
+  // Before the fix, touch passed no pull at all, so the disarm fell back on the
+  // scroll-event path — the one this card MEASURED as lossy. The wheel got a
+  // gesture-level disarm and touch did not, which left the input that cannot
+  // escape the race standing on the mechanism that loses it.
+  //
+  // The sign is the opposite of a scrollbar thumb's: dragging the CONTENT down
+  // moves the box away from the live edge.
+
+  it("a finger moving down drags the content down, away from the live edge", () => {
+    expect(touchPull(12)).toBe("away");
+  });
+
+  it("a finger moving up drags the content toward the live edge", () => {
+    expect(touchPull(-12)).toBe("toward");
+  });
+
+  it("a finger that has not moved says nothing", () => {
+    expect(touchPull(0)).toBe("unknown");
+  });
+
+  it("a touch drag away from the edge takes the pin off on the gesture", () => {
+    expect(pinAfterGesture({ pinned: true, pull: touchPull(20), distanceFromBottom: 0 })).toBe(false);
+  });
+});
+
+describe("taking hold of the scrollbar is its own kind of gesture", () => {
+  // Measured, not assumed: a thumb drag delivers pointerdown and pointerup and
+  // NOTHING in between — zero pointermove events (kanban/evidence/card-257) — so
+  // there is no direction to read while the drag is happening. What the press
+  // does say is that the reader has the position control in their hand.
+  //
+  // Left on the scroll-event path it cost, measured under a stream commanding a
+  // smooth follow 20x a second: 35 scroll events and 2228ms of being yanked
+  // back to the edge (0 -> 21 -> 0 -> 21 ...) before a 24px drag finally held.
+
+  it("the grab takes the pin off at the press, before anything scrolls", () => {
+    expect(pinAfterGesture({ pinned: true, pull: "grab", distanceFromBottom: 0 })).toBe(false);
+  });
+
+  it("the grab forgets which way the reader last pulled, so the DROP decides", () => {
+    // Not "away": a reader who wheels up and then drags the thumb back to the
+    // bottom must be able to re-arm. Not "toward" either, which would arm the
+    // pin merely for touching the bar.
+    expect(nextPull("away", "grab")).toBe("unknown");
+    expect(nextPull("toward", "grab")).toBe("unknown");
+  });
+
+  it("dropping the thumb at the live edge re-arms the pin", () => {
+    const pull = nextPull("away", "grab");
+    expect(
+      pinAfterScroll({
+        pinned: false,
+        cause: "reader",
+        lastPull: pull,
+        movedUp: false,
+        distanceFromBottom: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it("a press on the scrollbar is told from a press on the content by where it landed", () => {
+    // clientWidth excludes the scrollbar; getBoundingClientRect().width does not.
+    expect(onScrollbar(532, 0, 524)).toBe(true);
+    expect(onScrollbar(40, 0, 524)).toBe(false);
+    // A box that is not at the window's left edge is measured from its own.
+    expect(onScrollbar(532, 100, 524)).toBe(false);
+  });
+
+  it("overlay scrollbars take up no width, so nothing is ever read as a grab", () => {
+    // macOS' default. The hit test cannot fire, and the drag falls back to the
+    // scroll-event path — stated here so the limit is pinned rather than
+    // discovered later.
+    expect(onScrollbar(539, 0, 541)).toBe(false);
   });
 });

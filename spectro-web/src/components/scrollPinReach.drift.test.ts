@@ -37,6 +37,42 @@ function followEffect(src: string): string {
   return src.slice(from, src.indexOf(");", end) + 2);
 }
 
+/** The dependency ARRAY of the follow effect, and nothing from its body. The
+ *  difference matters: a `void childFolds;` marker in the body satisfies a
+ *  search for the name while the array itself has lost it. */
+function followDeps(src: string): string {
+  const eff = followEffect(src);
+  const at = eff.lastIndexOf("}, [");
+  expect(at).toBeGreaterThan(-1);
+  return eff.slice(at);
+}
+
+/** One button of the jump rail, by the dictionary key it is labelled with —
+ *  its onClick and nothing else. Sliced, because a whole-file search for
+ *  `setPin(true);` is answered by submit and by the search-hit jump, and both
+ *  rail buttons could be gutted with the file-wide assertion still green. That
+ *  is what the review found here. */
+function railControl(src: string, label: string): string {
+  const at = src.indexOf(`t(lang, "${label}")`);
+  expect(at).toBeGreaterThan(-1);
+  const from = src.indexOf("onClick={", at);
+  expect(from).toBeGreaterThan(at);
+  const end = src.indexOf("}}", from);
+  expect(end).toBeGreaterThan(from);
+  expect(end - from).toBeLessThan(300);
+  return src.slice(from, end);
+}
+
+/** The effect that starts a reading over when the view is swapped. */
+function viewSwapEffect(src: string): string {
+  const from = src.indexOf("setPin(liveView);");
+  expect(from).toBeGreaterThan(-1);
+  const end = src.indexOf("}, [", from);
+  expect(end).toBeGreaterThan(from);
+  expect(end - from).toBeLessThan(500);
+  return src.slice(from, src.indexOf(");", end) + 2);
+}
+
 describe("the old always-pin shape is gone", () => {
   it("no scroll event recomputes the pin from distance alone", () => {
     // The defect, written out: `pinnedRef.current = scrollHeight - scrollTop -
@@ -56,7 +92,12 @@ describe("the old always-pin shape is gone", () => {
     // foldScrollDelta returns zero for a pinned reader BECAUSE this effect puts
     // them back at the edge on the same render. Drop childFolds from the deps
     // and that promise quietly becomes false.
-    expect(followEffect(chat)).toContain("childFolds");
+    //
+    // Read from the ARRAY and not from the effect's body. Written as a search
+    // over the whole effect, this passed on a `void childFolds;` marker that
+    // sat in the body while the array had lost the name — green for its own
+    // opposite, found by the review.
+    expect(followDeps(chat)).toContain("childFolds");
   });
 });
 
@@ -104,8 +145,47 @@ describe("Chat asks scrollPin who scrolled, and what to do about it", () => {
 describe("what counts as the reader reaching for the transcript", () => {
   it("wheel, touch and drag on the scroll box all say so", () => {
     expect(chat).toContain("onWheel={onWheel}");
-    expect(chat).toContain("onTouchMove={onTouchOrDrag}");
-    expect(chat).toContain("onPointerDown={onTouchOrDrag}");
+    expect(chat).toContain("onTouchStart={onTouchStart}");
+    expect(chat).toContain("onTouchMove={onTouchMove}");
+    expect(chat).toContain("onPointerDown={onPointerDown}");
+  });
+
+  it("a gesture with no direction does not erase the one on record", () => {
+    // The review's finding: every gesture overwrote lastPull, "unknown"
+    // included, so one click in the transcript wiped the away a wheel had just
+    // recorded — and the away flag is all that stops a follow reaching the edge
+    // from arming the pin again on the reader's behalf.
+    const note = chat.slice(
+      chat.indexOf("const noteReaderIntent = useCallback"),
+      chat.indexOf("const onWheel = useCallback"),
+    );
+    expect(note).toContain("lastPull.current = nextPull(lastPull.current, pull);");
+  });
+
+  it("a touch drag carries its direction to the rule, like a wheel", () => {
+    // Touch passed no pull at all, so its disarm fell back on the scroll-event
+    // path this card measured as lossy — the input that cannot escape the race
+    // left standing on the mechanism that loses it.
+    const touch = chat.slice(
+      chat.indexOf("const onTouchStart = useCallback"),
+      chat.indexOf("const setPin = "),
+    );
+    expect(touch).toContain("lastTouchY.current = e.touches[0]?.clientY ?? null;");
+    expect(touch).toContain(
+      'noteReaderIntent(from === null || y === null ? "unknown" : touchPull(y - from));',
+    );
+  });
+
+  it("a press on the scrollbar is a grab, a press on the content is not", () => {
+    // Measured: a thumb drag delivers pointerdown and pointerup and no
+    // pointermove at all, so there is no direction to read while it happens.
+    // The press itself is the news — the reader has the position control.
+    const down = chat.slice(
+      chat.indexOf("const onPointerDown = useCallback"),
+      chat.indexOf("const onTouchStart = useCallback"),
+    );
+    expect(down).toContain("onScrollbar(e.clientX, el.getBoundingClientRect().left, el.clientWidth)");
+    expect(down).toContain('noteReaderIntent(grabbed ? "grab" : "unknown");');
   });
 
   it("the wheel's own direction reaches the rule, not just the fact of a wheel", () => {
@@ -120,7 +200,7 @@ describe("what counts as the reader reaching for the transcript", () => {
     expect(note).toContain("pinnedRef.current = pinAfterGesture({");
     expect(note).toContain("pull,");
     expect(note).toContain("distanceFromBottom: el.scrollHeight - el.scrollTop - el.clientHeight,");
-    expect(note).toContain("lastPull.current = pull;");
+    expect(note).toContain("lastPull.current = nextPull(lastPull.current, pull);");
   });
 
   it("the scrolling keys say so too, and the module decides which they are", () => {
@@ -139,9 +219,16 @@ describe("what counts as the reader reaching for the transcript", () => {
 });
 
 describe("the deliberate controls own the pin outright", () => {
-  it("jump-to-end arms it and jump-to-start disarms it", () => {
-    expect(chat).toContain("setPin(true);");
-    expect(chat).toContain("setPin(false);");
+  it("jump-to-end arms the pin, and nothing else in that button does", () => {
+    const toEnd = railControl(chat, "trace.toEnd");
+    expect(toEnd).toContain("setPin(true);");
+    expect(toEnd).not.toContain("setPin(false);");
+  });
+
+  it("jump-to-start releases it, and nothing else in that button does", () => {
+    const toStart = railControl(chat, "trace.toStart");
+    expect(toStart).toContain("setPin(false);");
+    expect(toStart).not.toContain("setPin(true);");
   });
 
   it("setting the pin deliberately drops the reader's stamp with it", () => {
@@ -164,12 +251,30 @@ describe("the deliberate controls own the pin outright", () => {
     expect(hitJump.slice(0, 400)).toContain("setPin(false);");
   });
 
-  it("swapping the view starts that reading's pin over", () => {
+  it("swapping the view starts that reading's pin over, on every swap", () => {
     // pinnedRef is seeded once at mount, and App swaps props instead of
     // remounting. Without this, a reader who scrolled up in the live view opens
     // an archive already disarmed — and comes back to a live run that never
     // follows again.
-    expect(chat).toContain("setPin(liveView);");
+    //
+    // WHEN it runs is the whole content of the decision, so the dependency line
+    // is named here. Written as a file-wide search for the call, this stayed
+    // green with the array emptied and the re-seed silently never happening.
+    expect(viewSwapEffect(chat)).toContain("}, [props.viewKey, liveView]);");
+  });
+
+  it("swapping the view also decides where the reader STANDS in it", () => {
+    // Seeding the pin alone left a hole the review found: with the follow effect
+    // standing down for a disarmed reader, an archive opened on whatever
+    // scrollTop the previous view happened to have, clamped into an unrelated
+    // transcript. A live view opens at its edge; a record is read from the top.
+    const swap = viewSwapEffect(chat);
+    expect(swap).toContain('el.scrollTo({ top: liveView ? el.scrollHeight : 0, behavior: "auto" });');
+    // The two records that would otherwise carry the previous reading's numbers
+    // into this one: the last scroll position the handler compares against, and
+    // the turn count that decides what counts as a new turn.
+    expect(swap).toContain("lastScrollTop.current = el.scrollTop;");
+    expect(swap).toContain("prevTurnCount.current = 0;");
   });
 });
 
