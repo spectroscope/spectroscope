@@ -42,7 +42,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { blankBlockComments as code } from "../testkit/source";
 import type { SettingsView } from "../state/serverSettings";
 import { PlusSubmenu, type SkillRow } from "./PlusMenuSettings";
-import { dict } from "../i18n/i18n";
+import { dict, t } from "../i18n/i18n";
 
 const css = code(
   readFileSync(fileURLToPath(new URL("../styles/workspace-gear.css", import.meta.url)), "utf8"),
@@ -62,31 +62,116 @@ function declsOf(selector: string): string {
   return rule.decls;
 }
 
-/** The markup of the `<div class="…">` carrying `cls`, from its opening tag to
- *  its OWN closing tag — nesting counted, so a row's own `</div>` does not end
- *  the slice early. Containment is measured, not guessed from two indices.
- *  (The idiom is sidebarStickyHead.test.tsx's, which had the same problem.) */
-function divBlock(html: string, cls: string): string {
-  const at = html.indexOf(`class="${cls}"`);
-  if (at < 0) throw new Error(`no element carries class="${cls}"`);
-  const open = html.lastIndexOf("<div", at);
-  if (open < 0) throw new Error(`class="${cls}" is not on a <div>`);
-  let i = open;
-  let depth = 0;
-  for (;;) {
-    const nextOpen = html.indexOf("<div", i + 1);
-    const nextClose = html.indexOf("</div>", i + 1);
-    if (nextClose < 0) throw new Error(`class="${cls}" is never closed`);
-    if (nextOpen >= 0 && nextOpen < nextClose) {
-      depth += 1;
-      i = nextOpen;
-    } else if (depth === 0) {
-      return html.slice(open, nextClose + "</div>".length);
-    } else {
-      depth -= 1;
-      i = nextClose;
+/** One element of the rendered markup, with its own direct children.
+ *
+ *  The first cut of this file walked the markup with `indexOf`, which can say
+ *  that a row is somewhere below the well but never that the well is a DIRECT
+ *  CHILD of the group — and direct childhood is the entire mechanism: only a
+ *  flex ITEM of `.plus-items` may shrink, and only a box that shrinks can
+ *  scroll. The review put one wrapper element between the two and every
+ *  containment assertion here stayed green while the defect came back whole
+ *  (4333 of 4333 tests passing, 8 of 38 rows reachable in the browser). So the
+ *  markup is parsed now, not searched. */
+interface El {
+  tag: string;
+  classes: string[];
+  children: El[];
+  /** The element's own markup, opening tag to closing tag. */
+  outer: string;
+}
+
+/** HTML elements that carry no closing tag. React writes the rest self-closed
+ *  (`<path …/>`), so both forms are recognised. */
+const VOID = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
+/** Tag, with quoted attribute values skipped whole so a `>` inside one does not
+ *  end the tag early. */
+const TAG = /<(\/?)([a-zA-Z][\w:-]*)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/g;
+
+function parse(html: string): El[] {
+  const roots: El[] = [];
+  const stack: { el: El; from: number }[] = [];
+  TAG.lastIndex = 0;
+  for (let m = TAG.exec(html); m !== null; m = TAG.exec(html)) {
+    const name = (m[2] ?? "").toLowerCase();
+    if (m[1] === "/") {
+      const top = stack.pop();
+      if (top === undefined || top.el.tag !== name) throw new Error(`markup does not nest: </${name}>`);
+      top.el.outer = html.slice(top.from, m.index + m[0].length);
+      continue;
     }
+    const cls = /class="([^"]*)"/.exec(m[3] ?? "")?.[1] ?? "";
+    const el: El = {
+      tag: name,
+      classes: cls.split(/\s+/).filter((c) => c !== ""),
+      children: [],
+      outer: m[0],
+    };
+    const parentEl = stack[stack.length - 1];
+    if (parentEl === undefined) roots.push(el);
+    else parentEl.el.children.push(el);
+    if (m[4] !== "/" && !VOID.has(name)) stack.push({ el, from: m.index });
   }
+  const unclosed = stack[stack.length - 1];
+  if (unclosed !== undefined) throw new Error(`markup is not closed: <${unclosed.el.tag}>`);
+  return roots;
+}
+
+/** Every element carrying `cls`, anywhere. Class-LIST membership, not the exact
+ *  attribute text: a second class on the well must not make this helper look
+ *  the other way. */
+function allWith(html: string, cls: string): El[] {
+  const found: El[] = [];
+  const walk = (els: El[]): void => {
+    for (const el of els) {
+      if (el.classes.includes(cls)) found.push(el);
+      walk(el.children);
+    }
+  };
+  walk(parse(html));
+  return found;
+}
+
+/** The ONE element carrying `cls`. Two of them throws rather than taking the
+ *  first: measured, wrapping the footer in a well of its own left all eleven of
+ *  this file's first assertions green, because the old helper walked to the
+ *  first match and stopped looking. */
+function one(html: string, cls: string): El {
+  const found = allWith(html, cls);
+  const only = found[0];
+  if (found.length !== 1 || only === undefined)
+    throw new Error(`${found.length} elements carry the class \`${cls}\`, expected exactly one`);
+  return only;
+}
+
+/** The markup of the one element carrying `cls`. */
+const block = (html: string, cls: string): string => one(html, cls).outer;
+
+/** How a direct child reads at a glance — its first class, or its tag. */
+const shapeOf = (el: El): string => el.classes[0] ?? el.tag;
+
+/** The source from `from` up to the next `to`. Reading ONE function's body,
+ *  rather than letting a source pin match a mention half a file away. */
+function slice(src: string, from: string, to: string): string {
+  const a = src.indexOf(from);
+  if (a < 0) throw new Error(`the source has no \`${from}\``);
+  const b = src.indexOf(to, a + from.length);
+  if (b < 0) throw new Error(`\`${from}\` is never followed by \`${to}\``);
+  return src.slice(a, b);
 }
 
 /** How many switch rows a chunk of markup draws. */
@@ -153,15 +238,17 @@ function skillsPanel(subIdx = 0, rows: SkillRow[] | null | "failed" = SKILLS): s
   );
 }
 
-/** The MCP panel beside it, drawn from the same component with the same rule. */
-function mcpPanel(count: number, subIdx = 0): string {
+/** The MCP panel beside it, drawn from the same component with the same rule.
+ *  `writable` is a parameter because the read-only sentence only exists when it
+ *  is false — and that sentence is a footer row like any other. */
+function mcpPanel(count: number, subIdx = 0, writable = true): string {
   return renderToStaticMarkup(
     <PlusSubmenu
       lang="en"
       sub="mcp"
       skills={null}
       view={mcpView(count)}
-      mcpWritable={true}
+      mcpWritable={writable}
       subIdx={subIdx}
       itemCount={count + 1}
       listRef={createRef<HTMLDivElement>()}
@@ -180,17 +267,47 @@ describe("the plus menu's entry rows ride in a well of their own", () => {
     expect(switchRows(html)).toBe(36);
     // The claim of the card, as markup: the rows are IN the well. A list that
     // renders beside the well instead of inside it is exactly the old shape.
-    expect(switchRows(divBlock(html, "plus-scroll"))).toBe(36);
+    expect(switchRows(block(html, "plus-scroll"))).toBe(36);
+  });
+
+  it("hangs the well straight off the group, because only a flex ITEM shrinks", () => {
+    // The mechanism in one sentence: `.plus-scroll` scrolls because it may
+    // shrink below its content, and it may shrink only while it is a flex item
+    // of `.plus-items`. Put ONE element in between and the well grows to full
+    // content height inside a box that clips it — card 260's defect verbatim,
+    // and nothing else in this file can see it. Measured on the review's
+    // mutation: `ReachBlock` (a SHARED component, a fragment today only by
+    // choice) given a wrapper `<div>` left 4333 of 4333 tests green, with 8 of
+    // 38 rows reachable in the browser and Browse catalogue gone again.
+    const kids = one(skillsPanel(), "plus-items").children;
+    // The footer hangs off the same parent for the same reason: the
+    // `.plus-items > …` rule that pins it against shrinking is written for
+    // exactly this parentage and stops applying, silently, one level down.
+    expect(kids.map(shapeOf)).toEqual([
+      "plus-scroll",
+      "settings-note",
+      "plus-sep",
+      "wsg-mode-row",
+      "wsg-mode-row",
+    ]);
+    // and the MCP side, whose read-only sentence is a footer row of its own
+    expect(one(mcpPanel(20, 0, false), "plus-items").children.map(shapeOf)).toEqual([
+      "plus-scroll",
+      "settings-note",
+      "settings-note",
+      "plus-sep",
+      "wsg-mode-row",
+    ]);
   });
 
   it("leaves the popover's own footer outside the well, so it cannot scroll away", () => {
     const html = skillsPanel();
-    const well = divBlock(html, "plus-scroll");
-    // ONE well. `divBlock` walks the first one it finds, so without this a
-    // second scroller anywhere in the panel would sail past every assertion
-    // below — measured: wrapping the footer in a well of its own left all
-    // eleven of these green.
-    expect(html.match(/class="plus-scroll"/g)?.length).toBe(1);
+    const well = block(html, "plus-scroll");
+    // ONE well. A helper that walked to the first match and stopped would let a
+    // second scroller sail past every assertion below — measured: wrapping the
+    // footer in a well of its own left all eleven of this file's first
+    // assertions green. `one` throws on two, so this states the count as well.
+    expect(allWith(html, "plus-scroll").length).toBe(1);
     // Manage and Browse are the chrome of this popover — it has no head and no
     // back row (measured: the submenu is one group, nothing above it). They are
     // what "stays put" means here, and they are unreachable today.
@@ -209,14 +326,26 @@ describe("the plus menu's entry rows ride in a well of their own", () => {
     // — one rule or the defect comes back one list over.
     const html = mcpPanel(20);
     expect(switchRows(html)).toBe(20);
-    expect(html.match(/class="plus-scroll"/g)?.length).toBe(1);
-    expect(switchRows(divBlock(html, "plus-scroll"))).toBe(20);
-    expect(divBlock(html, "plus-scroll")).not.toContain(dict["plus.manageMcp"].en);
+    expect(allWith(html, "plus-scroll").length).toBe(1);
+    expect(switchRows(block(html, "plus-scroll"))).toBe(20);
+    expect(block(html, "plus-scroll")).not.toContain(dict["plus.manageMcp"].en);
     expect(html).toContain(dict["plus.manageMcp"].en);
     // and the stylesheet grew ONE scroller rule, not one per list
     expect(rules.filter((r) => r.selector.includes(".plus-scroll")).map((r) => r.selector)).toEqual([
       ".plus-scroll",
     ]);
+  });
+
+  it("keeps the MCP read-only sentence out of the well as well", () => {
+    // The last footer row nothing was rendering. It appears only when the
+    // owning layer cannot be written, so every other case in this file drew the
+    // panel without it — and a sentence that says why the switches do nothing
+    // is worth exactly as much as the switches it sits under, which is nothing
+    // once it has scrolled away with them.
+    const html = mcpPanel(20, 0, false);
+    const note = t("en", "plus.mcpReadOnly", { layer: "user" });
+    expect(html).toContain(note);
+    expect(block(html, "plus-scroll")).not.toContain(note);
   });
 
   it("addresses every row by the index the arrow keys move, below the fold included", () => {
@@ -226,7 +355,7 @@ describe("the plus menu's entry rows ride in a well of their own", () => {
     // Manage at 36 and Browse at 37.
     const html = skillsPanel();
     expect(indices(html)).toEqual(Array.from({ length: 38 }, (_, i) => i));
-    expect(indices(divBlock(html, "plus-scroll"))).toEqual(Array.from({ length: 36 }, (_, i) => i));
+    expect(indices(block(html, "plus-scroll"))).toEqual(Array.from({ length: 36 }, (_, i) => i));
   });
 
   it("keeps the index space honest when the list never arrived", () => {
@@ -236,10 +365,14 @@ describe("the plus menu's entry rows ride in a well of their own", () => {
     expect(indices(skillsPanel(0, null))).toEqual([0, 1]);
   });
 
-  it("opens with the first entry focused, and only that one", () => {
-    // The second half of criterion 3. The submenu focuses the GROUP and marks
-    // the current row with a class — so "the first entry keeps focus on open"
-    // is the claim that exactly one row is marked and it is entry zero.
+  it("marks exactly one row, and at index 0 it is the first entry", () => {
+    // This test was called "opens with the first entry focused" and could not
+    // see any such thing: the panel is HANDED its subIdx by the test, so the
+    // name claimed the parent's reset while the body measured the render.
+    // Measured on the review's mutation: turning that reset into `setSubIdx(3)`
+    // left 1333 of 1333 component tests green with the submenu opening on the
+    // fourth row. The name says what the body measures now, and the reset is
+    // pinned at its own seam below — where it actually lives.
     const html = skillsPanel(0);
     expect(html.match(/wsg-mode-row--focus/g)?.length).toBe(1);
     const first = html.indexOf('data-sub-index="0"');
@@ -289,6 +422,43 @@ describe("the parent hands the panel its index space, and finds a row by it", ()
     // does not drag the list under the pointer that is hovering it
     expect(parent).toContain('scrollIntoView({ block: "nearest" })');
   });
+
+  it("puts the focus on the FIRST entry when a submenu opens", () => {
+    // Criterion 3's second half, at the only seam this suite can reach. The
+    // render test above is handed its index and can never see where the menu
+    // opens; this is where "opens with the first entry focused" lives, and it
+    // was unpinned anywhere until the review broke it and watched 1333 of 1333
+    // component tests stay green.
+    const body = slice(parent, "const openSub = (which: SubMenu): void => {", "};");
+    expect(body).toContain("setSubIdx(0)");
+    expect(body).toContain('subIdxCause.current = "key"');
+  });
+
+  it("does not scroll for an index the POINTER moved", () => {
+    // The review measured what the first cut of this got wrong.
+    // `block: "nearest"` is a fixpoint only for a row that is FULLY visible — a
+    // row clipped by the well's edge, which is exactly what sits under a
+    // pointer parked near that edge while the wheel runs, costs up to a whole
+    // row of counter-scroll. Hover has marked the row here since card 224, so
+    // wheeling with the pointer near the edge dragged the list back against the
+    // gesture: 17, 37.5, 32.5, 27, 55.5, 41px over six offsets, against a flat
+    // 0px for a pointer in the middle. The index carries what moved it now.
+    //
+    // No test in this suite runs the effect — there is no DOM. What is pinned
+    // is that all three halves name the same cause, which is the drift a rename
+    // on one side would otherwise make silent.
+    const effects = parent.split("useEffect(() => {").slice(1);
+    const scroller = effects.find((e) => e.includes("scrollIntoView"));
+    if (scroller === undefined) throw new Error("no effect scrolls the focused row into view");
+    const body = scroller.slice(0, scroller.indexOf("}, ["));
+    expect(body).toContain('if (subIdxCause.current === "pointer") return;');
+    expect(slice(parent, "const focusSubRow = (index: number): void => {", "};")).toContain(
+      'subIdxCause.current = "pointer"',
+    );
+    expect(slice(parent, "const onSubKeyDown", "if (e.key ===")).toContain('subIdxCause.current = "key"');
+    // and the panel is handed THAT function, not the raw setter
+    expect(parent).toContain("onFocusRow={focusSubRow}");
+  });
 });
 
 describe("the stylesheet behind the well", () => {
@@ -298,15 +468,28 @@ describe("the stylesheet behind the well", () => {
     // would have two scrollers and a long one would show both.
     expect(declsOf(".wsg-pop")).toMatch(/max-height:\s*min\(70vh,\s*480px\)/);
     expect(declsOf(".plus-sub")).toMatch(/overflow:\s*hidden/);
+    // and it wins by ORDER, which `declsOf` is blind to: both selectors are one
+    // class, so equal specificity, so the later rule takes it. Move `.plus-sub`
+    // above `.wsg-pop` and the frame has its scrollbar back, with every
+    // declaration assertion above still green.
+    const pop = rules.findIndex((r) => r.selector === ".wsg-pop");
+    const sub = rules.findIndex((r) => r.selector === ".plus-sub");
+    expect(pop).toBeGreaterThanOrEqual(0);
+    expect(sub).toBeGreaterThan(pop);
   });
 
   it("makes the entry well the one scroller, and lets it shrink to fit", () => {
     // `min-height: 0` is the declaration the old shape was missing one level
     // up: without it a flex item does not go below its content and the box
-    // clips instead of scrolling.
+    // clips instead of scrolling. `flex` is the other half of "shrink", and the
+    // half this test used to only claim in its name: the review set `flex: none`
+    // here — a plausible copy of the rule that pins every OTHER child three
+    // lines down — and all 13 tests in this file stayed green while the well
+    // rendered at its full 2078px inside a box that clips.
     const well = declsOf(".plus-scroll");
     expect(well).toMatch(/overflow-y:\s*auto/);
     expect(well).toMatch(/min-height:\s*0/);
+    expect(well).toMatch(/flex:\s*0 1 auto/);
     expect(declsOf(".plus-items")).toMatch(/min-height:\s*0/);
   });
 

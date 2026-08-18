@@ -76,6 +76,10 @@ export function PlusMenu({
   const [view, setView] = useState<SettingsView | null | "failed">(null);
   const [rootIdx, setRootIdx] = useState(0);
   const [subIdx, setSubIdx] = useState(0);
+  // What moved the submenu's index last. The pointer and the arrow keys share
+  // ONE index (hover has marked the row here since card 224), and only the
+  // arrows are worth scrolling for — see the effect below.
+  const subIdxCause = useRef<"key" | "pointer">("key");
   const ref = useRef<HTMLDivElement>(null);
   const rootListRef = useRef<HTMLDivElement>(null);
   const subListRef = useRef<HTMLDivElement>(null);
@@ -136,17 +140,32 @@ export function PlusMenu({
   // on its own, and the moment the entries got a bounded well the keyboard
   // could walk to a row nobody can see. `block: "nearest"` moves the nearest
   // scrollable ancestor by the least it can, which is the well and never the
-  // page: a row already in view costs no scroll at all, so a mouse hover (which
-  // sets the same index) does not yank the list under the pointer.
+  // page.
+  //
+  // A hover is NOT worth a scroll, and the review measured why the first cut of
+  // this was wrong: `block: "nearest"` is a fixpoint only for a row that is
+  // FULLY visible. A row clipped by the well's edge — exactly what sits under a
+  // pointer parked near that edge while the wheel runs — costs up to a whole
+  // row of counter-scroll, so the list bounced against the gesture by 17–55px
+  // (against 0px with the pointer in the middle of the well). The index
+  // therefore remembers what moved it.
   useEffect(() => {
     if (!open || sub === null) return;
+    if (subIdxCause.current === "pointer") return;
     const row = subListRef.current?.querySelector(`[data-sub-index="${subIdx}"]`);
     row?.scrollIntoView({ block: "nearest" });
   }, [open, sub, subIdx, skills, view]);
 
   const openSub = (which: SubMenu): void => {
     setSub(which);
+    subIdxCause.current = "key";
     setSubIdx(0);
+  };
+
+  /** The hover's way of marking a row: the same index, minus the scroll. */
+  const focusSubRow = (index: number): void => {
+    subIdxCause.current = "pointer";
+    setSubIdx(index);
   };
 
   const toggleSkill = (row: SkillRow): void => {
@@ -224,6 +243,9 @@ export function PlusMenu({
     subItems.push({ key: "manage-mcp", activate: () => pick("mcp") });
   }
   const onSubKeyDown: KeyboardEventHandler<HTMLDivElement> = (e) => {
+    // Whatever this key does to the index, the keyboard did it — and a row the
+    // keyboard walked to has to come into view.
+    subIdxCause.current = "key";
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSubIdx((i) => Math.min(Math.max(subItems.length - 1, 0), i + 1));
@@ -314,7 +336,7 @@ export function PlusMenu({
           itemCount={subItems.length}
           listRef={subListRef}
           onKeyDown={onSubKeyDown}
-          onFocusRow={setSubIdx}
+          onFocusRow={focusSubRow}
           onToggleSkill={toggleSkill}
           onToggleServer={toggleServer}
           onPick={pick}

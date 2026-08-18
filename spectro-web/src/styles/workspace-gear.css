@@ -426,6 +426,13 @@
 }
 
 .plus-scroll {
+  /* Said out loud rather than left to the initial value, because it is the
+     whole mechanism: the well scrolls only because it MAY SHRINK below its
+     content inside .plus-items. `flex: none` here — a plausible copy of the
+     rule three lines down, which pins every OTHER child — renders the well at
+     full content height, which .plus-items then clips under `overflow: hidden`,
+     and card 260's defect is back with nothing to scroll anywhere. */
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
