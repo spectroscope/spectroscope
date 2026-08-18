@@ -147,6 +147,25 @@ export function isSessionBusy(frame: unknown): boolean {
   return (frame as { type?: unknown }).type === "session_busy";
 }
 
+/**
+ * The answer a server built before the probe existed gives it.
+ *
+ * SpectroSocketHandler's default arm is {@code sendError("Unknown message
+ * type.")}, and sendError is a first-class RunEvent there: it goes through
+ * send() and is APPENDED to the session's JSONL. So a page carrying this
+ * transport, talking to an older dev server or an older desktop jar, would
+ * write one error row into the operator's chat AND into his record every
+ * fifteen seconds of idling. The client is the new half here, so the client
+ * is what has to notice and stop.
+ *
+ * @param frame one inbound frame, already parsed
+ * @return true when this is that refusal
+ */
+export function isUnknownTypeError(frame: unknown): boolean {
+  const named = frame as { type?: unknown; message?: unknown };
+  return named.type === "error" && named.message === "Unknown message type.";
+}
+
 export function connect(options: ConnectOptions): Connection {
   const host = options.host ?? browserHost();
   const base = options.url ?? defaultUrl();
@@ -166,6 +185,9 @@ export function connect(options: ConnectOptions): Connection {
   let socket: TransportSocket | null = null;
   let phase: "connecting" | "open" | "down" = "down";
   let live: LivenessState = freshLiveness(host.now());
+  // Per socket: whether the peer on the other end understands being asked.
+  // An older server answers the probe with an error it also writes to disk.
+  let probesUnderstood = true;
   let tickTimer: number | null = null;
   let disposed = false;
   let attempts = 0;
@@ -219,12 +241,20 @@ export function connect(options: ConnectOptions): Connection {
     tickTimer = null;
     if (disposed) return;
     if (phase === "open" && socket !== null) {
-      const step = livenessTick(live, host.now());
-      live = step.state;
-      if (step.action === "probe") {
-        socket.send(PROBE_FRAME);
-      } else if (step.action === "drop") {
-        retire();
+      if (!probesUnderstood) {
+        // This peer cannot be asked. The watch is kept fresh rather than run,
+        // which leaves the socket exactly as the transport treated it before
+        // card 261: it reconnects from onclose and from nothing else. Half a
+        // fix beats writing an error into the operator's record every tick.
+        live = freshLiveness(host.now());
+      } else {
+        const step = livenessTick(live, host.now());
+        live = step.state;
+        if (step.action === "probe") {
+          socket.send(PROBE_FRAME);
+        } else if (step.action === "drop") {
+          retire();
+        }
       }
     }
     tickTimer = host.setTimer(onTick, LIVENESS_TICK_MS);
@@ -235,6 +265,7 @@ export function connect(options: ConnectOptions): Connection {
     phase = "connecting";
     options.onStatus?.("connecting");
     live = freshLiveness(host.now());
+    probesUnderstood = true; // a fresh socket may reach a newer server
     socket = host.openSocket(currentUrl());
 
     socket.onopen = () => {
@@ -244,6 +275,7 @@ export function connect(options: ConnectOptions): Connection {
       options.onStatus?.("open");
     };
     socket.onmessage = (data: unknown) => {
+      const asked = live.probeSentAt !== null; // read BEFORE the watch resets
       // ANY frame is proof the socket still delivers — including the probe's
       // own answer, which is why this comes before the parse decides anything.
       live = noteInbound(live, host.now());
@@ -251,6 +283,14 @@ export function connect(options: ConnectOptions): Connection {
       if (event === null) return;
       // The answer to a probe is transport bookkeeping, not news for the app.
       if ((event as { type: string }).type === PROBE_ANSWER_TYPE) return;
+      // …and so is an older server's refusal of the question. Only while a
+      // probe is outstanding: the same text with nothing asked is the agent's
+      // own error and belongs on the operator's screen. A false positive here
+      // costs one socket its watch, never a frame the operator needed.
+      if (asked && isUnknownTypeError(event)) {
+        probesUnderstood = false;
+        return;
+      }
       const named = sessionIdOf(event);
       if (named !== null) resumeTarget = named;
       if (isSessionBusy(event)) resumeTarget = null;

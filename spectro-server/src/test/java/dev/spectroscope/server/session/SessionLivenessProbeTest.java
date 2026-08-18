@@ -24,6 +24,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * at all does. A regression would therefore keep the watchdog working while
  * quietly writing an error into the operator's chat every fifteen seconds. That
  * is why the refusal is asserted against, not merely the reply asserted for.</p>
+ *
+ * <p>This test pins the NEW server only, which was the review's point: a client
+ * carrying the probe can also meet an OLDER server that has no such case. The
+ * client half of that guard lives in {@code ws.ts#isUnknownTypeError} — it stops
+ * probing a peer that answers with the refusal — and the exact text is held
+ * against this handler by
+ * {@code spectro-web/src/transport/unknownTypeRefusal.drift.test.ts}.</p>
  */
 @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SessionLivenessProbeTest {

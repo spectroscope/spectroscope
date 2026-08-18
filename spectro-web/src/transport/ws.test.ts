@@ -8,7 +8,7 @@
 // all because nothing will ever arrive again.
 
 import { describe, expect, it } from "vitest";
-import { connect, type TransportHost, type TransportSocket } from "./ws";
+import { browserHost, connect, type TransportHost, type TransportSocket } from "./ws";
 import { LIVENESS_TICK_MS, LIVENESS_WINDOW_MS, PROBE_FRAME } from "./liveness";
 import type { RunEvent } from "../events";
 
@@ -263,6 +263,63 @@ describe("the socket that died without saying so", () => {
   });
 });
 
+/** The frame an older server answers an unknown type with, verbatim. */
+const unknownType = (): string =>
+  JSON.stringify({ type: "error", agentId: "main", message: "Unknown message type.", ts: 1 });
+
+describe("a server that predates the probe", () => {
+  // Card 261 review. A page carrying this transport can meet a server built
+  // before `case "ping"` existed — an older dev server, an older desktop jar.
+  // That server's default arm is sendError("Unknown message type."), and
+  // sendError is a first-class RunEvent: it goes through send() and is
+  // APPENDED to the session's JSONL. Asking every fifteen seconds would fill
+  // the operator's chat and his record on disk with error rows forever.
+  it("asks once, is refused, and never asks that socket again", () => {
+    const rigged = rig({ paints: true });
+    const batches: RunEvent[][] = [];
+    connect({ url: "ws://x/ws", host: rigged.host, onEvents: (b) => batches.push(b) });
+    const socket = accept(rigged);
+
+    rigged.advance(LIVENESS_TICK_MS * 3);
+    expect(socket.sent).toEqual([PROBE_FRAME]);
+
+    socket.deliver(unknownType());
+    rigged.paint();
+    expect(batches).toEqual([]); // our own probe coming back is not news
+
+    rigged.advance(LIVENESS_WINDOW_MS * 4);
+    expect(socket.sent).toEqual([PROBE_FRAME]); // asked once, and only once
+  });
+
+  it("does not condemn a socket that answered, even with a refusal", () => {
+    // Answering at all is proof of delivery — that is the whole premise of the
+    // probe. Retiring here would cost the operator the run over a version skew.
+    const rigged = rig({ paints: true });
+    connect({ url: "ws://x/ws", host: rigged.host, onEvents: () => {} });
+    const socket = accept(rigged);
+
+    rigged.advance(LIVENESS_TICK_MS * 3);
+    socket.deliver(unknownType());
+    rigged.advance(LIVENESS_WINDOW_MS * 4);
+
+    expect(socket.closes.count).toBe(0);
+    expect(rigged.sockets.length).toBe(1);
+  });
+
+  it("still shows an error the server raised on its own", () => {
+    // Only the answer to an OUTSTANDING probe is swallowed. The same text with
+    // nothing asked is the agent's own error and belongs on the screen.
+    const rigged = rig({ paints: true });
+    const batches: RunEvent[][] = [];
+    connect({ url: "ws://x/ws", host: rigged.host, onEvents: (b) => batches.push(b) });
+    const socket = accept(rigged);
+
+    socket.deliver(unknownType());
+    rigged.paint();
+    expect(batches.flat().length).toBe(1);
+  });
+});
+
 describe("onerror", () => {
   it("reconnects from an error, not only from a close", () => {
     const rigged = rig({ paints: true });
@@ -357,6 +414,33 @@ describe("what a reconnect reconnects to", () => {
     expect(rigged.sockets[2].url).toBe("ws://x/ws");
   });
 
+  it("goes back fresh when the watchdog's own reconnect is refused", () => {
+    // Card 261 review, the headline scenario end to end. A half-open socket
+    // means the server never saw a FIN, so it still holds the LiveSessions
+    // claim: the watchdog retires at 35 s, the reconnect asks for the session
+    // back, and start() refuses it. The socket AFTER that must ask for
+    // nothing — a retry that kept the resume would be refused every second
+    // for as long as the server's own half-open socket holds the claim.
+    const rigged = rig({ paints: true });
+    connect({ url: "ws://x/ws", host: rigged.host, onEvents: () => {} });
+    const first = accept(rigged);
+    first.deliver(JSON.stringify({ type: "workspace_info", sessionId: "s-9", path: "/w" }));
+    rigged.paint();
+
+    rigged.advance(LIVENESS_WINDOW_MS); // the watchdog gives up on a live socket
+    expect(first.closes.count).toBe(1);
+    rigged.advance(2000); // the backoff runs out
+    expect(rigged.sockets[1].url).toBe("ws://x/ws?resume=s-9");
+
+    const second = accept(rigged);
+    second.deliver(JSON.stringify({ type: "session_busy", sessionId: "s-9" }));
+    rigged.paint();
+    second.onclose?.();
+    rigged.advance(4000);
+
+    expect(rigged.sockets[2].url).toBe("ws://x/ws");
+  });
+
   it("keeps the resume the app asked for when the server never named a session", () => {
     const rigged = rig({ paints: true });
     connect({ url: "ws://x/ws", host: rigged.host, resume: "s-7", onEvents: () => {} });
@@ -368,6 +452,26 @@ describe("what a reconnect reconnects to", () => {
 });
 
 describe("the manual reconnect link", () => {
+  it("opens at once instead of waiting out the backoff", () => {
+    // Card 261 review: the whole body of reconnectNow() could be replaced with
+    // `return` and the suite stayed green, because only its guard was pinned.
+    // This is what the banner's retry link is FOR.
+    const rigged = rig({ paints: true });
+    const connection = connect({ url: "ws://x/ws", host: rigged.host, onEvents: () => {} });
+    const first = accept(rigged);
+
+    first.onclose?.(); // retired, with a backoff armed
+    expect(rigged.sockets.length).toBe(1);
+
+    connection.reconnectNow();
+    expect(rigged.sockets.length).toBe(2); // now, not in a second
+
+    // …and the backoff it skipped must be cancelled, not merely overtaken:
+    // a second socket arriving behind this one is the two-client defect.
+    rigged.advance(60_000);
+    expect(rigged.sockets.length).toBe(2);
+  });
+
   it("does not open a second socket while the first one is still connecting", () => {
     const rigged = rig({ paints: true });
     const connection = connect({ url: "ws://x/ws", host: rigged.host, onEvents: () => {} });
@@ -375,6 +479,157 @@ describe("the manual reconnect link", () => {
 
     connection.reconnectNow(); // the socket has not said onopen yet
     expect(rigged.sockets.length).toBe(1);
+  });
+});
+
+describe("the wiring to the real browser", () => {
+  // Card 261 review. browserHost() is the exact seam this card exists to fix,
+  // and it was the one part of it no test touched: every other test in this
+  // file injects a double. A setTimer pointed at requestAnimationFrame, or an
+  // onmessage handed the MessageEvent instead of its data, would ship the
+  // original defect with all of the above green.
+
+  interface FakeRaw {
+    url: string;
+    readyState: number;
+    sent: string[];
+    closed: number;
+    onopen: (() => void) | null;
+    onmessage: ((msg: { data: unknown }) => void) | null;
+    onclose: (() => void) | null;
+    onerror: (() => void) | null;
+  }
+  interface Calls {
+    frames: (() => void)[];
+    cancelledFrames: number[];
+    timers: { ms: number }[];
+    clearedTimers: number[];
+    opened: FakeRaw[];
+  }
+
+  /** Runs `body` with globalThis.window and WebSocket replaced by recorders. */
+  function withFakeBrowser(body: (calls: Calls) => void): void {
+    const globals = globalThis as unknown as Record<string, unknown>;
+    const saved = { window: globals.window, socket: globals.WebSocket };
+    const calls: Calls = {
+      frames: [],
+      cancelledFrames: [],
+      timers: [],
+      clearedTimers: [],
+      opened: [],
+    };
+    class FakeWebSocket implements FakeRaw {
+      static readonly OPEN = 1;
+      readyState = 1;
+      sent: string[] = [];
+      closed = 0;
+      onopen: (() => void) | null = null;
+      onmessage: ((msg: { data: unknown }) => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(readonly url: string) {
+        calls.opened.push(this);
+      }
+      send(text: string): void {
+        this.sent.push(text);
+      }
+      close(): void {
+        this.closed += 1;
+      }
+    }
+    globals.WebSocket = FakeWebSocket;
+    globals.window = {
+      requestAnimationFrame: (run: () => void) => {
+        calls.frames.push(run);
+        return 11;
+      },
+      cancelAnimationFrame: (handle: number) => calls.cancelledFrames.push(handle),
+      setTimeout: (run: () => void, ms: number) => {
+        void run;
+        calls.timers.push({ ms });
+        return 22;
+      },
+      clearTimeout: (handle: number) => calls.clearedTimers.push(handle),
+    };
+    try {
+      body(calls);
+    } finally {
+      globals.window = saved.window;
+      globals.WebSocket = saved.socket;
+    }
+  }
+
+  it("puts each of the four clock calls on the global it belongs to", () => {
+    withFakeBrowser((calls) => {
+      const host = browserHost();
+      const noop = (): void => {};
+
+      expect(host.requestFrame(noop)).toBe(11);
+      expect(calls.frames.length).toBe(1);
+      expect(calls.timers).toEqual([]); // a frame may not arm a timeout
+
+      expect(host.setTimer(noop, 250)).toBe(22);
+      expect(calls.timers).toEqual([{ ms: 250 }]);
+      expect(calls.frames.length).toBe(1); // …and a timeout may not arm a frame
+
+      host.cancelFrame(11);
+      expect(calls.cancelledFrames).toEqual([11]);
+      expect(calls.clearedTimers).toEqual([]);
+
+      host.clearTimer(22);
+      expect(calls.clearedTimers).toEqual([22]);
+      expect(calls.cancelledFrames).toEqual([11]);
+
+      expect(Math.abs(host.now() - Date.now())).toBeLessThan(1000);
+    });
+  });
+
+  it("hands the transport the frame's data, not the event that carried it", () => {
+    // The liveness watch keys on the frame's `type`, so a MessageEvent here
+    // would parse to null, every pong would be dropped, and every socket in
+    // the product would be condemned after 35 s.
+    withFakeBrowser((calls) => {
+      const socket = browserHost().openSocket("ws://x/ws");
+      const seen: unknown[] = [];
+      socket.onmessage = (data) => seen.push(data);
+
+      const raw = calls.opened[0];
+      expect(raw.url).toBe("ws://x/ws");
+      raw.onmessage?.({ data: '{"type":"pong","ts":1}' });
+      expect(seen).toEqual(['{"type":"pong","ts":1}']);
+    });
+  });
+
+  it("reads open, send and close off the socket underneath", () => {
+    withFakeBrowser((calls) => {
+      const socket = browserHost().openSocket("ws://x/ws");
+      const raw = calls.opened[0];
+
+      expect(socket.isOpen()).toBe(true);
+      raw.readyState = 3; // CLOSED
+      expect(socket.isOpen()).toBe(false);
+
+      socket.send("hi");
+      expect(raw.sent).toEqual(["hi"]);
+      socket.close();
+      expect(raw.closed).toBe(1);
+    });
+  });
+
+  it("forwards the three lifecycle events to the handlers the transport set", () => {
+    withFakeBrowser((calls) => {
+      const socket = browserHost().openSocket("ws://x/ws");
+      const seen: string[] = [];
+      socket.onopen = () => seen.push("open");
+      socket.onclose = () => seen.push("close");
+      socket.onerror = () => seen.push("error");
+
+      const raw = calls.opened[0];
+      raw.onopen?.();
+      raw.onerror?.();
+      raw.onclose?.();
+      expect(seen).toEqual(["open", "error", "close"]);
+    });
   });
 });
 

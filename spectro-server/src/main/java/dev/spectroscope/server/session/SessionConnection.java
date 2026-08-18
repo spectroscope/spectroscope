@@ -1838,8 +1838,12 @@ public final class SessionConnection {
      * the wire union is byte-frozen and a heartbeat is not session history —
      * this frame exists only between one socket and the tab holding it.
      *
-     * The reply is written off the socket thread and touches no run state, so a
-     * busy agent never makes a healthy connection look dead.
+     * The reply is written ON the socket's own reading thread — SpectroSocketHandler
+     * dispatches {@code case "ping"} inline — and touches no run state at all. That
+     * is the property that matters: the answer never queues behind the agent loop,
+     * so a busy agent cannot make a healthy connection look dead. An earlier version
+     * of this sentence claimed the reply was written OFF the socket thread, which was
+     * simply false and said the opposite of the handler's own comment two lines up.
      */
     synchronized void sendPong() {
         if (!socket.isOpen()) {
