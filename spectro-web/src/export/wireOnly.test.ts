@@ -73,13 +73,18 @@ describe("what a written jsonl may contain", () => {
       // now, not this session's history.
       "live_sessions",
       "session_busy",
+      // Card 261's heartbeat answer. The transport swallows it at the socket
+      // boundary, so no writer will ever see one — it is named here because
+      // this list is where "may a file hold this" is answered, and for a
+      // heartbeat the answer is no.
+      "pong",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    // Twenty: eighteen, plus card 212's two. The number is asserted so the set
-    // cannot grow or shrink by accident — only on purpose, with the reason
-    // written above.
-    expect(NON_WIRE_TYPES.size).toBe(20);
+    // Twenty-one: eighteen, plus card 212's two, plus card 261's one. The
+    // number is asserted so the set cannot grow or shrink by accident — only
+    // on purpose, with the reason written above.
+    expect(NON_WIRE_TYPES.size).toBe(21);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

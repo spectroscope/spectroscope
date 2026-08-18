@@ -1828,6 +1828,29 @@ public final class SessionConnection {
     }
 
     /**
+     * Answers the browser's liveness probe — socket-only UI frame, never
+     * appended to the JSONL.
+     *
+     * Card 261. A TCP peer that vanishes without a FIN leaves a socket that is
+     * OPEN and delivers nothing forever, and the browser cannot tell that apart
+     * from a run that is simply thinking. It can tell it apart from an
+     * unanswered question, which is what this is. Deliberately NOT a RunEvent:
+     * the wire union is byte-frozen and a heartbeat is not session history —
+     * this frame exists only between one socket and the tab holding it.
+     *
+     * The reply is written off the socket thread and touches no run state, so a
+     * busy agent never makes a healthy connection look dead.
+     */
+    synchronized void sendPong() {
+        if (!socket.isOpen()) {
+            return;
+        }
+        sendFrame(Map.of(
+                "type", "pong",
+                "ts", System.currentTimeMillis()));
+    }
+
+    /**
      * Queues a fleet frame for this connection, NEVER blocking the caller: the
      * listener runs on the hub's reader/tap threads, so a blocking socket write
      * here would stall a joining node and every other browser. On overflow the
