@@ -871,7 +871,28 @@ public record SpectroConfig(
             new ProcessGlobal("headlessMcp", p -> p.headlessMcp,
                     "is process-global and not allowed in a workspace scope",
                     "the headless MCP opt-in belongs in ~/.spectro/settings.json or "
-                            + "SPECTRO_HEADLESS_MCP, not in a folder the agent writes into."));
+                            + "SPECTRO_HEADLESS_MCP, not in a folder the agent writes into."),
+            // Card 281: the guard's three counts, and the sharpest case on this
+            // list. The others let a folder redirect or widen what the agent may
+            // do; these let it switch off the detector that is WATCHING it. Zero
+            // is the off value, a workspace is the folder the agent writes into,
+            // and the loop that wrote the same file thirty-one times could have
+            // ended that inspection by writing a thirty-second.
+            new ProcessGlobal("progressGuardWrites", p -> p.progressGuardWrites,
+                    "is process-global and not allowed in a workspace scope",
+                    "the progress guard's counts belong in ~/.spectro/settings.json, not in "
+                            + "a folder the agent writes into — a workspace that can set them "
+                            + "to zero can disarm the guard watching it."),
+            new ProcessGlobal("progressGuardFailures", p -> p.progressGuardFailures,
+                    "is process-global and not allowed in a workspace scope",
+                    "the progress guard's counts belong in ~/.spectro/settings.json, not in "
+                            + "a folder the agent writes into — a workspace that can set them "
+                            + "to zero can disarm the guard watching it."),
+            new ProcessGlobal("progressGuardPlanTurns", p -> p.progressGuardPlanTurns,
+                    "is process-global and not allowed in a workspace scope",
+                    "the progress guard's counts belong in ~/.spectro/settings.json, not in "
+                            + "a folder the agent writes into — a workspace that can set them "
+                            + "to zero can disarm the guard watching it."));
 
     /** The keys a workspace scope may not hold, by name. Exists for the doc
      *  guard: a key added to the list above without a word in the published
