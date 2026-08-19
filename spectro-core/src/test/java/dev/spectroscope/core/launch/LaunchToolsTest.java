@@ -17,7 +17,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -95,6 +97,26 @@ class LaunchToolsTest {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
+    }
+
+    /**
+     * A port this test KEEPS, and that provably answers nothing while it does.
+     *
+     * <p>{@link #freePort()} gives its number straight back, which is right for
+     * a test whose server binds it and wrong for a test whose claim is that
+     * nothing answers there — a stranger arriving in that window makes a start
+     * that already died look like one that came up. The socket here is bound and
+     * never listened on, at whatever {@code localhost} resolves to — the host
+     * the probe will dial: bound means nobody else can have the address, silent
+     * means every connect to it fails. The reasoning and the four measurements
+     * behind it are written out once, on {@code LaunchSupervisorTest}.
+     *
+     * @return the bound socket, to be closed by the caller
+     */
+    private static Socket reservedAndSilent() throws IOException {
+        Socket socket = new Socket();
+        socket.bind(new InetSocketAddress(InetAddress.getByName("localhost"), 0));
+        return socket;
     }
 
     private static void writeLaunchFile(Path project, String json) throws IOException {
@@ -493,28 +515,39 @@ class LaunchToolsTest {
         supervisor.close();
     }
 
-    /** Criterion 5: a port that never comes up names the configuration and the address. */
+    /**
+     * Criterion 5: a port that never comes up names the configuration and the address.
+     *
+     * <p>The port is HELD for the length of the test rather than borrowed from
+     * {@link #freePort()} — the same window, and the same reasoning, as the
+     * twin of this test on {@code LaunchSupervisorTest}: a start is refused here
+     * BY a silent address, so the address has to be this test's own.
+     */
     @Test
     @EnabledOnOs({OS.MAC, OS.LINUX})
     void aPortThatNeverComesUpNamesTheConfigurationAndThePort(@TempDir Path project)
             throws Exception {
-        int port = freePort();
-        writeLaunchFile(project, """
-                { "version": "0.0.1", "configurations": [
-                  { "name": "web", "runtimeExecutable": "/bin/sh",
-                    "runtimeArgs": ["-c", "echo 'Cannot find module ./server' >&2; exit 1"],
-                    "port": %d } ] }
-                """.formatted(port));
-        LaunchSupervisor supervisor = LaunchSupervisor.real();
-        String said = tool(new LaunchTools(supervisor, () -> new RecordingBrowser(true),
-                () -> fence(true)).all(), "launch_start")
-                .execute(args(Map.of("name", "web", "wait_seconds", "5")), context(project));
-        assertTrue(said.startsWith("ERROR:"), said);
-        assertTrue(said.contains("\"web\""), said);
-        assertTrue(said.contains("http://localhost:" + port + "/"), said);
-        assertTrue(said.contains("Cannot find module"),
-                "the output it printed is in the failure: " + said);
-        supervisor.close();
+        try (Socket reservation = reservedAndSilent()) {
+            int port = reservation.getLocalPort();
+            assertFalse(LaunchSupervisor.TCP_CONNECT.answers("localhost", port),
+                    "the reservation really is silent on " + port);
+            writeLaunchFile(project, """
+                    { "version": "0.0.1", "configurations": [
+                      { "name": "web", "runtimeExecutable": "/bin/sh",
+                        "runtimeArgs": ["-c", "echo 'Cannot find module ./server' >&2; exit 1"],
+                        "port": %d } ] }
+                    """.formatted(port));
+            LaunchSupervisor supervisor = LaunchSupervisor.real();
+            String said = tool(new LaunchTools(supervisor, () -> new RecordingBrowser(true),
+                    () -> fence(true)).all(), "launch_start")
+                    .execute(args(Map.of("name", "web", "wait_seconds", "5")), context(project));
+            assertTrue(said.startsWith("ERROR:"), said);
+            assertTrue(said.contains("\"web\""), said);
+            assertTrue(said.contains("http://localhost:" + port + "/"), said);
+            assertTrue(said.contains("Cannot find module"),
+                    "the output it printed is in the failure: " + said);
+            supervisor.close();
+        }
     }
 
     /** Criterion 5: an attach entry whose address answers nothing is refused by that url. */
