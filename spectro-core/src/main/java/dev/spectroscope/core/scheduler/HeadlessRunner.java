@@ -261,6 +261,30 @@ public final class HeadlessRunner {
      * @param exitOk     true iff the run ended regularly with end_turn — an
      *                   abandoned plan ({@code unfinished}) is not a regular end
      */
+    /**
+     * The agent the last {@link #runOnce} assembled — a reader for the tests
+     * that pin what this UNATTENDED face wires onto it, and above all what it
+     * does NOT.
+     *
+     * <p>Card 266's review asked for the negative that the money decision
+     * deserves: {@code spectro run}, every cron fire and every fleet node build
+     * their agent here (RunCommand, CronCommand, NodeCommand, TriggeredNode all
+     * construct a {@code HeadlessRunner}), and none of them may carry a
+     * continuation leash — a face that continues by itself multiplies a bill
+     * with nobody watching. Until this reader existed, that half of the fence
+     * was a comment: adding the clause here would have left the whole gate
+     * green. The same precedent as {@code SpectroCli.agent()} and
+     * {@code SessionConnection.agent()}, both added for exactly this after card
+     * 222's finding F4.</p>
+     */
+    private volatile Agent lastAgent;
+
+    /** The agent {@link #runOnce} last built, or null before the first run.
+     *  @return the agent, for the wiring pins */
+    Agent lastAgent() {
+        return lastAgent;
+    }
+
     public record Outcome(String finalText, String stopReason, String sessionId, boolean exitOk) {
     }
 
@@ -387,7 +411,7 @@ public final class HeadlessRunner {
             return allowed;
         };
 
-        Agent agent = new Agent(AgentOptions.builder()
+        Agent agent = lastAgent = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(HEADLESS_SYSTEM_PROMPT)
                 .registry(registry)

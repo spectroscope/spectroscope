@@ -221,6 +221,33 @@ public final class ServerLocalRuntime {
                 return Vision.UNKNOWN;
             }
         }
+
+        /**
+         * The window this session's llama-server was STARTED with (card 263).
+         *
+         * <p>Read off the catalogue rather than forwarded to the delegate, and
+         * that is not a shortcut: {@link #buildCommand} passes
+         * {@code -c <contextTokens>} from this very entry, so the catalogue is
+         * the instruction that created the window, not a guess about it.
+         * llama.cpp's server has no capability listing to ask instead, so a
+         * forward would spend a request to learn 0.</p>
+         *
+         * <p>Until this override existed the facade inherited the interface
+         * default and every built-in-model session compacted at the 100,000
+         * fallback — while every entry in the bundled catalogue is loaded with
+         * 8,192 tokens or fewer. That is the small-window half of AC 4, in the
+         * one configuration the app ships with.</p>
+         *
+         * @return the catalogue entry's context window, or 0 if it cannot be resolved
+         */
+        @Override
+        public int contextWindow() {
+            try {
+                return LocalCatalog.bundled().resolve(modelId).contextTokens();
+            } catch (RuntimeException unavailable) {
+                return 0;
+            }
+        }
     }
 
     /**

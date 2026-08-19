@@ -2,7 +2,6 @@ package dev.spectroscope.core.tools;
 
 import dev.spectroscope.core.CancelSignal;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -87,6 +86,32 @@ public final class ShellCommand {
      */
     public static Result run(String command, Map<String, String> extraEnv, Path cwd,
                              long timeoutSeconds, CancelSignal signal, int maxOutputChars) {
+        return run(command, extraEnv, cwd, timeoutSeconds, signal, maxOutputChars, false);
+    }
+
+    /**
+     * The same run, with a say in WHICH end of an over-long output survives.
+     *
+     * <p>Head is the default and stays the default for every tool and hook: a
+     * tool result is read from the top. A goal's check is the one caller that
+     * asks for the tail, because a test suite prints its failure last — card
+     * 267's review found the guidance handing a model 4.000 characters of
+     * "ok N" lines with the failing assertion cut off. The cut is made in the
+     * DRAIN, not afterwards, so the memory bound is the same either way: a
+     * suite that prints a gigabyte still costs one small buffer.</p>
+     *
+     * @param command        the shell line, passed verbatim to sh -c
+     * @param extraEnv       environment entries layered over the inherited environment
+     * @param cwd            working directory the child starts in
+     * @param timeoutSeconds wall-clock budget; overrun kills the child and sets timedOut
+     * @param signal         run-scoped cancel — cancelling kills the child immediately
+     * @param maxOutputChars cap for the returned output
+     * @param keepTail       true to keep the END of the output instead of the beginning
+     * @return exit code, clipped output and the failure flags — see {@link Result}
+     */
+    public static Result run(String command, Map<String, String> extraEnv, Path cwd,
+                             long timeoutSeconds, CancelSignal signal, int maxOutputChars,
+                             boolean keepTail) {
         Process process = null;
         Runnable deregister = () -> { };
         try {
@@ -102,17 +127,14 @@ public final class ShellCommand {
             // reading past the cap so the child never blocks on a full pipe.
             int capBytes = maxOutputChars > Integer.MAX_VALUE / 4
                     ? Integer.MAX_VALUE : maxOutputChars * 4;
-            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            Sink buffer = new Sink(capBytes, keepTail);
             Thread drainer = Thread.startVirtualThread(() -> {
                 try (InputStream in = running.getInputStream()) {
                     byte[] chunk = new byte[8192];
                     int n;
                     while ((n = in.read(chunk)) != -1) {
                         synchronized (buffer) {
-                            int room = capBytes - buffer.size();
-                            if (room > 0) {
-                                buffer.write(chunk, 0, Math.min(n, room));
-                            }
+                            buffer.write(chunk, n);
                         }
                     }
                 } catch (IOException ignored) {
@@ -128,9 +150,11 @@ public final class ShellCommand {
             drainer.join(DRAIN_GRACE_MS);
             String output;
             synchronized (buffer) {
-                output = buffer.toString(StandardCharsets.UTF_8);
+                output = buffer.text();
             }
-            return new Result(process.exitValue(), ToolOutput.clip(output, maxOutputChars),
+            return new Result(process.exitValue(),
+                    keepTail ? ToolOutput.clipTail(output, maxOutputChars)
+                            : ToolOutput.clip(output, maxOutputChars),
                     false, null);
         } catch (IOException | RuntimeException error) {
             if (process != null) {
@@ -145,6 +169,65 @@ public final class ShellCommand {
             return new Result(NO_EXIT, "", false, "interrupted");
         } finally {
             deregister.run();
+        }
+    }
+
+    /**
+     * The drain's bounded byte sink — the first {@code cap} bytes, or the last
+     * {@code cap} bytes, and never more than {@code cap} bytes of memory either
+     * way. The reader keeps reading past the bound in both modes, which is what
+     * keeps a chatty child from blocking on a full pipe.
+     */
+    private static final class Sink {
+        private final byte[] held;
+        private final boolean keepTail;
+        private int at;
+        private boolean wrapped;
+
+        Sink(int cap, boolean keepTail) {
+            this.held = new byte[Math.max(1, cap)];
+            this.keepTail = keepTail;
+        }
+
+        /** Takes one chunk.
+         *  @param chunk the bytes just read
+         *  @param n     how many of them are real */
+        void write(byte[] chunk, int n) {
+            if (!keepTail) {
+                int room = held.length - at;
+                if (room > 0) {
+                    System.arraycopy(chunk, 0, held, at, Math.min(n, room));
+                    at += Math.min(n, room);
+                }
+                return;
+            }
+            // Only the last held.length bytes of this chunk can survive it.
+            for (int i = Math.max(0, n - held.length); i < n; i++) {
+                held[at] = chunk[i];
+                at++;
+                if (at == held.length) {
+                    at = 0;
+                    wrapped = true;
+                }
+            }
+        }
+
+        /** What was kept, decoded.
+         *  @return the held bytes as UTF-8, never starting mid-character */
+        String text() {
+            if (!keepTail || !wrapped) {
+                return new String(held, 0, at, StandardCharsets.UTF_8);
+            }
+            byte[] out = new byte[held.length];
+            System.arraycopy(held, at, out, 0, held.length - at);
+            System.arraycopy(held, 0, out, held.length - at, at);
+            // The cut landed anywhere, including inside a multi-byte character:
+            // skip continuation bytes so the first char is not a replacement glyph.
+            int from = 0;
+            while (from < out.length && (out[from] & 0xC0) == 0x80) {
+                from++;
+            }
+            return new String(out, from, out.length - from, StandardCharsets.UTF_8);
         }
     }
 }

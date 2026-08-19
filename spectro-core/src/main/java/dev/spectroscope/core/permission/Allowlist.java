@@ -277,7 +277,8 @@ public final class Allowlist {
      * an entry that no longer approves the thing the user just said yes to.
      *
      * <p>Risky tools stay prefix-scoped so one click never blanket-approves every call:
-     * run_command by its first token ("run_command#eval-execute:git*"), the path/url tools by
+     * run_command and the goal check by their first token ("run_command#eval-execute:git*",
+     * "goal_check#eval-execute:./gradlew*"), the path/url tools by
      * their full value ("write_file#write:docs/a.md*", "edit_file#write:src/Main.java*",
      * "web_fetch#read:https://example.com*", "browse_page#write:https://example.com*");
      * every other tool (web_search included — queries vary every call) remembers
@@ -298,7 +299,11 @@ public final class Allowlist {
         }
         String value = input.path(field).asText("").strip();
         // A command scopes by its first token; path/url tools by the full value.
-        if ("run_command".equals(toolName) && !value.isEmpty()) {
+        // Keyed on the FIELD and not on the tool name: card 267 added a second
+        // caller of the same /bin/sh (goal_check) and a switch on the name would
+        // have remembered it bare — one click blanket-approving every future
+        // check, which is the thing the run_command scoping exists to prevent.
+        if ("command".equals(field) && !value.isEmpty()) {
             value = value.split("\\s+")[0];
         }
         return value.isEmpty() ? qualified : qualified + ":" + value + "*";
@@ -314,7 +319,12 @@ public final class Allowlist {
      */
     private static String guardedField(String toolName) {
         return switch (toolName) {
-            case "run_command" -> "command";
+            // goal_check is not a tool and is in no registry (Agent.GOAL_CHECK_GATE),
+            // but it asks this gate with a shell line in a field named "command",
+            // so it is scoped exactly as run_command is. The alternative, measured
+            // in card 267's review, is a persisted `goal_check#eval-execute` that
+            // approves every command an operator states from then on.
+            case "run_command", "goal_check" -> "command";
             case "write_file", "edit_file" -> "path";
             case "web_fetch", "browse_page" -> "url";
             default -> null;

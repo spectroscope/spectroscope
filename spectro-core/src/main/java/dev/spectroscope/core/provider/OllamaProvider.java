@@ -57,6 +57,22 @@ public final class OllamaProvider implements LlmProvider {
      *  unknowable for the rest of the session. */
     private volatile Vision vision = Vision.UNKNOWN;
 
+    /** The running window this server reported, memoized (card 263). Zero is
+     *  never cached: ollama loads a model on the first chat call, so an empty
+     *  {@code /api/ps} before the first turn is a moment, not a verdict. */
+    private volatile int contextWindow;
+
+    /** Set once the server has denied the route outright — a 4xx, which an
+     *  ollama old enough to predate {@code /api/ps} answers. That verdict does
+     *  not expire; a timeout or a 5xx does not set it, because neither says
+     *  anything about whether the route exists. */
+    private volatile boolean capabilityRouteAbsent;
+
+    /** A SECOND client for capability questions only, with a read timeout the
+     *  chat client must never have — that one streams NDJSON, and a deadline on
+     *  it would cut long answers off mid-sentence. */
+    private final RestClient capabilities;
+
     /**
      * Builds the provider and its HTTP plumbing; no request leaves here yet.
      *
@@ -76,6 +92,18 @@ public final class OllamaProvider implements LlmProvider {
                 .requestFactory(new JdkClientHttpRequestFactory())
                 .build();
         this.api = OllamaApi.create(http);
+        // BOTH deadlines, and they live in two places. A refused connection comes
+        // back in milliseconds, but a host that is merely asleep — a Tailscale
+        // node, a laptop that closed its lid — drops the packets instead of
+        // refusing, and a read timeout alone never fires because the read never
+        // starts. The connect deadline belongs to the JDK client, the read
+        // deadline to Spring's factory over it.
+        JdkClientHttpRequestFactory probeFactory = new JdkClientHttpRequestFactory(
+                java.net.http.HttpClient.newBuilder()
+                        .connectTimeout(java.time.Duration.ofSeconds(2))
+                        .build());
+        probeFactory.setReadTimeout(java.time.Duration.ofSeconds(2));
+        this.capabilities = RestClient.builder().requestFactory(probeFactory).build();
     }
 
     /**
@@ -102,6 +130,92 @@ public final class OllamaProvider implements LlmProvider {
     @Override
     public String endpoint() {
         return baseUrl;
+    }
+
+    /**
+     * The window the RUNNING instance of this model was loaded with, from
+     * {@code GET /api/ps} (card 263) — memoized, asked at most once per run.
+     *
+     * <p><b>Why {@code /api/ps} and not {@code /api/show}.</b> The show endpoint
+     * answers {@code model_info["<arch>.context_length"]} — measured on ollama
+     * 0.24.0, qwen2.5:3b reports 32,768 there. That is the window the model was
+     * TRAINED with, not the one ollama loaded it into: the server decides that
+     * per run, from the Modelfile's {@code num_ctx} or its own
+     * {@code OLLAMA_CONTEXT_LENGTH}, and either can be far smaller. Reporting
+     * the trained figure would push compaction past the served window, which is
+     * the one direction worse than the constant this card removes. {@code /ps}
+     * states what is actually loaded: {@code models[].context_length}, 32,768
+     * for the same model on the same measurement.</p>
+     *
+     * <p>The cost is that a fresh session, before its first turn, finds nothing
+     * running and starts on the fallback. That is why only a POSITIVE answer is
+     * remembered — the model is loaded by the first chat call, and the second
+     * run of the session gets the truth.</p>
+     *
+     * @return the running instance's context length, or 0 when nothing is known
+     */
+    @Override
+    public int contextWindow() {
+        int known = contextWindow;
+        if (known > 0) {
+            return known;
+        }
+        if (capabilityRouteAbsent) {
+            return 0;
+        }
+        int probed = probeContextWindow();
+        if (probed > 0) {
+            contextWindow = probed;
+        }
+        return probed;
+    }
+
+    /** One best-effort GET on the short-timeout client. Never throws: a
+     *  capability question may not be able to fail a run.
+     *  @return the running window, or 0 on any refusal, timeout or surprise */
+    private int probeContextWindow() {
+        try {
+            String body = capabilities.get().uri(baseUrl + "/api/ps")
+                    .retrieve().body(String.class);
+            return body == null ? 0 : loadedWindow(JSON.readTree(body), model);
+        } catch (org.springframework.web.client.HttpClientErrorException definitive) {
+            capabilityRouteAbsent = true;
+            return 0;
+        } catch (Exception nothingLearned) {
+            return 0;
+        }
+    }
+
+    /**
+     * What {@code /api/ps} says about ONE model's running window.
+     *
+     * <p>The shape, measured on ollama 0.24.0 with qwen2.5:3b loaded:
+     * {@code {"models":[{"name":"qwen2.5:3b","model":"qwen2.5:3b","size":…,
+     * "context_length":32768}]}}. With nothing loaded the same call answers
+     * {@code {"models":[]}} — the state every fresh session starts in.</p>
+     *
+     * <p>{@code context_length} arrived in a later ollama; an entry without it
+     * must read as "nothing known" and never as a window of zero, which would
+     * make the harness compact on the empty first turn and every turn after.</p>
+     *
+     * @param ps    the parsed {@code /api/ps} body, whatever it turned out to be
+     * @param model the model id this provider sends to; null teaches nothing
+     * @return the running context length in tokens, or 0 when nothing is known
+     */
+    static int loadedWindow(JsonNode ps, String model) {
+        if (ps == null || model == null) {
+            return 0;
+        }
+        for (JsonNode entry : ps.path("models")) {
+            if (model.equals(entry.path("model").asText(null))
+                    || model.equals(entry.path("name").asText(null))) {
+                int window = entry.path("context_length").asInt(0);
+                if (window > 0) {
+                    return window;
+                }
+            }
+        }
+        return 0;
     }
 
     /**

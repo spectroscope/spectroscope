@@ -285,10 +285,18 @@ class SpectroServerIntegrationTest {
         // finished draining. So the run sequence is asserted over the run
         // events, exactly as this test always meant it. (Their own ordering is
         // pinned where it belongs, on the recorder.)
+        // Card 267: and the goal announcement, right behind the workspace one —
+        // "what this run is for" is the same kind of fact as "where it runs",
+        // and it is socket-only for the same reason: the session's HISTORY holds
+        // the check's VERDICT (goal_check), not the goal in force right now.
+        assertEquals("goal_info", types.get(6),
+                "the goal announcement precedes the run, got " + types);
+        assertFalse(announced.get(6).path("stated").asBoolean(true),
+                "nothing was stated, and no face refuses to start without a goal");
         List<String> runTypes = types.stream()
                 .filter(t -> !t.startsWith("llm_"))
                 .toList();
-        assertEquals("run_start", runTypes.get(6), "sequence starts with run_start, got " + runTypes);
+        assertEquals("run_start", runTypes.get(7), "sequence starts with run_start, got " + runTypes);
         assertTrue(runTypes.contains("text_delta"), "text must stream, got " + runTypes);
         assertTrue(runTypes.contains("usage"), "usage must arrive, got " + runTypes);
         assertEquals("run_end", runTypes.getLast());
@@ -495,10 +503,11 @@ class SpectroServerIntegrationTest {
         assertEquals("permission_mode_info", types.get(5),
                 "...and permission_mode_info right after it, got " + types);
         assertEquals("workspace_info", types.get(6));
+        assertEquals("goal_info", types.get(7), "card 267's announcement, got " + types);
         // Same reason as the canonical-sequence test above: the llm layer's
         // frames announce a call leaving and a call closing, not a run event.
         List<String> runTypes = types.stream().filter(t -> !t.startsWith("llm_")).toList();
-        assertEquals("run_start", runTypes.get(7),
+        assertEquals("run_start", runTypes.get(8),
                 "the ONLY run events come from the second, valid message: " + runTypes);
     }
 

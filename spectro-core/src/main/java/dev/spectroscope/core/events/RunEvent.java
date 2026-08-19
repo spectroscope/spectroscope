@@ -58,7 +58,10 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.HookDecision.class,       name = "hook_decision"), // additive (card 195)
     @JsonSubTypes.Type(value = RunEvent.ImagesWithheld.class,     name = "images_withheld"), // additive (card 252)
     @JsonSubTypes.Type(value = RunEvent.QuestionAsked.class,      name = "question_asked"),   // additive (card 265)
-    @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered") // additive (card 265)
+    @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered"), // additive (card 265)
+    @JsonSubTypes.Type(value = RunEvent.NoProgress.class,         name = "no_progress"),      // additive (card 262)
+    @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation"),     // additive (card 266)
+    @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check")        // additive (card 267)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -66,7 +69,8 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
-        RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered {
+        RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
+        RunEvent.NoProgress, RunEvent.Continuation, RunEvent.GoalCheck {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -600,6 +604,117 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
             implements RunEvent {}
 
     /**
+     * Additive: the harness decided whether to keep an unfinished run going
+     * (card 266).
+     *
+     * <p>One line per DECISION, not per continuation, because the two refusals
+     * are the facts an operator most needs afterwards: a run that quietly
+     * stopped being continued is the same silence card 264 was cut to end. The
+     * value in {@code decision} is what a reader keys off — never the prose in
+     * {@code evidence}, which is written for a person and may be reworded.</p>
+     *
+     * @param agentId      the agent whose run stopped with steps open
+     * @param decision     {@code continued}, {@code budget_exhausted} or
+     *                     {@code no_progress} — the three outcomes of
+     *                     {@code ContinuationLeash.Decision}
+     * @param continuation which continuation this is, 1-based; on a refusal, how
+     *                     many had already been spent
+     * @param budget       the leash's budget for this run, so the count is
+     *                     readable as "2 of 3" without a second lookup
+     * @param openSteps    how many plan steps were still open at the exit
+     * @param totalSteps   how many steps the plan had
+     * @param inputTokens  what the run's LAST exchange reported as input tokens —
+     *                     the floor of what this continuation's own exchange
+     *                     costs. The non-functional criterion of card 266 asks
+     *                     the price to be stated per continuation, and this is
+     *                     the only honest number the loop holds. 0 when the
+     *                     provider reported no usage
+     * @param evidence     the same decision as one English sentence, for the
+     *                     surfaces with no dictionary
+     * @param ts           epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record Continuation(String agentId, String decision, int continuation, int budget,
+                        int openSteps, int totalSteps, int inputTokens, String evidence,
+                        long ts) implements RunEvent {}
+
+    /**
+     * Additive: the goal's check ran, and this is what it said (card 267).
+     *
+     * <p>One line per check, at the exit that would otherwise have ended the
+     * run. Criterion 4 is the reason every field is here: <b>a verdict is never
+     * a claim</b>. The command and its exit code — or the evaluator's model name
+     * and what it answered — travel WITH the outcome, so nobody downstream has
+     * to take the word "done" on faith, and a run recorded as met can be re-run
+     * by hand from its own record.</p>
+     *
+     * <p>Key off {@code outcome}, never off {@code evidence}: the prose is
+     * written for a person and may be reworded, the three values may not. And
+     * the prose is written in the register
+     * {@code .spectro/skills/verification/SKILL.md} permits — the banned words
+     * ("should work", "probably passes", "looks correct") state a belief where
+     * this line states a measurement.</p>
+     *
+     * @param agentId    the agent whose run was about to end
+     * @param outcome    {@code met}, {@code failed} or {@code untested}
+     * @param command    the command that ran, or null when a model judged
+     * @param exitCode   the exit code, or null when nothing ran to completion
+     * @param judge      the evaluator's model name, or null for a command check
+     * @param output     what the check printed, clipped to the tail
+     * @param durationMs how long the CHECK took — kept apart from the model's
+     *                   work, the split card 111 established for the gate and
+     *                   card 265 extended to the ask
+     * @param gateWaitMs how long the check waited on a person at the permission
+     *                   gate, or null when it never parked
+     * @param evidence   the same verdict as one English sentence
+     * @param ts         epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record GoalCheck(String agentId, String outcome, String command, Integer exitCode,
+                     String judge, String output, long durationMs, Long gateWaitMs,
+                     String evidence, long ts) implements RunEvent {}
+
+    /**
+     * Additive: the harness noticed that nothing is moving (card 262).
+     *
+     * <p>Emitted the moment a detector fires, BEFORE the question that follows
+     * it, so the transcript carries the observation even if the run is
+     * cancelled while the question is parked. Never a silent abort: the line is
+     * on the wire whatever the operator then decides, and whatever happens when
+     * nobody answers.</p>
+     *
+     * <p><b>Facts and a sentence, both.</b> {@code detector}, {@code count} and
+     * {@code details} are the facts a localized surface builds its own wording
+     * from — {@link ImagesWithheld} learned that the hard way, and a reopened
+     * session must not print English into a German transcript. {@code evidence}
+     * is the ready-made English sentence for every surface that has no
+     * dictionary at all: the CLI transcript, the log line, a session file a
+     * human opens in an editor. A guard that says "no progress" without naming
+     * what it saw is a guess wearing a warning's clothes, and that has to hold
+     * in the places where no UI is watching.</p>
+     *
+     * @param agentId  the agent whose run stopped moving
+     * @param detector which net caught it — {@code identical_writes},
+     *                 {@code repeated_failure} or {@code stalled_plan}. Pin on
+     *                 this, never on {@code evidence}: the prose is written for
+     *                 a person and may be reworded, this may not
+     * @param count    how many times the thing happened — three identical
+     *                 writes, three failures in a row, five unmoved turns
+     * @param details  the supporting facts, per detector. {@code identical_writes}:
+     *                 the paths that already carry those bytes, and LAST the new
+     *                 path the run was about to write. {@code repeated_failure}:
+     *                 one entry, the call as it was issued. {@code stalled_plan}:
+     *                 the plan steps still open. Null (omitted) when a detector
+     *                 has none
+     * @param evidence the same thing as one English sentence, for the surfaces
+     *                 with no dictionary
+     * @param ts       epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record NoProgress(String agentId, String detector, int count, List<String> details,
+                      String evidence, long ts) implements RunEvent {}
+
+    /**
      * Additive: what sits in the context window right now. Emitted
      * once per turn when introspection is enabled; sizes are char/4 estimates — the
      * real token truth stays with the {@link Usage} events.
@@ -611,10 +726,31 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param threshold       the compaction threshold the estimate is measured against
      * @param parts           the labeled slices (system prompt, tool schemas, conversation)
      * @param ts              epoch millis of emission
+     * @param thresholdSource which fact produced the threshold (additive, card
+     *                        263): {@code override} when an explicit setting won,
+     *                        {@code window} when the backend stated the window
+     *                        the loaded instance serves, {@code fallback} when
+     *                        nothing could be learned. Null in pre-263 sessions,
+     *                        and dropped from the wire when null
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ContextInfo(String agentId, int turn, int messages, int estimatedTokens,
-                       int threshold, List<ContextPart> parts, long ts) implements RunEvent {}
+                       int threshold, List<ContextPart> parts, long ts,
+                       String thresholdSource) implements RunEvent {
+
+        /** Pre-card-263 shape: a threshold with no stated provenance.
+         *  @param agentId        the agent the estimate belongs to
+         *  @param turn           the turn the estimate precedes (1-based)
+         *  @param messages       how many history entries ride along
+         *  @param estimatedTokens the chars/4 sum of the parts
+         *  @param threshold      the compaction trigger's level
+         *  @param parts          the labeled slices behind the estimate
+         *  @param ts             epoch millis of emission */
+        public ContextInfo(String agentId, int turn, int messages, int estimatedTokens,
+                           int threshold, List<ContextPart> parts, long ts) {
+            this(agentId, turn, messages, estimatedTokens, threshold, parts, ts, null);
+        }
+    }
 
     /** One labeled slice of the context estimate; not a RunEvent itself, like {@link Attachment}.
      *  @param label     what the slice covers (e.g. "system prompt")

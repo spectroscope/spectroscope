@@ -49,7 +49,16 @@ import java.util.function.Function;
  * @param provider            "anthropic", "ollama" or "openai" (LM Studio &amp; friends)
  * @param model               model id for the chosen provider
  * @param baseUrl             base URL for ollama/openai (ignored for anthropic)
- * @param compactionThreshold input-token threshold that triggers compaction
+ * @param compactionThreshold input-token threshold that triggers compaction, or
+ *                            {@code null} when nobody set one — then the harness
+ *                            DERIVES it from the window the backend says it
+ *                            loaded (card 263,
+ *                            {@link dev.spectroscope.core.session.CompactionThreshold}).
+ *                            The default used to be a literal 100,000 here, and
+ *                            that is the whole reason a session on a 204,288-token
+ *                            model summarized itself away at 100,000: with an int
+ *                            there was no way to tell "the operator typed this"
+ *                            from "nobody said anything".
  * @param permissionMode      "ask", "auto" or "readonly"
  * @param autoApprove         permission allowlist in card 199's grammar,
  *                            {@code <tool>[#<tier>][:<valuePrefix>]} — e.g.
@@ -154,12 +163,35 @@ import java.util.function.Function;
  *                            scope may not set it — the switch that widens an
  *                            unattended run must not live in the folder the
  *                            agent writes into). Env {@code SPECTRO_HEADLESS_MCP}
+ * @param progressGuardWrites how many DISTINCT earlier paths must already carry
+ *                            the exact bytes a write is about to repeat before
+ *                            the harness says so and asks (card 262). Default
+ *                            <b>3</b>; <b>0 turns the detector off</b>. The
+ *                            measured loop wrote the same 283 bytes to 31 paths
+ * @param progressGuardFailures how many times in a row one call with
+ *                            byte-identical input must fail before the harness
+ *                            says so and asks. Default <b>3</b>, and the 3 is
+ *                            load-bearing: a flaky test that fails twice and
+ *                            then passes must stay silent. 0 turns it off
+ * @param progressGuardPlanTurns how many consecutive turns a plan must sit
+ *                            unchanged, with a step still open, before the
+ *                            harness says so and asks. Default <b>0 — OFF</b>:
+ *                            it needs a plan that exists and is maintained, and
+ *                            the weak local models this guard was cut for keep
+ *                            none. Built, tested, and off until an operator
+ *                            turns it on
+ * @param continuationBudget  how many times ONE run may be restarted by the
+ *                            harness after it stopped with its own plan still
+ *                            open (card 266). Default <b>3</b>; <b>0 turns the
+ *                            leash off</b>. It sits beside the guard's counts on
+ *                            purpose: an operator tuning one will want the other,
+ *                            and the two mechanics share a progress signal
  */
 public record SpectroConfig(
         String provider,
         String model,
         String baseUrl,
-        int compactionThreshold,
+        Integer compactionThreshold,
         String permissionMode,
         List<String> autoApprove,
         String imageProvider,
@@ -181,7 +213,133 @@ public record SpectroConfig(
         String lmstudioBaseUrl,
         String searxngUrl,
         boolean allowLocalhost,
-        boolean headlessMcp) {
+        boolean headlessMcp,
+        int progressGuardWrites,
+        int progressGuardFailures,
+        int progressGuardPlanTurns,
+        int continuationBudget) {
+
+    /**
+     * Compat: the pre-card-262 arity, which knew no progress guard. Every caller
+     * that built a config positionally keeps compiling and gets the shipped
+     * defaults — both cheap detectors armed, the plan net off.
+     *
+     * @param provider            "anthropic", "ollama" or "openai"
+     * @param model               model id for the chosen provider
+     * @param baseUrl             base URL for ollama/openai
+     * @param compactionThreshold input-token threshold, or null to derive it
+     * @param permissionMode      "ask", "auto" or "readonly"
+     * @param autoApprove         permission allowlist
+     * @param imageProvider       the image backend
+     * @param thinking            whether the reasoning stream is requested
+     * @param mcpServers          the configured MCP servers
+     * @param maxRetries          provider retry count
+     * @param promptCaching       whether prompt caching is on
+     * @param hooks               the configured shell hooks
+     * @param workspace           the workspace directory, or null for a temp one
+     * @param logLevel            file-diagnostics level
+     * @param imageModel          the image model id
+     * @param sttModel            the speech model id
+     * @param sttProvider         the speech backend
+     * @param sttLanguage         the dictation language
+     * @param chromeBinary        an explicit Chrome path
+     * @param otlpEndpoint        the OTLP collector, or null
+     * @param otlpBasicAuth       its credentials, or null
+     * @param ollamaBaseUrl       the ollama base URL, or null
+     * @param lmstudioBaseUrl     the LM Studio base URL, or null
+     * @param searxngUrl          the SearXNG instance, or null
+     * @param allowLocalhost      whether the net fence permits localhost
+     * @param headlessMcp         whether an unattended run may mount MCP servers
+     */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp,
+                DEFAULT_PROGRESS_WRITES, DEFAULT_PROGRESS_FAILURES, DEFAULT_PROGRESS_PLAN_TURNS,
+                DEFAULT_CONTINUATION_BUDGET);
+    }
+
+    /**
+     * Compat: the pre-card-266 arity, which knew no continuation leash. Every
+     * caller that built a config positionally keeps compiling and gets the
+     * shipped budget.
+     *
+     * @param provider            "anthropic", "ollama" or "openai"
+     * @param model               the model id
+     * @param baseUrl             the legacy per-provider endpoint override
+     * @param compactionThreshold input tokens that trigger compaction
+     * @param permissionMode      how tool permissions are answered
+     * @param autoApprove         tool names answered without asking
+     * @param imageProvider       which backend renders images
+     * @param thinking            whether reasoning is requested
+     * @param mcpServers          the configured MCP servers
+     * @param maxRetries          provider retry budget
+     * @param promptCaching       whether prompt caching is requested
+     * @param hooks               the configured shell hooks
+     * @param workspace           the working directory
+     * @param logLevel            the log level
+     * @param imageModel          the image model id
+     * @param sttModel            the speech model id
+     * @param sttProvider         which backend transcribes
+     * @param sttLanguage         the dictation language
+     * @param chromeBinary        an explicit Chrome path
+     * @param otlpEndpoint        the OTLP collector
+     * @param otlpBasicAuth       its credentials
+     * @param ollamaBaseUrl       the ollama endpoint
+     * @param lmstudioBaseUrl     the LM Studio endpoint
+     * @param searxngUrl          the SearXNG instance
+     * @param allowLocalhost      whether the net fence allows loopback
+     * @param headlessMcp         whether an unattended run mounts MCP servers
+     * @param progressGuardWrites detector 1's count
+     * @param progressGuardFailures detector 2's count
+     * @param progressGuardPlanTurns detector 3's count
+     */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
+                DEFAULT_CONTINUATION_BUDGET);
+    }
+
+    /** The shipped {@code progressGuardWrites}: the same bytes under a third new
+     *  name is where "a second copy" stops explaining it. */
+    public static final int DEFAULT_PROGRESS_WRITES = 3;
+    /** The shipped {@code progressGuardFailures}: above the two a flaky test is
+     *  allowed, and the counter resets on any success of the same call. */
+    public static final int DEFAULT_PROGRESS_FAILURES = 3;
+    /** The shipped {@code progressGuardPlanTurns}: 0, meaning off. The reason is
+     *  on card 262 and in {@code ProgressSettings} — it needs a maintained plan,
+     *  and the runs it was cut for keep none. */
+    public static final int DEFAULT_PROGRESS_PLAN_TURNS = 0;
+
+    /** The shipped {@code continuationBudget}: three restarts of one run. No
+     *  budget vocabulary existed anywhere in the owner's sixteen work orders, so
+     *  this number is an addition to the house language rather than a recovery
+     *  of it — card 266 owner call 2, decided while building. */
+    public static final int DEFAULT_CONTINUATION_BUDGET = 3;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -237,7 +395,8 @@ public record SpectroConfig(
     static final Set<String> KNOWN_PERMISSION_MODES = Set.of("ask", "auto", "readonly");
 
     private static final SpectroConfig DEFAULTS = new SpectroConfig(
-            "anthropic", "claude-opus-4-8", "http://localhost:11434", 100_000, "ask", List.of(),
+            // compactionThreshold null: unset, so the harness derives it (card 263)
+            "anthropic", "claude-opus-4-8", "http://localhost:11434", null, "ask", List.of(),
             "gemini", true, List.of(), 2, true, List.of(), // 2 retries; caching on; no hooks
             null, // workspace: per-session temp folder unless configured
             "info", // logLevel: file diagnostics at info; console stays WARN-quiet
@@ -249,7 +408,14 @@ public record SpectroConfig(
             null, null, // ollamaBaseUrl/lmstudioBaseUrl: unset — the legacy baseUrl chain decides
             null, // searxngUrl: no instance — web_search resolves its tier without one
             false, // allowLocalhost: the net fence refuses loopback until somebody says otherwise
-            false); // headlessMcp: an unattended run mounts no MCP server until an operator opts in
+            false, // headlessMcp: an unattended run mounts no MCP server until an operator opts in
+            // Card 262, the progress guard: identical bytes under a new name and
+            // a call failing on unchanged input both speak at three; the plan net
+            // ships off, because it needs a plan the weak models never write.
+            3, 3, 0,
+            // Card 266: three continuations per run, on the attended faces only —
+            // the WIRING is the fence, exactly as it is for the guard above.
+            3);
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -568,7 +734,9 @@ public record SpectroConfig(
                         base.sttLanguage(), base.chromeBinary(),
                         base.otlpEndpoint(), base.otlpBasicAuth(),
                         base.ollamaBaseUrl(), base.lmstudioBaseUrl(), base.searxngUrl(),
-                        base.allowLocalhost(), base.headlessMcp());
+                        base.allowLocalhost(), base.headlessMcp(),
+                        base.progressGuardWrites(), base.progressGuardFailures(),
+                        base.progressGuardPlanTurns(), base.continuationBudget());
             }
         }
         return base;
@@ -618,7 +786,11 @@ public record SpectroConfig(
             new FieldProbe("lmstudioBaseUrl", p -> p.lmstudioBaseUrl),
             new FieldProbe("searxngUrl", p -> p.searxngUrl),
             new FieldProbe("allowLocalhost", p -> p.allowLocalhost),
-            new FieldProbe("headlessMcp", p -> p.headlessMcp));
+            new FieldProbe("headlessMcp", p -> p.headlessMcp),
+            new FieldProbe("progressGuardWrites", p -> p.progressGuardWrites),
+            new FieldProbe("progressGuardFailures", p -> p.progressGuardFailures),
+            new FieldProbe("progressGuardPlanTurns", p -> p.progressGuardPlanTurns),
+            new FieldProbe("continuationBudget", p -> p.continuationBudget));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -741,7 +913,9 @@ public record SpectroConfig(
                 maxRetries, promptCaching, hooks,
                 workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
-                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp);
+                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
+                continuationBudget);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1451,6 +1625,13 @@ public record SpectroConfig(
         public String searxngUrl;
         public Boolean allowLocalhost;
         public Boolean headlessMcp;
+        // Card 262: three counts, and zero is the off switch for each — one knob
+        // per detector rather than a knob and a flag that can disagree.
+        public Integer progressGuardWrites;
+        public Integer progressGuardFailures;
+        public Integer progressGuardPlanTurns;
+        // Card 266: how many times one run may be restarted; zero is off.
+        public Integer continuationBudget;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1490,6 +1671,14 @@ public record SpectroConfig(
             out.searxngUrl = Optional.ofNullable(higher.searxngUrl).orElse(searxngUrl);
             out.allowLocalhost = Optional.ofNullable(higher.allowLocalhost).orElse(allowLocalhost);
             out.headlessMcp = Optional.ofNullable(higher.headlessMcp).orElse(headlessMcp);
+            out.progressGuardWrites =
+                    Optional.ofNullable(higher.progressGuardWrites).orElse(progressGuardWrites);
+            out.progressGuardFailures =
+                    Optional.ofNullable(higher.progressGuardFailures).orElse(progressGuardFailures);
+            out.progressGuardPlanTurns =
+                    Optional.ofNullable(higher.progressGuardPlanTurns).orElse(progressGuardPlanTurns);
+            out.continuationBudget =
+                    Optional.ofNullable(higher.continuationBudget).orElse(continuationBudget);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1504,6 +1693,12 @@ public record SpectroConfig(
                     Optional.ofNullable(provider).orElse(DEFAULTS.provider()),
                     Optional.ofNullable(model).orElse(DEFAULTS.model()),
                     Optional.ofNullable(baseUrl).orElse(DEFAULTS.baseUrl()),
+                    // Card 263: DEFAULTS holds null here, so an unset threshold
+                    // stays unset and the harness derives it. Written as the same
+                    // fold as every sibling field on purpose — the version that
+                    // returned `compactionThreshold` directly made the DEFAULTS
+                    // entry dead, and a dead default is one a later hand restores
+                    // to 100_000 without a single test going red.
                     Optional.ofNullable(compactionThreshold).orElse(DEFAULTS.compactionThreshold()),
                     Optional.ofNullable(permissionMode).orElse(DEFAULTS.permissionMode()),
                     Optional.ofNullable(autoApprove).orElse(DEFAULTS.autoApprove()),
@@ -1526,7 +1721,11 @@ public record SpectroConfig(
                     Optional.ofNullable(lmstudioBaseUrl).orElse(DEFAULTS.lmstudioBaseUrl()),
                     Optional.ofNullable(searxngUrl).orElse(DEFAULTS.searxngUrl()),
                     Optional.ofNullable(allowLocalhost).orElse(DEFAULTS.allowLocalhost()),
-                    Optional.ofNullable(headlessMcp).orElse(DEFAULTS.headlessMcp()));
+                    Optional.ofNullable(headlessMcp).orElse(DEFAULTS.headlessMcp()),
+                    Optional.ofNullable(progressGuardWrites).orElse(DEFAULTS.progressGuardWrites()),
+                    Optional.ofNullable(progressGuardFailures).orElse(DEFAULTS.progressGuardFailures()),
+                    Optional.ofNullable(progressGuardPlanTurns).orElse(DEFAULTS.progressGuardPlanTurns()),
+                    Optional.ofNullable(continuationBudget).orElse(DEFAULTS.continuationBudget()));
         }
 
         /**

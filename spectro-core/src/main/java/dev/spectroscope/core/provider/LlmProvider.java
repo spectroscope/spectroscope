@@ -86,6 +86,29 @@ public interface LlmProvider {
         return Vision.UNKNOWN;
     }
 
+    /**
+     * How many tokens the instance that will serve the next request can hold —
+     * asked once per run, before the first token flows (card 263).
+     *
+     * <p>The wedge this answers: the harness compacted at a literal 100,000
+     * whatever the backend offered, so a session on a model loaded with 204,288
+     * summarized half its context away for nothing, and one loaded with 8,192
+     * was never compacted at all until the server truncated it silently.</p>
+     *
+     * <p><b>0 means "nothing known", never "no room".</b> The number wanted here
+     * is the LOADED window and not the model's ceiling: LM Studio states both —
+     * a model whose {@code max_context_length} is 1,048,576 loaded at 204,288 —
+     * and reporting the ceiling would push compaction past the window the server
+     * actually holds, which is the one direction worse than the constant. A
+     * provider that cannot ask (anthropic has no such endpoint; the OpenAI wire
+     * has none either) answers 0 and lands on the documented fallback.</p>
+     *
+     * @return the usable context window in tokens, or 0 when nothing is known
+     */
+    default int contextWindow() {
+        return 0;
+    }
+
     /** What is known about a model's sight. {@code UNKNOWN} is NOT {@code BLIND}:
      *  the first sends the image and lets the provider answer, the second is the
      *  only state that makes the harness keep an attachment back. */

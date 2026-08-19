@@ -84,6 +84,14 @@ public final class RetryingProvider implements LlmProvider {
         return delegate.vision();
     }
 
+    /** Delegates (card 263): the threshold is derived from the provider the
+     *  agent HOLDS, and every session holds this wrapper. A default answer here
+     *  would pin every run back onto the 100,000 constant, silently. */
+    @Override
+    public int contextWindow() {
+        return delegate.contextWindow();
+    }
+
     /**
      * Returns a lazy iterable whose {@code iterator()} runs the retrying establishment.
      *

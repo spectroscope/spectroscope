@@ -116,7 +116,9 @@ carries the reference; the bytes live in the content-addressed store.</p></div><
 
 <div class="ref"><div class="ref-head"><code class="name">context_info</code><span class="meta">additive · full build, opt-in</span></div><div class="ref-body">
 <p><code>agentId</code>, <code>turn</code>, <code>messages</code>, <code>estimatedTokens</code>,
-<code>threshold</code>, <code>parts[]</code> (<code>{label, chars, estTokens}</code> — system
+<code>threshold</code>, <code>thresholdSource</code> (<code>override</code> |
+<code>window</code> | <code>fallback</code> — which fact produced the threshold; absent in
+pre-0.9 sessions), <code>parts[]</code> (<code>{label, chars, estTokens}</code> — system
 prompt / tool schemas / conversation). Emitted once per turn when introspection is on;
 sizes are chars/4 <em>estimates</em> — <code>usage</code> stays the truth. Drives the
 context ring.</p></div></div>

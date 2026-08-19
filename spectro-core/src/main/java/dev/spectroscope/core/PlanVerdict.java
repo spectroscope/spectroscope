@@ -171,6 +171,35 @@ public enum PlanVerdict {
     }
 
     /**
+     * The plan as one comparable string — the house's single definition of
+     * "the plan has not advanced".
+     *
+     * <p>Two mechanics need it and must not each grow their own: card 262's
+     * stalled-plan detector asks whether the ledger sat still for N turns, and
+     * card 266's leash asks whether anything at all changed since the last
+     * continuation. Two spellings of "unchanged" would mean a run the guard
+     * calls stalled and the leash calls progress, in the same turn, from the
+     * same ledger.</p>
+     *
+     * <p>Status AND text, separated by printable escapes: the separator has to
+     * be readable in the source, and {@code "completed" + "do x"} must not equal
+     * {@code "complete" + "ddo x"} — a signature that cannot tell two plans
+     * apart is a stall detector that misses a plan changing.</p>
+     *
+     * @param plan the latest plan event, or null
+     * @return the signature; the empty string without a ledger
+     */
+    public static String planSignature(RunEvent.Plan plan) {
+        if (plan == null || plan.steps() == null || plan.steps().isEmpty()) {
+            return "";
+        }
+        return plan.steps().stream()
+                .map(step -> step.status() + "\t" + step.text())
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("");
+    }
+
+    /**
      * Projects the verdict onto the stop reason the run is about to record.
      *
      * <p><b>Only {@code end_turn} is displaced.</b> It is the single value that

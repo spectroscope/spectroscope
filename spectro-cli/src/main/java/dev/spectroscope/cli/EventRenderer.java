@@ -257,6 +257,35 @@ final class EventRenderer {
                     System.out.println("  " + mark + " " + step.text());
                 }
             }
+            // Card 262: the guard saw the run stop moving. Printed HERE and not
+            // by the guard, the same split as the gate and the question above —
+            // one writer, so the terminal can never say something other than
+            // what went on the wire. Coral, because unlike a compaction or a
+            // plan this is the line a reader is meant to stop at.
+            case RunEvent.NoProgress stalled -> {
+                spinner.stop();
+                System.out.println("\n" + ansi.coral("◈ no progress · " + stalled.detector()
+                        + " ×" + stalled.count()) + " " + stalled.evidence());
+            }
+            // Card 266: the harness holding an unfinished run — or refusing to.
+            // Same writer as the guard's line above, so the terminal can never
+            // say something other than what went on the wire. Coral for the same
+            // reason: this is a line a reader is meant to stop at.
+            case RunEvent.Continuation held -> {
+                spinner.stop();
+                System.out.println("\n" + ansi.coral("◈ " + held.decision().replace('_', ' '))
+                        + " " + held.evidence());
+            }
+            // Card 267: the goal's verdict, where the run is watched. The
+            // evidence sentence carries the command and its exit code, because
+            // criterion 4 is that a verdict is never a claim — a console line
+            // saying only "done" is exactly the faith this card removes.
+            case RunEvent.GoalCheck verdict -> {
+                spinner.stop();
+                System.out.println("\n" + ansi.coral("◈ goal " + verdict.outcome())
+                        + " " + verdict.evidence()
+                        + (verdict.command() == null ? "" : "  (" + verdict.command() + ")"));
+            }
             default -> { }
         }
     }
@@ -370,6 +399,13 @@ final class EventRenderer {
             case RunEvent.HookDecision e -> e.agentId();
             case RunEvent.ImagesWithheld e -> e.agentId();
             case RunEvent.QuestionAsked e -> e.agentId();
+            // Card 262: the guard watches one agent's loop; its observation is
+            // attributed to that agent so a child's stall reads as the child's.
+            case RunEvent.NoProgress e -> e.agentId();
+            // Card 266: the leash holds ONE agent's loop, so a child's
+            // continuation reads as the child's.
+            case RunEvent.Continuation e -> e.agentId();
+            case RunEvent.GoalCheck e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             // Card 265: the answer joins its question by callId and carries no
             // agent, exactly like the verdict that closes a permission request.

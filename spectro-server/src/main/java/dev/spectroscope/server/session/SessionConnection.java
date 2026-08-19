@@ -96,6 +96,18 @@ public final class SessionConnection {
     /** The agent's working world — resolved per session in buildAgentOnce. */
     private Path workspace;
 
+    /**
+     * Card 267: what this session is FOR, and the command that decides it.
+     *
+     * <p>It lives on the CONNECTION and not inside the system prompt string
+     * above, because {@link #buildAgentOnce} runs once per browser session: a
+     * goal baked into that one line could not be stated, changed or cleared
+     * without a reconnect. The loop re-reads this object on every turn instead,
+     * which is the whole of criterion 2 — the goal steers because it is
+     * re-read, not because it was remembered.</p>
+     */
+    private dev.spectroscope.core.goal.SessionGoal goal;
+
     /** callId -> the future the agent's virtual thread is blocked on. */
     private final Map<String, CompletableFuture<Boolean>> pending = new ConcurrentHashMap<>();
 
@@ -1012,7 +1024,9 @@ public final class SessionConnection {
         try {
             // Everything below is exactly what the CLI builds — nothing new in the core.
             buildAgentOnce();
+            refreshContinuationBudget(); // card 266: the operator's number, per prompt
             sendWorkspaceInfo();
+            sendGoalInfo(); // card 267: what this run is for, where it is watched
 
             // The run goes through the SubagentManager: parent and child
             // events merge into ONE stream. ONE sender virtual thread drains it and
@@ -1100,6 +1114,12 @@ public final class SessionConnection {
         this.skillLibrary = skills; // card 247: runPrompt expands /skill tokens against it
         String systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
                 + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
+        // Card 267: the goal is NOT part of that line, on purpose. This assembly
+        // is evaluated ONCE per session and the goal has to be re-readable per
+        // turn; the loop appends it to each request's system prompt instead. Off
+        // disk, so a resumed session resumes its goal — the same durable-artifact
+        // pattern loadAgentsMd uses one line above.
+        ensureGoal();
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);
@@ -1187,6 +1207,9 @@ public final class SessionConnection {
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(webTools)
                 .budget(dev.spectroscope.core.subagents.ChildBudget.derivedFrom(latency))
+                // card 263 AC 3: the same number the parent agent is built with
+                // below, so the operator's instruction governs the whole tree
+                .compactionThreshold(active.compactionThreshold())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -1209,11 +1232,71 @@ public final class SessionConnection {
                 .hooks(hooks) // external pre/post_tool_use shell hooks (config-only)
                 .llmWire(llmWire) // the backend-to-LLM record rides the session's recorder (card 184)
                 .latency(latency) // the parent's own exchanges price its children (card 270)
+                // Card 262: this face has a person attached (a browser holding a
+                // socket), so the guard can do what the owner decided — warn AND
+                // pause — through the very asker card 265 built. It reuses that
+                // park rather than inventing a second waiting mechanism, because
+                // two of those can disagree about who is waiting.
+                .progressGuard(new dev.spectroscope.core.progress.ProgressGuard(
+                        new dev.spectroscope.core.progress.ProgressSettings(
+                                active.progressGuardWrites(),
+                                active.progressGuardFailures(),
+                                active.progressGuardPlanTurns()),
+                        asker))
+                // Card 266: a browser holds this socket, so somebody is
+                // watching the bill — the owner's first call names the attended
+                // face as the one that continues. The budget is re-read per
+                // PROMPT below, not only here, because the agent is built once
+                // per session and a number readable only at build time would
+                // need a reconnect to change.
+                .continuationLeash(new dev.spectroscope.core.loop.ContinuationLeash(
+                        active.continuationBudget()))
+                // Card 267: the goal, with the SHIPPED teeth — a command whose
+                // exit code is the verdict. The evaluator variant exists and is
+                // wired nowhere: on this house's own backend the judge would be
+                // weaker than the worker it judges, which is what owner call 1
+                // is about and what the card measured.
+                .goal(goal)
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
         // effort level.
         applyReasoning(agent);
+    }
+
+    /**
+     * Re-reads the operator's continuation budget onto the live leash (card 266,
+     * criterion 7).
+     *
+     * <p>Called at the top of every prompt. {@code buildAgentOnce} runs once per
+     * browser session, so a budget read only there could not be changed without
+     * a reconnect — which is a rebuild by another name. The settings panel
+     * already writes this key through {@code SettingsWriter}; this is what makes
+     * the number it wrote govern the very next run.</p>
+     */
+    void refreshContinuationBudget() {
+        if (agent == null || agent.continuationLeash() == null) {
+            return;
+        }
+        SpectroConfig active = activeConfig.get();
+        if (active != null) {
+            agent.continuationLeash().setBudget(active.continuationBudget());
+        }
+    }
+
+    /** This session's agent, for the tests that pin what the live build wired
+     *  onto it rather than what a test wired onto one of its own.
+     *  @return the agent {@link #buildAgentOnce} built, or null before the first
+     *          prompt */
+    Agent agent() {
+        return agent;
+    }
+
+    /** This session's id — the basename its JSONL, its llm-wire sidecar and its
+     *  goal file are all named after.
+     *  @return the id, or null before the store exists */
+    String sessionId() {
+        return store == null ? null : store.id();
     }
 
     /** The tool belt this session's agent carries, for the test that pins the
@@ -1396,9 +1479,18 @@ public final class SessionConnection {
      * now" — every setting a tool here reads is read again on the call. What
      * this method does NOT cover is listed on the card and said on the settings
      * page: the workspace, the MCP servers, the shell hooks, the system prompt
-     * and its skills, and the compaction threshold are settled when the agent is
-     * built and stay settled, because changing them mid-session would mean
-     * killing processes or rewriting a conversation that already happened.</p>
+     * and its skills, and the CONFIGURED compaction threshold are settled when
+     * the agent is built and stay settled, because changing them mid-session
+     * would mean killing processes or rewriting a conversation that already
+     * happened.</p>
+     *
+     * <p>Half of that last one moved with card 263 and the sentence above would
+     * otherwise be the harder kind of stale — true enough to believe. What the
+     * operator TYPED is still read once, at {@code buildAgentOnce}. What is
+     * DERIVED when they typed nothing is re-computed at the head of every run
+     * from the window the backend reports, so a backend that loads a different
+     * model mid-session changes the threshold on the next run and not on this
+     * one.</p>
      *
      * <p>Package-private so a test can hold this belt without a provider and a
      * whole run: the tier a tool USED is only assertable on the tool object the
@@ -1697,6 +1789,110 @@ public final class SessionConnection {
      * not exist yet. The pane draws a tree for one and a waiting state for the
      * other, and cannot tell them apart without being told.</p>
      */
+    /**
+     * The operator states (or clears) this session's goal (card 267,
+     * criterion 1).
+     *
+     * <p>The OPERATOR, and never the model: there is no goal tool anywhere in
+     * the registry, because a model-written goal is a run defining its own
+     * success and {@code konzept/PROMPT-ORCHESTRATION.md} §3 rule 2 already
+     * refuses a model-written definition that out-grants its author's session.
+     * This frame comes from a browser a person is sitting at.</p>
+     *
+     * <p>It is written to disk in the same breath, so it survives the socket and
+     * a person can open it in an editor. Stating a goal grants nothing: no tool
+     * appears, no tier moves, and the check itself asks the same gate any other
+     * command asks before it runs.</p>
+     *
+     * @param outcome what the run is for; blank clears the goal entirely
+     * @param check   the command whose exit code decides it; blank means the run
+     *                will be reported untested rather than met
+     */
+    void onSetGoal(String outcome, String check) {
+        // The store mints the id the goal file is named after, and a goal may
+        // be stated before the first prompt has built an agent.
+        ensureStore();
+        ensureGoal();
+        dev.spectroscope.core.goal.RunGoal stated =
+                outcome == null || outcome.isBlank()
+                        ? null
+                        : new dev.spectroscope.core.goal.RunGoal(outcome,
+                                check == null || check.isBlank() ? null : check);
+        goal.state(stated);
+        try {
+            dev.spectroscope.core.goal.GoalStore.write(
+                    dev.spectroscope.core.goal.GoalStore.fileFor(store.id()), stated);
+        } catch (java.io.IOException unwritable) {
+            log.warn("could not write the goal file: {}", unwritable.getMessage());
+        }
+        sendGoalInfo();
+    }
+
+    /**
+     * Tells the page what this session is for — the "shown where the run is
+     * watched" half of criterion 1.
+     *
+     * <p>A socket-only UI frame like {@code workspace_info}, never appended to
+     * the JSONL: the wire union is the session's HISTORY, and the goal in force
+     * is a property of the session right now. What DOES belong in the history is
+     * the check's verdict, and that travels as {@code goal_check} from the loop
+     * itself.</p>
+     *
+     * <p>Saying that in this exact sentence is not decoration. {@code
+     * spectro-web/src/export/wireOnly.drift.test.ts} reads THIS file, takes
+     * every frame name built by hand here and holds
+     * {@code nonWire.ts NON_WIRE_TYPES} to it — because the first version of
+     * that list was written from memory and named three of six. This frame was
+     * missing from it when the card was first built, which the review caught:
+     * the web gate was red and an exported session would have carried a
+     * {@code goal_info} line the Java reader drops as torn.</p>
+     */
+    /** This session's goal object — the very one the loop re-reads each turn.
+     *  @return the goal, or null before {@link #ensureGoal} has run */
+    dev.spectroscope.core.goal.SessionGoal goal() {
+        return goal;
+    }
+
+    /**
+     * Makes sure the session HAS a goal object, off disk (card 267, review pass).
+     *
+     * <p>It used to be built in {@link #buildAgentOnce}, which runs on the first
+     * PROMPT. So the natural order — open a session, say what it is for, then
+     * prompt — left {@link #onSetGoal} writing the file, skipping the object and
+     * then reporting {@code stated: false} to the page, because the field it
+     * reads was still null. The goal took effect anyway (the first prompt read
+     * it back off disk), which made it a silent contradiction rather than a
+     * loss, and those are the expensive kind.</p>
+     *
+     * <p>Once built it is never rebuilt: a goal stated in this session is the
+     * operator's own bytes, and re-reading the file over it would hand the model
+     * the parsed copy instead of the typed one.</p>
+     */
+    private synchronized void ensureGoal() {
+        if (goal != null || store == null) {
+            return;
+        }
+        goal = new dev.spectroscope.core.goal.SessionGoal(
+                new dev.spectroscope.core.goal.CommandGoalCheck());
+        goal.state(dev.spectroscope.core.goal.GoalStore.read(
+                dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
+    }
+
+    synchronized void sendGoalInfo() {
+        if (!socket.isOpen() || store == null) {
+            return;
+        }
+        dev.spectroscope.core.goal.RunGoal stated = goal == null ? null : goal.stated();
+        Map<String, Object> frame = new java.util.HashMap<>();
+        frame.put("type", "goal_info");
+        frame.put("sessionId", store.id());
+        frame.put("stated", stated != null);
+        frame.put("outcome", stated == null ? "" : stated.outcome());
+        frame.put("check", stated == null || !stated.hasCheck() ? "" : stated.check());
+        frame.put("file", dev.spectroscope.core.goal.GoalStore.fileFor(store.id()).toString());
+        sendFrame(frame);
+    }
+
     private synchronized void sendWorkspaceInfo() {
         if (workspaceAnnounced || workspace == null || !socket.isOpen()) {
             return;

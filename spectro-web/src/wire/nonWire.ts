@@ -88,6 +88,11 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // heartbeat the answer is no — a stored "the socket was alive at 14:02" is a
   // claim about a connection nobody can reopen.
   "pong",
+  // Card 267. What this session is FOR, and the command that decides it: a
+  // property of the session right now, not a line of its history. The verdict
+  // IS history and rides the union as `goal_check`, so exactly one of the two
+  // is here. Caught by the drift guard next door, which is what it is for.
+  "goal_info",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

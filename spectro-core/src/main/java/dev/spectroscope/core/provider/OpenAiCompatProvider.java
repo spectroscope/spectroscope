@@ -11,6 +11,7 @@ import dev.spectroscope.core.wire.LlmWireTap;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -92,6 +93,25 @@ public final class OpenAiCompatProvider implements LlmProvider {
      *  wedged session heals on the NEXT prompt, not at the next app start. */
     private volatile Vision vision = Vision.UNKNOWN;
 
+    /** The loaded window this endpoint reported, memoized (card 263). Zero is
+     *  never cached: a just-in-time backend can have nothing loaded when the
+     *  first run starts and the right answer a minute later. */
+    private volatile int contextWindow;
+
+    /** Set once the server has said, in so many words, that it does not serve
+     *  this route — a 4xx. That answer does not expire, and remembering it is
+     *  what keeps every endpoint which structurally cannot answer (openai,
+     *  openrouter, llama.cpp, vLLM, the gemini gateway) from being re-probed on
+     *  every run and every child run for the life of the session. A timeout or
+     *  a 5xx is NOT this: those say nothing about the route. */
+    private volatile boolean capabilityRouteAbsent;
+
+    /** A SECOND client for capability questions only, with a read timeout the
+     *  chat client must never have — that one streams, and a deadline on it
+     *  would cut long answers off mid-sentence. Two seconds is a local listing's
+     *  budget; past that the run starts on the fallback rather than waiting. */
+    private final RestClient capabilities;
+
     /**
      * Builds the provider; the Bearer header is attached only when a key is configured.
      *
@@ -110,6 +130,26 @@ public final class OpenAiCompatProvider implements LlmProvider {
             builder.defaultHeader("Authorization", "Bearer " + options.apiKey());
         }
         this.http = builder.build();
+        // BOTH deadlines, and they live in two places. A refused connection comes
+        // back in milliseconds, but a host that is merely asleep — a Tailscale
+        // node, a laptop that closed its lid — drops the packets instead of
+        // refusing, and a read timeout alone never fires because the read never
+        // starts. The connect deadline belongs to the JDK client, the read
+        // deadline to Spring's factory over it.
+        JdkClientHttpRequestFactory probeFactory = new JdkClientHttpRequestFactory(
+                java.net.http.HttpClient.newBuilder()
+                        .connectTimeout(java.time.Duration.ofSeconds(2))
+                        .build());
+        probeFactory.setReadTimeout(java.time.Duration.ofSeconds(2));
+        // The SAME key the chat wire carries. Without it, LM Studio with its
+        // API-key setting on, a vLLM started with --api-key or a LiteLLM proxy
+        // answers 401 to the probe, the blanket catch below swallows it, and the
+        // run lands on the fallback with nothing said anywhere.
+        RestClient.Builder probeBuilder = RestClient.builder().requestFactory(probeFactory);
+        if (options.apiKey() != null && !options.apiKey().isBlank()) {
+            probeBuilder.defaultHeader("Authorization", "Bearer " + options.apiKey());
+        }
+        this.capabilities = probeBuilder.build();
         this.model = options.model();
         this.baseUrl = options.baseUrl();
         this.dialect = options.dialect();
@@ -127,6 +167,129 @@ public final class OpenAiCompatProvider implements LlmProvider {
     @Override
     public String endpoint() {
         return baseUrl;
+    }
+
+    /**
+     * The window the loaded instance serves, from LM Studio's OWN REST listing
+     * (card 263) — memoized, and asked at most once per run.
+     *
+     * <p>Deliberately {@code /api/v1/models} and not the OpenAI-compatible
+     * {@code /v1/models}: the compatible listing carries ids and nothing else,
+     * while LM Studio's own answers {@code loaded_instances[].config
+     * .context_length} per model. Nothing here is LM Studio-gated by dialect —
+     * the operator's LM Studio sits on a Tailscale host, not on localhost, and a
+     * host heuristic is exactly what card 193 had to unpick. A server without
+     * that endpoint answers 404, the parse finds nothing, and the run lands on
+     * the documented fallback having spent one request.</p>
+     *
+     * <p>Only a POSITIVE answer is remembered. Both LM Studio and ollama load
+     * models just in time, so the very first run of a session can legitimately
+     * find nothing loaded; freezing that into "unknowable" would deny the truth
+     * to every later run of the session.</p>
+     *
+     * @return the loaded instance's context length, or 0 when nothing is known
+     */
+    @Override
+    public int contextWindow() {
+        int known = contextWindow;
+        if (known > 0) {
+            return known;
+        }
+        if (capabilityRouteAbsent) {
+            return 0;
+        }
+        int probed = probeContextWindow();
+        if (probed > 0) {
+            contextWindow = probed;
+        }
+        return probed;
+    }
+
+    /** One best-effort GET, on the short-timeout client. Never throws: a
+     *  capability question may not be able to fail a run.
+     *  @return the loaded window, or 0 on any refusal, timeout or surprise */
+    private int probeContextWindow() {
+        try {
+            String body = capabilities.get()
+                    .uri(capabilityUrl(baseUrl))
+                    .retrieve()
+                    .body(String.class);
+            return body == null ? 0 : loadedWindow(JSON.readTree(body), model);
+        } catch (HttpClientErrorException definitive) {
+            // The server answered, and its answer is "no such route here". That
+            // is a verdict, not a moment — unlike an empty listing, which is
+            // what a just-in-time backend says before it has loaded anything.
+            capabilityRouteAbsent = true;
+            return 0;
+        } catch (Exception nothingLearned) {
+            return 0;
+        }
+    }
+
+    /**
+     * What LM Studio's listing says about ONE model's loaded window.
+     *
+     * <p>The listing shape, read off the owner's backend on 2026-08-18:
+     * {@code {"models":[{"key":…,"max_context_length":1048576,
+     * "loaded_instances":[{"id":…,"config":{"context_length":204288}}]}]}}.
+     * A model matches on its {@code key} or on any loaded instance's {@code id}
+     * — a session may name either — and the answer is the SMALLEST window among
+     * that model's loaded instances, because the next request may land on any
+     * of them and only the smallest is true whichever one answers.</p>
+     *
+     * <p>{@code max_context_length} is read by nobody on purpose. It is the
+     * ceiling the model COULD be loaded with; taking it would push compaction
+     * past the window the server is actually holding — the one direction worse
+     * than the constant this card removes. An installed but unloaded model
+     * therefore teaches nothing, which is the honest answer.</p>
+     *
+     * @param listing the parsed response body, whatever it turned out to be
+     * @param model   the model id this provider sends to; null teaches nothing
+     * @return the loaded context length in tokens, or 0 when nothing is known
+     */
+    static int loadedWindow(JsonNode listing, String model) {
+        if (listing == null || model == null) {
+            return 0;
+        }
+        int smallest = 0;
+        for (JsonNode entry : listing.path("models")) {
+            JsonNode instances = entry.path("loaded_instances");
+            boolean mine = model.equals(entry.path("key").asText(null));
+            if (!mine) {
+                for (JsonNode instance : instances) {
+                    mine = mine || model.equals(instance.path("id").asText(null));
+                }
+            }
+            if (!mine) {
+                continue;
+            }
+            for (JsonNode instance : instances) {
+                int window = instance.path("config").path("context_length").asInt(0);
+                if (window > 0 && (smallest == 0 || window < smallest)) {
+                    smallest = window;
+                }
+            }
+        }
+        return smallest;
+    }
+
+    /**
+     * Where LM Studio's own REST listing hangs off a configured base URL.
+     *
+     * <p>The chat wire lives under {@code /v1} and this listing under
+     * {@code /api/v1}, both on the same root — but the configured base may
+     * already carry the version segment ({@code SpectroConfig.compatPath}
+     * tolerates that, and gemini's preset ends in {@code /v1beta/openai}).
+     * Appending blindly would dial {@code /v1/api/v1/models} and learn nothing,
+     * silently.</p>
+     *
+     * @param baseUrl the configured server root, versioned or not
+     * @return the absolute URL of the capability listing
+     */
+    static String capabilityUrl(String baseUrl) {
+        String root = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
+        root = root.replaceAll("/v1beta/openai$", "").replaceAll("/v\\d+$", "");
+        return root + "/api/v1/models";
     }
 
     /**

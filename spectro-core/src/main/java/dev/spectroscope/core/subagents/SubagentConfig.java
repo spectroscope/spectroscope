@@ -40,6 +40,13 @@ import java.util.List;
  *                      face without web tools (headless, fleet) passes none,
  *                      and its research children hold none — the unattended
  *                      lanes stay closed (nullable → none)
+ * @param compactionThreshold the parent's explicit {@code compactionThreshold},
+ *                      or null when the operator set none. AC 3 of card 263 says
+ *                      an explicit setting wins; without carrying it here a
+ *                      parent pinned to 5,000 spawned children that derived
+ *                      153,216 from the shared provider — a 30x divergence from
+ *                      a stated instruction, and invisible, because children are
+ *                      built without introspection and emit no {@code context_info}
  * @param budget        what a child may spend (card 270). Default: derived from
  *                      a fresh, unfed {@link dev.spectroscope.core.provider.ExchangeLatency},
  *                      which means the {@link ChildBudget#FLOOR_MS} floor governs.
@@ -55,7 +62,8 @@ public record SubagentConfig(
         HookRunner hooks,
         LlmWireRecorder llmWire,
         List<Tool> webTools,
-        ChildBudget budget) {
+        ChildBudget budget,
+        Integer compactionThreshold) {
 
     /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
      *  and an absent budget to the derived one over an unfed window (the floor). */
@@ -64,6 +72,26 @@ public record SubagentConfig(
         budget = budget == null
                 ? ChildBudget.derivedFrom(new dev.spectroscope.core.provider.ExchangeLatency())
                 : budget;
+    }
+
+    /** The pre-card-263 arity, kept so a caller that does not carry the
+     *  operator's threshold still compiles — the children then derive it from
+     *  the same provider the parent uses, which is what they did before.
+     *  @param provider      the provider the children run on
+     *  @param cwd           sandbox root, same as the parent's
+     *  @param parentAgentId agentId of the parent agent
+     *  @param onPermission  the same blocking broker the parent uses
+     *  @param baseTools     the belt a child inherits, WITHOUT the spawn tools
+     *  @param hooks         the parent's hooks (nullable → none)
+     *  @param llmWire       the session's recorder (nullable → children record nothing)
+     *  @param webTools      the parent's web tools (nullable → none)
+     *  @param budget        what a child may spend (nullable → derived) */
+    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
+                          PermissionBroker onPermission, List<Tool> baseTools,
+                          HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
+                          ChildBudget budget) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
+                webTools, budget, null);
     }
 
     /**
@@ -91,6 +119,7 @@ public record SubagentConfig(
         private LlmWireRecorder llmWire;        // nullable -> children record nothing
         private List<Tool> webTools = List.of();
         private ChildBudget budget;             // nullable -> derived, floor governs
+        private Integer compactionThreshold;    // nullable -> the child derives it too
 
         private Builder() {
         }
@@ -133,10 +162,19 @@ public record SubagentConfig(
          *  @return this builder */
         public Builder budget(ChildBudget value) { this.budget = value; return this; }
 
+        /** @param value the parent's explicit compaction threshold, so the
+         *               operator's number governs the whole tree and not just
+         *               its root (card 263); null lets the child derive
+         *  @return this builder */
+        public Builder compactionThreshold(Integer value) {
+            this.compactionThreshold = value;
+            return this;
+        }
+
         /** @return the finished config, normalized by the canonical constructor */
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
-                    baseTools, hooks, llmWire, webTools, budget);
+                    baseTools, hooks, llmWire, webTools, budget, compactionThreshold);
         }
     }
 }

@@ -63,7 +63,11 @@ public final class SettingsWriter {
             "promptCaching", "hooks", "workspace", "logLevel",
             "imageModel", "sttModel", "sttProvider", "sttLanguage", "chromeBinary",
             "otlpEndpoint", "otlpBasicAuth", "ollamaBaseUrl", "lmstudioBaseUrl",
-            "searxngUrl", "allowLocalhost", "headlessMcp");
+            "searxngUrl", "allowLocalhost", "headlessMcp",
+            // Card 262: the progress guard's three counts, zero meaning off.
+            "progressGuardWrites", "progressGuardFailures", "progressGuardPlanTurns",
+            // Card 266: how many times one run may be restarted; zero is off.
+            "continuationBudget");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
