@@ -32,9 +32,7 @@ describe("every stop reason the harness can write has a sentence", () => {
     const key = stopReasonKey("a_reason_from_the_future");
     expect(key).toBe("stop.other");
     for (const lang of ["de", "en"] as const) {
-      expect(t(lang, key, { reason: "a_reason_from_the_future" })).toContain(
-        "a_reason_from_the_future",
-      );
+      expect(t(lang, key, { reason: "a_reason_from_the_future" })).toContain("a_reason_from_the_future");
     }
   });
 

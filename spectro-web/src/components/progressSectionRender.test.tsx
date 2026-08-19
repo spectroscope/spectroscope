@@ -71,9 +71,7 @@ describe("the progress section on screen", () => {
   it("carries one next-session block for the three counts and one for the ceiling", () => {
     const html = render(view({}));
     const blocks = [...html.matchAll(/data-reach-fields="([^"]+)"/g)].map((m) => m[1]);
-    expect(blocks).toContain(
-      "progressGuardWrites progressGuardFailures progressGuardPlanTurns",
-    );
+    expect(blocks).toContain("progressGuardWrites progressGuardFailures progressGuardPlanTurns");
     expect(blocks).toContain("maxTurns");
     expect(blocks).toContain("continuationBudget");
     // The two ceilings never merge: their reaches differ and one sentence
@@ -82,9 +80,7 @@ describe("the progress section on screen", () => {
   });
 
   it("says nothing is watching rather than zero of three", () => {
-    const off = render(
-      view({ progressGuardWrites: 0, progressGuardFailures: 0, progressGuardPlanTurns: 0 }),
-    );
+    const off = render(view({ progressGuardWrites: 0, progressGuardFailures: 0, progressGuardPlanTurns: 0 }));
     expect(off).toContain('data-progress-summary="0"');
     // The negative goes on the attribute, never on the sentence: in German
     // "aus" is a substring of "ausgeschaltet" and "scharf" of "unscharf".

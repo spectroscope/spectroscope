@@ -76,11 +76,14 @@ export type RunStatusLine = { key: string; vars?: Record<string, string | number
  *   same rule is applied to those rather than believing the old value, so the
  *   line can never contradict the Plan panel sitting next to it.
  */
-export function runStatusLine(state: {
-  running: boolean;
-  lastStopReason: string | null;
-  plan: PlanStep[] | null;
-}, lang: Lang): RunStatusLine {
+export function runStatusLine(
+  state: {
+    running: boolean;
+    lastStopReason: string | null;
+    plan: PlanStep[] | null;
+  },
+  lang: Lang,
+): RunStatusLine {
   const { running, lastStopReason, plan } = state;
   if (running) return { key: "footer.runActive" };
   if (lastStopReason === null) return { key: "footer.ready" };

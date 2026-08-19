@@ -57,9 +57,7 @@ describe("the guard vocabularies the transcript draws", () => {
       new Set(["CARRY_ON", "CHANGE_COURSE", "END"]),
     );
     for (const value of values) {
-      expect(setInReducer("PROGRESS_INTERVENTIONS").has(value), `${value} has no sentence`).toBe(
-        true,
-      );
+      expect(setInReducer("PROGRESS_INTERVENTIONS").has(value), `${value} has no sentence`).toBe(true);
     }
   });
 

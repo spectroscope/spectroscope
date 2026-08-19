@@ -530,32 +530,17 @@ const PROGRESS_DETECTORS: ReadonlySet<string> = new Set([
 ]);
 
 /** The Intervention enum's values (card 281). */
-const PROGRESS_INTERVENTIONS: ReadonlySet<string> = new Set([
-  "CARRY_ON",
-  "CHANGE_COURSE",
-  "END",
-]);
+const PROGRESS_INTERVENTIONS: ReadonlySet<string> = new Set(["CARRY_ON", "CHANGE_COURSE", "END"]);
 
 /** The leash's decisions (card 266). Deliberately NOT the run_end vocabulary:
  *  the leash's own `no_progress` and the guard's stop reason of the same name
  *  are different facts, and only the enum tells them apart. */
-const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set([
-  "continued",
-  "no_progress",
-  "budget_spent",
-]);
+const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set(["continued", "no_progress", "budget_spent"]);
 
 /** The goal check's verdicts (card 267). */
 const GOAL_OUTCOMES: ReadonlySet<string> = new Set(["met", "unmet", "unknown"]);
 
-/** The stop reasons that mean the run got to the end of its work. Everything
- *  else earns a line, including the ones this build has never heard of: a
- *  reason we cannot read is still evidence the run did not simply run out of
- *  things to say, and the quieter mistake is to draw a cut run as clean. Same
- *  direction sessionRows.tsx already takes for its outcome dot. */
-const CLEAN_FINISHES: ReadonlySet<string> = new Set(["end_turn", "goal_met"]);
-
-import { stopReasonKey } from "./stopReason";
+import { CLEAN_FINISHES, stopReasonKey } from "./stopReason";
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
 

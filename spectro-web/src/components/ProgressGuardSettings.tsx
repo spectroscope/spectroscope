@@ -133,12 +133,7 @@ export function ProgressGuardSettings({
               onChange={(e) => onSave({ maxTurns: Number(e.target.value) })}
             />
             <p className="settings-note">{t(lang, "set.maxTurnsNote")}</p>
-            <OriginRow
-              view={view}
-              field="maxTurns"
-              lang={lang}
-              onReset={() => onSave({ maxTurns: null })}
-            />
+            <OriginRow view={view} field="maxTurns" lang={lang} onReset={() => onSave({ maxTurns: null })} />
           </label>
         </div>
       </ReachBlock>

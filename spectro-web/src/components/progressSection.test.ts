@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  PROGRESS_FIELDS,
-  armedState,
-  progressSummary,
-  type ProgressCounts,
-} from "./progressSection";
+import { PROGRESS_FIELDS, armedState, progressSummary, type ProgressCounts } from "./progressSection";
 import { reachOf } from "./settingsReach";
 import { SETTINGS_TAB_SECTIONS, sectionsOfTab } from "./settingsTabs";
 import { SETTINGS_SECTIONS } from "../state/route";

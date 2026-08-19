@@ -219,8 +219,7 @@ export function buildTextFeed(events: readonly RunEvent[], extended = false): Fe
         push(
           "marker",
           e.agentId,
-          `[progress_intervention ${e.detector} · ${e.intervention}]` +
-            (e.stoodDown ? " [stood down]" : ""),
+          `[progress_intervention ${e.detector} · ${e.intervention}]` + (e.stoodDown ? " [stood down]" : ""),
         );
         break;
       case "continuation":

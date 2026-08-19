@@ -60,12 +60,7 @@ import { WebSearchSettings } from "./WebSearchSettings";
 import { AllowlistSettings } from "./AllowlistSettings";
 import { HooksSettings } from "./HooksSettings";
 import type { Leveling } from "../state/useLeveling";
-import {
-  fetchSettings,
-  putSettings,
-  textFieldPatch,
-  type SettingsView,
-} from "../state/serverSettings";
+import { fetchSettings, putSettings, textFieldPatch, type SettingsView } from "../state/serverSettings";
 import { CopyButton } from "./CopyButton";
 import { ReachBlock } from "./settingsReach";
 import { OriginRow } from "./settingsOrigin";

@@ -526,9 +526,7 @@ describe("an abandoned run in the exported document", () => {
   it("says it in German too, in German", () => {
     const html = chatToHtml(events, { now: NOW, lang: "de" });
     expect(html).toContain(`beendet: ${t("de", "stop.unfinished")}`);
-    expect(html, "the archived document still carries the wire word").not.toContain(
-      "beendet: unfinished",
-    );
+    expect(html, "the archived document still carries the wire word").not.toContain("beendet: unfinished");
   });
 
   // Fix pass: verbatim was not enough. The archived file is read by somebody who

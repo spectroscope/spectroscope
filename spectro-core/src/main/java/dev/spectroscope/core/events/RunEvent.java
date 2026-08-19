@@ -755,6 +755,10 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param evidence the same thing as one English sentence, for the surfaces
      *                 with no dictionary
      * @param ts       epoch millis of emission
+     * @param callId   the ask this observation belongs to (card 281), so a
+     *                 transcript can pair a line with the bar that answers it.
+     *                 Null in sessions written before that card, and dropped
+     *                 from the wire when null
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record NoProgress(String agentId, String detector, int count, List<String> details,

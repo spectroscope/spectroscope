@@ -775,9 +775,7 @@ export function Chat(props: {
                   // Card 282: a line built from two sentences. The reducer names
                   // the second one by key because it has no language of its own;
                   // substituting it raw would print "stop.max_turns" at a person.
-                  ...(turn.infoRefKey === undefined
-                    ? {}
-                    : { ref: t(lang, turn.infoRefKey, turn.infoVars) }),
+                  ...(turn.infoRefKey === undefined ? {} : { ref: t(lang, turn.infoRefKey, turn.infoVars) }),
                 })
               : turn.text}
           </div>

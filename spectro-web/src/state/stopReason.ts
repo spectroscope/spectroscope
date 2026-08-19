@@ -55,3 +55,19 @@ export const STOP_REASONS: ReadonlySet<string> = new Set([
 export function stopReasonKey(reason: string): string {
   return STOP_REASONS.has(reason) ? `stop.${reason}` : "stop.other";
 }
+
+/**
+ * The stop reasons that mean the run got to the end of its work.
+ *
+ * Two readers, one definition, for the reason `planVerdict` has one: the
+ * transcript decides whether to draw a "the run has ended" line from this, and
+ * the session list decides whether to draw its outcome dot as clean. They were
+ * about to disagree — card 282 taught the transcript that `goal_met` is a
+ * finish while `sessionRows.outcomeOf` still read everything but `end_turn` as
+ * a cut, so a run that MET its goal would have got no line and a cut dot.
+ *
+ * Everything not in here earns both, including a reason this build has never
+ * heard of: an unreadable reason is still evidence the run did not simply run
+ * out of things to say, and drawing a cut run as clean is the quieter mistake.
+ */
+export const CLEAN_FINISHES: ReadonlySet<string> = new Set(["end_turn", "goal_met"]);
