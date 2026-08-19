@@ -6,7 +6,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -74,5 +76,53 @@ class ProgressGuardSettingsTest {
         assertThrows(UnsupportedOperationException.class,
                 () -> SettingsWriter.knownKeys().add("progressGuardMood"),
                 "the key list is the contract, not a suggestion");
+    }
+
+    /**
+     * Card 281: a workspace scope may not disarm the guard that is watching it.
+     *
+     * <p>The same reasoning that fenced {@code allowLocalhost} (card 199 F4) and
+     * {@code headlessMcp} (card 220): a workspace is the folder the AGENT itself
+     * writes into. Leaving the guard's three counts there put the switch inside
+     * the sandbox it guards, and one auto-approved {@code write_file} of
+     * {@code {"progressGuardWrites": 0}} would have turned off the very detector
+     * that noticed the loop writing it.</p>
+     *
+     * <p>Each key is bitten on its own rather than as a group: three keys
+     * sharing one assertion is one claim wearing three names, and a list that
+     * silently held only the first would still be green.</p>
+     */
+    @Test
+    void aWorkspaceScopeMayNotDisarmTheGuardWatchingIt(@TempDir Path projectDir, @TempDir Path ws)
+            throws Exception {
+        for (String key : new String[] {
+                "progressGuardWrites", "progressGuardFailures", "progressGuardPlanTurns"}) {
+            Files.createDirectories(ws.resolve(".spectro"));
+            Files.writeString(ws.resolve(SpectroConfig.PROJECT_SETTINGS),
+                    "{ \"" + key + "\": 0 }");
+            IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
+                    () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
+                            Map.of()),
+                    "a workspace scope set " + key + " and the load accepted it");
+            assertTrue(loud.getMessage().contains(key),
+                    "the refusal must name the key, got: " + loud.getMessage());
+            assertTrue(loud.getMessage().contains("workspace scope"),
+                    "the refusal must name the rule it breaks, got: " + loud.getMessage());
+        }
+    }
+
+    /**
+     * The counterpart, and the reason the fence costs an operator nothing: the
+     * settings page writes the USER scope, which still takes all three.
+     */
+    @Test
+    void theUserScopeStillTakesAllThree(@TempDir Path dir) {
+        assertDoesNotThrow(() -> SettingsWriter.patch(dir.resolve("user.json"),
+                SettingsWriter.Scope.USER, new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readTree("""
+                                { "progressGuardWrites": 5,
+                                  "progressGuardFailures": 2,
+                                  "progressGuardPlanTurns": 3 }
+                                """)));
     }
 }

@@ -205,6 +205,33 @@ export function buildTextFeed(events: readonly RunEvent[], extended = false): Fe
           push("output", e.agentId, e.steps.map((s) => `${s.status.padEnd(12)} ${s.text}`).join("\n"));
         }
         break;
+      // Cards 281 and 282: the run's three self-reports. Markers, not output —
+      // they are the harness talking about the run, the same register as
+      // [permission] and [run_end], and never something the model said.
+      //
+      // Not gated on `extended`: context_info and plan are diagnostics a reader
+      // may not want, while these three are the reason a run stopped. A reading
+      // that drops them answers "what happened?" with silence.
+      case "no_progress":
+        push("marker", e.agentId, `[no_progress ${e.detector} ×${e.count}] ${e.evidence}`);
+        break;
+      case "progress_intervention":
+        push(
+          "marker",
+          e.agentId,
+          `[progress_intervention ${e.detector} · ${e.intervention}]` + (e.stoodDown ? " [stood down]" : ""),
+        );
+        break;
+      case "continuation":
+        push(
+          "marker",
+          e.agentId,
+          `[continuation ${e.continuation}/${e.budget} · ${e.decision}] ${e.evidence}`,
+        );
+        break;
+      case "goal_check":
+        push("marker", e.agentId, `[goal_check ${e.outcome} · ${e.command}] ${e.evidence}`);
+        break;
       case "run_end":
         // Close every open reasoning run — a child may still be mid-thought
         // only in theory; the merged stream ends them before run_end.

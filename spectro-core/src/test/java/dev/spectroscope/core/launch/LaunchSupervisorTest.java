@@ -7,7 +7,10 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -37,6 +40,52 @@ class LaunchSupervisorTest {
         }
     }
 
+    /**
+     * A port this test KEEPS, and that provably answers nothing while it does.
+     *
+     * <p>{@link #freePort()} borrows a number and hands it straight back, so
+     * from that line on the caller races every other process on this machine
+     * for it — and this machine runs spectro servers and a second session's
+     * builds beside the suite. That is fine for a test whose command is going
+     * to bind the port itself. It is NOT fine for a test whose claim is that
+     * nothing answers there: a stranger arriving in that window makes the
+     * supervisor see an open port and report a start that already died as up.
+     *
+     * <p>This closes the window by never opening it. The socket is <b>bound and
+     * never listened on</b>, which is the whole trick: bound means nobody else
+     * can have the address, and not listening means every connect to it fails.
+     * Measured on 2026-08-19, all four ways it could have leaked:
+     *
+     * <ul>
+     *   <li>the probe gets no answer, on every attempt — the SYN is dropped;</li>
+     *   <li>another {@code ServerSocket} on the loopback address is refused
+     *       with {@code Address already in use};</li>
+     *   <li>so is another PROCESS binding {@code 127.0.0.1}, even one asking
+     *       for {@code SO_REUSEADDR};</li>
+     *   <li>and the bind is aimed at whatever {@code localhost} resolves to
+     *       rather than at {@link InetAddress#getLoopbackAddress()}, because
+     *       {@code localhost} is the host the entry's address carries and so
+     *       the one the probe will dial — asking the resolver the same
+     *       question the probe asks keeps the two from being different
+     *       addresses on a machine that answers it differently;</li>
+     *   <li>and a WILDCARD listener — which is what {@code python3 -m
+     *       http.server} is — does bind {@code 0.0.0.0} on that number, but
+     *       still cannot answer {@code localhost}: the narrower loopback bind
+     *       wins. Driven with a real {@code http.server}, the probe stayed
+     *       silent.</li>
+     * </ul>
+     *
+     * <p>So this is a reservation and not a wish, and the assertion below says
+     * so out loud rather than trusting this paragraph.
+     *
+     * @return the bound socket, to be closed by the caller
+     */
+    private static Socket reservedAndSilent() throws IOException {
+        Socket socket = new Socket();
+        socket.bind(new InetSocketAddress(InetAddress.getByName("localhost"), 0));
+        return socket;
+    }
+
     // ---- starting ------------------------------------------------------------
 
     /** A real server, a real port, and "up" means the port answers. */
@@ -60,25 +109,62 @@ class LaunchSupervisorTest {
         }
     }
 
-    /** Criterion 5: a port that never comes up is a failure that says so. */
+    /**
+     * Criterion 5: a port that never comes up is a failure that says so.
+     *
+     * <p><b>The port is held for the length of the test, and that is the point
+     * of the shape.</b> This is the one test here that asserts something about
+     * a port NOT answering, and it used to take its number from
+     * {@link #freePort()} — which releases it. The supervisor decides a start
+     * came up by seeing the port open, so between that release and the first
+     * probe, anything on this machine that bound the number turned a start that
+     * had already died into a start reported as up. Measured on 2026-08-19: it
+     * failed exactly there inside a full {@code --rerun-tasks} run, on
+     * {@code assertFalse(outcome.ok())}, and passed 3/3 when the class ran
+     * alone. A borrowed number is not a fact about a port.
+     *
+     * <p>{@link #reservedAndSilent()} owns the number instead, so the claim
+     * below is about this test's own port and nobody else's timing.
+     *
+     * <p>The margin on the clock is deliberately enormous, for the same reason
+     * the one in {@code aSlowStartDoesNotHoldUpTheOtherConfigurations} is: the
+     * honest path here is two probes at the 400 ms the reserved port costs each
+     * — under a second — the budget it must not run to the end of is thirty
+     * seconds, and the assertion allows ten. That measures a branch, not a
+     * loaded machine.
+     */
     @Test
     @EnabledOnOs({OS.MAC, OS.LINUX})
     void aCommandThatNeverAnswersFailsWithItsOwnOutput(@TempDir Path project) throws Exception {
-        int port = freePort();
-        LaunchEntry entry = new LaunchEntry("broken", port, "/bin/sh",
-                List.of("-c", "echo 'Error: Cannot find module ./server' >&2; exit 1"),
-                null, List.of());
-        try (LaunchSupervisor supervisor = LaunchSupervisor.real()) {
-            LaunchSupervisor.Outcome outcome =
-                    supervisor.start(entry, project, Duration.ofSeconds(10));
-            assertFalse(outcome.ok());
-            assertNull(outcome.running());
-            assertTrue(outcome.problem().contains("exited with code 1"),
-                    "the problem says the process died: " + outcome.problem());
-            assertTrue(outcome.tail().contains("Cannot find module"),
-                    "the output it produced comes back with the failure: " + outcome.tail());
-            assertTrue(supervisor.running().isEmpty(),
-                    "a start that failed leaves nothing behind");
+        try (Socket reservation = reservedAndSilent()) {
+            int port = reservation.getLocalPort();
+            assertFalse(LaunchSupervisor.TCP_CONNECT.answers("localhost", port),
+                    "the reservation really is silent on " + port + " — this test claims a start "
+                            + "is refused BY that silence, so it has to be measured, not assumed");
+            LaunchEntry entry = new LaunchEntry("broken", port, "/bin/sh",
+                    List.of("-c", "echo 'Error: Cannot find module ./server' >&2; exit 1"),
+                    null, List.of());
+            try (LaunchSupervisor supervisor = LaunchSupervisor.real()) {
+                long began = System.nanoTime();
+                LaunchSupervisor.Outcome outcome =
+                        supervisor.start(entry, project, Duration.ofSeconds(30));
+                long tookMillis = (System.nanoTime() - began) / 1_000_000;
+
+                assertFalse(outcome.ok());
+                assertNull(outcome.running());
+                assertTrue(outcome.problem().contains("exited with code 1"),
+                        "the problem says the process died: " + outcome.problem());
+                assertTrue(tookMillis < 10_000,
+                        "the death is what ENDED the wait, after " + tookMillis + " ms — a dead "
+                                + "process must not go on being waited for until the budget runs "
+                                + "out. Deleting that branch left every assertion above green "
+                                + "and only made the wait 30 seconds long, so the sentence "
+                                + "\"exited with code 1\" alone pinned nothing.");
+                assertTrue(outcome.tail().contains("Cannot find module"),
+                        "the output it produced comes back with the failure: " + outcome.tail());
+                assertTrue(supervisor.running().isEmpty(),
+                        "a start that failed leaves nothing behind");
+            }
         }
     }
 

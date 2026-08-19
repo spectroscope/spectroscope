@@ -1754,3 +1754,176 @@ describe("card 246 — stripLiveTrace, the live-trace switch's fold", () => {
     expect(stripLiveTrace(bare, false)).toBe(bare);
   });
 });
+
+// Cards 281 and 282: the run's three self-reports get a face.
+//
+// All three printed beside each other in the CLI and all three fell into the
+// reducer's "everything else unknown is ignored" catch-all, so the web showed
+// nothing at all. The unattended case is the one the cards were cut from: in
+// auto and readonly the ask is queued and dequeued in the same frame batch, and
+// the line is the only thing that survives that.
+describe("the run's self-reports are lines and not silence", () => {
+  it("draws a guard firing as a warn line, attributed to the agent that stalled", () => {
+    const state = reduce(initialState, {
+      type: "no_progress",
+      agentId: "child-1",
+      detector: "identical_writes",
+      count: 3,
+      evidence: "the same 283 bytes, 3 times",
+      callId: "progress-abc",
+      ts: 1,
+    });
+    expect(state.turns[0]).toMatchObject({
+      kind: "info",
+      tone: "warn",
+      infoKey: "info.noProgress.identical_writes",
+      agentId: "child-1",
+    });
+    expect(state.turns[0]).toMatchObject({ infoVars: { n: 3 } });
+  });
+
+  it("falls back rather than going silent on a detector this build does not know", () => {
+    // A server one version ahead is the ordinary case for a desktop app that
+    // updates on its own schedule. A missing case must degrade to a readable
+    // line, never to nothing.
+    const state = reduce(initialState, {
+      type: "no_progress",
+      agentId: "main",
+      detector: "some_future_net",
+      count: 9,
+      evidence: "whatever it saw",
+      ts: 1,
+    });
+    expect(state.turns[0]).toMatchObject({
+      kind: "info",
+      tone: "warn",
+      infoKey: "info.noProgress.other",
+    });
+  });
+
+  it("says what the person chose, from the enum and not from the answer text", () => {
+    const state = reduce(initialState, {
+      type: "progress_intervention",
+      agentId: "main",
+      callId: "progress-abc",
+      detector: "identical_writes",
+      intervention: "CHANGE_COURSE",
+      stoodDown: false,
+      ts: 2,
+    });
+    expect(state.turns[0]).toMatchObject({
+      kind: "info",
+      infoKey: "info.progressIntervention.CHANGE_COURSE",
+      agentId: "main",
+    });
+  });
+
+  it("draws the leash's decision", () => {
+    const state = reduce(initialState, {
+      type: "continuation",
+      agentId: "main",
+      decision: "continued",
+      continuation: 1,
+      budget: 3,
+      openSteps: 2,
+      totalSteps: 5,
+      inputTokens: 0,
+      evidence: "two steps still open",
+      ts: 3,
+    });
+    expect(state.turns[0]).toMatchObject({
+      kind: "info",
+      infoKey: "info.continuation.continued",
+      infoVars: { n: 1, budget: 3 },
+    });
+  });
+
+  it("draws the goal check's verdict", () => {
+    const state = reduce(initialState, {
+      type: "goal_check",
+      agentId: "main",
+      outcome: "met",
+      command: "npm test",
+      exitCode: 0,
+      judge: "exit_code",
+      output: "",
+      durationMs: 12,
+      evidence: "exit 0",
+      ts: 4,
+    });
+    expect(state.turns[0]).toMatchObject({
+      kind: "info",
+      infoKey: "info.goalCheck.met",
+    });
+  });
+
+  it("tells the guard's stop reason apart from the leash's, by the value and not by prose", () => {
+    // "no_progress" means three things in this codebase: the RunEvent subtype,
+    // ProgressGuard.STOP_REASON, and ContinuationLeash.Decision.NO_PROGRESS. The
+    // two RUN-END reasons are safely distinct and a label keyed on the bare word
+    // would conflate card 262 with card 266.
+    const guard = reduce(initialState, {
+      type: "run_end",
+      runId: "r",
+      stopReason: "no_progress",
+      ts: 5,
+    });
+    const leash = reduce(initialState, {
+      type: "run_end",
+      runId: "r",
+      stopReason: "unfinished_after_continuations",
+      ts: 5,
+    });
+    expect(guard.lastStopReason).toBe("no_progress");
+    expect(leash.lastStopReason).toBe("unfinished_after_continuations");
+    expect(guard.lastStopReason).not.toBe(leash.lastStopReason);
+  });
+});
+
+// Card 282, criterion 8: a run that ran out of room says so where the operator
+// is reading.
+//
+// The owner's report, exactly: a session whose last visible line was a green
+// tool result. run_end carried stopReason "max_turns" and the transcript drew
+// nothing at all — only the footer said "gestoppt · max_turns", small, below
+// the fold, in machine vocabulary.
+describe("a run that did not finish says so in the transcript", () => {
+  it("names the ceiling it hit", () => {
+    const state = reduce(initialState, {
+      type: "run_end",
+      runId: "r",
+      stopReason: "max_turns",
+      ts: 1,
+    });
+    expect(state.turns.at(-1)).toMatchObject({
+      kind: "info",
+      tone: "warn",
+      infoKey: "info.runEnded",
+      infoRefKey: "stop.max_turns",
+    });
+  });
+
+  it("stays quiet when the run simply finished", () => {
+    // A line after every run would be noise, and noise is how a real one stops
+    // being read. Clean finishes are the ones the footer already covers with
+    // "ready".
+    for (const reason of ["end_turn", "goal_met"]) {
+      const state = reduce(initialState, { type: "run_end", runId: "r", stopReason: reason, ts: 1 });
+      expect(state.turns, `${reason} drew a line`).toHaveLength(0);
+    }
+  });
+
+  it("draws one for a reason this build has never seen", () => {
+    const state = reduce(initialState, {
+      type: "run_end",
+      runId: "r",
+      stopReason: "a_reason_from_the_future",
+      ts: 1,
+    });
+    expect(state.turns.at(-1)).toMatchObject({
+      kind: "info",
+      infoKey: "info.runEnded",
+      infoRefKey: "stop.other",
+    });
+  });
+});

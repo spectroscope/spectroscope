@@ -12,9 +12,10 @@ import { onAboutRequested } from "../state/aboutSignal";
 import type { AgentInfo, PlanStep, RunSubagents, UiState } from "../state/reducer";
 import type { ConnectionStatus } from "../transport/ws";
 import { formatTokens } from "../format";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { openSteps, planVerdict } from "../state/planVerdict";
 import { useLang } from "../state/lang";
+import { stopReasonKey } from "../state/stopReason";
 
 /**
  * What of the session total belongs to subagents, or null when none of it does.
@@ -75,11 +76,14 @@ export type RunStatusLine = { key: string; vars?: Record<string, string | number
  *   same rule is applied to those rather than believing the old value, so the
  *   line can never contradict the Plan panel sitting next to it.
  */
-export function runStatusLine(state: {
-  running: boolean;
-  lastStopReason: string | null;
-  plan: PlanStep[] | null;
-}): RunStatusLine {
+export function runStatusLine(
+  state: {
+    running: boolean;
+    lastStopReason: string | null;
+    plan: PlanStep[] | null;
+  },
+  lang: Lang,
+): RunStatusLine {
   const { running, lastStopReason, plan } = state;
   if (running) return { key: "footer.runActive" };
   if (lastStopReason === null) return { key: "footer.ready" };
@@ -99,9 +103,16 @@ export function runStatusLine(state: {
       // A brake, a cap, a failure — or a verdict whose ledger this page never
       // saw (a truncated import): the run stopped, and this line cannot say
       // how much was left.
+      // Card 282: the REASON is translated before it is substituted. It used
+      // to travel as the raw wire value, so a German operator read
+      // "gestoppt · max_turns" — the machine's word inside a localised
+      // sentence, which is the report this card was cut from.
       return lastStopReason === "end_turn"
         ? { key: "footer.ready" }
-        : { key: "footer.stopped", vars: { r: lastStopReason } };
+        : {
+            key: "footer.stopped",
+            vars: { r: t(lang, stopReasonKey(lastStopReason), { reason: lastStopReason }) },
+          };
   }
 }
 
@@ -116,7 +127,7 @@ export function UsageFooter(props: { state: UiState; connection: ConnectionStatu
   // The desktop shell's menu bar opens this same panel from outside React.
   useEffect(() => onAboutRequested(() => setAboutOpen(true)), []);
 
-  const status = runStatusLine(props.state);
+  const status = runStatusLine(props.state, lang);
   const runStatus = t(lang, status.key, status.vars);
   // The dot an unclosed thing already wears in the sidebar (runIndicator.ts) —
   // same token, no new colour, and the words carry the meaning either way.

@@ -214,6 +214,83 @@ export type RunEvent =
       hint: string;
       ts: number;
     }
+  // Cards 262, 266 and 267 built three self-reports; card 281 and 282 give them
+  // a face. All three printed side by side in the CLI and all three fell into
+  // the reducer's catch-all, so the web drew none of them. The fields are the
+  // wire's own — no English prose is folded into a localised sentence, which is
+  // why each frame carries values and counts rather than a ready-made line.
+  | {
+      type: "no_progress";
+      agentId: string;
+      /** The net that caught it, as its stable snake_case wire name:
+       *  `identical_writes`, `repeated_failure` or `stalled_plan`. A build one
+       *  version behind will meet a fourth; the reading falls back rather than
+       *  going silent. */
+      detector: string;
+      /** How many times the thing happened — the number the sentence says. */
+      count: number;
+      /** The same facts unprosed, for a surface writing its own sentence.
+       *  Omitted when the detector has none. */
+      details?: string[];
+      /** One English sentence, for the surfaces with no dictionary. */
+      evidence: string;
+      /** The ask this observation belongs to (card 281). Absent in sessions
+       *  written before that card, which is why the reading may not require it. */
+      callId?: string;
+      ts: number;
+    }
+  | {
+      type: "progress_intervention";
+      agentId: string;
+      callId: string;
+      /** Which net's question was answered, so the line can point at its own
+       *  settings control. */
+      detector: string;
+      /** The Intervention ENUM NAME: `CARRY_ON`, `CHANGE_COURSE` or `END`.
+       *  Never a rendered sentence — a browser deriving this from answer text
+       *  would be a second copy of ProgressGuard.decide living where it cannot
+       *  see the original. */
+      intervention: string;
+      /** Whether this detector is silent for the rest of the run. Display only;
+       *  nothing reads it back. Only a PERSON saying carry on sets it. */
+      stoodDown: boolean;
+      ts: number;
+    }
+  | {
+      type: "continuation";
+      agentId: string;
+      /** The leash's decision as its own value — `continued`, `no_progress`,
+       *  `budget_spent`. NOT the same vocabulary as run_end's stopReason: the
+       *  leash's exhaustion reads `unfinished_after_continuations` there, and a
+       *  label keyed on the bare word "no_progress" would conflate card 266 with
+       *  card 262. */
+      decision: string;
+      /** Which continuation this is, 1-based. */
+      continuation: number;
+      /** How many the run was allowed. */
+      budget: number;
+      openSteps: number;
+      totalSteps: number;
+      inputTokens: number;
+      evidence: string;
+      ts: number;
+    }
+  | {
+      type: "goal_check";
+      agentId: string;
+      /** `met`, `unmet` or `unknown`. */
+      outcome: string;
+      command: string;
+      /** Absent when the check never ran a command. */
+      exitCode?: number | null;
+      /** What decided it: `exit_code` today. */
+      judge: string;
+      output: string;
+      durationMs: number;
+      gateWaitMs?: number | null;
+      evidence: string;
+      ts: number;
+    }
   | {
       type: "images_withheld";
       agentId: string;

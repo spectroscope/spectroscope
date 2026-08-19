@@ -258,3 +258,70 @@ describe("buildTextFeed (a user turn from the stream)", () => {
     expect(feed.map((s) => s.text)).toEqual(["[run_start]", "first", "<think>", "hmm", "</think>", "stop"]);
   });
 });
+
+// Cards 281 and 282: the accessible reading carries all three self-reports.
+//
+// Card 281's criterion 5 says the textFeed case lands in the same pass, "or the
+// accessible reading omits the one line this card exists for". The transcript
+// and this feed are two readings of the same session, and a guard that speaks in
+// one and not the other is a guard a screen reader never hears.
+describe("buildTextFeed — the run's self-reports", () => {
+  it("carries the guard's observation and the answer to it", () => {
+    const texts = feedTexts([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts },
+      {
+        type: "no_progress",
+        agentId: "main",
+        detector: "identical_writes",
+        count: 3,
+        evidence: "the same 283 bytes, 3 times",
+        callId: "progress-abc",
+        ts,
+      },
+      {
+        type: "progress_intervention",
+        agentId: "main",
+        callId: "progress-abc",
+        detector: "identical_writes",
+        intervention: "END",
+        stoodDown: false,
+        ts,
+      },
+      { type: "run_end", runId: "r1", stopReason: "no_progress", ts },
+    ]);
+    expect(texts).toContain("[no_progress identical_writes ×3] the same 283 bytes, 3 times");
+    expect(texts).toContain("[progress_intervention identical_writes · END]");
+    expect(texts).toContain("[run_end no_progress]");
+  });
+
+  it("carries the leash and the goal check too, not one guard out of three", () => {
+    const texts = feedTexts([
+      {
+        type: "continuation",
+        agentId: "main",
+        decision: "continued",
+        continuation: 1,
+        budget: 3,
+        openSteps: 2,
+        totalSteps: 5,
+        inputTokens: 0,
+        evidence: "two steps still open",
+        ts,
+      },
+      {
+        type: "goal_check",
+        agentId: "main",
+        outcome: "unmet",
+        command: "npm test",
+        exitCode: 1,
+        judge: "exit_code",
+        output: "",
+        durationMs: 12,
+        evidence: "exit 1",
+        ts,
+      },
+    ]);
+    expect(texts).toContain("[continuation 1/3 · continued] two steps still open");
+    expect(texts).toContain("[goal_check unmet · npm test] exit 1");
+  });
+});

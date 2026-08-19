@@ -769,7 +769,15 @@ export function Chat(props: {
       case "info":
         return (
           <div key={`${vk}:${i}`} className={`info-line ${turn.tone}`}>
-            {turn.infoKey !== undefined ? t(lang, turn.infoKey, turn.infoVars) : turn.text}
+            {turn.infoKey !== undefined
+              ? t(lang, turn.infoKey, {
+                  ...turn.infoVars,
+                  // Card 282: a line built from two sentences. The reducer names
+                  // the second one by key because it has no language of its own;
+                  // substituting it raw would print "stop.max_turns" at a person.
+                  ...(turn.infoRefKey === undefined ? {} : { ref: t(lang, turn.infoRefKey, turn.infoVars) }),
+                })
+              : turn.text}
           </div>
         );
       case "error":

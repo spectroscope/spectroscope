@@ -2571,6 +2571,187 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: '"{key}" was ignored: a workspace folder may not set it. {hint}',
   },
 
+  // Cards 281 and 282: the run's three self-reports, one sentence per value.
+  //
+  // Not one template with the value substituted in, because the three detectors
+  // do not count the same thing and a shared sentence would be wrong for at
+  // least one of them. Read off the detector bodies, not off the field names:
+  // identical_writes counts the EARLIER paths already holding those bytes (the
+  // fourth copy trips the shipped 3), repeated_failure counts failures INCLUDING
+  // the current one (the third trips it), stalled_plan counts unchanged turns
+  // including this one.
+  // Card 282, criterion 8: the transcript says the run is over, and why. The
+  // owner met the gap as a session whose last line was a green tool result.
+  "info.runEnded": {
+    de: "Der Lauf ist zu Ende: {ref}",
+    en: "The run has ended: {ref}",
+  },
+
+  // Card 282: why a run ended, in words. The footer used to substitute the wire
+  // value into "gestoppt · {r}", so a German operator read "gestoppt ·
+  // max_turns" — which is the owner's own report.
+  "stop.end_turn": { de: "fertig", en: "finished" },
+  "stop.max_tokens": { de: "Token-Budget der Antwort erschöpft", en: "the answer ran out of tokens" },
+  "stop.tool_use": { de: "wartet auf ein Werkzeug", en: "waiting on a tool" },
+  "stop.aborted": { de: "abgebrochen", en: "cancelled" },
+  "stop.error": { de: "Fehler", en: "error" },
+  "stop.max_turns": {
+    de: "Zug-Limit erreicht — der Lauf hat nichts bemerkt, ihm ist der Platz ausgegangen",
+    en: "turn limit reached — nothing was noticed, the run ran out of room",
+  },
+  "stop.unfinished": { de: "mitten im Plan aufgehört", en: "stopped mid-plan" },
+  "stop.no_progress": {
+    de: "vom Fortschritts-Wächter beendet",
+    en: "ended at the progress guard",
+  },
+  "stop.unfinished_after_continuations": {
+    de: "nach allen Fortsetzungen noch unfertig",
+    en: "still unfinished after every continuation",
+  },
+  "stop.goal_met": { de: "Ziel erreicht", en: "goal met" },
+  "stop.goal_unmet": { de: "Ziel nicht erreicht", en: "goal not met" },
+  "stop.goal_untested": { de: "Ziel ungeprüft", en: "goal untested" },
+  "stop.other": {
+    de: "unbekannter Grund ({reason})",
+    en: "unknown reason ({reason})",
+  },
+
+  // Cards 281/282: the settings section for the five numbers that decide when a
+  // run has to come back to a person.
+  "set.secProgress": { de: "Fortschritts-Wächter", en: "progress guard" },
+  "set.progressHint": {
+    de: "Drei Netze, die bemerken, wenn ein Lauf sich nicht mehr bewegt. Jedes ist eine Zahl, und null schaltet es aus — einen zweiten Schalter gibt es nicht.",
+    en: "Three nets that notice when a run stops moving. Each one is a count, and zero switches it off — there is no second switch.",
+  },
+  "set.progress.summary": {
+    de: "{armed} von {total} Netzen sind scharf.",
+    en: "{armed} of {total} nets are watching.",
+  },
+  "set.progress.summaryOff": {
+    de: "Kein Netz ist scharf. Dieser Lauf sagt nichts, wenn er sich im Kreis dreht.",
+    en: "No net is watching. This run will say nothing if it goes in circles.",
+  },
+  "set.progress.chipArmed": { de: "scharf", en: "watching" },
+  "set.progress.chipOff": { de: "aus", en: "off" },
+  "set.progress.whereItRuns": {
+    de: "Der Wächter läuft nur dort, wo jemand antworten kann: im Browser und in der interaktiven Konsole. spectro run, geplante Läufe und Flotten-Knoten bekommen ihn nicht.",
+    en: "The guard runs only where somebody can answer it: the browser and the interactive console. spectro run, scheduled runs and fleet nodes register none.",
+  },
+  "set.progress.floorNote": {
+    de: "Inhalte unter 64 Zeichen werden nie verglichen: Gerüst-Werkzeuge schreiben leere __init__.py und .gitkeep dutzendweise, alle byte-gleich und alle in Ordnung.",
+    en: "Content under 64 characters is never compared: scaffolds write empty __init__.py and .gitkeep files by the dozen, all byte-identical and all legitimate.",
+  },
+  "set.progress.progressGuardWrites": { de: "Gleiche Bytes unter neuem Pfad", en: "Same bytes under a new path" },
+  "set.progress.progressGuardWritesNote": {
+    de: "Wie viele FRÜHERE Pfade dieselben Bytes schon tragen müssen. Bei 3 schlägt die vierte Kopie an.",
+    en: "How many EARLIER paths must already carry the same bytes. At 3, the fourth copy trips it.",
+  },
+  "set.progress.progressGuardFailures": { de: "Derselbe Aufruf scheitert wieder", en: "The same call failing again" },
+  "set.progress.progressGuardFailuresNote": {
+    de: "Wie oft hintereinander, diesen Fehlschlag mitgezählt. Bei 3 schlägt der dritte an. Ein Erfolg setzt zurück, damit ein flakiger Test still bleibt.",
+    en: "How many times in a row, counting this failure. At 3, the third one trips it. Any success resets, so a flaky test stays silent.",
+  },
+  "set.progress.progressGuardPlanTurns": { de: "Plan bewegt sich nicht", en: "Plan not moving" },
+  "set.progress.progressGuardPlanTurnsNote": {
+    de: "Wie viele Züge unverändert, diesen mitgezählt. Ab Werk 0, also aus: dieses Netz braucht einen gepflegten Plan, und Modelle ohne Werkzeug-Training schreiben keinen.",
+    en: "How many turns unchanged, counting this one. Ships at 0, meaning off: this net needs a maintained plan, and models without tool training never write one.",
+  },
+  "set.secRunLimits": { de: "Grenzen eines Laufs", en: "limits on one run" },
+  "set.runLimitsHint": {
+    de: "Keine Netze, sondern Decken. Wenn eine greift, wurde nichts bemerkt — dem Lauf ist der Platz ausgegangen.",
+    en: "Not nets but ceilings. When one of these hits, nothing was noticed — the run ran out of room.",
+  },
+  "set.maxTurns": { de: "Züge pro Lauf", en: "Turns per run" },
+  "set.maxTurnsNote": {
+    de: "Danach endet der Lauf mit „Zug-Limit erreicht“, auch mitten in der Arbeit. Ab Werk 15. Eine Fortsetzung setzt diese Zahl NICHT zurück.",
+    en: "After this the run ends on \"turn limit reached\", even mid-task. Ships at 15. A continuation does NOT reset it.",
+  },
+  "set.continuationBudget": { de: "Fortsetzungen pro Lauf", en: "Continuations per run" },
+  "set.continuationBudgetNote": {
+    de: "Wie oft der Harness einen Lauf weiterführt, der mit offenem Plan aufgehört hat. 0 schaltet die Leine aus.",
+    en: "How often the harness carries on a run that stopped with its plan still open. 0 switches the leash off.",
+  },
+
+  "info.noProgress.identical_writes": {
+    de: "Kein Fortschritt: dieselben Bytes stehen schon unter {n} früheren Pfaden. {evidence}",
+    en: "No progress: these same bytes already sit under {n} earlier paths. {evidence}",
+  },
+  "info.noProgress.repeated_failure": {
+    de: "Kein Fortschritt: derselbe Aufruf ist {n} Mal hintereinander an unveränderter Eingabe gescheitert. {evidence}",
+    en: "No progress: the same call has failed {n} times in a row on unchanged input. {evidence}",
+  },
+  "info.noProgress.stalled_plan": {
+    de: "Kein Fortschritt: der Plan hat sich seit {n} Zügen nicht bewegt und hat offene Schritte. {evidence}",
+    en: "No progress: the plan has not moved for {n} turns and still has open steps. {evidence}",
+  },
+  // A detector this build has never heard of. It still gets a line, with the
+  // wire name in it, because silence is the defect these cards exist to remove.
+  "info.noProgress.other": {
+    de: "Kein Fortschritt ({detector}, {n}×). {evidence}",
+    en: "No progress ({detector}, {n}×). {evidence}",
+  },
+
+  // What the person watching decided. CARRY_ON is two facts, not one: said by a
+  // person it takes that net down for the rest of the run, arriving because
+  // nobody was there it leaves the net up.
+  "info.progressIntervention.CARRY_ON": {
+    de: "Weiter wie bisher. Niemand hat geantwortet, dieses Netz bleibt scharf.",
+    en: "Carrying on. Nobody answered, so this net stays armed.",
+  },
+  "info.progressIntervention.CARRY_ON.stoodDown": {
+    de: "Weiter wie bisher — du hast hingesehen, dieses Netz meldet sich in diesem Lauf nicht mehr.",
+    en: "Carrying on — you looked, so this net says nothing more in this run.",
+  },
+  "info.progressIntervention.CHANGE_COURSE": {
+    de: "Kurs geändert. Der Aufruf wurde nicht ausgeführt, das Modell hat deine Anweisung bekommen.",
+    en: "Course changed. The call was not made, and the model was told what to do instead.",
+  },
+  "info.progressIntervention.END": {
+    de: "Der Lauf wurde hier beendet.",
+    en: "The run was ended here.",
+  },
+  "info.progressIntervention.other": {
+    de: "Entscheidung: {intervention} ({detector}).",
+    en: "Decision: {intervention} ({detector}).",
+  },
+
+  // Card 266's leash, on the same surface as the guard above it.
+  "info.continuation.continued": {
+    de: "Der Lauf wird weitergeführt ({n} von {budget}): {open} von {total} Schritten sind noch offen.",
+    en: "Carried on ({n} of {budget}): {open} of {total} steps are still open.",
+  },
+  "info.continuation.no_progress": {
+    de: "Nicht weitergeführt: seit der letzten Fortsetzung hat sich nichts bewegt.",
+    en: "Not carried on: nothing has moved since the last continuation.",
+  },
+  "info.continuation.budget_spent": {
+    de: "Nicht weitergeführt: alle {budget} Fortsetzungen sind aufgebraucht, {open} von {total} Schritten bleiben offen.",
+    en: "Not carried on: all {budget} continuations are spent, {open} of {total} steps still open.",
+  },
+  "info.continuation.other": {
+    de: "Leine: {decision} ({n} von {budget}).",
+    en: "Leash: {decision} ({n} of {budget}).",
+  },
+
+  // Card 267's goal check. "unknown" is a real verdict here — the check could
+  // not decide — which is why the fallback below is spelled "other".
+  "info.goalCheck.met": {
+    de: "Ziel erreicht: {evidence}",
+    en: "Goal met: {evidence}",
+  },
+  "info.goalCheck.unmet": {
+    de: "Ziel nicht erreicht: {evidence}",
+    en: "Goal not met: {evidence}",
+  },
+  "info.goalCheck.unknown": {
+    de: "Ziel ließ sich nicht beurteilen: {evidence}",
+    en: "The goal could not be judged: {evidence}",
+  },
+  "info.goalCheck.other": {
+    de: "Ziel-Prüfung: {outcome} ({command}).",
+    en: "Goal check: {outcome} ({command}).",
+  },
+
   "info.imagesWithheld": {
     de: "{n} Bilder nicht gesendet: Dieses Modell kann keine Bilder sehen. Sie bleiben im Verlauf.",
     en: "{n} images not sent: this model cannot see images. They stay in the record.",

@@ -13,6 +13,7 @@
 // upstream, not behind a chevron.
 
 import type { SessionMeta } from "../events";
+import { CLEAN_FINISHES } from "../state/stopReason";
 import { t, type Lang } from "../i18n/i18n";
 import { formatDuration } from "../format";
 
@@ -76,7 +77,12 @@ export function sessionSignal(meta: SessionMeta): SessionSignal {
  */
 function outcomeOf(stopReason: string | null | undefined): SessionOutcome {
   if (stopReason === null || stopReason === undefined || stopReason === "") return "open";
-  if (stopReason === "end_turn") return "clean";
+  // Card 282: read from the SHARED set rather than from a literal here. This
+  // line used to name end_turn alone, which was right until card 267 added
+  // goal_met — a run that met its goal is the cleanest finish there is, and it
+  // was drawing the cut dot. The transcript and this row now answer the
+  // question from one definition and cannot drift apart again.
+  if (CLEAN_FINISHES.has(stopReason)) return "clean";
   if (stopReason === "error") return "failed";
   return "cut";
 }

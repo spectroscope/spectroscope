@@ -55,6 +55,11 @@ export const SETTINGS_SECTIONS = [
   "skills",
   "skills-catalogue",
   "mcp",
+  // Card 281: the progress guard's three counts. It stands in the permissions
+  // room because that room's subject is "what runs without being asked" seen
+  // from the other end — allowlist, netfence and hooks decide which calls never
+  // come back to a person, and these three decide which loops must.
+  "progress",
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 

@@ -88,6 +88,13 @@ export type Turn =
        *  English fallback (and keeps old tests/callers working). */
       infoKey?: string;
       infoVars?: Record<string, string | number>;
+      /** A SECOND dict key, translated and substituted into `infoKey` as
+       *  `{ref}` (card 282). One line, two sentences: the run ended, and why.
+       *  The reducer cannot translate — it has no language — and folding the
+       *  reason in as a plain var would print the dict key at the operator.
+       *  An explicit field rather than a naming convention over infoVars, so
+       *  nothing has to be remembered to keep it working. */
+      infoRefKey?: string;
     }
   /** agentId marks a failure that belongs to a subagent's thread — `error` has
    *  carried the field on the wire all along, and a session import sets it for
@@ -511,6 +518,29 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
       return agents;
   }
 }
+
+/** The detector names this build has a sentence for (cards 262/281). A name
+ *  outside this set still draws a line, through the `unknown` key — the wire is
+ *  allowed to grow without the transcript going quiet. Pinned against the Java
+ *  enum by a drift test rather than by memory. */
+const PROGRESS_DETECTORS: ReadonlySet<string> = new Set([
+  "identical_writes",
+  "repeated_failure",
+  "stalled_plan",
+]);
+
+/** The Intervention enum's values (card 281). */
+const PROGRESS_INTERVENTIONS: ReadonlySet<string> = new Set(["CARRY_ON", "CHANGE_COURSE", "END"]);
+
+/** The leash's decisions (card 266). Deliberately NOT the run_end vocabulary:
+ *  the leash's own `no_progress` and the guard's stop reason of the same name
+ *  are different facts, and only the enum tells them apart. */
+const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set(["continued", "no_progress", "budget_spent"]);
+
+/** The goal check's verdicts (card 267). */
+const GOAL_OUTCOMES: ReadonlySet<string> = new Set(["met", "unmet", "unknown"]);
+
+import { CLEAN_FINISHES, stopReasonKey } from "./stopReason";
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
 
@@ -1001,6 +1031,88 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         tone: "warn",
       });
 
+    // Cards 281 and 282: the run's three self-reports, drawn instead of dropped.
+    //
+    // One infoKey per VALUE rather than one shared key with the value as a
+    // variable: the three detectors do not count the same thing (distinct
+    // earlier paths, failures including this one, unchanged turns including
+    // this one), so a shared sentence template is wrong for at least one of
+    // them. Card 281 says that in its own words, and this is where it is
+    // obeyed.
+    case "no_progress":
+      return addTurn(state, {
+        kind: "info",
+        text: `No progress: ${event.detector} ×${event.count}. ${event.evidence}`,
+        infoKey: PROGRESS_DETECTORS.has(event.detector)
+          ? `info.noProgress.${event.detector}`
+          : // A server one version ahead is ordinary for an app that updates on
+            // its own schedule. A detector this build has never heard of must
+            // degrade to a readable line, never to nothing.
+            //
+            // The fallback suffix is "other" and not "unknown", because
+            // "unknown" is a REAL value of goal_check.outcome — one fallback
+            // spelling across all four vocabularies, and none of them able to
+            // collide with a value that means something.
+            "info.noProgress.other",
+        infoVars: { n: event.count, detector: event.detector, evidence: event.evidence },
+        tone: "warn",
+        agentId: event.agentId,
+      });
+
+    case "progress_intervention":
+      return addTurn(state, {
+        kind: "info",
+        text: `${event.detector}: ${event.intervention.toLowerCase().replace(/_/g, " ")}${
+          event.stoodDown ? " — this net is down for the rest of the run" : ""
+        }`,
+        // stoodDown is part of the SENTENCE, not a variable in it: "carry on"
+        // said by a person takes the net down for the rest of the run, and the
+        // same enum value arriving because nobody was there leaves it up. One
+        // sentence covering both would be false half the time.
+        infoKey: PROGRESS_INTERVENTIONS.has(event.intervention)
+          ? `info.progressIntervention.${event.intervention}${event.stoodDown ? ".stoodDown" : ""}`
+          : "info.progressIntervention.other",
+        infoVars: { detector: event.detector, intervention: event.intervention },
+        // The answer to an alarm, not a second alarm.
+        tone: event.intervention === "END" ? "warn" : "neutral",
+        agentId: event.agentId,
+      });
+
+    case "continuation":
+      return addTurn(state, {
+        kind: "info",
+        text: `Continuation ${event.continuation}/${event.budget}: ${event.decision}. ${event.evidence}`,
+        infoKey: CONTINUATION_DECISIONS.has(event.decision)
+          ? `info.continuation.${event.decision}`
+          : "info.continuation.other",
+        infoVars: {
+          n: event.continuation,
+          budget: event.budget,
+          open: event.openSteps,
+          total: event.totalSteps,
+          decision: event.decision,
+        },
+        tone: event.decision === "continued" ? "neutral" : "warn",
+        agentId: event.agentId,
+      });
+
+    case "goal_check":
+      return addTurn(state, {
+        kind: "info",
+        text: `Goal ${event.outcome}: ${event.evidence}`,
+        infoKey: GOAL_OUTCOMES.has(event.outcome)
+          ? `info.goalCheck.${event.outcome}`
+          : "info.goalCheck.other",
+        infoVars: {
+          outcome: event.outcome,
+          command: event.command,
+          code: event.exitCode ?? "",
+          evidence: event.evidence,
+        },
+        tone: event.outcome === "met" ? "neutral" : "warn",
+        agentId: event.agentId,
+      });
+
     case "images_withheld":
       return addTurn(state, {
         kind: "info",
@@ -1066,17 +1178,36 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
     }
 
-    case "run_end":
+    case "run_end": {
       // A subagent's run_end must not flip the UI to "ready" mid-run.
       if (state.rootRunId !== null && event.runId !== state.rootRunId) return state;
+      // Card 282, criterion 8. The owner's report was a session whose last
+      // visible line was a green tool result: run_end carried max_turns and the
+      // transcript drew nothing, while the footer said "gestoppt · max_turns"
+      // in machine vocabulary, small, below the fold.
+      //
+      // Only for a run that did NOT finish. A line after every run is noise,
+      // and noise is how a real one stops being read — the clean finishes are
+      // the ones the footer already covers with "ready".
+      const ended = CLEAN_FINISHES.has(event.stopReason)
+        ? state
+        : addTurn(state, {
+            kind: "info",
+            text: `The run ended: ${event.stopReason}`,
+            infoKey: "info.runEnded",
+            infoRefKey: stopReasonKey(event.stopReason),
+            infoVars: { reason: event.stopReason },
+            tone: "warn",
+          });
       return {
-        ...state,
+        ...ended,
         running: false,
         rootRunId: null,
         runStartTs: null,
         thinkingActive: false,
         lastStopReason: event.stopReason,
       };
+    }
 
     case "error":
       // Whose failure it was, when the frame says so: an outage inside a

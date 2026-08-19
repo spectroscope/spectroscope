@@ -180,6 +180,11 @@ import java.util.function.Function;
  *                            the weak local models this guard was cut for keep
  *                            none. Built, tested, and off until an operator
  *                            turns it on
+ * @param maxTurns            the runaway-loop brake: how many turns ONE run may
+ *                            take before the harness ends it with
+ *                            {@code stopReason: "max_turns"}. Card 282 finished
+ *                            card 266's owner call 4, which made it an option
+ *                            without ever giving it a settings key
  * @param continuationBudget  how many times ONE run may be restarted by the
  *                            harness after it stopped with its own plan still
  *                            open (card 266). Default <b>3</b>; <b>0 turns the
@@ -217,7 +222,8 @@ public record SpectroConfig(
         int progressGuardWrites,
         int progressGuardFailures,
         int progressGuardPlanTurns,
-        int continuationBudget) {
+        int continuationBudget,
+        int maxTurns) {
 
     /**
      * Compat: the pre-card-262 arity, which knew no progress guard. Every caller
@@ -266,7 +272,7 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
                 searxngUrl, allowLocalhost, headlessMcp,
                 DEFAULT_PROGRESS_WRITES, DEFAULT_PROGRESS_FAILURES, DEFAULT_PROGRESS_PLAN_TURNS,
-                DEFAULT_CONTINUATION_BUDGET);
+                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS);
     }
 
     /**
@@ -321,7 +327,7 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
                 searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
-                DEFAULT_CONTINUATION_BUDGET);
+                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS);
     }
 
     /** The shipped {@code progressGuardWrites}: the same bytes under a third new
@@ -340,6 +346,19 @@ public record SpectroConfig(
      *  this number is an addition to the house language rather than a recovery
      *  of it — card 266 owner call 2, decided while building. */
     public static final int DEFAULT_CONTINUATION_BUDGET = 3;
+
+    /** The shipped {@code maxTurns}: the runaway-loop brake, in turns per run.
+     *  Card 266 owner call 4 said this becomes an option and 15 stays the value;
+     *  {@link dev.spectroscope.core.AgentOptions} got its field in that wave and
+     *  the settings chain did not, so until card 282 every browser session ran
+     *  on the harness's own fallback with nowhere to change it.
+     *
+     *  <p>Deliberately a second copy of {@code Agent.DEFAULT_MAX_TURNS} rather
+     *  than an import: {@code Agent} reads this package, and the house answer to
+     *  a restated number is a test that goes and looks. {@code MaxTurnsSettingTest}
+     *  pins the two together, the same way {@code ProgressGuardSettingsTest} pins
+     *  the guard's three against {@code ProgressSettings.defaults()}.</p> */
+    public static final int DEFAULT_MAX_TURNS = 15;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -415,7 +434,11 @@ public record SpectroConfig(
             3, 3, 0,
             // Card 266: three continuations per run, on the attended faces only —
             // the WIRING is the fence, exactly as it is for the guard above.
-            3);
+            3,
+            // Card 282: fifteen turns per run, the value card 266's owner call 4
+            // kept. Until this card nothing outside the two fleet-node paths ever
+            // passed it, so this default WAS the ceiling, everywhere.
+            DEFAULT_MAX_TURNS);
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -736,7 +759,8 @@ public record SpectroConfig(
                         base.ollamaBaseUrl(), base.lmstudioBaseUrl(), base.searxngUrl(),
                         base.allowLocalhost(), base.headlessMcp(),
                         base.progressGuardWrites(), base.progressGuardFailures(),
-                        base.progressGuardPlanTurns(), base.continuationBudget());
+                        base.progressGuardPlanTurns(), base.continuationBudget(),
+                        base.maxTurns());
             }
         }
         return base;
@@ -790,7 +814,8 @@ public record SpectroConfig(
             new FieldProbe("progressGuardWrites", p -> p.progressGuardWrites),
             new FieldProbe("progressGuardFailures", p -> p.progressGuardFailures),
             new FieldProbe("progressGuardPlanTurns", p -> p.progressGuardPlanTurns),
-            new FieldProbe("continuationBudget", p -> p.continuationBudget));
+            new FieldProbe("continuationBudget", p -> p.continuationBudget),
+            new FieldProbe("maxTurns", p -> p.maxTurns));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -871,7 +896,28 @@ public record SpectroConfig(
             new ProcessGlobal("headlessMcp", p -> p.headlessMcp,
                     "is process-global and not allowed in a workspace scope",
                     "the headless MCP opt-in belongs in ~/.spectro/settings.json or "
-                            + "SPECTRO_HEADLESS_MCP, not in a folder the agent writes into."));
+                            + "SPECTRO_HEADLESS_MCP, not in a folder the agent writes into."),
+            // Card 281: the guard's three counts, and the sharpest case on this
+            // list. The others let a folder redirect or widen what the agent may
+            // do; these let it switch off the detector that is WATCHING it. Zero
+            // is the off value, a workspace is the folder the agent writes into,
+            // and the loop that wrote the same file thirty-one times could have
+            // ended that inspection by writing a thirty-second.
+            new ProcessGlobal("progressGuardWrites", p -> p.progressGuardWrites,
+                    "is process-global and not allowed in a workspace scope",
+                    "the progress guard's counts belong in ~/.spectro/settings.json, not in "
+                            + "a folder the agent writes into — a workspace that can set them "
+                            + "to zero can disarm the guard watching it."),
+            new ProcessGlobal("progressGuardFailures", p -> p.progressGuardFailures,
+                    "is process-global and not allowed in a workspace scope",
+                    "the progress guard's counts belong in ~/.spectro/settings.json, not in "
+                            + "a folder the agent writes into — a workspace that can set them "
+                            + "to zero can disarm the guard watching it."),
+            new ProcessGlobal("progressGuardPlanTurns", p -> p.progressGuardPlanTurns,
+                    "is process-global and not allowed in a workspace scope",
+                    "the progress guard's counts belong in ~/.spectro/settings.json, not in "
+                            + "a folder the agent writes into — a workspace that can set them "
+                            + "to zero can disarm the guard watching it."));
 
     /** The keys a workspace scope may not hold, by name. Exists for the doc
      *  guard: a key added to the list above without a word in the published
@@ -963,7 +1009,7 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
                 ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
-                continuationBudget);
+                continuationBudget, maxTurns);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1680,6 +1726,8 @@ public record SpectroConfig(
         public Integer progressGuardPlanTurns;
         // Card 266: how many times one run may be restarted; zero is off.
         public Integer continuationBudget;
+        // Card 282: the runaway-loop brake, in turns per run.
+        public Integer maxTurns;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1727,6 +1775,7 @@ public record SpectroConfig(
                     Optional.ofNullable(higher.progressGuardPlanTurns).orElse(progressGuardPlanTurns);
             out.continuationBudget =
                     Optional.ofNullable(higher.continuationBudget).orElse(continuationBudget);
+            out.maxTurns = Optional.ofNullable(higher.maxTurns).orElse(maxTurns);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1773,7 +1822,8 @@ public record SpectroConfig(
                     Optional.ofNullable(progressGuardWrites).orElse(DEFAULTS.progressGuardWrites()),
                     Optional.ofNullable(progressGuardFailures).orElse(DEFAULTS.progressGuardFailures()),
                     Optional.ofNullable(progressGuardPlanTurns).orElse(DEFAULTS.progressGuardPlanTurns()),
-                    Optional.ofNullable(continuationBudget).orElse(DEFAULTS.continuationBudget()));
+                    Optional.ofNullable(continuationBudget).orElse(DEFAULTS.continuationBudget()),
+                    Optional.ofNullable(maxTurns).orElse(DEFAULTS.maxTurns()));
         }
 
         /**
