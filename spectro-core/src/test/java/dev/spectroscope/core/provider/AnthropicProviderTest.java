@@ -10,6 +10,7 @@ import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.provider.LlmProvider.ImageContent;
 import dev.spectroscope.core.provider.LlmProvider.PStop;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
+import dev.spectroscope.core.provider.LlmProvider.PToolCall;
 import dev.spectroscope.core.provider.LlmProvider.ProviderContent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderEvent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
@@ -460,6 +461,140 @@ class AnthropicProviderTest {
             assertEquals(400, tap.outcome.status());
             assertNotNull(tap.outcome.error());
             assertFalse(tap.outcome.aborted());
+        }
+    }
+
+    /**
+     * Card 283: a tool that takes no arguments. Measured on 2026-08-19 from
+     * session {@code 20260819-160135-b651423f}: {@code launch_list} is the one
+     * tool in the tree with an empty schema, so the model sends NO argument
+     * JSON at all — a {@code tool_use} block with {@code input:{}} and a single
+     * EMPTY {@code partial_json} delta. Every call that worked in that session
+     * carried between 5 and 37 filled deltas; both that failed carried none.
+     *
+     * <p>The SDK accumulator then leaves the input absent, and serializing a
+     * {@code JsonMissing} throws, which ends the whole run rather than the one
+     * tool call. {@code OllamaProvider.parseArguments} already guards exactly
+     * this for its own wire.</p>
+     */
+    @Nested
+    class ToolCallWithoutArguments {
+
+        /**
+         * What the input_json_delta carries. The empty string is the real
+         * capture; the accumulator builds the input from the DELTAS alone and
+         * ignores what content_block_start carried, which a bite test proved.
+         */
+        private String servedDelta = "";
+
+        /** The capture from the failing session, minus the fields not implicated. */
+        private List<String> servedData() {
+            return List.of(
+                "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_noargs\","
+                        + "\"type\":\"message\",\"role\":\"assistant\","
+                        + "\"model\":\"claude-opus-4-8\",\"content\":[],"
+                        + "\"stop_reason\":null,\"stop_sequence\":null,"
+                        + "\"usage\":{\"input_tokens\":22,\"output_tokens\":3}}}",
+                "{\"type\":\"content_block_start\",\"index\":0,"
+                        + "\"content_block\":{\"type\":\"tool_use\","
+                        + "\"id\":\"toolu_01KjgnDE2PY29C2broetmT6h\","
+                        + "\"name\":\"launch_list\",\"input\":{}}}",
+                "{\"type\":\"content_block_delta\",\"index\":0,"
+                        + "\"delta\":{\"type\":\"input_json_delta\","
+                        + "\"partial_json\":\"" + servedDelta + "\"}}",
+                "{\"type\":\"content_block_stop\",\"index\":0}",
+                "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\","
+                        + "\"stop_sequence\":null},\"usage\":{\"output_tokens\":61}}",
+                "{\"type\":\"message_stop\"}");
+        }
+
+        private HttpServer server;
+        private String baseUrl;
+
+        @BeforeEach
+        void scriptedSseServer() throws IOException {
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> {
+                exchange.getRequestBody().readAllBytes();
+                StringBuilder sse = new StringBuilder();
+                for (String data : servedData()) {
+                    String name = JSON.readTree(data).get("type").asText();
+                    sse.append("event: ").append(name).append('\n')
+                            .append("data: ").append(data).append("\n\n");
+                }
+                byte[] bytes = sse.toString().getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(bytes);
+                }
+            });
+            server.start();
+            baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        }
+
+        @AfterEach
+        void stop() {
+            server.stop(0);
+        }
+
+        private List<ProviderEvent> drained() {
+            AnthropicProvider provider = new AnthropicProvider(
+                    "claude-opus-4-8", false, "test-key", baseUrl);
+            ProviderRequest request = new ProviderRequest("You are spectroscope.",
+                    List.of(new ProviderMessage(ProviderMessage.Role.USER,
+                            List.of(new TextContent("start the app")))),
+                    List.of(), 512, ProviderRequest.Reasoning.DEFAULT, null,
+                    new CancelSignal(), null);
+            List<ProviderEvent> events = new ArrayList<>();
+            for (ProviderEvent event : provider.stream(request)) {
+                events.add(event);
+            }
+            return events;
+        }
+
+        /**
+         * The same block shape, but the delta carries the literal {@code null}
+         * rather than nothing, so the accumulated value is a JSON null instead
+         * of an absent one. Downstream every caller does {@code input.get(...)},
+         * so a NullNode is as unusable as an exception is fatal.
+         */
+        @Test
+        void aToolCallWhoseInputIsJsonNullAlsoArrivesWithAnEmptyObject() {
+            servedDelta = "null";
+            List<ProviderEvent> events = drained();
+
+            PToolCall call = events.stream()
+                    .filter(PToolCall.class::isInstance)
+                    .map(PToolCall.class::cast)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "the tool call never arrived: " + events));
+
+            assertTrue(call.input().isObject(),
+                    "a null input must become an OBJECT, was " + call.input().getNodeType());
+            assertTrue(call.input().isEmpty(),
+                    "the object must be empty, was " + call.input());
+        }
+
+        @Test
+        void aToolCallCarryingNoArgumentsArrivesWithAnEmptyObject() {
+            List<ProviderEvent> events = drained();
+
+            PToolCall call = events.stream()
+                    .filter(PToolCall.class::isInstance)
+                    .map(PToolCall.class::cast)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "the tool call never arrived: " + events));
+
+            assertEquals("launch_list", call.name());
+            assertEquals("toolu_01KjgnDE2PY29C2broetmT6h", call.callId());
+            assertNotNull(call.input(), "an absent input must become a node, never null");
+            assertTrue(call.input().isObject(),
+                    "an absent input must become an OBJECT, was " + call.input().getNodeType());
+            assertTrue(call.input().isEmpty(),
+                    "the object must be empty, was " + call.input());
         }
     }
 }
