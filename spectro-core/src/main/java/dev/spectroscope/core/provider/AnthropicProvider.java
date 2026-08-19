@@ -2,6 +2,7 @@ package dev.spectroscope.core.provider;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.core.JsonMissing;
 import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.core.http.StreamResponse;
@@ -302,7 +303,7 @@ public final class AnthropicProvider implements LlmProvider {
                     block.toolUse().ifPresent(toolUse -> pending.add(new PToolCall(
                             toolUse.id(),
                             toolUse.name(),
-                            JSON.valueToTree(toolUse._input()))));
+                            toolInput(toolUse._input()))));
                 }
                 pending.add(usageEvent(message.usage().inputTokens(),
                         message.usage().outputTokens(),
@@ -661,5 +662,29 @@ public final class AnthropicProvider implements LlmProvider {
                     default -> StopReason.END_TURN;
                 })
                 .orElse(StopReason.END_TURN);
+    }
+
+    /**
+     * The arguments a {@code tool_use} block carried, as a node.
+     *
+     * <p>A tool with an EMPTY schema gets no argument JSON at all. The block
+     * arrives carrying {@code input:{}} and a single empty
+     * {@code partial_json} delta, and the accumulator leaves the value
+     * {@link JsonMissing}. Serializing that throws
+     * {@code IllegalArgumentException}, which ended the whole run rather than
+     * the one call: measured 2026-08-19 on {@code launch_list}, the only tool
+     * in the tree with an empty schema (card 283). {@code
+     * OllamaProvider.parseArguments} guards the same case on its own wire.</p>
+     *
+     * @param input the accumulated input, which may be absent
+     * @return the arguments, an empty object when the model sent none
+     */
+    private static JsonNode toolInput(JsonValue input) {
+        if (input == null || input instanceof JsonMissing) {
+            return JSON.createObjectNode();
+        }
+        JsonNode node = JSON.valueToTree(input);
+        return node == null || node.isNull() || node.isMissingNode()
+                ? JSON.createObjectNode() : node;
     }
 }

@@ -668,4 +668,25 @@ class LaunchToolsTest {
         assertTrue(said.contains("SPECTRO_CHROME"), said);
         supervisor.close();
     }
+
+    /**
+     * Card 283's regression test drives a {@code tool_use} for
+     * {@code launch_list} carrying NO arguments, because it is the one tool in
+     * the tree with an empty schema and therefore the only one that reproduces
+     * what the model really sent on 2026-08-19. If it ever grows a parameter,
+     * that test keeps passing while mirroring nothing real. This pin fails
+     * first and says why.
+     */
+    @Test
+    void launchListTakesNoArgumentsSoCard283sRegressionStaysAnchored() {
+        LaunchSupervisor supervisor = new LaunchSupervisor((host, port) -> true);
+        JsonNode schema = tool(new LaunchTools(supervisor,
+                () -> new RecordingBrowser(true), () -> fence(true)).all(), "launch_list")
+                .inputSchema();
+
+        JsonNode properties = schema.get("properties");
+        assertTrue(properties == null || properties.isEmpty(),
+                "launch_list must take no arguments, or card 283's regression test "
+                        + "no longer mirrors a real tool. Schema was: " + schema);
+    }
 }
