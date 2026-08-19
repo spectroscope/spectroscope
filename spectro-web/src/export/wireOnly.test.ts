@@ -78,13 +78,26 @@ describe("what a written jsonl may contain", () => {
       // this list is where "may a file hold this" is answered, and for a
       // heartbeat the answer is no.
       "pong",
+      // Card 267's goal frame: what this session is FOR, and the command that
+      // decides it. A property of the session right now, not a line of its
+      // history — the VERDICT is history and rides the union as `goal_check`,
+      // so exactly one of the pair belongs here.
+      "goal_info",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    // Twenty-one: eighteen, plus card 212's two, plus card 261's one. The
-    // number is asserted so the set cannot grow or shrink by accident — only
-    // on purpose, with the reason written above.
-    expect(NON_WIRE_TYPES.size).toBe(21);
+    // Twenty-two: eighteen, plus card 212's two, plus card 261's `pong` and
+    // card 267's `goal_info`. The number is asserted so the set cannot grow or
+    // shrink by accident — only on purpose, with the reason written above.
+    //
+    // This literal is what caught the merge of the two waves. 261 and 267 were
+    // built on separate branches and each raised the count from 20 to 21 for
+    // its own frame, so the merge produced a set of 22 asserted to be 21 — with
+    // no conflict marker anywhere, because the two edits were textually
+    // identical. The compiler had nothing to say either. This guard was the
+    // only thing that noticed, which is the whole argument for keeping a bare
+    // number in a test.
+    expect(NON_WIRE_TYPES.size).toBe(22);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {
