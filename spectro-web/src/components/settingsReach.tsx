@@ -105,6 +105,24 @@ export const SETTING_REACH = {
   // The exporter is built where the session store is minted.
   otlpEndpoint: "next-session",
   otlpBasicAuth: "next-session",
+  // Card 281: the guard's three counts. Measured rather than assumed — both
+  // attached faces build the ProgressGuard INSIDE the agent build
+  // (SessionConnection's AgentOptions.builder chain, SpectroCli's the same) and
+  // nothing re-reads them afterwards. Their neighbour continuationBudget is a
+  // few lines further down in that same file and IS re-read, per prompt, which
+  // is why the two cannot share a block.
+  progressGuardWrites: "next-session",
+  progressGuardFailures: "next-session",
+  progressGuardPlanTurns: "next-session",
+  // Card 266's leash: SessionConnection calls setBudget(...) on the LIVE agent
+  // once per prompt, so a save decides the next prompt of the session already
+  // open. The one field in this neighbourhood that is not next-session.
+  continuationBudget: "live",
+  // Card 282: the turn ceiling. Agent.maxTurns() reads options, and options are
+  // frozen when the agent is built — there is no setter, deliberately, because
+  // raising the cap mid-run would move a boundary the run has already counted
+  // against.
+  maxTurns: "next-session",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

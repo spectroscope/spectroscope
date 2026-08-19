@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { UsageFooter, runStatusLine } from "./UsageFooter";
+import { t } from "../i18n/i18n";
 import { initialState, reduceAll } from "../state/reducer";
 import type { RunEvent } from "../events";
 import { dict } from "../i18n/i18n";
@@ -42,7 +43,7 @@ const fold = (events: RunEvent[]) => reduceAll(initialState, events);
 
 describe("runStatusLine — what the footer says a run did", () => {
   it("says the run is active while it runs", () => {
-    expect(runStatusLine(fold([start])).key).toBe("footer.runActive");
+    expect(runStatusLine(fold([start]), "en").key).toBe("footer.runActive");
   });
 
   it("names the open steps when the harness reports an unfinished run", () => {
@@ -51,7 +52,7 @@ describe("runStatusLine — what the footer says a run did", () => {
       planOf("completed", "completed", "in_progress", "pending", "pending", "pending"),
       end("unfinished"),
     ]);
-    expect(runStatusLine(state)).toEqual({
+    expect(runStatusLine(state, "en")).toEqual({
       key: "footer.stoppedUnfinished",
       vars: { open: 4, total: 6 },
     });
@@ -59,14 +60,14 @@ describe("runStatusLine — what the footer says a run did", () => {
 
   it("says ready for a run that finished its plan", () => {
     const state = fold([start, planOf("completed", "completed"), end("end_turn")]);
-    expect(runStatusLine(state).key).toBe("footer.ready");
+    expect(runStatusLine(state, "en").key).toBe("footer.ready");
   });
 
   it("says so when no plan was ever written, instead of claiming a clean finish", () => {
     // The house backend's normal case: a model that cannot call update_plan
     // writes no ledger at all. "ready" would be a claim nobody can back.
     const state = fold([start, end("end_turn")]);
-    expect(runStatusLine(state).key).toBe("footer.readyNoPlan");
+    expect(runStatusLine(state, "en").key).toBe("footer.readyNoPlan");
   });
 
   it("reads an older file honestly too — end_turn with steps still open", () => {
@@ -74,21 +75,48 @@ describe("runStatusLine — what the footer says a run did", () => {
     // the verdict is computed from. The footer applies the same rule to them
     // rather than believing a stop reason the harness never graded.
     const state = fold([start, planOf("completed", "pending"), end("end_turn")]);
-    expect(runStatusLine(state)).toEqual({
+    expect(runStatusLine(state, "en")).toEqual({
       key: "footer.stoppedUnfinished",
       vars: { open: 1, total: 2 },
     });
   });
 
-  it("keeps naming the other stops by their own reason", () => {
-    for (const reason of ["aborted", "error", "max_turns", "max_tokens"]) {
-      const state = fold([start, planOf("pending"), end(reason)]);
-      expect(runStatusLine(state)).toEqual({ key: "footer.stopped", vars: { r: reason } });
+  // REPLACED by card 282, not loosened. This used to assert
+  // {key: "footer.stopped", vars: {r: reason}} — the wire value substituted
+  // straight into "gestoppt · {r}", so a German operator read
+  // "gestoppt · max_turns". The threshold stays (the footer still names the
+  // stop); the claim underneath it is exchanged and measured again.
+  it("names the other stops in the operator's own language, not on the wire", () => {
+    for (const lang of ["de", "en"] as const) {
+      for (const reason of ["aborted", "error", "max_turns", "max_tokens"]) {
+        const state = fold([start, planOf("pending"), end(reason)]);
+        const line = runStatusLine(state, lang);
+        expect(line.key).toBe("footer.stopped");
+        const rendered = t(lang, line.key, line.vars);
+        const sentence = t(lang, `stop.${reason}`);
+        // It goes through the dictionary. Stated positively, because the
+        // negative alone is the wrong claim: the English for "error" IS
+        // "error", and a rule saying the wire word may never appear would
+        // fail on a correct translation.
+        expect(sentence, `stop.${reason} has no sentence`).not.toBe(`stop.${reason}`);
+        expect(rendered, `${lang}/${reason} does not read its sentence`).toContain(sentence);
+        // And where the sentence really differs from the wire word, the wire
+        // word is gone — which is the owner's actual report, in German.
+        if (sentence !== reason) {
+          expect(rendered, `${lang}/${reason} still prints the wire word`).not.toContain(reason);
+        }
+      }
     }
   });
 
+  it("still says something for a reason this build has never seen", () => {
+    const state = fold([start, planOf("pending"), end("a_reason_from_the_future")]);
+    const line = runStatusLine(state, "de");
+    expect(t("de", line.key, line.vars)).toContain("a_reason_from_the_future");
+  });
+
   it("is ready before anything has run", () => {
-    expect(runStatusLine(initialState).key).toBe("footer.ready");
+    expect(runStatusLine(initialState, "en").key).toBe("footer.ready");
   });
 });
 
@@ -131,7 +159,7 @@ describe("the mount — the fold is consulted, not just exported", () => {
   const footer = stripComments(read("./UsageFooter.tsx", import.meta.url));
 
   it("UsageFooter builds its status line from the fold and translates it", () => {
-    expect(footer).toContain("runStatusLine(props.state)");
+    expect(footer).toContain("runStatusLine(props.state, lang)");
     expect(footer).toContain("t(lang, status.key, status.vars)");
   });
 

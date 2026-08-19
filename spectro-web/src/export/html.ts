@@ -21,7 +21,8 @@
 // Provenance rides in `note` — outside the frozen event union, where it belongs.
 
 import type { RunEvent } from "../events";
-import type { Lang } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
+import { stopReasonKey } from "../state/stopReason";
 import type { Block, Inline } from "../markdown/parse";
 import { parseMarkdown } from "../markdown/parse";
 import { hlLangForFence } from "../workspace/highlight";
@@ -663,9 +664,20 @@ export function chatBody(
  * @returns the "ended: …" text, or an empty string while nothing has ended
  */
 function endedLabel(lang: Lang, state: { lastStopReason: string | null; plan: PlanStep[] | null }): string {
-  const reason = state.lastStopReason;
-  if (reason === null) return "";
-  switch (planVerdict(reason, state.plan)) {
+  const wire = state.lastStopReason;
+  if (wire === null) return "";
+  // Card 282: the reason is read through the app's own sentences before it is
+  // put in the document. The exported twin of the footer defect the owner
+  // reported — a German archive used to say "beendet: unfinished", the wire
+  // word inside a German line. Shared with the footer deliberately, for the
+  // same reason planVerdict is shared: the live page and the archived document
+  // have to say the same thing about the same session.
+  const reason = t(lang, stopReasonKey(wire), { reason: wire });
+  // planVerdict grades the WIRE value, never the sentence. Handing it the
+  // translated one made every verdict fall to the default branch and cost this
+  // pass two red tests — the same shape as pinning on prose instead of on an
+  // enum, one indirection out.
+  switch (planVerdict(wire, state.plan)) {
     case "unfinished":
       return label(lang, "endedOpen", {
         reason,

@@ -4,6 +4,7 @@
 // exported file is opened by someone who was never in the room.
 
 import { describe, expect, it } from "vitest";
+import { t } from "../i18n/i18n";
 import type { RunEvent } from "../events";
 import { chatToHtml, escapeHtml, exportFilename, textFeedToHtml } from "./html";
 
@@ -512,22 +513,33 @@ describe("an abandoned run in the exported document", () => {
     { type: "run_end", runId: "r1", stopReason: "unfinished", ts: T0 + 3 },
   ];
 
+  // REPLACED by card 282, not loosened. These used to assert "ended: unfinished"
+  // and "beendet: unfinished" — the wire word inside a German document, the
+  // archived twin of the footer defect the owner reported. The threshold stays
+  // (the document still names the verdict); the words underneath are exchanged.
   it("names the verdict instead of the clean finish it never was", () => {
     const html = chatToHtml(events, { now: NOW });
-    expect(html).toContain("ended: unfinished");
+    expect(html).toContain(`ended: ${t("en", "stop.unfinished")}`);
+    expect(html).not.toContain("ended: unfinished");
   });
 
-  it("says it in German too", () => {
-    expect(chatToHtml(events, { now: NOW, lang: "de" })).toContain("beendet: unfinished");
+  it("says it in German too, in German", () => {
+    const html = chatToHtml(events, { now: NOW, lang: "de" });
+    expect(html).toContain(`beendet: ${t("de", "stop.unfinished")}`);
+    expect(html, "the archived document still carries the wire word").not.toContain(
+      "beendet: unfinished",
+    );
   });
 
   // Fix pass: verbatim was not enough. The archived file is read by somebody who
   // was not there, and "unfinished" without a count says less than the Plan panel
   // sitting in the same document — while an ungradable run said nothing at all.
   it("says how much was left open, in both languages", () => {
-    expect(chatToHtml(events, { now: NOW })).toContain("ended: unfinished · 1 of 2 steps open");
+    expect(chatToHtml(events, { now: NOW })).toContain(
+      `ended: ${t("en", "stop.unfinished")} · 1 of 2 steps open`,
+    );
     expect(chatToHtml(events, { now: NOW, lang: "de" })).toContain(
-      "beendet: unfinished · 1 von 2 Schritten offen",
+      `beendet: ${t("de", "stop.unfinished")} · 1 von 2 Schritten offen`,
     );
   });
 
@@ -544,9 +556,11 @@ describe("an abandoned run in the exported document", () => {
       { type: "text_delta", agentId: "main", text: "Done, I think.", ts: T0 + 1 },
       { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T0 + 2 },
     ];
-    expect(chatToHtml(noPlan, { now: NOW })).toContain("ended: end_turn · no plan on record");
+    expect(chatToHtml(noPlan, { now: NOW })).toContain(
+      `ended: ${t("en", "stop.end_turn")} · no plan on record`,
+    );
     expect(chatToHtml(noPlan, { now: NOW, lang: "de" })).toContain(
-      "beendet: end_turn · kein Plan aufgezeichnet",
+      `beendet: ${t("de", "stop.end_turn")} · kein Plan aufgezeichnet`,
     );
   });
 
@@ -572,7 +586,7 @@ describe("an abandoned run in the exported document", () => {
       { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T0 + 2 },
     ];
     const html = chatToHtml(finished, { now: NOW });
-    expect(html).toContain("ended: end_turn");
+    expect(html).toContain(`ended: ${t("en", "stop.end_turn")}`);
     expect(html).not.toContain("steps open");
     expect(html).not.toContain("no plan on record");
   });

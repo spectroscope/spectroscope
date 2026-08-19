@@ -1073,7 +1073,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           : "info.progressIntervention.other",
         infoVars: { detector: event.detector, intervention: event.intervention },
         // The answer to an alarm, not a second alarm.
-        tone: event.intervention === "END" ? "warn" : undefined,
+        tone: event.intervention === "END" ? "warn" : "neutral",
         agentId: event.agentId,
       });
 
@@ -1091,7 +1091,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           total: event.totalSteps,
           decision: event.decision,
         },
-        tone: event.decision === "continued" ? undefined : "warn",
+        tone: event.decision === "continued" ? "neutral" : "warn",
         agentId: event.agentId,
       });
 
@@ -1108,7 +1108,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           code: event.exitCode ?? "",
           evidence: event.evidence,
         },
-        tone: event.outcome === "met" ? undefined : "warn",
+        tone: event.outcome === "met" ? "neutral" : "warn",
         agentId: event.agentId,
       });
 

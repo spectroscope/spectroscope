@@ -63,8 +63,11 @@ export const SETTINGS_TAB_SECTIONS = {
   // Its own room: the server list is unbounded, and it is the one page whose
   // height is the operator's own doing.
   mcp: ["mcp"],
-  // The three surfaces that decide what runs without being asked.
-  permissions: ["allowlist", "netfence", "hooks"],
+  // The surfaces that decide what runs without being asked — and, since card
+  // 281, the one that decides what must come BACK to a person. The room's
+  // German label stays "Freigaben"; the section heading carries the difference,
+  // so card 256's grouping stays a pure move.
+  permissions: ["allowlist", "netfence", "hooks", "progress"],
   // Where this installation points: the fleet hub, the trace sink, the default
   // workspace, the log level.
   system: ["fleet", "observability", "workspace", "logging"],

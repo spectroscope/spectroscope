@@ -63,12 +63,13 @@ import type { Leveling } from "../state/useLeveling";
 import {
   fetchSettings,
   putSettings,
-  originLabel,
   textFieldPatch,
   type SettingsView,
 } from "../state/serverSettings";
 import { CopyButton } from "./CopyButton";
 import { ReachBlock } from "./settingsReach";
+import { OriginRow } from "./settingsOrigin";
+import { ProgressGuardSettings } from "./ProgressGuardSettings";
 import { dockerOffer, type DockerStatus } from "./dockerOffer";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
 
@@ -94,37 +95,6 @@ function Switch({
         <span className="fx-switch-knob" />
       </span>
     </button>
-  );
-}
-
-/** A field's provenance badge, plus a "reset to the layer below" affordance
- *  shown only when the USER scope actually set this field — there is nothing
- *  to fall back FROM otherwise, so the button stays hidden rather than
- *  writing a no-op patch. */
-function OriginRow({
-  view,
-  field,
-  lang,
-  onReset,
-  resetTitle,
-}: {
-  view: SettingsView;
-  field: string;
-  lang: Lang;
-  onReset: () => void;
-  resetTitle?: string;
-}) {
-  const resettable = view.layers.user?.[field] !== undefined;
-  const title = resetTitle ?? t(lang, "set.reset");
-  return (
-    <span className="origin-row">
-      <span className="origin-badge">{originLabel(view.origins[field], lang)}</span>
-      {resettable && (
-        <button type="button" className="origin-reset" title={title} aria-label={title} onClick={onReset}>
-          ↺
-        </button>
-      )}
-    </span>
   );
 }
 
@@ -1137,6 +1107,16 @@ export function SettingsPanel({
                   block asked the session-less endpoint and stated the wrong
                   guards with full confidence. ---- */}
                 <HooksSettings anchorId={sectionAnchorId("hooks")} session={session} onSave={saveUser} />
+                {/* ---- The progress guard (cards 281/282). The other end of
+                  this room's question: allowlist, netfence and hooks decide
+                  which calls never come back to a person, and these five
+                  numbers decide which loops must. ---- */}
+                <ProgressGuardSettings
+                  anchorId={sectionAnchorId("progress")}
+                  view={view}
+                  lang={lang}
+                  onSave={saveUser}
+                />
               </>
             )}
           </SettingsTabPage>

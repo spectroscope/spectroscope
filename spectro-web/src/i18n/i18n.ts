@@ -2580,6 +2580,91 @@ export const dict: Record<string, { de: string; en: string }> = {
   // fourth copy trips the shipped 3), repeated_failure counts failures INCLUDING
   // the current one (the third trips it), stalled_plan counts unchanged turns
   // including this one.
+  // Card 282: why a run ended, in words. The footer used to substitute the wire
+  // value into "gestoppt · {r}", so a German operator read "gestoppt ·
+  // max_turns" — which is the owner's own report.
+  "stop.end_turn": { de: "fertig", en: "finished" },
+  "stop.max_tokens": { de: "Token-Budget der Antwort erschöpft", en: "the answer ran out of tokens" },
+  "stop.tool_use": { de: "wartet auf ein Werkzeug", en: "waiting on a tool" },
+  "stop.aborted": { de: "abgebrochen", en: "cancelled" },
+  "stop.error": { de: "Fehler", en: "error" },
+  "stop.max_turns": {
+    de: "Zug-Limit erreicht — der Lauf hat nichts bemerkt, ihm ist der Platz ausgegangen",
+    en: "turn limit reached — nothing was noticed, the run ran out of room",
+  },
+  "stop.unfinished": { de: "mitten im Plan aufgehört", en: "stopped mid-plan" },
+  "stop.no_progress": {
+    de: "vom Fortschritts-Wächter beendet",
+    en: "ended at the progress guard",
+  },
+  "stop.unfinished_after_continuations": {
+    de: "nach allen Fortsetzungen noch unfertig",
+    en: "still unfinished after every continuation",
+  },
+  "stop.goal_met": { de: "Ziel erreicht", en: "goal met" },
+  "stop.goal_unmet": { de: "Ziel nicht erreicht", en: "goal not met" },
+  "stop.goal_untested": { de: "Ziel ungeprüft", en: "goal untested" },
+  "stop.other": {
+    de: "unbekannter Grund ({reason})",
+    en: "unknown reason ({reason})",
+  },
+
+  // Cards 281/282: the settings section for the five numbers that decide when a
+  // run has to come back to a person.
+  "set.secProgress": { de: "Fortschritts-Wächter", en: "progress guard" },
+  "set.progressHint": {
+    de: "Drei Netze, die bemerken, wenn ein Lauf sich nicht mehr bewegt. Jedes ist eine Zahl, und null schaltet es aus — einen zweiten Schalter gibt es nicht.",
+    en: "Three nets that notice when a run stops moving. Each one is a count, and zero switches it off — there is no second switch.",
+  },
+  "set.progress.summary": {
+    de: "{armed} von {total} Netzen sind scharf.",
+    en: "{armed} of {total} nets are watching.",
+  },
+  "set.progress.summaryOff": {
+    de: "Kein Netz ist scharf. Dieser Lauf sagt nichts, wenn er sich im Kreis dreht.",
+    en: "No net is watching. This run will say nothing if it goes in circles.",
+  },
+  "set.progress.chipArmed": { de: "scharf", en: "watching" },
+  "set.progress.chipOff": { de: "aus", en: "off" },
+  "set.progress.whereItRuns": {
+    de: "Der Wächter läuft nur dort, wo jemand antworten kann: im Browser und in der interaktiven Konsole. spectro run, geplante Läufe und Flotten-Knoten bekommen ihn nicht.",
+    en: "The guard runs only where somebody can answer it: the browser and the interactive console. spectro run, scheduled runs and fleet nodes register none.",
+  },
+  "set.progress.floorNote": {
+    de: "Inhalte unter 64 Zeichen werden nie verglichen: Gerüst-Werkzeuge schreiben leere __init__.py und .gitkeep dutzendweise, alle byte-gleich und alle in Ordnung.",
+    en: "Content under 64 characters is never compared: scaffolds write empty __init__.py and .gitkeep files by the dozen, all byte-identical and all legitimate.",
+  },
+  "set.progress.progressGuardWrites": { de: "Gleiche Bytes unter neuem Pfad", en: "Same bytes under a new path" },
+  "set.progress.progressGuardWritesNote": {
+    de: "Wie viele FRÜHERE Pfade dieselben Bytes schon tragen müssen. Bei 3 schlägt die vierte Kopie an.",
+    en: "How many EARLIER paths must already carry the same bytes. At 3, the fourth copy trips it.",
+  },
+  "set.progress.progressGuardFailures": { de: "Derselbe Aufruf scheitert wieder", en: "The same call failing again" },
+  "set.progress.progressGuardFailuresNote": {
+    de: "Wie oft hintereinander, diesen Fehlschlag mitgezählt. Bei 3 schlägt der dritte an. Ein Erfolg setzt zurück, damit ein flakiger Test still bleibt.",
+    en: "How many times in a row, counting this failure. At 3, the third one trips it. Any success resets, so a flaky test stays silent.",
+  },
+  "set.progress.progressGuardPlanTurns": { de: "Plan bewegt sich nicht", en: "Plan not moving" },
+  "set.progress.progressGuardPlanTurnsNote": {
+    de: "Wie viele Züge unverändert, diesen mitgezählt. Ab Werk 0, also aus: dieses Netz braucht einen gepflegten Plan, und Modelle ohne Werkzeug-Training schreiben keinen.",
+    en: "How many turns unchanged, counting this one. Ships at 0, meaning off: this net needs a maintained plan, and models without tool training never write one.",
+  },
+  "set.secRunLimits": { de: "Grenzen eines Laufs", en: "limits on one run" },
+  "set.runLimitsHint": {
+    de: "Keine Netze, sondern Decken. Wenn eine greift, wurde nichts bemerkt — dem Lauf ist der Platz ausgegangen.",
+    en: "Not nets but ceilings. When one of these hits, nothing was noticed — the run ran out of room.",
+  },
+  "set.maxTurns": { de: "Züge pro Lauf", en: "Turns per run" },
+  "set.maxTurnsNote": {
+    de: "Danach endet der Lauf mit „Zug-Limit erreicht“, auch mitten in der Arbeit. Ab Werk 15. Eine Fortsetzung setzt diese Zahl NICHT zurück.",
+    en: "After this the run ends on \"turn limit reached\", even mid-task. Ships at 15. A continuation does NOT reset it.",
+  },
+  "set.continuationBudget": { de: "Fortsetzungen pro Lauf", en: "Continuations per run" },
+  "set.continuationBudgetNote": {
+    de: "Wie oft der Harness einen Lauf weiterführt, der mit offenem Plan aufgehört hat. 0 schaltet die Leine aus.",
+    en: "How often the harness carries on a run that stopped with its plan still open. 0 switches the leash off.",
+  },
+
   "info.noProgress.identical_writes": {
     de: "Kein Fortschritt: dieselben Bytes stehen schon unter {n} früheren Pfaden. {evidence}",
     en: "No progress: these same bytes already sit under {n} earlier paths. {evidence}",
