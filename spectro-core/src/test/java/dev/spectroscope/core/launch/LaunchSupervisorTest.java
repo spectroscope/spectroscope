@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Optional;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
@@ -530,5 +531,147 @@ class LaunchSupervisorTest {
             TimeUnit.MILLISECONDS.sleep(100);
         }
         return false;
+    }
+
+    /**
+     * A STRANGER on the port: bound, listening and accepting, owned by nobody
+     * this session started.
+     *
+     * <p>Deliberately different from {@link #reservedAndSilent()}, which holds a
+     * number that answers NOTHING. This one answers, which is the whole point:
+     * the supervisor's evidence for "it came up" is a successful TCP connect,
+     * and this socket supplies that evidence without a single line of the
+     * command having run.
+     *
+     * @return the listening socket; close it to release the port
+     * @throws IOException when the port cannot be taken
+     */
+    private static ServerSocket strangerOnAPort() throws IOException {
+        ServerSocket stranger = new ServerSocket(0, 8, InetAddress.getLoopbackAddress());
+        Thread accepter = new Thread(() -> {
+            while (!stranger.isClosed()) {
+                try (Socket ignored = stranger.accept()) {
+                    // Answering IS the behaviour under test. Nothing is read or
+                    // written: a connect that succeeds is all the supervisor asks.
+                } catch (IOException closed) {
+                    return;
+                }
+            }
+        }, "stranger-on-the-port");
+        accepter.setDaemon(true);
+        accepter.start();
+        return stranger;
+    }
+
+    /**
+     * Card 286, criteria 2, 3 and 4: a stranger on the port cannot pass for the
+     * app.
+     *
+     * <p>The owner's report was a launch that said "web is up on
+     * http://localhost:5173/", opened the browser there, let the agent work
+     * against that page — and then {@code launch_list} showed nothing running.
+     * Both cannot be true, and the supervisor said both.
+     *
+     * <p>The three assertions are separate claims and are asserted separately.
+     * That the start FAILS is one. That its answer carries the command's own
+     * EADDRINUSE text is another, and it is the half that makes the failure
+     * useful rather than merely correct. And that {@code launch_list} agrees is
+     * a third: the defect this card is named for is not a wrong answer, it is
+     * two answers from one object in the same instant.
+     */
+    @Test
+    @EnabledOnOs({OS.MAC, OS.LINUX})
+    void aStrangerOnThePortCannotPassForTheApp(@TempDir Path project) throws Exception {
+        try (ServerSocket stranger = strangerOnAPort()) {
+            int port = stranger.getLocalPort();
+            assertTrue(LaunchSupervisor.TCP_CONNECT.answers("localhost", port),
+                    "the stranger really does answer on " + port + " — this test claims a start "
+                            + "is refused DESPITE that answer, so the answer has to be measured");
+
+            LaunchEntry entry = new LaunchEntry("web", port, "/bin/sh",
+                    List.of("-c", "echo 'Error: Port " + port + " is already in use' >&2; exit 1"),
+                    null, List.of());
+            try (LaunchSupervisor supervisor = LaunchSupervisor.real()) {
+                LaunchSupervisor.Outcome outcome =
+                        supervisor.start(entry, project, Duration.ofSeconds(30));
+
+                assertFalse(outcome.ok(),
+                        "a port answering proves nothing about the process we started: "
+                                + outcome.running());
+                assertNull(outcome.running(),
+                        "no address is earned here, and LaunchTools points a browser at whatever "
+                                + "this holds");
+                assertTrue(outcome.tail().contains("already in use"),
+                        "the answer has to carry the command's OWN words, or the operator is told "
+                                + "a start failed and not why: " + outcome.tail());
+                assertEquals(Optional.empty(), supervisor.running("web"),
+                        "start() and launch_list have to agree — two answers from one object in "
+                                + "the same instant is the defect this card is named for");
+            }
+        }
+    }
+
+    /**
+     * Card 286, criterion 6: the narrowing of rule B, measured rather than
+     * asserted in prose.
+     *
+     * <p>This is the case that made the unnarrowed fix wrong and got it
+     * reverted. An entry carrying BOTH a url and a command is the ordinary
+     * shape for a proxy already listening while the command serves behind it.
+     * Under rule A that start waits out its budget, reports failure, and
+     * {@code spawn()} reaps on the way out — killing a dev server that was
+     * working.
+     *
+     * <p>So the assertion is that the pre-spawn sample does NOT apply here: the
+     * url answers before the command runs, and the start still succeeds. Take
+     * the narrowing out of the supervisor and this goes red while the stranger
+     * test above stays green, which is what makes the two claims separable.
+     */
+    @Test
+    @EnabledOnOs({OS.MAC, OS.LINUX})
+    void aProxyAlreadyAnsweringOnAStatedUrlIsTheIntendedShape(@TempDir Path project)
+            throws Exception {
+        try (ServerSocket proxy = strangerOnAPort()) {
+            int port = proxy.getLocalPort();
+            String url = "http://localhost:" + port + "/";
+            assertTrue(LaunchSupervisor.TCP_CONNECT.answers("localhost", port),
+                    "the proxy answers before anything is spawned — that is the premise");
+
+            // A command that stays alive and binds nothing: the work happens
+            // behind the proxy, which is the whole point of the shape.
+            LaunchEntry entry = new LaunchEntry("app", null, "/bin/sh",
+                    List.of("-c", "sleep 30"), url, List.of());
+            assertFalse(entry.addressIsPortDerived(),
+                    "a stated url is not port-derived, and rule B turns on exactly that");
+
+            try (LaunchSupervisor supervisor = LaunchSupervisor.real()) {
+                LaunchSupervisor.Outcome outcome =
+                        supervisor.start(entry, project, Duration.ofSeconds(10));
+                assertTrue(outcome.ok(),
+                        "rule A would have failed this start and then reaped a working server: "
+                                + outcome.problem());
+                assertEquals(url, outcome.running().address());
+                assertTrue(supervisor.running("app").isPresent(),
+                        "and launch_list agrees, in this direction too");
+            }
+        }
+    }
+
+    /**
+     * The distinction rule B rests on, as a unit, so a future edit to
+     * {@code address()} cannot quietly move it.
+     */
+    @Test
+    void anEntrySaysWhetherItsAddressWasDerivedOrStated() {
+        assertTrue(new LaunchEntry("a", 5173, "x", List.of(), null, List.of())
+                .addressIsPortDerived());
+        assertFalse(new LaunchEntry("b", 5173, "x", List.of(), "http://localhost:9/", List.of())
+                .addressIsPortDerived(),
+                "a stated url wins over a port, exactly as address() resolves it");
+        assertFalse(new LaunchEntry("c", null, "x", List.of(), null, List.of())
+                .addressIsPortDerived(), "no address at all is not port-derived");
+        assertFalse(new LaunchEntry("d", 5173, "x", List.of(), "   ", List.of())
+                .addressIsPortDerived() == false,
+                "a blank url is not a stated one — address() falls through to the port");
     }
 }

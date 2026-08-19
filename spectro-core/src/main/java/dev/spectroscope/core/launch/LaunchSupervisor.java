@@ -272,7 +272,7 @@ public final class LaunchSupervisor implements AutoCloseable {
         if (endpoint == null) {
             return new Outcome(false, null, "its url is not an address that can be reached", "");
         }
-        if (!waitForAnswer(endpoint, budget, null)) {
+        if (!waitForAnswer(endpoint, budget, null, false)) {
             return new Outcome(false, null, "nothing answered there", "");
         }
         Running running = new Running(entry.name(), address, true, -1);
@@ -286,6 +286,20 @@ public final class LaunchSupervisor implements AutoCloseable {
         if (endpoint == null) {
             return new Outcome(false, null, "its address cannot be reached", "");
         }
+        // Card 286, rule B: sample the address BEFORE spawning, and only when it
+        // was derived from `port`. If somebody already answers there, that
+        // answer is not evidence about the process we are about to start — it
+        // was true before the process existed. The measured defect: a stranger
+        // holding the port turned a command that died of EADDRINUSE into a
+        // reported success in 58 ms, and the browser was pointed at the
+        // stranger's page.
+        //
+        // Narrowed to port-derived addresses on the owner's ruling. A stated url
+        // may legitimately be a proxy that is already up while the command
+        // serves behind it; refusing that would reap a working dev server, which
+        // is why the unnarrowed version of this fix was built and reverted.
+        boolean strangerHoldsIt = entry.addressIsPortDerived()
+                && probe.answers(endpoint.host(), endpoint.port());
         List<String> command = new ArrayList<>();
         command.add(resolveExecutable(entry.runtimeExecutable(), cwd));
         command.addAll(entry.runtimeArgs());
@@ -311,7 +325,7 @@ public final class LaunchSupervisor implements AutoCloseable {
         }
         ensureReaper();
         drain(process, entryHeld);
-        if (waitForAnswer(endpoint, budget, process)) {
+        if (waitForAnswer(endpoint, budget, process, strangerHoldsIt)) {
             return new Outcome(true, running, null, "");
         }
         // It never came up. Leave nothing behind: a half-started tree holding a
@@ -324,12 +338,39 @@ public final class LaunchSupervisor implements AutoCloseable {
         reap(entryHeld);
         held.remove(entry.name());
         String tail = entryHeld.text();
-        String problem = process.isAlive()
-                ? "it did not answer on " + address + " within "
-                        + budget.toSeconds() + " seconds"
-                : "it exited with code " + process.exitValue()
-                        + " before " + address + " answered";
+        String problem = problemFor(process, address, budget, strangerHoldsIt);
         return new Outcome(false, null, problem, tail);
+    }
+
+    /**
+     * Why a start failed, in the operator's terms.
+     *
+     * <p>Three cases and they are genuinely different (card 286). A process
+     * still alive when the budget ran out simply never answered. A process that
+     * died says so with its code. And a start refused because somebody else
+     * held the port has to SAY that, or the operator reads "did not answer" for
+     * an address that answers perfectly well and goes looking in the wrong
+     * place.</p>
+     *
+     * @param process         the spawned process
+     * @param address         the address that was being waited on
+     * @param budget          how long it was given
+     * @param strangerHoldsIt whether the address answered before the spawn
+     * @return the sentence for {@link Outcome#problem()}
+     */
+    private static String problemFor(Process process, String address, Duration budget,
+            boolean strangerHoldsIt) {
+        if (!process.isAlive()) {
+            return "it exited with code " + process.exitValue()
+                    + (strangerHoldsIt
+                            ? ", and " + address + " was already answering before it started"
+                            : " before " + address + " answered");
+        }
+        if (strangerHoldsIt) {
+            return "something else was already answering on " + address
+                    + " before it started, so its own answer could not be told apart";
+        }
+        return "it did not answer on " + address + " within " + budget.toSeconds() + " seconds";
     }
 
     /**
@@ -373,17 +414,26 @@ public final class LaunchSupervisor implements AutoCloseable {
     }
 
     /** Polls the address until it answers, the budget runs out, or the process dies. */
-    private boolean waitForAnswer(Endpoint endpoint, Duration budget, Process process) {
+    private boolean waitForAnswer(Endpoint endpoint, Duration budget, Process process,
+            boolean strangerHoldsIt) {
         long deadline = System.nanoTime() + budget.toNanos();
         while (true) {
-            if (probe.answers(endpoint.host(), endpoint.port())) {
+            // Card 286: when somebody was already answering before this process
+            // existed, the probe cannot tell us anything about the process, so
+            // it is not consulted at all. What remains is the process itself —
+            // which is exactly what the operator asked us to start.
+            if (!strangerHoldsIt && probe.answers(endpoint.host(), endpoint.port())) {
                 return true;
             }
             if (process != null && !process.isAlive()) {
-                // One last look: a server can answer and exit in the same breath
-                // on a very short-lived command, and calling that a failure
-                // would be a race the reader could never reproduce.
-                return probe.answers(endpoint.host(), endpoint.port());
+                // Card 286, owner's ruling: the "one last look" is deleted. Its
+                // stated case was a server answering and exiting in the same
+                // breath, which means a launcher that daemonizes — and this
+                // class cannot hold such an entry at all, because running(name)
+                // answers empty for a dead process. Its only reachable effect
+                // was to turn ok() true for something launch_list would never
+                // show, which is the disagreement this card exists to remove.
+                return false;
             }
             if (System.nanoTime() >= deadline) {
                 return false;
