@@ -512,6 +512,35 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
   }
 }
 
+/** The detector names this build has a sentence for (cards 262/281). A name
+ *  outside this set still draws a line, through the `unknown` key — the wire is
+ *  allowed to grow without the transcript going quiet. Pinned against the Java
+ *  enum by a drift test rather than by memory. */
+const PROGRESS_DETECTORS: ReadonlySet<string> = new Set([
+  "identical_writes",
+  "repeated_failure",
+  "stalled_plan",
+]);
+
+/** The Intervention enum's values (card 281). */
+const PROGRESS_INTERVENTIONS: ReadonlySet<string> = new Set([
+  "CARRY_ON",
+  "CHANGE_COURSE",
+  "END",
+]);
+
+/** The leash's decisions (card 266). Deliberately NOT the run_end vocabulary:
+ *  the leash's own `no_progress` and the guard's stop reason of the same name
+ *  are different facts, and only the enum tells them apart. */
+const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set([
+  "continued",
+  "no_progress",
+  "budget_spent",
+]);
+
+/** The goal check's verdicts (card 267). */
+const GOAL_OUTCOMES: ReadonlySet<string> = new Set(["met", "unmet", "unknown"]);
+
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
 
 // An append copies the trace, so a fold costs O(rows²): measured 6000 rows in
@@ -999,6 +1028,79 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         infoKey: "info.settingsIgnored",
         infoVars: { key: event.key, hint: event.hint },
         tone: "warn",
+      });
+
+    // Cards 281 and 282: the run's three self-reports, drawn instead of dropped.
+    //
+    // One infoKey per VALUE rather than one shared key with the value as a
+    // variable: the three detectors do not count the same thing (distinct
+    // earlier paths, failures including this one, unchanged turns including
+    // this one), so a shared sentence template is wrong for at least one of
+    // them. Card 281 says that in its own words, and this is where it is
+    // obeyed.
+    case "no_progress":
+      return addTurn(state, {
+        kind: "info",
+        text: `No progress: ${event.detector} ×${event.count}. ${event.evidence}`,
+        infoKey: PROGRESS_DETECTORS.has(event.detector)
+          ? `info.noProgress.${event.detector}`
+          : // A server one version ahead is ordinary for an app that updates on
+            // its own schedule. A detector this build has never heard of must
+            // degrade to a readable line, never to nothing.
+            "info.noProgress.unknown",
+        infoVars: { n: event.count, detector: event.detector, evidence: event.evidence },
+        tone: "warn",
+        agentId: event.agentId,
+      });
+
+    case "progress_intervention":
+      return addTurn(state, {
+        kind: "info",
+        text: `${event.detector}: ${event.intervention.toLowerCase().replace(/_/g, " ")}${
+          event.stoodDown ? " — this net is down for the rest of the run" : ""
+        }`,
+        infoKey: PROGRESS_INTERVENTIONS.has(event.intervention)
+          ? `info.progressIntervention.${event.intervention}`
+          : "info.progressIntervention.unknown",
+        infoVars: { detector: event.detector, intervention: event.intervention },
+        // The answer to an alarm, not a second alarm.
+        tone: event.intervention === "END" ? "warn" : undefined,
+        agentId: event.agentId,
+      });
+
+    case "continuation":
+      return addTurn(state, {
+        kind: "info",
+        text: `Continuation ${event.continuation}/${event.budget}: ${event.decision}. ${event.evidence}`,
+        infoKey: CONTINUATION_DECISIONS.has(event.decision)
+          ? `info.continuation.${event.decision}`
+          : "info.continuation.unknown",
+        infoVars: {
+          n: event.continuation,
+          budget: event.budget,
+          open: event.openSteps,
+          total: event.totalSteps,
+          decision: event.decision,
+        },
+        tone: event.decision === "continued" ? undefined : "warn",
+        agentId: event.agentId,
+      });
+
+    case "goal_check":
+      return addTurn(state, {
+        kind: "info",
+        text: `Goal ${event.outcome}: ${event.evidence}`,
+        infoKey: GOAL_OUTCOMES.has(event.outcome)
+          ? `info.goalCheck.${event.outcome}`
+          : "info.goalCheck.unknown",
+        infoVars: {
+          outcome: event.outcome,
+          command: event.command,
+          code: event.exitCode ?? "",
+          evidence: event.evidence,
+        },
+        tone: event.outcome === "met" ? undefined : "warn",
+        agentId: event.agentId,
       });
 
     case "images_withheld":
