@@ -262,6 +262,13 @@ final class EventRenderer {
             // one writer, so the terminal can never say something other than
             // what went on the wire. Coral, because unlike a compaction or a
             // plan this is the line a reader is meant to stop at.
+            // Card 285: a refusal by design, not a crash. Amber rather than the
+            // red an error wears, and it names where the setting does belong.
+            case RunEvent.SettingsIgnored refused -> {
+                spinner.stop();
+                System.out.println("\n" + ansi.coral("◈ settings ignored · " + refused.key())
+                        + " " + refused.file() + " — " + refused.hint());
+            }
             case RunEvent.NoProgress stalled -> {
                 spinner.stop();
                 System.out.println("\n" + ansi.coral("◈ no progress · " + stalled.detector()
@@ -401,6 +408,7 @@ final class EventRenderer {
             case RunEvent.QuestionAsked e -> e.agentId();
             // Card 262: the guard watches one agent's loop; its observation is
             // attributed to that agent so a child's stall reads as the child's.
+            case RunEvent.SettingsIgnored e -> null;
             case RunEvent.NoProgress e -> e.agentId();
             // Card 266: the leash holds ONE agent's loop, so a child's
             // continuation reads as the child's.

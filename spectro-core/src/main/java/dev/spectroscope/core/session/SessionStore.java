@@ -308,6 +308,46 @@ public final class SessionStore {
     }
 
     /**
+     * The folder a stored session's runs worked in, as its own record carries it
+     * (card 284).
+     *
+     * <p>Read line by line and stopped at the first answer rather than through
+     * {@link #readSessionEvents}: this is asked on every connect that names a
+     * resume, and a session file runs to megabytes. The FIRST run that named a
+     * folder wins, because that is the session's own folder; a later run in the
+     * same file inherited whatever the resume resolved.</p>
+     *
+     * @param id the session id to read
+     * @return the recorded folder, or null when the file names none, is
+     *         unreadable, or predates card 284
+     */
+    public static String recordedWorkspace(String id) {
+        try {
+            Path path = sessionFile(id);
+            if (!Files.isRegularFile(path)) {
+                return null;
+            }
+            for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
+                if (line.isBlank() || !line.contains("\"run_start\"")) {
+                    continue;
+                }
+                try {
+                    RunEvent event = JSON.readValue(line, RunEvent.class);
+                    if (event instanceof RunEvent.RunStart start
+                            && start.workspace() != null && !start.workspace().isBlank()) {
+                        return start.workspace();
+                    }
+                } catch (IOException torn) {
+                    // A truncated line is not an answer; keep looking.
+                }
+            }
+        } catch (IOException unreadable) {
+            return null;
+        }
+        return null;
+    }
+
+    /**
      * Reads a session's events. A truncated last line (crash mid-write) is
      * discarded: each line is parsed in its own try/catch. The id goes through
      * {@link #sessionFile(String)} first — a traversal id never reaches the
@@ -821,6 +861,10 @@ public final class SessionStore {
             // Card 265: the answer joins its question by callId, exactly as a
             // permission_decision joins its request — neither carries an agent.
             case RunEvent.QuestionAnswered e -> null;
+            // Card 285: a settings file was refused for the whole SESSION, not
+            // for one agent — every agent in it reads the same settings, so
+            // attributing the refusal to one of them would be an invention.
+            case RunEvent.SettingsIgnored e -> null;
             case RunEvent.RunEnd e -> null;
         });
     }

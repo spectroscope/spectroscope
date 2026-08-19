@@ -657,8 +657,15 @@ class SpectroServerIntegrationTest {
     void aBrokenWorkspaceScopeReportsLoudlyAndTheRunStillCompletes() throws Exception {
         // Task 15 fallback pin: a workspace file setting a forbidden
         // process-global ("workspace" inside a workspace scope) is rejected by
-        // loadForWorkspace — the session must report it as a readable error
-        // frame and still run on the connect-time view, never half-apply.
+        // loadForWorkspace, and the session must still run on the connect-time
+        // view, never half-apply.
+        //
+        // Card 285 REPLACES the claim this test used to make. It asserted the
+        // refusal arrives as an "error" frame, which is the defect: a refusal by
+        // design wore the same red box as a run-ending crash, offered a retry
+        // that can only be refused identically, and appeared nowhere in the
+        // record, so the reason was gone the moment the socket closed. The
+        // threshold is unchanged; the claim underneath it is exchanged.
         Path ws = Files.createTempDirectory("spectroscope-ws-broken");
         Files.createDirectories(ws.resolve(".spectro"));
         Files.writeString(ws.resolve(".spectro/settings.json"), """
@@ -689,10 +696,28 @@ class SpectroServerIntegrationTest {
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
 
-        assertTrue(events.stream().anyMatch(e -> "error".equals(e.path("type").asText())
+        JsonNode ignored = events.stream()
+                .filter(e -> "settings_ignored".equals(e.path("type").asText()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "the broken scope must surface as a settings_ignored notice, got "
+                                + events.stream().map(e -> e.path("type").asText()).toList()));
+        assertEquals("workspace", ignored.path("key").asText(),
+                "the notice names the key it refused, structured rather than in prose");
+        assertFalse(ignored.path("hint").asText().isBlank(),
+                "and it keeps naming where the setting does belong");
+        assertTrue(events.stream().noneMatch(e -> "error".equals(e.path("type").asText())
                         && e.path("message").asText().contains("workspace settings ignored")),
-                "the broken scope must surface as a readable error frame, got "
-                        + events.stream().map(e -> e.path("type").asText()).toList());
+                "a refusal by design must not wear the error frame a crash wears");
+
+        String sessionId = events.stream()
+                .map(e -> e.path("sessionId").asText())
+                .filter(id -> id != null && !id.isBlank() && !"null".equals(id))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no frame named the session"));
+        assertTrue(Files.readString(dev.spectroscope.core.session.SessionStore.sessionFile(sessionId))
+                        .contains("settings_ignored"),
+                "and the reason survives in the record, not only on the socket");
         assertTrue(events.stream().anyMatch(e -> "run_end".equals(e.path("type").asText())),
                 "run_end must arrive despite the broken workspace file");
     }

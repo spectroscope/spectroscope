@@ -61,7 +61,8 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered"), // additive (card 265)
     @JsonSubTypes.Type(value = RunEvent.NoProgress.class,         name = "no_progress"),      // additive (card 262)
     @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation"),     // additive (card 266)
-    @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check")        // additive (card 267)
+    @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check"),       // additive (card 267)
+    @JsonSubTypes.Type(value = RunEvent.SettingsIgnored.class,    name = "settings_ignored")  // additive (card 285)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -70,7 +71,8 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
         RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
-        RunEvent.NoProgress, RunEvent.Continuation, RunEvent.GoalCheck {
+        RunEvent.NoProgress, RunEvent.Continuation, RunEvent.GoalCheck,
+        RunEvent.SettingsIgnored {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -90,6 +92,9 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param trigger     what woke a triggered node's run (additive, card 72),
      *                    e.g. "fs #4 watch:/drop"; null on every non-triggered run
      * @param attachments images riding along with the prompt (additive); null when none
+     * @param workspace   the folder this run actually worked in (additive, card 284),
+     *                    so a resume in a later process lands where the run did;
+     *                    null on a run that recorded none
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -98,7 +103,26 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
                     String model,                     // additive (card 87)
                     String trigger,                   // additive (card 72)
                     List<Attachment> attachments,     // from additive
+                    String workspace,                 // additive (card 284)
                     long ts) implements RunEvent {
+
+        /** Pre-card-284 arity — no workspace; Jackson keeps using the canonical.
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param model       the model id serving the run; null when unknown
+         * @param trigger     what woke a triggered node's run; null when none
+         * @param attachments images riding along with the prompt; null when none
+         * @param ts          epoch millis of emission */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, String model, String trigger,
+                        List<Attachment> attachments, long ts) {
+            this(runId, agentId, parentId, prompt, provider, model, trigger,
+                    attachments, null, ts);
+        }
         /** Pre-card-72 arity — no trigger; Jackson keeps using the canonical.
          *
          * @param runId       unique id of the run
@@ -111,7 +135,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param ts          epoch millis of emission */
         public RunStart(String runId, String agentId, String parentId, String prompt,
                         String provider, String model, List<Attachment> attachments, long ts) {
-            this(runId, agentId, parentId, prompt, provider, model, null, attachments, ts);
+            this(runId, agentId, parentId, prompt, provider, model, null, attachments, null, ts);
         }
 
         /** Pre-card-87 arity — model unknown; Jackson keeps using the canonical.
@@ -125,9 +149,29 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param ts          epoch millis of emission */
         public RunStart(String runId, String agentId, String parentId, String prompt,
                         String provider, List<Attachment> attachments, long ts) {
-            this(runId, agentId, parentId, prompt, provider, null, null, attachments, ts);
+            this(runId, agentId, parentId, prompt, provider, null, null, attachments, null, ts);
         }
     }
+
+    /**
+     * A settings file named a key its scope may not set, so the WHOLE file was
+     * ignored.
+     *
+     * <p>Card 285. This used to reach the operator as an {@code error} frame,
+     * which wore the same red box as a run-ending crash, offered a retry that
+     * could only be refused identically, and was never written down, so the
+     * reason vanished with the socket. It is a refusal by design and it belongs
+     * in the record: a reader opening the session later sees a successful write
+     * and, without this, no hint that its contents were dropped.</p>
+     *
+     * @param key   the setting the scope was not allowed to name
+     * @param file  the settings file it was read from
+     * @param hint  where the setting does belong, kept because it is the half
+     *              that was already right
+     * @param ts    epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record SettingsIgnored(String key, String file, String hint, long ts) implements RunEvent {}
 
     /**
      * One provider round-trip begins; the loop's turn brake caps how many a run may take.

@@ -372,6 +372,81 @@ public final class SessionConnection {
     }
 
     /**
+     * The folder this session should work in, before any run resolves one.
+     *
+     * <p>Three sources in order, and the middle one is card 284. The operator's
+     * pin lives in memory and therefore only inside one server process. The
+     * folder the session's own RECORD names survives a restart, which is what a
+     * resume needs: without it a resumed session fell back to the configured
+     * default and worked in a folder nobody chose, silently. The configured
+     * default is last.</p>
+     *
+     * <p>All three call sites read this, so the Files tab's announcement, the
+     * agent's sandbox and the launcher's project folder cannot disagree.</p>
+     *
+     * @return the folder to use, or null when nothing names one
+     */
+    private String workspaceChoice() {
+        return workspacePick().path();
+    }
+
+    /**
+     * The folder and WHERE the answer came from, computed once so the two can
+     * never disagree. The frames report the source as their {@code mode}: a
+     * frame that says "default" while the folder came from the record would be
+     * a lie the chooser then pre-selects.
+     *
+     * @return the pick, whose path is null when nothing names a folder
+     */
+    private WorkspacePick workspacePick() {
+        String pinned = store == null ? null : SessionWorkspaces.pinned(store.id());
+        if (pinned != null && !pinned.isBlank()) {
+            return new WorkspacePick(pinned, "set", null);
+        }
+        String recorded = resumeId == null
+                ? null : dev.spectroscope.core.session.SessionStore.recordedWorkspace(resumeId);
+        String gone = null;
+        if (recorded != null && !recorded.isBlank()) {
+            // Only if it is still THERE. resolve() calls createDirectories, so
+            // accepting a vanished path would mint an empty directory at the old
+            // place and hand the agent a project that is not there. Falling back
+            // is fine; falling back in silence is what card 284 is about.
+            if (isExistingDirectory(recorded)) {
+                return new WorkspacePick(recorded, "recorded", null);
+            }
+            gone = recorded;
+        }
+        String configured = config.workspace();
+        boolean has = configured != null && !configured.isBlank();
+        return new WorkspacePick(has ? configured : null, has ? "default" : "random", gone);
+    }
+
+    /**
+     * A resolved workspace choice and its provenance.
+     *
+     * @param path        the folder, or null when nothing names one
+     * @param source      one of {@code set}, {@code recorded}, {@code default}, {@code random}
+     * @param unavailable the folder the record named that is no longer there,
+     *                    so the frame can say what it wanted; null when none
+     */
+    private record WorkspacePick(String path, String source, String unavailable) {}
+
+    /**
+     * Whether a configured path names a directory that exists right now.
+     *
+     * @param path the path to test
+     * @return true only for an existing directory; false for anything else,
+     *         including a path this file system cannot even parse
+     */
+    private static boolean isExistingDirectory(String path) {
+        try {
+            return Files.isDirectory(Path.of(path));
+        } catch (RuntimeException notAPath) {
+            return false;
+        }
+    }
+
+    /**
      * The folder this session's launch file is read from — the workspace once
      * one is resolved, else the pinned or configured folder by the same rule
      * {@code sendProspectiveWorkspace} mirrors, else null. Null is honest for
@@ -385,8 +460,7 @@ public final class SessionConnection {
         if (resolved != null) {
             return resolved;
         }
-        String pinned = store == null ? null : SessionWorkspaces.pinned(store.id());
-        String configured = pinned != null && !pinned.isBlank() ? pinned : config.workspace();
+        String configured = workspaceChoice();
         if (configured == null || configured.isBlank()) {
             return null;
         }
@@ -473,11 +547,11 @@ public final class SessionConnection {
             // end — a receipt that names an event must name the right one.
             openSessionStack(SessionStore.eventCount(resumeId));
             // A resumed session knows its workspace immediately — announce it so
-            // the Files tab points at the right folder before any prompt. A pin
-            // from an earlier pick (same server process) wins over the config.
-            String pinned = SessionWorkspaces.pinned(store.id());
-            workspace = resolveAndRecord(
-                    pinned != null ? pinned : config.workspace(), store.id());
+            // the Files tab points at the right folder before any prompt. The
+            // order is workspaceChoice's: a pin from an earlier pick in THIS
+            // process, then the folder the session's own record names (card
+            // 284, the half that survives a restart), then the config.
+            workspace = resolveAndRecord(workspaceChoice(), store.id());
             sendWorkspaceInfo();
         } catch (Exception missing) {
             // The claim was taken before the load; a session that cannot be
@@ -1090,9 +1164,7 @@ public final class SessionConnection {
         // configured workspace, else this session's deterministic temp folder
         // (the store minted the id already). The Files tab learns it through
         // the workspace_info frame below.
-        String pinned = SessionWorkspaces.pinned(store.id());
-        workspace = resolveAndRecord(
-                pinned != null ? pinned : config.workspace(), store.id());
+        workspace = resolveAndRecord(workspaceChoice(), store.id());
 
         // Card 199, criterion 8: the one-time, in-place migration of allowlist
         // entries onto tiers, run BEFORE the session-moment load so the config
@@ -1458,10 +1530,34 @@ public final class SessionConnection {
      */
     private void reportUnreadable(RuntimeException unreadable) {
         String message = "workspace settings ignored: " + unreadable.getMessage();
-        if (!message.equals(reportedUnreadable)) {
-            reportedUnreadable = message;
-            sendError(message);
+        if (message.equals(reportedUnreadable)) {
+            return;
         }
+        reportedUnreadable = message;
+        // Card 285: a scope that names a forbidden key is a refusal BY DESIGN.
+        // It used to leave through sendError, which wears the red box a crash
+        // wears, offers a retry that can only be refused identically, and is
+        // never written down — so the reason was gone the moment the socket
+        // closed. It gets its own recorded notice; the file first, exactly as
+        // the llm_exchange mirror does, so a session whose socket died still
+        // says why its settings were dropped.
+        if (unreadable instanceof SpectroConfig.WorkspaceScopeRefused refused) {
+            RunEvent.SettingsIgnored event = new RunEvent.SettingsIgnored(
+                    refused.key(), refused.file(), refused.hint(), System.currentTimeMillis());
+            if (store != null) {
+                try {
+                    store.append(event);
+                } catch (RuntimeException unwritable) {
+                    // Losing the record line is not worth losing the session.
+                }
+            }
+            send(event);
+            return;
+        }
+        // A scope that is not merely refused but UNPARSEABLE is a different
+        // fact: nothing named a key, the file itself is broken. That keeps the
+        // error frame, because there is no structured refusal to report.
+        sendError(message);
     }
 
     /**
@@ -1756,12 +1852,16 @@ public final class SessionConnection {
         if (!socket.isOpen()) {
             return;
         }
-        String configured = config.workspace();
+        WorkspacePick pick = workspacePick();
+        String configured = pick.path();
         boolean hasConfigured = configured != null && !configured.isBlank();
         Map<String, Object> frame = new java.util.LinkedHashMap<>();
         frame.put("type", "workspace_info");
         frame.put("resolved", false);
-        frame.put("mode", hasConfigured ? "default" : "random");
+        frame.put("mode", pick.source());
+        if (pick.unavailable() != null) {
+            frame.put("unavailable", pick.unavailable());
+        }
         frame.put("configured", hasConfigured);
         if (hasConfigured) {
             // locate() needs no session id once a workspace is configured, and
@@ -1897,19 +1997,23 @@ public final class SessionConnection {
         if (workspaceAnnounced || workspace == null || !socket.isOpen()) {
             return;
         }
-        String pinned = SessionWorkspaces.pinned(store.id());
-        boolean configured = pinned != null || config.workspace() != null;
+        WorkspacePick pick = workspacePick();
+        boolean configured = pick.path() != null;
         // A dead socket just misses the hint, the Files tab stays on its
         // waiting state until the next announcement — announced latches only
         // on a frame that actually left, exactly as before.
-        if (sendFrame(Map.of(
-                "type", "workspace_info",
-                "resolved", true,
-                "mode", pinned != null ? "set" : (config.workspace() != null ? "default" : "random"),
-                "exists", Files.isDirectory(workspace),
-                "sessionId", store.id(),
-                "path", workspace.toString(),
-                "configured", configured))) {
+        Map<String, Object> resolvedFrame = new java.util.LinkedHashMap<>();
+        resolvedFrame.put("type", "workspace_info");
+        resolvedFrame.put("resolved", true);
+        resolvedFrame.put("mode", pick.source());
+        resolvedFrame.put("exists", Files.isDirectory(workspace));
+        resolvedFrame.put("sessionId", store.id());
+        resolvedFrame.put("path", workspace.toString());
+        resolvedFrame.put("configured", configured);
+        if (pick.unavailable() != null) {
+            resolvedFrame.put("unavailable", pick.unavailable());
+        }
+        if (sendFrame(resolvedFrame)) {
             workspaceAnnounced = true;
         }
     }

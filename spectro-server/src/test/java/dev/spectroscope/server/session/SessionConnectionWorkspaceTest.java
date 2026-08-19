@@ -3,11 +3,15 @@ package dev.spectroscope.server.session;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.session.SessionStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -101,5 +105,100 @@ class SessionConnectionWorkspaceTest {
                 .withFailMessage("a configured workspace is the 'default' mode, not 'random'")
                 .isEqualTo("default");
         assertThat(frame.path("path").asText("")).isEqualTo(configured.toString());
+    }
+
+    /**
+     * Card 284: a resume must land in the folder its own record names, not in
+     * the configured default. Measured 2026-08-19 on session
+     * {@code 20260819-160135-b651423f}: the original run worked in
+     * {@code particle_Stephan_deepseek} and the resume worked in
+     * {@code ForgeDemo}, the global default, because a restart had dropped the
+     * in-memory pin and nothing in the record carried the folder. The agent
+     * then read a CLAUDE.md and a folder that were not the ones it resumed,
+     * and said nothing about the swap.
+     */
+    @Test
+    void aResumeNamesTheFolderItsRecordCarriesRatherThanTheDefault(
+            @TempDir Path recorded, @TempDir Path configured) throws IOException {
+        String id = "card284-resume";
+        Files.createDirectories(SessionStore.SESSIONS_DIR);
+        Map<String, Object> runStart = new LinkedHashMap<>();
+        runStart.put("type", "run_start");
+        runStart.put("runId", "run-284");
+        runStart.put("agentId", "main");
+        runStart.put("prompt", "look at the folder");
+        runStart.put("workspace", recorded.toString());
+        runStart.put("ts", 1L);
+        Files.writeString(SessionStore.SESSIONS_DIR.resolve(id + ".jsonl"),
+                JSON.writeValueAsString(runStart) + "\n");
+
+        FakeSocket socket = new FakeSocket("ws-284", "ws://localhost/ws");
+        new SessionConnection(socket, JSON, configuredAt(configured), id).start();
+
+        JsonNode frame = workspaceFrame(socket)
+                .orElseThrow(() -> new AssertionError("a resume announces no workspace at all"));
+        assertThat(Path.of(frame.path("path").asText()).toRealPath())
+                .as("the resume must name the folder its record carries, not the default")
+                .isEqualTo(recorded.toRealPath());
+    }
+
+    /** Writes a stored session whose run_start records {@code folder}. */
+    private static void recordSession(String id, String folder) throws IOException {
+        Files.createDirectories(SessionStore.SESSIONS_DIR);
+        Map<String, Object> runStart = new LinkedHashMap<>();
+        runStart.put("type", "run_start");
+        runStart.put("runId", "run-" + id);
+        runStart.put("agentId", "main");
+        runStart.put("prompt", "look at the folder");
+        runStart.put("workspace", folder);
+        runStart.put("ts", 1L);
+        Files.writeString(SessionStore.SESSIONS_DIR.resolve(id + ".jsonl"),
+                JSON.writeValueAsString(runStart) + "\n");
+    }
+
+    /**
+     * Card 284: the mode must name where the folder came from. Once a resume
+     * can be answered from the record, reporting "default" would be a lie the
+     * chooser then pre-selects.
+     */
+    @Test
+    void aResumeAnsweredFromTheRecordSaysSoInItsMode(
+            @TempDir Path recorded, @TempDir Path configured) throws IOException {
+        recordSession("card284-mode", recorded.toString());
+
+        FakeSocket socket = new FakeSocket("ws-284-mode", "ws://localhost/ws");
+        new SessionConnection(socket, JSON, configuredAt(configured), "card284-mode").start();
+
+        assertThat(workspaceFrame(socket).orElseThrow().path("mode").asText())
+                .as("the mode names the record as the source, not the default")
+                .isEqualTo("recorded");
+    }
+
+    /**
+     * Card 284, criterion 3: a recorded folder that is gone must not be
+     * silently recreated. {@code WorkspaceResolver.resolve} calls
+     * {@code Files.createDirectories}, so without this the resume would mint an
+     * EMPTY directory at the old path and hand the agent a project that is not
+     * there. Falling back is fine; falling back in silence is not.
+     */
+    @Test
+    void aRecordedFolderThatIsGoneIsNamedRatherThanRecreated(
+            @TempDir Path parent, @TempDir Path configured) throws IOException {
+        Path vanished = parent.resolve("deleted-project");
+        recordSession("card284-gone", vanished.toString());
+
+        FakeSocket socket = new FakeSocket("ws-284-gone", "ws://localhost/ws");
+        new SessionConnection(socket, JSON, configuredAt(configured), "card284-gone").start();
+
+        JsonNode frame = workspaceFrame(socket).orElseThrow();
+        assertThat(Files.exists(vanished))
+                .as("a folder the record names but that is gone must not be recreated")
+                .isFalse();
+        assertThat(frame.path("unavailable").asText())
+                .as("the frame names the folder it wanted and could not use")
+                .isEqualTo(vanished.toString());
+        assertThat(Path.of(frame.path("path").asText()).toRealPath())
+                .as("and it falls back to the configured folder")
+                .isEqualTo(configured.toRealPath());
     }
 }
