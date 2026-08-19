@@ -146,6 +146,12 @@ public final class SpectroCli implements Runnable {
     private HookRunner hooks = HookRunner.load(List.of());
     private SkillLibrary skills = SkillLibrary.load(List.of());
     private Agent agent;
+    /** Card 267: what this session is FOR, and the command that decides it.
+     *  Loaded from {@code ~/.spectro/goals/<id>.goal.md} at start and rewritten
+     *  there by {@code /goal}, so it outlives the process the way SPECTRO.md
+     *  does. Never null on this face — a goal with nothing stated is simply an
+     *  empty statement, and the loop then behaves exactly as before. */
+    private dev.spectroscope.core.goal.SessionGoal goal;
     private SessionStore store;
     // The tracing seam (KONZEPT §4.3): persistence rides a required port, so
     // bus/OTel consumers can dock without touching the drain loop. Rebuilt
@@ -336,6 +342,15 @@ public final class SpectroCli implements Runnable {
         // question when the event reaches it, exactly as it prints "run X? [y/N]";
         // this only reads, so the two can never show different questions.
         askQuestionOnTerminal = new ConsoleAsker(console);
+
+        // Card 267: the goal comes off disk, so a resumed session resumes its
+        // goal too. The check is the shipped command one — the evaluator variant
+        // ships but is wired nowhere by default, which is the whole of owner
+        // call 1's answer.
+        goal = new dev.spectroscope.core.goal.SessionGoal(
+                new dev.spectroscope.core.goal.CommandGoalCheck());
+        goal.state(dev.spectroscope.core.goal.GoalStore.read(
+                dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
 
         registerTools();
         agent = buildAgent(initialMessages);
@@ -798,6 +813,11 @@ public final class SpectroCli implements Runnable {
                 .continuationLeash(askQuestionOnTerminal == null ? null
                         : new dev.spectroscope.core.loop.ContinuationLeash(
                                 config.continuationBudget()))
+                // Card 267: the goal is wired on every face, unlike the leash
+                // above. Grading is one gated command and it ends the run; only
+                // the CONTINUATION half multiplies a bill, and that half is
+                // already fenced by the leash being null here.
+                .goal(goal)
                 .onPermission(askOnTerminal)
                 .build());
     }
@@ -833,6 +853,16 @@ public final class SpectroCli implements Runnable {
             }
             return;
         }
+        // /goal — the operator surface for card 267. A goal is text plus a
+        // command; it grants no tool, no role and no permission, and stating it
+        // is deliberately NOT a tool the model could reach: a model-written goal
+        // is a run defining its own success, which
+        // konzept/PROMPT-ORCHESTRATION.md §3 rule 2 already refuses.
+        if (command.equals("/goal") || command.startsWith("/goal ")) {
+            handleGoalCommand(command.length() > "/goal".length()
+                    ? command.substring("/goal".length()).trim() : "");
+            return;
+        }
         switch (command) {
             case "/help" -> {
                 System.out.println(ansi.bold("Slash commands"));
@@ -845,6 +875,7 @@ public final class SpectroCli implements Runnable {
                 System.out.println("  /think     reasoning visibility on|off");
                 System.out.println("  /voice     push-to-talk: record, transcribe, edit, send");
                 System.out.println("  /speak     read answers aloud on|off");
+                System.out.println("  /goal      state this run's outcome and its check");
                 System.out.println("  /compact   summarize older history now");
                 System.out.println("  /clear     start a fresh session (new agent, new file)");
                 System.out.println("  /exit      quit (empty line works too)");
@@ -876,6 +907,11 @@ public final class SpectroCli implements Runnable {
                     llmWire.close(); // the old session's writer; lines are flushed
                 }
                 llmWire = LlmWireRecorder.forSession(store.id());
+                // Card 267: a new session is a new goal file, and inheriting the
+                // old session's outcome would be the harness deciding what the
+                // fresh conversation is for.
+                goal.state(dev.spectroscope.core.goal.GoalStore.read(
+                        dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
                 gateAudit = dev.spectroscope.core.permission.GateAudit.forSession(store.id());
                 tracing = new TracingPorts().require(new JsonlSink(store));
                 workspace = WorkspaceResolver.resolve(config.workspace(), store.id());
@@ -888,6 +924,59 @@ public final class SpectroCli implements Runnable {
             }
             default -> System.out.println("Unknown command: " + command + " (/help lists all)");
         }
+    }
+
+    /**
+     * The {@code /goal} surface (card 267, criterion 1).
+     *
+     * <p>Four forms, and the state after any of them is written straight to
+     * {@code ~/.spectro/goals/<id>.goal.md} — the durable artifact criterion 1
+     * asks for, in the shape {@code loadAgentsMd} already reads its file in. The
+     * operator can equally edit that file in a text editor; the loop re-reads
+     * the object on every turn, and {@code /goal} is what puts the two in
+     * step.</p>
+     *
+     * @param arg what followed {@code /goal}, already trimmed
+     */
+    private void handleGoalCommand(String arg) {
+        dev.spectroscope.core.goal.RunGoal current = goal.stated();
+        java.nio.file.Path file = dev.spectroscope.core.goal.GoalStore.fileFor(store.id());
+        if (arg.isEmpty()) {
+            if (current == null) {
+                System.out.println("No goal stated. /goal set <outcome>, then"
+                        + " /goal check <command>.");
+            } else {
+                System.out.println(ansi.bold("Goal: ") + current.outcome());
+                System.out.println(current.hasCheck()
+                        ? ansi.bold("Check: ") + current.check()
+                        : ansi.dim("No check — this run would be reported untested."));
+            }
+            System.out.println(ansi.dim(file.toString()));
+            return;
+        }
+        if (arg.equals("clear")) {
+            goal.state(null);
+        } else if (arg.startsWith("check ")) {
+            if (current == null) {
+                System.out.println("State the outcome first: /goal set <outcome>");
+                return;
+            }
+            goal.state(new dev.spectroscope.core.goal.RunGoal(current.outcome(),
+                    arg.substring("check ".length()).trim()));
+        } else {
+            String outcome = arg.startsWith("set ") ? arg.substring("set ".length()).trim() : arg;
+            goal.state(new dev.spectroscope.core.goal.RunGoal(outcome,
+                    current == null ? null : current.check()));
+        }
+        try {
+            dev.spectroscope.core.goal.GoalStore.write(file, goal.stated());
+        } catch (IOException unwritable) {
+            // The goal still governs this session; only its durability is lost,
+            // and saying so is better than pretending the file exists.
+            System.out.println(ansi.dim("Could not write " + file + ": "
+                    + unwritable.getMessage()));
+        }
+        handleGoalCommand("");
     }
 
     /** Lists every configured MCP server, its reachability, and the tools it advertised. */

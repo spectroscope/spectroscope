@@ -60,7 +60,8 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.QuestionAsked.class,      name = "question_asked"),   // additive (card 265)
     @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered"), // additive (card 265)
     @JsonSubTypes.Type(value = RunEvent.NoProgress.class,         name = "no_progress"),      // additive (card 262)
-    @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation")      // additive (card 266)
+    @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation"),     // additive (card 266)
+    @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check")        // additive (card 267)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -69,7 +70,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
         RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
-        RunEvent.NoProgress, RunEvent.Continuation {
+        RunEvent.NoProgress, RunEvent.Continuation, RunEvent.GoalCheck {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -636,6 +637,42 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     record Continuation(String agentId, String decision, int continuation, int budget,
                         int openSteps, int totalSteps, int inputTokens, String evidence,
                         long ts) implements RunEvent {}
+
+    /**
+     * Additive: the goal's check ran, and this is what it said (card 267).
+     *
+     * <p>One line per check, at the exit that would otherwise have ended the
+     * run. Criterion 4 is the reason every field is here: <b>a verdict is never
+     * a claim</b>. The command and its exit code — or the evaluator's model name
+     * and what it answered — travel WITH the outcome, so nobody downstream has
+     * to take the word "done" on faith, and a run recorded as met can be re-run
+     * by hand from its own record.</p>
+     *
+     * <p>Key off {@code outcome}, never off {@code evidence}: the prose is
+     * written for a person and may be reworded, the three values may not. And
+     * the prose is written in the register
+     * {@code .spectro/skills/verification/SKILL.md} permits — the banned words
+     * ("should work", "probably passes", "looks correct") state a belief where
+     * this line states a measurement.</p>
+     *
+     * @param agentId    the agent whose run was about to end
+     * @param outcome    {@code met}, {@code failed} or {@code untested}
+     * @param command    the command that ran, or null when a model judged
+     * @param exitCode   the exit code, or null when nothing ran to completion
+     * @param judge      the evaluator's model name, or null for a command check
+     * @param output     what the check printed, clipped to the tail
+     * @param durationMs how long the CHECK took — kept apart from the model's
+     *                   work, the split card 111 established for the gate and
+     *                   card 265 extended to the ask
+     * @param gateWaitMs how long the check waited on a person at the permission
+     *                   gate, or null when it never parked
+     * @param evidence   the same verdict as one English sentence
+     * @param ts         epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record GoalCheck(String agentId, String outcome, String command, Integer exitCode,
+                     String judge, String output, long durationMs, Long gateWaitMs,
+                     String evidence, long ts) implements RunEvent {}
 
     /**
      * Additive: the harness noticed that nothing is moving (card 262).

@@ -32,6 +32,10 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import dev.spectroscope.core.goal.GoalCheck;
+import dev.spectroscope.core.goal.GoalVerdict;
+import dev.spectroscope.core.goal.RunGoal;
+import dev.spectroscope.core.goal.SessionGoal;
 import dev.spectroscope.core.loop.ContinuationLeash;
 import dev.spectroscope.core.progress.ProgressGuard;
 import dev.spectroscope.core.provider.VisionFence;
@@ -74,6 +78,20 @@ public final class Agent {
      *  back has to hold one of these, and a second copy of the number in the
      *  derivation would drift the day this one moves. */
     public static final int DEFAULT_MAX_TOKENS = 32_000;
+
+    /**
+     * The name the goal's check asks the permission gate under (card 267,
+     * criterion 5).
+     *
+     * <p>It is NOT a tool and is deliberately absent from {@code tool-tiers.json}
+     * and from every {@link dev.spectroscope.core.tools.ToolRegistry}: a goal
+     * grants no tool, no role and no permission, and putting a name in the tier
+     * map for something that is in no registry would make the map claim a tool
+     * exists. Unmapped resolves to {@code eval-execute}, the widest tier, so no
+     * wildcard allowlist entry can pre-approve somebody else's command by
+     * accident — the operator has to name it.</p>
+     */
+    public static final String GOAL_CHECK_GATE = "goal_check";
 
     private final AgentOptions options;
     // Multi-turn history lives in the agent, across runs on the same instance.
@@ -315,6 +333,11 @@ public final class Agent {
             // would leave the second prompt of an evening with nothing left.
             leash.startRun();
         }
+        // Card 267: what this run is FOR, and the check that decides it. Null
+        // states nothing and leaves everything below byte-identical to card 266
+        // — no heading in the system prompt, no check, no new exit.
+        SessionGoal goal = options.goal();
+        GoalGate goalGate = new GoalGate();
         ProgressGuard progress = options.progressGuard();
         if (progress != null) {
             // Its memory and its stand-down are sentences about THIS run. One
@@ -457,7 +480,25 @@ public final class Agent {
                     emit.accept(new RunEvent.ImagesWithheld(agentId, fenced.withheld(),
                             options.provider().modelName(), "no_vision", now()));
                 }
-                ProviderRequest request = new ProviderRequest(options.systemPrompt(),
+                // Card 267, criterion 2: the goal is READ HERE, once per turn,
+                // and appended to the system prompt of THIS request.
+                //
+                // The system prompt is the one part of a request compaction
+                // never touches — Compaction.maybeCompact rewrites `messages`
+                // and nothing else — so a goal that rides here survives the
+                // summarizer by construction, and the property holds whatever
+                // number card 263 puts the threshold at.
+                //
+                // Read per TURN and not per run, because SessionConnection's
+                // buildAgentOnce returns the same agent for every prompt of a
+                // browser session: a goal baked into options.systemPrompt() at
+                // build time could not be stated, changed or cleared without a
+                // reconnect, which is a rebuild by another name.
+                RunGoal statedGoal = goal == null ? null : goal.stated();
+                String systemForTurn = statedGoal == null
+                        ? options.systemPrompt()
+                        : options.systemPrompt() + statedGoal.promptSection();
+                ProviderRequest request = new ProviderRequest(systemForTurn,
                         fenced.messages(), advertisedTools, maxTokens,
                         effectiveReasoning(), effortOverride, signal, tap);
 
@@ -540,6 +581,60 @@ public final class Agent {
                     // steps still open was the app reporting a clean finish for
                     // a run that walked away mid-plan.
                     String reason = stopReasonName(stopReason);
+                    // Card 267, THE PIVOT. Where a goal is stated, the CHECK
+                    // decides this exit and the plan ledger does not.
+                    //
+                    // Criterion 7 asks that card 264's verdict be derived from
+                    // the check and that the two never disagree in the record —
+                    // and the only way two graders never disagree is if exactly
+                    // one of them grades. So a stated goal takes the whole exit:
+                    // the leash's plan-ledger consult below is skipped, card
+                    // 264's `unfinished` rename never applies, and run_end
+                    // carries goal_met / goal_unmet / goal_untested instead.
+                    // A failing check then buys its continuation from the SAME
+                    // budget, through the same three decisions, so the bound
+                    // stays one number an operator can read (criterion 6).
+                    //
+                    // A CEILING is graded but does not get to decide. max_tokens
+                    // (here) and max_turns (after the loop) say that something
+                    // other than the model's judgement ended the run — the same
+                    // line card 266 draws — so they keep their own names, and
+                    // reporting a run the token budget cut off mid-sentence as
+                    // `goal_met` would be exactly the clean-finish lie card 264
+                    // was cut to end. The verdict still goes on the wire beside
+                    // them: an operator who stated a check and got no answer
+                    // from it has the worst of both, which is what the live AC-8
+                    // run found when this branch first covered end_turn only.
+                    //
+                    // The cancel check is belt and braces and NO TEST REACHES
+                    // IT — measured, not assumed: dropping it leaves every test
+                    // of this card green, because the loop's own abort exit some
+                    // sixty lines above already returns on signal.isCancelled().
+                    // Card 266 says the same thing about its own copy. It stays
+                    // because a later refactor that moved that exit would
+                    // otherwise let the harness run somebody's command after
+                    // they stopped the run.
+                    RunGoal statedAtExit = goal == null ? null : goal.stated();
+                    if (statedAtExit != null && !signal.isCancelled()) {
+                        GoalVerdict verdict = gradeTheRun(statedAtExit, goal, agentId, signal,
+                                emit, goalGate);
+                        log.info("goal verdict {}", verdict.evidence());
+                        if ("end_turn".equals(reason)) {
+                            Optional<String> carryOn = continuationForTheCheck(verdict, leash,
+                                    turn < maxTurns, productiveCalls, lastInputTokens, agentId,
+                                    emit);
+                            if (carryOn.isPresent()) {
+                                // The check's own words, not the harness's
+                                // paraphrase of a failure it did not produce.
+                                appendUserText(messages, carryOn.get());
+                                continue;
+                            }
+                            emit.accept(new RunEnd(runId, verdict.outcome().stopReason(), now()));
+                            return;
+                        }
+                        // max_tokens falls through to the exit below, which
+                        // writes it exactly as card 266 left it.
+                    }
                     // Card 266: and this is what the harness DOES about that
                     // verdict. Only where card 264 renames, i.e. a voluntary
                     // end_turn with the plan open. max_tokens, max_turns,
@@ -685,6 +780,17 @@ public final class Agent {
                     return;
                 }
             }
+            // Card 267: the cap is a would-be ending too, so the check runs and
+            // its verdict goes on the wire — an operator who stated a check and
+            // got no answer from it has the worst of both. It does NOT decide
+            // the ending: there is no turn left to continue into, and the brake
+            // keeps its own name for the reason below.
+            RunGoal statedAtCap = goal == null ? null : goal.stated();
+            if (statedAtCap != null && !signal.isCancelled()) {
+                log.info("goal verdict {}",
+                        gradeTheRun(statedAtCap, goal, agentId, signal, emit, goalGate)
+                                .evidence());
+            }
             // The brake keeps its own name even with the plan open: the verdict
             // is logged either way, and losing "this run hit turn 15" would
             // trade one silence for another.
@@ -697,6 +803,177 @@ public final class Agent {
             emit.accept(new ErrorEvent(agentId, error.getMessage(), now()));
             emit.accept(new RunEnd(runId, "error", now()));
         }
+    }
+
+    /**
+     * Asks card 266's leash whether a failing check buys another turn, and puts
+     * the decision on the wire either way (card 267, criterion 6).
+     *
+     * <p>Every one of the three outcomes is a line, exactly as card 266 made
+     * them: a continuation nobody can count afterwards is the silence card 264
+     * was cut to end. The plan counts on that line come from the ledger this run
+     * wrote, because the reader of a {@code continuation} event has always been
+     * told how much of the plan was open — a goal does not take that away, it
+     * only stops the ledger from deciding.</p>
+     *
+     * @param verdict         what the check said
+     * @param leash           the run's leash, or null where nothing continues
+     * @param belowTheCap     false on the last permitted turn — consulting the
+     *                        leash there would record a continuation the run can
+     *                        never take, which is a line that lies
+     * @param productiveCalls clean tool calls this run, the work half of the
+     *                        fingerprint
+     * @param inputTokens     what the last exchange cost, the floor of what this
+     *                        continuation would cost
+     * @param agentId         the agent the decision belongs to
+     * @param emit            the loop's event sink
+     * @return the message to hand the model, or empty when the run ends here
+     */
+    private Optional<String> continuationForTheCheck(GoalVerdict verdict, ContinuationLeash leash,
+                                                     boolean belowTheCap, int productiveCalls,
+                                                     int inputTokens, String agentId,
+                                                     Consumer<RunEvent> emit) {
+        if (verdict.outcome() != GoalVerdict.Outcome.FAILED || leash == null || !belowTheCap) {
+            // UNTESTED never continues: there is nothing to react to, and
+            // spending a turn on a broken thermometer is what criterion 3
+            // separates untested from failed to prevent.
+            return Optional.empty();
+        }
+        RunEvent.Plan ownLedger = planWrittenThisRun ? lastPlan : null;
+        Optional<ContinuationLeash.Verdict> held = leash.considerFailedCheck(
+                ContinuationLeash.checkSignature(verdict.exitCode(), verdict.output(),
+                        productiveCalls),
+                verdict.asGuidance());
+        if (held.isEmpty()) {
+            return Optional.empty();
+        }
+        ContinuationLeash.Verdict decision = held.get();
+        emit.accept(new RunEvent.Continuation(agentId, decision.decision().wireName(),
+                decision.continuation(), decision.budget(), PlanVerdict.openSteps(ownLedger),
+                PlanVerdict.totalSteps(ownLedger), inputTokens, decision.evidence(), now()));
+        return decision.decision() == ContinuationLeash.Decision.CONTINUED
+                ? Optional.of(decision.message()) : Optional.empty();
+    }
+
+    /**
+     * One run's memory of what the operator said about the goal's check
+     * (card 267, owner call 4).
+     *
+     * <p><b>Asked once per run, per command.</b> The command is not the model's:
+     * it comes from a statement the operator froze before the run started, so
+     * every ask after the first would be the same question about the same bytes,
+     * and a run continued three times would spend a person's attention four
+     * times for one decision — the thing card 262 is careful with. The decision
+     * is keyed by the command, so an operator who RESTATES the goal mid-run is
+     * asked again about the new one.</p>
+     */
+    private static final class GoalGate {
+        private String command;
+        private boolean allowed;
+        private Long waitMs;
+
+        /** What was already decided about this command, or null when it has not
+         *  been asked.
+         *  @param forCommand the command about to run
+         *  @return TRUE/FALSE when remembered, null when it must be asked */
+        Boolean decided(String forCommand) {
+            return forCommand.equals(command) ? allowed : null;
+        }
+
+        /** Remembers one decision and the wait it cost.
+         *  @param forCommand the command that was asked about
+         *  @param verdict    what the operator said
+         *  @param wait       how long they took, in millis */
+        void remember(String forCommand, boolean verdict, long wait) {
+            this.command = forCommand;
+            this.allowed = verdict;
+            this.waitMs = wait;
+        }
+
+        /** The wait the FIRST ask cost, reported on every check of this run so
+         *  the price of the question is never invisible.
+         *  @return the wait in millis, or null when nobody was ever asked */
+        Long waitMs() {
+            return waitMs;
+        }
+    }
+
+    /**
+     * Runs the goal's check at the exit that would otherwise end the run, past
+     * the same gate every other command passes, and puts the verdict on the wire
+     * (card 267, criteria 3, 4 and 5).
+     *
+     * <p>The gate is {@link #options}' own {@link PermissionBroker} — the very
+     * one {@link #runGuarded} blocks on — asked under {@link #GOAL_CHECK_GATE}
+     * with the command as its input. A refusal is
+     * {@link GoalVerdict.Outcome#UNTESTED} and never
+     * {@link GoalVerdict.Outcome#FAILED}: "the operator would not let me look"
+     * is not "it did not pass", and only the first of those refuses to spend a
+     * continuation on a question nobody answered.</p>
+     *
+     * <p>The two clocks are kept apart, exactly as card 111 kept the gate's wait
+     * out of a tool's duration: {@code durationMs} is the check's own time and
+     * {@code gateWaitMs} is the person's.</p>
+     *
+     * @param stated  the goal in force at this exit
+     * @param goal    the session's goal, for the check it carries
+     * @param agentId the agent whose run is being graded
+     * @param signal  cooperative cancellation — it kills the check's child process
+     * @param emit    the loop's event sink
+     * @param gate    this run's memory of the operator's answer
+     * @return the verdict, already emitted as a {@code goal_check} line
+     */
+    private GoalVerdict gradeTheRun(RunGoal stated, SessionGoal goal, String agentId,
+                                    CancelSignal signal, Consumer<RunEvent> emit, GoalGate gate) {
+        GoalVerdict verdict;
+        if (stated.hasCheck() && !approvedCheck(stated.check().strip(), agentId, signal, emit,
+                gate)) {
+            verdict = new GoalVerdict(GoalVerdict.Outcome.UNTESTED, stated.check().strip(), null,
+                    "", 0, gate.waitMs(), null,
+                    "untested: the operator did not approve the goal's check, so nothing ran");
+        } else {
+            GoalVerdict ran = goal.check().run(stated,
+                    new GoalCheck.Context(options.cwd(), signal, () -> List.copyOf(messages)));
+            verdict = new GoalVerdict(ran.outcome(), ran.command(), ran.exitCode(), ran.output(),
+                    ran.durationMs(), gate.waitMs(), ran.judge(), ran.evidence());
+        }
+        emit.accept(new RunEvent.GoalCheck(agentId, verdict.outcome().wireName(),
+                verdict.command(), verdict.exitCode(), verdict.judge(), verdict.output(),
+                verdict.durationMs(), verdict.gateWaitMs(), verdict.evidence(), now()));
+        return verdict;
+    }
+
+    /**
+     * The permission handshake for the goal's check — the same broker, the same
+     * two events, asked once per run per command.
+     *
+     * @param command the check about to run
+     * @param agentId the agent the run belongs to
+     * @param signal  cooperative cancellation
+     * @param emit    the loop's event sink
+     * @param gate    this run's memory
+     * @return true when the check may run
+     */
+    private boolean approvedCheck(String command, String agentId, CancelSignal signal,
+                                  Consumer<RunEvent> emit, GoalGate gate) {
+        Boolean remembered = gate.decided(command);
+        if (remembered != null) {
+            return remembered;
+        }
+        String callId = UUID.randomUUID().toString();
+        PermissionRequest request = new PermissionRequest(agentId, callId, GOAL_CHECK_GATE,
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
+                        .put("command", command),
+                now());
+        emit.accept(request);
+        long parkedAt = now();
+        // Blocking on purpose, exactly as runGuarded blocks: this virtual thread
+        // pauses until the human decided.
+        boolean allowed = options.onPermission().decide(request);
+        long wait = now() - parkedAt;
+        emit.accept(new PermissionDecision(callId, allowed, now()));
+        gate.remember(command, allowed && !signal.isCancelled(), wait);
+        return allowed && !signal.isCancelled();
     }
 
     /**
@@ -1096,6 +1373,22 @@ public final class Agent {
      */
     public dev.spectroscope.core.loop.ContinuationLeash continuationLeash() {
         return options.continuationLeash();
+    }
+
+    /**
+     * The goal this agent runs with, or null where none is wired (card 267).
+     *
+     * <p>Same reason as {@link #progressGuard()} and {@link #continuationLeash()}:
+     * the fence is the WIRING, and a test that builds its own goal proves
+     * nothing about the face the operator actually uses. Card 222's finding F4
+     * is the precedent — a whole tool family was deleted from the live
+     * registration and the full gate stayed green, because every test built its
+     * own registry.</p>
+     *
+     * @return the session's goal, or null
+     */
+    public dev.spectroscope.core.goal.SessionGoal goal() {
+        return options.goal();
     }
 
     /**

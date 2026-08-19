@@ -226,6 +226,83 @@ public final class ContinuationLeash {
     }
 
     /**
+     * Decides what happens to a run whose GOAL CHECK just failed (card 267,
+     * criterion 6).
+     *
+     * <p>The second continuation reason, and deliberately not a second
+     * mechanism. It spends {@link #budget}, it moves the same {@code spent}
+     * counter and it compares against the same {@code lastSignature} — because a
+     * ceiling that is the product of two numbers, only one of which is visible,
+     * is not a ceiling anybody can reason about, and this class's own javadoc
+     * says so about the turn cap. A run whose plan is open AND whose check fails
+     * therefore cannot spend the budget twice.</p>
+     *
+     * <p>Where {@link #consider} refuses to grade an {@link PlanVerdict#UNKNOWN}
+     * run, this one has nothing to refuse: an exit code is not a guess. So the
+     * plan verdict is not consulted here at all — the check has already said
+     * what the ledger could only estimate.</p>
+     *
+     * @param signature what the run has to show for itself, from
+     *                  {@link #checkSignature(Integer, String, int)}
+     * @param guidance  the check's own output, which becomes the continuation
+     *                  message. The harness does not paraphrase a failure it did
+     *                  not produce
+     * @return the decision, or empty when the leash is off
+     */
+    public Optional<Verdict> considerFailedCheck(String signature, String guidance) {
+        int allowed = budget;
+        if (allowed <= 0) {
+            return Optional.empty();
+        }
+        if (spent >= allowed) {
+            return Optional.of(new Verdict(Decision.BUDGET_EXHAUSTED, null, spent, allowed,
+                    "not continued: the goal's check did not pass, and this run's budget of "
+                            + allowed + " continuations is spent"));
+        }
+        if (signature != null && signature.equals(lastSignature)) {
+            return Optional.of(new Verdict(Decision.NO_PROGRESS, null, spent, allowed,
+                    "not continued: the goal's check failed the same way as at continuation "
+                            + spent + ", and nothing the model did moved it"));
+        }
+        spent++;
+        lastSignature = signature;
+        return Optional.of(new Verdict(Decision.CONTINUED, guidance, spent, allowed,
+                "continued: the goal's check did not pass, continuation " + spent + " of "
+                        + allowed));
+    }
+
+    /**
+     * What a run with a goal has to show for itself — the fingerprint two failed
+     * checks are compared by (card 267, criterion 6).
+     *
+     * <p>Both halves again, and for the reasons
+     * {@link #signature(RunEvent.Plan, int)} states. The check's own exit code
+     * and output are what the WORLD says; the clean-call count is what the model
+     * did. Only when neither moved is a further continuation the spin card 262
+     * was cut from.</p>
+     *
+     * <p><b>The known weakness, said out loud.</b> A check whose output carries a
+     * timestamp or an elapsed time — most test runners print one — differs on
+     * every run, so this fingerprint never matches and the spin guard never
+     * fires. The bound that still holds in that case is the budget itself, which
+     * is why the budget and not the fingerprint is the load-bearing half.
+     * Normalising the output was considered and refused: guessing which digits
+     * of somebody else's test runner are noise is exactly the kind of invention
+     * this house measures instead of assuming.</p>
+     *
+     * @param exitCode        the check's exit code, or null when it never
+     *                        produced one
+     * @param output          what the check printed
+     * @param productiveCalls how many tool calls of this run ran and came back
+     *                        without an error
+     * @return the fingerprint; the leading integer makes the join unambiguous
+     *         even though the output half contains newlines
+     */
+    public static String checkSignature(Integer exitCode, String output, int productiveCalls) {
+        return productiveCalls + "\n" + exitCode + "\n" + (output == null ? "" : output);
+    }
+
+    /**
      * What the run has to show for itself — the fingerprint two stops are
      * compared by.
      *

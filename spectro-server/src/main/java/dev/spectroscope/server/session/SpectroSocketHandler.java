@@ -143,6 +143,12 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
                     connection.onSetWorkspace(frame.path("mode").asText("set"), frame.path("path").asText(""));
             case "set_permission_mode" ->                      // composer gear, additive
                     connection.onSetPermissionMode(frame.path("mode").asText(""));
+            // Card 267: the operator states what this run is FOR and the command
+            // that decides it. From a person at a browser, never from the model —
+            // there is no goal tool in any registry, on purpose.
+            case "set_goal" ->                                 // additive
+                    connection.onSetGoal(frame.path("outcome").asText(""),
+                            frame.path("check").asText(""));
             default -> connection.sendError("Unknown message type.");
         }
     }
