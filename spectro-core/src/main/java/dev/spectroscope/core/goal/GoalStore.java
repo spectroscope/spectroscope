@@ -96,21 +96,37 @@ public final class GoalStore {
         } catch (IOException absent) {
             return null;
         }
-        String outcome = section(raw, OUTCOME_HEADING);
-        String check = section(raw, CHECK_HEADING);
+        String outcome = section(raw, OUTCOME_HEADING, false);
+        String check = section(raw, CHECK_HEADING, true);
         if (outcome == null || outcome.isBlank()) {
             return null;
         }
         return new RunGoal(outcome, check == null || check.isBlank() ? null : check);
     }
 
-    /** The text under one heading, up to the next {@code ##} heading or the end.
-     *  Lines are de-indented, so the check's four-space code indent comes back
-     *  as the command it was.
-     *  @param raw     the whole file
-     *  @param heading the heading to look under
-     *  @return the stripped section body, or null when the heading is absent */
-    private static String section(String raw, String heading) {
+    /**
+     * The text under one heading, up to the next {@code ##} heading or the end.
+     *
+     * <p><b>Only the CHECK is de-indented, and that asymmetry is the whole
+     * point.</b> {@link #write} indents the command by four spaces to make it a
+     * markdown code block, so reading it back has to undo that. The outcome is
+     * indented by nobody: it is the operator's prose, and stripping it line by
+     * line — which this method used to do to both — silently flattened a list
+     * into an unindented one. Criterion 2 promises the operator's words travel
+     * byte for byte, and on the browser face THIS file is where the model's copy
+     * comes from, so a rewrite here is a rewrite in the prompt.</p>
+     *
+     * <p>Known limit, stated rather than papered over: a line of the operator's
+     * own text that begins {@code "## "} ends the section, because that is what
+     * the format means. A goal whose outcome contains a markdown heading loses
+     * everything after it.</p>
+     *
+     * @param raw      the whole file
+     * @param heading  the heading to look under
+     * @param deIndent true to strip each line, for the block {@link #write} indented
+     * @return the section body, or null when the heading is absent
+     */
+    private static String section(String raw, String heading, boolean deIndent) {
         int at = raw.indexOf(heading);
         if (at < 0) {
             return null;
@@ -118,6 +134,9 @@ public final class GoalStore {
         int from = at + heading.length();
         int to = raw.indexOf("\n## ", from);
         String body = to < 0 ? raw.substring(from) : raw.substring(from, to);
+        if (!deIndent) {
+            return body.strip();
+        }
         StringBuilder out = new StringBuilder();
         for (String line : body.split("\n", -1)) {
             out.append(line.strip()).append('\n');

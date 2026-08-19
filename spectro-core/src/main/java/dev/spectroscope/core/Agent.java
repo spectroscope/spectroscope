@@ -87,9 +87,20 @@ public final class Agent {
      * and from every {@link dev.spectroscope.core.tools.ToolRegistry}: a goal
      * grants no tool, no role and no permission, and putting a name in the tier
      * map for something that is in no registry would make the map claim a tool
-     * exists. Unmapped resolves to {@code eval-execute}, the widest tier, so no
-     * wildcard allowlist entry can pre-approve somebody else's command by
-     * accident — the operator has to name it.</p>
+     * exists. Unmapped resolves to {@code eval-execute}, the widest tier, so
+     * only an allowlist entry whose OWN ceiling is eval-execute can reach it —
+     * a narrower entry (anything at {@code read} or {@code write}) cannot.</p>
+     *
+     * <p><b>What that does NOT mean, corrected after the review.</b> An earlier
+     * version of this javadoc claimed the widest tier put the check beyond any
+     * wildcard. It does not: {@code Allowlist.decide} tests {@code
+     * resolved.tier().atMost(rule.ceiling())}, so a wildcard entry AT
+     * eval-execute — {@code goal*#eval-execute} — matches this name like any
+     * other. {@code AllowlistTest.anUnmappedNameIsNotOutOfReachOfAWildcardEntry}
+     * states both halves so the comfortable reading cannot come back. What does
+     * hold is the scoping: {@code Allowlist.guardedField} maps this name to
+     * {@code command}, so remembering one approved check stores its first token
+     * as a prefix and never the bare name.</p>
      */
     public static final String GOAL_CHECK_GATE = "goal_check";
 
@@ -915,6 +926,16 @@ public final class Agent {
      * out of a tool's duration: {@code durationMs} is the check's own time and
      * {@code gateWaitMs} is the person's.</p>
      *
+     * <p><b>What this path does NOT pass, stated because the review asked.</b>
+     * {@code pre_tool_use} hooks. {@link #runGuarded} runs them before the gate
+     * for every tool call; the goal's check goes to the broker and to
+     * {@code /bin/sh} without them. That is deliberate rather than overlooked: a
+     * hook is a policy about what the MODEL may do, and this command is the
+     * OPERATOR's own, frozen before the run and shown to them at the gate. An
+     * operator whose hook policy should also cover their own check has the
+     * answer already — the check is a shell line, and it can call the policy
+     * itself. If that ever stops being true, this is the sentence to delete.</p>
+     *
      * @param stated  the goal in force at this exit
      * @param goal    the session's goal, for the check it carries
      * @param agentId the agent whose run is being graded
@@ -1192,7 +1213,16 @@ public final class Agent {
      */
     private ContextInfo contextInfo(int turn, List<ProviderMessage> messages,
                                     CompactionThreshold.Derived compaction) {
-        int systemChars = options.systemPrompt().length();
+        // Card 267 review: the goal rides on the system prompt of every request,
+        // so it is part of the system prompt this gauge is estimating. Reading
+        // options.systemPrompt() alone under-reported every turn of every run
+        // with a goal by exactly the section the goal adds — and this estimate
+        // is what the browser's context ring and the CLI's meter show.
+        RunGoal statedForGauge = options.goal() == null ? null : options.goal().stated();
+        String systemForGauge = statedForGauge == null
+                ? options.systemPrompt()
+                : options.systemPrompt() + statedForGauge.promptSection();
+        int systemChars = systemForGauge.length();
         int schemaChars = options.registry().specs().stream()
                 .mapToInt(spec -> spec.name().length() + spec.description().length()
                         + spec.inputSchema().toString().length())
@@ -1205,7 +1235,7 @@ public final class Agent {
                 .map(spec -> spec.name() + " — " + spec.description() + "\n" + spec.inputSchema())
                 .reduce((a, b) -> a + "\n\n" + b).orElse("");
         List<ContextPart> parts = List.of(
-                part("system prompt", systemChars, options.systemPrompt()),
+                part("system prompt", systemChars, systemForGauge),
                 part("tool schemas", schemaChars, schemaText),
                 part("conversation", conversationChars, renderConversation(messages)));
         int estimatedTokens = parts.stream().mapToInt(ContextPart::estTokens).sum();

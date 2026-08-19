@@ -95,13 +95,21 @@ public final class EvaluatorGoalCheck implements GoalCheck {
         }
         long durationMs = System.currentTimeMillis() - startedAt;
         String said = GoalVerdict.clip(answer.toString().strip());
-        if (said.contains(MET_WORD)) {
-            return new GoalVerdict(GoalVerdict.Outcome.MET, null, null, said, durationMs, null,
-                    model, "met: the evaluator " + model + " answered " + MET_WORD);
-        }
+        // UNMET IS TESTED FIRST, and the order is the whole safety property.
+        // The system prompt asks for a verdict AND a reason, and a reason is
+        // routinely about the evidence for the OTHER verdict — "GOAL_NOT_MET,
+        // there is no GOAL_MET evidence in the transcript" is a well-formed
+        // answer. Read MET-first, that sentence graded the run met, which is
+        // this class's javadoc promise broken in the one direction it names.
+        // Asymmetric on purpose: a permissive misread reports work as done that
+        // is not, a strict one costs a continuation.
         if (said.contains(UNMET_WORD)) {
             return new GoalVerdict(GoalVerdict.Outcome.FAILED, null, null, said, durationMs, null,
                     model, "failed: the evaluator " + model + " answered " + UNMET_WORD);
+        }
+        if (said.contains(MET_WORD)) {
+            return new GoalVerdict(GoalVerdict.Outcome.MET, null, null, said, durationMs, null,
+                    model, "met: the evaluator " + model + " answered " + MET_WORD);
         }
         return new GoalVerdict(GoalVerdict.Outcome.UNTESTED, null, null, said, durationMs, null,
                 model, "untested: the evaluator " + model + " answered with neither verdict word");

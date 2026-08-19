@@ -81,6 +81,11 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // byte-frozen while the UI learns something new.
   "live_sessions",
   "session_busy",
+  // Card 267. What this session is FOR, and the command that decides it: a
+  // property of the session right now, not a line of its history. The verdict
+  // IS history and rides the union as `goal_check`, so exactly one of the two
+  // is here. Caught by the drift guard next door, which is what it is for.
+  "goal_info",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

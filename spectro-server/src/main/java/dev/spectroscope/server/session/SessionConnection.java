@@ -1119,10 +1119,7 @@ public final class SessionConnection {
         // turn; the loop appends it to each request's system prompt instead. Off
         // disk, so a resumed session resumes its goal — the same durable-artifact
         // pattern loadAgentsMd uses one line above.
-        goal = new dev.spectroscope.core.goal.SessionGoal(
-                new dev.spectroscope.core.goal.CommandGoalCheck());
-        goal.state(dev.spectroscope.core.goal.GoalStore.read(
-                dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
+        ensureGoal();
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);
@@ -1815,14 +1812,13 @@ public final class SessionConnection {
         // The store mints the id the goal file is named after, and a goal may
         // be stated before the first prompt has built an agent.
         ensureStore();
+        ensureGoal();
         dev.spectroscope.core.goal.RunGoal stated =
                 outcome == null || outcome.isBlank()
                         ? null
                         : new dev.spectroscope.core.goal.RunGoal(outcome,
                                 check == null || check.isBlank() ? null : check);
-        if (goal != null) {
-            goal.state(stated);
-        }
+        goal.state(stated);
         try {
             dev.spectroscope.core.goal.GoalStore.write(
                     dev.spectroscope.core.goal.GoalStore.fileFor(store.id()), stated);
@@ -1836,11 +1832,52 @@ public final class SessionConnection {
      * Tells the page what this session is for — the "shown where the run is
      * watched" half of criterion 1.
      *
-     * <p>A socket frame and deliberately NOT a {@link RunEvent}: the wire union
-     * is the session's HISTORY, and the goal in force is a property of the
-     * session right now. What DOES belong in the history is the check's verdict,
-     * and that travels as {@code goal_check} from the loop itself.</p>
+     * <p>A socket-only UI frame like {@code workspace_info}, never appended to
+     * the JSONL: the wire union is the session's HISTORY, and the goal in force
+     * is a property of the session right now. What DOES belong in the history is
+     * the check's verdict, and that travels as {@code goal_check} from the loop
+     * itself.</p>
+     *
+     * <p>Saying that in this exact sentence is not decoration. {@code
+     * spectro-web/src/export/wireOnly.drift.test.ts} reads THIS file, takes
+     * every frame name built by hand here and holds
+     * {@code nonWire.ts NON_WIRE_TYPES} to it — because the first version of
+     * that list was written from memory and named three of six. This frame was
+     * missing from it when the card was first built, which the review caught:
+     * the web gate was red and an exported session would have carried a
+     * {@code goal_info} line the Java reader drops as torn.</p>
      */
+    /** This session's goal object — the very one the loop re-reads each turn.
+     *  @return the goal, or null before {@link #ensureGoal} has run */
+    dev.spectroscope.core.goal.SessionGoal goal() {
+        return goal;
+    }
+
+    /**
+     * Makes sure the session HAS a goal object, off disk (card 267, review pass).
+     *
+     * <p>It used to be built in {@link #buildAgentOnce}, which runs on the first
+     * PROMPT. So the natural order — open a session, say what it is for, then
+     * prompt — left {@link #onSetGoal} writing the file, skipping the object and
+     * then reporting {@code stated: false} to the page, because the field it
+     * reads was still null. The goal took effect anyway (the first prompt read
+     * it back off disk), which made it a silent contradiction rather than a
+     * loss, and those are the expensive kind.</p>
+     *
+     * <p>Once built it is never rebuilt: a goal stated in this session is the
+     * operator's own bytes, and re-reading the file over it would hand the model
+     * the parsed copy instead of the typed one.</p>
+     */
+    private synchronized void ensureGoal() {
+        if (goal != null || store == null) {
+            return;
+        }
+        goal = new dev.spectroscope.core.goal.SessionGoal(
+                new dev.spectroscope.core.goal.CommandGoalCheck());
+        goal.state(dev.spectroscope.core.goal.GoalStore.read(
+                dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
+    }
+
     synchronized void sendGoalInfo() {
         if (!socket.isOpen() || store == null) {
             return;

@@ -12,7 +12,11 @@ import dev.spectroscope.core.provider.OpenAiCompatProvider;
 import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.ToolRegistry;
 import dev.spectroscope.core.tools.UpdatePlanTool;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +47,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   --tests 'dev.spectroscope.core.goal.LiveWeakModelGoalTest' -i
  * </pre>
  *
+ * <p><b>Three scenarios, three methods, three derived budgets.</b> They were one
+ * method under a literal 900 s, and the review's re-run died on that timeout
+ * inside the third scenario — so the two numbers the card publishes (the three
+ * verdicts and the disagreement rate) were not reproducible by the command the
+ * card publishes. Each scenario now carries {@link #SCENARIO_SECONDS}, derived
+ * from the turns and checks the run may actually spend, and the rate is printed
+ * from {@code @AfterAll} over whatever ran.</p>
+ *
  * <p>The host is a PARAMETER and has no default on purpose: this repository is
  * public, and {@code NoOperatorAddressesInTheRepoTest} is the guard that says
  * so. It caught the first draft of this file, which had the tailnet address
@@ -61,8 +73,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * disagreement rate is a real number rather than two runs compared by eye.</p>
  */
 @EnabledIfEnvironmentVariable(named = "SPECTRO_LIVE", matches = "1")
-@Timeout(value = 900, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class LiveWeakModelGoalTest {
+
+    /** The run's own ceilings, named here because the timeout below is DERIVED
+     *  from them. The first version of this class wrapped all three scenarios in
+     *  one method under a literal 900 s, and the review's re-run died on that
+     *  timeout inside the third one — so the command the card publishes did not
+     *  produce the number the card publishes. A budget that is not derived from
+     *  what the run can cost is a coin toss. */
+    private static final int MAX_TURNS = 8;
+
+    /** The continuation budget one scenario runs with. */
+    private static final int CONTINUATIONS = 2;
+
+    /** The wall-clock budget for ONE check of one scenario. */
+    private static final int CHECK_SECONDS = 120;
+
+    /** One scenario's ceiling: every turn it may take, at a minute of exchange
+     *  each on a slow local model, plus a full check at every would-be ending. */
+    private static final long SCENARIO_SECONDS =
+            (MAX_TURNS + CONTINUATIONS) * 60L + (CONTINUATIONS + 1L) * CHECK_SECONDS;
+
+    /** Every (command, evaluator) pair of every scenario in this class, so the
+     *  disagreement rate criterion 8 asks for is one number over all of them and
+     *  survives the scenarios being separate methods. */
+    private static final List<String[]> PAIRS =
+            java.util.Collections.synchronizedList(new ArrayList<>());
 
     /** No default: see the class javadoc. An unset variable simply fails the
      *  run with a readable message rather than hiding somebody's LAN in a
@@ -100,8 +137,10 @@ class LiveWeakModelGoalTest {
         @Override public GoalVerdict run(RunGoal goal, Context context) {
             GoalVerdict byCommand = command.run(goal, context);
             GoalVerdict byModel = evaluator.run(goal, context);
-            pairs.add(new String[] {byCommand.outcome().wireName(), byModel.outcome().wireName(),
-                    String.valueOf(byCommand.exitCode()), byModel.output()});
+            String[] pair = {byCommand.outcome().wireName(), byModel.outcome().wireName(),
+                String.valueOf(byCommand.exitCode()), byModel.output()};
+            pairs.add(pair);
+            PAIRS.add(pair);
             return byCommand;
         }
     }
@@ -156,19 +195,25 @@ class LiveWeakModelGoalTest {
                 .map(RunEvent.RunEnd.class::cast).reduce((a, b) -> b).orElseThrow().stopReason();
     }
 
-    @Test
-    void theWeakModelReachesARealVerdict(@TempDir Path workspace) throws Exception {
-        BothChecks checks = new BothChecks(new CommandGoalCheck(120),
+    private static BothChecks bothChecks() {
+        return new BothChecks(new CommandGoalCheck(CHECK_SECONDS),
                 new EvaluatorGoalCheck(provider(), MODEL));
+    }
 
-        // 1 — the honest failure. The check is a real command with a real exit
-        //     code that this run genuinely cannot turn green: the path is inside
-        //     macOS's system-integrity-protected /usr/lib, which not even root
-        //     may write. Asking a weak model to "please fail" does not work — it
-        //     was tried, and it repaired the file anyway after the harness
-        //     handed it the failing output, which is §A1's point about prose
-        //     arriving a third time. So the impossibility is in the world, where
-        //     the whole card says the teeth belong.
+    @Test
+    @Order(1)
+    @Timeout(value = SCENARIO_SECONDS, unit = TimeUnit.SECONDS,
+            threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void anUnreachableCheckIsNeverReportedMet(@TempDir Path workspace) throws Exception {
+        // The honest failure. The check is a real command with a real exit code
+        // that this run genuinely cannot turn green: the path is inside macOS's
+        // system-integrity-protected /usr/lib, which not even root may write.
+        // Asking a weak model to "please fail" does not work — it was tried, and
+        // it repaired the file anyway after the harness handed it the failing
+        // output, which is §A1's point about prose arriving a third time. So the
+        // impossibility is in the world, where the whole card says the teeth
+        // belong.
+        BothChecks checks = bothChecks();
         List<RunEvent> honest = drive(workspace, FAILING_TEST, checks,
                 "Have a look around and tell me what you find.",
                 "The marker file exists.", "test -f /usr/lib/spectroscope-267-marker");
@@ -186,18 +231,32 @@ class LiveWeakModelGoalTest {
                 "an unreachable check ended the run as met");
         assertTrue(honest.stream().anyMatch(RunEvent.Continuation.class::isInstance),
                 "a failing check did not buy its continuation");
+    }
 
-        // 2 — a green suite. The other real verdict, from the same exit code.
+    @Test
+    @Order(2)
+    @Timeout(value = SCENARIO_SECONDS, unit = TimeUnit.SECONDS,
+            threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void aGreenSuiteEndsTheRunMetOnItsExitCode(@TempDir Path workspace) throws Exception {
+        BothChecks checks = bothChecks();
         List<RunEvent> green = drive(workspace, PASSING_TEST, checks,
                 "Read sum.test.js and tell me in one sentence what it does.");
         report("green", green);
         assertEquals(GoalVerdict.MET_STOP_REASON, stopReason(green));
         assertEquals(0, last(checks(green)).exitCode());
+    }
 
-        // 3 — a red suite and a free hand. Whatever the model does, run_end and
-        //     the LAST check must be the same fact: criteria 3 and 7 in one
-        //     assertion, and the one property that holds whichever way a
-        //     non-deterministic model jumps.
+    @Test
+    @Order(3)
+    @Timeout(value = SCENARIO_SECONDS, unit = TimeUnit.SECONDS,
+            threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void theEndingAndTheLastCheckAreOneFactWhateverTheModelDoes(@TempDir Path workspace)
+            throws Exception {
+        // A red suite and a free hand. Whatever the model does, run_end and the
+        // LAST check must be the same fact: criteria 3 and 7 in one assertion,
+        // and the one property that holds whichever way a non-deterministic
+        // model jumps.
+        BothChecks checks = bothChecks();
         List<RunEvent> free = drive(workspace, FAILING_TEST, checks,
                 "Have a look at sum.test.js and tell me what you make of it.");
         report("free-hand", free);
@@ -205,10 +264,22 @@ class LiveWeakModelGoalTest {
         assertEquals(GoalVerdict.Outcome.valueOf(
                         lastFree.outcome().toUpperCase(java.util.Locale.ROOT)).stopReason(),
                 stopReason(free), "run_end disagreed with the check that produced it");
+    }
 
+    /**
+     * Criterion 8's number, over every check point of every scenario above.
+     *
+     * <p>It PRINTS and does not assert a threshold: a threshold here would turn
+     * a measurement into a wish, and this card's whole argument is that the exit
+     * code decides and the opinion is reported beside it. It also survives a run
+     * of one scenario — the rate is then over that scenario, and the line says
+     * how many samples it stands on.</p>
+     */
+    @AfterAll
+    static void reportTheDisagreementRate() {
         int samples = 0;
         int disagreements = 0;
-        for (String[] pair : checks.pairs) {
+        for (String[] pair : List.copyOf(PAIRS)) {
             samples++;
             if (!pair[0].equals(pair[1])) {
                 disagreements++;
@@ -219,11 +290,6 @@ class LiveWeakModelGoalTest {
         }
         System.out.println("[card 267 AC 8] DISAGREEMENT " + disagreements + "/" + samples
                 + " between the command check and the evaluator " + MODEL);
-        assertTrue(samples >= 3, "too few samples to report a rate");
-        // The number is the finding and is NOT pinned: a threshold here would
-        // turn a measurement into a wish, and this card's whole argument is that
-        // the exit code decides and the opinion is reported beside it.
-        assertNotNull(checks.pairs);
     }
 
     private static RunEvent.GoalCheck last(List<RunEvent.GoalCheck> lines) {

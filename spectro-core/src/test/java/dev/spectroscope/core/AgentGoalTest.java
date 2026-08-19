@@ -9,6 +9,9 @@ import dev.spectroscope.core.goal.GoalVerdict;
 import dev.spectroscope.core.goal.RunGoal;
 import dev.spectroscope.core.goal.SessionGoal;
 import dev.spectroscope.core.loop.ContinuationLeash;
+import dev.spectroscope.core.progress.ProgressGuard;
+import dev.spectroscope.core.progress.ProgressSettings;
+
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
@@ -610,5 +613,147 @@ class AgentGoalTest {
                     }
                 }));
         return out.toString();
+    }
+
+    // ── the review pass: three decisions that were pinned by nothing ──────
+
+    @Test
+    void aGoalReplacedMidRunSteersTheVeryNextTurn() {
+        // The reason SessionGoal is mutable and volatile, and the reason the
+        // loop reads it INSIDE the turn loop rather than once before it. The
+        // review hoisted that read out of the loop and every test of this card
+        // stayed green — so the two long javadocs that justify the per-turn read
+        // were the only thing holding it, and a javadoc is not a gate.
+        //
+        // The browser face is the case: buildAgentOnce returns the SAME agent
+        // for every prompt of a session, so an operator who states or edits a
+        // goal has to be obeyed without a reconnect.
+        final SessionGoal session = goal(new ScriptedCheck(met()), OUTCOME, "node --test");
+        final String replaced = "Only the refresh-token case matters now.";
+        AtomicInteger turn = new AtomicInteger();
+        Recording provider = new Recording(request -> {
+            if (turn.incrementAndGet() == 1) {
+                session.state(new RunGoal(replaced, "node --test"));
+                return List.of(new LlmProvider.PToolCall("c1", "always_works",
+                                JSON.createObjectNode()),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE));
+            }
+            return answerTurn();
+        });
+        run(agent(provider, session, new ContinuationLeash(0)));
+
+        assertTrue(provider.requests.size() >= 2, "needs a second turn to be a test at all");
+        assertTrue(provider.requests.get(0).system().contains(OUTCOME),
+                "the first turn should still carry what was stated when it started");
+        String last = provider.requests.get(provider.requests.size() - 1).system();
+        assertTrue(last.contains(replaced), "the replaced goal never reached a turn: " + last);
+        assertFalse(last.contains(OUTCOME),
+                "the withdrawn goal is still steering the model: " + last);
+    }
+
+    @Test
+    void theCheckPrintedOutputRidesOnTheEventAndNotOnlyOnTheGuidance() {
+        // Half of criterion 4's "a verdict is never a claim": the exit code says
+        // no, and the output says WHAT said no. The review dropped output() from
+        // the emission and all 1739 core tests stayed green, so the wire field
+        // was carrying evidence nobody had ever read back.
+        List<RunEvent> events = run(agent(new Recording(alwaysJustAnswers()),
+                goal(new ScriptedCheck(failed("not ok 3 - refresh token expired early")),
+                        OUTCOME, "node --test"),
+                new ContinuationLeash(0)));
+        assertEquals(1, checks(events).size());
+        assertEquals("not ok 3 - refresh token expired early", checks(events).get(0).output(),
+                "the goal_check line has to carry what the check printed");
+    }
+
+    @Test
+    void aRunTheGuardEndedIsNotGradedAndSaysSoByItsStopReason() {
+        // DECIDED, not left ambiguous. Card 262's guard END is a PERSON saying
+        // stop — the operator answered "end the run" to a question. Grading it
+        // would run their check, which on a real goal is a whole test suite,
+        // after they asked for the run to be over; that is the same reason the
+        // cancel branch at the terminal exit refuses. The ceiling exits are the
+        // opposite case and ARE graded: nobody was asked there.
+        //
+        // Pinned in the direction of the refusal, so a later refactor that adds
+        // grading here has to come and delete this test on purpose.
+        ProgressGuard guard = new ProgressGuard(new ProgressSettings(0, 0, 1),
+                question -> new Asker.Answer(List.of(ProgressGuard.END_LABEL)));
+        LlmProvider plansThenSitsStill = request -> {
+            var steps = JSON.createArrayNode();
+            steps.addObject().put("text", "step 1").put("status", "pending");
+            steps.addObject().put("text", "step 2").put("status", "pending");
+            return List.of(new LlmProvider.PToolCall("p1", "update_plan",
+                            JSON.createObjectNode().set("steps", steps)),
+                    new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE));
+        };
+        ScriptedCheck check = new ScriptedCheck(met());
+        List<RunEvent> events = run(new Agent(AgentOptions.builder()
+                .provider(plansThenSitsStill)
+                .systemPrompt(SYSTEM)
+                .registry(registryWithWorks())
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .goal(goal(check, OUTCOME, "node --test"))
+                .progressGuard(guard)
+                .continuationLeash(new ContinuationLeash(3))
+                .maxTurns(6)
+                .build()));
+
+        assertEquals(ProgressGuard.STOP_REASON, lastStopReason(events));
+        assertEquals(0, check.runs.get(),
+                "the operator ended the run and the harness ran their test suite anyway");
+        assertEquals(List.of(), checks(events),
+                "a run nobody graded must not carry a goal_check line");
+    }
+
+    @Test
+    void theContextGaugeCountsTheGoalItIsCarrying() {
+        // Non-functional criterion 2, the half that is a defect rather than a
+        // measurement: context_info is the estimate the browser's ring and the
+        // CLI's meter read, and it summed options.systemPrompt() only. A run
+        // with a goal was therefore under-reporting its own system prompt by
+        // exactly the section this card adds, every turn.
+        SessionGoal session = goal(new ScriptedCheck(met()), OUTCOME, "node --test");
+        List<RunEvent> withGoal = run(introspecting(session));
+        List<RunEvent> without = run(introspecting(null));
+
+        int stated = systemChars(withGoal);
+        int bare = systemChars(without);
+        assertEquals(SYSTEM.length(), bare, "the no-goal reading is the plain system prompt");
+        assertEquals(SYSTEM.length() + session.stated().promptSection().length(), stated,
+                "the gauge has to count the bytes that actually ride to the provider");
+    }
+
+    /** An agent with the context gauge switched on — the only way a run emits
+     *  the context_info line this reads.
+     *  @param session the goal to carry, or null
+     *  @return the agent */
+    private static Agent introspecting(SessionGoal session) {
+        return new Agent(AgentOptions.builder()
+                .provider(alwaysJustAnswers())
+                .systemPrompt(SYSTEM)
+                .registry(registryWithWorks())
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .introspection(true)
+                .goal(session)
+                .build());
+    }
+
+    /** The "system prompt" slice of the first context_info line of a run.
+     *  @param events the run's events
+     *  @return the char count that slice reported */
+    private static int systemChars(List<RunEvent> events) {
+        return events.stream()
+                .filter(RunEvent.ContextInfo.class::isInstance)
+                .map(RunEvent.ContextInfo.class::cast)
+                .findFirst()
+                .orElseThrow()
+                .parts().stream()
+                .filter(part -> part.label().equals("system prompt"))
+                .findFirst()
+                .orElseThrow()
+                .chars();
     }
 }

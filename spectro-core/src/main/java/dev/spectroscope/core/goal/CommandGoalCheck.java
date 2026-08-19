@@ -50,8 +50,12 @@ public final class CommandGoalCheck implements GoalCheck {
         }
         String command = goal.check().strip();
         long startedAt = System.currentTimeMillis();
+        // keepTail: a suite prints its failure LAST. The review measured what the
+        // head-clip did here — 600 "ok N" lines survived and the one line that
+        // said what broke did not, so criterion 3's "the failure output as the
+        // guidance" was handing back the passing prefix.
         ShellCommand.Result result = ShellCommand.run(command, Map.of(), context.cwd(),
-                timeoutSeconds, context.signal(), GoalVerdict.MAX_OUTPUT_CHARS);
+                timeoutSeconds, context.signal(), GoalVerdict.MAX_OUTPUT_CHARS, true);
         long durationMs = System.currentTimeMillis() - startedAt;
         if (result.timedOut()) {
             return new GoalVerdict(GoalVerdict.Outcome.UNTESTED, command, null, result.output(),

@@ -97,4 +97,41 @@ class CommandGoalCheckTest {
         assertTrue(verdict.durationMs() >= 150,
                 "a 200 ms check reported " + verdict.durationMs() + " ms");
     }
+
+    @Test
+    void theFailingLineOfALongSuiteIsWhatTheModelIsHandedBack(@TempDir Path dir) {
+        // The review's finding, and it is the normal case rather than an edge:
+        // `node --test` — the command AC 8 itself names — prints one line per
+        // test, so a suite of any size pushes its failure past the clip. A
+        // head-clipped output hands the model four thousand characters of
+        // passing lines under the sentence "the check ran and did not pass",
+        // which is criterion 3's guidance saying nothing about the failure.
+        String command = "i=1; while [ $i -le 600 ]; do echo \"ok $i - a passing case\"; "
+                + "i=$((i+1)); done; echo 'not ok 601 - THE FAILING ASSERTION: expected 2 got 0'; "
+                + "exit 1";
+        GoalVerdict verdict = new CommandGoalCheck()
+                .run(new RunGoal("the suite is green", command), context(dir));
+
+        assertEquals(GoalVerdict.Outcome.FAILED, verdict.outcome(), verdict.evidence());
+        assertTrue(verdict.output().length() <= GoalVerdict.MAX_OUTPUT_CHARS,
+                "the clip still has to hold, or a chatty suite eats the window the goal is"
+                        + " trying to protect — got " + verdict.output().length());
+        assertTrue(verdict.output().contains("THE FAILING ASSERTION"),
+                "the failure is at the END of a suite's output, so the TAIL is the part a"
+                        + " reader cannot afford to lose. Got the last 80 chars: "
+                        + verdict.output().substring(Math.max(0, verdict.output().length() - 80)));
+        assertTrue(verdict.asGuidance().contains("THE FAILING ASSERTION"),
+                "criterion 3 hands the check's own output back as the guidance");
+    }
+
+    @Test
+    void aShortOutputIsHandedBackWholeAndUnmarked(@TempDir Path dir) {
+        // The other direction of the same clip: nothing is prepended, nothing is
+        // dropped, for the output that fits. A tail-clip that always stamped its
+        // ellipsis would make every verdict look truncated.
+        GoalVerdict verdict = new CommandGoalCheck()
+                .run(new RunGoal("it works", "echo 'two lines'; echo 'and no more'; exit 1"),
+                        context(dir));
+        assertEquals("two lines\nand no more\n", verdict.output());
+    }
 }

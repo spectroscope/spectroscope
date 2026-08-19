@@ -387,6 +387,15 @@ public final class SpectroCli implements Runnable {
         return agent;
     }
 
+    /** This REPL's session id — what the goal file and every sidecar are named
+     *  after. Package-private for the same reason {@link #agent()} is: card
+     *  267's face reader has to name the file the REAL session wrote, not one it
+     *  chose itself.
+     *  @return the session id, or null before {@link #openInteractiveSession} */
+    String sessionId() {
+        return store == null ? null : store.id();
+    }
+
     /**
      * The belt this face hands its CHILDREN — the same evidence, for the other
      * half of the fence.
@@ -829,7 +838,7 @@ public final class SpectroCli implements Runnable {
      *
      * @param command the full input line starting with {@code /}, including any argument
      */
-    private void handleSlashCommand(String command) {
+    void handleSlashCommand(String command) {
         // /think on|off — toggles reasoning visibility live. The flag is a build-time
         // AgentOptions input, so we rebuild the agent to apply it. History is preserved
         // by reconstructing the conversation from the current session's JSONL file
@@ -928,6 +937,11 @@ public final class SpectroCli implements Runnable {
 
     /**
      * The {@code /goal} surface (card 267, criterion 1).
+     *
+     * <p>Driven in the gate through {@link #handleSlashCommand}, which is
+     * package-private for exactly that: the review found /goal's four forms
+     * untested, and a surface nobody drives is a surface that can be deleted
+     * without a test going red.</p>
      *
      * <p>Four forms, and the state after any of them is written straight to
      * {@code ~/.spectro/goals/<id>.goal.md} — the durable artifact criterion 1

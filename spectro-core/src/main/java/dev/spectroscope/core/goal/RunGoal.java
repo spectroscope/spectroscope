@@ -68,6 +68,23 @@ public record RunGoal(String outcome, String check) {
      * not by the model agreeing to keep going, so an instruction to "not stop"
      * would be exactly the prompt tax §A1 refuses.</p>
      *
+     * <p><b>What it costs, measured rather than felt</b> (the card's
+     * non-functional criterion 2). On the house backend — LM Studio on the
+     * tailnet node, {@code deepseek-v4-flash-0731@iq1_m} — this section is
+     * <b>77 prompt tokens per turn</b> for a 326-character goal, measured
+     * 2026-08-19 by posting the same system prompt with and without it and
+     * reading {@code usage.prompt_tokens}:</p>
+     *
+     * <pre>
+     * curl -s $LMS/v1/chat/completions -H 'Content-Type: application/json' \
+     *   -d '{"model":"&lt;model&gt;","max_tokens":1,"messages":[
+     *        {"role":"system","content":"&lt;base&gt;"},{"role":"user","content":"hi"}]}' \
+     *   | jq .usage.prompt_tokens        # 26 bare, 103 with the section
+     * </pre>
+     *
+     * <p>Per turn and not per run, which is the whole trade: a fifteen-turn run
+     * pays it fifteen times, and that is the price of surviving compaction.</p>
+     *
      * @return the ready-to-append section, or "" when nothing was stated
      */
     public String promptSection() {

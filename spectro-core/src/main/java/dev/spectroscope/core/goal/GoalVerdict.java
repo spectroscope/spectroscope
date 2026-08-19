@@ -1,5 +1,7 @@
 package dev.spectroscope.core.goal;
 
+import dev.spectroscope.core.tools.ToolOutput;
+
 /**
  * What the check said, and what produced it (card 267, criterion 4).
  *
@@ -86,16 +88,16 @@ public record GoalVerdict(Outcome outcome, String command, Integer exitCode, Str
      *  a failing suite says what failed at the end, and the head is the part a
      *  reader can afford to lose.
      *
+     *  <p>One implementation, in {@link ToolOutput#clipTail}, because the
+     *  command path does its cut in the DRAIN and this one cuts a string that
+     *  is already in hand: two copies of "which end survives" is exactly the
+     *  drift the review found — this method documented the tail while the
+     *  command check kept the head.</p>
+     *
      *  @param text the raw output; null becomes ""
      *  @return the clipped text, never null */
     public static String clip(String text) {
-        if (text == null) {
-            return "";
-        }
-        if (text.length() <= MAX_OUTPUT_CHARS) {
-            return text;
-        }
-        return "…" + text.substring(text.length() - MAX_OUTPUT_CHARS + 1);
+        return text == null ? "" : ToolOutput.clipTail(text, MAX_OUTPUT_CHARS);
     }
 
     /** The message the harness hands the model when a failing check buys a
