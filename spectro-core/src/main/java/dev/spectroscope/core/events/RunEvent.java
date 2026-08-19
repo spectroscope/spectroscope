@@ -90,6 +90,9 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param trigger     what woke a triggered node's run (additive, card 72),
      *                    e.g. "fs #4 watch:/drop"; null on every non-triggered run
      * @param attachments images riding along with the prompt (additive); null when none
+     * @param workspace   the folder this run actually worked in (additive, card 284),
+     *                    so a resume in a later process lands where the run did;
+     *                    null on a run that recorded none
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -98,7 +101,26 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
                     String model,                     // additive (card 87)
                     String trigger,                   // additive (card 72)
                     List<Attachment> attachments,     // from additive
+                    String workspace,                 // additive (card 284)
                     long ts) implements RunEvent {
+
+        /** Pre-card-284 arity — no workspace; Jackson keeps using the canonical.
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param model       the model id serving the run; null when unknown
+         * @param trigger     what woke a triggered node's run; null when none
+         * @param attachments images riding along with the prompt; null when none
+         * @param ts          epoch millis of emission */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, String model, String trigger,
+                        List<Attachment> attachments, long ts) {
+            this(runId, agentId, parentId, prompt, provider, model, trigger,
+                    attachments, null, ts);
+        }
         /** Pre-card-72 arity — no trigger; Jackson keeps using the canonical.
          *
          * @param runId       unique id of the run
@@ -111,7 +133,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param ts          epoch millis of emission */
         public RunStart(String runId, String agentId, String parentId, String prompt,
                         String provider, String model, List<Attachment> attachments, long ts) {
-            this(runId, agentId, parentId, prompt, provider, model, null, attachments, ts);
+            this(runId, agentId, parentId, prompt, provider, model, null, attachments, null, ts);
         }
 
         /** Pre-card-87 arity — model unknown; Jackson keeps using the canonical.
@@ -125,7 +147,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param ts          epoch millis of emission */
         public RunStart(String runId, String agentId, String parentId, String prompt,
                         String provider, List<Attachment> attachments, long ts) {
-            this(runId, agentId, parentId, prompt, provider, null, null, attachments, ts);
+            this(runId, agentId, parentId, prompt, provider, null, null, attachments, null, ts);
         }
     }
 

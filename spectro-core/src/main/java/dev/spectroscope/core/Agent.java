@@ -364,8 +364,12 @@ public final class Agent {
         if (providerLabel == null) {
             providerLabel = options.providerName();
         }
+        // The folder is recorded on the run itself (card 284): the in-memory pin
+        // dies with the process, so without this a resume after a restart lands
+        // in the configured default and says nothing about the swap.
         emit.accept(new RunStart(runId, agentId, options.parentId(), prompt,
-                providerLabel, options.provider().modelName(), attachments, now()));
+                providerLabel, options.provider().modelName(), null, attachments,
+                options.cwd() == null ? null : options.cwd().toString(), now()));
         log.info("run {} started (provider {})", runId, providerLabel);
         log.info("compacting at {} input tokens ({})",
                 compactionThreshold, compaction.source().wireName());
