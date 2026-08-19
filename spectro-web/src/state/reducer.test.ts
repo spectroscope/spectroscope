@@ -1879,3 +1879,51 @@ describe("the run's self-reports are lines and not silence", () => {
     expect(guard.lastStopReason).not.toBe(leash.lastStopReason);
   });
 });
+
+// Card 282, criterion 8: a run that ran out of room says so where the operator
+// is reading.
+//
+// The owner's report, exactly: a session whose last visible line was a green
+// tool result. run_end carried stopReason "max_turns" and the transcript drew
+// nothing at all — only the footer said "gestoppt · max_turns", small, below
+// the fold, in machine vocabulary.
+describe("a run that did not finish says so in the transcript", () => {
+  it("names the ceiling it hit", () => {
+    const state = reduce(initialState, {
+      type: "run_end",
+      runId: "r",
+      stopReason: "max_turns",
+      ts: 1,
+    });
+    expect(state.turns.at(-1)).toMatchObject({
+      kind: "info",
+      tone: "warn",
+      infoKey: "info.runEnded",
+      infoRefKey: "stop.max_turns",
+    });
+  });
+
+  it("stays quiet when the run simply finished", () => {
+    // A line after every run would be noise, and noise is how a real one stops
+    // being read. Clean finishes are the ones the footer already covers with
+    // "ready".
+    for (const reason of ["end_turn", "goal_met"]) {
+      const state = reduce(initialState, { type: "run_end", runId: "r", stopReason: reason, ts: 1 });
+      expect(state.turns, `${reason} drew a line`).toHaveLength(0);
+    }
+  });
+
+  it("draws one for a reason this build has never seen", () => {
+    const state = reduce(initialState, {
+      type: "run_end",
+      runId: "r",
+      stopReason: "a_reason_from_the_future",
+      ts: 1,
+    });
+    expect(state.turns.at(-1)).toMatchObject({
+      kind: "info",
+      infoKey: "info.runEnded",
+      infoRefKey: "stop.other",
+    });
+  });
+});

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
 import type { RunEvent } from "../events";
@@ -94,5 +96,43 @@ describe("the guard lines have sentences, in both languages", () => {
         expect(rendered, `${line.infoKey} (${lang}) rendered as its own key`).not.toBe(line.infoKey);
       }
     }
+  });
+});
+
+// Card 282, criterion 8: the run-ended line is two sentences and both are
+// written. The composed form is the one that can go wrong — a missing {ref}
+// substitution prints the dict key at the operator, which is the same silent
+// failure the rest of this file guards.
+describe("the run-ended line composes, in both languages", () => {
+  it.each(["max_turns", "aborted", "unfinished_after_continuations", "a_reason_from_the_future"])(
+    "%s reads as one sentence",
+    (reason) => {
+      const line = reduce(initialState, { type: "run_end", runId: "r", stopReason: reason, ts: 1 })
+        .turns.at(-1);
+      if (line === undefined || line.kind !== "info" || line.infoKey === undefined) {
+        throw new Error(`${reason} drew no line`);
+      }
+      for (const lang of ["de", "en"] as const) {
+        const ref = t(lang, line.infoRefKey ?? "", line.infoVars);
+        const rendered = t(lang, line.infoKey, { ...line.infoVars, ref });
+        expect(rendered, `${reason}/${lang} left a placeholder`).not.toContain("{");
+        expect(rendered, `${reason}/${lang} printed a dict key`).not.toContain("stop.");
+        expect(rendered).toContain(ref);
+      }
+    },
+  );
+});
+
+// And the mount, because the test above cannot see it: it composes the line the
+// same way Chat.tsx does, so it stays green for a Chat that forgot to. Read off
+// the source, the idiom footerStatus.test.tsx already uses for the same reason.
+describe("the chat actually substitutes the second sentence", () => {
+  it("translates infoRefKey rather than passing it through as a var", () => {
+    const chat = readFileSync(
+      fileURLToPath(new URL("../components/Chat.tsx", import.meta.url)),
+      "utf8",
+    );
+    expect(chat).toContain("turn.infoRefKey");
+    expect(chat).toContain("ref: t(lang, turn.infoRefKey, turn.infoVars)");
   });
 });

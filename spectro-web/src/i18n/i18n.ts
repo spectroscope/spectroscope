@@ -2580,6 +2580,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   // fourth copy trips the shipped 3), repeated_failure counts failures INCLUDING
   // the current one (the third trips it), stalled_plan counts unchanged turns
   // including this one.
+  // Card 282, criterion 8: the transcript says the run is over, and why. The
+  // owner met the gap as a session whose last line was a green tool result.
+  "info.runEnded": {
+    de: "Der Lauf ist zu Ende: {ref}",
+    en: "The run has ended: {ref}",
+  },
+
   // Card 282: why a run ended, in words. The footer used to substitute the wire
   // value into "gestoppt · {r}", so a German operator read "gestoppt ·
   // max_turns" — which is the owner's own report.

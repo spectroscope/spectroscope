@@ -88,6 +88,13 @@ export type Turn =
        *  English fallback (and keeps old tests/callers working). */
       infoKey?: string;
       infoVars?: Record<string, string | number>;
+      /** A SECOND dict key, translated and substituted into `infoKey` as
+       *  `{ref}` (card 282). One line, two sentences: the run ended, and why.
+       *  The reducer cannot translate — it has no language — and folding the
+       *  reason in as a plain var would print the dict key at the operator.
+       *  An explicit field rather than a naming convention over infoVars, so
+       *  nothing has to be remembered to keep it working. */
+      infoRefKey?: string;
     }
   /** agentId marks a failure that belongs to a subagent's thread — `error` has
    *  carried the field on the wire all along, and a session import sets it for
@@ -540,6 +547,15 @@ const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set([
 
 /** The goal check's verdicts (card 267). */
 const GOAL_OUTCOMES: ReadonlySet<string> = new Set(["met", "unmet", "unknown"]);
+
+/** The stop reasons that mean the run got to the end of its work. Everything
+ *  else earns a line, including the ones this build has never heard of: a
+ *  reason we cannot read is still evidence the run did not simply run out of
+ *  things to say, and the quieter mistake is to draw a cut run as clean. Same
+ *  direction sessionRows.tsx already takes for its outcome dot. */
+const CLEAN_FINISHES: ReadonlySet<string> = new Set(["end_turn", "goal_met"]);
+
+import { stopReasonKey } from "./stopReason";
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
 
@@ -1177,17 +1193,36 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
     }
 
-    case "run_end":
+    case "run_end": {
       // A subagent's run_end must not flip the UI to "ready" mid-run.
       if (state.rootRunId !== null && event.runId !== state.rootRunId) return state;
+      // Card 282, criterion 8. The owner's report was a session whose last
+      // visible line was a green tool result: run_end carried max_turns and the
+      // transcript drew nothing, while the footer said "gestoppt · max_turns"
+      // in machine vocabulary, small, below the fold.
+      //
+      // Only for a run that did NOT finish. A line after every run is noise,
+      // and noise is how a real one stops being read — the clean finishes are
+      // the ones the footer already covers with "ready".
+      const ended = CLEAN_FINISHES.has(event.stopReason)
+        ? state
+        : addTurn(state, {
+            kind: "info",
+            text: `The run ended: ${event.stopReason}`,
+            infoKey: "info.runEnded",
+            infoRefKey: stopReasonKey(event.stopReason),
+            infoVars: { reason: event.stopReason },
+            tone: "warn",
+          });
       return {
-        ...state,
+        ...ended,
         running: false,
         rootRunId: null,
         runStartTs: null,
         thinkingActive: false,
         lastStopReason: event.stopReason,
       };
+    }
 
     case "error":
       // Whose failure it was, when the frame says so: an outage inside a
