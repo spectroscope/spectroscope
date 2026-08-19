@@ -3,12 +3,23 @@ package dev.spectroscope.core.config;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -27,11 +38,22 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * to go and look. The field list is read off {@link SpectroConfig}'s record
  * components, so a THIRD per-provider address turns this red the day it is
  * added rather than the day someone notices.</p>
+ *
+ * <p>The last two tests follow that fact outward past the chapter it lives in:
+ * first into the two assembled HTML editions, then into the two PDFs printed
+ * from them. Each hop was added because the one before it went green over an
+ * artefact a reader would actually have opened.</p>
  */
 class ConfigDocDriftTest {
 
     private static final Path REFERENCE =
             Path.of("docs/guide-assets/parts/18-ref-config-build.html");
+
+    /** What each tracked PDF was printed from, written by the rebuild ritual. */
+    private static final Path PDF_STAMP = Path.of("docs/guide-assets/pdf-stamp.txt");
+
+    /** Where both shipped editions live, as {@code .html} and printed {@code .pdf}. */
+    private static final Path DOCS = Path.of("docs");
 
     /** Every per-provider address component — the shared legacy field excluded. */
     private static List<String> addressFields() {
@@ -274,6 +296,149 @@ class ConfigDocDriftTest {
                             + " (docs/guide-assets/build_user_guide.py, both themes,"
                             + " then the PDFs)");
         }
+    }
+
+    @Test
+    void everyTrackedPdfWasPrintedFromTheHtmlEditionAsItStandsNow() throws Exception {
+        // The test above ties the two HTML editions to the parts, and its own
+        // failure message ends "then the PDFs" — so the PDFs were known to need
+        // the same rebuild, and nothing anywhere said when they had not had it.
+        // Measured 2026-08-19 while building cards 281/282: one added config key
+        // moved the chapter lead from "31 keys" to "32 keys", the HTML guard went
+        // red at once, and the two 23 MB PDFs would have shipped saying 31 with
+        // nothing red anywhere. They were reprinted only because a person
+        // happened to run `git ls-files docs/ | grep pdf`.
+        //
+        // Reading the PDFs is NOT the way to check this. Their text lives in
+        // FlateDecode content streams as positioned glyph runs, so "32 keys" is
+        // not a substring of the inflated bytes either, and a scan over 23 MB
+        // costs more than the whole module's suite. What is cheap and exact is
+        // the digest of the SOURCE recorded beside the print it produced: two
+        // reads and a hash, no PDF parsing at all.
+        // Keyed on the same source-checkout marker as every test above, and
+        // deliberately NOT on the artefacts themselves: an assumption naming
+        // docs/USER-GUIDE.html would turn "someone deleted an edition" from a
+        // failure into a skip, which is the one answer this test must never give.
+        assumeTrue(source() != null, "not running from a source checkout");
+        Path root = repoRoot();
+
+        Path stampFile = root.resolve(PDF_STAMP);
+        assertTrue(Files.isRegularFile(stampFile),
+                PDF_STAMP + " is missing — it records which HTML edition each tracked"
+                        + " PDF was printed from, and it is the only thing standing"
+                        + " between a stale 23 MB download and a green gate. Write it:"
+                        + " cd docs/guide-assets && python3 build_user_guide.py --stamp");
+        Map<String, String> stamp = readStamp(stampFile);
+
+        // Discovered rather than listed, the way the forbidden-key test above
+        // reads its own list: a THIRD edition printed into docs/ is guarded the
+        // day it lands, instead of being the one PDF nothing watches.
+        List<String> editions = editions(root);
+        assertEquals(List.of("USER-GUIDE", "USER-GUIDE-LIGHT"), editions,
+                "the set of tracked PDF editions in docs/ has changed. That is fine —"
+                        + " but each one needs its own three lines in " + PDF_STAMP
+                        + " (python3 build_user_guide.py --stamp), and this list is"
+                        + " here so the change cannot pass unread");
+
+        for (String edition : editions) {
+            Path html = root.resolve(DOCS).resolve(edition + ".html");
+            Path pdf = root.resolve(DOCS).resolve(edition + ".pdf");
+            assertTrue(Files.isRegularFile(html),
+                    "docs/" + edition + ".pdf has no docs/" + edition + ".html beside"
+                            + " it — a PDF whose source is not in the tree cannot be"
+                            + " checked against anything");
+
+            // The measured failure: the part moves, the HTML is rebuilt, the
+            // print is not repeated. Everything else here guards the record.
+            assertEquals(stamp.get(edition + ".source.sha256"), sha256(html),
+                    "docs/" + edition + ".html has changed since docs/" + edition
+                            + ".pdf was printed from it, so the PDF a reader downloads"
+                            + " still says what the guide said before that edit."
+                            + " Reprint it (the Chrome command in the docstring of"
+                            + " docs/guide-assets/build_user_guide.py), then record the"
+                            + " print: python3 build_user_guide.py --stamp");
+
+            assertEquals(stamp.get(edition + ".printed"), printedAt(pdf),
+                    "docs/" + edition + ".pdf is not the print " + PDF_STAMP + " names:"
+                            + " its own /CreationDate disagrees. The stamp is a record of"
+                            + " a specific print, so re-run python3 build_user_guide.py"
+                            + " --stamp rather than editing it by hand");
+
+            assertEquals(stamp.get(edition + ".bytes"), Long.toString(Files.size(pdf)),
+                    "docs/" + edition + ".pdf is " + Files.size(pdf) + " bytes where "
+                            + PDF_STAMP + " records " + stamp.get(edition + ".bytes")
+                            + " — a Chrome print that never finished still exits 0 and"
+                            + " still leaves a file that opens, so the length is checked"
+                            + " rather than trusted");
+        }
+    }
+
+    /** Every printed edition in {@code docs/}, read off the directory itself. */
+    private static List<String> editions(Path root) throws IOException {
+        assertTrue(Files.isDirectory(root.resolve(DOCS)),
+                "there is no docs/ directory in this checkout at all");
+        try (Stream<Path> files = Files.list(root.resolve(DOCS))) {
+            return files.map(file -> file.getFileName().toString())
+                    .filter(name -> name.endsWith(".pdf"))
+                    .map(name -> name.substring(0, name.length() - ".pdf".length()))
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    /** The {@code key=value} lines of the stamp, {@code #} comments dropped. */
+    private static Map<String, String> readStamp(Path stamp) throws IOException {
+        Map<String, String> values = new HashMap<>();
+        for (String line : Files.readAllLines(stamp)) {
+            String trimmed = line.strip();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                continue;
+            }
+            int split = trimmed.indexOf('=');
+            assertTrue(split > 0, PDF_STAMP + " has a line that is not key=value: " + trimmed);
+            values.put(trimmed.substring(0, split), trimmed.substring(split + 1));
+        }
+        return values;
+    }
+
+    /** SHA-256 of a file, streamed — the editions are ~13 MB each. */
+    private static String sha256(Path file) throws IOException, NoSuchAlgorithmException {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[1 << 20];
+        try (InputStream in = Files.newInputStream(file)) {
+            for (int read; (read = in.read(buffer)) > 0; ) {
+                digest.update(buffer, 0, read);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    /**
+     * The {@code /CreationDate} headless Chrome wrote into the PDF's Info
+     * dictionary.
+     *
+     * <p>Skia writes that dictionary as object 1, uncompressed, inside the first
+     * kilobyte of the file, so this is one short read and never touches a
+     * content stream. It is also the one timestamp that survives a clone: a
+     * file's mtime is whatever the checkout wrote, in index order, and would
+     * make this guard say different things on two machines.</p>
+     *
+     * @param pdf a tracked edition
+     * @return the raw date string, e.g. {@code D:20260819191326+00'00'}
+     */
+    private static String printedAt(Path pdf) throws IOException {
+        byte[] head = new byte[2048];
+        int read;
+        try (InputStream in = Files.newInputStream(pdf)) {
+            read = in.readNBytes(head, 0, head.length);
+        }
+        String text = new String(head, 0, read, StandardCharsets.ISO_8859_1);
+        Matcher date = Pattern.compile("/CreationDate \\(([^)]*)\\)").matcher(text);
+        assertTrue(date.find(),
+                pdf.getFileName() + " carries no /CreationDate in its first " + read
+                        + " bytes — it did not come from the headless Chrome print in"
+                        + " build_user_guide.py's docstring");
+        return date.group(1);
     }
 
     /** Rows of the "Every key" table — the one count the lead must restate. */

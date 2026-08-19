@@ -63,19 +63,32 @@ Both blockers of the 2026-08-03 "known lag" note are gone, measured 2026-08-14
       git log -1 --format=%ad -- ../USER-GUIDE.html
       git log -1 --format=%ad -- parts/
 
-The rebuild ritual (all four artefacts, or none)
+The rebuild ritual (all five artefacts, or none)
   python3 build_user_guide.py            # -> ../USER-GUIDE.html        (dark)
   python3 build_user_guide.py --light    # -> ../USER-GUIDE-LIGHT.html  (paper)
-  then the Chrome command above, once per edition, into the matching PDF.
+  then the Chrome command above, once per edition, into the matching PDF,
+  python3 build_user_guide.py --stamp    # -> pdf-stamp.txt             (LAST)
   Give Chrome its own --user-data-dir: printing through a profile someone is
   using disturbs their browser. Each PDF takes minutes and is ~23 MB; check the
   md5 really moved rather than trusting the exit code, because a print that
   never completed still exits 0 and leaves yesterday's file in place. The
   deploy mirror behind spectroscope.ai/guide lives in a different repo and must
   be re-synced in the same pass, or the published copies disagree with this tree.
+
+Why the fifth artefact exists (measured 2026-08-19)
+  Until it did, only the two HTML editions were guarded. A part edit that was
+  rebuilt but not reprinted shipped two 23 MB PDFs stating the old fact with
+  nothing red anywhere — measured 2026-08-19, when one added config key moved
+  the config chapter's lead from "31 keys" to "32", and the PDFs were caught
+  only because a person happened to run `git ls-files docs/ | grep pdf`.
+  pdf-stamp.txt records the digest of the HTML each PDF was printed from, so
+  ConfigDocDriftTest can see the lag without parsing a PDF. Skipping --stamp
+  turns that test red; it does not fail quietly.
 """
 
 import base64
+import datetime
+import hashlib
 import html as html_mod
 import re
 import shutil
@@ -98,6 +111,12 @@ OUT = HERE.parent / ("USER-GUIDE-LIGHT.html" if THEME == "light" else "USER-GUID
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 WEBP_CACHE = HERE / ".webp-cache"
+
+# The record that lets a test see a stale PDF (measured 2026-08-19). Written
+# by --stamp, read by ConfigDocDriftTest, which goes red when a PDF lags.
+STAMP = HERE / "pdf-stamp.txt"
+EDITIONS = ("USER-GUIDE", "USER-GUIDE-LIGHT")
+PDF_DATE_RE = re.compile(rb"/CreationDate \(([^)]*)\)")
 
 
 def b64(path: Path) -> str:
@@ -216,6 +235,121 @@ def build_toc(full: str) -> str:
     return '<div class="toc">' + "".join(items) + "</div>"
 
 
+def pdf_printed_at(pdf: Path) -> str:
+    """The /CreationDate headless Chrome wrote into the PDF's Info dictionary.
+
+    Skia emits that dictionary as object 1, uncompressed, inside the first
+    kilobyte, so this is one short read and never inflates a content stream.
+    It is also the only print timestamp that survives a clone — a file's mtime
+    is whatever the checkout happened to write.
+    """
+    with pdf.open("rb") as fh:
+        head = fh.read(2048)
+    found = PDF_DATE_RE.search(head)
+    if not found:
+        sys.exit(f"{pdf.name}: no /CreationDate in the first 2 KB — not a Chrome print")
+    return found.group(1).decode("latin-1")
+
+
+def parse_pdf_date(raw: str) -> datetime.datetime:
+    """`D:20260819191326+00'00'` -> an aware datetime."""
+    m = re.fullmatch(r"D:(\d{14})(?:(Z)|([+-]\d{2})'(\d{2})')?", raw)
+    if not m:
+        sys.exit(f"unparseable PDF date {raw!r}")
+    stamped = datetime.datetime.strptime(m.group(1), "%Y%m%d%H%M%S")
+    if m.group(3):
+        offset = datetime.timedelta(hours=int(m.group(3)), minutes=int(m.group(4)))
+        if m.group(3).startswith("-"):
+            offset = -abs(offset)
+        return stamped.replace(tzinfo=datetime.timezone(offset))
+    return stamped.replace(tzinfo=datetime.timezone.utc)
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_stamp() -> dict[str, str]:
+    """The stamp as it stands, or {} when there is none yet."""
+    if not STAMP.is_file():
+        return {}
+    out = {}
+    for line in STAMP.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            out[key] = value
+    return out
+
+
+def write_stamp() -> None:
+    """Record which HTML edition each tracked PDF was printed from.
+
+    Run this LAST, after both Chrome prints. The guard that reads this file
+    compares content digests, because a digest is the same on every machine;
+    this writer additionally refuses a stamp that could not be true, which is
+    the one thing the guard itself cannot see. Without that refusal, re-running
+    --stamp after an HTML edit would happily bless the OLD print and turn the
+    guard green over exactly the stale PDF it exists to catch.
+
+    The refusal is keyed on CONTENT first and the clock only second. An HTML
+    whose digest still matches the stamp was not really rebuilt — a re-run of
+    build_user_guide.py that lands byte-identical output moves the mtime and
+    changes nothing — and demanding a fresh 23 MB print for that would be a
+    false alarm, which is how people learn to work around a guard. Only when
+    the digest is genuinely new does the mtime matter, and then it is decisive:
+    a print older than the HTML it claims to come from is impossible. mtimes
+    are trustworthy here and nowhere else, on the one machine that just did the
+    ritual; after a clone they are the checkout's and mean nothing, which is
+    why the guard never looks at them.
+    """
+    previous = read_stamp()
+    lines = [
+        "# Which HTML edition each tracked PDF was printed from.",
+        "#",
+        "# Generated — never hand-edit. Rebuild the guide, reprint BOTH PDFs with",
+        "# the headless Chrome command in build_user_guide.py's docstring, then:",
+        "#     cd docs/guide-assets && python3 build_user_guide.py --stamp",
+        "#",
+        "# ConfigDocDriftTest reads this and goes red when a PDF lags its HTML.",
+        "",
+    ]
+    for edition in EDITIONS:
+        html = HERE.parent / f"{edition}.html"
+        pdf = HERE.parent / f"{edition}.pdf"
+        for artefact in (html, pdf):
+            if not artefact.is_file():
+                sys.exit(f"{artefact} is missing — build and print before stamping")
+
+        printed_raw = pdf_printed_at(pdf)
+        printed = parse_pdf_date(printed_raw)
+        built = datetime.datetime.fromtimestamp(html.stat().st_mtime, datetime.timezone.utc)
+        source = sha256(html)
+        unchanged = previous.get(f"{edition}.source.sha256") == source
+        if not unchanged and printed < built:
+            sys.exit(
+                f"refusing to stamp {pdf.name}: it was printed {printed:%Y-%m-%d %H:%M:%SZ}, "
+                f"before {html.name} was written {built:%Y-%m-%d %H:%M:%SZ}. Reprint it:\n"
+                f'    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \\\n'
+                f"      --headless --disable-gpu --no-pdf-header-footer \\\n"
+                f"      --virtual-time-budget=20000 \\\n"
+                f"      --print-to-pdf=../{pdf.name} ../{html.name}\n"
+                f"(On a fresh clone every mtime is the checkout's, so this check cannot "
+                f"pass there — stamp on the machine that did the print.)"
+            )
+        lines += [
+            f"{edition}.source.sha256={source}",
+            f"{edition}.printed={printed_raw}",
+            f"{edition}.bytes={pdf.stat().st_size}",
+        ]
+    STAMP.write_text("\n".join(lines) + "\n")
+    print(f"wrote {STAMP}")
+
+
 def main() -> None:
     css = (HERE / "guide.css").read_text()
     # Brand fonts, self-hosted (phase 4): the server bundle already carries the
@@ -271,4 +405,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--stamp" in sys.argv:
+        write_stamp()
+    else:
+        main()

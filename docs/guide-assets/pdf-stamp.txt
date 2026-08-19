@@ -1,0 +1,14 @@
+# Which HTML edition each tracked PDF was printed from.
+#
+# Generated — never hand-edit. Rebuild the guide, reprint BOTH PDFs with
+# the headless Chrome command in build_user_guide.py's docstring, then:
+#     cd docs/guide-assets && python3 build_user_guide.py --stamp
+#
+# ConfigDocDriftTest reads this and goes red when a PDF lags its HTML.
+
+USER-GUIDE.source.sha256=dcc193968e889a6423b668d709ed34b445f11ed098df14fefa704959261bc07e
+USER-GUIDE.printed=D:20260819191326+00'00'
+USER-GUIDE.bytes=23384184
+USER-GUIDE-LIGHT.source.sha256=c6d622e49626c8ad6db9884bc1cd578a479d5832617b7575e3e3f7aeea37e276
+USER-GUIDE-LIGHT.printed=D:20260819191333+00'00'
+USER-GUIDE-LIGHT.bytes=24048823
