@@ -1,6 +1,9 @@
 package dev.spectroscope.core.loop;
 
+import dev.spectroscope.core.Asker;
 import dev.spectroscope.core.events.RunEvent;
+import dev.spectroscope.core.progress.ProgressGuard;
+import dev.spectroscope.core.progress.ProgressSettings;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -163,20 +166,55 @@ class ContinuationLeashTest {
                         + " is not a model that is stuck");
     }
 
+    /** Two ledgers, and what a reader of them should conclude. */
+    private record Ledgers(String label, RunEvent.Plan before, RunEvent.Plan after) {}
+
+    /** Does card 262's stalled-plan detector call this pair unchanged? Armed at
+     *  one turn, so the SECOND ledger either strikes or resets the counter. */
+    private static boolean theGuardCallsItUnchanged(Ledgers pair) {
+        ProgressGuard guard =
+                new ProgressGuard(new ProgressSettings(0, 0, 1), Asker.none());
+        guard.observeTurn(pair.before());
+        return guard.observeTurn(pair.after()).isPresent();
+    }
+
+    /** Does card 266's leash call the same pair unchanged? */
+    private static boolean theLeashCallsItUnchanged(Ledgers pair) {
+        return ContinuationLeash.signature(pair.before(), 0)
+                .equals(ContinuationLeash.signature(pair.after(), 0));
+    }
+
     @Test
-    void theSignatureIsTheHousesOneDefinitionOfAPlanThatDidNotMove() {
-        // Shared with card 262's stalled-plan detector through
-        // PlanVerdict.planSignature. Two spellings of "unchanged" would mean a
-        // run the guard calls stalled and the leash calls progress, in the same
-        // turn, off the same ledger.
-        assertEquals(ContinuationLeash.signature(plan("pending"), 0),
-                ContinuationLeash.signature(plan("pending"), 0));
-        assertFalse(ContinuationLeash.signature(plan("pending"), 0)
-                        .equals(ContinuationLeash.signature(plan("in_progress"), 0)),
-                "a status change is a plan that moved");
-        assertFalse(ContinuationLeash.signature(plan("pending"), 0)
-                        .equals(ContinuationLeash.signature(plan("pending", "pending"), 0)),
-                "a step added is a plan that moved");
+    void theGuardAndTheLeashCannotDisagreeAboutTheSameLedger() {
+        // What is measured here is the SHARING, not the function. Both mechanics
+        // ask PlanVerdict.planSignature whether a ledger moved; a second spelling
+        // of "unchanged" would mean a run the guard calls stalled and the leash
+        // calls progress, off the same ledger in the same turn. The previous
+        // version of this test asserted the leash against ITSELF and never
+        // touched ProgressGuard, so re-inlining the guard's own signature would
+        // have left the whole gate green.
+        List<Ledgers> pairs = List.of(
+                new Ledgers("byte-identical", plan("pending"), plan("pending")),
+                new Ledgers("a status moved", plan("pending"), plan("in_progress")),
+                new Ledgers("a step was added", plan("pending"), plan("pending", "pending")),
+                new Ledgers("only the text moved",
+                        new RunEvent.Plan("main",
+                                List.of(new RunEvent.PlanStep("wire the exporter", "pending")), 1L),
+                        new RunEvent.Plan("main",
+                                List.of(new RunEvent.PlanStep("wire the importer", "pending")), 1L)));
+
+        for (Ledgers pair : pairs) {
+            assertEquals(theLeashCallsItUnchanged(pair), theGuardCallsItUnchanged(pair),
+                    "the guard and the leash read the same ledger through the same"
+                            + " function, so they must agree — " + pair.label());
+        }
+
+        // And the shared function is not the constant-true one: at least one pair
+        // moves and at least one does not, or the loop above pins nothing.
+        assertTrue(theLeashCallsItUnchanged(pairs.getFirst()), "byte-identical is unchanged");
+        assertFalse(theLeashCallsItUnchanged(pairs.get(1)), "a status change is a plan that moved");
+        assertFalse(theLeashCallsItUnchanged(pairs.get(2)), "a step added is a plan that moved");
+        assertFalse(theLeashCallsItUnchanged(pairs.get(3)), "new step text is a plan that moved");
     }
 
     // ── what the model is told (criterion 1) ───────────────────────────────

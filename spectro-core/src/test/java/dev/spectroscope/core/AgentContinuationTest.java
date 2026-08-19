@@ -189,6 +189,34 @@ class AgentContinuationTest {
         };
     }
 
+    /**
+     * A model that answers every continuation by re-writing the SAME ledger,
+     * byte for byte, and doing nothing else.
+     *
+     * <p>The shape the live AC-8 run took, and the reason this file's review
+     * came back blocking: {@code update_plan} is itself a tool, and the
+     * harness's own continuation message asks the model to "mark it and say
+     * why" — i.e. to call it. A ledger re-emitted unchanged must therefore not
+     * count as the work half of the signature, or the leash buys its next turn
+     * with its own instruction.</p>
+     */
+    private static LlmProvider reWritesTheIdenticalPlan() {
+        AtomicInteger turn = new AtomicInteger();
+        return request -> {
+            int n = turn.incrementAndGet();
+            return n % 2 == 1 ? planTurn("c" + n, "pending", "pending") : answerTurn();
+        };
+    }
+
+    /** Writes a ledger on its very first turn and never touches one again — so
+     *  the agent's latest-wins {@code lastPlan} outlives the run that wrote it. */
+    private static LlmProvider plansOnceAndThenNeverAgain() {
+        AtomicInteger turn = new AtomicInteger();
+        return request -> turn.incrementAndGet() == 1
+                ? planTurn("c1", "pending", "pending")
+                : answerTurn();
+    }
+
     private static Agent agent(LlmProvider provider, ContinuationLeash leash) {
         return agent(provider, leash, null, null, null, Path.of("."), false);
     }
@@ -389,6 +417,29 @@ class AgentContinuationTest {
                 "the second prompt is its own task and gets its own budget");
     }
 
+    @Test
+    void anUnrelatedSecondPromptIsNotContinuedAgainstTheFirstPromptsAbandonedLedger() {
+        // Card 264 keeps the ledger with the AGENT, latest-wins, so the footer and
+        // the Plan panel agree — a decision about REPORTING. This card turns the
+        // same ledger into ACTION, and an inherited one buys a provider exchange
+        // telling the model "you stopped, but the plan you wrote still has 2 of 2
+        // steps open" about a task the user has already moved on from. So the
+        // leash is graded by a plan THIS run wrote; a run that wrote none is
+        // PlanVerdict.UNKNOWN territory, which card 264 already refuses to grade.
+        Agent agent = agent(plansOnceAndThenNeverAgain(), new ContinuationLeash(3));
+
+        assertEquals(List.of("continued", "no_progress"), decisions(run(agent)),
+                "the premise: the first prompt did write a ledger and was held on it");
+
+        List<RunEvent> second = run(agent);
+        assertEquals(List.of(), decisions(second),
+                "the second prompt wrote no ledger of its own, so there is nothing here"
+                        + " for the harness to hold it to");
+        assertEquals(PlanVerdict.UNFINISHED_STOP_REASON, lastStopReason(second),
+                "card 264's reporting is deliberately untouched: the ledger still says"
+                        + " unfinished, and only the leash stops acting on it");
+    }
+
     // ── criterion 5: it cannot spin ────────────────────────────────────────
 
     @Test
@@ -401,6 +452,34 @@ class AgentContinuationTest {
 
         assertEquals(List.of("continued", "no_progress"), decisions(events));
         assertEquals(3, turns(events), "the third turn is the last one this run gets");
+        assertEquals(ContinuationLeash.STOP_REASON, lastStopReason(events));
+    }
+
+    @Test
+    void aLedgerReEmittedUnchangedIsNotWorkAndBuysNoFurtherContinuation() {
+        // The review's blocking finding, replayed as a test. In the live AC-8 run
+        // (~/.spectro/sessions/20260819-014333-f072f411.jsonl) continuation 2 was
+        // granted after a denied write and an update_plan whose ledger hashed
+        // identically to turn 1's — the plan half of the signature said "unchanged"
+        // and the work half flipped anyway, because the plan tool was counted in
+        // BOTH halves. Criterion 5 names "a plan that has not advanced" as the
+        // thing that must not earn another turn.
+        List<RunEvent> events = run(agent(reWritesTheIdenticalPlan(), new ContinuationLeash(3)));
+
+        List<RunEvent.Plan> ledgers = events.stream()
+                .filter(RunEvent.Plan.class::isInstance)
+                .map(RunEvent.Plan.class::cast)
+                .toList();
+        assertTrue(ledgers.size() >= 2,
+                "the premise: the model wrote its ledger more than once, " + ledgers.size());
+        assertEquals(PlanVerdict.planSignature(ledgers.get(0)),
+                PlanVerdict.planSignature(ledgers.get(1)),
+                "the premise: the second ledger is byte-identical to the first");
+
+        assertEquals(List.of("continued", "no_progress"), decisions(events),
+                "the plan tool is the leash's own instruction answered back — the plan"
+                        + " half already grades it, so counting it as work too lets the"
+                        + " harness buy its own next turn");
         assertEquals(ContinuationLeash.STOP_REASON, lastStopReason(events));
     }
 
@@ -488,7 +567,7 @@ class AgentContinuationTest {
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    void anAbortAtTheContinuationEndsTheRunAndDoesNotReEnter() {
+    void anAbortAtTheContinuationEndsTheRunAndDoesNotReEnter() throws InterruptedException {
         // The provider PARKS on the turn the leash bought, so the producer
         // cannot run ahead of the consumer's stop. A race here would make the
         // count a coin toss, and a race test that is "tidied up" goes blind
@@ -516,7 +595,8 @@ class AgentContinuationTest {
         CancelSignal signal = new CancelSignal();
         Agent agent = agent(parksAfterTheContinuation, new ContinuationLeash(10));
         List<RunEvent> events = new ArrayList<>();
-        try (EventStream stream = agent.run("do it", new RunOptions(signal, null))) {
+        EventStream stream = agent.run("do it", new RunOptions(signal, null));
+        try (stream) {
             for (RunEvent event : stream) {
                 events.add(event);
                 if (event instanceof RunEvent.Continuation) {
@@ -530,6 +610,20 @@ class AgentContinuationTest {
         assertEquals(1, events.stream().filter(RunEvent.RunEnd.class::isInstance).count());
         assertEquals(1, continuations(events).size(),
                 "a cancelled run is not continued a second time");
+
+        // Criterion 6's third clause, in words on the card and until the review
+        // asserted by nothing: "leaves no producer thread alive". A leash that
+        // re-entered the loop after the cancel would strand exactly this thread,
+        // and the consumer side could not tell — the END sentinel arrives either
+        // way. The wait is bounded because the producer unwinds asynchronously;
+        // it is not a sleep that hides a race, it is the join this API has no
+        // method for.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (((QueueEventStream) stream).producerAlive() && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertFalse(((QueueEventStream) stream).producerAlive(),
+                "the run is over, so the virtual thread that produced it must be gone");
     }
 
     @Test

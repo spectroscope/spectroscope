@@ -42,10 +42,22 @@ public final class UpdatePlanTool implements Tool {
                       "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] } } } } } }
             """);
 
+    /**
+     * The wire name, as a constant because the loop has to recognise this tool
+     * by name.
+     *
+     * <p>Card 266's leash grades a stopped run by two halves — did the plan
+     * advance, and did any tool call come back clean. This tool writes the
+     * FIRST half, so counting it in the second as well lets a model buy its
+     * next continuation by re-emitting a ledger that did not move. A literal
+     * string in {@code Agent} would be the same fact spelled twice.</p>
+     */
+    public static final String NAME = "update_plan";
+
     /** Wire name: {@code update_plan}. */
     @Override
     public String name() {
-        return "update_plan";
+        return NAME;
     }
 
     /** The model-facing manual — call on start and whenever a step's status changes. */

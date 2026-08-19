@@ -104,12 +104,13 @@ class SessionContinuationLeashTest {
     }
 
     @Test
-    void theBudgetIsReReadPerPromptSoAnOperatorCanChangeItMidSession(@TempDir Path workspace)
+    void theRefreshMethodItselfPutsTheOperatorsNumberOnTheLiveLeash(@TempDir Path workspace)
             throws IOException {
-        // Criterion 7: switchable per session at runtime, without a rebuild. The
-        // agent is built ONCE per browser session (buildAgentOnce), so a budget
-        // read only there would need a reconnect to change — which is a rebuild
-        // by another name.
+        // The METHOD only — it is called by hand here, so this pins what
+        // refreshContinuationBudget does and NOT that runPrompt calls it. The
+        // test below is the one that pins the call site; the review found this
+        // distinction the hard way, because the whole call site could be deleted
+        // with the full gate staying green.
         String previous = saveForUser("{\"provider\": \"ollama\", \"model\": \"qwen3:latest\"}");
         try {
             SessionConnection connection = sessionIn("ws-266-live", workspace);
@@ -126,6 +127,54 @@ class SessionContinuationLeashTest {
 
             assertThat(connection.agent().continuationLeash().budget())
                     .as("the operator's new number governs the very next prompt")
+                    .isEqualTo(1);
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
+
+    @Test
+    void aSecondPromptPicksUpTheOperatorsNewBudgetWithoutAReconnect(@TempDir Path workspace)
+            throws IOException, InterruptedException {
+        // Criterion 7, pinned where it lives: the CALL SITE in runPrompt, not the
+        // method it calls. The agent is built ONCE per browser session
+        // (buildAgentOnce), so a budget read only there would need a reconnect to
+        // change — a rebuild by another name. Deleting the one line
+        // `refreshContinuationBudget();` from runPrompt left the entire Java gate
+        // green before this test existed, which is card 222's finding F4 exactly.
+        //
+        // The provider points at a closed port on purpose: this measures what the
+        // prompt path DOES on its way into the run, and it must not need a
+        // backend to do it.
+        String previous = saveForUser("""
+                { "provider": "ollama", "model": "qwen3:latest",
+                  "baseUrl": "http://127.0.0.1:1" }
+                """);
+        try {
+            SessionConnection connection = sessionIn("ws-266-callsite", workspace);
+            connection.buildAgentOnce();
+            assertThat(connection.agent().continuationLeash().budget())
+                    .as("the premise: this session started on the shipped default")
+                    .isEqualTo(ContinuationLeash.DEFAULT_BUDGET);
+
+            saveForUser("""
+                    { "provider": "ollama", "model": "qwen3:latest",
+                      "baseUrl": "http://127.0.0.1:1", "continuationBudget": 1 }
+                    """);
+            connection.adoptSessionConfig();
+
+            connection.onUserMessage("say something", null);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            while (System.nanoTime() < deadline
+                    && connection.agent().continuationLeash().budget()
+                            == ContinuationLeash.DEFAULT_BUDGET) {
+                Thread.sleep(20);
+            }
+
+            assertThat(connection.agent().continuationLeash().budget())
+                    .as("the operator changed the number between prompts and the very next"
+                            + " prompt runs on it — read off a real onUserMessage, never"
+                            + " off a hand-called refresh")
                     .isEqualTo(1);
         } finally {
             restoreUserSettings(previous);

@@ -38,6 +38,7 @@ import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.session.Compaction;
 import dev.spectroscope.core.session.CompactionThreshold;
 import dev.spectroscope.core.tools.Tool;
+import dev.spectroscope.core.tools.UpdatePlanTool;
 import dev.spectroscope.core.wire.LlmWireRecorder;
 import dev.spectroscope.core.wire.LlmWireTap;
 
@@ -105,6 +106,24 @@ public final class Agent {
      * until its model publishes a plan again.</p>
      */
     private volatile RunEvent.Plan lastPlan;
+
+    /**
+     * Whether THIS run has written a ledger of its own (card 266, review pass).
+     *
+     * <p>{@link #lastPlan} outlives the run that wrote it on purpose — card
+     * 264's latest-wins, so the run-end footer and the Plan panel agree about
+     * what is still open. That is a decision about REPORTING. Card 266's leash
+     * turns the same ledger into ACTION, and an inherited one would spend a
+     * provider exchange telling the model "you stopped, but the plan you wrote
+     * still has 3 of 4 steps open" about a task the user has already moved on
+     * from — the harness overruling the person's own redirect, with money.</p>
+     *
+     * <p>So reporting inherits and acting does not: the verdict still reads
+     * {@link #lastPlan}, the leash is handed only a plan this run published. A
+     * run that wrote none is exactly {@link PlanVerdict#UNKNOWN}, which card 264
+     * already refuses to grade either way.</p>
+     */
+    private volatile boolean planWrittenThisRun;
 
     /**
      * Flips reasoning visibility mid-session — the web header toggle. Takes
@@ -284,6 +303,10 @@ public final class Agent {
         // konzept/ORCHESTRATION.md refusal 5 keeps executing verbs off
         // unattended faces for exactly that reason, and the WIRING is the fence
         // here as it is there.
+        // A ledger is a sentence about ONE run for the purpose of ACTING on it.
+        // Reset unconditionally, so the flag cannot depend on whether this face
+        // happens to carry a leash.
+        planWrittenThisRun = false;
         ContinuationLeash leash = options.continuationLeash();
         if (leash != null) {
             // The count and the fingerprint are sentences about THIS run, for
@@ -529,23 +552,29 @@ public final class Agent {
                     // never take, which is a line that lies.
                     //
                     // The cancel check is belt and braces and NO TEST REACHES
-                    // IT — said out loud rather than left to look pinned. The
-                    // loop's own abort exit thirty lines above already returns
-                    // on `signal.isCancelled()`, so the only window this covers
-                    // is the microseconds spent assembling the assistant
-                    // message. It stays because a later refactor that moves
-                    // that exit would otherwise let the harness silently
-                    // re-enter a run the operator stopped.
+                    // IT — said out loud rather than left to look pinned, and
+                    // RE-MEASURED in the review pass: replacing it with `true`
+                    // leaves all 1687 tests of spectro-core green. The loop's
+                    // own abort exit thirty lines above already returns on
+                    // `signal.isCancelled()`, so the only window this covers is
+                    // the microseconds spent assembling the assistant message.
+                    // It stays because a later refactor that moves that exit
+                    // would otherwise let the harness silently re-enter a run
+                    // the operator stopped.
                     if (leash != null && !signal.isCancelled()
                             && "end_turn".equals(reason) && turn < maxTurns) {
+                        // Only a ledger THIS run wrote. An inherited one belongs
+                        // to the prompt before it, and continuing against it would
+                        // overrule the user's own redirect at provider prices.
+                        RunEvent.Plan ownLedger = planWrittenThisRun ? lastPlan : null;
                         Optional<ContinuationLeash.Verdict> held = leash.consider(
-                                lastPlan, ContinuationLeash.signature(lastPlan, productiveCalls));
+                                ownLedger, ContinuationLeash.signature(ownLedger, productiveCalls));
                         if (held.isPresent()) {
                             ContinuationLeash.Verdict verdict = held.get();
                             emit.accept(new RunEvent.Continuation(agentId,
                                     verdict.decision().wireName(), verdict.continuation(),
-                                    verdict.budget(), PlanVerdict.openSteps(lastPlan),
-                                    PlanVerdict.totalSteps(lastPlan), lastInputTokens,
+                                    verdict.budget(), PlanVerdict.openSteps(ownLedger),
+                                    PlanVerdict.totalSteps(ownLedger), lastInputTokens,
                                     verdict.evidence(), now()));
                             if (verdict.decision() == ContinuationLeash.Decision.CONTINUED) {
                                 // The same fold card 262 uses: the history ends
@@ -613,12 +642,21 @@ public final class Agent {
                                         document.name());
                             }));
                     boolean isError = outcome.output().startsWith("ERROR: ");
-                    if (!isError) {
+                    if (!isError && !UpdatePlanTool.NAME.equals(call.name())) {
                         // Card 266's half of the shared progress signal. A call
                         // the guard refused above never reaches this line, and a
                         // call that errored is not counted — so neither buys the
                         // run another turn, and a continuation cannot launder
                         // card 262's spin into progress.
+                        //
+                        // update_plan is excluded because the OTHER half of the
+                        // signature already grades it, and the leash's own
+                        // message asks the model to call it ("mark it and say
+                        // why"). Counted here as well, a ledger re-emitted
+                        // unchanged would flip the signature and the harness
+                        // would buy its next turn with its own instruction —
+                        // measured in the live AC-8 run, where continuation 2
+                        // followed a denied write and a byte-identical plan.
                         productiveCalls++;
                     }
                     emit.accept(new ToolResult(agentId, call.callId(), outcome.output(), isError,
@@ -1076,6 +1114,7 @@ public final class Agent {
         return event -> {
             if (event instanceof RunEvent.Plan plan && options.agentId().equals(plan.agentId())) {
                 lastPlan = plan;
+                planWrittenThisRun = true;
             }
             emit.accept(event);
         };

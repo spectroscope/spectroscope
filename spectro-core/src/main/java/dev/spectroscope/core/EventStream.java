@@ -90,6 +90,22 @@ final class QueueEventStream implements EventStream {
         });
     }
 
+    /**
+     * Whether the virtual thread producing this stream is still running.
+     *
+     * <p>Card 266 criterion 6 asks for it in words — "an abort during a
+     * continuation ends the run, does not re-enter, and leaves no producer
+     * thread alive" — and the review found that only the first two halves were
+     * ever asserted. A leash that re-entered the loop after a cancel would
+     * strand exactly this thread, and nothing on the consumer side could tell
+     * the difference: the sentinel arrives either way.</p>
+     *
+     * @return true while the producer has not finished unwinding
+     */
+    boolean producerAlive() {
+        return producer.isAlive();
+    }
+
     /** Forwards to the shared {@link CancelSignal} — nothing is interrupted here. */
     @Override
     public void cancel() {
