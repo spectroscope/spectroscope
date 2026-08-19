@@ -72,6 +72,22 @@ public final class Agent {
      *  {@code maxTokens} and {@code compactionThreshold} in {@link AgentOptions}. */
     public static final int DEFAULT_MAX_TURNS = 15;
 
+    /**
+     * The turn ceiling this run actually stops at — the configured value, or
+     * {@link #DEFAULT_MAX_TURNS} when nothing set one.
+     *
+     * <p>Card 282 needed it readable from outside: the fence for this setting is
+     * the WIRING, and until that card the browser session passed nothing at all
+     * while the key resolved perfectly in the config. A test that reads the
+     * config proves the chain and not the arrival.</p>
+     *
+     * @return the number of turns one run may take before it ends with
+     *         {@code stopReason: "max_turns"}
+     */
+    public int maxTurns() {
+        return options.maxTurns() != null ? options.maxTurns() : DEFAULT_MAX_TURNS;
+    }
+
     /** The completion budget one turn spends when nothing configures it.
      *  Public because {@link dev.spectroscope.core.session.CompactionThreshold}
      *  is defined AGAINST it (card 263): the share of the context window kept
@@ -325,7 +341,7 @@ public final class Agent {
         // the fence here exactly as it is for card 265's ask, and a guard that
         // can only narrate while the hour keeps burning is the one thing the
         // owner ruled out.
-        int maxTurns = options.maxTurns() != null ? options.maxTurns() : DEFAULT_MAX_TURNS;
+        int maxTurns = maxTurns();
         // Card 266: the harness's leash on a run that stops with its own plan
         // still open. Null on every unattended face, because a face that
         // continues by itself multiplies a bill with nobody watching —

@@ -1323,6 +1323,11 @@ public final class SessionConnection {
                 // need a reconnect to change.
                 .continuationLeash(new dev.spectroscope.core.loop.ContinuationLeash(
                         active.continuationBudget()))
+                // Card 282, finishing card 266's owner call 4: until this line the
+                // only callers of this builder method were the two fleet-node
+                // paths, so a browser session ran on Agent.DEFAULT_MAX_TURNS with
+                // the settings key resolving perfectly and reaching nothing.
+                .maxTurns(active.maxTurns())
                 // Card 267: the goal, with the SHIPPED teeth — a command whose
                 // exit code is the verdict. The evaluator variant exists and is
                 // wired nowhere: on this house's own backend the judge would be

@@ -67,7 +67,9 @@ public final class SettingsWriter {
             // Card 262: the progress guard's three counts, zero meaning off.
             "progressGuardWrites", "progressGuardFailures", "progressGuardPlanTurns",
             // Card 266: how many times one run may be restarted; zero is off.
-            "continuationBudget");
+            "continuationBudget",
+            // Card 282: the run's turn ceiling, finishing card 266's owner call 4.
+            "maxTurns");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
