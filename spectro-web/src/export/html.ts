@@ -591,8 +591,21 @@ function turnHtml(turn: Turn, state: UiState, lang: Lang, inThread: boolean, fol
       const card = state.cards[turn.callId];
       return card !== undefined ? toolHtml(card, lang, folds.tools) : "";
     }
-    case "info":
-      return `<div class="x-info x-info--${turn.tone}">${escapeHtml(turn.text)}</div>`;
+    case "info": {
+      // Card 282: the archived document reads in the operator's language too.
+      // This rendered turn.text — the English fallback — for EVERY info line,
+      // so a German export said "The run ended: unfinished" under a German
+      // heading. Not a defect these cards introduced; one their own lines made
+      // visible, and criterion 2 covers this face as much as the live one.
+      const text =
+        turn.infoKey === undefined
+          ? turn.text
+          : t(lang, turn.infoKey, {
+              ...turn.infoVars,
+              ...(turn.infoRefKey === undefined ? {} : { ref: t(lang, turn.infoRefKey, turn.infoVars) }),
+            });
+      return `<div class="x-info x-info--${turn.tone}">${escapeHtml(text)}</div>`;
+    }
     case "error":
       return (
         `<div class="x-error"><div class="x-eyebrow">${escapeHtml(label(lang, "error"))}</div>` +

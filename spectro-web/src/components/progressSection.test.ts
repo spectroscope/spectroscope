@@ -73,3 +73,21 @@ describe("the summary cannot disagree with the chips", () => {
     expect(progressSummary(counts(-1, -1, -1)).key).toBe("set.progress.summaryOff");
   });
 });
+
+// The literal in ProgressGuardSettings.tsx against PROGRESS_FIELDS.
+//
+// settingsReach.test.tsx WALKS that file's source, so the block has to name its
+// fields as text — a variable is invisible to a reader of text, and the guard
+// said so ("a ReachBlock names no fields"). Writing them out satisfies the
+// guard and creates a second list; this is what stops the two drifting.
+describe("the block's written fields are the module's fields", () => {
+  it("names exactly PROGRESS_FIELDS, in order", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const jsx = readFileSync(fileURLToPath(new URL("./ProgressGuardSettings.tsx", import.meta.url)), "utf8");
+    const block = /<ReachBlock\s+lang=\{lang\}\s+fields=\{\[([^\]]+)\]\}/.exec(jsx);
+    expect(block, "the guard block no longer writes its fields out").not.toBeNull();
+    const written = [...block![1].matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]);
+    expect(written).toEqual([...PROGRESS_FIELDS]);
+  });
+});

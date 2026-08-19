@@ -118,6 +118,11 @@ const SETTINGS_ROWS: ReadonlyArray<readonly [string, string]> = [
   ["skills", "Skills"],
   ["skills-catalogue", "Skill catalogue"],
   ["mcp", "MCP servers"],
+  // Card 281: the progress guard's three counts and the run's two ceilings.
+  // menuWires.drift.test.ts demanded this row the moment the section joined
+  // route.ts, which is the whole point of that guard — a section reachable by
+  // hash and by nothing a person can click is half a feature.
+  ["progress", "Progress guard"],
 ];
 
 /**

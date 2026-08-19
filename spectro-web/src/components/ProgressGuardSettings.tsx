@@ -108,7 +108,17 @@ export function ProgressGuardSettings({
         guard at all, and a page implying otherwise would be true of two faces
         out of five. */}
       <p className="settings-note">{t(lang, "set.progress.whereItRuns")}</p>
-      <ReachBlock lang={lang} fields={PROGRESS_FIELDS}>
+      {/* The three names are written out here rather than passed as
+        PROGRESS_FIELDS, and that is not redundancy. settingsReach.test.tsx
+        WALKS this file's source to check that no block promises a reach its
+        fields do not have, and a variable is invisible to a reader of text —
+        the guard reported "a ReachBlock names no fields" and it was right.
+        progressSection.test.ts pins this literal against PROGRESS_FIELDS, so
+        the two cannot drift. */}
+      <ReachBlock
+        lang={lang}
+        fields={["progressGuardWrites", "progressGuardFailures", "progressGuardPlanTurns"]}
+      >
         <div className="settings-grid">
           {PROGRESS_FIELDS.map((field) => (
             <CountField key={field} view={view} field={field} lang={lang} onSave={onSave} />
