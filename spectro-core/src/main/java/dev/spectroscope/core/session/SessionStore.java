@@ -850,6 +850,11 @@ public final class SessionStore {
             // belongs to that agent — a child's stall must not read as a stall
             // of the run that spawned it.
             case RunEvent.NoProgress e -> e.agentId();
+            // Card 281: the decision answers ONE agent's stall, so it belongs to
+            // that agent for the same reason its observation does. It carries a
+            // callId as well, but the pairing is the transcript's job — the
+            // ownership question here is whose loop was interrupted.
+            case RunEvent.ProgressIntervention e -> e.agentId();
             // Card 266: the leash holds ONE agent's loop, so the decision to
             // keep it going belongs to that agent — a child's continuation must
             // not read as a continuation of the run that spawned it.

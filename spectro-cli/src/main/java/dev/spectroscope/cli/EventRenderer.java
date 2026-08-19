@@ -274,6 +274,18 @@ final class EventRenderer {
                 System.out.println("\n" + ansi.coral("◈ no progress · " + stalled.detector()
                         + " ×" + stalled.count()) + " " + stalled.evidence());
             }
+            // Card 281: what the person chose, and whether that took the net
+            // down. The compiler asked for this line rather than anybody
+            // remembering it — the same price the sealed interface charged card
+            // 285, and the same reason it is worth paying. Not coral: the alarm
+            // was the line above, this one is its answer.
+            case RunEvent.ProgressIntervention chosen -> {
+                spinner.stop();
+                System.out.println(ansi.dim("  ↳ " + chosen.detector() + " · "
+                        + chosen.intervention().toLowerCase(java.util.Locale.ROOT)
+                                .replace('_', ' ')
+                        + (chosen.stoodDown() ? " · net down for this run" : "")));
+            }
             // Card 266: the harness holding an unfinished run — or refusing to.
             // Same writer as the guard's line above, so the terminal can never
             // say something other than what went on the wire. Coral for the same
@@ -410,6 +422,9 @@ final class EventRenderer {
             // attributed to that agent so a child's stall reads as the child's.
             case RunEvent.SettingsIgnored e -> null;
             case RunEvent.NoProgress e -> e.agentId();
+            // Card 281: the decision answers one agent's stall, so it belongs to
+            // that agent for the same reason the observation does.
+            case RunEvent.ProgressIntervention e -> e.agentId();
             // Card 266: the leash holds ONE agent's loop, so a child's
             // continuation reads as the child's.
             case RunEvent.Continuation e -> e.agentId();

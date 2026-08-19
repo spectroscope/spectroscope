@@ -344,6 +344,77 @@ class ProgressGuardTest {
                 "the answer is on the record too, or the pause is invisible afterwards");
     }
 
+    /**
+     * Card 281, criterion 6: the operator can see WHAT THEY CHOSE, not merely
+     * that something happened.
+     *
+     * <p>Two additive fields, and the reason each exists is different. The
+     * {@code callId} binds the transcript's line to the ask it belongs to: a run
+     * that fires twice draws two lines and two bars, and without the id the web
+     * has to guess which belongs to which. The intervention frame carries the
+     * {@link Intervention} ENUM NAME rather than a rendered sentence, because the
+     * alternative is the browser re-deriving a Java mapping from prose — the
+     * defect {@code AllowlistSettings.tsx} names outright.</p>
+     */
+    @Test
+    void theLineNamesTheAskItBelongsToAndWhatWasChosen() {
+        List<RunEvent> events = new ArrayList<>();
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(),
+                question -> new Asker.Answer(List.of(ProgressGuard.CARRY_ON_LABEL)));
+        guard.intervene(new Strike(Detector.IDENTICAL_WRITES, 3, "the same 283 bytes, 3 times"),
+                "main", events::add, new CancelSignal());
+
+        RunEvent.NoProgress said = (RunEvent.NoProgress) events.get(0);
+        RunEvent.QuestionAsked asked = (RunEvent.QuestionAsked) events.get(1);
+        assertNotNull(said.callId(), "the line has no ask to bind to");
+        assertEquals(asked.callId(), said.callId(),
+                "the observation and its question must carry the SAME id, or a run that"
+                        + " fires twice draws two lines nobody can pair with two bars");
+
+        RunEvent.ProgressIntervention chosen = events.stream()
+                .filter(RunEvent.ProgressIntervention.class::isInstance)
+                .map(RunEvent.ProgressIntervention.class::cast)
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("no frame says what was chosen, so the web has to"
+                                + " re-implement decide() from the answer text"));
+        assertEquals(asked.callId(), chosen.callId(), "bound to the same ask");
+        assertEquals(Intervention.CARRY_ON.name(), chosen.intervention(),
+                "the ENUM NAME travels, never a rendered sentence");
+        assertTrue(chosen.stoodDown(),
+                "a PERSON said carry on, so this detector is down for the rest of the run —"
+                        + " that is the fact the line has to be able to show");
+    }
+
+    /**
+     * The other half of the same frame, and the one the owner ruled on: the web's
+     * Skip leaves the net UP.
+     *
+     * <p>{@code SessionConnection.onQuestionResponse} maps a skip to
+     * {@code cancelled} and hands the asker null, which is the nobody-was-there
+     * branch. The guard's own comment used to say "a skipped question counts,
+     * the bar was in front of them" one line below, describing a DIFFERENT skip:
+     * an Answer object that arrives blank. Both readings are in the code; only
+     * one of them is what a web operator gets.</p>
+     */
+    @Test
+    void theWebsSkipLeavesTheNetUpAndSaysSoOnTheFrame() {
+        List<RunEvent> events = new ArrayList<>();
+        // null is exactly what onQuestionResponse hands over for a skip.
+        ProgressGuard guard = new ProgressGuard(ProgressSettings.defaults(), question -> null);
+        guard.intervene(new Strike(Detector.REPEATED_FAILURE, 3, "the same call, 3 times"),
+                "main", events::add, new CancelSignal());
+
+        RunEvent.ProgressIntervention chosen = events.stream()
+                .filter(RunEvent.ProgressIntervention.class::isInstance)
+                .map(RunEvent.ProgressIntervention.class::cast)
+                .findFirst().orElseThrow();
+        assertEquals(Intervention.CARRY_ON.name(), chosen.intervention(),
+                "nothing at all is CARRY_ON: ending a run because nobody looked is worse");
+        assertFalse(chosen.stoodDown(),
+                "nobody answered, so the net stays up — a run that really is looping keeps"
+                        + " saying so instead of mentioning it once in an hour");
+    }
+
     @Test
     void theThreeAnswersMapToTheThreeOutcomes() {
         assertEquals(Intervention.CARRY_ON, answered(ProgressGuard.CARRY_ON_LABEL).intervention());

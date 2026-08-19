@@ -60,6 +60,7 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.QuestionAsked.class,      name = "question_asked"),   // additive (card 265)
     @JsonSubTypes.Type(value = RunEvent.QuestionAnswered.class,   name = "question_answered"), // additive (card 265)
     @JsonSubTypes.Type(value = RunEvent.NoProgress.class,         name = "no_progress"),      // additive (card 262)
+    @JsonSubTypes.Type(value = RunEvent.ProgressIntervention.class, name = "progress_intervention"), // additive (card 281)
     @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation"),     // additive (card 266)
     @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check"),       // additive (card 267)
     @JsonSubTypes.Type(value = RunEvent.SettingsIgnored.class,    name = "settings_ignored")  // additive (card 285)
@@ -71,7 +72,8 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
         RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
-        RunEvent.NoProgress, RunEvent.Continuation, RunEvent.GoalCheck,
+        RunEvent.NoProgress, RunEvent.ProgressIntervention,
+        RunEvent.Continuation, RunEvent.GoalCheck,
         RunEvent.SettingsIgnored {
 
     /** Epoch millis of the moment the event was emitted. */
@@ -756,7 +758,51 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record NoProgress(String agentId, String detector, int count, List<String> details,
-                      String evidence, long ts) implements RunEvent {}
+                      String evidence, long ts, String callId) implements RunEvent {
+
+        /** Pre-card-281 shape: an observation with no ask bound to it. Kept so a
+         *  line written by v0.10.0 still reads, and so the positional callers in
+         *  the tests of the detector half need no new argument.
+         *  @param agentId  the agent that stopped moving
+         *  @param detector the wire name of the net that caught it
+         *  @param count    how many times the thing happened
+         *  @param details  the facts unprosed, or null when the detector has none
+         *  @param evidence the same thing as one English sentence
+         *  @param ts       epoch millis of emission */
+        public NoProgress(String agentId, String detector, int count, List<String> details,
+                          String evidence, long ts) {
+            this(agentId, detector, count, details, evidence, ts, null);
+        }
+    }
+
+    /**
+     * Additive (card 281): what the person watching decided, and whether that
+     * answer took the detector down for the rest of the run.
+     *
+     * <p>The {@code intervention} is the {@link
+     * dev.spectroscope.core.progress.ProgressGuard.Intervention} ENUM NAME and
+     * never a rendered sentence. Without this frame a surface has to re-derive
+     * the mapping from the answer text, which is a second copy of
+     * {@code ProgressGuard.decide} living in a language that cannot see it — the
+     * defect {@code AllowlistSettings.tsx} names in its own header.</p>
+     *
+     * <p>{@code stoodDown} is display only. It says whether this detector will
+     * speak again in this run; it is not a control, and nothing reads it back.</p>
+     *
+     * @param agentId      the agent whose run was interrupted
+     * @param callId       the ask this answers, the same id {@link QuestionAsked}
+     *                     and {@link NoProgress} carry
+     * @param detector     the wire name of the net that fired, so a surface can
+     *                     bind the decision to its own settings control
+     * @param intervention {@code CARRY_ON}, {@code CHANGE_COURSE} or {@code END}
+     * @param stoodDown    true when this detector is silent for the rest of the
+     *                     run. Only a PERSON saying carry on does that; nobody
+     *                     being there leaves the net up
+     * @param ts           epoch millis of emission
+     */
+    record ProgressIntervention(String agentId, String callId, String detector,
+                                String intervention, boolean stoodDown, long ts)
+            implements RunEvent {}
 
     /**
      * Additive: what sits in the context window right now. Emitted

@@ -424,11 +424,14 @@ public final class ProgressGuard {
     public Response intervene(Strike strike, String agentId,
                               Consumer<RunEvent> emit, CancelSignal signal) {
         long now = System.currentTimeMillis();
+        // Card 281: minted BEFORE the observation, not after, so the line and the
+        // bar it belongs to carry the same id. A run that fires twice draws two
+        // of each, and without the id a surface has to pair them by guessing.
+        String callId = "progress-" + UUID.randomUUID();
         emit.accept(new RunEvent.NoProgress(agentId, strike.detector().wireName(),
                 strike.count(), strike.details().isEmpty() ? null : strike.details(),
-                strike.evidence(), now));
+                strike.evidence(), now, callId));
 
-        String callId = "progress-" + UUID.randomUUID();
         RunEvent.QuestionAsked question = new RunEvent.QuestionAsked(agentId, callId,
                 List.of(new RunEvent.AskedQuestion(questionText(strike), HEADER, false,
                         List.of(new RunEvent.QuestionOption(CARRY_ON_LABEL,
@@ -448,6 +451,17 @@ public final class ProgressGuard {
                 waitedMs, System.currentTimeMillis()));
 
         Response response = decide(strike, answers);
+        // Card 281, criterion 6: what was CHOSEN, as the enum's own name and
+        // bound to its ask. Emitted for every path including the unanswered one,
+        // because "nobody was there" is itself a fact the transcript owes the
+        // operator — a line that only appears when someone answered would read
+        // as if the guard never fired in the unattended case the card was cut
+        // from. stoodDown is display only and says whether this detector speaks
+        // again in this run.
+        boolean standsDown = answer != null && response.intervention() == Intervention.CARRY_ON;
+        emit.accept(new RunEvent.ProgressIntervention(agentId, callId,
+                strike.detector().wireName(), response.intervention().name(), standsDown,
+                System.currentTimeMillis()));
         if (answer == null) {
             // NOBODY was there — a closed socket, an unattended permission mode,
             // a face with no person. That is not somebody saying "carry on", and
@@ -461,8 +475,17 @@ public final class ProgressGuard {
         }
         switch (response.intervention()) {
             // Answered for BY A PERSON: they looked, so this detector has had its
-            // say and stays quiet for the rest of the run. A skipped question
-            // counts — the bar was in front of them.
+            // say and stays quiet for the rest of the run.
+            //
+            // Card 281 sharpened this line, because it used to read "a skipped
+            // question counts, the bar was in front of them" and that is true of
+            // only ONE of the two things called a skip. An Answer that arrives
+            // BLANK reaches here and does stand the detector down. The web's
+            // Skip is not that: SessionConnection.onQuestionResponse maps it to
+            // cancelled and hands the asker null, which never enters this switch
+            // at all — it takes the branch above and leaves the net UP. The
+            // owner ruled that this is the behaviour to keep, so what changed is
+            // the sentence and not the code.
             case CARRY_ON -> stoodDown.add(strike.detector());
             // Steered: the memory goes, the net stays. A model that walks back
             // into the same loop earns a full N again before anyone is bothered.
