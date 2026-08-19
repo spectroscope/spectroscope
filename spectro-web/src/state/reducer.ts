@@ -1047,7 +1047,12 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           : // A server one version ahead is ordinary for an app that updates on
             // its own schedule. A detector this build has never heard of must
             // degrade to a readable line, never to nothing.
-            "info.noProgress.unknown",
+            //
+            // The fallback suffix is "other" and not "unknown", because
+            // "unknown" is a REAL value of goal_check.outcome — one fallback
+            // spelling across all four vocabularies, and none of them able to
+            // collide with a value that means something.
+            "info.noProgress.other",
         infoVars: { n: event.count, detector: event.detector, evidence: event.evidence },
         tone: "warn",
         agentId: event.agentId,
@@ -1059,9 +1064,13 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         text: `${event.detector}: ${event.intervention.toLowerCase().replace(/_/g, " ")}${
           event.stoodDown ? " — this net is down for the rest of the run" : ""
         }`,
+        // stoodDown is part of the SENTENCE, not a variable in it: "carry on"
+        // said by a person takes the net down for the rest of the run, and the
+        // same enum value arriving because nobody was there leaves it up. One
+        // sentence covering both would be false half the time.
         infoKey: PROGRESS_INTERVENTIONS.has(event.intervention)
-          ? `info.progressIntervention.${event.intervention}`
-          : "info.progressIntervention.unknown",
+          ? `info.progressIntervention.${event.intervention}${event.stoodDown ? ".stoodDown" : ""}`
+          : "info.progressIntervention.other",
         infoVars: { detector: event.detector, intervention: event.intervention },
         // The answer to an alarm, not a second alarm.
         tone: event.intervention === "END" ? "warn" : undefined,
@@ -1074,7 +1083,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         text: `Continuation ${event.continuation}/${event.budget}: ${event.decision}. ${event.evidence}`,
         infoKey: CONTINUATION_DECISIONS.has(event.decision)
           ? `info.continuation.${event.decision}`
-          : "info.continuation.unknown",
+          : "info.continuation.other",
         infoVars: {
           n: event.continuation,
           budget: event.budget,
@@ -1092,7 +1101,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         text: `Goal ${event.outcome}: ${event.evidence}`,
         infoKey: GOAL_OUTCOMES.has(event.outcome)
           ? `info.goalCheck.${event.outcome}`
-          : "info.goalCheck.unknown",
+          : "info.goalCheck.other",
         infoVars: {
           outcome: event.outcome,
           command: event.command,

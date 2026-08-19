@@ -2571,6 +2571,95 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: '"{key}" was ignored: a workspace folder may not set it. {hint}',
   },
 
+  // Cards 281 and 282: the run's three self-reports, one sentence per value.
+  //
+  // Not one template with the value substituted in, because the three detectors
+  // do not count the same thing and a shared sentence would be wrong for at
+  // least one of them. Read off the detector bodies, not off the field names:
+  // identical_writes counts the EARLIER paths already holding those bytes (the
+  // fourth copy trips the shipped 3), repeated_failure counts failures INCLUDING
+  // the current one (the third trips it), stalled_plan counts unchanged turns
+  // including this one.
+  "info.noProgress.identical_writes": {
+    de: "Kein Fortschritt: dieselben Bytes stehen schon unter {n} früheren Pfaden. {evidence}",
+    en: "No progress: these same bytes already sit under {n} earlier paths. {evidence}",
+  },
+  "info.noProgress.repeated_failure": {
+    de: "Kein Fortschritt: derselbe Aufruf ist {n} Mal hintereinander an unveränderter Eingabe gescheitert. {evidence}",
+    en: "No progress: the same call has failed {n} times in a row on unchanged input. {evidence}",
+  },
+  "info.noProgress.stalled_plan": {
+    de: "Kein Fortschritt: der Plan hat sich seit {n} Zügen nicht bewegt und hat offene Schritte. {evidence}",
+    en: "No progress: the plan has not moved for {n} turns and still has open steps. {evidence}",
+  },
+  // A detector this build has never heard of. It still gets a line, with the
+  // wire name in it, because silence is the defect these cards exist to remove.
+  "info.noProgress.other": {
+    de: "Kein Fortschritt ({detector}, {n}×). {evidence}",
+    en: "No progress ({detector}, {n}×). {evidence}",
+  },
+
+  // What the person watching decided. CARRY_ON is two facts, not one: said by a
+  // person it takes that net down for the rest of the run, arriving because
+  // nobody was there it leaves the net up.
+  "info.progressIntervention.CARRY_ON": {
+    de: "Weiter wie bisher. Niemand hat geantwortet, dieses Netz bleibt scharf.",
+    en: "Carrying on. Nobody answered, so this net stays armed.",
+  },
+  "info.progressIntervention.CARRY_ON.stoodDown": {
+    de: "Weiter wie bisher — du hast hingesehen, dieses Netz meldet sich in diesem Lauf nicht mehr.",
+    en: "Carrying on — you looked, so this net says nothing more in this run.",
+  },
+  "info.progressIntervention.CHANGE_COURSE": {
+    de: "Kurs geändert. Der Aufruf wurde nicht ausgeführt, das Modell hat deine Anweisung bekommen.",
+    en: "Course changed. The call was not made, and the model was told what to do instead.",
+  },
+  "info.progressIntervention.END": {
+    de: "Der Lauf wurde hier beendet.",
+    en: "The run was ended here.",
+  },
+  "info.progressIntervention.other": {
+    de: "Entscheidung: {intervention} ({detector}).",
+    en: "Decision: {intervention} ({detector}).",
+  },
+
+  // Card 266's leash, on the same surface as the guard above it.
+  "info.continuation.continued": {
+    de: "Der Lauf wird weitergeführt ({n} von {budget}): {open} von {total} Schritten sind noch offen.",
+    en: "Carried on ({n} of {budget}): {open} of {total} steps are still open.",
+  },
+  "info.continuation.no_progress": {
+    de: "Nicht weitergeführt: seit der letzten Fortsetzung hat sich nichts bewegt.",
+    en: "Not carried on: nothing has moved since the last continuation.",
+  },
+  "info.continuation.budget_spent": {
+    de: "Nicht weitergeführt: alle {budget} Fortsetzungen sind aufgebraucht, {open} von {total} Schritten bleiben offen.",
+    en: "Not carried on: all {budget} continuations are spent, {open} of {total} steps still open.",
+  },
+  "info.continuation.other": {
+    de: "Leine: {decision} ({n} von {budget}).",
+    en: "Leash: {decision} ({n} of {budget}).",
+  },
+
+  // Card 267's goal check. "unknown" is a real verdict here — the check could
+  // not decide — which is why the fallback below is spelled "other".
+  "info.goalCheck.met": {
+    de: "Ziel erreicht: {evidence}",
+    en: "Goal met: {evidence}",
+  },
+  "info.goalCheck.unmet": {
+    de: "Ziel nicht erreicht: {evidence}",
+    en: "Goal not met: {evidence}",
+  },
+  "info.goalCheck.unknown": {
+    de: "Ziel ließ sich nicht beurteilen: {evidence}",
+    en: "The goal could not be judged: {evidence}",
+  },
+  "info.goalCheck.other": {
+    de: "Ziel-Prüfung: {outcome} ({command}).",
+    en: "Goal check: {outcome} ({command}).",
+  },
+
   "info.imagesWithheld": {
     de: "{n} Bilder nicht gesendet: Dieses Modell kann keine Bilder sehen. Sie bleiben im Verlauf.",
     en: "{n} images not sent: this model cannot see images. They stay in the record.",

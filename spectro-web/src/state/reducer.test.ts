@@ -1797,7 +1797,7 @@ describe("the run's self-reports are lines and not silence", () => {
     expect(state.turns[0]).toMatchObject({
       kind: "info",
       tone: "warn",
-      infoKey: "info.noProgress.unknown",
+      infoKey: "info.noProgress.other",
     });
   });
 
