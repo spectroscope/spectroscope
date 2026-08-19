@@ -200,6 +200,20 @@ export type RunEvent =
   // request was built without it. This line is the sole place that says so, and
   // it carries facts rather than a sentence — the transcript is German or
   // English by the reader's choice, and the server does not know which.
+  // Card 285: a settings file named a key its scope may not set, so the WHOLE
+  // file was ignored. A refusal BY DESIGN, not a crash: it used to arrive as an
+  // "error" and wore the same red box, offered a retry that could only be
+  // refused identically, and was never written down.
+  | {
+      type: "settings_ignored";
+      /** The setting the scope was not allowed to name. */
+      key: string;
+      /** The settings file it was read from. */
+      file: string;
+      /** Where the setting does belong. The half that was already right. */
+      hint: string;
+      ts: number;
+    }
   | {
       type: "images_withheld";
       agentId: string;

@@ -580,6 +580,35 @@ describe("reduce — forward compatibility and errors", () => {
   });
 });
 
+describe("reduce — settings ignored (card 285)", () => {
+  // The refusal used to arrive as an "error", which wore the red box a crash
+  // wears and offered a retry that can only be refused identically. It is a
+  // refusal by design: a warn-toned line naming the key and where it does
+  // belong, and it is in the record, so reopening the session still explains
+  // why a successful write had no effect.
+  it("names the key and its home, as a warn-toned info line", () => {
+    const state = reduce(initialState, {
+      type: "settings_ignored",
+      key: "allowLocalhost",
+      file: "/Users/x/ForgeDemo/.spectro/settings.json",
+      hint: "the opt-in belongs in ~/.spectro/settings.json",
+      ts: 1,
+    });
+    expect(state.turns[0]).toEqual({
+      kind: "info",
+      text:
+        '"allowLocalhost" was ignored: a workspace folder may not set it. ' +
+        "the opt-in belongs in ~/.spectro/settings.json",
+      tone: "warn",
+      infoKey: "info.settingsIgnored",
+      infoVars: {
+        key: "allowLocalhost",
+        hint: "the opt-in belongs in ~/.spectro/settings.json",
+      },
+    });
+  });
+});
+
 describe("reduce — images withheld (card 252)", () => {
   // The refusal has to be READABLE, and it has to sit in the chat where the
   // picture is: the bubble above still shows the screenshot, because the record

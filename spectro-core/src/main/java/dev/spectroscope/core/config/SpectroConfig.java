@@ -894,9 +894,57 @@ public record SpectroConfig(
     private static void rejectProcessGlobals(PartialConfig scope, Path file) {
         for (ProcessGlobal forbidden : WORKSPACE_SCOPE_FORBIDDEN) {
             if (forbidden.get().apply(scope) != null) {
-                throw new IllegalArgumentException("\"" + forbidden.key() + "\" "
-                        + forbidden.rule() + " (" + file + ") — " + forbidden.hint());
+                throw new WorkspaceScopeRefused(forbidden.key(), file.toString(),
+                        forbidden.hint(),
+                        "\"" + forbidden.key() + "\" " + forbidden.rule()
+                                + " (" + file + ") — " + forbidden.hint());
             }
+        }
+    }
+
+    /**
+     * A workspace scope named a process-global key, with the parts kept apart.
+     *
+     * <p>Card 285: the message alone was all the reader got, so every surface
+     * had to re-parse prose to say anything specific, and none did. It stays an
+     * {@link IllegalArgumentException} so the existing catch sites are
+     * unchanged; what is new is that the key, the file and the hint survive the
+     * throw and can be recorded as values.</p>
+     */
+    public static final class WorkspaceScopeRefused extends IllegalArgumentException {
+
+        private static final long serialVersionUID = 1L;
+
+        private final String key;
+        private final String file;
+        private final String hint;
+
+        /**
+         * @param key     the setting the scope was not allowed to name
+         * @param file    the settings file it was read from
+         * @param hint    where the setting does belong
+         * @param message the whole sentence, unchanged from before card 285
+         */
+        public WorkspaceScopeRefused(String key, String file, String hint, String message) {
+            super(message);
+            this.key = key;
+            this.file = file;
+            this.hint = hint;
+        }
+
+        /** @return the setting the scope was not allowed to name */
+        public String key() {
+            return key;
+        }
+
+        /** @return the settings file it was read from */
+        public String file() {
+            return file;
+        }
+
+        /** @return where the setting does belong */
+        public String hint() {
+            return hint;
         }
     }
 

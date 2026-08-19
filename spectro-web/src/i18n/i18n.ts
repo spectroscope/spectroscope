@@ -2566,6 +2566,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Bild nicht gesendet: Dieses Modell kann keine Bilder sehen. Es bleibt im Verlauf.",
     en: "Image not sent: this model cannot see images. It stays in the record.",
   },
+  "info.settingsIgnored": {
+    de: '"{key}" wurde ignoriert: Ein Workspace-Ordner darf das nicht setzen. {hint}',
+    en: '"{key}" was ignored: a workspace folder may not set it. {hint}',
+  },
+
   "info.imagesWithheld": {
     de: "{n} Bilder nicht gesendet: Dieses Modell kann keine Bilder sehen. Sie bleiben im Verlauf.",
     en: "{n} images not sent: this model cannot see images. They stay in the record.",

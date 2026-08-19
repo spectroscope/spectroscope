@@ -989,6 +989,18 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     // happened, not merely that something did. The model is not named here: it
     // stands in the run's own meta row, and a name interpolated from a provider
     // that reported none would print "null" into the chat.
+    // Card 285. The key and the hint ride as vars so a German operator reads a
+    // German sentence around the server's own English hint, which names paths
+    // and env vars and is not ours to translate.
+    case "settings_ignored":
+      return addTurn(state, {
+        kind: "info",
+        text: `"${event.key}" was ignored: a workspace folder may not set it. ${event.hint}`,
+        infoKey: "info.settingsIgnored",
+        infoVars: { key: event.key, hint: event.hint },
+        tone: "warn",
+      });
+
     case "images_withheld":
       return addTurn(state, {
         kind: "info",

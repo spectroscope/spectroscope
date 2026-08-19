@@ -861,6 +861,10 @@ public final class SessionStore {
             // Card 265: the answer joins its question by callId, exactly as a
             // permission_decision joins its request — neither carries an agent.
             case RunEvent.QuestionAnswered e -> null;
+            // Card 285: a settings file was refused for the whole SESSION, not
+            // for one agent — every agent in it reads the same settings, so
+            // attributing the refusal to one of them would be an invention.
+            case RunEvent.SettingsIgnored e -> null;
             case RunEvent.RunEnd e -> null;
         });
     }

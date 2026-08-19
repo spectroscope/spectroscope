@@ -1530,10 +1530,34 @@ public final class SessionConnection {
      */
     private void reportUnreadable(RuntimeException unreadable) {
         String message = "workspace settings ignored: " + unreadable.getMessage();
-        if (!message.equals(reportedUnreadable)) {
-            reportedUnreadable = message;
-            sendError(message);
+        if (message.equals(reportedUnreadable)) {
+            return;
         }
+        reportedUnreadable = message;
+        // Card 285: a scope that names a forbidden key is a refusal BY DESIGN.
+        // It used to leave through sendError, which wears the red box a crash
+        // wears, offers a retry that can only be refused identically, and is
+        // never written down — so the reason was gone the moment the socket
+        // closed. It gets its own recorded notice; the file first, exactly as
+        // the llm_exchange mirror does, so a session whose socket died still
+        // says why its settings were dropped.
+        if (unreadable instanceof SpectroConfig.WorkspaceScopeRefused refused) {
+            RunEvent.SettingsIgnored event = new RunEvent.SettingsIgnored(
+                    refused.key(), refused.file(), refused.hint(), System.currentTimeMillis());
+            if (store != null) {
+                try {
+                    store.append(event);
+                } catch (RuntimeException unwritable) {
+                    // Losing the record line is not worth losing the session.
+                }
+            }
+            send(event);
+            return;
+        }
+        // A scope that is not merely refused but UNPARSEABLE is a different
+        // fact: nothing named a key, the file itself is broken. That keeps the
+        // error frame, because there is no structured refusal to report.
+        sendError(message);
     }
 
     /**
