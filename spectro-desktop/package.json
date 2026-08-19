@@ -1,9 +1,9 @@
 {
   "name": "spectro-desktop",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.10.0",
   "homepage": "https://spectroscope.ai",
-  "description": "spectroscope Desktop — Electron shell: spawns and supervises the spectro-server JVM",
+  "description": "spectroscope Desktop \u2014 Electron shell: spawns and supervises the spectro-server JVM",
   "author": "Christopher Ezell",
   "license": "MIT",
   "main": "dist/main.js",

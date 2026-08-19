@@ -628,22 +628,57 @@ class AgentContinuationTest {
 
     @Test
     void aRunCancelledBeforeTheExitIsNotContinuedAtAll() {
+        // The cancel lands INSIDE the provider, which the run loop calls on its
+        // own thread, so it is ordered strictly before the leash consult that
+        // ends the turn. It used to be raised from the consumer loop when the
+        // Plan event arrived — and that raced the run: on a loaded machine the
+        // consumer was late, the leash was consulted first, and the assertion
+        // below saw [continued]. Measured in the integration gate of
+        // 2026-08-19, green 5 of 5 in isolation and red under five parallel
+        // module suites.
+        //
+        // WHICH guard this actually holds, measured rather than assumed. Not the
+        // `!signal.isCancelled()` in the leash arm — that one is belt and braces
+        // and the code says so in its own comment; replacing it with `true`
+        // leaves this test green. The guarantee comes from the loop's abort
+        // exit, which returns on a cancelled signal before a turn can reach the
+        // leash at all. Deleting the `|| signal.isCancelled()` there turns this
+        // test red, which is the bite that earns its name.
+        //
+        // Nothing about the production code moved. What was wrong was a test
+        // that raced its own precondition, which this project counts as a test
+        // that cannot fail honestly.
         CancelSignal signal = new CancelSignal();
-        Agent agent = agent(scripted(
-                planTurn("c1", "pending", "pending"),
-                answerTurn(), answerTurn()), new ContinuationLeash(3));
+        Agent agent = agent(cancellingAfterThePlan(signal), new ContinuationLeash(3));
         List<RunEvent> events = new ArrayList<>();
         try (EventStream stream = agent.run("do it", new RunOptions(signal, null))) {
-            for (RunEvent event : stream) {
-                events.add(event);
-                if (event instanceof RunEvent.Plan) {
-                    signal.cancel();
-                }
-            }
+            stream.forEach(events::add);
         }
 
         assertEquals("aborted", lastStopReason(events));
-        assertEquals(List.of(), decisions(events));
+        assertEquals(List.of(), decisions(events),
+                "a run whose signal was already cancelled must not buy a continuation");
+    }
+
+    /** Plans on the first turn, then cancels ON THE RUN LOOP'S OWN THREAD and
+     *  stops — so "cancelled before the exit" is an ordering, not a hope.
+     *  @param signal the run's signal, cancelled from inside the second call
+     *  @return the provider */
+    private static LlmProvider cancellingAfterThePlan(CancelSignal signal) {
+        AtomicInteger next = new AtomicInteger();
+        return request -> {
+            if (next.getAndIncrement() == 0) {
+                return planTurn("c1", "pending", "pending");
+            }
+            signal.cancel();
+            // END_TURN, deliberately, NOT an aborted stop. An aborted stop leaves
+            // the loop before the leash is ever consulted, so a test built that
+            // way stays green with the cancel check deleted — measured. The run
+            // has to arrive at the exit the ordinary way, with an unfinished plan
+            // and a cancelled signal, because that arrival is the only place the
+            // check can be the thing that stops the continuation.
+            return answerTurn();
+        };
     }
 
     // ── criterion 4: the exit says how often it held on ────────────────────
