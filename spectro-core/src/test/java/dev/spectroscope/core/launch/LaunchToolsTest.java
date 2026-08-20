@@ -16,6 +16,7 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -721,5 +722,61 @@ class LaunchToolsTest {
         assertTrue(properties == null || properties.isEmpty(),
                 "launch_list must take no arguments, or card 283's regression test "
                         + "no longer mirrors a real tool. Schema was: " + schema);
+    }
+
+    /**
+     * Card 286, criterion 5: no browser is pointed at an address the start did
+     * not earn.
+     *
+     * <p>The owner's report is this sentence, from the other end: "It said web
+     * is up on http://localhost:5173/, it opened the browser there, and the
+     * agent worked against that page for a while." The page belonged to a
+     * server nobody in that session had started.
+     *
+     * <p>The assertion is on the browser's own record of where it was sent, not
+     * on the absence of a phrase in the answer. A negative over the sentence
+     * would be green for a tool that returned nothing at all, and this whole
+     * card is about a surface that spoke confidently while being wrong.
+     */
+    @Test
+    @EnabledOnOs({OS.MAC, OS.LINUX})
+    void aStrangerOnThePortGetsNoBrowserPointedAtIt(@TempDir Path project) throws Exception {
+        ServerSocket stranger = new ServerSocket(0, 8, InetAddress.getLoopbackAddress());
+        Thread accepter = new Thread(() -> {
+            while (!stranger.isClosed()) {
+                try (Socket ignored = stranger.accept()) {
+                    // answering is the point
+                } catch (IOException closed) {
+                    return;
+                }
+            }
+        }, "stranger-launchtools");
+        accepter.setDaemon(true);
+        accepter.start();
+        try (ServerSocket held = stranger) {
+            int port = held.getLocalPort();
+            assertTrue(LaunchSupervisor.TCP_CONNECT.answers("localhost", port),
+                    "the stranger answers, which is the premise of this test");
+            writeLaunchFile(project, """
+                    { "version": "0.0.1", "configurations": [
+                      { "name": "web", "runtimeExecutable": "/bin/sh",
+                        "runtimeArgs": ["-c", "echo 'Error: Port %d is already in use' >&2; exit 1"],
+                        "port": %d } ] }
+                    """.formatted(port, port));
+            RecordingBrowser browser = new RecordingBrowser(true);
+            LaunchSupervisor supervisor = LaunchSupervisor.real();
+            String said = tool(new LaunchTools(supervisor, () -> browser, () -> fence(true)).all(),
+                    "launch_start")
+                    .execute(args(Map.of("name", "web", "wait_seconds", "5")), context(project));
+
+            assertTrue(said.startsWith("ERROR:"),
+                    "a stranger on the port is a failed start, and it has to say so: " + said);
+            assertTrue(said.contains("already in use"),
+                    "with the command's own words in it: " + said);
+            assertEquals(List.of(), browser.opened,
+                    "the browser was sent to a page this start never earned");
+            assertEquals(Optional.empty(), supervisor.running("web"),
+                    "and launch_list agrees with the tool that just spoke");
+        }
     }
 }

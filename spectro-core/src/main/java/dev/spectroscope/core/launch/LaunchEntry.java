@@ -27,6 +27,24 @@ import java.util.List;
 public record LaunchEntry(String name, Integer port, String runtimeExecutable,
                           List<String> runtimeArgs, String url, List<String> unknownKeys) {
 
+    /**
+     * Whether {@link #address()} was DERIVED from {@code port} rather than
+     * stated as a {@code url} (card 286).
+     *
+     * <p>Rule B rests entirely on this one distinction, so it lives here beside
+     * the method it is about rather than being re-derived by a caller. An
+     * explicit url is a statement about where to LOOK, and something already
+     * answering there is the intended shape — a proxy in front of the command
+     * is the ordinary case. A port is a statement about what to BIND, and a
+     * stranger already holding it is exactly what makes a start a lie.</p>
+     *
+     * @return true when the address came from {@code port}, false when the
+     *         operator named a url and false when there is no address at all
+     */
+    public boolean addressIsPortDerived() {
+        return (url == null || url.isBlank()) && port != null && port > 0;
+    }
+
     /** Defensive copies, so a caller cannot mutate an entry after it was read. */
     public LaunchEntry {
         runtimeArgs = runtimeArgs == null ? List.of() : List.copyOf(runtimeArgs);
