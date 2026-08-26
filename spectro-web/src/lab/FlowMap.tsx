@@ -25,6 +25,7 @@ import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
 import { deriveDetail, sceneToFlow } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
+import { workerChip } from "./flowmap/workerGrid";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -165,6 +166,19 @@ export function FlowMap(props: {
           nodeColor={(nd) => MINIMAP_COLOR[nd.type ?? ""] ?? "transparent"}
           nodeStrokeColor="var(--border-strong)"
         />
+
+        <Panel position="top-right">
+          {(() => {
+            // The honest chip (card 287): quiet while every spawned worker is
+            // drawn, loud about the gap past the seating ceiling. Data, not
+            // chrome — the text stays untranslated like other wire-derived text.
+            const drawn = flow.nodes.filter((n) => n.type === "subagent").length;
+            const chip = workerChip(scene.subagents.length, drawn);
+            return chip === null ? null : (
+              <div className={`pf-chip${chip.gap ? " pf-chip--gap" : ""}`}>{chip.text}</div>
+            );
+          })()}
+        </Panel>
 
         <Panel position="bottom-left">
           <div className="pf-legend">

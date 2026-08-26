@@ -1614,3 +1614,18 @@
 .pf-os__by-also {
   color: var(--text-faint);
 }
+
+/* ---- The worker-count chip (card 287) ----------------------------------- */
+.pf-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: var(--surface);
+}
+.pf-chip--gap {
+  color: var(--error);
+  border-color: var(--error);
+}

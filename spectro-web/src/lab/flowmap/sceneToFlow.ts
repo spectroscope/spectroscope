@@ -11,6 +11,7 @@ import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
 import { stationUsers } from "./stationUsers";
+import { SEAT_ROWS_COMPACT, SEAT_ROWS_EXPANDED, SEATS_MAX_COMPACT, SEATS_MAX_EXPANDED, seatGrid, seatOf } from "./workerGrid";
 
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
@@ -445,8 +446,10 @@ const FOCUS_NODE: Record<Focus, string> = {
   mcp: "os-mcp",
 };
 
-const SUB_MAX = 3;
 const SUB_H = 132; // compact subagent card height, used to vertically center the group
+/** Compact subagent card width — mirrors `.pf-sub { width }` in flowmap.css;
+ *  the compact column pitch derives from it. */
+const COMPACT_SUB_W = 216;
 const SUB_MIN_GAP = 44; // hard minimum visual gap between subagent cards
 const SUB_BAND_BOTTOM = 630; // subagents stay above the OS band (OS_BAND_TOP)
 
@@ -523,10 +526,17 @@ export function sceneToFlow(
   //   · the OS band and the outside stations drop below the tall agent and LLM
   //     cards, and the frames grow by the same amount.
   const posL: Record<string, XY> = { ...L.pos };
-  // The column's slot count is needed before the frames are sized: expanded, the
-  // workers stack deeper than anything else on the map, so the frames follow them.
-  const subsOnMap = scene.subagents.slice(0, SUB_MAX);
-  const slotCount = Math.min(SUB_MAX, Math.max(subsOnMap.length, opts.subSlots ?? subsOnMap.length));
+  // The grid's slot count is needed before the frames are sized: expanded, the
+  // workers stack deeper than anything else on the map, so the frames follow
+  // them. Seats are a grid since card 287 — rows first, columns as needed, the
+  // seat of worker i fixed by i alone so a card never moves once it is drawn.
+  const isExpanded = !declutter && opts.expanded === true;
+  const seatRows = isExpanded ? SEAT_ROWS_EXPANDED : SEAT_ROWS_COMPACT;
+  const seatCeiling = isExpanded ? SEATS_MAX_EXPANDED : SEATS_MAX_COMPACT;
+  const subsOnMap = scene.subagents.slice(0, seatCeiling);
+  const slotCount = Math.min(seatCeiling, Math.max(subsOnMap.length, opts.subSlots ?? subsOnMap.length));
+  const grid = seatGrid(slotCount, seatRows);
+  let subColPitch = COMPACT_SUB_W + SUB_MIN_GAP;
   let spread = 0;
   let vSpread = 0;
   let bandGrow = 0;
@@ -535,7 +545,7 @@ export function sceneToFlow(
   let subGapL = L.subGap;
   let subCardH = SUB_H;
   let subBandBottom = SUB_BAND_BOTTOM;
-  if (!declutter && opts.expanded === true) {
+  if (isExpanded) {
     const agentX = L.pos.user.x + EXPANDED_CARD.user.w + EXP_GAP;
     const subX = agentX + EXPANDED_CARD.agent.w + EXP_GAP;
     // The leftmost thing in the right-hand world sets the shift for all of it:
@@ -546,7 +556,10 @@ export function sceneToFlow(
       L.pos.netz.x,
       L.pos.mcpserver.x,
     );
-    spread = Math.max(0, subX + EXPANDED_CARD.subagent.w + EXP_GAP - rightWorld);
+    // The grid's right edge plus rail room: subX + cols * (card + gap). With
+    // one column this is exactly the single-column shift it replaces.
+    subColPitch = EXPANDED_CARD.subagent.w + EXP_GAP;
+    spread = Math.max(0, subX + grid.cols * subColPitch - rightWorld);
     vSpread = Math.max(
       0,
       L.pos.agent.y + EXPANDED_CARD.agent.h + EXP_GAP - OS_BAND_TOP,
@@ -575,9 +588,22 @@ export function sceneToFlow(
     // it no longer shares a column with the band anyway (it sits right of the
     // wide agent). So it gets the room it needs instead of being clamped into
     // room it does not have — a clamp here is how the cards ended up stacked.
-    subBandBottom = subBaseL.y + Math.max(0, slotCount - 1) * subGapL + subCardH;
+    // Depth follows the grid's ROWS — a second column adds width, not depth.
+    subBandBottom = subBaseL.y + Math.max(0, grid.rows - 1) * subGapL + subCardH;
     const macFrame = L.zones.find((z) => z.variant === "mac");
     colGrow = macFrame ? Math.max(0, subBandBottom + FRAME_PAD - (macFrame.y + macFrame.h)) : 0;
+  } else if (!declutter && grid.cols > 1) {
+    // Compact grows sideways too: a second worker column would otherwise run
+    // into the boundary (remote) or the in-machine LLM (local). Same shift
+    // rule as expanded — the right-hand world clears the grid's right edge.
+    const rightWorld = Math.min(
+      L.boundary?.x ?? Number.POSITIVE_INFINITY,
+      L.pos.llm.x,
+      L.pos.netz.x,
+      L.pos.mcpserver.x,
+    );
+    spread = Math.max(0, L.subBase.x + grid.cols * subColPitch - rightWorld);
+    for (const id of ["llm", "netz", "mcpserver"]) posL[id] = { ...posL[id], x: posL[id].x + spread };
   }
   // Frames hold whichever runs deeper: the drop below the tall agent/llm cards,
   // or the worker column.
@@ -744,10 +770,16 @@ export function sceneToFlow(
   // a worker never slides as siblings spawn; it falls back to the live count for
   // the sim, and the frames above are already sized for it.
   const subs = subsOnMap;
-  const subYs = subagentYs(slotCount, subBaseL.y, subBandBottom, subGapL, subCardH);
+  // One shared row ladder for every column: the y of seat (row, col) is the y
+  // of that row — a sibling in a second column never re-centres the first.
+  const subYs = subagentYs(grid.rows, subBaseL.y, subBandBottom, subGapL, subCardH);
   subs.forEach((c, i) => {
     const id = `sub-${c.id}`;
-    posL[id] = { x: declutter ? subBaseX : subBaseL.x, y: subYs[i] };
+    const seat = seatOf(i, seatRows);
+    posL[id] = {
+      x: (declutter ? subBaseX : subBaseL.x) + seat.col * subColPitch,
+      y: subYs[seat.row] ?? subBaseL.y,
+    };
     const act = activity(
       c.focus,
       c.disk,

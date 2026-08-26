@@ -187,7 +187,9 @@ describe("registry", () => {
     expect([...names].some((n) => n.startsWith("mcp__"))).toBe(true); // the mcp chain
     // every worker reports usage, so the per-worker spend has numbers
     const spenders = new Set(
-      ev.filter((e) => e.type === "usage" && e.agentId !== "main").map((e) => e.agentId),
+      ev
+        .filter((e): e is Extract<RunEvent, { type: "usage" }> => e.type === "usage" && e.agentId !== "main")
+        .map((e) => e.agentId),
     );
     expect(spenders.size).toBe(8);
   });
