@@ -380,7 +380,9 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
       { id: "sub-a", type: "subagent", position: { x: 100, y: 100 } },
       { id: "sub-b", type: "subagent", position: { x: 100, y: 120 } },
     ];
-    expect(seatCollisions(nodes)).toEqual([`sub-a/sub-b 216x${EXPANDED_CARD.subagent.h - 20}`]);
+    expect(seatCollisions(nodes)).toEqual([
+      `sub-a/sub-b ${EXPANDED_CARD.subagent.w}x${EXPANDED_CARD.subagent.h - 20}`,
+    ]);
   });
 
   it("a card measured taller than its envelope is reported, once, and names both numbers", () => {

@@ -64,6 +64,20 @@ export interface Detail {
    * inherited that shape rather than causing it.
    */
   root: string;
+  /** Each agent's own launch brief — its run_start.prompt (card 287). */
+  briefs: Record<string, string>;
+  /** Each agent's own model, ONLY when its run_start named one. An agent with
+   *  no model on the wire stays absent — never inherited (card 287). */
+  models: Record<string, string>;
+  /**
+   * Per-agent context spend off the usage events (card 287). The context size
+   * of one turn is inputTokens + cacheReadTokens + cacheCreationTokens — the
+   * wire's own contract says inputTokens is the RAW uncached remainder and the
+   * true context is the sum. `peak` keeps the MAXIMUM, not the last value,
+   * because a window can be compacted downward mid-run and the reader is being
+   * shown how big it got. `turns` counts the usage events.
+   */
+  spend: Record<string, { peak: number; turns: number }>;
 }
 
 /** How many pictures one card shows. The rest are in the chat and the trace. */
@@ -111,6 +125,9 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     genImage: {},
     attached: {},
     root: "main",
+    briefs: {},
+    models: {},
+    spend: {},
   };
   let rootSeen = false;
   for (const e of applied) {
@@ -140,8 +157,16 @@ export function deriveDetail(applied: RunEvent[]): Detail {
         }
         d.think[e.agentId] = "";
         d.answer[e.agentId] = "";
+        d.briefs[e.agentId] = e.prompt;
+        if (e.model !== undefined) d.models[e.agentId] = e.model;
         if (e.agentId === d.root) d.prompt = e.prompt;
         break;
+      case "usage": {
+        const size = e.inputTokens + (e.cacheReadTokens ?? 0) + (e.cacheCreationTokens ?? 0);
+        const had = d.spend[e.agentId] ?? { peak: 0, turns: 0 };
+        d.spend[e.agentId] = { peak: Math.max(had.peak, size), turns: had.turns + 1 };
+        break;
+      }
       case "context_info":
         if (e.agentId === d.root) {
           d.ctxParts = e.parts;
@@ -286,7 +311,11 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   user: { w: 400, h: 180 },
   agent: { w: 680, h: 780 },
   llm: { w: 440, h: 540 },
-  subagent: { w: 216, h: 480 },
+  // The full worker card (card 287): the 680-wide agent instrument under the
+  // fixed 0.6 zoom paints 408 wide; the height is the zoomed body plus the
+  // worker chrome (head + meta). Starting value — the card's browser pass
+  // re-measures it and replaces the number with the measured claim.
+  subagent: { w: 408, h: 560 },
   // The machine room feeds the SAME card a node's order and its status history,
   // so an open fleet card runs about twice as tall as a worker card here (293
   // measured on a four-phase fleet).
@@ -802,6 +831,25 @@ export function sceneToFlow(
       focus: c.focus,
       active: scene.activeChild === c.id,
       think: detail.think[c.id] ?? "",
+      // Expanded, a worker is the agent's own card with the child's data
+      // (card 287). Compact data stays byte-identical to what shipped.
+      ...(isExpanded
+        ? {
+            full: {
+              error: c.isError,
+              gate: c.gate,
+              gateNote: gateNote(c.gate, lang),
+              gateColor: GATE_COLOR[c.gate],
+              activeTool: c.activeTool,
+              tool: detail.tool[c.id] ?? null,
+              genImage: detail.genImage[c.id] ?? null,
+              attached: detail.attached[c.id] ?? null,
+              brief: detail.briefs[c.id] ?? null,
+              model: detail.models[c.id] ?? null,
+              spend: detail.spend[c.id] ?? null,
+            },
+          }
+        : {}),
     });
   });
 

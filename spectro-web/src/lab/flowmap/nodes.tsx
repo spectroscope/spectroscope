@@ -156,24 +156,29 @@ export function UserNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 // Agent hub
 // ---------------------------------------------------------------------------
-export function AgentNode({ data }: NodeProps) {
-  const d = data as {
-    active: boolean;
-    error: boolean;
-    focus: Focus;
-    activity: Activity;
-    gate: GateState;
-    gateNote: string;
-    gateColor: string;
-    activeTool: string | null;
-    ctxParts: CtxPart[] | null;
-    ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
-    prompt: string;
-    systemPrompt: string | null;
-    tool: { name: string; input: unknown } | null;
-    genImage: { src: string; prompt: string } | null;
-    attached: { src: string; note: string }[] | null;
-  };
+export type AgentData = {
+  active: boolean;
+  error: boolean;
+  focus: Focus;
+  activity: Activity;
+  gate: GateState;
+  gateNote: string;
+  gateColor: string;
+  activeTool: string | null;
+  ctxParts: CtxPart[] | null;
+  ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
+  prompt: string;
+  systemPrompt: string | null;
+  tool: { name: string; input: unknown } | null;
+  genImage: { src: string; prompt: string } | null;
+  attached: { src: string; note: string }[] | null;
+};
+
+/** The agent card's inner content — head, loop and gate rows, the tool belt
+ *  and the context panels — WITHOUT the outer card frame and WITHOUT handles.
+ *  Extracted so the expanded worker card renders the same instrument with the
+ *  child's own data (card 287); AgentNode below is the frame around it. */
+export function AgentCardBody({ data: d }: { data: AgentData }) {
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
@@ -346,9 +351,7 @@ export function AgentNode({ data }: NodeProps) {
   );
 
   return (
-    <div
-      className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}${expandAll ? " pf-agent--wide" : ""}`}
-    >
+    <>
       {head}
       {expandAll ? (
         // edu: the context sits BESIDE the controls (wider card, not a tall stack).
@@ -385,6 +388,19 @@ export function AgentNode({ data }: NodeProps) {
           </Disclosure>
         </>
       )}
+    </>
+  );
+}
+
+export function AgentNode({ data }: NodeProps) {
+  const d = data as AgentData;
+  const expandAll = useContext(ExpandAllContext);
+  const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
+  return (
+    <div
+      className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}${expandAll ? " pf-agent--wide" : ""}`}
+    >
+      <AgentCardBody data={d} />
       <Handles />
     </div>
   );
@@ -666,6 +682,50 @@ export function ExtNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 // Subagent loop
 // ---------------------------------------------------------------------------
+/** The worker's slice of the agent-card data shape — everything the child's
+ *  own fold carries; the context columns stay null (a child's context parts
+ *  are not on this wire) and the brief stands in for the prompt. */
+function workerAgentData(
+  d: {
+    active: boolean;
+    focus: Focus;
+    activity: Activity;
+    full: SubFull;
+  },
+): AgentData {
+  return {
+    active: d.active,
+    error: d.full.error,
+    focus: d.focus,
+    activity: d.activity,
+    gate: d.full.gate,
+    gateNote: d.full.gateNote,
+    gateColor: d.full.gateColor,
+    activeTool: d.full.activeTool,
+    ctxParts: null,
+    ctxTotals: null,
+    prompt: d.full.brief ?? "",
+    systemPrompt: null,
+    tool: d.full.tool,
+    genImage: d.full.genImage,
+    attached: d.full.attached,
+  };
+}
+
+type SubFull = {
+  error: boolean;
+  gate: GateState;
+  gateNote: string;
+  gateColor: string;
+  activeTool: string | null;
+  tool: { name: string; input: unknown } | null;
+  genImage: { src: string; prompt: string } | null;
+  attached: { src: string; note: string }[] | null;
+  brief: string | null;
+  model: string | null;
+  spend: { peak: number; turns: number } | null;
+};
+
 export function SubagentNode({ data }: NodeProps) {
   const lang = useLang();
   const d = data as {
@@ -680,7 +740,53 @@ export function SubagentNode({ data }: NodeProps) {
     focus: Focus;
     active: boolean;
     think: string;
+    /** Present only in the expanded view: the worker renders as the agent's
+     *  own card with this data (card 287). Absent = compact, byte-identical
+     *  to what shipped. */
+    full?: SubFull;
   };
+  if (d.full !== undefined) {
+    // The opaque agent id lives ONLY in the title attribute — the visible
+    // name is the task the spawner phrased, then the kind label, then nothing.
+    return (
+      <div className={`pf-card pf-sub pf-sub--full${d.active ? " pf-card--active" : ""}`}>
+        <div className="pf-sub__head" title={d.id}>
+          <span className="pf-sub__id">
+            <span className="pf-sub__dot" style={{ background: d.stateColor }} />
+            {d.task || d.label || "worker"}
+          </span>
+          {d.label !== null && <span className="pf-badge">{d.label}</span>}
+          <span className="pf-badge" style={{ color: d.stateColor }}>
+            {d.stateLabel}
+          </span>
+        </div>
+        <AgentCardBody data={workerAgentData({ active: d.active, focus: d.focus, activity: d.activity, full: d.full })} />
+        <div className="pf-sub__meta">
+          {d.full.brief !== null && (
+            <Disclosure label={t(lang, "map.sub.brief")}>
+              <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+                {d.full.brief}
+              </div>
+            </Disclosure>
+          )}
+          {d.full.spend !== null && (
+            <span className="pf-kv">
+              {t(lang, "map.sub.peak")}{" "}
+              <b className="tabular">{d.full.spend.peak.toLocaleString("en-US")}</b> tok ·{" "}
+              {d.full.spend.turns} turns
+            </span>
+          )}
+          {d.full.model !== null && <span className="pf-kv">{d.full.model}</span>}
+          {d.lastStatus !== null && (
+            <span className="pf-kv">
+              {t(lang, "map.sub.lastStatus")} <b>{d.lastStatus}</b>
+            </span>
+          )}
+        </div>
+        <Handles />
+      </div>
+    );
+  }
   return (
     <div className={`pf-card pf-sub${d.active ? " pf-card--active" : ""}`}>
       <div className="pf-sub__head">

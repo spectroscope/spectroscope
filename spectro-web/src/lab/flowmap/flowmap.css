@@ -1630,3 +1630,29 @@
   color: var(--error);
   border-color: var(--error);
 }
+
+/* ---- The full worker card (card 287): the agent's own instrument at worker
+ * scale. A FIXED zoom, never driven by a measured width — CSS zoom
+ * participates in layout, and paint feeding measurement feeding zoom is a
+ * feedback loop with gain (measured to a 33-million-pixel card on a
+ * downstream consumer of this engine). transform: scale is no alternative:
+ * the canvas measures the layout box and handles would anchor to a box the
+ * paint no longer matches. ------------------------------------------------ */
+.pf-sub--full {
+  zoom: 0.6;
+  width: 680px;
+}
+.pf-sub--full .pf-sub__head {
+  margin-bottom: 8px;
+}
+.pf-sub__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: left;
+}
