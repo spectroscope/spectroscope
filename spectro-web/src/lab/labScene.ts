@@ -64,21 +64,37 @@ export interface Scene extends Loop {
 
 const MAIN = "main";
 const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
+// Imported Claude Code transcripts carry Claude Code's tool names. The fold
+// routes them to the same stations the native names reach — the recorded name
+// itself is NEVER rewritten (the wire is evidence), so activeTool keeps the
+// original spelling. AskUserQuestion stays at the agent on purpose: this fold
+// uses focus "user" to mean the run is over, and an agent parked at the user
+// would read as finished. WebFetch/WebSearch stay dark on purpose: the map has
+// no rail from the agent to the network stack, and lighting a station with no
+// path to it would claim an MCP chain that never ran.
+const CC_DISK_READ = new Set(["Read", "Glob"]);
+const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
 
 /** Only Ollama runs the model on the user's machine; everything else is remote. */
 export function isLocalProvider(provider: string | null | undefined): boolean {
   return typeof provider === "string" && provider.toLowerCase() === "ollama";
 }
 
+/** Middle-ellipsis WITHOUT the basename split — for glob patterns and other
+ *  non-path strings the disk pill shows, where the directories are the point. */
+export function clipMiddle(s: string, max = 22): string {
+  if (s.length <= max) return s;
+  const keep = max - 1; // room for the ellipsis
+  const head = Math.ceil(keep / 2);
+  const tail = Math.floor(keep / 2);
+  return `${s.slice(0, head)}…${s.slice(s.length - tail)}`;
+}
+
 /** Last path segment, then Apple-style middle ellipsis so start AND end stay readable. */
 export function fileLabel(path: string, max = 22): string {
   const segs = path.split(/[/\\]+/).filter(Boolean);
   const name = segs.length > 0 ? segs[segs.length - 1] : path;
-  if (name.length <= max) return name;
-  const keep = max - 1; // room for the ellipsis
-  const head = Math.ceil(keep / 2);
-  const tail = Math.floor(keep / 2);
-  return `${name.slice(0, head)}…${name.slice(name.length - tail)}`;
+  return clipMiddle(name, max);
 }
 
 /** A fresh loop — a spawned/running agent starts "at the agent". */
@@ -171,6 +187,19 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
           focus: "disk",
           disk: event.name === "write_file" ? "write" : "read",
           activeFile: path !== null ? fileLabel(path) : null,
+        };
+      }
+      if (event.name === "Bash") {
+        return { ...base, focus: "cmd", activeCommand: inputStr(event.input, "command") };
+      }
+      if (CC_DISK_READ.has(event.name) || CC_DISK_WRITE.has(event.name)) {
+        const path = inputStr(event.input, "path") ?? inputStr(event.input, "file_path");
+        const pattern = event.name === "Glob" ? inputStr(event.input, "pattern") : null;
+        return {
+          ...base,
+          focus: "disk",
+          disk: CC_DISK_WRITE.has(event.name) ? "write" : "read",
+          activeFile: pattern !== null ? clipMiddle(pattern, 28) : path !== null ? fileLabel(path) : null,
         };
       }
       return { ...base, focus: "agent" }; // unknown tool: no dedicated station

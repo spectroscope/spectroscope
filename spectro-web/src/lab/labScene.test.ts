@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { advanceScene, fileLabel, initialScene, isLocalProvider } from "./labScene";
+import { advanceScene, clipMiddle, fileLabel, initialScene, isLocalProvider } from "./labScene";
 import type { Scene } from "./labScene";
 
 const T = 1700000000000;
@@ -416,5 +416,74 @@ describe("labScene", () => {
     expect(long.startsWith("this")).toBe(true);
     expect(long.endsWith(".tsx")).toBe(true);
     expect(long.length).toBeLessThanOrEqual(24);
+  });
+});
+
+describe("claude code tool aliases (imported transcripts light the stations)", () => {
+  it("routes Bash to the shell with its command, name never rewritten", () => {
+    const s = play([runStart("anthropic"), toolCall("Bash", { command: "ls -la" })]);
+    expect(s.focus).toBe("cmd");
+    expect(s.activeCommand).toBe("ls -la");
+    expect(s.activeTool).toBe("Bash");
+  });
+
+  it("routes Read to the disk as a read, via file_path", () => {
+    const s = play([runStart("anthropic"), toolCall("Read", { file_path: "/a/b/notes.md" })]);
+    expect(s.focus).toBe("disk");
+    expect(s.disk).toBe("read");
+    expect(s.activeFile).toBe("notes.md");
+  });
+
+  it("routes Write, Edit and MultiEdit to the disk as writes", () => {
+    for (const name of ["Write", "Edit", "MultiEdit"]) {
+      const s = play([runStart("anthropic"), toolCall(name, { file_path: "/x/app.ts" })]);
+      expect(s.focus).toBe("disk");
+      expect(s.disk).toBe("write");
+    }
+  });
+
+  it("routes Glob to the disk as a read, showing the pattern whole", () => {
+    const s = play([runStart("anthropic"), toolCall("Glob", { pattern: "src/**/*.ts" })]);
+    expect(s.focus).toBe("disk");
+    expect(s.disk).toBe("read");
+    expect(s.activeFile).toBe("src/**/*.ts");
+  });
+
+  it("a child's Bash lights the child's own loop, not the main packet", () => {
+    const s = play([
+      runStart("anthropic"),
+      { type: "agent_spawn", agentId: "c1", parentId: "main", task: "scout", ts: T } as RunEvent,
+      toolCall("Bash", { command: "pwd" }, "cc", "c1"),
+    ]);
+    expect(s.focus).toBe("agent");
+    expect(s.subagents[0].focus).toBe("cmd");
+    expect(s.subagents[0].activeCommand).toBe("pwd");
+  });
+
+  it("native names keep folding exactly as before, path read first", () => {
+    const s = play([runStart("anthropic"), toolCall("read_file", { path: "/a/b/c.txt" })]);
+    expect(s.focus).toBe("disk");
+    expect(s.activeFile).toBe("c.txt");
+  });
+
+  it("AskUserQuestion stays at the agent — focus user means the run is over", () => {
+    const s = play([runStart("anthropic"), toolCall("AskUserQuestion", { questions: [] })]);
+    expect(s.focus).toBe("agent");
+    expect(s.activeTool).toBe("AskUserQuestion");
+  });
+
+  it("WebFetch stays dark on purpose (agent hub, no station, no faked chain)", () => {
+    const s = play([runStart("anthropic"), toolCall("WebFetch", { url: "https://x" })]);
+    expect(s.focus).toBe("agent");
+    expect(s.activeMcp).toBeNull();
+  });
+
+  it("clipMiddle keeps head and tail without splitting on slashes", () => {
+    expect(clipMiddle("short", 22)).toBe("short");
+    const c = clipMiddle("src/deep/nested/**/*.spec.ts", 22);
+    expect(c).toContain("…");
+    expect(c.startsWith("src/")).toBe(true);
+    expect(c.endsWith(".ts")).toBe(true);
+    expect(c.length).toBeLessThanOrEqual(22);
   });
 });
