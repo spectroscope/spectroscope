@@ -175,7 +175,7 @@ export function FlowMap(props: {
             const drawn = flow.nodes.filter((n) => n.type === "subagent").length;
             const chip = workerChip(scene.subagents.length, drawn);
             return chip === null ? null : (
-              <div className={`pf-chip${chip.gap ? " pf-chip--gap" : ""}`}>{chip.text}</div>
+              <div className={`pf-count-chip${chip.gap ? " pf-count-chip--gap" : ""}`}>{chip.text}</div>
             );
           })()}
         </Panel>
