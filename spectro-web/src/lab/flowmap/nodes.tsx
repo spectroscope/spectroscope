@@ -107,6 +107,8 @@ function GenImage({ src, alt }: { src?: string; alt?: string }) {
 
 /** The shell's one-line display clips a running command to this width. */
 const SHELL_PREVIEW_CHARS = 26;
+/** The widened expanded station (card 287) fits a longer preview. */
+const SHELL_PREVIEW_CHARS_WIDE = 48;
 
 // ---------------------------------------------------------------------------
 // User
@@ -485,12 +487,16 @@ function DiskBody({ disk, file }: { disk?: "idle" | "read" | "write"; file?: str
   );
 }
 
-/** The prompt line typing the running command, plus its full-text disclosure. */
+/** The prompt line typing the running command, plus its full-text disclosure.
+ *  The widened expanded station (card 287) affords a longer preview and a
+ *  taller scroll window — legible without opening anything. */
 function ShellBody({ command, active }: { command?: string | null; active: boolean }) {
   const lang = useLang();
+  const expandAll = useContext(ExpandAllContext);
+  const previewChars = expandAll ? SHELL_PREVIEW_CHARS_WIDE : SHELL_PREVIEW_CHARS;
   const shown = command
-    ? command.length > SHELL_PREVIEW_CHARS
-      ? `${command.slice(0, SHELL_PREVIEW_CHARS - 1)}…`
+    ? command.length > previewChars
+      ? `${command.slice(0, previewChars - 1)}…`
       : command
     : "";
   return (
@@ -510,7 +516,7 @@ function ShellBody({ command, active }: { command?: string | null; active: boole
         <Disclosure label={t(lang, "map.shell.cmd")}>
           <div
             className="pf-panelbox pf-mono nowheel"
-            style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}
+            style={{ fontSize: 11, overflow: "auto", maxHeight: expandAll ? 240 : 90 }}
           >
             $ {command}
           </div>

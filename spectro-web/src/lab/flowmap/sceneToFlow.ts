@@ -12,6 +12,7 @@ import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
 import { stationUsers } from "./stationUsers";
 import { SEAT_ROWS_COMPACT, SEAT_ROWS_EXPANDED, SEATS_MAX_COMPACT, SEATS_MAX_EXPANDED, seatGrid, seatOf } from "./workerGrid";
+import { osBandWidth, stationSeats } from "./stationSeats";
 
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
@@ -321,9 +322,15 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   // measured on a four-phase fleet).
   "fleet-card": { w: 216, h: 300 },
   ext: { w: 150, h: 110 },
-  "os-disk": { w: 152, h: 150 },
-  "os-shell": { w: 200, h: 210 },
-  "os-mcp": { w: 190, h: 210 },
+  // The stations grew (card 287): sized so an ACTIVE station's content is
+  // legible without opening a disclosure — the command line whole, the MCP
+  // call readable. Starting values from a downstream measurement (shell fully
+  // visible went 10.5% → 75.4% of open steps there); the card's browser pass
+  // re-measures them here and replaces the numbers. Expanded seats derive
+  // from these via stationSeats, so widening moves neighbours, never overlaps.
+  "os-disk": { w: 260, h: 240 },
+  "os-shell": { w: 460, h: 340 },
+  "os-mcp": { w: 500, h: 340 },
   "os-net": { w: 104, h: 100 },
 };
 
@@ -566,6 +573,8 @@ export function sceneToFlow(
   const slotCount = Math.min(seatCeiling, Math.max(subsOnMap.length, opts.subSlots ?? subsOnMap.length));
   const grid = seatGrid(slotCount, seatRows);
   let subColPitch = COMPACT_SUB_W + SUB_MIN_GAP;
+  /** Expanded only: the band width derived from the widened stations. */
+  let osBandW: number | null = null;
   let spread = 0;
   let vSpread = 0;
   let bandGrow = 0;
@@ -576,7 +585,25 @@ export function sceneToFlow(
   let subBandBottom = SUB_BAND_BOTTOM;
   if (isExpanded) {
     const agentX = L.pos.user.x + EXPANDED_CARD.user.w + EXP_GAP;
-    const subX = agentX + EXPANDED_CARD.agent.w + EXP_GAP;
+    // The widened stations re-seat left-to-right from their own envelopes, and
+    // the band width follows them (stationSeats — the derivation that replaced
+    // the hand-written seats).
+    const stationIds = ["os-disk", "os-shell", "os-mcp", "os-net"] as const;
+    const stationWs = stationIds.map((sid) => EXPANDED_CARD[sid].w);
+    const stationXs = stationSeats(stationWs);
+    stationIds.forEach((sid, i) => {
+      posL[sid] = { ...posL[sid], x: stationXs[i] };
+    });
+    osBandW = osBandWidth(stationWs);
+    const osZone = L.zones.find((z) => z.variant === "os")!;
+    // The worker column starts clear of BOTH the wide agent card and the
+    // band's right edge — the band sits below user+agent and now runs wider
+    // than the agent, so a column keyed to the agent alone would stand on the
+    // stations (the seat guards caught exactly that).
+    const subX = Math.max(
+      agentX + EXPANDED_CARD.agent.w + EXP_GAP,
+      osZone.x + osBandW + EXP_GAP,
+    );
     // The leftmost thing in the right-hand world sets the shift for all of it:
     // remote that is the boundary wall, local it is the LLM inside the machine.
     const rightWorld = Math.min(
@@ -586,9 +613,13 @@ export function sceneToFlow(
       L.pos.mcpserver.x,
     );
     // The grid's right edge plus rail room: subX + cols * (card + gap). With
-    // one column this is exactly the single-column shift it replaces.
+    // one column this is exactly the single-column shift it replaces. The mac
+    // frame must hold the band even with no worker column (zero workers), so
+    // the spread takes whichever need is larger.
     subColPitch = EXPANDED_CARD.subagent.w + EXP_GAP;
-    spread = Math.max(0, subX + grid.cols * subColPitch - rightWorld);
+    const macFrameW = L.zones.find((z) => z.variant === "mac")?.w ?? 0;
+    const bandNeed = osZone.x + osBandW + FRAME_PAD - macFrameW;
+    spread = Math.max(0, subX + grid.cols * subColPitch - rightWorld, bandNeed);
     vSpread = Math.max(
       0,
       L.pos.agent.y + EXPANDED_CARD.agent.h + EXP_GAP - OS_BAND_TOP,
@@ -638,13 +669,13 @@ export function sceneToFlow(
   // or the worker column.
   const frameGrow = Math.max(vSpread + bandGrow, colGrow);
   const zonesL: Zone[] = L.zones.map((z) =>
-    spread === 0 && frameGrow === 0
+    spread === 0 && frameGrow === 0 && osBandW === null
       ? z
       : z.variant === "mac"
         ? { ...z, w: z.w + spread, h: z.h + frameGrow }
         : z.variant === "outside"
           ? { ...z, x: z.x + spread, h: z.h + frameGrow }
-          : { ...z, y: z.y + vSpread, h: z.h + bandGrow },
+          : { ...z, y: z.y + vSpread, h: z.h + bandGrow, ...(osBandW !== null ? { w: osBandW } : {}) },
   );
   const boundaryL =
     L.boundary && (spread > 0 || frameGrow > 0)

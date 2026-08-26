@@ -482,6 +482,23 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
     expect(boundary.position.x).toBeGreaterThanOrEqual(rightmost);
   });
 
+  it("expanded: the widened stations sit inside the band, and the band inside the mac frame", () => {
+    const flow = flowOfEight("anthropic");
+    const band = zone(flow, "z-os");
+    const mac = zone(flow, "z-mac");
+    for (const id of ["os-disk", "os-shell", "os-mcp", "os-net"]) {
+      const n = flow.nodes.find((x) => x.id === id)!;
+      const env = EXPANDED_CARD[id];
+      expect(n.position.x).toBeGreaterThanOrEqual(band.x);
+      expect(n.position.x + env.w).toBeLessThanOrEqual(band.x + band.w);
+      expect(n.position.y + env.h).toBeLessThanOrEqual(band.y + band.h);
+    }
+    expect(band.x + band.w).toBeLessThanOrEqual(mac.x + mac.w);
+    // and the worker column stands clear of the band's right edge
+    const firstSub = flow.nodes.filter((n) => n.type === "subagent")[0];
+    expect(firstSub.position.x).toBeGreaterThanOrEqual(band.x + band.w);
+  });
+
   it("expanded: a run past the ceiling draws the ceiling, not the fleet", () => {
     const events: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts: T },
