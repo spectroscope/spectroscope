@@ -92,8 +92,18 @@ describe("the full worker card (card 287)", () => {
     expect(markup).toContain("pf-agent__cols"); // the body came along, wide
     expect(markup).toContain("Scout Flink checkout");
     expect(markup).toContain("app-scout"); // the kind badge — the wire named one
-    expect(markup).toContain("66,041"); // peak, grouped
+    expect(markup).toContain("66,041"); // peak, grouped for the UI language
     expect(markup).toContain("17 turns");
+  });
+
+  it("says one turn, not one turns", () => {
+    const m = renderToStaticMarkup(
+      <ExpandAllContext.Provider value={true}>
+        <Sub data={{ ...workerData, full: { ...workerData.full, spend: { peak: 900, turns: 1 } } }} />
+      </ExpandAllContext.Provider>,
+    );
+    expect(m).toContain("1 turn");
+    expect(m).not.toContain("1 turns");
     expect(markup).toContain("claude-sonnet-5");
     expect(markup).toContain("checking the shop");
   });

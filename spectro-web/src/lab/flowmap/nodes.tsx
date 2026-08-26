@@ -566,6 +566,7 @@ export function OsNode({ data }: NodeProps) {
     by?: { tag: string; name: string }[];
   };
   const lang = useLang();
+  const expandAll = useContext(ExpandAllContext);
 
   let station: { title: string; body: ReactNode };
   switch (d.kind) {
@@ -584,7 +585,12 @@ export function OsNode({ data }: NodeProps) {
   }
 
   return (
-    <div className={`pf-card pf-os pf-os--${d.kind}${d.active ? " pf-card--active" : ""}`}>
+    // Expanded, the stations paint at the widths their SEATS reserve
+    // (EXPANDED_CARD / stationSeats) — the compact widths in the stylesheet
+    // would leave the reserved room empty and the command clipped anyway.
+    <div
+      className={`pf-card pf-os pf-os--${d.kind}${expandAll ? " pf-os--wide" : ""}${d.active ? " pf-card--active" : ""}`}
+    >
       <div className="pf-os__head">
         <span className="pf-eyebrow">{station.title}</span>
       </div>
@@ -776,8 +782,10 @@ export function SubagentNode({ data }: NodeProps) {
           )}
           {d.full.spend !== null && (
             <span className="pf-kv">
-              {t(lang, "map.sub.peak")} <b className="tabular">{d.full.spend.peak.toLocaleString("en-US")}</b>{" "}
-              tok · {d.full.spend.turns} turns
+              {t(lang, "map.sub.peak")}{" "}
+              <b className="tabular">{d.full.spend.peak.toLocaleString(lang === "de" ? "de-DE" : "en-US")}</b>{" "}
+              tok · {d.full.spend.turns}{" "}
+              {t(lang, d.full.spend.turns === 1 ? "map.sub.turn" : "map.sub.turns")}
             </span>
           )}
           {d.full.model !== null && <span className="pf-kv">{d.full.model}</span>}

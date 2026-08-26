@@ -1656,3 +1656,20 @@
   color: var(--text-dim);
   text-align: left;
 }
+
+/* ---- The widened stations (card 287). Expanded only: the seats reserve this
+ * room (EXPANDED_CARD + stationSeats), so the cards paint into it — otherwise
+ * the room stands empty and the command is clipped anyway. Compact keeps the
+ * hand-authored widths above, untouched. ---------------------------------- */
+.pf-os--wide {
+  width: 260px;
+}
+.pf-os--wide.pf-os--shell {
+  width: 460px;
+}
+.pf-os--wide.pf-os--mcp {
+  width: 500px;
+}
+.pf-os--wide.pf-os--net {
+  width: 104px;
+}

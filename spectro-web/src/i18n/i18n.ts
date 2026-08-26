@@ -1467,6 +1467,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.sub.lastStatus": { de: "Letzter Status:", en: "Last status:" },
   "map.sub.brief": { de: "Auftragstext", en: "launch brief" },
   "map.sub.peak": { de: "Spitze", en: "peak" },
+  "map.sub.turn": { de: "Zug", en: "turn" },
+  "map.sub.turns": { de: "Züge", en: "turns" },
 
   // trace tab
   "trace.filterPh": { de: "Frames filtern …", en: "Filter frames …" },

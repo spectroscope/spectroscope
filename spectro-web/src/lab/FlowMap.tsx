@@ -213,7 +213,9 @@ export function FlowMap(props: {
           panOnDrag={[1, 2]}
           fitView
           fitViewOptions={{ padding: 0.16 }}
-          minZoom={0.3}
+          // 0.1 since card 287: an expanded eight-worker map needs a fit zoom
+          // near 0.21 — the old 0.3 floor made fitView clip the grid.
+          minZoom={0.1}
           maxZoom={1.8}
           proOptions={{ hideAttribution: true }}
           defaultEdgeOptions={{ type: "rail" }}
