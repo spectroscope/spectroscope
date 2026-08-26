@@ -73,9 +73,7 @@ export function LabView(props: {
   // agent, the prompt beside the user — exactly the edu lessons' reading.
   // Default (card 287, owner-decided): replay and import open expanded (the
   // player), live opens compact; an explicit choice wins and sticks.
-  const [expanded, setExpanded] = useState<boolean>(() =>
-    labViewDefault(storedView(), replay !== null),
-  );
+  const [expanded, setExpanded] = useState<boolean>(() => labViewDefault(storedView(), replay !== null));
   const pickView = (next: boolean): void => {
     setExpanded(next);
     try {

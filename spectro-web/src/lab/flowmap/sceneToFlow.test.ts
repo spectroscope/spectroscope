@@ -449,7 +449,13 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
     ...Array.from(
       { length: 8 },
       (_, i) =>
-        ({ type: "agent_spawn", agentId: `worker-${i + 1}`, parentId: "main", task: `t${i + 1}`, ts: T }) as RunEvent,
+        ({
+          type: "agent_spawn",
+          agentId: `worker-${i + 1}`,
+          parentId: "main",
+          task: `t${i + 1}`,
+          ts: T,
+        }) as RunEvent,
     ),
   ];
   const flowOfEight = (provider: string) => {
@@ -505,7 +511,13 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
       ...Array.from(
         { length: 14 },
         (_, i) =>
-          ({ type: "agent_spawn", agentId: `w${i + 1}`, parentId: "main", task: `t${i + 1}`, ts: T }) as RunEvent,
+          ({
+            type: "agent_spawn",
+            agentId: `w${i + 1}`,
+            parentId: "main",
+            task: `t${i + 1}`,
+            ts: T,
+          }) as RunEvent,
       ),
     ];
     const scene = events.reduce(advanceScene, initialScene());

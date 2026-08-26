@@ -247,7 +247,12 @@ const fanoutEight: Dsl = {
             task: { en: "summarize the risks", de: "fasse die Risiken zusammen" },
             steps: [
               { status: { en: "thinking it through", de: "denke es durch" } },
-              { think: { en: "No station for this one — thinking only.", de: "Keine Station hier — nur Denken." } },
+              {
+                think: {
+                  en: "No station for this one — thinking only.",
+                  de: "Keine Station hier — nur Denken.",
+                },
+              },
               { usage: { in: 52_000, out: 3_200 } },
               { say: { en: "two risks, both small", de: "zwei Risiken, beide klein" } },
             ],

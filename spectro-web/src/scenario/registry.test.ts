@@ -175,7 +175,10 @@ describe("registry", () => {
   });
 
   it("fanout-eight: eight workers, and the stations are all exercised (card 287)", () => {
-    const ev = compile(SCENARIOS.find((s) => s.id === "fanout-eight")!, "en");
+    const ev = compile(
+      SCENARIOS.find((s) => s.id === "fanout-eight")!,
+      "en",
+    );
     expect(ev.filter((e) => e.type === "agent_spawn")).toHaveLength(8);
     const childCalls = ev.filter(
       (e): e is Extract<RunEvent, { type: "tool_call" }> => e.type === "tool_call" && e.agentId !== "main",

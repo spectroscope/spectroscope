@@ -34,8 +34,22 @@ describe("per-agent spend, brief and model (card 287)", () => {
 
   it("each agent's brief and model come from its OWN run_start", () => {
     const events: RunEvent[] = [
-      { type: "run_start", runId: "r", agentId: "main", prompt: "root brief", model: "opus", ts: 1 } as RunEvent,
-      { type: "run_start", runId: "r", agentId: "w1id", prompt: "child brief", model: "sonnet", ts: 2 } as RunEvent,
+      {
+        type: "run_start",
+        runId: "r",
+        agentId: "main",
+        prompt: "root brief",
+        model: "opus",
+        ts: 1,
+      } as RunEvent,
+      {
+        type: "run_start",
+        runId: "r",
+        agentId: "w1id",
+        prompt: "child brief",
+        model: "sonnet",
+        ts: 2,
+      } as RunEvent,
     ];
     const d = deriveDetail(events);
     expect(d.briefs["w1id"]).toBe("child brief");
@@ -45,9 +59,7 @@ describe("per-agent spend, brief and model (card 287)", () => {
   });
 
   it("an agent with no model on the wire stays absent — no inherited value", () => {
-    const d = deriveDetail([
-      { type: "run_start", runId: "r", agentId: "x", prompt: "p", ts: 1 } as RunEvent,
-    ]);
+    const d = deriveDetail([{ type: "run_start", runId: "r", agentId: "x", prompt: "p", ts: 1 } as RunEvent]);
     expect(d.models["x"]).toBeUndefined();
     expect(d.briefs["x"]).toBe("p");
   });
