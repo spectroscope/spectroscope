@@ -10,6 +10,16 @@ import type { DiskState, Focus, GateState, Loop, Scene, SubagentInfo } from "../
 import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
+import { stationUsers } from "./stationUsers";
+import {
+  SEAT_ROWS_COMPACT,
+  SEAT_ROWS_EXPANDED,
+  SEATS_MAX_COMPACT,
+  SEATS_MAX_EXPANDED,
+  seatGrid,
+  seatOf,
+} from "./workerGrid";
+import { osBandWidth, stationSeats } from "./stationSeats";
 
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
@@ -62,6 +72,20 @@ export interface Detail {
    * inherited that shape rather than causing it.
    */
   root: string;
+  /** Each agent's own launch brief — its run_start.prompt (card 287). */
+  briefs: Record<string, string>;
+  /** Each agent's own model, ONLY when its run_start named one. An agent with
+   *  no model on the wire stays absent — never inherited (card 287). */
+  models: Record<string, string>;
+  /**
+   * Per-agent context spend off the usage events (card 287). The context size
+   * of one turn is inputTokens + cacheReadTokens + cacheCreationTokens — the
+   * wire's own contract says inputTokens is the RAW uncached remainder and the
+   * true context is the sum. `peak` keeps the MAXIMUM, not the last value,
+   * because a window can be compacted downward mid-run and the reader is being
+   * shown how big it got. `turns` counts the usage events.
+   */
+  spend: Record<string, { peak: number; turns: number }>;
 }
 
 /** How many pictures one card shows. The rest are in the chat and the trace. */
@@ -109,6 +133,9 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     genImage: {},
     attached: {},
     root: "main",
+    briefs: {},
+    models: {},
+    spend: {},
   };
   let rootSeen = false;
   for (const e of applied) {
@@ -138,8 +165,16 @@ export function deriveDetail(applied: RunEvent[]): Detail {
         }
         d.think[e.agentId] = "";
         d.answer[e.agentId] = "";
+        d.briefs[e.agentId] = e.prompt;
+        if (e.model !== undefined) d.models[e.agentId] = e.model;
         if (e.agentId === d.root) d.prompt = e.prompt;
         break;
+      case "usage": {
+        const size = e.inputTokens + (e.cacheReadTokens ?? 0) + (e.cacheCreationTokens ?? 0);
+        const had = d.spend[e.agentId] ?? { peak: 0, turns: 0 };
+        d.spend[e.agentId] = { peak: Math.max(had.peak, size), turns: had.turns + 1 };
+        break;
+      }
       case "context_info":
         if (e.agentId === d.root) {
           d.ctxParts = e.parts;
@@ -284,15 +319,25 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   user: { w: 400, h: 180 },
   agent: { w: 680, h: 780 },
   llm: { w: 440, h: 540 },
-  subagent: { w: 216, h: 480 },
+  // The full worker card (card 287): the 680-wide agent instrument under the
+  // fixed 0.6 zoom paints 408 wide; the height is the zoomed body plus the
+  // worker chrome (head + meta). Starting value — the card's browser pass
+  // re-measures it and replaces the number with the measured claim.
+  subagent: { w: 408, h: 560 },
   // The machine room feeds the SAME card a node's order and its status history,
   // so an open fleet card runs about twice as tall as a worker card here (293
   // measured on a four-phase fleet).
   "fleet-card": { w: 216, h: 300 },
   ext: { w: 150, h: 110 },
-  "os-disk": { w: 152, h: 150 },
-  "os-shell": { w: 200, h: 210 },
-  "os-mcp": { w: 190, h: 210 },
+  // The stations grew (card 287): sized so an ACTIVE station's content is
+  // legible without opening a disclosure — the command line whole, the MCP
+  // call readable. Starting values from a downstream measurement (shell fully
+  // visible went 10.5% → 75.4% of open steps there); the card's browser pass
+  // re-measures them here and replaces the numbers. Expanded seats derive
+  // from these via stationSeats, so widening moves neighbours, never overlaps.
+  "os-disk": { w: 260, h: 240 },
+  "os-shell": { w: 460, h: 340 },
+  "os-mcp": { w: 500, h: 340 },
   "os-net": { w: 104, h: 100 },
 };
 
@@ -444,8 +489,10 @@ const FOCUS_NODE: Record<Focus, string> = {
   mcp: "os-mcp",
 };
 
-const SUB_MAX = 3;
 const SUB_H = 132; // compact subagent card height, used to vertically center the group
+/** Compact subagent card width — mirrors `.pf-sub { width }` in flowmap.css;
+ *  the compact column pitch derives from it. */
+const COMPACT_SUB_W = 216;
 const SUB_MIN_GAP = 44; // hard minimum visual gap between subagent cards
 const SUB_BAND_BOTTOM = 630; // subagents stay above the OS band (OS_BAND_TOP)
 
@@ -522,10 +569,19 @@ export function sceneToFlow(
   //   · the OS band and the outside stations drop below the tall agent and LLM
   //     cards, and the frames grow by the same amount.
   const posL: Record<string, XY> = { ...L.pos };
-  // The column's slot count is needed before the frames are sized: expanded, the
-  // workers stack deeper than anything else on the map, so the frames follow them.
-  const subsOnMap = scene.subagents.slice(0, SUB_MAX);
-  const slotCount = Math.min(SUB_MAX, Math.max(subsOnMap.length, opts.subSlots ?? subsOnMap.length));
+  // The grid's slot count is needed before the frames are sized: expanded, the
+  // workers stack deeper than anything else on the map, so the frames follow
+  // them. Seats are a grid since card 287 — rows first, columns as needed, the
+  // seat of worker i fixed by i alone so a card never moves once it is drawn.
+  const isExpanded = !declutter && opts.expanded === true;
+  const seatRows = isExpanded ? SEAT_ROWS_EXPANDED : SEAT_ROWS_COMPACT;
+  const seatCeiling = isExpanded ? SEATS_MAX_EXPANDED : SEATS_MAX_COMPACT;
+  const subsOnMap = scene.subagents.slice(0, seatCeiling);
+  const slotCount = Math.min(seatCeiling, Math.max(subsOnMap.length, opts.subSlots ?? subsOnMap.length));
+  const grid = seatGrid(slotCount, seatRows);
+  let subColPitch = COMPACT_SUB_W + SUB_MIN_GAP;
+  /** Expanded only: the band width derived from the widened stations. */
+  let osBandW: number | null = null;
   let spread = 0;
   let vSpread = 0;
   let bandGrow = 0;
@@ -534,9 +590,24 @@ export function sceneToFlow(
   let subGapL = L.subGap;
   let subCardH = SUB_H;
   let subBandBottom = SUB_BAND_BOTTOM;
-  if (!declutter && opts.expanded === true) {
+  if (isExpanded) {
     const agentX = L.pos.user.x + EXPANDED_CARD.user.w + EXP_GAP;
-    const subX = agentX + EXPANDED_CARD.agent.w + EXP_GAP;
+    // The widened stations re-seat left-to-right from their own envelopes, and
+    // the band width follows them (stationSeats — the derivation that replaced
+    // the hand-written seats).
+    const stationIds = ["os-disk", "os-shell", "os-mcp", "os-net"] as const;
+    const stationWs = stationIds.map((sid) => EXPANDED_CARD[sid].w);
+    const stationXs = stationSeats(stationWs);
+    stationIds.forEach((sid, i) => {
+      posL[sid] = { ...posL[sid], x: stationXs[i] };
+    });
+    osBandW = osBandWidth(stationWs);
+    const osZone = L.zones.find((z) => z.variant === "os")!;
+    // The worker column starts clear of BOTH the wide agent card and the
+    // band's right edge — the band sits below user+agent and now runs wider
+    // than the agent, so a column keyed to the agent alone would stand on the
+    // stations (the seat guards caught exactly that).
+    const subX = Math.max(agentX + EXPANDED_CARD.agent.w + EXP_GAP, osZone.x + osBandW + EXP_GAP);
     // The leftmost thing in the right-hand world sets the shift for all of it:
     // remote that is the boundary wall, local it is the LLM inside the machine.
     const rightWorld = Math.min(
@@ -545,7 +616,14 @@ export function sceneToFlow(
       L.pos.netz.x,
       L.pos.mcpserver.x,
     );
-    spread = Math.max(0, subX + EXPANDED_CARD.subagent.w + EXP_GAP - rightWorld);
+    // The grid's right edge plus rail room: subX + cols * (card + gap). With
+    // one column this is exactly the single-column shift it replaces. The mac
+    // frame must hold the band even with no worker column (zero workers), so
+    // the spread takes whichever need is larger.
+    subColPitch = EXPANDED_CARD.subagent.w + EXP_GAP;
+    const macFrameW = L.zones.find((z) => z.variant === "mac")?.w ?? 0;
+    const bandNeed = osZone.x + osBandW + FRAME_PAD - macFrameW;
+    spread = Math.max(0, subX + grid.cols * subColPitch - rightWorld, bandNeed);
     vSpread = Math.max(
       0,
       L.pos.agent.y + EXPANDED_CARD.agent.h + EXP_GAP - OS_BAND_TOP,
@@ -574,21 +652,34 @@ export function sceneToFlow(
     // it no longer shares a column with the band anyway (it sits right of the
     // wide agent). So it gets the room it needs instead of being clamped into
     // room it does not have — a clamp here is how the cards ended up stacked.
-    subBandBottom = subBaseL.y + Math.max(0, slotCount - 1) * subGapL + subCardH;
+    // Depth follows the grid's ROWS — a second column adds width, not depth.
+    subBandBottom = subBaseL.y + Math.max(0, grid.rows - 1) * subGapL + subCardH;
     const macFrame = L.zones.find((z) => z.variant === "mac");
     colGrow = macFrame ? Math.max(0, subBandBottom + FRAME_PAD - (macFrame.y + macFrame.h)) : 0;
+  } else if (!declutter && grid.cols > 1) {
+    // Compact grows sideways too: a second worker column would otherwise run
+    // into the boundary (remote) or the in-machine LLM (local). Same shift
+    // rule as expanded — the right-hand world clears the grid's right edge.
+    const rightWorld = Math.min(
+      L.boundary?.x ?? Number.POSITIVE_INFINITY,
+      L.pos.llm.x,
+      L.pos.netz.x,
+      L.pos.mcpserver.x,
+    );
+    spread = Math.max(0, L.subBase.x + grid.cols * subColPitch - rightWorld);
+    for (const id of ["llm", "netz", "mcpserver"]) posL[id] = { ...posL[id], x: posL[id].x + spread };
   }
   // Frames hold whichever runs deeper: the drop below the tall agent/llm cards,
   // or the worker column.
   const frameGrow = Math.max(vSpread + bandGrow, colGrow);
   const zonesL: Zone[] = L.zones.map((z) =>
-    spread === 0 && frameGrow === 0
+    spread === 0 && frameGrow === 0 && osBandW === null
       ? z
       : z.variant === "mac"
         ? { ...z, w: z.w + spread, h: z.h + frameGrow }
         : z.variant === "outside"
           ? { ...z, x: z.x + spread, h: z.h + frameGrow }
-          : { ...z, y: z.y + vSpread, h: z.h + bandGrow },
+          : { ...z, y: z.y + vSpread, h: z.h + bandGrow, ...(osBandW !== null ? { w: osBandW } : {}) },
   );
   const boundaryL =
     L.boundary && (spread > 0 || frameGrow > 0)
@@ -699,17 +790,20 @@ export function sceneToFlow(
     active: atDisk !== undefined,
     disk: atDisk?.loop.disk ?? "idle",
     file: atDisk?.loop.activeFile ?? null,
+    by: stationUsers(scene, "disk"),
   });
   N("os-shell", "os", {
     kind: "shell",
     active: atCmd !== undefined,
     command: atCmd?.loop.activeCommand ?? null,
+    by: stationUsers(scene, "cmd"),
   });
   N("os-mcp", "os", {
     kind: "mcp",
     active: mcpInUse,
     mcp: mcpUser?.loop.activeMcp ?? null,
     tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
+    by: stationUsers(scene, "mcp"),
   });
   N("os-net", "os", { kind: "net", active: mcpInUse });
 
@@ -740,10 +834,16 @@ export function sceneToFlow(
   // a worker never slides as siblings spawn; it falls back to the live count for
   // the sim, and the frames above are already sized for it.
   const subs = subsOnMap;
-  const subYs = subagentYs(slotCount, subBaseL.y, subBandBottom, subGapL, subCardH);
+  // One shared row ladder for every column: the y of seat (row, col) is the y
+  // of that row — a sibling in a second column never re-centres the first.
+  const subYs = subagentYs(grid.rows, subBaseL.y, subBandBottom, subGapL, subCardH);
   subs.forEach((c, i) => {
     const id = `sub-${c.id}`;
-    posL[id] = { x: declutter ? subBaseX : subBaseL.x, y: subYs[i] };
+    const seat = seatOf(i, seatRows);
+    posL[id] = {
+      x: (declutter ? subBaseX : subBaseL.x) + seat.col * subColPitch,
+      y: subYs[seat.row] ?? subBaseL.y,
+    };
     const act = activity(
       c.focus,
       c.disk,
@@ -766,6 +866,25 @@ export function sceneToFlow(
       focus: c.focus,
       active: scene.activeChild === c.id,
       think: detail.think[c.id] ?? "",
+      // Expanded, a worker is the agent's own card with the child's data
+      // (card 287). Compact data stays byte-identical to what shipped.
+      ...(isExpanded
+        ? {
+            full: {
+              error: c.isError,
+              gate: c.gate,
+              gateNote: gateNote(c.gate, lang),
+              gateColor: GATE_COLOR[c.gate],
+              activeTool: c.activeTool,
+              tool: detail.tool[c.id] ?? null,
+              genImage: detail.genImage[c.id] ?? null,
+              attached: detail.attached[c.id] ?? null,
+              brief: detail.briefs[c.id] ?? null,
+              model: detail.models[c.id] ?? null,
+              spend: detail.spend[c.id] ?? null,
+            },
+          }
+        : {}),
     });
   });
 

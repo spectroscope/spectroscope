@@ -153,6 +153,124 @@ const fanout: Dsl = {
   ],
 };
 
+/** The scaling fixture (card 287): eight parallel workers, enough of them on
+ *  the disk, the shell and the MCP chain that the grid seating, the per-child
+ *  station rails and the station-user strip are all exercised by one replay.
+ *  Worker eight touches no station on purpose — the honest no-rail case. */
+const fanoutEight: Dsl = {
+  id: "fanout-eight",
+  name: { en: "Scaling fan-out · 8 subagents", de: "Scaling-Fan-out · 8 Subagenten" },
+  prompt: {
+    en: "Survey the repo from eight angles at once and report back.",
+    de: "Untersuche das Repo aus acht Blickwinkeln gleichzeitig und berichte.",
+  },
+  provider: "ollama",
+  steps: [
+    { think: { en: "Eight angles, eight workers.", de: "Acht Blickwinkel, acht Worker." } },
+    {
+      fanout: {
+        label: "survey",
+        tool: "survey",
+        agents: [
+          {
+            id: "one",
+            task: { en: "scout the build", de: "erkunde den Build" },
+            steps: [
+              { status: { en: "running the build", de: "Build läuft" } },
+              { run: "./gradlew build -x test", result: "BUILD SUCCESSFUL in 41s" },
+              { usage: { in: 41_000, out: 900 } },
+              { say: { en: "build is green", de: "Build ist grün" } },
+            ],
+          },
+          {
+            id: "two",
+            task: { en: "write the survey notes", de: "schreibe die Notizen" },
+            steps: [
+              { status: { en: "writing notes", de: "schreibe Notizen" } },
+              { write: "docs/survey/notes.md", result: "Wrote: docs/survey/notes.md (2311 bytes)" },
+              { usage: { in: 22_000, out: 1_400 } },
+              { say: { en: "notes written", de: "Notizen geschrieben" } },
+            ],
+          },
+          {
+            id: "three",
+            task: { en: "read the entrypoints", de: "lies die Einstiege" },
+            steps: [
+              { status: { en: "reading main", de: "lese main" } },
+              { read: "src/main/java/app/Main.java", result: "public final class Main { … }" },
+              { usage: { in: 35_000, out: 700 } },
+              { say: { en: "entrypoints mapped", de: "Einstiege kartiert" } },
+            ],
+          },
+          {
+            id: "four",
+            task: { en: "count the tests", de: "zähle die Tests" },
+            steps: [
+              { status: { en: "counting", de: "zähle" } },
+              { run: "grep -rc @Test src/test | wc -l", result: "312" },
+              { usage: { in: 18_000, out: 300 } },
+              { say: { en: "312 test files", de: "312 Testdateien" } },
+            ],
+          },
+          {
+            id: "five",
+            task: { en: "check the board", de: "prüfe das Board" },
+            steps: [
+              { status: { en: "asking the board", de: "frage das Board" } },
+              { mcp: "notes__search_notes", input: { query: "open cards" }, result: "3 open cards" },
+              { usage: { in: 27_000, out: 500 } },
+              { say: { en: "three cards open", de: "drei Karten offen" } },
+            ],
+          },
+          {
+            id: "six",
+            task: { en: "draft the summary file", de: "entwirf die Zusammenfassung" },
+            steps: [
+              { status: { en: "drafting", de: "entwerfe" } },
+              { write: "docs/survey/summary.md", result: "Wrote: docs/survey/summary.md (1102 bytes)" },
+              { usage: { in: 30_000, out: 2_100 } },
+              { say: { en: "summary drafted", de: "Zusammenfassung entworfen" } },
+            ],
+          },
+          {
+            id: "seven",
+            task: { en: "probe the dev server", de: "prüfe den Dev-Server" },
+            steps: [
+              { status: { en: "probing :8080", de: "prüfe :8080" } },
+              { run: "curl -s -o /dev/null -w '%{http_code}' localhost:8080", result: "200" },
+              { usage: { in: 12_000, out: 250 } },
+              { say: { en: "server answers 200", de: "Server antwortet 200" } },
+            ],
+          },
+          {
+            id: "eight",
+            task: { en: "summarize the risks", de: "fasse die Risiken zusammen" },
+            steps: [
+              { status: { en: "thinking it through", de: "denke es durch" } },
+              {
+                think: {
+                  en: "No station for this one — thinking only.",
+                  de: "Keine Station hier — nur Denken.",
+                },
+              },
+              { usage: { in: 52_000, out: 3_200 } },
+              { say: { en: "two risks, both small", de: "zwei Risiken, beide klein" } },
+            ],
+          },
+        ],
+      },
+    },
+    { think: { en: "All eight are back.", de: "Alle acht sind zurück." } },
+    { usage: { in: 180_000, out: 4_000 } },
+    {
+      say: {
+        en: "Survey done: build green, 312 test files, three cards open, two small risks.",
+        de: "Untersuchung fertig: Build grün, 312 Testdateien, drei Karten offen, zwei kleine Risiken.",
+      },
+    },
+  ],
+};
+
 const permission: Dsl = {
   id: "permission",
   name: { en: "Permission gate · blocked & allowed", de: "Permission-Gate · blockiert & erlaubt" },
@@ -1074,6 +1192,7 @@ export const SCENARIOS: Dsl[] = [
   bughunt,
   adversarial,
   fanout,
+  fanoutEight,
   permission,
   diskshell,
   agentsmd,

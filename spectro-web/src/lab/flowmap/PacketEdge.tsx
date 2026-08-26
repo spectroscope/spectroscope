@@ -1,10 +1,30 @@
-// The rail + the coral "packet". A custom React Flow edge draws the bezier rail;
-// when it is the active leg (leading to the current focus) it turns coral, gains a
-// flowing dash, and one or two comet dots ride the EXACT path via SVG
+// The rail + the coral "packet". A custom React Flow edge draws the rail;
+// when it is the active leg (leading to the current focus) it turns coral,
+// gains a flowing dash, and one or two comet dots ride the EXACT path via SVG
 // <animateMotion>/<mpath> — the modern, GPU-friendly analogue of the SVG map's
-// static packet. Reduced motion is honoured in CSS (comets hidden, dash frozen).
+// static packet. Reduced motion is honoured in CSS (comets hidden, dash
+// frozen).
+//
+// RIGHT-ANGLED since card 287: the path is the canvas package's own
+// smooth-step, with the ONE number the helper leaves open — where the turn
+// happens — chosen by railRoute's obstacle scorer against the live card boxes
+// (RailBoxes). No boxes provided (the fleet machine room, tests) → the
+// helper's own default trunk, still right-angled. The lane offset comes from
+// an ID HASH, never an index into the edges array: an index renumbers the
+// moment a station rail appears, and a trunk that jumps sideways mid-run is
+// worse than an overlap.
 
-import { getBezierPath, type EdgeProps } from "@xyflow/react";
+import { useContext } from "react";
+import { getSmoothStepPath, type EdgeProps } from "@xyflow/react";
+import { RailBoxes } from "./railBoxes";
+import { RAIL_STUB, splitAxis, trunkFor, type RailEnd, type Side } from "./railRoute";
+
+/** -10 | 0 | +10, stable per edge id. */
+export function railLane(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return ((Math.abs(h) % 3) - 1) * 10;
+}
 
 export function PacketEdge({
   id,
@@ -16,7 +36,32 @@ export function PacketEdge({
   targetPosition,
   data,
 }: EdgeProps) {
-  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const boxes = useContext(RailBoxes);
+  // The engine's handle sides are the first letter of the Position enum value
+  // ("left" | "right" | "top" | "bottom") — the same letters railRoute names.
+  const from: RailEnd = { x: sourceX, y: sourceY, side: sourcePosition[0] as Side };
+  const to: RailEnd = { x: targetX, y: targetY, side: targetPosition[0] as Side };
+  const trunk = boxes.length > 0 ? trunkFor(from, to, [...boxes], railLane(id)) : null;
+  // Guard against handing the helper a centre it would not read (splitAxis
+  // documents which one moves the trunk) — a wrong centre is silently ignored
+  // and the rail routes on the default while we believe it is steered.
+  const steer =
+    trunk === null || trunk.axis !== splitAxis(from, to)
+      ? {}
+      : trunk.axis === "x"
+        ? { centerX: trunk.at }
+        : { centerY: trunk.at };
+  const [path] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 8,
+    offset: RAIL_STUB,
+    ...steer,
+  });
   const d = (data ?? {}) as { active?: boolean; net?: boolean; err?: boolean; dim?: boolean; flow?: boolean };
 
   const cls = [

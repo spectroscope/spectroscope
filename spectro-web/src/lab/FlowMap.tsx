@@ -25,6 +25,9 @@ import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
 import { deriveDetail, sceneToFlow } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
+import { workerChip } from "./flowmap/workerGrid";
+import { RailBoxes } from "./flowmap/railBoxes";
+import { panMove, panStart, type PanDrag } from "./flowmap/panDrag";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -127,70 +130,145 @@ export function FlowMap(props: {
     setEdges(flow.edges);
   }, [flow, local, expandAll, setNodes, setEdges]);
 
+  // The rails' live obstacle set: every card's rendered box (zones excluded),
+  // recomputed from the node state so a dragged card re-routes its rails.
+  const railBoxes = useMemo(
+    () =>
+      nodes
+        .filter((n) => n.type !== "zone")
+        .map((n) => ({
+          id: n.id,
+          x: n.position.x,
+          y: n.position.y,
+          w: (n.measured?.width ?? n.width ?? 200) as number,
+          h: (n.measured?.height ?? n.height ?? 100) as number,
+        })),
+    [nodes],
+  );
+
+  // Right-drag pans EVEN WHEN IT STARTS ON A CARD (card 287): React Flow
+  // writes `nopan` on draggable nodes and d3-zoom refuses the mousedown, so
+  // those pixels are panned here. The pure model (panDrag.ts) owns the rules —
+  // including the three ways a drag ends; this effect is only wiring.
+  const panRef = useRef<PanDrag>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (el === null) return;
+    const down = (e: MouseEvent) => {
+      // Only when the press lands on a card — the canvas itself already pans
+      // via panOnDrag, and doubling that would fight d3-zoom.
+      const target = e.target as Element | null;
+      if (target === null || target.closest(".react-flow__node") === null) return;
+      panRef.current = panStart(e.button, e.clientX, e.clientY);
+    };
+    const move = (e: MouseEvent) => {
+      const r = panMove(panRef.current, e.buttons, e.clientX, e.clientY);
+      panRef.current = r.next;
+      if (r.dx !== 0 || r.dy !== 0) {
+        const inst = rfRef.current;
+        if (inst !== null) {
+          const vp = inst.getViewport();
+          inst.setViewport({ x: vp.x + r.dx, y: vp.y + r.dy, zoom: vp.zoom });
+        }
+      }
+    };
+    const up = () => {
+      panRef.current = null;
+    };
+    el.addEventListener("mousedown", down, true);
+    window.addEventListener("mousemove", move, true);
+    window.addEventListener("mouseup", up, true);
+    return () => {
+      panRef.current = null; // the third way a drag ends
+      el.removeEventListener("mousedown", down, true);
+      window.removeEventListener("mousemove", move, true);
+      window.removeEventListener("mouseup", up, true);
+    };
+  }, []);
+
   return (
     // Right mouse button pans (context menu suppressed), left only clicks and
-    // drags nodes — owner request, same rule as the Graph tab.
-    <div className="lab-flowmap" onContextMenu={(e) => e.preventDefault()}>
-      <ReactFlow
-        // A disclosure seeds its open/closed state when the card mounts, so a
-        // view flip has to remount the canvas — otherwise the cards carry the
-        // other view's open panels into seats that never reserved for them.
-        key={`${local ? "local" : "remote"}:${expandAll ? "expanded" : "compact"}`}
-        className="pf-flow"
-        onInit={(inst) => {
-          rfRef.current = inst;
-        }}
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChangePinned}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        nodesConnectable={false}
-        elementsSelectable={false}
-        panOnDrag={[1, 2]}
-        fitView
-        fitViewOptions={{ padding: 0.16 }}
-        minZoom={0.3}
-        maxZoom={1.8}
-        proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: "rail" }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="var(--border-strong)" />
-        <Controls showInteractive={false} />
-        <MiniMap
-          pannable
-          zoomable
-          maskColor="color-mix(in srgb, var(--bg) 72%, transparent)"
-          nodeColor={(nd) => MINIMAP_COLOR[nd.type ?? ""] ?? "transparent"}
-          nodeStrokeColor="var(--border-strong)"
-        />
+    // drags nodes — owner request, same rule as the Graph tab. Since card 287
+    // the right-drag works over cards too (the capture listener above).
+    <div className="lab-flowmap" ref={wrapRef} onContextMenu={(e) => e.preventDefault()}>
+      <RailBoxes.Provider value={railBoxes}>
+        <ReactFlow
+          // A disclosure seeds its open/closed state when the card mounts, so a
+          // view flip has to remount the canvas — otherwise the cards carry the
+          // other view's open panels into seats that never reserved for them.
+          key={`${local ? "local" : "remote"}:${expandAll ? "expanded" : "compact"}`}
+          className="pf-flow"
+          onInit={(inst) => {
+            rfRef.current = inst;
+          }}
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChangePinned}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          panOnDrag={[1, 2]}
+          fitView
+          fitViewOptions={{ padding: 0.16 }}
+          // 0.1 since card 287: an expanded eight-worker map needs a fit zoom
+          // near 0.21 — the old 0.3 floor made fitView clip the grid.
+          minZoom={0.1}
+          maxZoom={1.8}
+          proOptions={{ hideAttribution: true }}
+          defaultEdgeOptions={{ type: "rail" }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="var(--border-strong)" />
+          <Controls showInteractive={false} />
+          <MiniMap
+            pannable
+            zoomable
+            maskColor="color-mix(in srgb, var(--bg) 72%, transparent)"
+            nodeColor={(nd) => MINIMAP_COLOR[nd.type ?? ""] ?? "transparent"}
+            nodeStrokeColor="var(--border-strong)"
+          />
 
-        <Panel position="bottom-left">
-          <div className="pf-legend">
-            <span>
-              <i className="on" />
-              {t(lang, "map.legend.activeRail")}
-            </span>
-            <span>
-              <i />
-              {t(lang, "map.legend.inside")}
-            </span>
-            <span>
-              <i className="net" />
-              {t(lang, "map.legend.out")}
-            </span>
-            <span>
-              <b style={{ background: "var(--ok)" }} />
-              {t(lang, "map.legend.read")}
-            </span>
-            <span>
-              <b style={{ background: "var(--accent)" }} />
-              {t(lang, "map.legend.writeLive")}
-            </span>
-          </div>
-        </Panel>
-      </ReactFlow>
+          <Panel position="top-right">
+            {(() => {
+              // The honest chip (card 287): quiet while every spawned worker is
+              // drawn, loud about the gap past the seating ceiling. Data, not
+              // chrome — the text stays untranslated like other wire-derived text.
+              const drawn = flow.nodes.filter((n) => n.type === "subagent").length;
+              const chip = workerChip(scene.subagents.length, drawn);
+              return chip === null ? null : (
+                <div className={`pf-count-chip${chip.gap ? " pf-count-chip--gap" : ""}`}>{chip.text}</div>
+              );
+            })()}
+          </Panel>
+
+          <Panel position="bottom-left">
+            <div className="pf-legend">
+              <span>
+                <i className="on" />
+                {t(lang, "map.legend.activeRail")}
+              </span>
+              <span>
+                <i />
+                {t(lang, "map.legend.inside")}
+              </span>
+              <span>
+                <i className="net" />
+                {t(lang, "map.legend.out")}
+              </span>
+              <span>
+                <b style={{ background: "var(--ok)" }} />
+                {t(lang, "map.legend.read")}
+              </span>
+              <span>
+                <b style={{ background: "var(--accent)" }} />
+                {t(lang, "map.legend.writeLive")}
+              </span>
+            </div>
+          </Panel>
+        </ReactFlow>
+      </RailBoxes.Provider>
     </div>
   );
 }

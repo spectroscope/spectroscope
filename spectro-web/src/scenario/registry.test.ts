@@ -19,6 +19,7 @@ describe("registry", () => {
       "darkmode",
       "diskshell",
       "fanout",
+      "fanout-eight",
       "fleetswarm",
       "imagegen",
       "permission",
@@ -171,5 +172,28 @@ describe("registry", () => {
       .map(({ i }) => i);
     const criticSpawn = spawns[2];
     expect(criticSpawn).toBeGreaterThan(researcherResults[1]);
+  });
+
+  it("fanout-eight: eight workers, and the stations are all exercised (card 287)", () => {
+    const ev = compile(
+      SCENARIOS.find((s) => s.id === "fanout-eight")!,
+      "en",
+    );
+    expect(ev.filter((e) => e.type === "agent_spawn")).toHaveLength(8);
+    const childCalls = ev.filter(
+      (e): e is Extract<RunEvent, { type: "tool_call" }> => e.type === "tool_call" && e.agentId !== "main",
+    );
+    const names = new Set(childCalls.map((c) => c.name));
+    expect(names.has("run_command")).toBe(true); // the shell
+    expect(names.has("write_file")).toBe(true); // the disk, writing
+    expect(names.has("read_file")).toBe(true); // the disk, reading
+    expect([...names].some((n) => n.startsWith("mcp__"))).toBe(true); // the mcp chain
+    // every worker reports usage, so the per-worker spend has numbers
+    const spenders = new Set(
+      ev
+        .filter((e): e is Extract<RunEvent, { type: "usage" }> => e.type === "usage" && e.agentId !== "main")
+        .map((e) => e.agentId),
+    );
+    expect(spenders.size).toBe(8);
   });
 });

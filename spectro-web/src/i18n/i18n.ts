@@ -1419,6 +1419,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "fleetlab.live": { de: "live", en: "live" },
   "fleetlab.behind": { de: "{n} Events voraus", en: "{n} events ahead" },
   "map.zone.os": { de: "BETRIEBSSYSTEM", en: "OPERATING SYSTEM" },
+  "map.station.also": { de: "auch", en: "also" },
   "map.zone.outside": { de: "AUSSERHALB", en: "OUTSIDE" },
   "map.zone.boundary": { de: "NETZGRENZE", en: "NETWORK BOUNDARY" },
   "map.you": { de: "Du", en: "You" },
@@ -1464,6 +1465,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.sub.disc": { de: "Task & Verlauf", en: "Task & history" },
   "map.sub.order": { de: "Auftrag", en: "Task" },
   "map.sub.lastStatus": { de: "Letzter Status:", en: "Last status:" },
+  "map.sub.brief": { de: "Auftragstext", en: "launch brief" },
+  "map.sub.peak": { de: "Spitze", en: "peak" },
+  "map.sub.turn": { de: "Zug", en: "turn" },
+  "map.sub.turns": { de: "Züge", en: "turns" },
 
   // trace tab
   "trace.filterPh": { de: "Frames filtern …", en: "Filter frames …" },

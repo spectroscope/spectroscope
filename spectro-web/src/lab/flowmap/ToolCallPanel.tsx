@@ -51,7 +51,9 @@ export function ToolCallPanel({ tool }: { tool: { name: string; input: unknown }
           </button>
         ))}
       </div>
-      <div className="nowheel" style={{ maxHeight: 150, overflow: "auto" }}>
+      {/* 240 since card 287 — the widened stations and worker cards afford a
+          panel a person can actually read; it scrolls either way. */}
+      <div className="nowheel" style={{ maxHeight: 240, overflow: "auto" }}>
         {face === "structured" ? (
           /* No output on purpose: sceneToFlow clears the tool on tool_result,
              so the panel only ever holds a pending call. */

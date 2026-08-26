@@ -182,6 +182,10 @@ export function compile(dsl: Dsl, lang: Lang, baseTs = 1_783_000_000_000): RunEv
           s.error,
           false,
         );
+      else if ("usage" in s)
+        // A child's usage rides under the CHILD's id — the per-worker spend
+        // (peak context, turns) folds from exactly these events (card 287).
+        push({ type: "usage", agentId: childId, inputTokens: s.usage.in, outputTokens: s.usage.out });
       // spawn/fanout stay top-level only: no nested subagents (the scene model
       // and the map render exactly one level of children).
     }

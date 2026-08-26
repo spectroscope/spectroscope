@@ -1590,3 +1590,86 @@
   width: 148px;
   height: 99px;
 }
+
+/* ---- Who is on the station (stationUsers, owner call 2026-08-26) -------- */
+.pf-os__by {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.pf-os__by-user {
+  color: var(--text-dim);
+  border: 1px solid var(--agent-worker);
+  border-radius: 999px;
+  padding: 0 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-os__by-also {
+  color: var(--text-faint);
+}
+
+/* ---- The worker-count chip (card 287). NOT .pf-chip — that class is the
+ * agent card's tool-belt chip and must keep its own look. ----------------- */
+.pf-count-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: var(--surface);
+}
+.pf-count-chip--gap {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* ---- The full worker card (card 287): the agent's own instrument at worker
+ * scale. A FIXED zoom, never driven by a measured width — CSS zoom
+ * participates in layout, and paint feeding measurement feeding zoom is a
+ * feedback loop with gain (measured to a 33-million-pixel card on a
+ * downstream consumer of this engine). transform: scale is no alternative:
+ * the canvas measures the layout box and handles would anchor to a box the
+ * paint no longer matches. ------------------------------------------------ */
+.pf-sub--full {
+  zoom: 0.6;
+  width: 680px;
+}
+.pf-sub--full .pf-sub__head {
+  margin-bottom: 8px;
+}
+.pf-sub__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+/* ---- The widened stations (card 287). Expanded only: the seats reserve this
+ * room (EXPANDED_CARD + stationSeats), so the cards paint into it — otherwise
+ * the room stands empty and the command is clipped anyway. Compact keeps the
+ * hand-authored widths above, untouched. ---------------------------------- */
+.pf-os--wide {
+  width: 260px;
+}
+.pf-os--wide.pf-os--shell {
+  width: 460px;
+}
+.pf-os--wide.pf-os--mcp {
+  width: 500px;
+}
+.pf-os--wide.pf-os--net {
+  width: 104px;
+}

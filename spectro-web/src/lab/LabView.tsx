@@ -13,6 +13,7 @@ import { Resizer } from "../components/Resizer";
 import { setChatW, setTraceW, toggleChat, toggleTrace, useLayout } from "../state/layout";
 import type { PendingAttachment } from "../components/AttachmentPreview";
 import { backToLive, loadReplay, step, useStepper } from "../state/stepper";
+import { labViewDefault } from "./labViewDefault";
 import { LabHint } from "./LabControls";
 import { LabTransport } from "./LabTransport";
 import { FlowMap } from "./FlowMap";
@@ -25,11 +26,11 @@ import { useLang } from "../state/lang";
 /** The card-view choice survives tab switches and reloads (TextView pattern). */
 const VIEW_STORAGE_KEY = "spectroscope.lab.view";
 
-function storedExpanded(): boolean {
+function storedView(): string | null {
   try {
-    return localStorage.getItem(VIEW_STORAGE_KEY) === "expanded";
+    return localStorage.getItem(VIEW_STORAGE_KEY);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -70,7 +71,9 @@ export function LabView(props: {
   // Compact vs expanded agent cards (owner switch): expanded provides the
   // engine's ExpandAllContext — every disclosure open, the context beside the
   // agent, the prompt beside the user — exactly the edu lessons' reading.
-  const [expanded, setExpanded] = useState<boolean>(storedExpanded);
+  // Default (card 287, owner-decided): replay and import open expanded (the
+  // player), live opens compact; an explicit choice wins and sticks.
+  const [expanded, setExpanded] = useState<boolean>(() => labViewDefault(storedView(), replay !== null));
   const pickView = (next: boolean): void => {
     setExpanded(next);
     try {
@@ -79,6 +82,11 @@ export function LabView(props: {
       // private mode: the toggle simply does not stick
     }
   };
+  // Opening or closing an archive re-derives the default — but only while the
+  // user has never chosen (a stored value makes labViewDefault ignore the flip).
+  useEffect(() => {
+    setExpanded(labViewDefault(storedView(), replay !== null));
+  }, [replay]);
 
   // Flow = paced auto-play: a timer calls step() every intervalMs (fine/coarse
   // honoured by step itself). An empty queue makes step() a no-op, so live

@@ -82,13 +82,31 @@ describe("sceneToFlow", () => {
     expect(subs[2].position.y + 132).toBeLessThanOrEqual(632); // last card clears the OS band
   });
 
-  it("clamps the subagent column to at most three cards", () => {
+  it("seats a fourth compact worker in a second column instead of dropping it (card 287)", () => {
     const flow = build(
       [runStart("ollama"), spawn("w1"), spawn("w2"), spawn("w3"), spawn("w4")],
       true,
       "ollama",
     );
-    expect(flow.nodes.filter((n) => n.id.startsWith("sub-"))).toHaveLength(3);
+    const subs = flow.nodes.filter((n) => n.id.startsWith("sub-"));
+    expect(subs).toHaveLength(4);
+    // three rows deep, so the fourth opens column two at the first row's y
+    expect(subs[3].position.x).toBeGreaterThan(subs[0].position.x);
+    expect(subs[3].position.y).toBe(subs[0].position.y);
+  });
+
+  it("clamps compact at six cards — past the ceiling the chip confesses, the map stays readable", () => {
+    const spawns = Array.from({ length: 8 }, (_, i) => spawn(`w${i + 1}`));
+    const flow = build([runStart("ollama"), ...spawns], true, "ollama");
+    expect(flow.nodes.filter((n) => n.id.startsWith("sub-"))).toHaveLength(6);
+  });
+
+  it("compact second column pushes the in-machine LLM clear instead of overlapping it", () => {
+    const spawns = Array.from({ length: 4 }, (_, i) => spawn(`w${i + 1}`));
+    const flow = build([runStart("ollama"), ...spawns], true, "ollama");
+    const llm = flow.nodes.find((n) => n.id === "llm")!;
+    const lastSub = flow.nodes.filter((n) => n.id.startsWith("sub-"))[3];
+    expect(llm.position.x).toBeGreaterThanOrEqual(lastSub.position.x + 216 + 44);
   });
 
   it("shared stations light for WHICHEVER loop is on them (child at the disk)", () => {
@@ -362,7 +380,9 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
       { id: "sub-a", type: "subagent", position: { x: 100, y: 100 } },
       { id: "sub-b", type: "subagent", position: { x: 100, y: 120 } },
     ];
-    expect(seatCollisions(nodes)).toEqual([`sub-a/sub-b 216x${EXPANDED_CARD.subagent.h - 20}`]);
+    expect(seatCollisions(nodes)).toEqual([
+      `sub-a/sub-b ${EXPANDED_CARD.subagent.w}x${EXPANDED_CARD.subagent.h - 20}`,
+    ]);
   });
 
   it("a card measured taller than its envelope is reported, once, and names both numbers", () => {
@@ -421,6 +441,93 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
     expect(zone(flow, "z-outside")).toEqual({ x: 1052, y: 24, w: 520, h: 900 });
     expect(at("z-boundary")).toEqual({ x: 1016, y: 24 });
     expect(at("sub-worker-1").x).toBe(685);
+  });
+
+  // ---- the worker grid (card 287): eight in parallel is the acceptance floor
+  const busyEight = (provider: string): RunEvent[] => [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider, ts: T },
+    ...Array.from(
+      { length: 8 },
+      (_, i) =>
+        ({
+          type: "agent_spawn",
+          agentId: `worker-${i + 1}`,
+          parentId: "main",
+          task: `t${i + 1}`,
+          ts: T,
+        }) as RunEvent,
+    ),
+  ];
+  const flowOfEight = (provider: string) => {
+    const events = busyEight(provider);
+    const scene = events.reduce(advanceScene, initialScene());
+    return sceneToFlow(scene, deriveDetail(events), {
+      local: provider === "ollama",
+      provider,
+      model: "m",
+      expanded: true,
+    });
+  };
+
+  it("expanded: eight workers seat as a 4x2 grid with no seat collisions", () => {
+    const flow = flowOfEight("anthropic");
+    const subs = flow.nodes.filter((n) => n.type === "subagent");
+    expect(subs).toHaveLength(8);
+    expect(new Set(subs.map((n) => n.position.x)).size).toBe(2);
+    expect(new Set(subs.map((n) => n.position.y)).size).toBe(4);
+    expect(seatCollisions(flow.nodes as never)).toEqual([]);
+  });
+
+  it("expanded: the mac frame contains the whole grid, and the right world clears it", () => {
+    const flow = flowOfEight("anthropic");
+    const mac = zone(flow, "z-mac");
+    const subs = flow.nodes.filter((n) => n.type === "subagent");
+    const rightmost = Math.max(...subs.map((n) => n.position.x)) + EXPANDED_CARD.subagent.w;
+    expect(rightmost).toBeLessThanOrEqual(mac.x + mac.w);
+    const boundary = flow.nodes.find((n) => n.id === "z-boundary")!;
+    expect(boundary.position.x).toBeGreaterThanOrEqual(rightmost);
+  });
+
+  it("expanded: the widened stations sit inside the band, and the band inside the mac frame", () => {
+    const flow = flowOfEight("anthropic");
+    const band = zone(flow, "z-os");
+    const mac = zone(flow, "z-mac");
+    for (const id of ["os-disk", "os-shell", "os-mcp", "os-net"]) {
+      const n = flow.nodes.find((x) => x.id === id)!;
+      const env = EXPANDED_CARD[id];
+      expect(n.position.x).toBeGreaterThanOrEqual(band.x);
+      expect(n.position.x + env.w).toBeLessThanOrEqual(band.x + band.w);
+      expect(n.position.y + env.h).toBeLessThanOrEqual(band.y + band.h);
+    }
+    expect(band.x + band.w).toBeLessThanOrEqual(mac.x + mac.w);
+    // and the worker column stands clear of the band's right edge
+    const firstSub = flow.nodes.filter((n) => n.type === "subagent")[0];
+    expect(firstSub.position.x).toBeGreaterThanOrEqual(band.x + band.w);
+  });
+
+  it("expanded: a run past the ceiling draws the ceiling, not the fleet", () => {
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts: T },
+      ...Array.from(
+        { length: 14 },
+        (_, i) =>
+          ({
+            type: "agent_spawn",
+            agentId: `w${i + 1}`,
+            parentId: "main",
+            task: `t${i + 1}`,
+            ts: T,
+          }) as RunEvent,
+      ),
+    ];
+    const scene = events.reduce(advanceScene, initialScene());
+    const flow = sceneToFlow(scene, deriveDetail(events), {
+      local: false,
+      provider: "anthropic",
+      model: "m",
+      expanded: true,
+    });
+    expect(flow.nodes.filter((n) => n.type === "subagent")).toHaveLength(12);
   });
 });
 

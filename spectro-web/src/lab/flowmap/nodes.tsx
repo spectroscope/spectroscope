@@ -107,6 +107,8 @@ function GenImage({ src, alt }: { src?: string; alt?: string }) {
 
 /** The shell's one-line display clips a running command to this width. */
 const SHELL_PREVIEW_CHARS = 26;
+/** The widened expanded station (card 287) fits a longer preview. */
+const SHELL_PREVIEW_CHARS_WIDE = 48;
 
 // ---------------------------------------------------------------------------
 // User
@@ -156,24 +158,29 @@ export function UserNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 // Agent hub
 // ---------------------------------------------------------------------------
-export function AgentNode({ data }: NodeProps) {
-  const d = data as {
-    active: boolean;
-    error: boolean;
-    focus: Focus;
-    activity: Activity;
-    gate: GateState;
-    gateNote: string;
-    gateColor: string;
-    activeTool: string | null;
-    ctxParts: CtxPart[] | null;
-    ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
-    prompt: string;
-    systemPrompt: string | null;
-    tool: { name: string; input: unknown } | null;
-    genImage: { src: string; prompt: string } | null;
-    attached: { src: string; note: string }[] | null;
-  };
+export type AgentData = {
+  active: boolean;
+  error: boolean;
+  focus: Focus;
+  activity: Activity;
+  gate: GateState;
+  gateNote: string;
+  gateColor: string;
+  activeTool: string | null;
+  ctxParts: CtxPart[] | null;
+  ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
+  prompt: string;
+  systemPrompt: string | null;
+  tool: { name: string; input: unknown } | null;
+  genImage: { src: string; prompt: string } | null;
+  attached: { src: string; note: string }[] | null;
+};
+
+/** The agent card's inner content — head, loop and gate rows, the tool belt
+ *  and the context panels — WITHOUT the outer card frame and WITHOUT handles.
+ *  Extracted so the expanded worker card renders the same instrument with the
+ *  child's own data (card 287); AgentNode below is the frame around it. */
+export function AgentCardBody({ data: d }: { data: AgentData }) {
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
@@ -346,9 +353,7 @@ export function AgentNode({ data }: NodeProps) {
   );
 
   return (
-    <div
-      className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}${expandAll ? " pf-agent--wide" : ""}`}
-    >
+    <>
       {head}
       {expandAll ? (
         // edu: the context sits BESIDE the controls (wider card, not a tall stack).
@@ -385,6 +390,19 @@ export function AgentNode({ data }: NodeProps) {
           </Disclosure>
         </>
       )}
+    </>
+  );
+}
+
+export function AgentNode({ data }: NodeProps) {
+  const d = data as AgentData;
+  const expandAll = useContext(ExpandAllContext);
+  const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
+  return (
+    <div
+      className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}${expandAll ? " pf-agent--wide" : ""}`}
+    >
+      <AgentCardBody data={d} />
       <Handles />
     </div>
   );
@@ -469,12 +487,16 @@ function DiskBody({ disk, file }: { disk?: "idle" | "read" | "write"; file?: str
   );
 }
 
-/** The prompt line typing the running command, plus its full-text disclosure. */
+/** The prompt line typing the running command, plus its full-text disclosure.
+ *  The widened expanded station (card 287) affords a longer preview and a
+ *  taller scroll window — legible without opening anything. */
 function ShellBody({ command, active }: { command?: string | null; active: boolean }) {
   const lang = useLang();
+  const expandAll = useContext(ExpandAllContext);
+  const previewChars = expandAll ? SHELL_PREVIEW_CHARS_WIDE : SHELL_PREVIEW_CHARS;
   const shown = command
-    ? command.length > SHELL_PREVIEW_CHARS
-      ? `${command.slice(0, SHELL_PREVIEW_CHARS - 1)}…`
+    ? command.length > previewChars
+      ? `${command.slice(0, previewChars - 1)}…`
       : command
     : "";
   return (
@@ -494,7 +516,7 @@ function ShellBody({ command, active }: { command?: string | null; active: boole
         <Disclosure label={t(lang, "map.shell.cmd")}>
           <div
             className="pf-panelbox pf-mono nowheel"
-            style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}
+            style={{ fontSize: 11, overflow: "auto", maxHeight: expandAll ? 240 : 90 }}
           >
             $ {command}
           </div>
@@ -539,8 +561,12 @@ export function OsNode({ data }: NodeProps) {
     command?: string | null;
     mcp?: string | null;
     tool?: { name: string; input: unknown } | null;
+    /** Who is on the station right now — first entry is the occupant whose
+     *  content shows, the rest are "also" (stationUsers, owner call 2026-08-26). */
+    by?: { tag: string; name: string }[];
   };
   const lang = useLang();
+  const expandAll = useContext(ExpandAllContext);
 
   let station: { title: string; body: ReactNode };
   switch (d.kind) {
@@ -559,10 +585,31 @@ export function OsNode({ data }: NodeProps) {
   }
 
   return (
-    <div className={`pf-card pf-os pf-os--${d.kind}${d.active ? " pf-card--active" : ""}`}>
+    // Expanded, the stations paint at the widths their SEATS reserve
+    // (EXPANDED_CARD / stationSeats) — the compact widths in the stylesheet
+    // would leave the reserved room empty and the command clipped anyway.
+    <div
+      className={`pf-card pf-os pf-os--${d.kind}${expandAll ? " pf-os--wide" : ""}${d.active ? " pf-card--active" : ""}`}
+    >
       <div className="pf-os__head">
         <span className="pf-eyebrow">{station.title}</span>
       </div>
+      {d.by !== undefined && d.by.length > 0 && (
+        <div className="pf-os__by">
+          <span className="pf-os__by-user" title={d.by[0].name}>
+            {d.by[0].tag === "main" ? "main" : `${d.by[0].tag} · ${d.by[0].name}`}
+          </span>
+          {d.by.length > 1 && (
+            <span className="pf-os__by-also">
+              {t(lang, "map.station.also")}{" "}
+              {d.by
+                .slice(1)
+                .map((u) => u.tag)
+                .join(" ")}
+            </span>
+          )}
+        </div>
+      )}
       {station.body}
       <Handles />
     </div>
@@ -651,6 +698,43 @@ export function ExtNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 // Subagent loop
 // ---------------------------------------------------------------------------
+/** The worker's slice of the agent-card data shape — everything the child's
+ *  own fold carries; the context columns stay null (a child's context parts
+ *  are not on this wire) and the brief stands in for the prompt. */
+function workerAgentData(d: { active: boolean; focus: Focus; activity: Activity; full: SubFull }): AgentData {
+  return {
+    active: d.active,
+    error: d.full.error,
+    focus: d.focus,
+    activity: d.activity,
+    gate: d.full.gate,
+    gateNote: d.full.gateNote,
+    gateColor: d.full.gateColor,
+    activeTool: d.full.activeTool,
+    ctxParts: null,
+    ctxTotals: null,
+    prompt: d.full.brief ?? "",
+    systemPrompt: null,
+    tool: d.full.tool,
+    genImage: d.full.genImage,
+    attached: d.full.attached,
+  };
+}
+
+type SubFull = {
+  error: boolean;
+  gate: GateState;
+  gateNote: string;
+  gateColor: string;
+  activeTool: string | null;
+  tool: { name: string; input: unknown } | null;
+  genImage: { src: string; prompt: string } | null;
+  attached: { src: string; note: string }[] | null;
+  brief: string | null;
+  model: string | null;
+  spend: { peak: number; turns: number } | null;
+};
+
 export function SubagentNode({ data }: NodeProps) {
   const lang = useLang();
   const d = data as {
@@ -665,7 +749,56 @@ export function SubagentNode({ data }: NodeProps) {
     focus: Focus;
     active: boolean;
     think: string;
+    /** Present only in the expanded view: the worker renders as the agent's
+     *  own card with this data (card 287). Absent = compact, byte-identical
+     *  to what shipped. */
+    full?: SubFull;
   };
+  if (d.full !== undefined) {
+    // The opaque agent id lives ONLY in the title attribute — the visible
+    // name is the task the spawner phrased, then the kind label, then nothing.
+    return (
+      <div className={`pf-card pf-sub pf-sub--full${d.active ? " pf-card--active" : ""}`}>
+        <div className="pf-sub__head" title={d.id}>
+          <span className="pf-sub__id">
+            <span className="pf-sub__dot" style={{ background: d.stateColor }} />
+            {d.task || d.label || "worker"}
+          </span>
+          {d.label !== null && <span className="pf-badge">{d.label}</span>}
+          <span className="pf-badge" style={{ color: d.stateColor }}>
+            {d.stateLabel}
+          </span>
+        </div>
+        <AgentCardBody
+          data={workerAgentData({ active: d.active, focus: d.focus, activity: d.activity, full: d.full })}
+        />
+        <div className="pf-sub__meta">
+          {d.full.brief !== null && (
+            <Disclosure label={t(lang, "map.sub.brief")}>
+              <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+                {d.full.brief}
+              </div>
+            </Disclosure>
+          )}
+          {d.full.spend !== null && (
+            <span className="pf-kv">
+              {t(lang, "map.sub.peak")}{" "}
+              <b className="tabular">{d.full.spend.peak.toLocaleString(lang === "de" ? "de-DE" : "en-US")}</b>{" "}
+              tok · {d.full.spend.turns}{" "}
+              {t(lang, d.full.spend.turns === 1 ? "map.sub.turn" : "map.sub.turns")}
+            </span>
+          )}
+          {d.full.model !== null && <span className="pf-kv">{d.full.model}</span>}
+          {d.lastStatus !== null && (
+            <span className="pf-kv">
+              {t(lang, "map.sub.lastStatus")} <b>{d.lastStatus}</b>
+            </span>
+          )}
+        </div>
+        <Handles />
+      </div>
+    );
+  }
   return (
     <div className={`pf-card pf-sub${d.active ? " pf-card--active" : ""}`}>
       <div className="pf-sub__head">
