@@ -1590,3 +1590,27 @@
   width: 148px;
   height: 99px;
 }
+
+/* ---- Who is on the station (stationUsers, owner call 2026-08-26) -------- */
+.pf-os__by {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.pf-os__by-user {
+  color: var(--text-dim);
+  border: 1px solid var(--agent-worker);
+  border-radius: 999px;
+  padding: 0 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-os__by-also {
+  color: var(--text-faint);
+}

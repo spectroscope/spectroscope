@@ -10,6 +10,7 @@ import type { DiskState, Focus, GateState, Loop, Scene, SubagentInfo } from "../
 import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
+import { stationUsers } from "./stationUsers";
 
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
@@ -699,17 +700,20 @@ export function sceneToFlow(
     active: atDisk !== undefined,
     disk: atDisk?.loop.disk ?? "idle",
     file: atDisk?.loop.activeFile ?? null,
+    by: stationUsers(scene, "disk"),
   });
   N("os-shell", "os", {
     kind: "shell",
     active: atCmd !== undefined,
     command: atCmd?.loop.activeCommand ?? null,
+    by: stationUsers(scene, "cmd"),
   });
   N("os-mcp", "os", {
     kind: "mcp",
     active: mcpInUse,
     mcp: mcpUser?.loop.activeMcp ?? null,
     tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
+    by: stationUsers(scene, "mcp"),
   });
   N("os-net", "os", { kind: "net", active: mcpInUse });
 

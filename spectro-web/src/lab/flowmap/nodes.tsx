@@ -539,6 +539,9 @@ export function OsNode({ data }: NodeProps) {
     command?: string | null;
     mcp?: string | null;
     tool?: { name: string; input: unknown } | null;
+    /** Who is on the station right now — first entry is the occupant whose
+     *  content shows, the rest are "also" (stationUsers, owner call 2026-08-26). */
+    by?: { tag: string; name: string }[];
   };
   const lang = useLang();
 
@@ -563,6 +566,18 @@ export function OsNode({ data }: NodeProps) {
       <div className="pf-os__head">
         <span className="pf-eyebrow">{station.title}</span>
       </div>
+      {d.by !== undefined && d.by.length > 0 && (
+        <div className="pf-os__by">
+          <span className="pf-os__by-user" title={d.by[0].name}>
+            {d.by[0].tag === "main" ? "main" : `${d.by[0].tag} · ${d.by[0].name}`}
+          </span>
+          {d.by.length > 1 && (
+            <span className="pf-os__by-also">
+              {t(lang, "map.station.also")} {d.by.slice(1).map((u) => u.tag).join(" ")}
+            </span>
+          )}
+        </div>
+      )}
       {station.body}
       <Handles />
     </div>
