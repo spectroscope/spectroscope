@@ -11,7 +11,14 @@ import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
 import { stationUsers } from "./stationUsers";
-import { SEAT_ROWS_COMPACT, SEAT_ROWS_EXPANDED, SEATS_MAX_COMPACT, SEATS_MAX_EXPANDED, seatGrid, seatOf } from "./workerGrid";
+import {
+  SEAT_ROWS_COMPACT,
+  SEAT_ROWS_EXPANDED,
+  SEATS_MAX_COMPACT,
+  SEATS_MAX_EXPANDED,
+  seatGrid,
+  seatOf,
+} from "./workerGrid";
 import { osBandWidth, stationSeats } from "./stationSeats";
 
 // ---------------------------------------------------------------------------
@@ -600,10 +607,7 @@ export function sceneToFlow(
     // band's right edge — the band sits below user+agent and now runs wider
     // than the agent, so a column keyed to the agent alone would stand on the
     // stations (the seat guards caught exactly that).
-    const subX = Math.max(
-      agentX + EXPANDED_CARD.agent.w + EXP_GAP,
-      osZone.x + osBandW + EXP_GAP,
-    );
+    const subX = Math.max(agentX + EXPANDED_CARD.agent.w + EXP_GAP, osZone.x + osBandW + EXP_GAP);
     // The leftmost thing in the right-hand world sets the shift for all of it:
     // remote that is the boundary wall, local it is the LLM inside the machine.
     const rightWorld = Math.min(

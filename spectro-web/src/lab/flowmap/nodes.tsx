@@ -595,7 +595,11 @@ export function OsNode({ data }: NodeProps) {
           </span>
           {d.by.length > 1 && (
             <span className="pf-os__by-also">
-              {t(lang, "map.station.also")} {d.by.slice(1).map((u) => u.tag).join(" ")}
+              {t(lang, "map.station.also")}{" "}
+              {d.by
+                .slice(1)
+                .map((u) => u.tag)
+                .join(" ")}
             </span>
           )}
         </div>
@@ -691,14 +695,7 @@ export function ExtNode({ data }: NodeProps) {
 /** The worker's slice of the agent-card data shape — everything the child's
  *  own fold carries; the context columns stay null (a child's context parts
  *  are not on this wire) and the brief stands in for the prompt. */
-function workerAgentData(
-  d: {
-    active: boolean;
-    focus: Focus;
-    activity: Activity;
-    full: SubFull;
-  },
-): AgentData {
+function workerAgentData(d: { active: boolean; focus: Focus; activity: Activity; full: SubFull }): AgentData {
   return {
     active: d.active,
     error: d.full.error,
@@ -766,7 +763,9 @@ export function SubagentNode({ data }: NodeProps) {
             {d.stateLabel}
           </span>
         </div>
-        <AgentCardBody data={workerAgentData({ active: d.active, focus: d.focus, activity: d.activity, full: d.full })} />
+        <AgentCardBody
+          data={workerAgentData({ active: d.active, focus: d.focus, activity: d.activity, full: d.full })}
+        />
         <div className="pf-sub__meta">
           {d.full.brief !== null && (
             <Disclosure label={t(lang, "map.sub.brief")}>
@@ -777,9 +776,8 @@ export function SubagentNode({ data }: NodeProps) {
           )}
           {d.full.spend !== null && (
             <span className="pf-kv">
-              {t(lang, "map.sub.peak")}{" "}
-              <b className="tabular">{d.full.spend.peak.toLocaleString("en-US")}</b> tok ·{" "}
-              {d.full.spend.turns} turns
+              {t(lang, "map.sub.peak")} <b className="tabular">{d.full.spend.peak.toLocaleString("en-US")}</b>{" "}
+              tok · {d.full.spend.turns} turns
             </span>
           )}
           {d.full.model !== null && <span className="pf-kv">{d.full.model}</span>}

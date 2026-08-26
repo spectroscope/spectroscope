@@ -11,7 +11,11 @@ const FIRST_STATION_X = 58; // the disk's seat, 34 in from the band's edge
 export const STATION_GAP = 26;
 export const STATION_PAD = FIRST_STATION_X - BAND_X; // 34 — same air on both ends
 
-export function stationSeats(widths: number[], x0: number = FIRST_STATION_X, gap: number = STATION_GAP): number[] {
+export function stationSeats(
+  widths: number[],
+  x0: number = FIRST_STATION_X,
+  gap: number = STATION_GAP,
+): number[] {
   const xs: number[] = [];
   let at = x0;
   for (const w of widths) {
