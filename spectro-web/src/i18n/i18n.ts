@@ -2491,6 +2491,66 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The translated session as a file — load it next time instead of translating again",
   },
   "tr.reset": { de: "Übersetzung verwerfen", en: "discard the translation" },
+  // The run analysis (card 294) — the consent voice follows the translate
+  // sheet: what leaves, on whose key, and no button that fails.
+  "an.button": { de: "diesen Lauf analysieren", en: "analyze this run" },
+  "an.buttonTitle": {
+    de: "Den konfigurierten Provider einmalig um eine Lesart dieses importierten Laufs bitten",
+    en: "Ask the configured provider for a one-shot reading of this imported run",
+  },
+  "an.title": { de: "Lauf-Analyse", en: "run analysis" },
+  "an.lede": {
+    de: "Schickt einen kompakten Auszug dieses importierten Laufs an den konfigurierten Provider — einmal, nur auf deinen Klick. Beim Import wurde nichts gesendet, und gespeichert wird nichts: Das Ergebnis lebt in dieser Ansicht.",
+    en: "Sends a compact digest of this imported run to the configured provider — once, only on your click. Nothing was sent at import, and nothing is stored: the result lives in this view.",
+  },
+  "an.engine": { de: "der konfigurierte Provider", en: "the configured provider" },
+  "an.engine.body": {
+    de: "Es geht auf deinen Key. Der Auszug unten verlässt diesen Rechner.",
+    en: "It spends your key. The digest below leaves this machine.",
+  },
+  "an.engine.localBody": {
+    de: "Die Adresse ist dieser Rechner — der Auszug bleibt auf diesem Rechner.",
+    en: "The address is loopback — the digest stays on this machine.",
+  },
+  "an.address": { de: "Adresse", en: "address" },
+  "an.out.needsKey": {
+    de: "Der konfigurierte Provider hat keinen Key.",
+    en: "The configured provider has no key.",
+  },
+  "an.out.providerIsLocal": {
+    de: "Der konfigurierte Provider ist das eingebaute Modell — die Analyse braucht einen Cloud-Provider; in den Einstellungen einen wählen.",
+    en: "The configured provider is the built-in model — the analysis needs a cloud provider; pick one in Settings.",
+  },
+  "an.out.generic": { de: "In dieser Installation nicht verfügbar.", en: "Not available on this install." },
+  "an.enginesFailed": {
+    de: "Der Server ließ sich nicht fragen, was eine Analyse benutzen würde ({msg}).",
+    en: "Could not ask the server what an analysis would use ({msg}).",
+  },
+  "an.plan": {
+    de: "Gesendet wird genau dieser Auszug: {c} Zeichen über {a} Agenten.",
+    en: "What leaves is exactly this digest: {c} characters over {a} agents.",
+  },
+  "an.planCapped": {
+    de: "Er ist gekürzt — Schnitte sind im Text markiert.",
+    en: "It is capped — cuts are marked inside the text.",
+  },
+  "an.showDigest": { de: "den Auszug zeigen", en: "show the digest" },
+  "an.run": { de: "Auszug senden & analysieren", en: "send the digest & analyze" },
+  "an.running": { de: "Das Modell liest den Lauf …", en: "The model is reading the run …" },
+  "an.readingLabel": {
+    de: "die Lesart des Modells — eine Deutung, keine Messung",
+    en: "the model's reading — an interpretation, not a measurement",
+  },
+  "an.again": { de: "erneut analysieren", en: "analyze again" },
+  "an.discard": { de: "verwerfen", en: "discard" },
+  "an.failed": {
+    de: "Die Analyse ist fehlgeschlagen: {msg}",
+    en: "The analysis failed: {msg}",
+  },
+  "an.cutShort": {
+    de: "Der Stream endete, bevor der Server fertig war — das ist nicht die ganze Lesart.",
+    en: "The stream ended before the server finished — this is not the whole reading.",
+  },
   "tv.mcp": { de: "MCP-Tool", en: "MCP tool" },
   "tv.agents": { de: "Subagenten", en: "Subagents" },
   "tv.agentsN": { de: "{n} Agenten", en: "{n} agents" },

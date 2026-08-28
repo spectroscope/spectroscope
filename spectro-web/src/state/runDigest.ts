@@ -91,7 +91,10 @@ export function buildRunDigest(events: readonly RunEvent[]): RunDigest {
       ? undefined
       : [...events]
           .reverse()
-          .find((e): e is Extract<RunEvent, { type: "run_end" }> => e.type === "run_end" && e.runId === rootStart.runId);
+          .find(
+            (e): e is Extract<RunEvent, { type: "run_end" }> =>
+              e.type === "run_end" && e.runId === rootStart.runId,
+          );
 
   // The main agent's totals and final text, read directly off the stream —
   // foldWork deliberately keeps the main agent out of its items.
@@ -165,7 +168,8 @@ export function buildRunDigest(events: readonly RunEvent[]): RunDigest {
     head.push(`kind=${item.kind}`);
     if (item.model !== null) head.push(`model=${item.model}`);
     head.push(`state=${item.state}`);
-    if (item.firstTs !== null && item.lastTs !== null) head.push(`span=${spanLabel(item.lastTs - item.firstTs)}`);
+    if (item.firstTs !== null && item.lastTs !== null)
+      head.push(`span=${spanLabel(item.lastTs - item.firstTs)}`);
     head.push(`tokens in=${item.inTokens} out=${item.outTokens}`);
     head.push(`tools=${item.toolCalls}`);
     if (item.gatesAsked > 0) head.push(`gates asked=${item.gatesAsked} denied=${item.gatesDenied}`);

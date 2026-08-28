@@ -5,12 +5,7 @@
 // cut is stated inside the digest itself rather than silently applied.
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import {
-  DIGEST_CAP_CHARS,
-  MAX_DIGEST_AGENTS,
-  buildRunDigest,
-  isLoopbackAddress,
-} from "./runDigest";
+import { DIGEST_CAP_CHARS, MAX_DIGEST_AGENTS, buildRunDigest, isLoopbackAddress } from "./runDigest";
 
 const T0 = 1735000000000;
 
@@ -26,7 +21,13 @@ function smallRun(): RunEvent[] {
       model: "glm-5.2:cloud",
       ts: T0,
     },
-    { type: "agent_spawn", agentId: "child-1", parentId: "main", task: "Scout the parser module", ts: T0 + 1000 },
+    {
+      type: "agent_spawn",
+      agentId: "child-1",
+      parentId: "main",
+      task: "Scout the parser module",
+      ts: T0 + 1000,
+    },
     {
       type: "run_start",
       runId: "r2",
@@ -102,9 +103,7 @@ describe("buildRunDigest — the agents", () => {
   });
 
   it("falls back to the last status line when no result ever came", () => {
-    const events = smallRun().filter(
-      (e) => !(e.type === "agent_message" && e.role === "result"),
-    );
+    const events = smallRun().filter((e) => !(e.type === "agent_message" && e.role === "result"));
     const digest = buildRunDigest(events);
     expect(digest.text).toContain("reading parser.ts");
   });

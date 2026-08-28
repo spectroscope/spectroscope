@@ -8,6 +8,7 @@
 // reconstruction actually resolved.
 
 import { useMemo } from "react";
+import type { ReactNode } from "react";
 import { ViewportPortal } from "@xyflow/react";
 import type { Node as FlowNode, NodeTypes } from "@xyflow/react";
 import type { RunEvent } from "../../events";
@@ -93,6 +94,9 @@ export function WorkflowLens(props: {
   scene: Scene;
   /** The root's model from the header picker, when the run itself said none. */
   model?: string;
+  /** The run-analysis affordance (card 294) — handed in only for an imported
+   *  run, so the lens itself stays ignorant of imports and stores. */
+  analyze?: ReactNode;
 }) {
   const lang = useLang();
   const tree = useMemo(() => spawnTree(props.events), [props.events]);
@@ -127,6 +131,7 @@ export function WorkflowLens(props: {
   return (
     <div className="wf-lens">
       <WorkflowLegend lang={lang} resolved={tree.resolved} reported={tree.reported} />
+      {props.analyze}
       <GraphCanvas
         className="wf-canvas"
         nodes={nodes}

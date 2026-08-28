@@ -125,6 +125,7 @@ function ArrangementDivider({
 
 export function RightPanel({
   agents,
+  analyze,
   plan,
   onClose,
   provider,
@@ -165,6 +166,9 @@ export function RightPanel({
   work?: WorkItem[];
   /** Which work item the transcript's chip is pointing at. */
   workHighlight?: string | null;
+  /** The run-analysis affordance (card 294), rendered above the agents
+   *  roster — handed in only for an imported run. */
+  analyze?: ReactNode;
   /** The agents beside the imported session (card 177). */
   sidecars?: SidecarIndex;
   /** Open one of them as a session of its own. */
@@ -283,7 +287,7 @@ export function RightPanel({
           />
         );
       case "agents":
-        return <AgentsTab agents={agents} selectedId={selectedId} onSelect={selectAgent} />;
+        return <AgentsTab agents={agents} selectedId={selectedId} onSelect={selectAgent} analyze={analyze} />;
       case "plan":
         return <PlanTab plan={plan} />;
       case "context":
