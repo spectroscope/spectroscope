@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { layoutStateGraph } from "../stategraph/layout";
-import { nodeStateAt, spawnedIn, spawnTree } from "./spawnTree";
+import { nodeStateAt, spawnedIn, spawnTree, terminalStatesIn } from "./spawnTree";
 import { advanceScene, initialScene, type Scene } from "./labScene";
 
 /** One child: spawned at `start`, last heard from at `end`. */
@@ -158,14 +158,34 @@ describe("nodeStateAt — the cursor lights the graph from the ONE scene fold", 
   it("shows a child pending before its spawn, active while it lives, done after the run", () => {
     const beforeSpawn = 1; // only run_start applied
     expect(
-      nodeStateAt(sceneAt(beforeSpawn), spawnedIn(events.slice(0, beforeSpawn)), "scout-a", "main"),
+      nodeStateAt(
+        sceneAt(beforeSpawn),
+        spawnedIn(events.slice(0, beforeSpawn)),
+        terminalStatesIn(events.slice(0, beforeSpawn)),
+        "scout-a",
+        "main",
+      ),
     ).toBe("pending");
     const midScouts = events.findIndex((e) => e.type === "agent_spawn" && e.agentId === "consolidate");
-    expect(nodeStateAt(sceneAt(midScouts), spawnedIn(events.slice(0, midScouts)), "scout-a", "main")).toBe(
-      "active",
-    );
+    expect(
+      nodeStateAt(
+        sceneAt(midScouts),
+        spawnedIn(events.slice(0, midScouts)),
+        terminalStatesIn(events.slice(0, midScouts)),
+        "scout-a",
+        "main",
+      ),
+    ).toBe("active");
     const all = events.length;
-    expect(nodeStateAt(sceneAt(all), spawnedIn(events.slice(0, all)), "scout-a", "main")).toBe("done");
+    expect(
+      nodeStateAt(
+        sceneAt(all),
+        spawnedIn(events.slice(0, all)),
+        terminalStatesIn(events.slice(0, all)),
+        "scout-a",
+        "main",
+      ),
+    ).toBe("done");
   });
 
   it("marks a completed child as done while the scene still carries it", () => {
@@ -183,7 +203,9 @@ describe("nodeStateAt — the cursor lights the graph from the ONE scene fold", 
       },
     ];
     const scene = completing.reduce((s, e) => advanceScene(s, e), initialScene());
-    expect(nodeStateAt(scene, spawnedIn(completing), "worker", "main")).toBe("done");
+    expect(nodeStateAt(scene, spawnedIn(completing), terminalStatesIn(completing), "worker", "main")).toBe(
+      "done",
+    );
   });
 
   it("marks a failed child as failed while the scene still carries it", () => {
@@ -201,12 +223,61 @@ describe("nodeStateAt — the cursor lights the graph from the ONE scene fold", 
       },
     ];
     const scene = failing.reduce((s, e) => advanceScene(s, e), initialScene());
-    expect(nodeStateAt(scene, spawnedIn(failing), "worker", "main")).toBe("failed");
+    expect(nodeStateAt(scene, spawnedIn(failing), terminalStatesIn(failing), "worker", "main")).toBe(
+      "failed",
+    );
+  });
+
+  it("keeps a failed child failed after run_end — the imported run's resting cursor", () => {
+    // An IMPORTED run is complete: its resting cursor sits after run_end,
+    // where the scene no longer carries any child. The terminal-state map is
+    // what still remembers HOW each child ended.
+    const ended: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      { type: "agent_spawn", agentId: "worker", parentId: "main", task: "t", ts: 1 },
+      { type: "agent_spawn", agentId: "sibling", parentId: "main", task: "u", ts: 2 },
+      {
+        type: "agent_message",
+        from: "worker",
+        to: "main",
+        role: "result",
+        state: "failed",
+        text: "gave up",
+        ts: 3,
+      },
+      {
+        type: "agent_message",
+        from: "sibling",
+        to: "main",
+        role: "result",
+        state: "completed",
+        text: "all done",
+        ts: 4,
+      },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 5 },
+    ];
+    const scene = ended.reduce((s, e) => advanceScene(s, e), initialScene());
+    // Premise of this pin: the scene has retired the children.
+    expect(scene.subagents).toEqual([]);
+    const spawned = spawnedIn(ended);
+    const terminal = terminalStatesIn(ended);
+    expect(nodeStateAt(scene, spawned, terminal, "worker", "main")).toBe("failed");
+    expect(nodeStateAt(scene, spawned, terminal, "sibling", "main")).toBe("done");
   });
 
   it("walks the root through pending, active and done", () => {
-    expect(nodeStateAt(sceneAt(0), spawnedIn([]), "main", "main")).toBe("pending");
-    expect(nodeStateAt(sceneAt(3), spawnedIn(events.slice(0, 3)), "main", "main")).toBe("active");
-    expect(nodeStateAt(sceneAt(events.length), spawnedIn(events), "main", "main")).toBe("done");
+    expect(nodeStateAt(sceneAt(0), spawnedIn([]), terminalStatesIn([]), "main", "main")).toBe("pending");
+    expect(
+      nodeStateAt(
+        sceneAt(3),
+        spawnedIn(events.slice(0, 3)),
+        terminalStatesIn(events.slice(0, 3)),
+        "main",
+        "main",
+      ),
+    ).toBe("active");
+    expect(
+      nodeStateAt(sceneAt(events.length), spawnedIn(events), terminalStatesIn(events), "main", "main"),
+    ).toBe("done");
   });
 });

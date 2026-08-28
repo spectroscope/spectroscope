@@ -15,7 +15,7 @@ import type { Scene } from "../labScene";
 import { layoutStateGraph, type StateGraphLayout } from "../../stategraph/layout";
 import { GraphCanvas } from "../../reactflow/GraphCanvas";
 import { RefitOnLayout } from "../../reactflow/RefitOnLayout";
-import { nodeStateAt, spawnedIn, spawnTree, type WorkflowNodeState } from "../spawnTree";
+import { nodeStateAt, spawnedIn, spawnTree, terminalStatesIn, type WorkflowNodeState } from "../spawnTree";
 import { t, type Lang } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 import "./workflow.css";
@@ -125,12 +125,13 @@ export function WorkflowLens(props: {
   const tree = useMemo(() => spawnTree(props.events), [props.events]);
   const laid = useMemo(() => layoutStateGraph(tree.topo, "horizontal"), [tree]);
   const spawned = useMemo(() => spawnedIn(props.applied), [props.applied]);
+  const terminal = useMemo(() => terminalStatesIn(props.applied), [props.applied]);
 
   const nodes: FlowNode[] = useMemo(
     () =>
       laid.nodes.map((p) => {
         const meta = tree.meta[p.id];
-        const state = nodeStateAt(props.scene, spawned, p.id, tree.root);
+        const state = nodeStateAt(props.scene, spawned, terminal, p.id, tree.root);
         return {
           id: p.id,
           type: "wfNode",
@@ -147,7 +148,7 @@ export function WorkflowLens(props: {
           } satisfies WfData,
         };
       }),
-    [laid, tree, props.scene, spawned, props.model, lang],
+    [laid, tree, props.scene, spawned, terminal, props.model, lang],
   );
 
   return (

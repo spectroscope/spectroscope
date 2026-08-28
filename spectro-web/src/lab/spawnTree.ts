@@ -11,6 +11,13 @@
 // from what happened, not a declaration from before the run, which is why
 // every edge here carries the `spawn` kind and is drawn dashed.
 //
+// OPEN OWNER CALL (card 293 review): the wave >= 2 edges are SYNTHESIZED
+// precedence edges, while the real parent edge (root -> child) goes undrawn
+// for those waves, and two wide consecutive waves multiply into |a| x |b|
+// edges. Whether this encoding stays or literal parent edges replace it
+// (which would flatten the ranks-by-overlap) is the owner's decision, not a
+// derivation — do not treat the current shape as settled.
+//
 // Honesty is counted, not implied: `reported` is the number of children the
 // run's agent_spawn events named (M), `resolved` how many of them named a
 // parent that actually appears in the run (N). A child whose parent never
@@ -170,13 +177,31 @@ export function spawnedIn(events: RunEvent[]): ReadonlySet<string> {
 
 export type WorkflowNodeState = "pending" | "active" | "done" | "failed";
 
+/** The last result-message state per child in this event prefix — the same
+ *  completed/failed mapping the scene fold applies. Once the root run_end
+ *  retires the scene's subagents, this map is what still remembers HOW each
+ *  child ended; without it an IMPORTED run (complete, resting cursor at the
+ *  end) could never show a failed child. */
+export function terminalStatesIn(events: RunEvent[]): ReadonlyMap<string, "completed" | "failed"> {
+  const last = new Map<string, "completed" | "failed">();
+  for (const e of events) {
+    if (e.type === "agent_message" && e.role === "result") {
+      last.set(e.from, e.state === "completed" ? "completed" : "failed");
+    }
+  }
+  return last;
+}
+
 /** The cursor lights the graph from the ONE scene fold the machine lens
- *  reads — no second fold. A node the scene still carries answers from its
- *  lifecycle; one the scene no longer carries (the root run ended) is done
- *  if it ever appeared, pending if the cursor has not reached it yet. */
+ *  reads — no second scene fold. A node the scene still carries answers from
+ *  its lifecycle; one the scene no longer carries (the root run ended)
+ *  answers from its terminal state, then from having appeared at all:
+ *  failed stays failed, otherwise done if it ever appeared, pending if the
+ *  cursor has not reached it yet. */
 export function nodeStateAt(
   scene: Scene,
   spawned: ReadonlySet<string>,
+  terminal: ReadonlyMap<string, "completed" | "failed">,
   id: string,
   root: string,
 ): WorkflowNodeState {
@@ -187,5 +212,7 @@ export function nodeStateAt(
     return "active";
   }
   if (id === root && scene.rootRunId !== null) return "active";
+  const end = terminal.get(id);
+  if (end !== undefined) return end === "failed" ? "failed" : "done";
   return spawned.has(id) ? "done" : "pending";
 }
