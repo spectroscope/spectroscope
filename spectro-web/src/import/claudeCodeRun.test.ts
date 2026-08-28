@@ -335,6 +335,100 @@ describe("importClaudeCodeRun", () => {
     });
   });
 
+  describe("a merged child keeps the ONE identity the session already knows (twin repair)", () => {
+    // Measured on the real reference run (browser pass, 2026-08-28): the main
+    // stream spawns each child under its Task tool_use id, and the merged
+    // sidecar arrived under its own hex agentId — every child twice, one twin
+    // ended by the result message and one working forever. The canon is the
+    // single-file importer's own convention: Task tool_use ids double as the
+    // child agentIds. The coordinator re-keys every merged frame onto it.
+    const idFields = ["agentId", "parentId", "from", "to"] as const;
+    const idsIn = (events: RunEvent[]): Set<string> => {
+      const ids = new Set<string>();
+      for (const e of frames(events))
+        for (const k of idFields) {
+          const v = (e as Record<string, unknown>)[k];
+          if (typeof v === "string") ids.add(v);
+        }
+      return ids;
+    };
+
+    it("re-keys the sidecar's frames onto the Task tool_use id — no hex twin anywhere", () => {
+      const ids = idsIn(importClaudeCodeRun(RUN).events);
+      expect(ids.has("agent-one")).toBe(false);
+      expect(ids.has("agent-two")).toBe(false);
+      expect(ids.has("toolu_child_1")).toBe(true);
+      expect(ids.has("toolu_child_2")).toBe(true);
+    });
+
+    it("the child's run_start speaks the in-file sidechain language", () => {
+      // runId `cc-<tool use id>`, agentId the tool use id, parentId the
+      // SPAWNER — exactly what the importer emits for a child it finds in the
+      // same file. parentId must never be the child's own id: before the
+      // repair the coordinator wrote parentId = toolUseId, which after the
+      // re-key would nest the child under itself.
+      const rs = runStartOf(importClaudeCodeRun(RUN).events, "toolu_child_1");
+      expect(rs?.runId).toBe("cc-toolu_child_1");
+      expect(rs?.parentId).toBe("main");
+    });
+
+    it("the sidecar's token frames land on the titled identity, not on a twin", () => {
+      const usage = frames(importClaudeCodeRun(RUN).events).filter(
+        (e) => e.type === "usage" && e.agentId === "toolu_child_1",
+      ) as { inputTokens: number; outputTokens: number }[];
+      expect(usage).toHaveLength(1);
+      expect(usage[0].inputTokens).toBe(10);
+      expect(usage[0].outputTokens).toBe(5);
+    });
+
+    it("a grandchild keeps its own identity, and its parentId follows the re-key", () => {
+      // A Task spawned INSIDE the sidecar: the grandchild's id is its own
+      // tool_use id and stays; only the pointer at its spawner moves from the
+      // hex root onto the toolu identity.
+      const withGrandchild = [
+        line({
+          type: "user",
+          isSidechain: true,
+          agentId: "agent-one",
+          sessionId: "session-under-test",
+          uuid: "agent-one-u",
+          timestamp: iso(T0 + 2_000),
+          message: { role: "user", content: "first subtask" },
+        }),
+        line({
+          type: "assistant",
+          isSidechain: true,
+          agentId: "agent-one",
+          uuid: "agent-one-a",
+          parentUuid: "agent-one-u",
+          timestamp: iso(T0 + 3_000),
+          message: {
+            id: "msg_agent-one",
+            role: "assistant",
+            model: "test-model-child",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_grandchild",
+                name: "Task",
+                input: { description: "a nested subtask", subagent_type: "worker" },
+              },
+            ],
+          },
+        }),
+      ].join("\n");
+      const { events } = importClaudeCodeRun({
+        sessionText: SESSION,
+        sidecars: [{ jsonlText: withGrandchild, metaJson: meta("toolu_child_1") }],
+      });
+      const grandSpawn = frames(events).find(
+        (e) => e.type === "agent_spawn" && e.agentId === "toolu_grandchild",
+      );
+      expect(grandSpawn?.parentId).toBe("toolu_child_1");
+      expect(idsIn(events).has("agent-one")).toBe(false);
+    });
+  });
+
   describe("a merged child's bill is not paid twice", () => {
     // The launch record's `usage` summarises the child's whole run. In a lone
     // session import it is the only bill there is and it stays; once the

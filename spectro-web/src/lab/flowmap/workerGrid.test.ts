@@ -120,6 +120,28 @@ describe("workerGrid", () => {
       expect(gone.total).toBe(0);
     });
 
+    it("a child's OWN run_end frees its seat — the merged sidecar carries one (card 291)", () => {
+      // The re-keyed sidecar ends with run_end `cc-<child id>`. Before the
+      // repair only a result message ended a child, so a merged child whose
+      // Task result never came back sat live forever. The pool learns the
+      // child's runId from its run_start and ends it on that run's end; the
+      // unmapped-runId case above stays exactly as it is.
+      const childStart: RunEvent = {
+        type: "run_start",
+        runId: "cc-a",
+        agentId: "a",
+        parentId: "main",
+        prompt: "subtask",
+        ts: T,
+      } as RunEvent;
+      const childEnd: RunEvent = { type: "run_end", runId: "cc-a", stopReason: "end_turn", ts: T } as RunEvent;
+      const p = foldSeatPool([start, spawn("a"), childStart, childEnd]);
+      expect(p.live).toBe(0);
+      expect(p.total).toBe(1);
+      // The seat itself is kept for reuse, exactly like a result-message end.
+      expect(p.occupant).toEqual(["a"]);
+    });
+
     it("a child that only ever speaks through its own events still gets a seat", () => {
       // No agent_spawn: the child appears the way labScene folds it — via any
       // event that carries its agentId.
