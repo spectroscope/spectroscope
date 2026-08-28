@@ -1,16 +1,14 @@
-// The worker grid (card 287). The map used to slice the fleet at three; the
-// harness runs four parallel children and more over a run, so the seats grow
-// into a grid: rows first, columns as needed, the seat of worker i fixed by i
-// alone (col = floor(i / rows), row = i % rows) so a card never moves once it
-// is on the map — the property the single-column seating already insisted on.
-//
-// WHY FOUR ROWS EXPANDED. A row costs the worker envelope plus the rail gap
-// of height (the pitch the expanded seating derives, subCardH + EXP_GAP); a
-// column costs the painted card plus the same gap of width. Four rows is the
-// best fit trade over the counts that occur (measured on a downstream
-// consumer of this engine across 5–12 workers; re-measured here in the card's
-// browser pass). Compact keeps three rows — its band above the OS stations is
-// exactly three compact cards deep.
+// The worker grid (card 287, reworked by card 292). The map used to slice the
+// fleet at three; the harness runs four parallel children and more over a run,
+// so the seats grow into a grid: rows first, columns as needed, the seat of a
+// worker fixed (col = floor(seat / rows), row = seat % rows) so a card never
+// moves while its child lives — the property the single-column seating already
+// insisted on. Since card 292 the seat INDEX comes from the pool fold below
+// (seats say what was concurrent, not how many children the run ever had), and
+// the expanded ROW COUNT derives from the pane's measured aspect via rowsFor —
+// SEAT_ROWS_EXPANDED is the fallback for a pane that never measured. Compact
+// keeps three rows: its band above the OS stations is exactly three compact
+// cards deep.
 //
 // THE CEILINGS ARE STARTING VALUES, replaced by the card's own browser
 // measurement if they move: past the ceiling the map stops drawing and the
@@ -67,12 +65,10 @@ export function foldSeatPool(events: readonly RunEvent[]): SeatPool {
   };
   const admit = (id: string) => {
     if (alive.has(id)) return;
-    let s: number;
-    if (seat[id] !== undefined && occupant[seat[id]] === id) {
-      // A child revived while still shown on its old seat keeps it — no jump.
-      s = seat[id];
-    } else {
-      s = occupant.findIndex((o) => !alive.has(o));
+    // A child revived while still shown on its old seat keeps it — no jump.
+    const keepsOldSeat = seat[id] !== undefined && occupant[seat[id]] === id;
+    if (!keepsOldSeat) {
+      let s = occupant.findIndex((o) => !alive.has(o));
       if (s < 0) s = occupant.length;
       seat[id] = s;
       occupant[s] = id;
@@ -184,11 +180,7 @@ export function drawnCount(spawned: number, expanded: boolean): number {
  * of those children already ended. Loud about a gap: when the ceiling kept
  * seats undrawn, the drawn number joins the confession.
  */
-export function workerChip(
-  pool: SeatPool,
-  drawn: number,
-  lang: Lang,
-): { text: string; gap: boolean } | null {
+export function workerChip(pool: SeatPool, drawn: number, lang: Lang): { text: string; gap: boolean } | null {
   if (pool.total <= 0) return null;
   const vars = { live: pool.live, total: pool.total, drawn };
   return drawn < pool.occupant.length

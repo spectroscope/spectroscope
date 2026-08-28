@@ -548,7 +548,15 @@ describe("sceneToFlow — the seat pool on the map (card 292)", () => {
   const spawnE = (id: string): RunEvent =>
     ({ type: "agent_spawn", agentId: id, parentId: "main", task: `t-${id}`, ts: T }) as RunEvent;
   const resultE = (id: string): RunEvent =>
-    ({ type: "agent_message", from: id, to: "main", role: "result", state: "completed", text: "", ts: T }) as RunEvent;
+    ({
+      type: "agent_message",
+      from: id,
+      to: "main",
+      role: "result",
+      state: "completed",
+      text: "",
+      ts: T,
+    }) as RunEvent;
   const flowOf = (events: RunEvent[], expanded: boolean) => {
     const scene = events.reduce(advanceScene, initialScene());
     return sceneToFlow(scene, deriveDetail(events), {
@@ -625,7 +633,9 @@ describe("sceneToFlow — the fitted card never falls off a cliff (card 292)", (
     ),
   ];
   const envelopeOf = (id: string, type?: string) => EXPANDED_CARD[id] ?? EXPANDED_CARD[type ?? ""];
-  const worldOf = (nodes: { id: string; type?: string; position: { x: number; y: number }; style?: unknown }[]) => {
+  const worldOf = (
+    nodes: { id: string; type?: string; position: { x: number; y: number }; style?: unknown }[],
+  ) => {
     let x0 = Infinity,
       y0 = Infinity,
       x1 = -Infinity,
@@ -664,9 +674,10 @@ describe("sceneToFlow — the fitted card never falls off a cliff (card 292)", (
     const sizes = Array.from({ length: 12 }, (_, i) => cardPx(i + 1));
     for (let i = 1; i < sizes.length; i++) {
       // e.g. the old N=3→4 cliff was a 24.5% drop; anything past 16% is a cliff.
-      expect(sizes[i], `n=${i + 1} vs n=${i}: ${sizes.map((s) => s.toFixed(1)).join(", ")}`).toBeGreaterThanOrEqual(
-        sizes[i - 1] * 0.84,
-      );
+      expect(
+        sizes[i],
+        `n=${i + 1} vs n=${i}: ${sizes.map((s) => s.toFixed(1)).join(", ")}`,
+      ).toBeGreaterThanOrEqual(sizes[i - 1] * 0.84);
       expect(sizes[i]).toBeGreaterThanOrEqual(160);
     }
   });
