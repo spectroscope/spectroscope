@@ -27,7 +27,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -204,7 +203,11 @@ class SpectroServerIntegrationTest {
 
     @Test
     void aUserMessageStreamsTheCanonicalEventSequence() throws Exception {
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
 
         WebSocket.Listener listener = new WebSocket.Listener() {
@@ -404,7 +407,11 @@ class SpectroServerIntegrationTest {
         String expectedSha256 = HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256").digest(imageBytes));
 
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -453,7 +460,11 @@ class SpectroServerIntegrationTest {
         // junk, non-images): readable error event, NO run, connection usable.
         String oversized = Base64.getEncoder().encodeToString(new byte[5 * 1024 * 1024 + 1]);
 
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -514,7 +525,11 @@ class SpectroServerIntegrationTest {
     @Test
     void aPickedWorkspacePinsTheSessionBeforeTheFirstRunAndIsFixedAfterIt() throws Exception {
         Path picked = Files.createTempDirectory("spectroscope-picked-ws");
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -596,7 +611,11 @@ class SpectroServerIntegrationTest {
                 { "model": "ws-model", "thinking": false }
                 """);
 
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -672,7 +691,11 @@ class SpectroServerIntegrationTest {
                 { "workspace": "/elsewhere" }
                 """);
 
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -730,7 +753,11 @@ class SpectroServerIntegrationTest {
         Path launchDirSettings = Path.of(System.getProperty("user.dir"), ".spectro", "settings.json");
         Files.deleteIfExists(launchDirSettings);
 
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -787,7 +814,11 @@ class SpectroServerIntegrationTest {
     void aProviderSwitchAnnouncesTheNewBackendAsAFrame() throws Exception {
         // The switch must be VISIBLE on the wire: a second provider_info frame
         // (trace row, header chip, host column) — never a silent client-side swap.
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch unused = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -830,7 +861,11 @@ class SpectroServerIntegrationTest {
         // v0.2.0 added lmstudio/openrouter/gemini; the live switch must accept
         // them, not just the original three. lmstudio is the openai-compatible
         // local preset — no key — so the switch completes to a provider_info.
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch unused = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -854,7 +889,11 @@ class SpectroServerIntegrationTest {
 
     @Test
     void anUnknownProviderIsStillRefusedWithTheFullAllowedList() throws Exception {
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch unused = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -883,7 +922,11 @@ class SpectroServerIntegrationTest {
         // (that shoved the Claude id into a local backend). Switch to openai
         // with a distinctive model, then to ollama with a BLANK model: the
         // second frame must show ollama's default (qwen3), not the carried id.
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch unused = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -916,7 +959,11 @@ class SpectroServerIntegrationTest {
         // present the switch succeeds; without one it must be refused AT SWITCH TIME
         // (naming the key) — never a lying header chip whose failure is a deferred 401.
         boolean hasKey = dev.spectroscope.core.config.SpectroConfig.hasApiKey("GEMINI_API_KEY");
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch unused = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -951,7 +998,11 @@ class SpectroServerIntegrationTest {
         // with no key the key check refuses first; with a key it is the model check.
         // Either way: NO gemini provider_info (no lying chip).
         boolean hasKey = dev.spectroscope.core.config.SpectroConfig.hasApiKey("GEMINI_API_KEY");
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch unused = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
@@ -1022,7 +1073,11 @@ class SpectroServerIntegrationTest {
 
     /** One WS session: the reasoning frame first, then a probe prompt, then run_end. */
     private void runWithReasoning(String reasoningFrame, String probeText) throws Exception {
-        List<JsonNode> events = new ArrayList<>();
+        // The websocket listener appends from its own thread while the test thread
+        // polls via events.stream() - a bare ArrayList raced there (measured on CI
+        // 2026-08-29: TimeoutException in aPersistedRuleLandsInTheWorkspaceProjectFile,
+        // the 2026-08-19 finding). Snapshot iteration ends the race.
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
         CountDownLatch runEnded = new CountDownLatch(1);
         try (HttpClient client = HttpClient.newHttpClient()) {
             WebSocket socket = client.newWebSocketBuilder()
