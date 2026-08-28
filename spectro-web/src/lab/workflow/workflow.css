@@ -94,6 +94,19 @@
   pointer-events: none;
 }
 
+/* The overlay SVG — the .sg-arcs contract, token for token: absolute and
+ * full-size over the viewport, arcs free to leave the box, and INERT to the
+ * pointer. Without pointer-events: none the SVG's default box would swallow
+ * pans and node clicks near the graph origin (found in review, card 293). */
+.wf-arcs {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
 .wf-arc {
   fill: none;
   stroke: var(--border-strong);
