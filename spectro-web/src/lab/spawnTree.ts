@@ -1,22 +1,17 @@
 // The workflow lens's reconstruction (card 293): (the run's events) → a
 // Topology for the UNCHANGED layoutStateGraph. Pure, DOM-free.
 //
-// Nodes are the run's agents — the root plus every child an agent_spawn
-// reported. Edges follow the spawn tree, and the RANK comes from TIME
-// OVERLAP: root children whose lifetimes overlap share a rank (a wave). The
-// layout derives ranks from longest paths, so the waves are encoded as the
-// edge set itself: a wave-one child hangs off the root (that IS its parent
-// edge), and a later wave's child receives an edge from every member of the
-// wave before it — "these ended, then this began". That is a reconstruction
-// from what happened, not a declaration from before the run, which is why
-// every edge here carries the `spawn` kind and is drawn dashed.
+// OWNER CALL, variant C (2026-08-28, decided in chat): an edge is the REAL
+// spawn relation — parent → child — and the POSITION carries time. Nodes sit
+// in their time-overlap waves (children whose lifetimes overlap share a
+// column), handed to the layout as its rank override instead of being
+// encoded into the edge set. Both truths live in one picture, neither lies.
+// This replaces the earlier wave-edge encoding, which drew synthesized
+// precedence edges ("these ended, then this began") while the real parent
+// edge went undrawn for every wave past the first.
 //
-// OPEN OWNER CALL (card 293 review): the wave >= 2 edges are SYNTHESIZED
-// precedence edges, while the real parent edge (root -> child) goes undrawn
-// for those waves, and two wide consecutive waves multiply into |a| x |b|
-// edges. Whether this encoding stays or literal parent edges replace it
-// (which would flatten the ranks-by-overlap) is the owner's decision, not a
-// derivation — do not treat the current shape as settled.
+// Every edge is still a reconstruction from what happened, not a declaration
+// from before the run — the `spawn` kind, drawn dashed.
 //
 // Honesty is counted, not implied: `reported` is the number of children the
 // run's agent_spawn events named (M), `resolved` how many of them named a
@@ -39,7 +34,8 @@ export interface SpawnNodeMeta {
 }
 
 export interface SpawnTree {
-  /** Ready for layoutStateGraph — every edge carries the `spawn` kind. */
+  /** Ready for layoutStateGraph — every edge carries the `spawn` kind, and
+   *  `ranks` carries the time-overlap waves as the layout's rank override. */
   topo: Topology;
   /** Per node id, the root included. */
   meta: Record<string, SpawnNodeMeta>;
@@ -112,39 +108,47 @@ export function spawnTree(events: RunEvent[]): SpawnTree {
   const known = new Set<string>([root, ...children.keys()]);
   const resolvedOf = (c: ChildRecord): boolean => c.parentId === root || known.has(c.parentId);
 
-  // Waves: root children grouped by lifetime overlap, in start order. Nested
-  // children hang under their real parent; unresolved ones dangle off the
-  // root — neither anchors a wave.
-  const rootChildren = [...children.values()]
-    .filter((c) => c.parentId === root)
+  // Position carries time (variant C): every child drawn off the root — a
+  // direct child, or one whose reported parent never appeared — joins the
+  // wave grouping, in start order. A new wave opens when a child starts
+  // after everything in the wave before it has ended.
+  const offRoot = [...children.values()]
+    .filter((c) => c.parentId === root || !known.has(c.parentId))
     .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
-  const waves: ChildRecord[][] = [];
+  const ranks = new Map<string, number>([[root, 0]]);
+  let wave = 0;
   let waveEnd = -Infinity;
-  for (const c of rootChildren) {
-    if (waves.length === 0 || c.start > waveEnd) {
-      waves.push([c]);
+  for (const c of offRoot) {
+    if (wave === 0 || c.start > waveEnd) {
+      wave += 1;
       waveEnd = c.end;
     } else {
-      waves[waves.length - 1].push(c);
       waveEnd = Math.max(waveEnd, c.end);
     }
+    ranks.set(c.id, wave);
   }
+  // A nested child overlaps its parent by construction, so a time wave
+  // cannot separate them — it ranks one step past its parent instead. The
+  // pre-set 1 is the cycle guard: a malformed parent chain stops there
+  // instead of recursing forever.
+  const rankOf = (c: ChildRecord): number => {
+    const got = ranks.get(c.id);
+    if (got !== undefined) return got;
+    ranks.set(c.id, 1);
+    const parent = children.get(c.parentId);
+    const r = parent === undefined ? 1 : rankOf(parent) + 1;
+    ranks.set(c.id, r);
+    return r;
+  };
+  for (const c of children.values()) rankOf(c);
 
-  const edges: Topology["edges"] = [];
-  waves.forEach((wave, k) => {
-    for (const c of wave) {
-      if (k === 0) {
-        edges.push({ from: root, to: c.id, kind: "spawn" });
-      } else {
-        for (const p of waves[k - 1]) edges.push({ from: p.id, to: c.id, kind: "spawn" });
-      }
-    }
-  });
-  for (const c of children.values()) {
-    if (c.parentId === root) continue;
-    // A nested child under its real parent; an unresolved one under the root.
-    edges.push({ from: known.has(c.parentId) ? c.parentId : root, to: c.id, kind: "spawn" });
-  }
+  // The real spawn relation, one edge per child: from its parent when that
+  // parent appears in the run, from the root when it does not.
+  const edges: Topology["edges"] = [...children.values()].map((c) => ({
+    from: known.has(c.parentId) ? c.parentId : root,
+    to: c.id,
+    kind: "spawn" as const,
+  }));
 
   const meta: Record<string, SpawnNodeMeta> = {
     [root]: { label: root, agentType: null, model: null, parentResolved: true },
@@ -157,7 +161,7 @@ export function spawnTree(events: RunEvent[]): SpawnTree {
   }
 
   return {
-    topo: { entry: root, nodes, edges },
+    topo: { entry: root, nodes, edges, ranks },
     meta,
     reported: children.size,
     resolved: [...children.values()].filter(resolvedOf).length,

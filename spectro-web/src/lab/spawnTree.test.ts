@@ -1,9 +1,10 @@
-// The workflow lens's reconstruction (card 293): the run's agents as a
-// topology for the UNCHANGED layoutStateGraph. Nodes are the agents, edges
-// follow the spawn tree, and the RANK comes from time overlap — children
-// whose lifetimes overlap share a rank. The fixture below is synthetic but
-// pins the measured target shape: root, one planning child, one rank of five
-// parallel scouts, then a three-step tail — five child ranks, widest five.
+// The workflow lens's reconstruction (card 293, owner call C 2026-08-28):
+// an edge is the REAL spawn relation (parent → child), and the POSITION
+// carries time — nodes sit in their time-overlap waves via the layout's rank
+// override. Both truths in one picture, neither lies. The fixture below is
+// synthetic but pins the measured target shape: root, one planning child,
+// one rank of five parallel scouts, then a three-step tail — five child
+// ranks, widest five, every edge from the root that spawned them.
 
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
@@ -63,19 +64,46 @@ describe("spawnTree — the reconstructed workflow topology", () => {
     expect(widest).toBe(5);
   });
 
-  it("chains consecutive waves and fans in/out at the parallel rank", () => {
+  it("draws every edge from the root that spawned them — variant C, no synthesized precedence", () => {
     const tree = spawnTree(pipelineEvents());
     expect(edgeSet(tree)).toEqual(
       [
         "main->plan-check",
-        ...["scout-a", "scout-b", "scout-c", "scout-d", "scout-e"].map((s) => `plan-check->${s}`),
-        ...["scout-a", "scout-b", "scout-c", "scout-d", "scout-e"].map((s) => `${s}->consolidate`),
-        "consolidate->deliver",
-        "deliver->publish",
+        ...["scout-a", "scout-b", "scout-c", "scout-d", "scout-e"].map((s) => `main->${s}`),
+        "main->consolidate",
+        "main->deliver",
+        "main->publish",
       ].sort(),
     );
     // Every reconstructed edge is a spawn edge — the dashed kind.
     tree.topo.edges.forEach((e) => expect(e.kind).toBe("spawn"));
+  });
+
+  it("supplies the wave ranks to the layout instead of encoding them as edges", () => {
+    const tree = spawnTree(pipelineEvents());
+    const ranks = tree.topo.ranks!;
+    expect(ranks.get("main")).toBe(0);
+    expect(ranks.get("plan-check")).toBe(1);
+    for (const s of ["scout-a", "scout-b", "scout-c", "scout-d", "scout-e"]) {
+      expect(ranks.get(s), s).toBe(2);
+    }
+    expect(ranks.get("consolidate")).toBe(3);
+    expect(ranks.get("deliver")).toBe(4);
+    expect(ranks.get("publish")).toBe(5);
+  });
+
+  it("routes the root's long edges to late waves over the skip lane, every edge routed", () => {
+    const tree = spawnTree(pipelineEvents());
+    const laid = layoutStateGraph(tree.topo, "horizontal");
+    // Every edge got a routed path — none dropped, none empty.
+    expect(laid.edges).toHaveLength(tree.topo.edges.length);
+    for (const e of laid.edges) expect(e.path.length, e.id).toBeGreaterThan(0);
+    // The edges into the waves beyond plan-check cross ranks whose single
+    // boxes sit on the axis — they must fly the skip lane, not cut through.
+    for (const to of ["consolidate", "deliver", "publish"]) {
+      expect(laid.edges.find((e) => e.from === "main" && e.to === to)!.skip, to).toBe(true);
+    }
+    expect(laid.edges.filter((e) => e.skip).length).toBeGreaterThan(0);
   });
 
   it("counts the honesty chip's values: nine reported, nine resolved", () => {
@@ -98,6 +126,10 @@ describe("spawnTree — the reconstructed workflow topology", () => {
     expect(tree.resolved).toBe(1);
     expect(tree.meta["orphan"].parentResolved).toBe(false);
     expect(tree.meta["worker"].parentResolved).toBe(true);
+    // Position carries time for the orphan too: it ran and ended before the
+    // worker began, so it takes the first wave and the worker the second.
+    expect(tree.topo.ranks!.get("orphan")).toBe(1);
+    expect(tree.topo.ranks!.get("worker")).toBe(2);
   });
 
   it("hangs a nested child under its real parent, not under root", () => {
@@ -110,6 +142,10 @@ describe("spawnTree — the reconstructed workflow topology", () => {
     const tree = spawnTree(events);
     expect(edgeSet(tree)).toContain("worker->grandchild");
     expect(edgeSet(tree)).not.toContain("main->grandchild");
+    // A nested child overlaps its parent by construction, so a time wave
+    // cannot separate them — it ranks one step past its parent instead.
+    expect(tree.topo.ranks!.get("worker")).toBe(1);
+    expect(tree.topo.ranks!.get("grandchild")).toBe(2);
   });
 
   it("reads model and agent type where the run said them", () => {
