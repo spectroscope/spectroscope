@@ -8,14 +8,15 @@
 // reconstruction actually resolved.
 
 import { useMemo } from "react";
-import { Handle, Position, ViewportPortal, type NodeProps } from "@xyflow/react";
+import { ViewportPortal } from "@xyflow/react";
 import type { Node as FlowNode, NodeTypes } from "@xyflow/react";
 import type { RunEvent } from "../../events";
 import type { Scene } from "../labScene";
 import { layoutStateGraph, type StateGraphLayout } from "../../stategraph/layout";
 import { GraphCanvas } from "../../reactflow/GraphCanvas";
 import { RefitOnLayout } from "../../reactflow/RefitOnLayout";
-import { nodeStateAt, spawnedIn, spawnTree, terminalStatesIn, type WorkflowNodeState } from "../spawnTree";
+import { nodeStateAt, spawnedIn, spawnTree, terminalStatesIn } from "../spawnTree";
+import { WorkflowNode, type WfData } from "./WorkflowNode";
 import { t, type Lang } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 import "./workflow.css";
@@ -29,36 +30,8 @@ export function lensFrom(stored: string | null): LabLens {
   return stored === "workflow" ? "workflow" : "machine";
 }
 
-interface WfData extends Record<string, unknown> {
-  label: string;
-  agentType: string | null;
-  model: string | null;
-  state: WorkflowNodeState;
-  /** Pre-translated state word — the card itself stays language-free. */
-  stateLabel: string;
-  w: number;
-  h: number;
-}
-
-/** The small topology card: label, type, model if known, state. Deliberately
- *  NOT the machine view's 408×560 worker envelope — this is the topology
- *  view, and the box matches the layout's own node cell. */
-export function WorkflowNode({ data }: NodeProps) {
-  const d = data as WfData;
-  const meta = [d.agentType, d.model, d.stateLabel].filter((p): p is string => p !== null && p !== "");
-  return (
-    <div
-      className={`wf-node wf-node--${d.state}`}
-      style={{ width: d.w, height: d.h }}
-      title={`${d.label} · ${d.stateLabel}`}
-    >
-      <Handle type="target" position={Position.Left} className="wf-handle" />
-      <span className="wf-node-label">{d.label}</span>
-      <span className="wf-node-meta mono">{meta.join(" · ")}</span>
-      <Handle type="source" position={Position.Right} className="wf-handle" />
-    </div>
-  );
-}
+// Re-exported so the card's markup pins keep their import path.
+export { WorkflowNode };
 
 const NODE_TYPES: NodeTypes = { wfNode: WorkflowNode };
 
