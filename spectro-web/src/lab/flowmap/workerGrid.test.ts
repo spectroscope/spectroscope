@@ -134,7 +134,12 @@ describe("workerGrid", () => {
         prompt: "subtask",
         ts: T,
       } as RunEvent;
-      const childEnd: RunEvent = { type: "run_end", runId: "cc-a", stopReason: "end_turn", ts: T } as RunEvent;
+      const childEnd: RunEvent = {
+        type: "run_end",
+        runId: "cc-a",
+        stopReason: "end_turn",
+        ts: T,
+      } as RunEvent;
       const p = foldSeatPool([start, spawn("a"), childStart, childEnd]);
       expect(p.live).toBe(0);
       expect(p.total).toBe(1);
