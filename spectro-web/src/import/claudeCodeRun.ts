@@ -69,8 +69,19 @@ interface FrameShape {
   runId?: string;
   agentId?: string;
   parentId?: string;
+  from?: string;
+  to?: string;
   cwd?: string;
 }
+
+/** Every field a frame can carry an AGENT id in, measured over the importer's
+ *  own output on the real reference run (2026-08-28): the hex root rides in
+ *  `agentId` on run_start / turn_start / *_delta / tool_call / tool_result /
+ *  usage / attachment_image, and — the moment a sidecar spawns its own Task —
+ *  in `parentId` (agent_spawn, the grandchild's run_start) and in the
+ *  `from`/`to` of agent_message. `ground_info.from` is a PATH, which is why
+ *  the re-key below matches the value, never the field name alone. */
+const ID_FIELDS = ["agentId", "parentId", "from", "to"] as const;
 
 const shape = (e: RunEvent): FrameShape => e as unknown as FrameShape;
 
@@ -149,11 +160,14 @@ export function importClaudeCodeRun(input: {
 
   // The join keys the session actually spawned: `agent_spawn.agentId` IS the
   // Task's tool_use id in the importer's own output, so the importer's
-  // reading — not a second scan of the records — is the authority.
-  const spawned = new Map<string, number>(); // toolUseId -> its agent_spawn ts
+  // reading — not a second scan of the records — is the authority. The spawn's
+  // parentId comes along because it is the child run_start's parentId after
+  // the re-key: the spawner, exactly as the in-file sidechain path writes it.
+  const spawned = new Map<string, { ts: number; parentId: string }>();
   for (const { ev } of sessionStream) {
     const f = shape(ev);
-    if (f.type === "agent_spawn" && typeof f.agentId === "string") spawned.set(f.agentId, f.ts ?? 0);
+    if (f.type === "agent_spawn" && typeof f.agentId === "string")
+      spawned.set(f.agentId, { ts: f.ts ?? 0, parentId: f.parentId ?? "main" });
   }
 
   let childrenSkipped = 0;
@@ -182,22 +196,45 @@ export function importClaudeCodeRun(input: {
     // whose records carry no timestamps at all ladders from its own spawn
     // instead of from the importer's default epoch (measured: `stampRecords`
     // reads the base only when no record in the file is dated).
-    if (readSubagentTranscript(records) === null) {
+    const transcript = readSubagentTranscript(records);
+    if (transcript === null) {
       childrenSkipped++;
       continue;
     }
-    const child = claudeCodeWithOrigin(records, spawned.get(toolUseId));
-    const stream: Sourced[] = child.events.map((ev) => {
+    const join = spawned.get(toolUseId)!;
+    const child = claudeCodeWithOrigin(records, join.ts);
+    // THE RE-KEY (twin repair). The sidecar knows itself by its own hex
+    // agentId; the session already spawned the same child under the Task
+    // tool_use id — the importer's canon that "Task tool_use ids double as
+    // the child agentIds". Left as two ids, every child is two agents: the
+    // toolu one the result message ends, and a hex one working forever.
+    // So every merged frame moves onto the identity the session knows. A
+    // grandchild spawned INSIDE the sidecar keeps its own id — only values
+    // equal to the sidecar's root id move, wherever an agent id can ride.
+    const hexRoot = transcript.agentId;
+    const rekey = (ev: RunEvent): RunEvent => {
+      const f = shape(ev);
+      let patched: Record<string, unknown> | null = null;
+      for (const k of ID_FIELDS)
+        if (f[k] === hexRoot) {
+          patched = patched ?? { ...(ev as object) };
+          patched[k] = toolUseId;
+        }
+      return patched === null ? ev : (patched as unknown as RunEvent);
+    };
+    const stream: Sourced[] = child.events.map((raw) => {
+      const ev = rekey(raw);
       const f = shape(ev);
       // The file's own root run gets the in-file sidechain path's language:
-      // runId `cc-<tool use id>`, parentId the join key. That is the join the
-      // single-file importer deliberately leaves open — the owner lived in
-      // another file, and now that file is here.
+      // runId `cc-<tool use id>`, parentId the SPAWNER — the same frame the
+      // importer emits for a child it finds in the same file. That is the
+      // join the single-file importer deliberately leaves open — the owner
+      // lived in another file, and now that file is here.
       if (f.runId === ROOT_RUN_ID && (f.type === "run_start" || f.type === "run_end")) {
         const renamed = {
           ...(ev as object),
           runId: `cc-${toolUseId}`,
-          ...(f.type === "run_start" ? { parentId: toolUseId } : {}),
+          ...(f.type === "run_start" ? { parentId: join.parentId } : {}),
         };
         return { ev: renamed as RunEvent, origin: -1 };
       }

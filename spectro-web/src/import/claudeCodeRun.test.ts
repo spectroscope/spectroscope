@@ -70,6 +70,7 @@ const sidecar = (
   answer: string,
   startMs: number,
   cwd = "/workspaces/demo-project",
+  usage: { input_tokens: number; output_tokens: number } = { input_tokens: 10, output_tokens: 5 },
 ): string =>
   [
     line({
@@ -94,7 +95,7 @@ const sidecar = (
         role: "assistant",
         model: "test-model-child",
         content: [{ type: "text", text: answer }],
-        usage: { input_tokens: 10, output_tokens: 5 },
+        usage,
       },
     }),
   ].join("\n");
@@ -125,10 +126,13 @@ const runStartOf = (events: RunEvent[], agentId: string): Frame | undefined =>
   frames(events).find((e) => e.type === "run_start" && e.agentId === agentId);
 
 describe("importClaudeCodeRun", () => {
-  it("sets each child's run_start.parentId from its meta toolUseId", () => {
+  it("joins each sidecar by its meta toolUseId — that id IS the child on screen", () => {
+    // The meta names the tool_use the spawn rode in on, and the session
+    // already spawned the child under exactly that id. The merged run_start
+    // carries it, parented under the spawner.
     const { events } = importClaudeCodeRun(RUN);
-    expect(runStartOf(events, "agent-one")?.parentId).toBe("toolu_child_1");
-    expect(runStartOf(events, "agent-two")?.parentId).toBe("toolu_child_2");
+    expect(runStartOf(events, "toolu_child_1")?.parentId).toBe("main");
+    expect(runStartOf(events, "toolu_child_2")?.parentId).toBe("main");
   });
 
   it("gives each child run its own runId, off the join key", () => {
@@ -136,7 +140,7 @@ describe("importClaudeCodeRun", () => {
     // merged stream speaks the same language, so the reducer can never take a
     // child's run_end for the session's.
     const { events } = importClaudeCodeRun(RUN);
-    expect(runStartOf(events, "agent-one")?.runId).toBe("cc-toolu_child_1");
+    expect(runStartOf(events, "toolu_child_1")?.runId).toBe("cc-toolu_child_1");
     const childEnd = frames(events).filter((e) => e.type === "run_end" && e.runId === "cc-toolu_child_1");
     expect(childEnd).toHaveLength(1);
     // The session's own root run keeps its id, once.
@@ -149,8 +153,8 @@ describe("importClaudeCodeRun", () => {
     const { events } = importClaudeCodeRun(RUN);
     const at = (pred: (e: Frame) => boolean): number => frames(events).findIndex(pred);
     const spawn1 = at((e) => e.type === "agent_spawn" && e.agentId === "toolu_child_1");
-    const child1 = at((e) => e.type === "run_start" && e.agentId === "agent-one");
-    const child2 = at((e) => e.type === "run_start" && e.agentId === "agent-two");
+    const child1 = at((e) => e.type === "run_start" && e.agentId === "toolu_child_1");
+    const child2 = at((e) => e.type === "run_start" && e.agentId === "toolu_child_2");
     const result1 = at((e) => e.type === "tool_result");
     expect(spawn1).toBeGreaterThanOrEqual(0);
     expect(child1).toBeGreaterThan(spawn1);
@@ -178,7 +182,7 @@ describe("importClaudeCodeRun", () => {
     });
     const all = frames(merged.events);
     const sessionResult = all.findIndex((e) => e.type === "tool_result");
-    const childStart = all.findIndex((e) => e.type === "run_start" && e.agentId === "agent-tie");
+    const childStart = all.findIndex((e) => e.type === "run_start" && e.agentId === "toolu_child_1");
     // The premise: both frames really carry the same stamp.
     expect(all[sessionResult].ts).toBe(all[childStart].ts);
     expect(sessionResult).toBeGreaterThanOrEqual(0);
@@ -331,7 +335,7 @@ describe("importClaudeCodeRun", () => {
       });
       expect(merged.childrenMerged).toBe(1);
       expect(merged.childrenSkipped).toBe(1);
-      expect(runStartOf(merged.events, "agent-two")?.parentId).toBe("toolu_child_2");
+      expect(runStartOf(merged.events, "toolu_child_2")?.runId).toBe("cc-toolu_child_2");
     });
   });
 
@@ -461,12 +465,24 @@ describe("importClaudeCodeRun", () => {
     });
 
     it("the merged import drops the summary and keeps the child's own bill", () => {
+      // Both bills name the same agent after the re-key, so the NUMBERS are
+      // the witness: the sidecar's own grain (21/13) survives, the launch
+      // record's summary (10/5) does not — one bill, not two, not the sum.
+      const distinctBill = sidecar("agent-one", "first subtask", "child one answer", T0 + 2_000, undefined, {
+        input_tokens: 21,
+        output_tokens: 13,
+      });
       const merged = importClaudeCodeRun({
         sessionText: SESSION_WITH_BILL,
-        sidecars: [{ jsonlText: SIDECAR_1, metaJson: meta("toolu_child_1") }],
+        sidecars: [{ jsonlText: distinctBill, metaJson: meta("toolu_child_1") }],
       });
-      expect(usageFor(merged.events, "toolu_child_1")).toHaveLength(0);
-      expect(usageFor(merged.events, "agent-one")).toHaveLength(1);
+      const bills = usageFor(merged.events, "toolu_child_1") as unknown as {
+        inputTokens: number;
+        outputTokens: number;
+      }[];
+      expect(bills).toHaveLength(1);
+      expect(bills[0].inputTokens).toBe(21);
+      expect(bills[0].outputTokens).toBe(13);
     });
 
     it("a SKIPPED child keeps the launch record's bill — it is the only one", () => {
