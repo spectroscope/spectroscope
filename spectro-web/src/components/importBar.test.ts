@@ -8,7 +8,7 @@
 // The header eyebrow switches to "archive" and the bar keeps naming the
 // imported file.
 import { describe, expect, it } from "vitest";
-import { shownImportBar, subagentNote } from "./importBar";
+import { childrenNote, shownImportBar, subagentNote } from "./importBar";
 
 const bar = {
   sessionId: "import:claude-code:four-readings.jsonl",
@@ -89,5 +89,39 @@ describe("what the bar says about a subagent transcript", () => {
     const note = subagentNote("en", { agentId: "lone", sessionId: "s-1" }) ?? "";
     expect(note).toContain("s-1");
     expect(note).not.toContain("undefined");
+  });
+});
+
+// Card 291: the bar says what came along with the session.
+//
+// A run import merges the children's own transcripts into the stream, and the
+// bar states the count. When some sidecars could not be joined it says that
+// too — honest, like the worker chip: a silent skip would read as "the run had
+// fewer children", which is a claim about somebody else's session.
+describe("what the bar says about a run import's children", () => {
+  it("says nothing about a lone-file import", () => {
+    expect(childrenNote("en", undefined)).toBeNull();
+    expect(childrenNote("de", null)).toBeNull();
+  });
+
+  it("says nothing when the run had no sidecars at all", () => {
+    expect(childrenNote("en", { workspace: null, childrenMerged: 0, childrenSkipped: 0 })).toBeNull();
+  });
+
+  it("counts the merged children, in both languages", () => {
+    const run = { workspace: "/workspaces/demo", childrenMerged: 2, childrenSkipped: 0 };
+    expect(childrenNote("en", run)).toContain("2");
+    expect(childrenNote("en", run)).toContain("merged");
+    expect(childrenNote("de", run)).toContain("2");
+    expect(childrenNote("de", run)).not.toMatch(/\{[a-z]+\}/);
+    // Nothing was skipped, so nothing claims it was.
+    expect(childrenNote("en", run)?.toLowerCase()).not.toContain("skip");
+  });
+
+  it("says when children were skipped", () => {
+    const run = { workspace: null, childrenMerged: 1, childrenSkipped: 2 };
+    expect(childrenNote("en", run)?.toLowerCase()).toContain("skipped");
+    expect(childrenNote("en", run)).toContain("2");
+    expect(childrenNote("de", run)).toContain("2");
   });
 });

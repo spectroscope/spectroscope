@@ -421,6 +421,19 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "imp.subagentKind": { de: "Art: {kind}.", en: "Kind: {kind}." },
   "imp.subagentSession": { de: "Er lief in Sitzung {session}.", en: "It ran in session {session}." },
+  // Card 291: a run import merged the children's own transcripts. The skipped
+  // clause appears only when something WAS skipped — a silent skip would read
+  // as "the run had fewer children".
+  "imp.childrenMerged": { de: "{n} Kind-Agenten zusammengeführt.", en: "{n} children merged." },
+  "imp.childrenSkipped": {
+    de: "{n} Kind-Agenten übersprungen (unlesbar oder nicht zuordenbar).",
+    en: "{n} children skipped (unreadable or unmatched).",
+  },
+  "imp.pickFolder": { de: "Session-Ordner wählen …", en: "Pick a session folder …" },
+  "imp.err.noSession": {
+    de: "Keine Session-.jsonl in der Auswahl gefunden.",
+    en: "No session .jsonl found in the selection.",
+  },
 
   // common
   "common.cancel": { de: "Abbrechen", en: "Cancel" },
@@ -930,6 +943,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "ws.unreachable": {
     de: "Server nicht erreichbar — kein Dateibaum.",
     en: "Server unreachable — no file tree.",
+  },
+  // Card 291: an imported run shows the cwd its records carried, as a label —
+  // resolving or creating anything on disk is card 288's neighbourhood.
+  "ws.recorded": {
+    de: "Aufgezeichneter Arbeitsordner des importierten Laufs — nur Anzeige, auf dieser Maschine wird nichts gelesen oder angelegt.",
+    en: "The imported run's recorded working folder — display only, nothing on this machine is read or created.",
   },
 
   // plan tab

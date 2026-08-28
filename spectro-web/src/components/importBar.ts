@@ -7,6 +7,7 @@
 // function so the rule is pinned rather than left to a stray effect.
 
 import { t, type Lang } from "../i18n/i18n";
+import type { ImportedRunSummary } from "../import/claudeCodeRun";
 import type { SubagentTranscript } from "../import/subagentFile";
 import type { SourceStats } from "../state/traceSource";
 
@@ -55,5 +56,26 @@ export function subagentNote(lang: Lang, sub: SubagentTranscript | null | undefi
   if (sub.attributionAgent !== undefined)
     parts.push(t(lang, "imp.subagentKind", { kind: sub.attributionAgent }));
   if (sub.sessionId !== undefined) parts.push(t(lang, "imp.subagentSession", { session: sub.sessionId }));
+  return parts.join(" ");
+}
+
+/**
+ * What the bar says about the children a run import carried (card 291).
+ *
+ * Only a run import — a session picked together with its subagents/ set —
+ * ever constructs a summary, so a lone-file import keeps its bar exactly as
+ * it was. A run whose directory held no sidecars at all says nothing either:
+ * "0 children merged" would read as a defect where there was simply nothing
+ * to merge. Skips are stated whenever they happened, the worker chip's rule:
+ * the honest count is both halves or neither.
+ *
+ * @param lang the chrome language
+ * @param run  what the coordinator measured, or nothing for a lone file
+ * @return the sentence(s), or null when there is nothing of the kind to say
+ */
+export function childrenNote(lang: Lang, run: ImportedRunSummary | null | undefined): string | null {
+  if (!run || (run.childrenMerged === 0 && run.childrenSkipped === 0)) return null;
+  const parts = [t(lang, "imp.childrenMerged", { n: run.childrenMerged })];
+  if (run.childrenSkipped > 0) parts.push(t(lang, "imp.childrenSkipped", { n: run.childrenSkipped }));
   return parts.join(" ");
 }
