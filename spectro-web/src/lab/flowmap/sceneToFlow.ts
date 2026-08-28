@@ -499,17 +499,19 @@ const SUB_BAND_BOTTOM = 630; // subagents stay above the OS band (OS_BAND_TOP)
 
 /**
  * Deterministic vertical layout for the subagent column. Rules:
- *  - a preferred top-to-top spacing (subGap), kept when it fits the band;
- *  - a hard minimum spacing (card height + SUB_MIN_GAP) so cards never clump;
- *  - the whole group centered in its band;
- *  - clamped so the column never overflows into the OS band.
+ *  - the preferred top-to-top spacing (subGap) is used as-is — the caller
+ *    always hands a band it fits (see below);
+ *  - the whole group centered in its band.
  * Result: one agent lands centered, two as a centered pair, three fill the band
  * evenly, and the spacing is identical whether one arrives before the others.
  *
- * cardH is what one card occupies — compact by default, the expanded envelope
- * when the shell opens every panel. It has to travel with the spacing: the band
- * clamp below shrinks the step to fit, and a clamp that shrinks against the
- * WRONG height happily seats card n+1 inside card n.
+ * There used to be a clamp here ("if span > band, shrink the step") and it was
+ * measured dead in both modes (card 292): expanded derives subBandBottom as
+ * subBase.y + (rows-1)*subGapL + subCardH, so band == span exactly; compact
+ * caps rows at three, so span <= 2*180 + 132 = 492 against a band of
+ * 630 - 110 = 520. A guard that pretends to protect and cannot fire is worse
+ * than none — a real overflow belongs to the seat-collision report, which says
+ * so out loud instead of silently squeezing cards into each other.
  */
 function subagentYs(
   count: number,
@@ -520,12 +522,9 @@ function subagentYs(
 ): number[] {
   if (count <= 0) return [];
   const band = bandBottom - bandTop;
-  const minStep = cardH + SUB_MIN_GAP;
-  const span = (step: number) => (count - 1) * step + cardH;
-  let step = preferredGap;
-  if (span(step) > band) step = Math.max(minStep, (band - cardH) / (count - 1 || 1));
-  const start = bandTop + Math.max(0, (band - span(step)) / 2);
-  return Array.from({ length: count }, (_, i) => Math.round(start + i * step));
+  const span = (count - 1) * preferredGap + cardH;
+  const start = bandTop + Math.max(0, (band - span) / 2);
+  return Array.from({ length: count }, (_, i) => Math.round(start + i * preferredGap));
 }
 
 export interface FlowResult {
