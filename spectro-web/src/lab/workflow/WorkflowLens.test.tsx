@@ -79,19 +79,25 @@ describe("every edge in this lens is dashed", () => {
 });
 
 describe("the legend and the honesty chip", () => {
-  it("says the dashed rule once in words, in both locales", () => {
+  it("says the variant-C rule once in words, in both locales", () => {
+    // Owner call C (2026-08-28): edges show who started whom, columns follow
+    // time — and dashed stays dashed: reconstructed, not declared.
     const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={9} reported={9} />);
+    expect(en).toContain("who started whom");
+    expect(en).toContain("columns follow time");
     expect(en).toContain("dashed");
     expect(en).toContain("reconstructed");
     const de = renderToStaticMarkup(<WorkflowLegend lang="de" resolved={9} reported={9} />);
+    expect(de).toContain("wer wen gestartet hat");
+    expect(de).toContain("Spalten folgen der Zeit");
     expect(de).toContain("gestrichelt");
     expect(de).toContain("rekonstruiert");
   });
 
-  it("hints on the COUNT, not on a drawn edge — true under either edge encoding", () => {
-    // The hint must describe what `resolved` counts (a parent that appears in
-    // the run), not assert a drawn parent edge: whether waves >= 2 draw their
-    // real parent edge or synthesized precedence edges is an OPEN owner call.
+  it("hints on the COUNT, not on a drawn edge", () => {
+    // The hint describes what `resolved` counts (a parent that appears in
+    // the run). It was written to be true under either edge encoding, and
+    // owner call C (2026-08-28) has since settled on real parent edges.
     const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={7} reported={9} />);
     expect(en).toContain("9 reported spawns, 7 of them with a parent that appears in the run");
     expect(en).not.toContain("parent edge");

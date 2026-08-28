@@ -3703,8 +3703,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The run's workflow: its agents as a graph, waves by time overlap",
   },
   "lab.lens.legend": {
-    de: "gestrichelt: aus den Ereignissen des Laufs rekonstruiert — durchgezogen hieße: vor dem Lauf deklariert (State-Graph)",
-    en: "dashed: reconstructed from the run's events — solid would mean declared before the run (state graph)",
+    de: "Kanten zeigen, wer wen gestartet hat, Spalten folgen der Zeit — gestrichelt: aus den Ereignissen des Laufs rekonstruiert, nicht vorher deklariert",
+    en: "edges show who started whom, columns follow time — dashed: reconstructed from the run's events, not declared before it",
   },
   "lab.lens.reconstructed": {
     de: "rekonstruiert aus {n} von {m} Kind-Agenten",
