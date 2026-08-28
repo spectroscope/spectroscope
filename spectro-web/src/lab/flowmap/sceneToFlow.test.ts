@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../../events";
 import { advanceScene, initialScene } from "../labScene";
+import { foldSeatPool } from "./workerGrid";
 import { t } from "../../i18n/i18n";
 import {
   activity,
@@ -528,6 +529,173 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
       expanded: true,
     });
     expect(flow.nodes.filter((n) => n.type === "subagent")).toHaveLength(12);
+  });
+});
+
+// Card 292, C1: the map draws the POOL's seating, not the lifetime index. A
+// run whose children came and went shows the peak concurrency, and a later
+// child sits down on a freed seat — in the exact position the ended child had.
+describe("sceneToFlow — the seat pool on the map (card 292)", () => {
+  const T = 1;
+  const start: RunEvent = {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "go",
+    provider: "anthropic",
+    ts: T,
+  };
+  const spawnE = (id: string): RunEvent =>
+    ({ type: "agent_spawn", agentId: id, parentId: "main", task: `t-${id}`, ts: T }) as RunEvent;
+  const resultE = (id: string): RunEvent =>
+    ({
+      type: "agent_message",
+      from: id,
+      to: "main",
+      role: "result",
+      state: "completed",
+      text: "",
+      ts: T,
+    }) as RunEvent;
+  const flowOf = (events: RunEvent[], expanded: boolean) => {
+    const scene = events.reduce(advanceScene, initialScene());
+    return sceneToFlow(scene, deriveDetail(events), {
+      local: false,
+      provider: "anthropic",
+      model: "m",
+      expanded,
+      pool: foldSeatPool(events),
+    });
+  };
+
+  it("a later child reuses a freed seat — same position, and the ended child yields it", () => {
+    const before = flowOf([start, spawnE("a"), spawnE("b")], true);
+    const after = flowOf([start, spawnE("a"), spawnE("b"), resultE("a"), spawnE("c")], true);
+    const at = (flow: { nodes: { id: string; position: { x: number; y: number } }[] }, id: string) =>
+      flow.nodes.find((n) => n.id === id)?.position;
+    // c sits exactly where a sat; a's card yielded the seat.
+    expect(at(after, "sub-c")).toEqual(at(before, "sub-a"));
+    expect(at(after, "sub-a")).toBeUndefined();
+    // b never ended: its seat is untouched by the churn around it.
+    expect(at(after, "sub-b")).toEqual(at(before, "sub-b"));
+  });
+
+  it("nine sequential children draw the peak, not the lifetime — the grid stays small", () => {
+    const events: RunEvent[] = [start];
+    for (let i = 0; i < 9; i++) {
+      events.push(spawnE(`w${i}`));
+      if (i >= 2) events.push(resultE(`w${i - 2}`));
+    }
+    const flow = flowOf(events, true);
+    const subs = flow.nodes.filter((n) => n.type === "subagent");
+    // Peak concurrency 3 → three seats on the map, not nine.
+    expect(subs).toHaveLength(3);
+    expect(new Set(subs.map((n) => `${n.position.x}/${n.position.y}`)).size).toBe(3);
+  });
+
+  it("without a pool the legacy lifetime seating is untouched (edu / sim path)", () => {
+    const events = [start, spawnE("a"), spawnE("b"), resultE("a"), spawnE("c")];
+    const scene = events.reduce(advanceScene, initialScene());
+    const flow = sceneToFlow(scene, deriveDetail(events), {
+      local: false,
+      provider: "anthropic",
+      model: "m",
+      expanded: true,
+    });
+    // all three drawn, lifetime order — today's behaviour, byte for byte.
+    expect(flow.nodes.filter((n) => n.type === "subagent")).toHaveLength(3);
+  });
+});
+
+// Card 292, C2: the cliff. Measured before the fix (pane 1600x900, no
+// padding): N=1..2 card 253 device px, N=3 → 192 (−24.1%), N=4 → 145
+// (−24.5%) and FLAT to N=12 — the world saturated at 2530 tall while the
+// pane stayed 900, and every card painted its 11px meta line at ~2 device
+// px. Rows now derive from seat count and pane aspect, so the fitted card
+// shrinks gently: the measured worst adjacent drop after the fix is 15.4%
+// (N=2→3) and the floor at N=12 is 164 px. Thresholds pinned just under
+// those measurements: no adjacent drop past 16%, never below 160 px.
+describe("sceneToFlow — the fitted card never falls off a cliff (card 292)", () => {
+  const T = 1;
+  const start: RunEvent = {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "go",
+    provider: "anthropic",
+    ts: T,
+  };
+  const spawnN = (n: number): RunEvent[] => [
+    start,
+    ...Array.from(
+      { length: n },
+      (_, i) => ({ type: "agent_spawn", agentId: `w${i}`, parentId: "main", task: "t", ts: T }) as RunEvent,
+    ),
+  ];
+  const envelopeOf = (id: string, type?: string) => EXPANDED_CARD[id] ?? EXPANDED_CARD[type ?? ""];
+  const worldOf = (
+    nodes: { id: string; type?: string; position: { x: number; y: number }; style?: unknown }[],
+  ) => {
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const n of nodes) {
+      const s = n.style as { width?: number; height?: number } | undefined;
+      const env = envelopeOf(n.id, n.type);
+      const w = s?.width ?? env?.w ?? 150;
+      const h = s?.height ?? env?.h ?? 110;
+      x0 = Math.min(x0, n.position.x);
+      y0 = Math.min(y0, n.position.y);
+      x1 = Math.max(x1, n.position.x + w);
+      y1 = Math.max(y1, n.position.y + h);
+    }
+    return { w: x1 - x0, h: y1 - y0 };
+  };
+  const PANE = { w: 1600, h: 900 };
+  /** The worker card's device-pixel width once the map is fitted to the pane. */
+  const cardPx = (n: number): number => {
+    const events = spawnN(n);
+    const scene = events.reduce(advanceScene, initialScene());
+    const flow = sceneToFlow(scene, deriveDetail(events), {
+      local: false,
+      provider: "anthropic",
+      model: "m",
+      expanded: true,
+      pool: foldSeatPool(events),
+      paneAspect: PANE.w / PANE.h,
+    });
+    const world = worldOf(flow.nodes as never);
+    const fit = Math.min(PANE.w / world.w, PANE.h / world.h);
+    return EXPANDED_CARD.subagent.w * fit;
+  };
+
+  it("adjacent seat counts 1..12 never drop the card past 16%, and never under 160 px", () => {
+    const sizes = Array.from({ length: 12 }, (_, i) => cardPx(i + 1));
+    for (let i = 1; i < sizes.length; i++) {
+      // e.g. the old N=3→4 cliff was a 24.5% drop; anything past 16% is a cliff.
+      expect(
+        sizes[i],
+        `n=${i + 1} vs n=${i}: ${sizes.map((s) => s.toFixed(1)).join(", ")}`,
+      ).toBeGreaterThanOrEqual(sizes[i - 1] * 0.84);
+      expect(sizes[i]).toBeGreaterThanOrEqual(160);
+    }
+  });
+
+  it("expanded seats stay collision-free at every count the rows derivation can pick", () => {
+    for (let n = 1; n <= 12; n++) {
+      const events = spawnN(n);
+      const scene = events.reduce(advanceScene, initialScene());
+      const flow = sceneToFlow(scene, deriveDetail(events), {
+        local: false,
+        provider: "anthropic",
+        model: "m",
+        expanded: true,
+        pool: foldSeatPool(events),
+        paneAspect: PANE.w / PANE.h,
+      });
+      expect(seatCollisions(flow.nodes as never), `n=${n}`).toEqual([]);
+    }
   });
 });
 

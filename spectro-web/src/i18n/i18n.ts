@@ -1025,6 +1025,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.act.file": { de: "datei", en: "file" },
   "map.act.plans": { de: "plant den nächsten Schritt", en: "plans the next step" },
   "map.act.plansShort": { de: "plant …", en: "planning …" },
+  // Card 292: the worker chip states the live count at the cursor and the run
+  // total; the gap variant adds how many the seat ceiling let the map draw.
+  "map.chip.workers": { de: "{live} aktiv · {total} im Lauf", en: "{live} active · {total} over the run" },
+  "map.chip.workersGap": {
+    de: "{live} aktiv · {total} im Lauf · {drawn} gezeichnet",
+    en: "{live} active · {total} over the run · {drawn} drawn",
+  },
   "map.zone.system": { de: "AGENTENSYSTEM", en: "AGENT SYSTEM" },
   "map.zone.mac": { de: "AGENTENSYSTEM · DEIN MAC", en: "AGENT SYSTEM · YOUR MAC" },
   "map.zone.fleetMac": { de: "FLOTTE · DEIN MAC", en: "FLEET · YOUR MAC" },

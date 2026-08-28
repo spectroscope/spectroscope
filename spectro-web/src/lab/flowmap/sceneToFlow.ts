@@ -13,11 +13,12 @@ import { imageUrl } from "./imageUrl";
 import { stationUsers } from "./stationUsers";
 import {
   SEAT_ROWS_COMPACT,
-  SEAT_ROWS_EXPANDED,
   SEATS_MAX_COMPACT,
   SEATS_MAX_EXPANDED,
+  rowsFor,
   seatGrid,
   seatOf,
+  type SeatPool,
 } from "./workerGrid";
 import { osBandWidth, stationSeats } from "./stationSeats";
 
@@ -498,17 +499,19 @@ const SUB_BAND_BOTTOM = 630; // subagents stay above the OS band (OS_BAND_TOP)
 
 /**
  * Deterministic vertical layout for the subagent column. Rules:
- *  - a preferred top-to-top spacing (subGap), kept when it fits the band;
- *  - a hard minimum spacing (card height + SUB_MIN_GAP) so cards never clump;
- *  - the whole group centered in its band;
- *  - clamped so the column never overflows into the OS band.
+ *  - the preferred top-to-top spacing (subGap) is used as-is — the caller
+ *    always hands a band it fits (see below);
+ *  - the whole group centered in its band.
  * Result: one agent lands centered, two as a centered pair, three fill the band
  * evenly, and the spacing is identical whether one arrives before the others.
  *
- * cardH is what one card occupies — compact by default, the expanded envelope
- * when the shell opens every panel. It has to travel with the spacing: the band
- * clamp below shrinks the step to fit, and a clamp that shrinks against the
- * WRONG height happily seats card n+1 inside card n.
+ * There used to be a clamp here ("if span > band, shrink the step") and it was
+ * measured dead in both modes (card 292): expanded derives subBandBottom as
+ * subBase.y + (rows-1)*subGapL + subCardH, so band == span exactly; compact
+ * caps rows at three, so span <= 2*180 + 132 = 492 against a band of
+ * 630 - 110 = 520. A guard that pretends to protect and cannot fire is worse
+ * than none — a real overflow belongs to the seat-collision report, which says
+ * so out loud instead of silently squeezing cards into each other.
  */
 function subagentYs(
   count: number,
@@ -519,12 +522,9 @@ function subagentYs(
 ): number[] {
   if (count <= 0) return [];
   const band = bandBottom - bandTop;
-  const minStep = cardH + SUB_MIN_GAP;
-  const span = (step: number) => (count - 1) * step + cardH;
-  let step = preferredGap;
-  if (span(step) > band) step = Math.max(minStep, (band - cardH) / (count - 1 || 1));
-  const start = bandTop + Math.max(0, (band - span(step)) / 2);
-  return Array.from({ length: count }, (_, i) => Math.round(start + i * step));
+  const span = (count - 1) * preferredGap + cardH;
+  const start = bandTop + Math.max(0, (band - span) / 2);
+  return Array.from({ length: count }, (_, i) => Math.round(start + i * preferredGap));
 }
 
 export interface FlowResult {
@@ -553,6 +553,16 @@ export function sceneToFlow(
      *  the worker column and the right-hand world, downwards for the OS band and
      *  the outside stations. Compact keeps the hand-authored seats untouched. */
     expanded?: boolean;
+    /** The seat pool folded over the SAME applied prefix as the scene (card
+     *  292): seats say what was concurrent, each seat shows its last assignee,
+     *  and an ended child yields its seat to a later one. Without it the
+     *  legacy lifetime seating stands — the edu sim has no event prefix. */
+    pool?: SeatPool;
+    /** The pane's width/height, measured by FlowMap (card 292): expanded rows
+     *  derive from it so the grid fills the space it has. A hidden pane never
+     *  measures — absent, the constant row count stands and nothing breaks
+     *  headless or in tests. */
+    paneAspect?: number | null;
   },
 ): FlowResult {
   const L = opts.local ? LAYOUTS.local : LAYOUTS.remote;
@@ -574,10 +584,24 @@ export function sceneToFlow(
   // them. Seats are a grid since card 287 — rows first, columns as needed, the
   // seat of worker i fixed by i alone so a card never moves once it is drawn.
   const isExpanded = !declutter && opts.expanded === true;
-  const seatRows = isExpanded ? SEAT_ROWS_EXPANDED : SEAT_ROWS_COMPACT;
   const seatCeiling = isExpanded ? SEATS_MAX_EXPANDED : SEATS_MAX_COMPACT;
-  const subsOnMap = scene.subagents.slice(0, seatCeiling);
-  const slotCount = Math.min(seatCeiling, Math.max(subsOnMap.length, opts.subSlots ?? subsOnMap.length));
+  // With a pool (card 292) the map draws each seat's CURRENT occupant: an
+  // ended child keeps its seat only until a later child takes it, and the grid
+  // is sized by the peak concurrency, not the lifetime count. Without a pool
+  // (the edu sim has no event prefix) the lifetime seating stands unchanged.
+  const pool = opts.pool;
+  const subsOnMap =
+    pool !== undefined
+      ? scene.subagents.filter((c) => {
+          const s = pool.seat[c.id];
+          return s !== undefined && s < seatCeiling && pool.occupant[s] === c.id;
+        })
+      : scene.subagents.slice(0, seatCeiling);
+  const seatsInUse = pool !== undefined ? Math.min(pool.occupant.length, seatCeiling) : subsOnMap.length;
+  const slotCount = Math.min(seatCeiling, Math.max(seatsInUse, opts.subSlots ?? seatsInUse));
+  // Expanded rows follow the seats in use and the measured pane (card 292);
+  // with no measurement the constant stands. Compact keeps its three rows.
+  const seatRows = isExpanded ? rowsFor(slotCount, opts.paneAspect) : SEAT_ROWS_COMPACT;
   const grid = seatGrid(slotCount, seatRows);
   let subColPitch = COMPACT_SUB_W + SUB_MIN_GAP;
   /** Expanded only: the band width derived from the widened stations. */
@@ -839,7 +863,9 @@ export function sceneToFlow(
   const subYs = subagentYs(grid.rows, subBaseL.y, subBandBottom, subGapL, subCardH);
   subs.forEach((c, i) => {
     const id = `sub-${c.id}`;
-    const seat = seatOf(i, seatRows);
+    // The pool's seat index survives the churn around a child; the lifetime
+    // index is the poolless fallback.
+    const seat = seatOf(pool?.seat[c.id] ?? i, seatRows);
     posL[id] = {
       x: (declutter ? subBaseX : subBaseL.x) + seat.col * subColPitch,
       y: subYs[seat.row] ?? subBaseL.y,
