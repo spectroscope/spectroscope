@@ -211,7 +211,7 @@ describe("isLoopbackAddress — the stays-on-this-machine line", () => {
 
   it("never flatters a remote address", () => {
     expect(isLoopbackAddress("api.anthropic.com")).toBe(false);
-    expect(isLoopbackAddress("100.90.57.62:1234")).toBe(false);
+    expect(isLoopbackAddress("100.64.0.1:1234")).toBe(false);
     expect(isLoopbackAddress("localhost.evil.example")).toBe(false);
     expect(isLoopbackAddress("")).toBe(false);
   });
