@@ -32,6 +32,12 @@ export interface Topology {
   entry: string | null;
   nodes: TopologyNode[];
   edges: TopologyEdge[];
+  /** Optional rank override (card 293): a caller that KNOWS the ranks — the
+   *  workflow lens ranks by time overlap — hands them in, and the longest-path
+   *  ranking steps aside. A node the map does not name sits at rank 0.
+   *  Everything downstream (in-rank ordering, coordinates, routing, skip
+   *  lanes, the `__end__` last-column rule) works off the ranks unchanged. */
+  ranks?: ReadonlyMap<string, number>;
 }
 
 export interface PlacedNode {
@@ -222,13 +228,19 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     indeg.set(e.to, indeg.get(e.to)! + 1);
   });
   const rank = new Map<string, number>(nodes.map((n) => [n.id, 0]));
-  const queue = nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    for (const to of dagOut.get(id)!) {
-      rank.set(to, Math.max(rank.get(to)!, rank.get(id)! + 1));
-      indeg.set(to, indeg.get(to)! - 1);
-      if (indeg.get(to) === 0) queue.push(to);
+  if (topo.ranks !== undefined) {
+    // The caller's ranks are authoritative — see Topology.ranks.
+    const given = topo.ranks;
+    nodes.forEach((n) => rank.set(n.id, Math.max(0, given.get(n.id) ?? 0)));
+  } else {
+    const queue = nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      for (const to of dagOut.get(id)!) {
+        rank.set(to, Math.max(rank.get(to)!, rank.get(id)! + 1));
+        indeg.set(to, indeg.get(to)! - 1);
+        if (indeg.get(to) === 0) queue.push(to);
+      }
     }
   }
 

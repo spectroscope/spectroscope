@@ -223,6 +223,67 @@ describe("edge geometry", () => {
   });
 });
 
+describe("rank override (card 293)", () => {
+  // A caller that KNOWS the ranks (the workflow lens: waves by time overlap)
+  // hands them in, and the longest-path ranking steps aside. Everything
+  // downstream — in-rank ordering, coordinates, routing, skip lanes — works
+  // off the supplied ranks unchanged.
+  const star: Topology = {
+    entry: "root",
+    nodes: ["root", "a", "b", "c"].map((id) => ({ id, label: id })),
+    edges: [
+      { from: "root", to: "a", kind: "spawn" },
+      { from: "root", to: "b", kind: "spawn" },
+      { from: "root", to: "c", kind: "spawn" },
+    ],
+  };
+
+  it("replaces the longest-path ranking with the supplied ranks", () => {
+    // Without the override every child of root sits at rank 1 — that is the
+    // longest path. The override spreads them 1, 2, 3.
+    const plain = layoutStateGraph(star, "horizontal");
+    expect(["a", "b", "c"].map((id) => byId(plain, id).rank)).toEqual([1, 1, 1]);
+
+    const ranks = new Map([
+      ["root", 0],
+      ["a", 1],
+      ["b", 2],
+      ["c", 3],
+    ]);
+    const l = layoutStateGraph({ ...star, ranks }, "horizontal");
+    expect(byId(l, "root").rank).toBe(0);
+    expect(byId(l, "a").rank).toBe(1);
+    expect(byId(l, "b").rank).toBe(2);
+    expect(byId(l, "c").rank).toBe(3);
+    expect(l.maxRank).toBe(3);
+  });
+
+  it("routes rank-skipping edges through the skip lane under supplied ranks", () => {
+    const ranks = new Map([
+      ["root", 0],
+      ["a", 1],
+      ["b", 2],
+      ["c", 3],
+    ]);
+    const l = layoutStateGraph({ ...star, ranks }, "horizontal");
+    // Single-slot ranks all sit on the axis, so the straight root→c connector
+    // would cut through a and b — the skip lane must take it instead.
+    expect(edge(l, "root", "c").skip).toBe(true);
+    for (const e of l.edges) expect(e.path.length).toBeGreaterThan(0);
+  });
+
+  it("puts a node the override does not name at rank 0", () => {
+    const ranks = new Map([
+      ["root", 0],
+      ["a", 2],
+    ]);
+    const l = layoutStateGraph({ ...star, ranks }, "horizontal");
+    expect(byId(l, "a").rank).toBe(2);
+    expect(byId(l, "b").rank).toBe(0);
+    expect(byId(l, "c").rank).toBe(0);
+  });
+});
+
 describe("edge identity (card 293)", () => {
   // Two edges between ONE pair used to collapse under the pair string
   // `${from}->${to}` — it doubled as the React key, so the second edge
