@@ -20,18 +20,25 @@ import { FlowMap } from "./FlowMap";
 import { LabTrace } from "./LabTrace";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
+import { lensFrom, WorkflowLens, type LabLens } from "./workflow/WorkflowLens";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 /** The card-view choice survives tab switches and reloads (TextView pattern). */
 const VIEW_STORAGE_KEY = "spectroscope.lab.view";
+/** The lens choice persists the same way (card 293). */
+const LENS_STORAGE_KEY = "spectroscope.lab.lens";
 
-function storedView(): string | null {
+function stored(key: string): string | null {
   try {
-    return localStorage.getItem(VIEW_STORAGE_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
+}
+
+function storedView(): string | null {
+  return stored(VIEW_STORAGE_KEY);
 }
 
 // Pane-resize clamps: neither side pane shrinks below its minimum, and the
@@ -88,6 +95,19 @@ export function LabView(props: {
     setExpanded(labViewDefault(storedView(), replay !== null));
   }, [replay]);
 
+  // The lens (card 293): machine = today's system map, workflow = the run's
+  // spawn tree reconstructed from its events. Same persistence pattern as the
+  // compact/expanded toggle above.
+  const [lens, setLens] = useState<LabLens>(() => lensFrom(stored(LENS_STORAGE_KEY)));
+  const pickLens = (next: LabLens): void => {
+    setLens(next);
+    try {
+      localStorage.setItem(LENS_STORAGE_KEY, next);
+    } catch {
+      // private mode: the toggle simply does not stick
+    }
+  };
+
   // Flow = paced auto-play: a timer calls step() every intervalMs (fine/coarse
   // honoured by step itself). An empty queue makes step() a no-op, so live
   // events that arrive later play out at the chosen pace instead of teleporting.
@@ -134,6 +154,11 @@ export function LabView(props: {
   useEffect(() => {
     if (st.applied.length === 0) setAnswered(new Set());
   }, [st.applied.length]);
+
+  // The workflow lens reconstructs from the FULL known timeline (applied +
+  // still-queued), while the cursor — applied — lights it. Same (events, upto)
+  // pair the machine lens follows.
+  const allEvents = useMemo(() => [...st.applied, ...st.queue], [st.applied, st.queue]);
 
   const viewingLive = st.source === "live";
   const pendingPermission = useMemo(
@@ -197,6 +222,30 @@ export function LabView(props: {
           running={props.running}
           trailing={
             <>
+              {/* The lens (card 293): which PROJECTION the centre shows. */}
+              <div className="lab-seg lab-lens-seg" role="group" aria-label={t(lang, "lab.lensAria")}>
+                <span className="lab-seg-label mono" title={t(lang, "lab.lensHint")}>
+                  {t(lang, "lab.lens")}
+                </span>
+                <button
+                  type="button"
+                  className={lens === "machine" ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                  aria-pressed={lens === "machine"}
+                  title={t(lang, "lab.lensMachineTitle")}
+                  onClick={() => pickLens("machine")}
+                >
+                  {t(lang, "lab.lensMachine")}
+                </button>
+                <button
+                  type="button"
+                  className={lens === "workflow" ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                  aria-pressed={lens === "workflow"}
+                  title={t(lang, "lab.lensWorkflowTitle")}
+                  onClick={() => pickLens("workflow")}
+                >
+                  {t(lang, "lab.lensWorkflow")}
+                </button>
+              </div>
               {/* The labelled master, trace-parity (the trace's "hauptschalter"
                   precedent): its buttons reuse the shared face labels. */}
               <div className="lab-seg lab-face-seg" role="group" aria-label={t(lang, "lab.faceAria")}>
@@ -239,15 +288,19 @@ export function LabView(props: {
             </>
           }
         >
-          <ExpandAllContext.Provider value={expanded}>
-            <FlowMap
-              scene={st.scene}
-              applied={st.applied}
-              provider={props.provider}
-              model={props.model}
-              systemPrompt={sysPrompt ?? undefined}
-            />
-          </ExpandAllContext.Provider>
+          {lens === "workflow" ? (
+            <WorkflowLens events={allEvents} applied={st.applied} scene={st.scene} model={props.model} />
+          ) : (
+            <ExpandAllContext.Provider value={expanded}>
+              <FlowMap
+                scene={st.scene}
+                applied={st.applied}
+                provider={props.provider}
+                model={props.model}
+                systemPrompt={sysPrompt ?? undefined}
+              />
+            </ExpandAllContext.Provider>
+          )}
         </LabTransport>
 
         <LabHint />
