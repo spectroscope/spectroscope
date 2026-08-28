@@ -64,7 +64,13 @@ const SESSION = [
   }),
 ].join("\n");
 
-const sidecar = (agentId: string, prompt: string, answer: string, startMs: number): string =>
+const sidecar = (
+  agentId: string,
+  prompt: string,
+  answer: string,
+  startMs: number,
+  cwd = "/workspaces/demo-project",
+): string =>
   [
     line({
       type: "user",
@@ -73,7 +79,7 @@ const sidecar = (agentId: string, prompt: string, answer: string, startMs: numbe
       sessionId: "session-under-test",
       uuid: `${agentId}-u`,
       timestamp: iso(startMs),
-      cwd: "/workspaces/demo-project",
+      cwd,
       message: { role: "user", content: prompt },
     }),
     line({
@@ -156,6 +162,29 @@ describe("importClaudeCodeRun", () => {
     expect([...stamps].sort((a, b) => a - b)).toEqual(stamps);
   });
 
+  it("on a timestamp tie, the session's frame lands first", () => {
+    // A child whose first record shares its stamp with a session record: the
+    // merge is a k-way pick with a strict `<`, so the earliest stream — the
+    // session — wins the tie. A `<=` would flip this and put a child's frame
+    // before the session frame that carries the same clock reading.
+    const merged = importClaudeCodeRun({
+      sessionText: SESSION,
+      sidecars: [
+        {
+          jsonlText: sidecar("agent-tie", "first subtask", "tie answer", T0 + 60_000),
+          metaJson: meta("toolu_child_1"),
+        },
+      ],
+    });
+    const all = frames(merged.events);
+    const sessionResult = all.findIndex((e) => e.type === "tool_result");
+    const childStart = all.findIndex((e) => e.type === "run_start" && e.agentId === "agent-tie");
+    // The premise: both frames really carry the same stamp.
+    expect(all[sessionResult].ts).toBe(all[childStart].ts);
+    expect(sessionResult).toBeGreaterThanOrEqual(0);
+    expect(sessionResult).toBeLessThan(childStart);
+  });
+
   it("reports the workspace off the first record carrying cwd", () => {
     expect(importClaudeCodeRun(RUN).workspace).toBe("/workspaces/demo-project");
     // A run whose records never carry one says so with null, not with "".
@@ -170,6 +199,36 @@ describe("importClaudeCodeRun", () => {
       sidecars: [],
     };
     expect(importClaudeCodeRun(bare).workspace).toBeNull();
+  });
+
+  it("the session's cwd outranks a child's, and a child's fills in when the session has none", () => {
+    // The search order is session first, then the merged children in order —
+    // a child checked out elsewhere must not displace the session's own
+    // workspace in the banner.
+    const elsewhere = sidecar(
+      "agent-one",
+      "first subtask",
+      "child answer",
+      T0 + 2_000,
+      "/workspaces/child-checkout",
+    );
+    const withElsewhere = {
+      sessionText: SESSION,
+      sidecars: [{ jsonlText: elsewhere, metaJson: meta("toolu_child_1") }],
+    };
+    expect(importClaudeCodeRun(withElsewhere).workspace).toBe("/workspaces/demo-project");
+    // ... and the children ARE searched: with a cwd-less session, the first
+    // merged child's cwd is the answer rather than null.
+    const bareSession = SESSION.split("\n")
+      .map((l) => {
+        const r = JSON.parse(l) as { cwd?: string };
+        delete r.cwd;
+        return JSON.stringify(r);
+      })
+      .join("\n");
+    expect(importClaudeCodeRun({ ...withElsewhere, sessionText: bareSession }).workspace).toBe(
+      "/workspaces/child-checkout",
+    );
   });
 
   it("counts what it merged", () => {
@@ -241,6 +300,27 @@ describe("importClaudeCodeRun", () => {
       expectSkipped({ jsonlText: SESSION, metaJson: meta("toolu_child_1") });
     });
 
+    it("skips every sidecar beside a session that is not a Claude Code transcript", () => {
+      // A spectroscope-native file may carry an `agent_spawn` verbatim, so the
+      // join KEY can exist — but the subagents/ directory layout is Claude
+      // Code's, and merging a Claude Code sidecar under a foreign session
+      // would fabricate a child that run never recorded. The kind gate, not
+      // the spawn lookup, is what refuses this.
+      const spectroSession = [
+        line({ type: "run_start", runId: "r1", agentId: "main", ts: T0 }),
+        line({ type: "agent_spawn", agentId: "toolu_child_1", parentId: "main", task: "x", ts: T0 + 1_000 }),
+        line({ type: "run_end", runId: "r1", ts: T0 + 2_000 }),
+      ].join("\n");
+      const merged = importClaudeCodeRun({
+        sessionText: spectroSession,
+        sidecars: [{ jsonlText: SIDECAR_1, metaJson: meta("toolu_child_1") }],
+      });
+      expect(merged.kind).toBe("spectroscope");
+      expect(merged.childrenMerged).toBe(0);
+      expect(merged.childrenSkipped).toBe(1);
+      expect(JSON.stringify(merged.events)).toBe(JSON.stringify(detectAndLoad(spectroSession).events));
+    });
+
     it("one bad sidecar does not take the good one with it", () => {
       const merged = importClaudeCodeRun({
         sessionText: SESSION,
@@ -306,7 +386,7 @@ describe("importClaudeCodeRun", () => {
 });
 
 describe("groupPickedFiles", () => {
-  it("one .jsonl alone is a single file — today's path, whatever its name", () => {
+  it("one file alone is a single file — today's path, whatever its name", () => {
     expect(groupPickedFiles([{ name: "session.jsonl", relativePath: "" }])).toEqual({
       kind: "single",
       session: 0,
@@ -314,6 +394,17 @@ describe("groupPickedFiles", () => {
     // A lone agent transcript stays on the card-152 path too: the shape rule
     // decides what it is, never this grouping.
     expect(groupPickedFiles([{ name: "agent-abc.jsonl", relativePath: "" }])).toEqual({
+      kind: "single",
+      session: 0,
+    });
+    // The extension does not matter for a lone pick: the file input invites
+    // .json and .txt as well, and the importer's shape detection (card 152)
+    // is the judge of what the bytes are — a vscode-agent export is a .json.
+    expect(groupPickedFiles([{ name: "export.json", relativePath: "" }])).toEqual({
+      kind: "single",
+      session: 0,
+    });
+    expect(groupPickedFiles([{ name: "notes.txt", relativePath: "" }])).toEqual({
       kind: "single",
       session: 0,
     });
@@ -353,7 +444,6 @@ describe("groupPickedFiles", () => {
         { name: "agent-a.meta.json", relativePath: "" },
       ]),
     ).toEqual({ kind: "none" });
-    expect(groupPickedFiles([{ name: "notes.txt", relativePath: "" }])).toEqual({ kind: "none" });
   });
 
   it("two session candidates are ambiguous, not a coin toss", () => {

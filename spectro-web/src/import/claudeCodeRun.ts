@@ -277,7 +277,7 @@ const META_NAME = /^agent-(.+)\.meta\.json$/;
  */
 export function groupPickedFiles(files: PickedFile[]): PickedGroup {
   if (files.length === 1) {
-    return files[0].name.endsWith(".jsonl") ? { kind: "single", session: 0 } : { kind: "none" };
+    return { kind: "single", session: 0 };
   }
   const sessions: number[] = [];
   const sidecarByAgent = new Map<string, number>();
