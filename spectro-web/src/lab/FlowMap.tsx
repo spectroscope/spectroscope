@@ -6,7 +6,7 @@
 // scene to nodes/edges and renders the canvas. Extracted from the prototype's
 // SystemFlow orchestrator; the pure render pieces live in ./flowmap.
 
-import { useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -69,6 +69,11 @@ export function FlowMap(props: {
   // The seat pool (card 292): folded over the SAME applied prefix as the scene,
   // so scrubbing re-folds deterministically and seats say what was concurrent.
   const pool = useMemo(() => foldSeatPool(applied), [applied]);
+  // The pane's measured aspect (card 292), for the expanded row derivation.
+  // null until a real measurement arrives — a HIDDEN pane delivers no frames
+  // and no ResizeObserver, so headless (and in tests) this stays null and the
+  // layout falls back to its constant rows instead of breaking.
+  const [paneAspect, setPaneAspect] = useState<number | null>(null);
   const flow = useMemo(
     () =>
       sceneToFlow(scene, detail, {
@@ -79,8 +84,9 @@ export function FlowMap(props: {
         lang,
         expanded: expandAll,
         pool,
+        paneAspect,
       }),
-    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool],
+    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool, paneAspect],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -88,8 +94,10 @@ export function FlowMap(props: {
   // Which seating the rendered nodes came from. Compact and expanded are two
   // different seatings, so switching the card view is as much a re-layout as
   // flipping local/remote — without this the cards keep the seats of the view
-  // they were rendered in and the map reads as a mix of both.
-  const layoutRef = useRef(`${local}:${expandAll}`);
+  // they were rendered in and the map reads as a mix of both. The measured
+  // pane aspect is part of the seating since card 292: it drives the expanded
+  // row derivation, so a real resize re-places the map the same way.
+  const layoutRef = useRef(`${local}:${expandAll}:${paneAspect}`);
   const rfRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   // Nodes the user has dragged. Once pinned, a node keeps its position across
   // every step (even a subagent, which otherwise re-centres) — so dragging a card
@@ -126,13 +134,13 @@ export function FlowMap(props: {
   // pinned and stays. A local/remote flip or a compact/expanded flip re-lays-out
   // everything and drops pins.
   useEffect(() => {
-    const seating = `${local}:${expandAll}`;
+    const seating = `${local}:${expandAll}:${paneAspect}`;
     const relayout = layoutRef.current !== seating;
     layoutRef.current = seating;
     if (relayout) pinned.current.clear();
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout));
     setEdges(flow.edges);
-  }, [flow, local, expandAll, setNodes, setEdges]);
+  }, [flow, local, expandAll, paneAspect, setNodes, setEdges]);
 
   // The rails' live obstacle set: every card's rendered box (zones excluded),
   // recomputed from the node state so a dragged card re-routes its rails.
@@ -156,6 +164,25 @@ export function FlowMap(props: {
   // including the three ways a drag ends; this effect is only wiring.
   const panRef = useRef<PanDrag>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Measure the pane for the row derivation (card 292). A hidden pane measures
+  // 0x0 and must not poison the fallback, so only positive sizes count; the
+  // aspect is quantized to 1/100 so resize jitter does not re-lay-out the map.
+  // jsdom has no ResizeObserver — then the one direct measurement has to do.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (el === null) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) setPaneAspect(Math.round((r.width / r.height) * 100) / 100);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
     const el = wrapRef.current;
     if (el === null) return;
