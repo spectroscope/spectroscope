@@ -7,7 +7,7 @@
 // Pure module: the announcement and the fetch outcome go in, one discriminated
 // state comes out. WorkspaceTab is wiring.
 
-import type { Lang } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 
 /** The mode a run started right now would use, mirrors the server's frame. */
 export type WorkspaceMode = "random" | "default" | "set";
@@ -72,6 +72,31 @@ export function listableBeforeTheFirstRun(announcement: WorkspaceAnnouncement | 
     announcement.path.length > 0 &&
     announcement.exists === true
   );
+}
+
+/**
+ * The workspace an IMPORTED run recorded, as a display-only pane (card 291).
+ *
+ * An import replays somebody else's session: no workspace_info frame ever
+ * arrives, and the ordinary pending state said "no workspace yet, the first
+ * run creates it" — a sentence about THIS machine's future, shown over a run
+ * that already happened somewhere else. The recorded cwd is what the file
+ * itself says, labelled as recorded; nothing on disk is resolved or created
+ * from it (that neighbourhood is card 288's). The moment a real announcement
+ * exists, the live answer wins and this says nothing.
+ *
+ * @param recordedCwd the cwd the imported records carried, or nothing
+ * @param announcement the latest workspace_info frame, or null before any
+ * @param lang the UI-chrome language
+ * @return the pane to show instead of paneState's, or null to defer to it
+ */
+export function recordedWorkspace(
+  recordedCwd: string | null | undefined,
+  announcement: WorkspaceAnnouncement | null,
+  lang: Lang,
+): PaneState | null {
+  if (recordedCwd == null || recordedCwd === "" || announcement !== null) return null;
+  return { kind: "pending", path: recordedCwd, message: t(lang, "ws.recorded") };
 }
 
 /** 409: the request carries no resolved workspace. 404: the folder is not there yet. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { listableBeforeTheFirstRun, paneState } from "./paneState";
+import { listableBeforeTheFirstRun, paneState, recordedWorkspace } from "./paneState";
 import type { WorkspaceAnnouncement, FetchOutcome } from "./paneState";
 
 const configured: WorkspaceAnnouncement = {
@@ -203,5 +203,38 @@ describe("paneState", () => {
     // "random" is keyed by a session id that does not exist yet, inventing a
     // path here would be the same guess the chooser used to make.
     expect(withoutPath.path).toBeNull();
+  });
+});
+
+// Card 291: an imported run's recorded working folder, display only.
+//
+// An import replays somebody else's session, so no workspace_info frame ever
+// arrives and the pane said "no workspace yet, the first run creates it" — a
+// sentence about THIS machine's future, shown over a run that already
+// happened somewhere else. The recorded cwd is the honest thing to show, and
+// it is labelled as recorded: nothing on this machine is read or created.
+describe("recordedWorkspace", () => {
+  it("shows the recorded cwd when no workspace was ever announced", () => {
+    const pane = recordedWorkspace("/workspaces/demo", null, "en");
+    expect(pane?.kind).toBe("pending");
+    expect(pane && "path" in pane ? pane.path : null).toBe("/workspaces/demo");
+    expect(pane && "message" in pane ? pane.message.toLowerCase() : "").toContain("recorded");
+  });
+
+  it("says it in German too", () => {
+    const pane = recordedWorkspace("/workspaces/demo", null, "de");
+    expect(pane && "message" in pane ? pane.message.toLowerCase() : "").toContain("aufgezeichnet");
+  });
+
+  it("never displaces a live announcement", () => {
+    // A recorded cwd is a fact about the imported file; the moment a real
+    // workspace_info frame exists, the live answer wins.
+    expect(recordedWorkspace("/workspaces/demo", running, "en")).toBeNull();
+  });
+
+  it("has nothing to say without a recorded cwd", () => {
+    expect(recordedWorkspace(null, null, "en")).toBeNull();
+    expect(recordedWorkspace(undefined, null, "en")).toBeNull();
+    expect(recordedWorkspace("", null, "en")).toBeNull();
   });
 });

@@ -146,7 +146,8 @@ import type { ImportSource } from "./import/detect";
 import type { SubagentTranscript } from "./import/subagentFile";
 import { attachSources, sourceStats } from "./state/traceSource";
 import { traceProvenance } from "./components/traceDetail";
-import { shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
+import { childrenNote, shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
+import type { ImportedRunSummary } from "./import/claudeCodeRun";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
 import { useImageRequest } from "./state/imageViewer";
 import { ImageLightbox } from "./components/ImageLightbox";
@@ -199,6 +200,10 @@ export function App() {
   // leave an imported file without anything clearing this, and folder buttons
   // pointing at the previous session's directories would be worse than none.
   const [importedPath, setImportedPath] = useState<{ sessionId: string; path: string } | null>(null);
+  // The cwd an imported RUN's records carried (card 291). STAMPED WITH THE
+  // SESSION like `importedPath`, for the same reason — a recorded folder shown
+  // over somebody else's session would be worse than none. Display only.
+  const [importedCwd, setImportedCwd] = useState<{ sessionId: string; cwd: string } | null>(null);
   // What the llm-wire index answered for the opened session (leg E): how many
   // recorded exchanges sit in the sidecar. STAMPED WITH THE SESSION like
   // `importedPath`, for the same reason — a download link pointing at the
@@ -893,6 +898,11 @@ export function App() {
   // the previous transcript is worse than none.
   const shownStorePath =
     importedPath !== null && importedPath.sessionId === (replay?.id ?? null) ? importedPath.path : null;
+  // The workspace an imported RUN recorded (card 291), stamped with its
+  // session like the import bar and the store path beside it: display only,
+  // the Files pane labels it as recorded and touches nothing on disk.
+  const shownRecordedCwd =
+    importedCwd !== null && importedCwd.sessionId === (replay?.id ?? null) ? importedCwd.cwd : null;
   // How the visible view is being read, straight from the module store the two
   // views report into (card 181). Subscribed rather than lifted into App state,
   // so a spectrum drag re-renders on its own terms and this only wakes when the
@@ -1142,7 +1152,7 @@ export function App() {
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((raw) => {
         const { events, kind, source, subagent } = detectAndLoad(raw);
-        openImport(events, label, kind, source, subagent, path, cause);
+        openImport(events, label, kind, source, subagent, path, undefined, cause);
       })
       .catch((e) => reportBrowserError("store-open", e));
   };
@@ -1158,6 +1168,8 @@ export function App() {
     source: ImportSource,
     subagent?: SubagentTranscript,
     storePath?: string,
+    /** What a run import measured (card 291); absent for every lone file. */
+    run?: ImportedRunSummary,
     /** "gesture" pushes a history entry; "apply" replaces it, so following an
      *  address does not stack a second one on top of itself. */
     cause: NavCause = "gesture",
@@ -1172,6 +1184,11 @@ export function App() {
     const sessionId = `import:${kind}:${label}`;
     setSidecars(NO_SIDECARS);
     setImportedPath(storePath === undefined ? null : { sessionId, path: storePath });
+    // A run import's recorded folder, or nothing: a lone file must clear the
+    // previous run's answer, not inherit it.
+    setImportedCwd(
+      run?.workspace !== undefined && run.workspace !== null ? { sessionId, cwd: run.workspace } : null,
+    );
     if (storePath !== undefined) void loadSidecarAgents(storePath).then(setSidecars);
     setReplay({
       id: sessionId,
@@ -1208,7 +1225,13 @@ export function App() {
       // keeps that an accident of the formats rather than a rule the bar
       // depends on.
       note:
-        [kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null, subagentNote(lang, subagent)]
+        [
+          kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
+          subagentNote(lang, subagent),
+          // Card 291: what a run import carried — "N children merged", and
+          // when some were skipped it says so.
+          childrenNote(lang, run),
+        ]
           .filter((line): line is string => line !== null)
           .join(" ") || null,
     });
@@ -2418,6 +2441,7 @@ export function App() {
                     model={curModel}
                     thinking={thinking}
                     workspace={view.workspace}
+                    recordedCwd={shownRecordedCwd}
                     onPickFolder={viewingLive ? pickWorkspace : undefined}
                     canPickFolder={canPickWorkspace}
                     fsRefreshSignal={viewingLive ? fsTick : undefined}
