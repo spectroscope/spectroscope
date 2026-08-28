@@ -3711,8 +3711,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "reconstructed from {n} of {m} children",
   },
   "lab.lens.reconstructedHint": {
-    de: "{m} gemeldete Spawns, {n} davon mit auflösbarer Eltern-Kante — der Rest hängt an der Wurzel",
-    en: "{m} reported spawns, {n} of them with a resolvable parent edge — the rest hang off the root",
+    de: "{m} gemeldete Spawns, {n} davon mit einem Elternteil, das im Lauf vorkommt — der Rest hängt an der Wurzel",
+    en: "{m} reported spawns, {n} of them with a parent that appears in the run — the rest hang off the root",
   },
   "lab.lens.state.pending": { de: "wartet", en: "pending" },
   "lab.lens.state.active": { de: "aktiv", en: "active" },

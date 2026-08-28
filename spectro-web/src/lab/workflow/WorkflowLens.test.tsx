@@ -82,6 +82,18 @@ describe("the legend and the honesty chip", () => {
     expect(de).toContain("rekonstruiert");
   });
 
+  it("hints on the COUNT, not on a drawn edge — true under either edge encoding", () => {
+    // The hint must describe what `resolved` counts (a parent that appears in
+    // the run), not assert a drawn parent edge: whether waves >= 2 draw their
+    // real parent edge or synthesized precedence edges is an OPEN owner call.
+    const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={7} reported={9} />);
+    expect(en).toContain("9 reported spawns, 7 of them with a parent that appears in the run");
+    expect(en).not.toContain("parent edge");
+    const de = renderToStaticMarkup(<WorkflowLegend lang="de" resolved={7} reported={9} />);
+    expect(de).toContain("9 gemeldete Spawns, 7 davon mit einem Elternteil, das im Lauf vorkommt");
+    expect(de).not.toContain("Eltern-Kante");
+  });
+
   it("pins the chip on VALUES: reconstructed from N of M children", () => {
     const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={7} reported={9} />);
     expect(en).toContain("reconstructed from 7 of 9 children");
@@ -127,5 +139,30 @@ describe("the assembled lens", () => {
     // Both children render as nodes, the orphan included.
     expect(html).toContain("scout the target");
     expect(html).toContain("a stray child");
+  });
+
+  it("keeps a failed child failed at the imported run's resting cursor", () => {
+    // The headline case of this card family: a COMPLETE (imported) run whose
+    // cursor rests after run_end. The scene no longer carries the children,
+    // so without the terminal-state fold every card would wear the green
+    // done border and the failure would be erased.
+    const ended: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      { type: "agent_spawn", agentId: "worker", parentId: "main", task: "scout the target", ts: 10 },
+      {
+        type: "agent_message",
+        from: "worker",
+        to: "main",
+        role: "result",
+        state: "failed",
+        text: "gave up",
+        ts: 20,
+      },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 30 },
+    ];
+    const scene = ended.reduce((s, e) => advanceScene(s, e), initialScene());
+    const html = renderToStaticMarkup(<WorkflowLens events={ended} applied={ended} scene={scene} />);
+    // The root legitimately reads done; the worker must read failed.
+    expect(html).toMatch(/wf-node--failed[^>]*scout the target/);
   });
 });
