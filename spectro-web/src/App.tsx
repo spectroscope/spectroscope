@@ -79,6 +79,7 @@ import { compile } from "./scenario/compile";
 import type { Dsl } from "./scenario/dsl";
 import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
+import { AnalyzeRun } from "./components/AnalyzeRun";
 import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
 import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
@@ -2435,6 +2436,13 @@ export function App() {
                     sessionId={shownSessionId}
                     covered={dockCovered}
                     agents={view.agents}
+                    analyze={
+                      /* Card 294: the imported-run surfaces offer the opt-in
+                         analysis; live and scenario views offer nothing. */
+                      replay !== null && replay.id.startsWith("import:") ? (
+                        <AnalyzeRun viewKey={replay.id} events={shownEvents} />
+                      ) : undefined
+                    }
                     plan={view.plan}
                     onClose={toggleRightPanel}
                     provider={curProvider}

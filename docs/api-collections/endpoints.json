@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 73,
+    "endpointCount": 75,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -208,6 +208,11 @@
       "id": "explain",
       "name": "explain",
       "description": "LLM interpretation of a run digest, streamed as NDJSON."
+    },
+    {
+      "id": "analyze",
+      "name": "analyze",
+      "description": "The opt-in one-shot run analysis of an imported run (card 294): pre-flight and the streaming call."
     },
     {
       "id": "voice",
@@ -1445,6 +1450,37 @@
         "lang": "en"
       },
       "bodyNote": "ExplainBody(String digest, String lang) — digest required, max 200000 chars; lang en | de."
+    },
+    {
+      "id": "analyze-engine",
+      "method": "GET",
+      "path": "/api/analyze/engine",
+      "area": "analyze",
+      "name": "run-analysis pre-flight",
+      "description": "What one run-analysis call would use: {available,provider,model,address} or {available:false,reason,provider,detail?} with reasons provider-is-local | needs-key. The consent dialog's truth, so no button can fail (card 294).",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "analyze-run",
+      "method": "POST",
+      "path": "/api/analyze",
+      "area": "analyze",
+      "name": "analyze a run digest (NDJSON stream)",
+      "description": "Opt-in one-shot LLM reading of an imported run's digest, streamed as NDJSON ({meta:{provider,model,address}}, {delta}..., {done}|{error}). Reasoning is refused (the translate lesson); an empty answer is an error, not a done. 400 blank, 413 oversize, 503 provider not ready or provider-is-local (card 294).",
+      "fence": "host+origin+json",
+      "writes": false,
+      "caution": "Spends the operator's API key on every call.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "digest": "run digest\nprompt: say OK",
+        "lang": "en"
+      },
+      "bodyNote": "AnalyzeBody(String digest, String lang) — digest required, max 60000 chars; lang en | de."
     },
     {
       "id": "transcribe",

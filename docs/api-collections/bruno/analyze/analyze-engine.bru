@@ -1,0 +1,19 @@
+meta {
+  name: run-analysis pre-flight
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/analyze/engine
+  body: none
+  auth: none
+}
+
+docs {
+  What one run-analysis call would use: {available,provider,model,address} or {available:false,reason,provider,detail?} with reasons provider-is-local | needs-key. The consent dialog's truth, so no button can fail (card 294).
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

@@ -1,0 +1,101 @@
+/* The run-analysis affordance (card 294). Every token below exists in
+ * tokens.css — an unknown custom property fails silently (the bus.css
+ * lesson), so no name here is invented. Colour on lines only (brand rule). */
+
+.an-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 10px;
+}
+
+.an-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.an-result {
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.an-running,
+.an-error p {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.an-error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The honesty label sits above the reading, always. */
+.an-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.an-label-words {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.an-meta {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.an-summary {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+}
+
+.an-prose {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.an-agents {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.an-agents li {
+  margin: 2px 0;
+}
+
+.an-agent-id {
+  color: var(--text-dim);
+}
+
+.an-result-foot {
+  display: flex;
+  gap: 8px;
+}
+
+/* The consent sheet's digest preview: the exact text that would leave. */
+.an-digest {
+  margin: 6px 0;
+}
+
+.an-digest-text {
+  max-height: 180px;
+  overflow: auto;
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 10px;
+  white-space: pre-wrap;
+}

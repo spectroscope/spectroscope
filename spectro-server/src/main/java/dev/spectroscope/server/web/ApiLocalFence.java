@@ -1,5 +1,6 @@
 package dev.spectroscope.server.web;
 
+import dev.spectroscope.server.llm.AnalyzeController;
 import dev.spectroscope.server.llm.ExplainController;
 
 import jakarta.servlet.Filter;
@@ -112,7 +113,13 @@ public class ApiLocalFence implements Filter {
      * @return the cap in bytes, or {@link Long#MAX_VALUE} where the handler owns the limit
      */
     private static long bodyCapFor(String path) {
-        return "/api/explain".equals(path) ? ExplainController.MAX_BODY_BYTES : Long.MAX_VALUE;
+        if ("/api/explain".equals(path)) {
+            return ExplainController.MAX_BODY_BYTES;
+        }
+        if ("/api/analyze".equals(path)) {
+            return AnalyzeController.MAX_BODY_BYTES;
+        }
+        return Long.MAX_VALUE;
     }
 
     /**

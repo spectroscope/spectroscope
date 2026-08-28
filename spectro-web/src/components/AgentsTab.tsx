@@ -3,6 +3,7 @@
 // entry 0; every spawned subagent is listed and PERSISTS across runs (only a New
 // chat clears it). Selecting a row drives the System-Kontext tab.
 
+import type { ReactNode } from "react";
 import type { AgentInfo } from "../state/reducer";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -17,62 +18,74 @@ export function AgentsTab({
   agents,
   selectedId,
   onSelect,
+  analyze,
 }: {
   agents: AgentInfo[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** The run-analysis affordance (card 294) — handed in only for an imported
+   *  run; the roster itself stays ignorant of imports and stores. */
+  analyze?: ReactNode;
 }) {
   const lang = useLang();
   if (agents.length === 0) {
-    return <p className="agents-empty">{t(lang, "agents.empty")}</p>;
+    return (
+      <>
+        {analyze}
+        <p className="agents-empty">{t(lang, "agents.empty")}</p>
+      </>
+    );
   }
 
   return (
-    <ul className="agents-list" role="listbox" aria-label={t(lang, "rp.agents")}>
-      {agents.map((a) => {
-        const isMain = a.parentId === null;
-        const selected = a.id === selectedId;
-        return (
-          <li key={a.id}>
-            <button
-              type="button"
-              role="option"
-              aria-selected={selected}
-              className={`agent-card agent-card--${a.state}${selected ? " agent-card--selected" : ""}`}
-              onClick={() => onSelect(a.id)}
-            >
-              <span className="agent-card-head">
-                <span className={`agent-dot agent-dot--${a.state}`} aria-hidden="true" />
-                <span className="agent-card-name mono">
-                  {a.label !== null ? `${a.label} · ` : ""}
-                  {a.id}
-                </span>
-                {isMain && <span className="agent-role-tag">{t(lang, "agents.main")}</span>}
-                {/* The model the child ACTUALLY ran on, when a transcript said
+    <>
+      {analyze}
+      <ul className="agents-list" role="listbox" aria-label={t(lang, "rp.agents")}>
+        {agents.map((a) => {
+          const isMain = a.parentId === null;
+          const selected = a.id === selectedId;
+          return (
+            <li key={a.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={`agent-card agent-card--${a.state}${selected ? " agent-card--selected" : ""}`}
+                onClick={() => onSelect(a.id)}
+              >
+                <span className="agent-card-head">
+                  <span className={`agent-dot agent-dot--${a.state}`} aria-hidden="true" />
+                  <span className="agent-card-name mono">
+                    {a.label !== null ? `${a.label} · ` : ""}
+                    {a.id}
+                  </span>
+                  {isMain && <span className="agent-role-tag">{t(lang, "agents.main")}</span>}
+                  {/* The model the child ACTUALLY ran on, when a transcript said
                     so (card 167). It is not the parent's: measured over
                     ~/.claude/projects, 617 launch records name one across seven
                     ids, and a haiku child under an opus parent is a normal
                     line. Verbatim, "[1m]" suffix and all. */}
-                {a.model !== undefined && <span className="agent-model mono">{a.model}</span>}
-                {/* "launched, never reported back" is a claim about the file,
+                  {a.model !== undefined && <span className="agent-model mono">{a.model}</span>}
+                  {/* "launched, never reported back" is a claim about the file,
                     so the importer only sets `launched` when the file says
                     nothing further: measured over ~/.claude/projects on
                     2026-08-04, 365 of the 394 background launches ARE answered
                     by a later task-notification in the same transcript, and 28
                     rows are left carrying this badge. */}
-                <span className={`agent-badge agent-badge--${a.state}`}>
-                  {a.launched === true ? t(lang, "agents.launched") : t(lang, `map.life.${a.state}`)}
+                  <span className={`agent-badge agent-badge--${a.state}`}>
+                    {a.launched === true ? t(lang, "agents.launched") : t(lang, `map.life.${a.state}`)}
+                  </span>
                 </span>
-              </span>
-              {a.task !== "" && <span className="agent-card-task">{a.task}</span>}
-              {a.lastStatus !== null && <span className="agent-card-status">» {a.lastStatus}</span>}
-              <span className="agent-card-meta mono tabular">
-                {tokenLabel(a.inTokens)} in · {tokenLabel(a.outTokens)} out
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+                {a.task !== "" && <span className="agent-card-task">{a.task}</span>}
+                {a.lastStatus !== null && <span className="agent-card-status">» {a.lastStatus}</span>}
+                <span className="agent-card-meta mono tabular">
+                  {tokenLabel(a.inTokens)} in · {tokenLabel(a.outTokens)} out
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

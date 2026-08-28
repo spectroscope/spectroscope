@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3c9061cd-742f-5c32-a0be-58a7fdb43d25",
     "name": "spectroscope REST API",
-    "description": "The whole REST surface of spectro-server — 73 endpoints in 18 folders, one per area.\n\nEvery request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.\n\nThe chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.\n\n## The fences, measured\n\nMeasured with curl from loopback against a live spectro-server built from this tree (port 8236, 2026-08-04). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL. GET /api/health is the one path deliberately left open.\n\n| endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |\n|---|---|---|---|---|---|\n| GET /api/health | none | 200 | 200 | 200 | 200 |\n| GET /api/sessions | host | 200 | 200 | 200 | 404 |\n| GET /api/settings | host | 200 | 200 | 200 | 404 |\n| GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |\n| POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |\n\nEvery fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.\n\n## Variables\n\n- `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.\n- `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.\n- `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.\n- `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.\n- `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.\n- `{{skillPack}}` = `superpowers` — A pack folder from the catalogue rows of GET /api/skills — set only for a skill installed from the catalogue.\n- `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills — the folder, not the display name: a packed skill shows as <pack>:<skill> and its folder is the part after the colon.\n- `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.\n- `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.\n- `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.\n- `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.\n- `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.\n- `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.\n- `{{exchangeId}}` = `1f2e3d4c-5b6a-4789-9abc-def012345678` — An LLM exchange id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/llm-wire/index.\n- `{{actionId}}` = `0a1b2c3d-4e5f-4671-8899-aabbccddeeff` — A browser action id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/browser-wire/index.\n\n## Handle with care\n\n- **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.\n- **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.\n- **POST /api/settings/env** — Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.\n- **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **DELETE /api/skills/{pack}/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **POST /api/skills/install** — Copies files into ~/.spectro/skills. It never overwrites; a taken name answers 409.\n- **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n- **POST /api/claude/transcripts/folders/open** — Opens a native file-manager window on the operator's screen.\n- **POST /api/claude/transcripts/gists** — Spends the operator key — one model call per transcript that is not already current.\n- **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n- **POST /api/explain** — Spends the operator's API key on every call.\n- **POST /api/stt/model/download** — Downloads ~488 MB — do not include this in an automated replay.",
+    "description": "The whole REST surface of spectro-server — 75 endpoints in 19 folders, one per area.\n\nEvery request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.\n\nThe chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.\n\n## The fences, measured\n\nMeasured with curl from loopback against a live spectro-server built from this tree (port 8236, 2026-08-04). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL. GET /api/health is the one path deliberately left open.\n\n| endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |\n|---|---|---|---|---|---|\n| GET /api/health | none | 200 | 200 | 200 | 200 |\n| GET /api/sessions | host | 200 | 200 | 200 | 404 |\n| GET /api/settings | host | 200 | 200 | 200 | 404 |\n| GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |\n| POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |\n\nEvery fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.\n\n## Variables\n\n- `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.\n- `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.\n- `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.\n- `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.\n- `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.\n- `{{skillPack}}` = `superpowers` — A pack folder from the catalogue rows of GET /api/skills — set only for a skill installed from the catalogue.\n- `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills — the folder, not the display name: a packed skill shows as <pack>:<skill> and its folder is the part after the colon.\n- `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.\n- `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.\n- `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.\n- `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.\n- `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.\n- `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.\n- `{{exchangeId}}` = `1f2e3d4c-5b6a-4789-9abc-def012345678` — An LLM exchange id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/llm-wire/index.\n- `{{actionId}}` = `0a1b2c3d-4e5f-4671-8899-aabbccddeeff` — A browser action id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/browser-wire/index.\n\n## Handle with care\n\n- **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.\n- **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.\n- **POST /api/settings/env** — Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.\n- **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **DELETE /api/skills/{pack}/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **POST /api/skills/install** — Copies files into ~/.spectro/skills. It never overwrites; a taken name answers 409.\n- **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n- **POST /api/claude/transcripts/folders/open** — Opens a native file-manager window on the operator's screen.\n- **POST /api/claude/transcripts/gists** — Spends the operator key — one model call per transcript that is not already current.\n- **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n- **POST /api/explain** — Spends the operator's API key on every call.\n- **POST /api/analyze** — Spends the operator's API key on every call.\n- **POST /api/stt/model/download** — Downloads ~488 MB — do not include this in an automated replay.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1681,6 +1681,65 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"digest\": \"user: say OK\\nassistant: OK\",\n  \"lang\": \"en\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "analyze",
+      "description": "The opt-in one-shot run analysis of an imported run (card 294): pre-flight and the streaming call.",
+      "item": [
+        {
+          "name": "run-analysis pre-flight",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyze/engine",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyze",
+                "engine"
+              ]
+            },
+            "description": "What one run-analysis call would use: {available,provider,model,address} or {available:false,reason,provider,detail?} with reasons provider-is-local | needs-key. The consent dialog's truth, so no button can fail (card 294).\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "analyze a run digest (NDJSON stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyze"
+              ]
+            },
+            "description": "Opt-in one-shot LLM reading of an imported run's digest, streamed as NDJSON ({meta:{provider,model,address}}, {delta}..., {done}|{error}). Reasoning is refused (the translate lesson); an empty answer is an error, not a done. 400 blank, 413 oversize, 503 provider not ready or provider-is-local (card 294).\n\nBody: AnalyzeBody(String digest, String lang) — digest required, max 60000 chars; lang en | de.\n\nCAUTION: Spends the operator's API key on every call.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: no",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"digest\": \"run digest\\nprompt: say OK\",\n  \"lang\": \"en\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

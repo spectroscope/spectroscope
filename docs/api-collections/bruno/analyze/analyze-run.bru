@@ -1,0 +1,34 @@
+meta {
+  name: analyze a run digest (NDJSON stream)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/analyze
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "digest": "run digest\nprompt: say OK",
+    "lang": "en"
+  }
+}
+
+docs {
+  Opt-in one-shot LLM reading of an imported run's digest, streamed as NDJSON ({meta:{provider,model,address}}, {delta}..., {done}|{error}). Reasoning is refused (the translate lesson); an empty answer is an error, not a done. 400 blank, 413 oversize, 503 provider not ready or provider-is-local (card 294).
+  
+  Body: AnalyzeBody(String digest, String lang) — digest required, max 60000 chars; lang en | de.
+  
+  CAUTION: Spends the operator's API key on every call.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: no
+}

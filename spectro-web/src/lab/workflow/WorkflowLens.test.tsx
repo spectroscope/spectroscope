@@ -143,6 +143,27 @@ describe("the small node card", () => {
   });
 });
 
+describe("the analyze affordance (card 294)", () => {
+  it("renders the analyze node it is handed, between legend and canvas", () => {
+    const scene = EVENTS.reduce((s, e) => advanceScene(s, e), initialScene());
+    const html = renderToStaticMarkup(
+      <WorkflowLens
+        events={EVENTS}
+        applied={EVENTS}
+        scene={scene}
+        analyze={<div data-pin="analyze-affordance">analyze this run</div>}
+      />,
+    );
+    expect(html).toContain("analyze-affordance");
+  });
+
+  it("renders no analyze bar when none is handed (the live run)", () => {
+    const scene = EVENTS.reduce((s, e) => advanceScene(s, e), initialScene());
+    const html = renderToStaticMarkup(<WorkflowLens events={EVENTS} applied={EVENTS} scene={scene} />);
+    expect(html).not.toContain("analyze-affordance");
+  });
+});
+
 describe("the assembled lens", () => {
   it("feeds the chip from the reconstruction: one resolved of two reported", () => {
     const scene = EVENTS.reduce((s, e) => advanceScene(s, e), initialScene());

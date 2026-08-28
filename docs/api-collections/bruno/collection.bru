@@ -1,5 +1,5 @@
 docs {
-  The whole REST surface of spectro-server — 73 endpoints in 18 folders, one per area.
+  The whole REST surface of spectro-server — 75 endpoints in 19 folders, one per area.
   
   Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.
   
@@ -50,5 +50,6 @@ docs {
   - **POST /api/claude/transcripts/gists** — Spends the operator key — one model call per transcript that is not already current.
   - **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.
   - **POST /api/explain** — Spends the operator's API key on every call.
+  - **POST /api/analyze** — Spends the operator's API key on every call.
   - **POST /api/stt/model/download** — Downloads ~488 MB — do not include this in an automated replay.
 }

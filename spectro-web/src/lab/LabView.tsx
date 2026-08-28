@@ -21,6 +21,7 @@ import { LabTrace } from "./LabTrace";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
 import { lensFrom, WorkflowLens, type LabLens } from "./workflow/WorkflowLens";
+import { AnalyzeRun } from "../components/AnalyzeRun";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -304,7 +305,19 @@ export function LabView(props: {
           }
         >
           {lens === "workflow" ? (
-            <WorkflowLens events={allEvents} applied={st.applied} scene={st.scene} model={props.model} />
+            <WorkflowLens
+              events={allEvents}
+              applied={st.applied}
+              scene={st.scene}
+              model={props.model}
+              analyze={
+                /* Card 294: only an IMPORTED run offers the one-shot analysis;
+                   nothing is sent at import — the affordance is a click away. */
+                replay !== null && replay.id.startsWith("import:") ? (
+                  <AnalyzeRun viewKey={replay.id} events={allEvents} />
+                ) : undefined
+              }
+            />
           ) : (
             <ExpandAllContext.Provider value={expanded}>
               <FlowMap
