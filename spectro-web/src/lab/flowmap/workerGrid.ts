@@ -58,6 +58,11 @@ export function foldSeatPool(events: readonly RunEvent[]): SeatPool {
   let occupant: string[] = [];
   const alive = new Set<string>();
   let rootRunId: string | null = null;
+  // Which child owns which run, off the child's own run_start — how a child's
+  // run_end (a frame with a runId and no agentId) ends the child (card 291
+  // twin repair: a merged sidecar carries the child's whole run, and its Task
+  // result may never have come back in the parent's stream).
+  const runOwner = new Map<string, string>();
   const reset = () => {
     seat = {};
     occupant = [];
@@ -84,14 +89,20 @@ export function foldSeatPool(events: readonly RunEvent[]): SeatPool {
           rootRunId = e.runId;
         } else {
           admit(e.agentId);
+          runOwner.set(e.runId, e.agentId);
         }
         break;
       case "run_end":
         // Mirrors advanceScene: a CHILD's run_end (different runId) must not
-        // retire the pool — only the root run ending clears the map.
+        // retire the pool — only the root run ending clears the map. It DOES
+        // end the child whose run_start named that runId, exactly like a
+        // result message: the seat stays for reuse, the child stops living.
         if (rootRunId === null || e.runId === rootRunId) {
           reset();
           rootRunId = null;
+        } else {
+          const owner = runOwner.get(e.runId);
+          if (owner !== undefined) alive.delete(owner);
         }
         break;
       case "agent_spawn":

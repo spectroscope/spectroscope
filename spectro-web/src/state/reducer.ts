@@ -202,6 +202,11 @@ export interface AgentInfo {
    *  the transcript. Only ever true; a child that did report back says so by
    *  its state. */
   launched?: true;
+  /** The runId of this agent's own run, off its run_start (additive, card 291
+   *  twin repair). It is how a child's OWN run_end finds its way back to the
+   *  child: the frame carries a runId and no agentId. Absent for an agent that
+   *  never had a run_start of its own (a spawn the transcript never followed). */
+  runId?: string;
 }
 
 /** One step of the agent's plan (from the additive `plan` event). Wire status
@@ -484,6 +489,7 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
       return upsertAgent(agents, event.agentId, {
         parentId: event.parentId ?? null,
         state: "working",
+        runId: event.runId,
         ...(event.parentId == null ? { label: null } : {}),
       });
     case "agent_spawn":
@@ -509,8 +515,18 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
       }));
     case "run_end":
       // The ROOT run finished — mark the main agent done (subagents got their
-      // own result message). A child's run_end has a different runId: ignore.
-      if (rootRunId !== null && event.runId !== rootRunId) return agents;
+      // own result message). A child's run_end names a different runId; when a
+      // run_start registered that runId to a child, the run's end ends the
+      // child (additive, card 291 twin repair: a merged sidecar carries the
+      // child's whole run, and its Task result may never have come back in the
+      // parent's stream). A run_end nobody's run_start named still changes
+      // nothing, and an already-failed child is never talked back to green.
+      if (rootRunId !== null && event.runId !== rootRunId)
+        return agents.map((a) =>
+          a.runId === event.runId && a.parentId !== null && a.state === "working"
+            ? { ...a, state: "completed" }
+            : a,
+        );
       return agents.map((a) =>
         a.parentId === null && a.state === "working" ? { ...a, state: "completed" } : a,
       );

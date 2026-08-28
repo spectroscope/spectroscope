@@ -99,6 +99,47 @@ describe("reduce — session-wide agents (persistence data model)", () => {
   });
 });
 
+describe("reduce — a child's OWN run_end ends the child (card 291 twin repair)", () => {
+  // A merged sidecar carries the child's whole run, run_end included, under
+  // runId `cc-<child id>`. Before the repair only an agent_message result
+  // could end a child, so a child whose Task result never came back in the
+  // main stream stayed badged working forever — the browser finding on the
+  // real reference run. The root run_end path is untouched: it still ignores
+  // child runIds and still completes only parentless workers.
+  const childRun: RunEvent[] = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 1 },
+    { type: "agent_spawn", agentId: "t1", parentId: "main", task: "subtask", ts: 2 },
+    { type: "run_start", runId: "cc-t1", agentId: "t1", parentId: "main", prompt: "subtask", ts: 3 },
+    { type: "usage", agentId: "t1", inputTokens: 7, outputTokens: 3, ts: 4 },
+  ];
+
+  it("the child completes on its own run_end while the root still works", () => {
+    const s = reduceAll(initialState, [
+      ...childRun,
+      { type: "run_end", runId: "cc-t1", stopReason: "end_turn", ts: 5 },
+    ]);
+    expect(s.agents.find((a) => a.id === "t1")?.state).toBe("completed");
+    expect(s.agents.find((a) => a.id === "main")?.state).toBe("working");
+  });
+
+  it("a run_end naming no known child run changes nobody's state", () => {
+    const s = reduceAll(initialState, [
+      ...childRun,
+      { type: "run_end", runId: "cc-somebody-else", stopReason: "end_turn", ts: 5 },
+    ]);
+    expect(s.agents.find((a) => a.id === "t1")?.state).toBe("working");
+  });
+
+  it("a child already failed by its result message stays failed", () => {
+    const s = reduceAll(initialState, [
+      ...childRun,
+      { type: "agent_message", from: "t1", to: "main", role: "result", state: "failed", text: "no", ts: 5 },
+      { type: "run_end", runId: "cc-t1", stopReason: "end_turn", ts: 6 },
+    ]);
+    expect(s.agents.find((a) => a.id === "t1")?.state).toBe("failed");
+  });
+});
+
 describe("reduce — happy path", () => {
   it("builds a user turn and one accumulated assistant turn", () => {
     const state = reduceAll(initialState, happyPath);
