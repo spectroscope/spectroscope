@@ -222,3 +222,48 @@ describe("edge geometry", () => {
     expect(edge(l, "retrieve", "rerank").kind).toBe("direct");
   });
 });
+
+describe("edge identity (card 293)", () => {
+  // Two edges between ONE pair used to collapse under the pair string
+  // `${from}->${to}` — it doubled as the React key, so the second edge
+  // silently replaced the first in the drawing.
+  const twin: Topology = {
+    entry: "a",
+    nodes: [
+      { id: "a", label: "a" },
+      { id: "b", label: "b" },
+    ],
+    edges: [
+      { from: "a", to: "b", kind: "direct" },
+      { from: "a", to: "b", kind: "conditional" },
+    ],
+  };
+
+  it("routes BOTH parallel edges between one pair, each under its own id", () => {
+    const l = layoutStateGraph(twin, "horizontal");
+    expect(l.edges).toHaveLength(2);
+    expect(new Set(l.edges.map((e) => e.id)).size).toBe(2);
+  });
+
+  it("keeps the plain pair string as the id of a lone edge (the stats key contract)", () => {
+    const l = layoutStateGraph(CRAG, "horizontal");
+    expect(edge(l, "retrieve", "rerank").id).toBe("retrieve->rerank");
+    // Every id in a pair-unique topology IS the pair string.
+    l.edges.forEach((e) => expect(e.id).toBe(`${e.from}->${e.to}`));
+  });
+
+  it("carries the spawn kind through routing (the workflow lens edge)", () => {
+    const l = layoutStateGraph(
+      {
+        entry: "a",
+        nodes: [
+          { id: "a", label: "a" },
+          { id: "b", label: "b" },
+        ],
+        edges: [{ from: "a", to: "b", kind: "spawn" }],
+      },
+      "horizontal",
+    );
+    expect(l.edges[0].kind).toBe("spawn");
+  });
+});

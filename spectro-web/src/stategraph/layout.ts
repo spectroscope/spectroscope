@@ -19,11 +19,13 @@ export interface TopologyNode {
 }
 
 /** One edge. `conditional` is drawn differently — it is a branch the compiler
- *  knew about, which may or may not have been taken. */
+ *  knew about, which may or may not have been taken. `spawn` is the workflow
+ *  lens's edge (card 293): reconstructed from the run's events, not declared
+ *  before it, and drawn dashed for exactly that reason. */
 export interface TopologyEdge {
   from: string;
   to: string;
-  kind: "direct" | "conditional";
+  kind: "direct" | "conditional" | "spawn";
 }
 
 export interface Topology {
@@ -45,9 +47,14 @@ export interface PlacedNode {
 }
 
 export interface RoutedEdge {
+  /** Unique per EDGE, not per pair: the pair string for the first edge between
+   *  a pair, `pair#2`, `pair#3`, … for parallel ones. The pair string used to
+   *  double as the React key, so a second edge between one pair silently
+   *  replaced the first in the drawing (card 293). Renderers key on THIS. */
+  id: string;
   from: string;
   to: string;
-  kind: "direct" | "conditional";
+  kind: "direct" | "conditional" | "spawn";
   /** True for an edge that closes a cycle. It keeps its direction. */
   back: boolean;
   /** True for a forward edge that skips ranks and had to fly over boxes. */
@@ -385,11 +392,15 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   let skipIdx = 0;
   const gutter = Math.min(GUTTER, gapAlong - 10);
 
+  const pairSeen = new Map<string, number>();
   const routed: RoutedEdge[] = edges.map((e) => {
     const a = byId.get(e.from)!;
     const b = byId.get(e.to)!;
     const back = cycleEdge.has(e.i);
-    const base = { from: e.from, to: e.to, kind: e.kind, back };
+    const pair = `${e.from}->${e.to}`;
+    const nth = (pairSeen.get(pair) ?? 0) + 1;
+    pairSeen.set(pair, nth);
+    const base = { id: nth === 1 ? pair : `${pair}#${nth}`, from: e.from, to: e.to, kind: e.kind, back };
 
     // A lane never crosses the field: it steps sideways into a GUTTER (the
     // free strip between two rank columns, where no box can ever sit), runs

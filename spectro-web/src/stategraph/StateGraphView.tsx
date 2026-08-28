@@ -542,6 +542,8 @@ export function CanvasOverlay({ laid, stats, started = false }: CanvasOverlayPro
         <line key={r.rank} className="sg-rankline" x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} />
       ))}
       {laid.edges.map((e) => {
+        // Stats stay keyed by the PAIR (that is what edgeStatsUpTo counts);
+        // the React key is the edge's own id, so parallel edges both render.
         const key = `${e.from}->${e.to}`;
         const walked = counts.has(key);
         const live = last === key;
@@ -550,7 +552,7 @@ export function CanvasOverlay({ laid, stats, started = false }: CanvasOverlayPro
         const taken = counts.get(key) ?? 0;
         const label = taken > 1 ? `×${taken}` : e.back ? "↺" : "";
         return (
-          <g key={key}>
+          <g key={e.id}>
             <path
               d={e.path}
               markerEnd={`url(#${marker})`}
