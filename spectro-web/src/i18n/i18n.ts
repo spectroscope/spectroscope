@@ -3685,6 +3685,39 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sg.omitted.cap": { de: "an der Kanal-Grenze", en: "at the channel cap" },
   "sg.omitted.error": { de: "beim Serialisieren gescheitert", en: "serialization failed" },
   "sg.omitted.recordCap": { de: "an der Datensatz-Grenze", en: "at the record cap" },
+  // The lab's lens toggle + the workflow lens (card 293)
+  "lab.lensAria": { de: "Karten-Linse", en: "Map lens" },
+  "lab.lens": { de: "Linse", en: "lens" },
+  "lab.lensHint": {
+    de: "Maschine = die heutige System-Map. Workflow = der Spawn-Baum des Laufs, aus den Ereignissen rekonstruiert.",
+    en: "Machine = today's system map. Workflow = the run's spawn tree, reconstructed from its events.",
+  },
+  "lab.lensMachine": { de: "maschine", en: "machine" },
+  "lab.lensMachineTitle": {
+    de: "Die System-Map: Agent, Modell, Gate, Disk — das Live-Bild der Maschine",
+    en: "The system map: agent, model, gate, disk — the machine's live picture",
+  },
+  "lab.lensWorkflow": { de: "workflow", en: "workflow" },
+  "lab.lensWorkflowTitle": {
+    de: "Der Workflow des Laufs: die Agenten als Graph, Wellen nach zeitlicher Überlappung",
+    en: "The run's workflow: its agents as a graph, waves by time overlap",
+  },
+  "lab.lens.legend": {
+    de: "gestrichelt: aus den Ereignissen des Laufs rekonstruiert — durchgezogen hieße: vor dem Lauf deklariert (State-Graph)",
+    en: "dashed: reconstructed from the run's events — solid would mean declared before the run (state graph)",
+  },
+  "lab.lens.reconstructed": {
+    de: "rekonstruiert aus {n} von {m} Kind-Agenten",
+    en: "reconstructed from {n} of {m} children",
+  },
+  "lab.lens.reconstructedHint": {
+    de: "{m} gemeldete Spawns, {n} davon mit auflösbarer Eltern-Kante — der Rest hängt an der Wurzel",
+    en: "{m} reported spawns, {n} of them with a resolvable parent edge — the rest hang off the root",
+  },
+  "lab.lens.state.pending": { de: "wartet", en: "pending" },
+  "lab.lens.state.active": { de: "aktiv", en: "active" },
+  "lab.lens.state.done": { de: "fertig", en: "done" },
+  "lab.lens.state.failed": { de: "gescheitert", en: "failed" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

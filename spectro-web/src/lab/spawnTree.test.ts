@@ -85,11 +85,12 @@ describe("spawnTree — the reconstructed workflow topology", () => {
   });
 
   it("keeps a child with an unresolvable parent, attached to root and counted as unresolved", () => {
-    const events: RunEvent[] = [
+    const raw: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
       ...child("orphan", 50, 90, "a child whose parent never appears", "ghost-parent"),
       ...child("worker", 100, 200, "a resolved child"),
-    ].sort((a, b) => a.ts - b.ts);
+    ];
+    const events = raw.sort((a, b) => a.ts - b.ts);
     const tree = spawnTree(events);
     expect(tree.topo.nodes.map((n) => n.id)).toContain("orphan");
     expect(edgeSet(tree)).toContain("main->orphan");
@@ -100,11 +101,12 @@ describe("spawnTree — the reconstructed workflow topology", () => {
   });
 
   it("hangs a nested child under its real parent, not under root", () => {
-    const events: RunEvent[] = [
+    const raw: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
       ...child("worker", 100, 400, "a first-level child"),
       ...child("grandchild", 150, 300, "spawned by the worker", "worker"),
-    ].sort((a, b) => a.ts - b.ts);
+    ];
+    const events = raw.sort((a, b) => a.ts - b.ts);
     const tree = spawnTree(events);
     expect(edgeSet(tree)).toContain("worker->grandchild");
     expect(edgeSet(tree)).not.toContain("main->grandchild");
@@ -124,7 +126,15 @@ describe("spawnTree — the reconstructed workflow topology", () => {
         label: "app-scout",
         ts: 101,
       },
-      { type: "run_start", runId: "c1", agentId: "worker", parentId: "main", prompt: "scout", model: "m-small", ts: 102 },
+      {
+        type: "run_start",
+        runId: "c1",
+        agentId: "worker",
+        parentId: "main",
+        prompt: "scout",
+        model: "m-small",
+        ts: 102,
+      },
     ];
     const tree = spawnTree(events);
     expect(tree.meta["worker"].agentType).toBe("app-scout");
@@ -147,9 +157,9 @@ describe("nodeStateAt — the cursor lights the graph from the ONE scene fold", 
 
   it("shows a child pending before its spawn, active while it lives, done after the run", () => {
     const beforeSpawn = 1; // only run_start applied
-    expect(nodeStateAt(sceneAt(beforeSpawn), spawnedIn(events.slice(0, beforeSpawn)), "scout-a", "main")).toBe(
-      "pending",
-    );
+    expect(
+      nodeStateAt(sceneAt(beforeSpawn), spawnedIn(events.slice(0, beforeSpawn)), "scout-a", "main"),
+    ).toBe("pending");
     const midScouts = events.findIndex((e) => e.type === "agent_spawn" && e.agentId === "consolidate");
     expect(nodeStateAt(sceneAt(midScouts), spawnedIn(events.slice(0, midScouts)), "scout-a", "main")).toBe(
       "active",

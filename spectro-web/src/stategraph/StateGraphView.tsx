@@ -14,17 +14,10 @@
 //   - absence is legible: "not recorded" and "was empty" are different claims
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ReactFlow,
-  Background,
-  Handle,
-  Position,
-  ViewportPortal,
-  useReactFlow,
-  type NodeProps,
-} from "@xyflow/react";
+import { ReactFlow, Background, Handle, Position, ViewportPortal, type NodeProps } from "@xyflow/react";
 import type { Node as FlowNode } from "@xyflow/react";
 import { layoutStateGraph, type PlacedNode, type StateGraphLayout } from "./layout";
+import { RefitOnLayout } from "../reactflow/RefitOnLayout";
 import { StateGraphExport } from "./StateGraphExport";
 import type { StateGraphViewState } from "./viewState";
 import {
@@ -97,18 +90,8 @@ function NodeCard({ data }: NodeProps) {
 
 const NODE_TYPES = { sgCard: NodeCard };
 
-/** Re-fits the viewport when the DRAWING changes shape — an orientation flip
- *  or a new run. React Flow's own fitView prop fires on mount only, so without
- *  this the flipped graph kept the old transform and sat small in a corner
- *  (seen live, not read). A child component because useReactFlow needs the
- *  provider ReactFlow itself creates. */
-function RefitOnLayout({ laid }: { laid: StateGraphLayout }) {
-  const { fitView } = useReactFlow();
-  useEffect(() => {
-    void fitView({ padding: 0.1 });
-  }, [laid, fitView]);
-  return null;
-}
+// RefitOnLayout moved to ../reactflow/RefitOnLayout when the workflow lens
+// became its second consumer (card 293) — same six lines, one address.
 
 /** The superstep of the visit the cursor stands in: the picked node's nearest
  *  lifecycle record at or before `upto` — or its FIRST visit while the cursor
