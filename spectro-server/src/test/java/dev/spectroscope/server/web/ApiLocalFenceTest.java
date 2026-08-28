@@ -2,6 +2,7 @@ package dev.spectroscope.server.web;
 
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.server.llm.AnalyzeController;
 import dev.spectroscope.server.llm.ExplainController;
 import dev.spectroscope.server.llm.TranscribeController;
 import dev.spectroscope.server.localmodel.ModelCapabilityController;
@@ -294,6 +295,20 @@ class ApiLocalFenceTest {
         explain.perform(post("http://127.0.0.1/api/explain")
                         .contentType("application/json")
                         .content(new byte[ExplainController.MAX_BODY_BYTES + 1]))
+                .andExpect(status().isPayloadTooLarge());
+    }
+
+    @Test
+    void anOversizeAnalyzeBodyIsRefusedBeforeItIsMaterialised() throws Exception {
+        // The run-analysis endpoint (card 294) carries the same shape of body
+        // as explain — a client-built digest — so it gets the same upstream
+        // refusal on the DECLARED length, before Spring parses anything.
+        MockMvc analyze = MockMvcBuilders.standaloneSetup(new AnalyzeController())
+                .addFilters(new ApiLocalFence())
+                .build();
+        analyze.perform(post("http://127.0.0.1/api/analyze")
+                        .contentType("application/json")
+                        .content(new byte[AnalyzeController.MAX_BODY_BYTES + 1]))
                 .andExpect(status().isPayloadTooLarge());
     }
 }
