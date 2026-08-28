@@ -25,6 +25,10 @@ const spawn = (id: string): RunEvent =>
   ({ type: "agent_spawn", agentId: id, parentId: "main", task: `t-${id}`, ts: T }) as RunEvent;
 const result = (id: string, state = "completed"): RunEvent =>
   ({ type: "agent_message", from: id, to: "main", role: "result", state, text: "", ts: T }) as RunEvent;
+const task = (id: string): RunEvent =>
+  ({ type: "agent_message", from: "main", to: id, role: "task", text: `t-${id}`, ts: T }) as RunEvent;
+const status = (id: string): RunEvent =>
+  ({ type: "agent_message", from: id, to: "main", role: "status", text: "…", ts: T }) as RunEvent;
 
 describe("workerGrid", () => {
   it("seats by column-of-rows, fixed by index alone — a card never moves", () => {
@@ -124,6 +128,46 @@ describe("workerGrid", () => {
         { type: "thinking_delta", agentId: "w1", text: "…", ts: T } as RunEvent,
       ]);
       expect(p.seat).toEqual({ w1: 0 });
+      expect(p.live).toBe(1);
+    });
+
+    it("a child announced only by a task message is seated — the pool filter would hide it otherwise", () => {
+      // sceneToFlow's pool path draws only children with a seat; advanceScene
+      // creates a card for a task message, so the pool must admit it too.
+      const p = foldSeatPool([start, task("x")]);
+      expect(p.seat).toEqual({ x: 0 });
+      expect(p.live).toBe(1);
+    });
+
+    it("a child announced only by a status message is seated — same filter, other direction", () => {
+      const p = foldSeatPool([start, status("y")]);
+      expect(p.seat).toEqual({ y: 0 });
+      expect(p.live).toBe(1);
+    });
+
+    it("a revived child still shown on its old seat KEEPS it — revival never jumps", () => {
+      // a=seat0 and b=seat1 both ended, both still shown; a status event
+      // revives b. Seat 0 is free (a ended too), so without the keep-branch
+      // b would jump there — the exact no-jumping property the pool claims.
+      const p = foldSeatPool([start, spawn("a"), spawn("b"), result("a"), result("b"), status("b")]);
+      expect(p.seat["b"]).toBe(1);
+      expect(p.occupant).toEqual(["a", "b"]);
+      expect(p.live).toBe(1);
+    });
+
+    it("a second root run_start restarts the pool — no seats carried across runs", () => {
+      // advanceScene returns initialScene() on every root run_start; the fold
+      // mirrors that, so a restarted run must not inherit the previous seating.
+      const start2: RunEvent = {
+        type: "run_start",
+        runId: "r2",
+        agentId: "main",
+        prompt: "again",
+        ts: T,
+      } as RunEvent;
+      const p = foldSeatPool([start, spawn("a"), start2, spawn("b")]);
+      expect(p.occupant).toEqual(["b"]);
+      expect(p.total).toBe(1);
       expect(p.live).toBe(1);
     });
   });
