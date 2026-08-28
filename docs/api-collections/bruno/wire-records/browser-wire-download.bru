@@ -1,17 +1,17 @@
 meta {
-  name: export session JSONL
+  name: browser record (download)
   type: http
   seq: 4
 }
 
 get {
-  url: {{baseUrl}}/api/sessions/{{sessionId}}/export
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/browser-wire
   body: none
   auth: none
 }
 
 docs {
-  The raw session JSONL, byte-identical, as an attachment (application/x-ndjson). Id shape-checked ([A-Za-z0-9][A-Za-z0-9-]*); 404 for foreign callers or malformed id.
+  The whole browser-record sidecar (~/.spectro/browser-wire) verbatim, as an NDJSON download — every address the agent visited and every script it ran. 404 for a foreign caller, a malformed id or a session that never drove a browser.
   
   Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
   

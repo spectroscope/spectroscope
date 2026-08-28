@@ -1,0 +1,19 @@
+meta {
+  name: speech-to-text status
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/stt/status
+  body: none
+  auth: none
+}
+
+docs {
+  The live state of speech-to-text, probed on every call: the pinned whisper model (presence, bytes), the whisper-cli binary with a per-platform install hint (a sentence, never a button), download progress, the configured provider and language, the route a recording would take right now and whether that route can run (speechWorks).
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

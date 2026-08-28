@@ -1,5 +1,5 @@
 docs {
-  The whole REST surface of spectro-server — 59 endpoints in 16 folders, one per area.
+  The whole REST surface of spectro-server — 73 endpoints in 18 folders, one per area.
   
   Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.
   
@@ -34,6 +34,8 @@ docs {
   - `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.
   - `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.
   - `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.
+  - `{{exchangeId}}` = `1f2e3d4c-5b6a-4789-9abc-def012345678` — An LLM exchange id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/llm-wire/index.
+  - `{{actionId}}` = `0a1b2c3d-4e5f-4671-8899-aabbccddeeff` — A browser action id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/browser-wire/index.
   
   ## Handle with care
   
@@ -48,4 +50,5 @@ docs {
   - **POST /api/claude/transcripts/gists** — Spends the operator key — one model call per transcript that is not already current.
   - **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.
   - **POST /api/explain** — Spends the operator's API key on every call.
+  - **POST /api/stt/model/download** — Downloads ~488 MB — do not include this in an automated replay.
 }

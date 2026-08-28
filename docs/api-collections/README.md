@@ -1,7 +1,8 @@
 # spectroscope REST API collections
 
-The whole REST surface of the spectro-server built from this tree — 48 endpoints in 16 area
-folders — as importable collections for the four popular REST clients
+The whole REST surface of the spectro-server built from this tree — 73 endpoints in 18 area
+folders (the count the generator validates against `meta.endpointCount`) — as
+importable collections for the four popular REST clients
 (card 132). One table, one generator, four client files.
 
 ## Which file is for which client

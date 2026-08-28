@@ -1,0 +1,19 @@
+meta {
+  name: LLM wire index
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/llm-wire/index
+  body: none
+  auth: none
+}
+
+docs {
+  The bodiless exchange ledger: one object per exchange in file order, request and response paired by xid while streaming the file — bodies are counted, never returned. A request still waiting for its response reports status null. 404 for a foreign caller, a malformed id or a session without a wire record.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

@@ -1,0 +1,23 @@
+meta {
+  name: auto-approve allowlist read-out
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/api/settings/allowlist
+  body: none
+  auth: none
+}
+
+params:query {
+  ~session: {{sessionId}}
+}
+
+docs {
+  The auto-approve allowlist READ OUT: schema and map version, the readable tier names, the entries per scope and the folded effective list — decided by the server's own gate so the page never re-decides. Writes go through PUT /api/settings/{scope} with an autoApprove array; there is deliberately no write endpoint here.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

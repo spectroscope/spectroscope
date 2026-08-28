@@ -1,0 +1,19 @@
+meta {
+  name: one LLM exchange
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/llm-wire/exchange/{{exchangeId}}
+  body: none
+  auth: none
+}
+
+docs {
+  One exchange's two recorded lines, parsed: {request, response}, with response null while the exchange is open. The scan stops as soon as both lines are found. 404 for a foreign caller, a malformed id or xid, a missing sidecar or an unknown exchange.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

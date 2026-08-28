@@ -1,0 +1,38 @@
+meta {
+  name: position the browser pane
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/browser/viewport
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "x": 320,
+    "y": 96,
+    "width": 900,
+    "height": 620,
+    "visible": true,
+    "sessionId": "{{sessionId}}"
+  }
+}
+
+docs {
+  The rectangle the web UI's browser segment reserved, in window CSS pixels; the server forwards it down the shell's control channel to place the native pane. 204 either way — with no shell attached the report is accepted and dropped, so the page never stalls.
+  
+  Body: Viewport(int x, int y, int width, int height, boolean visible, String sessionId) — sessionId names whose browser belongs in the rectangle; null/blank before a session exists.
+  
+  Side effect: Repositions (or hides) the native browser pane over the desktop window while a shell is attached.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

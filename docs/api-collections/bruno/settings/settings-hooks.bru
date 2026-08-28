@@ -1,0 +1,23 @@
+meta {
+  name: shell hooks read-out
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/api/settings/hooks
+  body: none
+  auth: none
+}
+
+params:query {
+  ~session: {{sessionId}}
+}
+
+docs {
+  The configured shell hooks READ OUT: per scope and folded, each with the matcher and the timeout it will ACTUALLY run under, raw and resolved side by side. hooks is a whole-block field — the highest layer that sets it replaces every layer below; the read-out exists to carry that fact.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

@@ -1,17 +1,17 @@
 meta {
-  name: session events
+  name: live sessions
   type: http
-  seq: 3
+  seq: 2
 }
 
 get {
-  url: {{baseUrl}}/api/sessions/{{sessionId}}/events
+  url: {{baseUrl}}/api/sessions/live
   body: none
   auth: none
 }
 
 docs {
-  All parsed RunEvents of one session as JSON; 404 when unreadable.
+  Which sessions are live on this server right now: one row per live session ({id, running, since}), oldest claim first. The polled floor under the live_sessions socket push — an empty list is a fact, not an error.
   
   Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
   

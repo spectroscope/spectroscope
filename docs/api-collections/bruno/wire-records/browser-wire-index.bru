@@ -1,0 +1,19 @@
+meta {
+  name: browser record index
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/browser-wire/index
+  body: none
+  auth: none
+}
+
+docs {
+  The bodiless action ledger the replay view scrubs: one object per action in file order, call and result paired by cid while streaming the file — arguments and page text are never returned. 404 for a foreign caller, a malformed id or a session that never drove a browser.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

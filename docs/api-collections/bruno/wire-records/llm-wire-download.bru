@@ -1,0 +1,19 @@
+meta {
+  name: LLM wire record (download)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/llm-wire
+  body: none
+  auth: none
+}
+
+docs {
+  The whole llm-wire sidecar (~/.spectro/llm-wire) verbatim, as an NDJSON download — the wire-record twin of the session export, carrying full prompts and responses. 404 for a foreign caller, a malformed id or a session without a wire record.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

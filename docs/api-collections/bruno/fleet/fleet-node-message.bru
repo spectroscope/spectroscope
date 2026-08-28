@@ -1,0 +1,31 @@
+meta {
+  name: message a node
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/fleet/{{nodeId}}/message
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "text": "Please summarize your progress so far"
+  }
+}
+
+docs {
+  Send the operator's words to a fleet node over the hub. 202 sent (best-effort, no ack), 400 blank text, 404 not local/no fleet/unknown node, 409 the node already left or announced no trigger (no run loop to fire). NOT idempotent — re-sending says it twice.
+  
+  Body: NodeMessage(String text) — required, must not be blank.
+  
+  Fence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

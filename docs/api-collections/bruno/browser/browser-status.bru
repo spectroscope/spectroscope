@@ -1,0 +1,23 @@
+meta {
+  name: browser pane status
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/browser/status
+  body: none
+  auth: none
+}
+
+params:query {
+  ~sessionId: {{sessionId}}
+}
+
+docs {
+  Whether a native browser pane is attached (desktop shell) and what THIS session's browser is showing: {attached, url}. url is null without a sessionId — a page that has not started a session has no browser and no address. On the web face attached:false is the honest answer, not an error.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

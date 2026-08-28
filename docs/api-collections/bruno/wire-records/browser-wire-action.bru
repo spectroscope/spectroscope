@@ -1,0 +1,19 @@
+meta {
+  name: one browser action
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/browser-wire/action/{{actionId}}
+  body: none
+  auth: none
+}
+
+docs {
+  One action's two recorded lines, parsed: {call, result}, with result null while the call is still open. The scan stops as soon as both are found. 400 for a cid that is not UUID-shaped; 404 for a foreign caller, a malformed id, a missing sidecar or an unknown action.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

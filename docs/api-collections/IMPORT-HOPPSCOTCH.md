@@ -28,7 +28,9 @@ add the entries below as its variables, and select it:
   "imageFile": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png",
   "transcriptPath": "-Users-you-project/session.jsonl",
   "workspaceFilePath": "README.md",
-  "scaffoldDir": "/tmp/spectro-scaffold"
+  "scaffoldDir": "/tmp/spectro-scaffold",
+  "exchangeId": "1f2e3d4c-5b6a-4789-9abc-def012345678",
+  "actionId": "0a1b2c3d-4e5f-4671-8899-aabbccddeeff"
 }
 ```
 

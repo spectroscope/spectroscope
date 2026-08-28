@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 59,
+    "endpointCount": 73,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -131,6 +131,16 @@
       "key": "scaffoldDir",
       "value": "/tmp/spectro-scaffold",
       "note": "An existing target folder for POST /api/bundles/{id}/scaffold."
+    },
+    {
+      "key": "exchangeId",
+      "value": "1f2e3d4c-5b6a-4789-9abc-def012345678",
+      "note": "An LLM exchange id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/llm-wire/index."
+    },
+    {
+      "key": "actionId",
+      "value": "0a1b2c3d-4e5f-4671-8899-aabbccddeeff",
+      "note": "A browser action id, UUID shape as the recorder mints it. Take a real one from GET /api/sessions/{id}/browser-wire/index."
     }
   ],
   "areas": [
@@ -213,6 +223,16 @@
       "id": "starter-bundles",
       "name": "starter bundles",
       "description": "The starter-bundle catalog and scaffolding a bundle into a folder."
+    },
+    {
+      "id": "wire-records",
+      "name": "wire records",
+      "description": "The verbatim sidecar records beside a session: the LLM exchanges and the browser actions, each served whole, as a bodiless index, and as one item's pair of lines."
+    },
+    {
+      "id": "browser",
+      "name": "browser",
+      "description": "The per-session browser pane: whether one is attached and where the web UI's segment places it."
     }
   ],
   "endpoints": [
@@ -282,6 +302,19 @@
       "body": null
     },
     {
+      "id": "sessions-live",
+      "method": "GET",
+      "path": "/api/sessions/live",
+      "area": "sessions",
+      "name": "live sessions",
+      "description": "Which sessions are live on this server right now: one row per live session ({id, running, since}), oldest claim first. The polled floor under the live_sessions socket push — an empty list is a fact, not an error.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [],
+      "body": null
+    },
+    {
       "id": "sessions-events",
       "method": "GET",
       "path": "/api/sessions/{id}/events",
@@ -331,6 +364,122 @@
         {
           "name": "id",
           "variable": "sessionId"
+        }
+      ],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "llm-wire-download",
+      "method": "GET",
+      "path": "/api/sessions/{id}/llm-wire",
+      "area": "wire-records",
+      "name": "LLM wire record (download)",
+      "description": "The whole llm-wire sidecar (~/.spectro/llm-wire) verbatim, as an NDJSON download — the wire-record twin of the session export, carrying full prompts and responses. 404 for a foreign caller, a malformed id or a session without a wire record.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        }
+      ],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "llm-wire-index",
+      "method": "GET",
+      "path": "/api/sessions/{id}/llm-wire/index",
+      "area": "wire-records",
+      "name": "LLM wire index",
+      "description": "The bodiless exchange ledger: one object per exchange in file order, request and response paired by xid while streaming the file — bodies are counted, never returned. A request still waiting for its response reports status null. 404 for a foreign caller, a malformed id or a session without a wire record.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        }
+      ],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "llm-wire-exchange",
+      "method": "GET",
+      "path": "/api/sessions/{id}/llm-wire/exchange/{xid}",
+      "area": "wire-records",
+      "name": "one LLM exchange",
+      "description": "One exchange's two recorded lines, parsed: {request, response}, with response null while the exchange is open. The scan stops as soon as both lines are found. 404 for a foreign caller, a malformed id or xid, a missing sidecar or an unknown exchange.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        },
+        {
+          "name": "xid",
+          "variable": "exchangeId"
+        }
+      ],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "browser-wire-download",
+      "method": "GET",
+      "path": "/api/sessions/{id}/browser-wire",
+      "area": "wire-records",
+      "name": "browser record (download)",
+      "description": "The whole browser-record sidecar (~/.spectro/browser-wire) verbatim, as an NDJSON download — every address the agent visited and every script it ran. 404 for a foreign caller, a malformed id or a session that never drove a browser.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        }
+      ],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "browser-wire-index",
+      "method": "GET",
+      "path": "/api/sessions/{id}/browser-wire/index",
+      "area": "wire-records",
+      "name": "browser record index",
+      "description": "The bodiless action ledger the replay view scrubs: one object per action in file order, call and result paired by cid while streaming the file — arguments and page text are never returned. 404 for a foreign caller, a malformed id or a session that never drove a browser.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        }
+      ],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "browser-wire-action",
+      "method": "GET",
+      "path": "/api/sessions/{id}/browser-wire/action/{cid}",
+      "area": "wire-records",
+      "name": "one browser action",
+      "description": "One action's two recorded lines, parsed: {call, result}, with result null while the call is still open. The scan stops as soon as both are found. 400 for a cid that is not UUID-shaped; 404 for a foreign caller, a malformed id, a missing sidecar or an unknown action.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        },
+        {
+          "name": "cid",
+          "variable": "actionId"
         }
       ],
       "query": [],
@@ -586,6 +735,46 @@
       "writes": false,
       "pathVars": [],
       "query": [],
+      "body": null
+    },
+    {
+      "id": "settings-allowlist",
+      "method": "GET",
+      "path": "/api/settings/allowlist",
+      "area": "settings",
+      "name": "auto-approve allowlist read-out",
+      "description": "The auto-approve allowlist READ OUT: schema and map version, the readable tier names, the entries per scope and the folded effective list — decided by the server's own gate so the page never re-decides. Writes go through PUT /api/settings/{scope} with an autoApprove array; there is deliberately no write endpoint here.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "session",
+          "required": false,
+          "example": "{{sessionId}}",
+          "note": "with it, the workspace scopes join the read-out"
+        }
+      ],
+      "body": null
+    },
+    {
+      "id": "settings-hooks",
+      "method": "GET",
+      "path": "/api/settings/hooks",
+      "area": "settings",
+      "name": "shell hooks read-out",
+      "description": "The configured shell hooks READ OUT: per scope and folded, each with the matcher and the timeout it will ACTUALLY run under, raw and resolved side by side. hooks is a whole-block field — the highest layer that sets it replaces every layer below; the read-out exists to carry that fact.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "session",
+          "required": false,
+          "example": "{{sessionId}}",
+          "note": "with it, the workspace scopes join the read-out"
+        }
+      ],
       "body": null
     },
     {
@@ -1120,6 +1309,27 @@
       "bodyNote": "GateAnswer(String callId, Boolean allow) — both required; allow is boxed so a missing verdict is 400, never a silent deny."
     },
     {
+      "id": "fleet-node-message",
+      "method": "POST",
+      "path": "/api/fleet/{node}/message",
+      "area": "fleet",
+      "name": "message a node",
+      "description": "Send the operator's words to a fleet node over the hub. 202 sent (best-effort, no ack), 400 blank text, 404 not local/no fleet/unknown node, 409 the node already left or announced no trigger (no run loop to fire). NOT idempotent — re-sending says it twice.",
+      "fence": "host+json",
+      "writes": true,
+      "pathVars": [
+        {
+          "name": "node",
+          "variable": "nodeId"
+        }
+      ],
+      "query": [],
+      "body": {
+        "text": "Please summarize your progress so far"
+      },
+      "bodyNote": "NodeMessage(String text) — required, must not be blank."
+    },
+    {
       "id": "fleet-spawn",
       "method": "POST",
       "path": "/api/fleet/nodes",
@@ -1139,6 +1349,48 @@
         "linger": false
       },
       "bodyNote": "SpawnRequest(String prompt, String context, String role, String id, boolean linger) — prompt+context required; context matches [A-Za-z0-9._-]; the node is FORCED readonly."
+    },
+    {
+      "id": "browser-status",
+      "method": "GET",
+      "path": "/api/browser/status",
+      "area": "browser",
+      "name": "browser pane status",
+      "description": "Whether a native browser pane is attached (desktop shell) and what THIS session's browser is showing: {attached, url}. url is null without a sessionId — a page that has not started a session has no browser and no address. On the web face attached:false is the honest answer, not an error.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "sessionId",
+          "required": false,
+          "example": "{{sessionId}}",
+          "note": "the session whose browser's address to answer"
+        }
+      ],
+      "body": null
+    },
+    {
+      "id": "browser-viewport",
+      "method": "POST",
+      "path": "/api/browser/viewport",
+      "area": "browser",
+      "name": "position the browser pane",
+      "description": "The rectangle the web UI's browser segment reserved, in window CSS pixels; the server forwards it down the shell's control channel to place the native pane. 204 either way — with no shell attached the report is accepted and dropped, so the page never stalls.",
+      "fence": "host+origin",
+      "writes": false,
+      "sideEffect": "Repositions (or hides) the native browser pane over the desktop window while a shell is attached.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "x": 320,
+        "y": 96,
+        "width": 900,
+        "height": 620,
+        "visible": true,
+        "sessionId": "{{sessionId}}"
+      },
+      "bodyNote": "Viewport(int x, int y, int width, int height, boolean visible, String sessionId) — sessionId names whose browser belongs in the rectangle; null/blank before a session exists."
     },
     {
       "id": "translate-engines",
@@ -1205,6 +1457,33 @@
       "writes": false,
       "bodyKind": "binary",
       "bodyNote": "Send the raw webm/opus recording as the request body (curl --data-binary @recording.webm). No JSON wrapper.",
+      "pathVars": [],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "stt-status",
+      "method": "GET",
+      "path": "/api/stt/status",
+      "area": "voice",
+      "name": "speech-to-text status",
+      "description": "The live state of speech-to-text, probed on every call: the pinned whisper model (presence, bytes), the whisper-cli binary with a per-platform install hint (a sentence, never a button), download progress, the configured provider and language, the route a recording would take right now and whether that route can run (speechWorks).",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "stt-model-download",
+      "method": "POST",
+      "path": "/api/stt/model/download",
+      "area": "voice",
+      "name": "start the STT model download",
+      "description": "Fetch the sha256-pinned whisper model (ggml-small.bin) into ~/.spectro/models; the digest is verified before the file is put in place, so a half or wrong download never becomes a usable-looking one. Idempotent start; answers the same status object as GET /api/stt/status.",
+      "fence": "host+origin",
+      "writes": true,
+      "caution": "Downloads ~488 MB — do not include this in an automated replay.",
       "pathVars": [],
       "query": [],
       "body": null
