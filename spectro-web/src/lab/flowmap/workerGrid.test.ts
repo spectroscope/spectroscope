@@ -7,6 +7,7 @@ import {
   SEATS_MAX_EXPANDED,
   drawnCount,
   foldSeatPool,
+  rowsFor,
   seatGrid,
   seatOf,
   workerChip,
@@ -124,6 +125,33 @@ describe("workerGrid", () => {
       ]);
       expect(p.seat).toEqual({ w1: 0 });
       expect(p.live).toBe(1);
+    });
+  });
+
+  // Card 292, C2: expanded rows derive from the seat count and the pane's
+  // aspect, so the grid fills the space it has instead of stacking four deep
+  // into a world twice as tall as the pane.
+  describe("rowsFor", () => {
+    it("a 16:9 pane spreads the grid wide instead of four deep", () => {
+      // Measured against the world model: at aspect 16/9 four seats fit best
+      // as 2x2 (fit 0.525 on a 1600x900 pane) — four deep gave 0.356.
+      expect(rowsFor(4, 16 / 9)).toBe(2);
+      expect(rowsFor(8, 16 / 9)).toBe(3);
+      expect(rowsFor(1, 16 / 9)).toBe(1);
+    });
+
+    it("a tall pane stacks deeper than a wide one", () => {
+      expect(rowsFor(8, 0.6)).toBeGreaterThan(rowsFor(8, 16 / 9));
+    });
+
+    it("with no measurement it falls back to today's constant — the hidden-pane trap", () => {
+      // A hidden pane delivers no frames and no ResizeObserver: no aspect ever
+      // arrives, and nothing may break headless or in tests.
+      expect(rowsFor(8, null)).toBe(SEAT_ROWS_EXPANDED);
+      expect(rowsFor(8, undefined)).toBe(SEAT_ROWS_EXPANDED);
+      expect(rowsFor(8, 0)).toBe(SEAT_ROWS_EXPANDED);
+      expect(rowsFor(8, Number.NaN)).toBe(SEAT_ROWS_EXPANDED);
+      expect(rowsFor(0, 16 / 9)).toBe(SEAT_ROWS_EXPANDED);
     });
   });
 

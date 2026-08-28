@@ -13,9 +13,9 @@ import { imageUrl } from "./imageUrl";
 import { stationUsers } from "./stationUsers";
 import {
   SEAT_ROWS_COMPACT,
-  SEAT_ROWS_EXPANDED,
   SEATS_MAX_COMPACT,
   SEATS_MAX_EXPANDED,
+  rowsFor,
   seatGrid,
   seatOf,
   type SeatPool,
@@ -559,6 +559,11 @@ export function sceneToFlow(
      *  and an ended child yields its seat to a later one. Without it the
      *  legacy lifetime seating stands — the edu sim has no event prefix. */
     pool?: SeatPool;
+    /** The pane's width/height, measured by FlowMap (card 292): expanded rows
+     *  derive from it so the grid fills the space it has. A hidden pane never
+     *  measures — absent, the constant row count stands and nothing breaks
+     *  headless or in tests. */
+    paneAspect?: number | null;
   },
 ): FlowResult {
   const L = opts.local ? LAYOUTS.local : LAYOUTS.remote;
@@ -580,7 +585,6 @@ export function sceneToFlow(
   // them. Seats are a grid since card 287 — rows first, columns as needed, the
   // seat of worker i fixed by i alone so a card never moves once it is drawn.
   const isExpanded = !declutter && opts.expanded === true;
-  const seatRows = isExpanded ? SEAT_ROWS_EXPANDED : SEAT_ROWS_COMPACT;
   const seatCeiling = isExpanded ? SEATS_MAX_EXPANDED : SEATS_MAX_COMPACT;
   // With a pool (card 292) the map draws each seat's CURRENT occupant: an
   // ended child keeps its seat only until a later child takes it, and the grid
@@ -596,6 +600,9 @@ export function sceneToFlow(
       : scene.subagents.slice(0, seatCeiling);
   const seatsInUse = pool !== undefined ? Math.min(pool.occupant.length, seatCeiling) : subsOnMap.length;
   const slotCount = Math.min(seatCeiling, Math.max(seatsInUse, opts.subSlots ?? seatsInUse));
+  // Expanded rows follow the seats in use and the measured pane (card 292);
+  // with no measurement the constant stands. Compact keeps its three rows.
+  const seatRows = isExpanded ? rowsFor(slotCount, opts.paneAspect) : SEAT_ROWS_COMPACT;
   const grid = seatGrid(slotCount, seatRows);
   let subColPitch = COMPACT_SUB_W + SUB_MIN_GAP;
   /** Expanded only: the band width derived from the widened stations. */

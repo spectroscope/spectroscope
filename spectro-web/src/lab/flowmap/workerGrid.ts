@@ -118,6 +118,53 @@ export function foldSeatPool(events: readonly RunEvent[]): SeatPool {
   return { seat, occupant: [...occupant], live: alive.size, total: Object.keys(seat).length };
 }
 
+// ---------------------------------------------------------------------------
+// Row derivation (card 292, C2). Four rows was a best-fit trade struck before
+// anything measured the pane; measured, it was a cliff: from N=4 the expanded
+// world saturated at 2530 tall against a ~900 pane, the fit froze at 0.356,
+// and every worker card painted 145 device px wide with its 11px meta line at
+// ~2 device px. Rows now derive from the seat count and the pane's aspect so
+// the grid fills the space it has.
+//
+// The world model below is MEASURED off sceneToFlow's own expanded output
+// (vitest probe, 2026-08-28): with no worker column the world is 2110 wide
+// and floors at 1426 tall; each grid column adds 468 (subagent envelope 408 +
+// rail gap 60); r rows bottom out at 50 + 620·r. The numbers live here rather
+// than being imported because sceneToFlow imports this module — and the cliff
+// test in sceneToFlow.test.ts re-measures the real output, so drift between
+// model and layout surfaces as a failing threshold, not as a silent lie.
+// ---------------------------------------------------------------------------
+const WORLD = { fixedW: 2110, colW: 468, floorH: 1426, rowBase: 50, rowH: 620 };
+
+/**
+ * The row count whose grid fits the pane biggest: for each candidate the model
+ * predicts the world extent, and the candidate with the best fit-zoom wins
+ * (ties go to the fewest rows). Pure and deterministic over (seats, aspect).
+ *
+ * @param seats seats in use — the pool's peak concurrency, ceiling-capped
+ * @param aspect pane width / height, or null/undefined when never measured —
+ *   a hidden pane delivers no frames and no ResizeObserver, so no measurement
+ *   ever arrives; the fallback is the constant the map always used.
+ */
+export function rowsFor(seats: number, aspect: number | null | undefined): number {
+  if (seats <= 0 || aspect == null || !Number.isFinite(aspect) || aspect <= 0) {
+    return SEAT_ROWS_EXPANDED;
+  }
+  let best = SEAT_ROWS_EXPANDED;
+  let bestFit = -1;
+  for (let r = 1; r <= seats; r++) {
+    const cols = Math.ceil(seats / r);
+    const w = WORLD.fixedW + cols * WORLD.colW;
+    const h = Math.max(WORLD.floorH, WORLD.rowBase + r * WORLD.rowH);
+    const fit = Math.min(aspect / w, 1 / h);
+    if (fit > bestFit) {
+      bestFit = fit;
+      best = r;
+    }
+  }
+  return best;
+}
+
 export function seatOf(i: number, rows: number): { row: number; col: number } {
   return { row: i % rows, col: Math.floor(i / rows) };
 }
