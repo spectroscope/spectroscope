@@ -19,9 +19,9 @@
 // for byte (pinned in the test file).
 
 import type { RunEvent } from "../events";
-import { detectAndLoad, type ImportSource } from "./detect";
+import { detectAndLoad, type ImportKind, type ImportSource } from "./detect";
 import { claudeCodeWithOrigin } from "./claudeCode";
-import { readSubagentTranscript } from "./subagentFile";
+import { readSubagentTranscript, type SubagentTranscript } from "./subagentFile";
 
 /** One child's two files, already read to text. The meta arrives as raw text
  *  because reading it is this module's job — a caller that parsed it would
@@ -44,6 +44,12 @@ export interface ImportedRunSummary {
 
 export interface ClaudeCodeRunImport extends ImportedRunSummary {
   events: RunEvent[];
+  /** The SESSION file's own detection, so the dialog hands the result to the
+   *  same onLoad a single pick uses. */
+  kind: ImportKind;
+  /** What the session file said about itself when it was one agent's
+   *  transcript (card 152), untouched by the merge. */
+  subagent?: SubagentTranscript;
   /** The SESSION file's lines. A frame merged in from a sidecar carries
    *  origin -1 — "not from this file", the same word the importer uses for
    *  frames it built itself — because pointing it at a line of the session
@@ -232,6 +238,8 @@ export function importClaudeCodeRun(input: {
 
   return {
     events,
+    kind: session.kind,
+    ...(session.subagent !== undefined ? { subagent: session.subagent } : {}),
     source: { lines: session.source.lines, origin },
     workspace,
     childrenMerged: mergedIds.length,

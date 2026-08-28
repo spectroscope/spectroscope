@@ -182,6 +182,10 @@ describe("importClaudeCodeRun", () => {
     const lone = detectAndLoad(SESSION);
     const merged = importClaudeCodeRun({ sessionText: SESSION, sidecars: [] });
     expect(JSON.stringify(merged.events)).toBe(JSON.stringify(lone.events));
+    // The session file's own detection travels through: the dialog hands the
+    // result to the same onLoad a single pick uses, kind and all.
+    expect(merged.kind).toBe(lone.kind);
+    expect(merged.subagent).toBe(lone.subagent);
     expect([...merged.source.origin]).toEqual([...lone.source.origin]);
     expect(merged.source.lines).toEqual(lone.source.lines);
   });

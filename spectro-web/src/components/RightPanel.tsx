@@ -131,6 +131,7 @@ export function RightPanel({
   model,
   thinking,
   workspace,
+  recordedCwd = null,
   onPickFolder,
   canPickFolder,
   fsRefreshSignal,
@@ -150,6 +151,9 @@ export function RightPanel({
   model?: string;
   thinking: boolean;
   workspace: WorkspaceInfo | null;
+  /** The cwd an imported run recorded (card 291) — the Files panel shows it,
+   *  labelled as recorded, where it would otherwise promise a first run. */
+  recordedCwd?: string | null;
   /** Opens the native folder picker (server-side dialog) for THIS session. */
   onPickFolder?: () => void;
   /** False once the agent ran — the workspace is baked in then. */
@@ -288,6 +292,7 @@ export function RightPanel({
         return (
           <WorkspaceTab
             workspace={workspace}
+            recordedCwd={recordedCwd}
             onPickFolder={onPickFolder}
             canPickFolder={canPickFolder}
             refreshSignal={fsRefreshSignal}

@@ -17,6 +17,12 @@ import type { ChangeEvent } from "react";
 import type { RunEvent } from "../events";
 import type { ImportSource } from "../import/detect";
 import { detectAndLoad } from "../import/detect";
+import {
+  groupPickedFiles,
+  importClaudeCodeRun,
+  type ImportedRunSummary,
+  type SidecarText,
+} from "../import/claudeCodeRun";
 import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -52,6 +58,10 @@ export function ImportDialog(props: {
      *  store path has agents beside it to look for (card 177); a pasted body
      *  and a picked file have no address, and say so by carrying none. */
     storePath?: string,
+    /** What a RUN import measured (card 291): a session picked together with
+     *  its subagents/ set. Absent for every single-file import, which is what
+     *  keeps that path exactly as it was. */
+    run?: ImportedRunSummary,
   ) => void;
   onClose: () => void;
 }) {
@@ -66,6 +76,7 @@ export function ImportDialog(props: {
   const [filter, setFilter] = useState<FactsFilter>(emptyFilter());
   const lang = useLang();
   const fileRef = useRef<HTMLInputElement>(null);
+  const dirRef = useRef<HTMLInputElement>(null);
   const { request, factsFor } = useTranscriptFacts();
 
   useEffect(() => {
@@ -246,15 +257,61 @@ export function ImportDialog(props: {
   };
 
   const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const list = Array.from(e.target.files ?? []);
+    // Same selection twice must fire twice: a file input keeps its value.
+    e.target.value = "";
+    if (list.length === 0) return;
     setError(null);
-    // A rejected read (ejected volume, permission, NotReadableError) used to
-    // show the user nothing at all — the dialog simply sat there.
-    void file
-      .text()
-      .then((raw) => load(raw, file.name))
-      .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
+    const group = groupPickedFiles(
+      list.map((f) => ({
+        name: f.name,
+        relativePath: (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? "",
+      })),
+    );
+    if (group.kind === "none") {
+      setError(t(lang, "imp.err.noSession"));
+      return;
+    }
+    if (group.kind === "single") {
+      // ONE file takes today's path byte for byte (card 291 pins the
+      // grouping; the read-and-load below is untouched card-152 territory).
+      // A rejected read (ejected volume, permission, NotReadableError) used
+      // to show the user nothing at all — the dialog simply sat there.
+      const file = list[group.session];
+      void file
+        .text()
+        .then((raw) => load(raw, file.name))
+        .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
+      return;
+    }
+    // A run: the session stream plus its sidecars, merged by the coordinator.
+    // A sidecar file that cannot be read degrades to an empty text, which the
+    // coordinator skips and COUNTS — the banner then says so, instead of the
+    // dialog throwing the whole session away over one unreadable child.
+    const session = list[group.session];
+    const readRun = async (): Promise<void> => {
+      const sessionText = await session.text();
+      const sidecars: SidecarText[] = [];
+      for (const s of group.sidecars) {
+        sidecars.push({
+          jsonlText: await list[s.jsonl].text().catch(() => ""),
+          metaJson: s.meta === null ? "" : await list[s.meta].text().catch(() => ""),
+        });
+      }
+      const run = importClaudeCodeRun({ sessionText, sidecars });
+      setNote(run.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+      props.onLoad(run.events, session.name, run.kind, run.source, run.subagent, undefined, {
+        workspace: run.workspace,
+        childrenMerged: run.childrenMerged,
+        childrenSkipped: run.childrenSkipped,
+      });
+    };
+    void readRun().catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+      // The blind spot the ring exists for: the whole import path runs in the
+      // browser and reaches no server, so nothing else records it.
+      reportBrowserError("import", err);
+    });
   };
 
   const now = Date.now();
@@ -473,9 +530,21 @@ export function ImportDialog(props: {
           {error !== null && <p className="import-error">{error}</p>}
           {note !== null && <p className="import-note">{note}</p>}
           <div className="modal-actions">
-            <input ref={fileRef} type="file" accept=".jsonl,.json,.txt" hidden onChange={onFile} />
+            <input ref={fileRef} type="file" accept=".jsonl,.json,.txt" multiple hidden onChange={onFile} />
+            {/* webkitdirectory is not in React's input typing; the spread puts
+                the attribute on the element without claiming it is. */}
+            <input
+              ref={dirRef}
+              type="file"
+              hidden
+              onChange={onFile}
+              {...({ webkitdirectory: "" } as Record<string, string>)}
+            />
             <button type="button" className="ghost" onClick={() => fileRef.current?.click()}>
               {t(lang, "imp.pick")}
+            </button>
+            <button type="button" className="ghost" onClick={() => dirRef.current?.click()}>
+              {t(lang, "imp.pickFolder")}
             </button>
             <span className="import-spacer" />
             <button type="button" className="ghost" onClick={props.onClose}>
