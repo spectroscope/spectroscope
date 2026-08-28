@@ -25,7 +25,7 @@ import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
 import { deriveDetail, sceneToFlow } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
-import { workerChip } from "./flowmap/workerGrid";
+import { foldSeatPool, workerChip } from "./flowmap/workerGrid";
 import { RailBoxes } from "./flowmap/railBoxes";
 import { panMove, panStart, type PanDrag } from "./flowmap/panDrag";
 import { ExpandAllContext } from "./flowmap/expandContext";
@@ -66,6 +66,9 @@ export function FlowMap(props: {
 
   const expandAll = useContext(ExpandAllContext);
   const detail = useMemo(() => deriveDetail(applied), [applied]);
+  // The seat pool (card 292): folded over the SAME applied prefix as the scene,
+  // so scrubbing re-folds deterministically and seats say what was concurrent.
+  const pool = useMemo(() => foldSeatPool(applied), [applied]);
   const flow = useMemo(
     () =>
       sceneToFlow(scene, detail, {
@@ -75,8 +78,9 @@ export function FlowMap(props: {
         systemPrompt,
         lang,
         expanded: expandAll,
+        pool,
       }),
-    [scene, detail, local, provider, model, systemPrompt, lang, expandAll],
+    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -232,11 +236,10 @@ export function FlowMap(props: {
 
           <Panel position="top-right">
             {(() => {
-              // The honest chip (card 287): quiet while every spawned worker is
-              // drawn, loud about the gap past the seating ceiling. Data, not
-              // chrome — the text stays untranslated like other wire-derived text.
+              // The honest chip (card 292): the live count at the cursor and
+              // the run total, loud about a gap past the seating ceiling.
               const drawn = flow.nodes.filter((n) => n.type === "subagent").length;
-              const chip = workerChip(scene.subagents.length, drawn);
+              const chip = workerChip(pool, drawn, lang);
               return chip === null ? null : (
                 <div className={`pf-count-chip${chip.gap ? " pf-count-chip--gap" : ""}`}>{chip.text}</div>
               );

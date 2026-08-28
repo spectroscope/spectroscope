@@ -127,9 +127,36 @@ describe("workerGrid", () => {
     });
   });
 
-  it("the chip confesses a gap and is quiet when all are drawn", () => {
-    expect(workerChip(0, 0)).toBeNull();
-    expect(workerChip(8, 8)).toEqual({ text: "8 spawned · all drawn", gap: false });
-    expect(workerChip(14, 12)).toEqual({ text: "14 spawned · 12 drawn", gap: true });
+  // Card 292: the chip states the LIVE count at the cursor and the run total —
+  // under the pool, "spawned" alone would hide that most of them already ended.
+  // Pinned on the exact values in both locales, never on prose fragments.
+  it("the chip states live at the cursor and the total over the run, EN and DE", () => {
+    const events: RunEvent[] = [start];
+    for (let i = 0; i < 9; i++) {
+      events.push(spawn(`w${i}`));
+      if (i >= 2) events.push(result(`w${i - 2}`));
+    }
+    const p = foldSeatPool(events); // live 2, total 9, seats 3
+    expect(workerChip(p, p.occupant.length, "en")).toEqual({
+      text: "2 active · 9 over the run",
+      gap: false,
+    });
+    expect(workerChip(p, p.occupant.length, "de")).toEqual({
+      text: "2 aktiv · 9 im Lauf",
+      gap: false,
+    });
+  });
+
+  it("the chip confesses a gap with the drawn number, and is silent with no children", () => {
+    const p = foldSeatPool([start, ...Array.from({ length: 14 }, (_, i) => spawn(`w${i}`))]);
+    expect(workerChip(p, 12, "en")).toEqual({
+      text: "14 active · 14 over the run · 12 drawn",
+      gap: true,
+    });
+    expect(workerChip(p, 12, "de")).toEqual({
+      text: "14 aktiv · 14 im Lauf · 12 gezeichnet",
+      gap: true,
+    });
+    expect(workerChip(foldSeatPool([start]), 0, "en")).toBeNull();
   });
 });

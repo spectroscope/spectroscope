@@ -17,6 +17,7 @@
 // chip confesses the gap instead — see workerChip.
 
 import type { RunEvent } from "../../events";
+import { t, type Lang } from "../../i18n/i18n";
 
 export const SEAT_ROWS_EXPANDED = 4;
 export const SEAT_ROWS_COMPACT = 3;
@@ -130,10 +131,20 @@ export function drawnCount(spawned: number, expanded: boolean): number {
   return Math.min(spawned, expanded ? SEATS_MAX_EXPANDED : SEATS_MAX_COMPACT);
 }
 
-/** The honest chip: quiet while everything is drawn, loud about a gap. */
-export function workerChip(spawned: number, drawn: number): { text: string; gap: boolean } | null {
-  if (spawned <= 0) return null;
-  return drawn < spawned
-    ? { text: `${spawned} spawned · ${drawn} drawn`, gap: true }
-    : { text: `${spawned} spawned · all drawn`, gap: false };
+/**
+ * The honest chip (card 292): it states the LIVE count at the cursor and the
+ * total over the run — under the pool, a bare "spawned" would hide that most
+ * of those children already ended. Loud about a gap: when the ceiling kept
+ * seats undrawn, the drawn number joins the confession.
+ */
+export function workerChip(
+  pool: SeatPool,
+  drawn: number,
+  lang: Lang,
+): { text: string; gap: boolean } | null {
+  if (pool.total <= 0) return null;
+  const vars = { live: pool.live, total: pool.total, drawn };
+  return drawn < pool.occupant.length
+    ? { text: t(lang, "map.chip.workersGap", vars), gap: true }
+    : { text: t(lang, "map.chip.workers", vars), gap: false };
 }
