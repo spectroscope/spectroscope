@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../../events";
 import { advanceScene, initialScene } from "../labScene";
+import { foldSeatPool } from "./workerGrid";
 import { t } from "../../i18n/i18n";
 import {
   activity,
@@ -528,6 +529,73 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
       expanded: true,
     });
     expect(flow.nodes.filter((n) => n.type === "subagent")).toHaveLength(12);
+  });
+});
+
+// Card 292, C1: the map draws the POOL's seating, not the lifetime index. A
+// run whose children came and went shows the peak concurrency, and a later
+// child sits down on a freed seat — in the exact position the ended child had.
+describe("sceneToFlow — the seat pool on the map (card 292)", () => {
+  const T = 1;
+  const start: RunEvent = {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "go",
+    provider: "anthropic",
+    ts: T,
+  };
+  const spawnE = (id: string): RunEvent =>
+    ({ type: "agent_spawn", agentId: id, parentId: "main", task: `t-${id}`, ts: T }) as RunEvent;
+  const resultE = (id: string): RunEvent =>
+    ({ type: "agent_message", from: id, to: "main", role: "result", state: "completed", text: "", ts: T }) as RunEvent;
+  const flowOf = (events: RunEvent[], expanded: boolean) => {
+    const scene = events.reduce(advanceScene, initialScene());
+    return sceneToFlow(scene, deriveDetail(events), {
+      local: false,
+      provider: "anthropic",
+      model: "m",
+      expanded,
+      pool: foldSeatPool(events),
+    });
+  };
+
+  it("a later child reuses a freed seat — same position, and the ended child yields it", () => {
+    const before = flowOf([start, spawnE("a"), spawnE("b")], true);
+    const after = flowOf([start, spawnE("a"), spawnE("b"), resultE("a"), spawnE("c")], true);
+    const at = (flow: { nodes: { id: string; position: { x: number; y: number } }[] }, id: string) =>
+      flow.nodes.find((n) => n.id === id)?.position;
+    // c sits exactly where a sat; a's card yielded the seat.
+    expect(at(after, "sub-c")).toEqual(at(before, "sub-a"));
+    expect(at(after, "sub-a")).toBeUndefined();
+    // b never ended: its seat is untouched by the churn around it.
+    expect(at(after, "sub-b")).toEqual(at(before, "sub-b"));
+  });
+
+  it("nine sequential children draw the peak, not the lifetime — the grid stays small", () => {
+    const events: RunEvent[] = [start];
+    for (let i = 0; i < 9; i++) {
+      events.push(spawnE(`w${i}`));
+      if (i >= 2) events.push(resultE(`w${i - 2}`));
+    }
+    const flow = flowOf(events, true);
+    const subs = flow.nodes.filter((n) => n.type === "subagent");
+    // Peak concurrency 3 → three seats on the map, not nine.
+    expect(subs).toHaveLength(3);
+    expect(new Set(subs.map((n) => `${n.position.x}/${n.position.y}`)).size).toBe(3);
+  });
+
+  it("without a pool the legacy lifetime seating is untouched (edu / sim path)", () => {
+    const events = [start, spawnE("a"), spawnE("b"), resultE("a"), spawnE("c")];
+    const scene = events.reduce(advanceScene, initialScene());
+    const flow = sceneToFlow(scene, deriveDetail(events), {
+      local: false,
+      provider: "anthropic",
+      model: "m",
+      expanded: true,
+    });
+    // all three drawn, lifetime order — today's behaviour, byte for byte.
+    expect(flow.nodes.filter((n) => n.type === "subagent")).toHaveLength(3);
   });
 });
 

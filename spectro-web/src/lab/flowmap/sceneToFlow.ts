@@ -18,6 +18,7 @@ import {
   SEATS_MAX_EXPANDED,
   seatGrid,
   seatOf,
+  type SeatPool,
 } from "./workerGrid";
 import { osBandWidth, stationSeats } from "./stationSeats";
 
@@ -553,6 +554,11 @@ export function sceneToFlow(
      *  the worker column and the right-hand world, downwards for the OS band and
      *  the outside stations. Compact keeps the hand-authored seats untouched. */
     expanded?: boolean;
+    /** The seat pool folded over the SAME applied prefix as the scene (card
+     *  292): seats say what was concurrent, each seat shows its last assignee,
+     *  and an ended child yields its seat to a later one. Without it the
+     *  legacy lifetime seating stands — the edu sim has no event prefix. */
+    pool?: SeatPool;
   },
 ): FlowResult {
   const L = opts.local ? LAYOUTS.local : LAYOUTS.remote;
@@ -576,8 +582,20 @@ export function sceneToFlow(
   const isExpanded = !declutter && opts.expanded === true;
   const seatRows = isExpanded ? SEAT_ROWS_EXPANDED : SEAT_ROWS_COMPACT;
   const seatCeiling = isExpanded ? SEATS_MAX_EXPANDED : SEATS_MAX_COMPACT;
-  const subsOnMap = scene.subagents.slice(0, seatCeiling);
-  const slotCount = Math.min(seatCeiling, Math.max(subsOnMap.length, opts.subSlots ?? subsOnMap.length));
+  // With a pool (card 292) the map draws each seat's CURRENT occupant: an
+  // ended child keeps its seat only until a later child takes it, and the grid
+  // is sized by the peak concurrency, not the lifetime count. Without a pool
+  // (the edu sim has no event prefix) the lifetime seating stands unchanged.
+  const pool = opts.pool;
+  const subsOnMap =
+    pool !== undefined
+      ? scene.subagents.filter((c) => {
+          const s = pool.seat[c.id];
+          return s !== undefined && s < seatCeiling && pool.occupant[s] === c.id;
+        })
+      : scene.subagents.slice(0, seatCeiling);
+  const seatsInUse = pool !== undefined ? Math.min(pool.occupant.length, seatCeiling) : subsOnMap.length;
+  const slotCount = Math.min(seatCeiling, Math.max(seatsInUse, opts.subSlots ?? seatsInUse));
   const grid = seatGrid(slotCount, seatRows);
   let subColPitch = COMPACT_SUB_W + SUB_MIN_GAP;
   /** Expanded only: the band width derived from the widened stations. */
@@ -839,7 +857,9 @@ export function sceneToFlow(
   const subYs = subagentYs(grid.rows, subBaseL.y, subBandBottom, subGapL, subCardH);
   subs.forEach((c, i) => {
     const id = `sub-${c.id}`;
-    const seat = seatOf(i, seatRows);
+    // The pool's seat index survives the churn around a child; the lifetime
+    // index is the poolless fallback.
+    const seat = seatOf(pool?.seat[c.id] ?? i, seatRows);
     posL[id] = {
       x: (declutter ? subBaseX : subBaseL.x) + seat.col * subColPitch,
       y: subYs[seat.row] ?? subBaseL.y,
