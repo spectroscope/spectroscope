@@ -27,13 +27,24 @@ import { useLang } from "../state/lang";
 /** The card-view choice survives tab switches and reloads (TextView pattern). */
 const VIEW_STORAGE_KEY = "spectroscope.lab.view";
 /** The lens choice persists the same way (card 293). */
-const LENS_STORAGE_KEY = "spectroscope.lab.lens";
+export const LENS_STORAGE_KEY = "spectroscope.lab.lens";
 
 function stored(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
     return null;
+  }
+}
+
+/** The write half of the lens persistence — `pickLens` routes through this,
+ *  and `lensFrom` (WorkflowLens) is the read half. Exported so the gate can
+ *  bite the key and the round-trip without a DOM to click in. */
+export function persistLens(next: LabLens): void {
+  try {
+    localStorage.setItem(LENS_STORAGE_KEY, next);
+  } catch {
+    // private mode: the toggle simply does not stick
   }
 }
 
@@ -101,11 +112,7 @@ export function LabView(props: {
   const [lens, setLens] = useState<LabLens>(() => lensFrom(stored(LENS_STORAGE_KEY)));
   const pickLens = (next: LabLens): void => {
     setLens(next);
-    try {
-      localStorage.setItem(LENS_STORAGE_KEY, next);
-    } catch {
-      // private mode: the toggle simply does not stick
-    }
+    persistLens(next);
   };
 
   // Flow = paced auto-play: a timer calls step() every intervalMs (fine/coarse
@@ -246,45 +253,53 @@ export function LabView(props: {
                   {t(lang, "lab.lensWorkflow")}
                 </button>
               </div>
-              {/* The labelled master, trace-parity (the trace's "hauptschalter"
-                  precedent): its buttons reuse the shared face labels. */}
-              <div className="lab-seg lab-face-seg" role="group" aria-label={t(lang, "lab.faceAria")}>
-                <span className="lab-seg-label mono" title={t(lang, "lab.faceHint")}>
-                  {t(lang, "lab.face")}
-                </span>
-                {LAB_FACES.map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    className={labFace.face === f ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
-                    aria-pressed={labFace.face === f}
-                    title={t(lang, `lab.faceTitle.${f}`)}
-                    onClick={() => setLabFace(f)}
-                  >
-                    {t(lang, `trace.mode.${f}`)}
-                  </button>
-                ))}
-              </div>
-              <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
-                <button
-                  type="button"
-                  className={!expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
-                  aria-pressed={!expanded}
-                  title={t(lang, "lab.viewCompactTitle")}
-                  onClick={() => pickView(false)}
-                >
-                  {t(lang, "lab.viewCompact")}
-                </button>
-                <button
-                  type="button"
-                  className={expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
-                  aria-pressed={expanded}
-                  title={t(lang, "lab.viewExpandedTitle")}
-                  onClick={() => pickView(true)}
-                >
-                  {t(lang, "lab.viewExpanded")}
-                </button>
-              </div>
+              {/* The face and compact/expanded segments only affect the
+                  machine lens, so they hide under the workflow lens — a
+                  control that does nothing is the worse default (card 293
+                  re-review). Drop the guard to bring them back. */}
+              {lens === "machine" && (
+                <>
+                  {/* The labelled master, trace-parity (the trace's "hauptschalter"
+                      precedent): its buttons reuse the shared face labels. */}
+                  <div className="lab-seg lab-face-seg" role="group" aria-label={t(lang, "lab.faceAria")}>
+                    <span className="lab-seg-label mono" title={t(lang, "lab.faceHint")}>
+                      {t(lang, "lab.face")}
+                    </span>
+                    {LAB_FACES.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        className={labFace.face === f ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                        aria-pressed={labFace.face === f}
+                        title={t(lang, `lab.faceTitle.${f}`)}
+                        onClick={() => setLabFace(f)}
+                      >
+                        {t(lang, `trace.mode.${f}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
+                    <button
+                      type="button"
+                      className={!expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                      aria-pressed={!expanded}
+                      title={t(lang, "lab.viewCompactTitle")}
+                      onClick={() => pickView(false)}
+                    >
+                      {t(lang, "lab.viewCompact")}
+                    </button>
+                    <button
+                      type="button"
+                      className={expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                      aria-pressed={expanded}
+                      title={t(lang, "lab.viewExpandedTitle")}
+                      onClick={() => pickView(true)}
+                    >
+                      {t(lang, "lab.viewExpanded")}
+                    </button>
+                  </div>
+                </>
+              )}
             </>
           }
         >

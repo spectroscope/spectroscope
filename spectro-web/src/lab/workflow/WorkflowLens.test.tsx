@@ -68,7 +68,13 @@ describe("every edge in this lens is dashed", () => {
     const dashed = html.match(/stroke-dasharray/g) ?? [];
     expect(laid.edges.length).toBeGreaterThan(0);
     expect(dashed).toHaveLength(laid.edges.length);
-    expect(html).not.toContain('class="wf-arc" d=');
+    // One arc per routed edge, and each edge's OWN routed path is drawn.
+    // (Replaces a former `not.toContain('class="wf-arc" d=')`, which pinned
+    // JSX attribute order and was vacuously green — the re-review's finding.)
+    expect(html.match(/class="wf-arc"/g) ?? []).toHaveLength(laid.edges.length);
+    for (const edge of laid.edges) {
+      expect(html).toContain(`d="${edge.path}"`);
+    }
   });
 });
 
