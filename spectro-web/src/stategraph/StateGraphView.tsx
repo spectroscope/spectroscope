@@ -14,17 +14,10 @@
 //   - absence is legible: "not recorded" and "was empty" are different claims
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ReactFlow,
-  Background,
-  Handle,
-  Position,
-  ViewportPortal,
-  useReactFlow,
-  type NodeProps,
-} from "@xyflow/react";
+import { ReactFlow, Background, Handle, Position, ViewportPortal, type NodeProps } from "@xyflow/react";
 import type { Node as FlowNode } from "@xyflow/react";
 import { layoutStateGraph, type PlacedNode, type StateGraphLayout } from "./layout";
+import { RefitOnLayout } from "../reactflow/RefitOnLayout";
 import { StateGraphExport } from "./StateGraphExport";
 import type { StateGraphViewState } from "./viewState";
 import {
@@ -97,18 +90,8 @@ function NodeCard({ data }: NodeProps) {
 
 const NODE_TYPES = { sgCard: NodeCard };
 
-/** Re-fits the viewport when the DRAWING changes shape — an orientation flip
- *  or a new run. React Flow's own fitView prop fires on mount only, so without
- *  this the flipped graph kept the old transform and sat small in a corner
- *  (seen live, not read). A child component because useReactFlow needs the
- *  provider ReactFlow itself creates. */
-function RefitOnLayout({ laid }: { laid: StateGraphLayout }) {
-  const { fitView } = useReactFlow();
-  useEffect(() => {
-    void fitView({ padding: 0.1 });
-  }, [laid, fitView]);
-  return null;
-}
+// RefitOnLayout moved to ../reactflow/RefitOnLayout when the workflow lens
+// became its second consumer (card 293) — same six lines, one address.
 
 /** The superstep of the visit the cursor stands in: the picked node's nearest
  *  lifecycle record at or before `upto` — or its FIRST visit while the cursor
@@ -542,6 +525,8 @@ export function CanvasOverlay({ laid, stats, started = false }: CanvasOverlayPro
         <line key={r.rank} className="sg-rankline" x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} />
       ))}
       {laid.edges.map((e) => {
+        // Stats stay keyed by the PAIR (that is what edgeStatsUpTo counts);
+        // the React key is the edge's own id, so parallel edges both render.
         const key = `${e.from}->${e.to}`;
         const walked = counts.has(key);
         const live = last === key;
@@ -550,7 +535,7 @@ export function CanvasOverlay({ laid, stats, started = false }: CanvasOverlayPro
         const taken = counts.get(key) ?? 0;
         const label = taken > 1 ? `×${taken}` : e.back ? "↺" : "";
         return (
-          <g key={key}>
+          <g key={e.id}>
             <path
               d={e.path}
               markerEnd={`url(#${marker})`}

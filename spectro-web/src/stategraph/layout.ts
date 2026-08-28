@@ -19,17 +19,25 @@ export interface TopologyNode {
 }
 
 /** One edge. `conditional` is drawn differently — it is a branch the compiler
- *  knew about, which may or may not have been taken. */
+ *  knew about, which may or may not have been taken. `spawn` is the workflow
+ *  lens's edge (card 293): reconstructed from the run's events, not declared
+ *  before it, and drawn dashed for exactly that reason. */
 export interface TopologyEdge {
   from: string;
   to: string;
-  kind: "direct" | "conditional";
+  kind: "direct" | "conditional" | "spawn";
 }
 
 export interface Topology {
   entry: string | null;
   nodes: TopologyNode[];
   edges: TopologyEdge[];
+  /** Optional rank override (card 293): a caller that KNOWS the ranks — the
+   *  workflow lens ranks by time overlap — hands them in, and the longest-path
+   *  ranking steps aside. A node the map does not name sits at rank 0.
+   *  Everything downstream (in-rank ordering, coordinates, routing, skip
+   *  lanes, the `__end__` last-column rule) works off the ranks unchanged. */
+  ranks?: ReadonlyMap<string, number>;
 }
 
 export interface PlacedNode {
@@ -45,9 +53,14 @@ export interface PlacedNode {
 }
 
 export interface RoutedEdge {
+  /** Unique per EDGE, not per pair: the pair string for the first edge between
+   *  a pair, `pair#2`, `pair#3`, … for parallel ones. The pair string used to
+   *  double as the React key, so a second edge between one pair silently
+   *  replaced the first in the drawing (card 293). Renderers key on THIS. */
+  id: string;
   from: string;
   to: string;
-  kind: "direct" | "conditional";
+  kind: "direct" | "conditional" | "spawn";
   /** True for an edge that closes a cycle. It keeps its direction. */
   back: boolean;
   /** True for a forward edge that skips ranks and had to fly over boxes. */
@@ -215,13 +228,19 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     indeg.set(e.to, indeg.get(e.to)! + 1);
   });
   const rank = new Map<string, number>(nodes.map((n) => [n.id, 0]));
-  const queue = nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    for (const to of dagOut.get(id)!) {
-      rank.set(to, Math.max(rank.get(to)!, rank.get(id)! + 1));
-      indeg.set(to, indeg.get(to)! - 1);
-      if (indeg.get(to) === 0) queue.push(to);
+  if (topo.ranks !== undefined) {
+    // The caller's ranks are authoritative — see Topology.ranks.
+    const given = topo.ranks;
+    nodes.forEach((n) => rank.set(n.id, Math.max(0, given.get(n.id) ?? 0)));
+  } else {
+    const queue = nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      for (const to of dagOut.get(id)!) {
+        rank.set(to, Math.max(rank.get(to)!, rank.get(id)! + 1));
+        indeg.set(to, indeg.get(to)! - 1);
+        if (indeg.get(to) === 0) queue.push(to);
+      }
     }
   }
 
@@ -385,11 +404,15 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   let skipIdx = 0;
   const gutter = Math.min(GUTTER, gapAlong - 10);
 
+  const pairSeen = new Map<string, number>();
   const routed: RoutedEdge[] = edges.map((e) => {
     const a = byId.get(e.from)!;
     const b = byId.get(e.to)!;
     const back = cycleEdge.has(e.i);
-    const base = { from: e.from, to: e.to, kind: e.kind, back };
+    const pair = `${e.from}->${e.to}`;
+    const nth = (pairSeen.get(pair) ?? 0) + 1;
+    pairSeen.set(pair, nth);
+    const base = { id: nth === 1 ? pair : `${pair}#${nth}`, from: e.from, to: e.to, kind: e.kind, back };
 
     // A lane never crosses the field: it steps sideways into a GUTTER (the
     // free strip between two rank columns, where no box can ever sit), runs

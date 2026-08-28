@@ -1,0 +1,118 @@
+/* The workflow lens (card 293). Every token below exists in tokens.css —
+ * an unknown custom property fails silently (the bus.css lesson), so no
+ * name here is invented. */
+
+.wf-lens {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.wf-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.wf-legend-words {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-chip {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.wf-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The small topology card — the layout's own 132×46 cell, not the machine
+ * view's worker envelope. State colours ride the border, never a fill:
+ * colour only on lines (brand rule). */
+.wf-node {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.wf-node--pending {
+  opacity: 0.45;
+}
+
+.wf-node--active {
+  border-color: var(--accent);
+}
+
+.wf-node--done {
+  border-color: var(--ok);
+}
+
+.wf-node--failed {
+  border-color: var(--error);
+}
+
+.wf-node-label {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.wf-node-meta {
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.wf-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The overlay SVG — the .sg-arcs contract, token for token: absolute and
+ * full-size over the viewport, arcs free to leave the box, and INERT to the
+ * pointer. Without pointer-events: none the SVG's default box would swallow
+ * pans and node clicks near the graph origin (found in review, card 293). */
+.wf-arcs {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.wf-arc {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+}
+
+.wf-ar-head {
+  fill: var(--border-strong);
+}
