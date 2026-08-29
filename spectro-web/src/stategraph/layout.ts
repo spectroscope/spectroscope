@@ -45,6 +45,16 @@ export interface Topology {
    *  that came out of a longest-path ranking. The workflow lens hands in the
    *  script's declared phases, which existed before the run did. */
   rankCaptions?: ReadonlyMap<number, RankCaption>;
+  /** Optional per-node height (card 302). A node that only NAMES something
+   *  fits the one cell every state-graph node has always had; a node that
+   *  HOLDS something does not — a workflow phase box lists its agents, and
+   *  five of them do not fit in 46 pixels. The producer states the height it
+   *  needs and the column is packed around it.
+   *
+   *  A topology that states none lays out byte for byte as before: with
+   *  uniform heights the packing below reduces to the fixed cell it replaced,
+   *  which is pinned rather than asserted (`nodeHeights.test.ts`). */
+  heights?: ReadonlyMap<string, number>;
 }
 
 /** What a rank is CALLED, when the caller knows. `detail` is the phase's own
@@ -338,18 +348,46 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   });
   if (!isFinite(minSlot)) minSlot = 0;
 
+  // Card 302: a column is PACKED, not indexed into fixed cells, so a node
+  // that states its own height can sit beside ones that did not. The packing
+  // is exact-equal to the old cell arithmetic when every height is NH:
+  //   old  across = MARGIN + (i - (L-1)/2 - minSlot) * (NH + gapCross)
+  //   new  across = AXIS - total/2 + offset(i),  AXIS = MARGIN - minSlot*(NH+gapCross) + NH/2
+  // and with uniform NH the two reduce to the same number, which is why
+  // adding this to a SHARED layout does not move the state graph's pictures.
+  // READ IN HORIZONTAL ONLY, and ignored outright in vertical rather than
+  // half-honoured. Vertical runs the ranks down the height axis, so a stated
+  // height would have to move the ALONG spacing too; reporting the tall box
+  // while spacing for the short one is the exact overlap this override exists
+  // to prevent. The one caller that states heights lays out horizontally.
+  const heightOf = (id: string): number => (horiz ? (topo.heights?.get(id) ?? NH) : NH);
+  const crossSize = horiz ? NH : NW;
+  const AXIS = MARGIN - minSlot * (crossSize + gapCross) + crossSize / 2;
+  /** Node id → its distance across the rank axis, packed within its layer. */
+  const across = new Map<string, number>();
+  layers.forEach((layer) => {
+    if (layer.length === 0) return;
+    const sizes = layer.map((id) => (horiz ? heightOf(id) : NW));
+    const total = sizes.reduce((a, b) => a + b, 0) + gapCross * (layer.length - 1);
+    let at = AXIS - total / 2;
+    layer.forEach((id, i) => {
+      across.set(id, at);
+      at += sizes[i] + gapCross;
+    });
+  });
+
   const placed: PlacedNode[] = nodes.map((n) => {
     const r = rank.get(n.id)!;
-    const s = slotOf.get(n.id)! - minSlot;
+    const a = across.get(n.id)!;
     return {
       id: n.id,
       label: n.label,
       rank: r,
       slot: slotOf.get(n.id)!,
-      x: MARGIN + (horiz ? r * (NW + gapAlong) : s * (NW + gapCross)),
-      y: MARGIN + (horiz ? s * (NH + gapCross) : r * (NH + gapAlong)),
+      x: horiz ? MARGIN + r * (NW + gapAlong) : a,
+      y: horiz ? a : MARGIN + r * (NH + gapAlong),
       w: NW,
-      h: NH,
+      h: horiz ? heightOf(n.id) : NH,
     };
   });
   const byId = new Map(placed.map((n) => [n.id, n]));
