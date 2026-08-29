@@ -340,6 +340,32 @@ describe("the per-box switch", () => {
     expect(loose.boxed).toBeUndefined();
   });
 
+  it("hands each member the SEAT its band gave it, because its type does not say", () => {
+    // The envelope check reads a card's seat off its type, and on an expanded
+    // map that type says 408x480 while a box thrown minimal seats 216x128. The
+    // seat therefore travels on the node — the same expression that seated the
+    // card, never a second one derived from the switch, because the direction
+    // a second one can disagree in is the invisible one: an envelope smaller
+    // than the seat reports nothing and hides the collisions that ARE there.
+    const flow = flowOf(EVENTS, { declared: DECL, expanded: true, boxExpanded: new Set([BOX]) });
+    const seatOf = (id: string) =>
+      (flow.nodes.find((n) => n.id === id)!.data as { boxSeat?: { w: number; h: number } }).boxSeat;
+    expect(seatOf("sub-a1")).toEqual(boxMemberSize(false));
+
+    const wide = flowOf(EVENTS, { declared: DECL, expanded: true });
+    const wideSeat = (
+      wide.nodes.find((n) => n.id === "sub-a1")!.data as {
+        boxSeat?: { w: number; h: number };
+      }
+    ).boxSeat;
+    expect(wideSeat).toEqual(boxMemberSize(true));
+
+    const loose = flowOf([...EVENTS, spawn("loner")], { declared: DECL }).nodes.find(
+      (n) => n.id === "sub-loner",
+    )!.data as { boxSeat?: unknown };
+    expect(loose.boxSeat).toBeUndefined();
+  });
+
   it("follows the GLOBAL switch when no per-box choice was made", () => {
     const flow = flowOf(EVENTS, { declared: DECL, expanded: true });
     const kid = flow.nodes.find((n) => n.id === "sub-a1")!;

@@ -421,13 +421,22 @@ export function seatCollisions(nodes: readonly SeatNode[]): string[] {
   return hits;
 }
 
-/** Cards that rendered taller than their envelope, worst first. */
+/**
+ * Cards that rendered taller than their envelope, worst first.
+ *
+ * CARD 306: `env` is the seat this ONE card was given where its type does not
+ * say — a member of a workflow box thrown minimal. `seatCollisions` was given
+ * that field and this arm was not, so a boxed member was judged against
+ * EXPANDED_CARD.subagent: it could grow to 479px inside a 128px band and the
+ * arm whose whole job is to say a card is drawing on its neighbour would have
+ * had nothing to say.
+ */
 export function oversizeCards(
-  measured: Iterable<{ id: string; type?: string; h: number }>,
+  measured: Iterable<{ id: string; type?: string; h: number; env?: { w: number; h: number } }>,
 ): { id: string; h: number; bound: number }[] {
   const out: { id: string; h: number; bound: number }[] = [];
   for (const m of measured) {
-    const env = envelopeOf({ id: m.id, type: m.type, position: { x: 0, y: 0 } });
+    const env = envelopeOf({ id: m.id, type: m.type, position: { x: 0, y: 0 }, env: m.env });
     if (env !== undefined && m.h > env.h) out.push({ id: m.id, h: m.h, bound: env.h });
   }
   return out.sort((a, b) => b.h - b.bound - (a.h - a.bound));
@@ -509,13 +518,19 @@ const warnedUnder = new Set<string>();
  *            move it instead of sleeping
  */
 export function underfilledCards(
-  measured: Iterable<{ id: string; type?: string; h: number }>,
+  measured: Iterable<{ id: string; type?: string; h: number; env?: { w: number; h: number } }>,
   now: number = Date.now(),
 ): { envelope: string; peak: number; bound: number }[] {
   for (const m of measured) {
     const type = m.type ?? "";
     // h <= 0 is "not laid out yet", not "a card of no height".
     if (!UNDER_WATCHED_TYPES.has(type) || m.h <= 0 || EXPANDED_CARD[type] === undefined) continue;
+    // CARD 306: a card carrying its own seat is not in the shape this arm
+    // judges. A boxed member at 96px fills three quarters of the 128px band it
+    // stands in, and measured against the 480 its TYPE reserves it would read
+    // as a seat holding air — reporting the subagent envelope on the strength
+    // of a card that never sat in one.
+    if (m.env !== undefined) continue;
     // The key is the ENVELOPE, not the card. Keyed by id, the second worker's
     // four pictures could never clear the first worker's bare reading.
     const key = type;
@@ -587,15 +602,25 @@ export function resetEnvelopeMemory(): void {
  * @param expanded the seating these nodes came from
  */
 export function measuredCards(
-  nodes: readonly { id: string; type?: string; measured?: { height?: number } }[],
+  nodes: readonly {
+    id: string;
+    type?: string;
+    data?: { boxSeat?: { w: number; h: number } };
+    measured?: { height?: number };
+  }[],
   expanded: boolean,
-): { id: string; type?: string; h: number }[] {
+): { id: string; type?: string; h: number; env?: { w: number; h: number } }[] {
   if (!expanded) return [];
-  const out: { id: string; type?: string; h: number }[] = [];
+  const out: { id: string; type?: string; h: number; env?: { w: number; h: number } }[] = [];
   for (const n of nodes) {
     if (n.type === "zone") continue;
     const h = n.measured?.height ?? 0;
-    if (h > 0) out.push({ id: n.id, type: n.type, h });
+    if (h <= 0) continue;
+    // CARD 306: a boxed member's seat comes off the node, because its type
+    // does not say. This is the only road it has — FlowMap hands this function
+    // the rendered nodes and nothing else.
+    const seat = n.data?.boxSeat;
+    out.push(seat === undefined ? { id: n.id, type: n.type, h } : { id: n.id, type: n.type, h, env: seat });
   }
   return out;
 }
@@ -1484,7 +1509,15 @@ export function sceneToFlow(
           //
           // It is set for a member in either view: the expanded card ignores
           // it, so one flag says one thing.
-          data: { ...subCardData(c, b.expandedBox), boxed: true },
+          // And the SEAT its band gave it, because its type does not say: on
+          // an expanded map `EXPANDED_CARD.subagent` is 408x480 while a box
+          // thrown minimal seats 216x128, and every check that reads a card's
+          // envelope off its type would be judging these thirteen against a
+          // seat they are not in. Taken off the seat itself, never re-derived
+          // from the switch — a second expression for one number can disagree,
+          // and the direction it disagrees in here is the invisible one: an
+          // envelope smaller than the seat reports nothing.
+          data: { ...subCardData(c, b.expandedBox), boxed: true, boxSeat: { w: m.w, h: m.h } },
           zIndex: 10,
         });
       }
@@ -1637,27 +1670,24 @@ export function sceneToFlow(
     const world = worldBoxes(nodes as { id: string; position: XY; parentId?: string }[]);
     // A boxed member is judged against the seat its OWN box gave it, because
     // its box carries its own switch: on an expanded map a box thrown minimal
-    // holds 216x132 cards at the minimal pitch, and the expanded envelope
+    // holds 216x128 cards at the minimal pitch, and the expanded envelope
     // would read those five as five cards lying on top of each other.
     //
-    // Taken off the SEAT rather than re-derived from the switch. Re-deriving
-    // would be a second expression for one number, and the failure it can have
-    // is the invisible direction: an envelope smaller than the seat reports
-    // nothing and hides the collisions that ARE there. There is no second
-    // number to disagree now.
-    const boxedSeat = new Map<string, { w: number; h: number }>();
-    for (const b of boxes) {
-      for (const band of b.layout.bands) {
-        for (const m of band.members) boxedSeat.set(`sub-${m.agentId}`, { w: m.w, h: m.h });
-      }
-    }
+    // Read off the node, where the seating put it, rather than re-derived from
+    // the switch — and read there by BOTH arms of the check, so there is one
+    // expression for the number instead of two that can disagree. The
+    // direction they can disagree in is the invisible one: an envelope smaller
+    // than the seat reports nothing and hides the collisions that ARE there.
     reportSeatCollisions(
-      nodes.map((n) => ({
-        id: n.id,
-        type: n.type,
-        position: world.get(n.id) ?? n.position,
-        ...(boxedSeat.has(n.id) ? { env: boxedSeat.get(n.id) } : {}),
-      })),
+      nodes.map((n) => {
+        const seat = (n.data as { boxSeat?: { w: number; h: number } } | undefined)?.boxSeat;
+        return {
+          id: n.id,
+          type: n.type,
+          position: world.get(n.id) ?? n.position,
+          ...(seat === undefined ? {} : { env: seat }),
+        };
+      }),
     );
   }
   // CARD 306: React Flow REQUIRES a parent to appear before its children, and
