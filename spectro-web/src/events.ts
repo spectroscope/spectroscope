@@ -119,7 +119,16 @@ export type RunEvent =
        *  an absence must stay one: a reader that defaults it would turn "we
        *  learned nothing" into "we measured this". Additive on the Java side
        *  (ContextInfoThresholdSourceAdditivityTest), declared here so a
-       *  consumer can tell a measurement from a stand-in. */
+       *  consumer can tell a measurement from a stand-in.
+       *
+       *  NARROWER THAN THE CONTRACT, ON PURPOSE. Java writes
+       *  `CompactionThreshold.Source.wireName()`, and that enum may grow — its
+       *  own additivity test already replays an unknown `"tokenizer"`. These
+       *  three are the ones that exist today; a fourth would arrive here as a
+       *  value the union does not list. Every reader must therefore treat an
+       *  UNRECOGNISED source the way it treats an absent one — as a threshold
+       *  taken at its word — and never as `fallback`, which is the only value
+       *  that downgrades what the panel is allowed to call it. */
       thresholdSource?: "override" | "window" | "fallback";
       parts: { label: string; chars: number; estTokens: number; text?: string }[];
       ts: number;
