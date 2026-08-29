@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { absences, elapsedLabel, groupState, opaqueLabel, tokenLabel, workGroups } from "./workLevels";
+import { absences, besideReading, elapsedLabel, groupState, tokenLabel, workGroups } from "./workLevels";
+import { NO_SIDECARS } from "../import/sidecarAgents";
 import { foldWork } from "../state/work";
 import type { WorkItem } from "../state/work";
 import type { RunEvent } from "../events";
@@ -143,17 +144,26 @@ describe("absences", () => {
   });
 });
 
-describe("opaqueLabel", () => {
-  it("quotes what a task reported and nothing else", () => {
-    const launched = item({
-      kind: "launched",
-      opaque: { agents: 24, agentsDone: 15, agentsError: 9, toolUses: 368, durationMs: 613990 },
-    });
-    expect(opaqueLabel(launched)).toEqual({ agents: 24, toolUses: 368 });
+// Card 313 folded opaqueLabel into besideReading: quoting the claim and
+// deciding whether the claim is the right thing to say were two functions over
+// one fact, and the panel held both. What it quoted is pinned here still, now
+// through the reading that decides it.
+describe("the claim a task reported, quoted and nothing else", () => {
+  const launched = item({
+    kind: "launched",
+    opaque: { agents: 24, agentsDone: 15, agentsError: 9, toolUses: 368, durationMs: 613990 },
   });
 
-  it("is null when the task reported no counts", () => {
-    expect(opaqueLabel(item({ kind: "launched", opaque: null }))).toBeNull();
+  it("carries the two numbers the panel prints", () => {
+    expect(besideReading(launched, [], NO_SIDECARS)).toEqual({
+      kind: "claim",
+      claimed: 24,
+      toolUses: 368,
+    });
+  });
+
+  it("says nothing when the task reported no counts", () => {
+    expect(besideReading(item({ kind: "launched", opaque: null }), [], NO_SIDECARS)).toBeNull();
   });
 });
 
