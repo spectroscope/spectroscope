@@ -20,10 +20,17 @@ export type StepSource = "live" | { replayId: string };
 export type StepMode = "step" | "flow";
 export type StepGrain = "fine" | "coarse";
 
-/** Auto-play pacing bounds (ms per step); the slider stays inside these. */
+/** Auto-play pacing bounds (ms per step); the slider stays inside these.
+ *
+ *  The slow bound is DERIVED, not chosen: card 299 puts a 0.25x pill on the
+ *  transport, and 0.25x of the default pace is 5000 ms. Left at the old 2000 the
+ *  store would have clamped that pill to 0.625x while the label kept saying
+ *  0.25x — a control lying about what it does. `intervalForFactor(0.25) ===
+ *  MAX_INTERVAL_MS` is pinned, so moving either number without the other is red.
+ */
 export const MIN_INTERVAL_MS = 60;
-export const MAX_INTERVAL_MS = 2000;
-export const DEFAULT_INTERVAL_MS = 1250; // 0.8 steps/s (owner-tuned default)
+export const MAX_INTERVAL_MS = 5000;
+export const DEFAULT_INTERVAL_MS = 1250; // 0.8 steps/s (owner-tuned default), the pills' 1x
 
 export interface StepperState {
   source: StepSource;
@@ -133,6 +140,248 @@ export function stepBoundaries(events: RunEvent[]): number[] {
     bs.push(cursor);
   }
   return bs;
+}
+
+// ---- card 299: where the interesting part is -------------------------------
+//
+// Three readings of the same stream the scrubber already walks, all pure and
+// all DOM-free, so the gate measures them in plain Node. The transport renders
+// them; nothing here knows a transport exists.
+
+/** What a chapter mark stands for — the canon's own vocabulary, one value per
+ *  fact the wire already carries. */
+export type ChapterKind =
+  | "turn"
+  | "spawn"
+  | "compaction"
+  | "gate"
+  | "denied"
+  | "no_progress"
+  | "intervention"
+  | "question"
+  | "skill"
+  | "error"
+  | "end";
+
+/** One tick on the scrub bar.
+ *
+ *  The label rides as a dict KEY plus its placeholders rather than as a
+ *  finished sentence: chrome text lives in i18n.ts in both locales, and a
+ *  sentence written here would exist in one language only. `chapterLabel`
+ *  (src/lab/chapterLabel.ts) turns a mark into the line a reader sees. */
+export interface ChapterMark {
+  /** Index of the event this mark is about, in the stream it was read from. */
+  at: number;
+  kind: ChapterKind;
+  labelKey: string;
+  vars: Record<string, string | number>;
+}
+
+/** How much of an error message one tick's label carries. */
+const MARK_MESSAGE_CAP = 60;
+
+/** The progress detectors this build has a line for (card 262). A fourth one
+ *  still gets a mark, through `.other`, which prints the wire name — going
+ *  quiet on a net nobody here has heard of is the worse mistake. */
+const MARK_DETECTORS: ReadonlySet<string> = new Set(["identical_writes", "repeated_failure", "stalled_plan"]);
+
+/** The Intervention enum's values (card 281), same rule as above. */
+const MARK_INTERVENTIONS: ReadonlySet<string> = new Set(["CARRY_ON", "CHANGE_COURSE", "END"]);
+
+/** The tool names a skill load arrives under. There is NO skill event on the
+ *  wire: a skill load IS a tool call, and these are the two names toolViews.ts
+ *  reads it by. */
+const SKILL_TOOLS: ReadonlySet<string> = new Set(["Skill", "use_skill"]);
+
+/** One line, capped with a visible mark — a tick's tooltip is not a transcript. */
+function markMessage(text: string): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length <= MARK_MESSAGE_CAP ? oneLine : `${oneLine.slice(0, MARK_MESSAGE_CAP - 1)}…`;
+}
+
+/** The skill's own name out of a Skill call's input; null when it names none. */
+function skillNameOf(input: unknown): string | null {
+  if (typeof input !== "object" || input === null) return null;
+  const record = input as Record<string, unknown>;
+  for (const key of ["name", "skill"]) {
+    const value = record[key];
+    if (typeof value === "string" && value !== "") return value;
+  }
+  return null;
+}
+
+/**
+ * The chapters of a run: the moments somebody scrubbing several hundred coarse
+ * steps is actually looking for.
+ *
+ * @param events the stream to read — applied plus queued, the whole run
+ * @return one mark per interesting event, in the stream's own order
+ */
+export function chapterMarks(events: readonly RunEvent[]): ChapterMark[] {
+  const marks: ChapterMark[] = [];
+  events.forEach((e, at) => {
+    switch (e.type) {
+      case "turn_start":
+        marks.push({ at, kind: "turn", labelKey: "lab.mark.turn", vars: { n: e.turn } });
+        break;
+      case "agent_spawn":
+        marks.push({ at, kind: "spawn", labelKey: "lab.mark.spawn", vars: { id: e.agentId } });
+        break;
+      case "compaction":
+        marks.push({ at, kind: "compaction", labelKey: "lab.mark.compaction", vars: { n: e.removedTurns } });
+        break;
+      case "permission_request":
+        marks.push({ at, kind: "gate", labelKey: "lab.mark.gate", vars: { name: e.name } });
+        break;
+      case "permission_decision":
+        // Only a refusal is a chapter. An allowed call is the run carrying on,
+        // and a tick on every gate would bury the one that stopped something.
+        if (!e.allowed) marks.push({ at, kind: "denied", labelKey: "lab.mark.denied", vars: {} });
+        break;
+      case "no_progress":
+        marks.push({
+          at,
+          kind: "no_progress",
+          labelKey: MARK_DETECTORS.has(e.detector)
+            ? `lab.mark.noProgress.${e.detector}`
+            : "lab.mark.noProgress.other",
+          vars: { n: e.count, detector: e.detector },
+        });
+        break;
+      case "progress_intervention":
+        marks.push({
+          at,
+          kind: "intervention",
+          labelKey: MARK_INTERVENTIONS.has(e.intervention)
+            ? `lab.mark.intervention.${e.intervention}`
+            : "lab.mark.intervention.other",
+          vars: { intervention: e.intervention },
+        });
+        break;
+      case "question_asked":
+        marks.push({ at, kind: "question", labelKey: "lab.mark.question", vars: { n: e.questions.length } });
+        break;
+      case "error":
+        marks.push({
+          at,
+          kind: "error",
+          labelKey: "lab.mark.error",
+          vars: { message: markMessage(e.message) },
+        });
+        break;
+      case "run_end":
+        // The reason travels as the WIRE value; the label resolves it through
+        // stopReasonKey, so the tick and the transcript footer say the same word.
+        marks.push({ at, kind: "end", labelKey: "lab.mark.end", vars: { reason: e.stopReason } });
+        break;
+      case "tool_call": {
+        if (!SKILL_TOOLS.has(e.name)) break;
+        const name = skillNameOf(e.input);
+        marks.push(
+          name === null
+            ? { at, kind: "skill", labelKey: "lab.mark.skill.unnamed", vars: {} }
+            : { at, kind: "skill", labelKey: "lab.mark.skill", vars: { name } },
+        );
+        break;
+      }
+      default:
+        break;
+    }
+  });
+  return marks;
+}
+
+/** A mark placed on the scrub bar. */
+export interface MarkPosition {
+  mark: ChapterMark;
+  /** The boundary index to seek to. The first boundary PAST the marked event,
+   *  never the one before it: seeking to the boundary before shows the run just
+   *  short of the thing the tick promised. */
+  index: number;
+  /** Where the tick sits along the bar, 0-100. */
+  pct: number;
+}
+
+/**
+ * Place marks on the coarse-step bar the scrubber walks.
+ *
+ * @param marks what chapterMarks read off the same stream
+ * @param boundaries stepBoundaries of that stream
+ */
+export function markPositions(marks: readonly ChapterMark[], boundaries: readonly number[]): MarkPosition[] {
+  const last = Math.max(0, boundaries.length - 1);
+  return marks.map((mark) => {
+    const found = boundaries.findIndex((b) => b > mark.at);
+    const index = found < 0 ? last : found;
+    return { mark, index, pct: last === 0 ? 0 : (index / last) * 100 };
+  });
+}
+
+/** The run's wall clock, in milliseconds. */
+export interface RunClock {
+  elapsedMs: number;
+  totalMs: number;
+}
+
+/** The event's timestamp, or null when it carries none a clock can read. */
+function timestampOf(e: RunEvent): number | null {
+  const ts = (e as { ts?: unknown }).ts;
+  return typeof ts === "number" && Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
+/**
+ * How far into the run the cursor stands, in wall clock.
+ *
+ * @param all the whole stream (applied plus queued)
+ * @param cursor how many events are applied
+ * @return the span, or NULL when the recording carries no readable one — an
+ *         imported transcript without timestamps, a single line, or a whole run
+ *         stamped on one millisecond. A "0:00 / 0:00" would be a claim about a
+ *         run's duration that nothing measured.
+ */
+export function runClock(all: readonly RunEvent[], cursor: number): RunClock | null {
+  // A bounds guard, not a second rule: it is what makes the two index reads
+  // below safe. A ONE-event stream is caught by the zero-span rule underneath
+  // anyway, which is why no test can tell `< 2` from `< 1` here.
+  if (all.length < 2) return null;
+  const first = timestampOf(all[0]);
+  const last = timestampOf(all[all.length - 1]);
+  if (first === null || last === null) return null;
+  const totalMs = last - first;
+  if (totalMs <= 0) return null;
+  const applied = Math.max(0, Math.min(all.length, Math.round(cursor)));
+  if (applied === 0) return { elapsedMs: 0, totalMs };
+  const here = timestampOf(all[applied - 1]);
+  if (here === null) return { elapsedMs: 0, totalMs };
+  // Clamped into the span: a session file may carry stamps out of order, and an
+  // elapsed larger than the total would read as a bug in the clock.
+  return { elapsedMs: Math.max(0, Math.min(totalMs, here - first)), totalMs };
+}
+
+/** Milliseconds as a transport clock: "0:07", "10:00", "1:02:05". Truncated,
+ *  because this labels a position that has been reached. */
+export function clockLabel(ms: number): string {
+  const seconds = Math.floor(Math.max(0, ms) / 1000);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor(seconds / 60) % 60;
+  const rest = seconds % 60;
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
+}
+
+/** The multipliers the transport offers, slowest first. 1x is the shipped
+ *  default pace — a speed control with no baseline names nothing. */
+export const SPEED_FACTORS: readonly number[] = [0.25, 0.5, 1, 2, 5];
+
+/** The interval one multiplier means. */
+export function intervalForFactor(factor: number): number {
+  return Math.round(DEFAULT_INTERVAL_MS / factor);
+}
+
+/** The pill that matches a pace, or null for a pace set off the grid (the
+ *  tempo slider under "more" still moves freely). */
+export function speedFactorOf(intervalMs: number): number | null {
+  return SPEED_FACTORS.find((f) => intervalForFactor(f) === intervalMs) ?? null;
 }
 
 /** The marks stack for an arbitrary applied prefix — coarse boundaries, or one
