@@ -22,19 +22,12 @@ function Disclosure({
   label,
   children,
   open: openDefault = false,
-  expandAll: override,
 }: {
   label: string;
   children: ReactNode;
   open?: boolean;
-  /** The switch that governs this disclosure, when it is not the map's.
-   *  A card inside a workflow box (card 306) has its own — the box's — and
-   *  reading the map's instead is how the geometry and the markup ended up
-   *  following two switches that disagree. */
-  expandAll?: boolean;
 }) {
-  const fromMap = useContext(ExpandAllContext);
-  const expandAll = override ?? fromMap;
+  const expandAll = useContext(ExpandAllContext);
   const [open, setOpen] = useState(openDefault || expandAll);
   return (
     <div className="pf-disc">
@@ -779,16 +772,6 @@ export function SubagentNode({ data }: NodeProps) {
      *  own card with this data (card 287). Absent = compact, byte-identical
      *  to what shipped. */
     full?: SubFull;
-    /** CARD 306: the switch of the workflow box this card stands in, present
-     *  only for a boxed member and absent for a loose one.
-     *
-     *  It governs the MINIMAL card's disclosure below, in place of the map's
-     *  switch — that is the case where the two disagreed and the card rendered
-     *  past what its band reserved. The full card's own disclosures still
-     *  follow the map, and that is not an oversight: the full card's reserve
-     *  is a bound measured with everything open (cardGeometry.ts), so a card
-     *  drawn with them shut fits a seat sized for them open. */
-    boxExpanded?: boolean;
     /** CARD 306: true for a member card a workflow box seated, absent for a
      *  loose one. It puts `.pf-sub--boxed` on the compact card, and that class
      *  is what the caps in flowmap.css hang off — the caps that make the
@@ -871,14 +854,22 @@ export function SubagentNode({ data }: NodeProps) {
         <span className={`pf-status__dot${d.focus === "llm" ? " pf-pulse" : ""}`} />
         {d.activity.text}
       </div>
-      {(d.lastStatus || d.think) && (
-        // CARD 306: a member of a box the reader threw minimal keeps this shut
-        // whatever the MAP's switch says. Its box reserves the minimal card's
-        // measured height, and an open body renders about 95px past it — which
-        // React Flow does not draw past the box, it CLAMPS, landing the last
-        // band's row on top of the row above it. `boxExpanded` is absent for a
-        // loose card, so the map's switch stays the map's switch.
-        <Disclosure label={t(lang, "map.sub.disc")} expandAll={d.boxExpanded}>
+      {d.boxed !== true && (d.lastStatus || d.think) && (
+        // CARD 306: a boxed member is drawn WITHOUT this control, and that is
+        // the only thing that holds its band.
+        //
+        // Its band reserves a shut card. An open body renders about 95px past
+        // that, and React Flow does not put it back: measured in Chrome, its
+        // `extent: "parent"` clamps a child's POSITION and never its SIZE, and
+        // it clamps to the BOX rather than to the band — so a member in the
+        // first band that grows simply stands on the row below it, and in the
+        // last band the clamp fires and walks the card up onto the row above.
+        // Capping the card instead (flowmap.css) leaves the button drawing a
+        // body nobody can see. A control whose every outcome is damage or a
+        // clipped nothing is worse than no control, so the detail lives one
+        // click away on the box's own switch, which redraws every member as
+        // the full instrument.
+        <Disclosure label={t(lang, "map.sub.disc")}>
           <div className="pf-panelbox">
             <div className="pf-panelbox__label">{t(lang, "map.sub.order")}</div>
             <div className="pf-prose nowheel">{d.task}</div>

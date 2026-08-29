@@ -58,39 +58,52 @@ export const BOX_EMPTY_BODY_H = 26;
 export const BOX_MEMBER_W_COMPACT = 216;
 
 // ---------------------------------------------------------------------------
-// WHAT A COMPACT MEMBER CARD COSTS — measured, then bounded.
+// WHAT A COMPACT MEMBER CARD COSTS — measured, then BOUNDED IN CSS.
 //
-// This was 132: the map's own compact seat (`SUB_H` in sceneToFlow), reused
-// here because a member IS that card. In the map a 44px rail gap swallows
-// whatever the card runs over by; a band has 10px of foot and 12px of gap, and
-// `extent: "parent"` does not let a child stick out of its box, it CLAMPS —
-// so a card that outgrows its band does not spill over the frame, it lands on
-// the row above.
+// This was 132, then 165: the map's own compact seat plus, for a while, the
+// shut disclosure strip. Both numbers were observations about the cards
+// somebody happened to measure, and both leaned on a mechanism that does not
+// exist. The mechanism first:
 //
-// Measured 2026-08-29 in Chrome at devicePixelRatio 1, off the shipped
-// "declared workflow" scenario at frame 141/188 with the lab in compact, read
-// through `offsetHeight` (React Flow's zoom is a viewport transform, so it is
-// not in these numbers). The thirteen cards a box actually held:
+// WHAT `extent: "parent"` REALLY DOES, measured in Chrome at devicePixelRatio
+// 1 on the shipped "declared workflow" scenario at frame 141/188, compact, by
+// opening a member's disclosure by hand and reading `offsetHeight` and the
+// node's own transform:
 //
-//   112  two cards   (one-line head, no disclosure)
-//   133  eight cards (one-line head, disclosure shut)
-//   149  three cards (head wrapped to two lines, disclosure shut)
+//   sub-scope    band 1 of 5   133 -> 227px, position UNCHANGED at y=200
+//   sub-audit-1  band 5 of 5   149 -> 260px, position y=1068 -> y=997
 //
-// Eleven of thirteen stood taller than the 132 reserved for them. And the
-// parts they are made of, same pass:
+// It clamps POSITION and never SIZE, and it clamps to the BOX, not to the
+// band. In band 1 nothing happened at all: the grown card simply stood on the
+// row below it — its foot at 427 against a next row starting at 417 — and no
+// check could see it, because both cards were still inside their parent. In
+// the last band the clamp did fire, and firing IS the damage: it walked the
+// card 71px up, out of its own band and onto the row above. React Flow is not
+// a safety net here in either direction, and the comment that said it was
+// deferred the one thing a reader could still break with a single click.
+//
+// So the reserve is bounded where bounds actually live — in flowmap.css. The
+// card carries `max-height: BOX_MEMBER_H_COMPACT` with `overflow: hidden`, and
+// every region inside it that grows with content carries its own cap. The one
+// control that could have pushed past all of them, the card's disclosure, is
+// not drawn on a boxed member at all (nodes.tsx): a band reserves a SHUT card,
+// an open body wants about 95px more than the band has, and a control whose
+// only possible outcomes are damage or a clipped nothing is worse than no
+// control. The detail is one click away on the box's own switch, which redraws
+// every member as the full instrument.
+//
+// The thirteen cards a box holds on that scenario, measured with no disclosure
+// on them:
+//
+//   96   eight cards
+//   112  five cards  (head wrapped to two lines)
+//
+// And the parts they are made of, same pass:
 //
 //   frame     26  = .pf-card border 1 twice + .pf-sub padding 12 twice
 //   head      21 at one line, 37 at two
 //   task      margin 8, then 16 at one line (its own cap allows 46)
 //   status    margin 8, then 17
-//   shut disc margin 10, then 27 (border 1 + padding 9 + button 17)
-//
-// So the reserve below is the SUM of those parts with every growing one capped
-// in flowmap.css — the same doctrine `cardGeometry.ts` applies to the expanded
-// worker card. It bounds the card as a box draws it: shut. A reader who opens
-// a member's disclosure by hand grows it past this, and React Flow clamps that
-// card back inside the box; that is the same trade the map's own compact seat
-// makes, and it is not what this constant claims.
 // ---------------------------------------------------------------------------
 
 /** `.pf-card` border twice plus `.pf-sub` padding twice. */
@@ -103,27 +116,25 @@ export const BOX_MEMBER_CAP_HEAD_PX = 37;
 export const BOX_MEMBER_CAP_TASK_PX = 32;
 /** The activity line: one line, then it clips. */
 export const BOX_MEMBER_CAP_STATUS_PX = 17;
-/** The disclosure as a box draws it — shut: its own margin plus its strip. */
-export const BOX_MEMBER_DISC_SHUT_H = 37;
 
 /** The tallest card measured in a box on the shipped scenario. The reserve has
  *  to hold it; `workflowBox.test.ts` is where that is said. */
-export const BOX_MEMBER_MEASURED_MAX = 149;
+export const BOX_MEMBER_MEASURED_MAX = 112;
 /** And the shortest — the yardstick for the other arm, a seat that reserves
  *  more than twice the card it holds (the under-fill rule of card 296). */
-export const BOX_MEMBER_MEASURED_MIN = 112;
+export const BOX_MEMBER_MEASURED_MIN = 96;
 
 /** What one band reserves for one agent: every part of the card above, each of
- *  the growing ones capped in flowmap.css so this is a bound and not an
- *  observation. 165 against a tallest measured 149. */
+ *  them capped in flowmap.css, and the card itself capped at this sum — so
+ *  this is a bound the browser enforces and not an observation. 128 against a
+ *  tallest measured 112. */
 export const BOX_MEMBER_H_COMPACT =
   BOX_MEMBER_FRAME_H +
   BOX_MEMBER_CAP_HEAD_PX +
   BOX_MEMBER_ROW_GAP +
   BOX_MEMBER_CAP_TASK_PX +
   BOX_MEMBER_ROW_GAP +
-  BOX_MEMBER_CAP_STATUS_PX +
-  BOX_MEMBER_DISC_SHUT_H;
+  BOX_MEMBER_CAP_STATUS_PX;
 
 /**
  * What one agent card occupies inside a box.

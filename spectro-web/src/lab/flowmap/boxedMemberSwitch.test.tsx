@@ -1,23 +1,27 @@
-// Card 306: inside a box, the box's switch is the switch.
+// Card 306: inside a box, the box's switch is the switch — and the one control
+// that could outgrow a band is not drawn there at all.
 //
 // Measured in the running app, on the shipped scenario with the map expanded
 // and one box thrown minimal:
 //
-//   the reserve per member  216 x 132        (BOX_MEMBER_H_COMPACT)
+//   the reserve per member  216 x 132        (BOX_MEMBER_H_COMPACT, as it was)
 //   what the card rendered  216 x 227 .. 244  (it grows with its content)
 //
-// and the last band's row was 88px above where the box seated it, because
-// React Flow's `extent: "parent"` CLAMPS a child that would stick out of its
-// parent. So the audit row came to rest on top of the draft row, and every
-// other row bled over its own band's floor. Nothing threw: a clamp is what
-// `extent: "parent"` is FOR.
+// and the last band's row was 88px above where the box seated it. The first
+// cut of this file said React Flow's `extent: "parent"` had put it back, and
+// called that the reserve's safety net. Re-measured in Chrome at 141/188: it
+// clamps POSITION and never SIZE, and it clamps to the BOX rather than to the
+// band — so a member in band 1 that grows just stands on the row below it
+// untouched, and the clamp only ever fires at the box's own floor, where it IS
+// the damage. There is no net (workflowBox.test.ts carries the numbers).
 //
-// The cause is not the constant. A minimal worker card renders 133 in a
-// compact map — the constant is right — and 227 in an expanded one, because
-// the card's own disclosure opens off `ExpandAllContext`, the MAP's switch.
-// A boxed member has its own switch, and it was reading the wrong one: two
-// switches disagreeing, with the geometry following one and the markup the
-// other.
+// The first cause was two switches disagreeing: a boxed member's disclosure
+// opened off `ExpandAllContext`, the MAP's switch, while its band was reserved
+// off the box's. Handing the card its box's switch fixed the disagreement but
+// not the reach — a reader can still click the thing. A band reserves a SHUT
+// card, and an open body needs about 95px it does not have, so a boxed member
+// draws no in-place disclosure at all. Its detail is one click away on the
+// box's own switch, which redraws every member as the full instrument.
 
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -65,10 +69,24 @@ describe("a minimal worker card and the switch that opens it", () => {
     // nothing here may quietly redefine what the map-wide switch means.
     expect(open(markup(true))).toBe(true);
   });
+});
 
-  it("stays shut inside a box the reader threw minimal, expanded map or not", () => {
-    expect(open(markup(true, { boxExpanded: false }))).toBe(false);
-    expect(open(markup(false, { boxExpanded: false }))).toBe(false);
+// A band reserves a shut card. Nothing about `extent: "parent"` puts an opened
+// one back — measured, see the header — so the reach is closed where it opens.
+describe("a boxed member has no in-place disclosure to open", () => {
+  it("draws no disclosure at all, not even the shut strip, on a boxed member", () => {
+    expect(markup(false, { boxed: true })).not.toContain("pf-disc");
+  });
+
+  it("cannot be opened by the map's switch either — the case that first broke the band", () => {
+    expect(markup(true, { boxed: true })).not.toContain("pf-disc");
+  });
+
+  it("leaves the loose minimal card the control it has always had", () => {
+    // Bitten on its own: a change that simply stopped rendering the
+    // disclosure for everybody would pass the two above and take a working
+    // control off every card on the map.
+    expect(markup(false)).toContain("pf-disc__btn");
   });
 });
 

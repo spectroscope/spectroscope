@@ -114,7 +114,7 @@ describe("the box in the map", () => {
     expect(boxes[1].position.y).toBeGreaterThan(boxes[0].position.y);
   });
 
-  it("makes each member a CHILD of its box, held inside it", () => {
+  it("makes each member a CHILD of its box, so its position is relative to it", () => {
     const flow = flowOf(EVENTS, { declared: DECL });
     for (const id of ["a1", "b1", "b2", "b3"]) {
       const node = flow.nodes.find((n) => n.id === `sub-${id}`);
@@ -325,17 +325,19 @@ describe("the per-box switch", () => {
     expect((flow.nodes.find((n) => n.id === "sub-a1")!.data as { full?: unknown }).full).toBeUndefined();
   });
 
-  it("hands each member its BOX's switch, so the card and the band agree", () => {
-    // Without it the card reads the map's switch and the band reserves off the
-    // box's: measured in the running app at 216x227 rendered into 216x132
-    // reserved, with the last row clamped on top of the one above it.
+  it("marks each member as boxed, so the caps that bound its band reach it", () => {
+    // The switch itself is pinned by the two tests above, through the card the
+    // box drew. What has to travel with the CARD is that it stands in a band
+    // at all: `boxed` is what puts `.pf-sub--boxed` on it, and that class
+    // carries the caps — and the max-height — that make the band's reserve a
+    // bound rather than a hope about React Flow (workflowBox.test.ts).
     const flow = flowOf(EVENTS, { declared: DECL, expanded: true, boxExpanded: new Set([BOX]) });
-    const kid = flow.nodes.find((n) => n.id === "sub-a1")!.data as { boxExpanded?: boolean };
-    expect(kid.boxExpanded).toBe(false);
+    const kid = flow.nodes.find((n) => n.id === "sub-a1")!.data as { boxed?: boolean };
+    expect(kid.boxed).toBe(true);
     const loose = flowOf([...EVENTS, spawn("loner")], { declared: DECL }).nodes.find(
       (n) => n.id === "sub-loner",
-    )!.data as { boxExpanded?: boolean };
-    expect(loose.boxExpanded).toBeUndefined();
+    )!.data as { boxed?: boolean };
+    expect(loose.boxed).toBeUndefined();
   });
 
   it("follows the GLOBAL switch when no per-box choice was made", () => {

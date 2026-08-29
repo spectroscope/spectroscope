@@ -1466,18 +1466,25 @@ export function sceneToFlow(
           parentId: b.boxId,
           extent: "parent",
           position: { x: m.x, y: m.y },
-          // The box's own switch travels WITH the card. A minimal card opens
-          // its disclosure off the MAP's switch, and a box thrown minimal on
-          // an expanded map then rendered 227-244px tall into the 132 its band
-          // reserved — measured — and `extent: "parent"` does not let a child
-          // stick out, it clamps: the last band's row came to rest 88px above
-          // its own band, on top of the row before it. Two switches
-          // disagreeing, the geometry following one and the markup the other.
           // `boxed` is what puts `.pf-sub--boxed` on the compact card, and
-          // that class carries the caps that make this band's reserve a bound
-          // (workflowBox.ts). It is set for a member in either view: the
-          // expanded card ignores it, so one flag says one thing.
-          data: { ...subCardData(c, b.expandedBox), boxExpanded: b.expandedBox, boxed: true },
+          // that class is where the band's reserve becomes a BOUND: the card
+          // is capped at exactly what its band gave it, every growing region
+          // inside it is capped and clipped, and the one control that could
+          // still push past all of them — the card's own disclosure — is not
+          // drawn on a boxed member at all (nodes.tsx).
+          //
+          // React Flow is not that bound and never was. Measured in Chrome:
+          // `extent: "parent"` clamps a child's POSITION, never its SIZE, and
+          // it clamps to the BOX rather than to the band — so a member that
+          // grows inside the box stands on the row below it with nothing
+          // said, and the one place the clamp fires, the box's own floor, it
+          // walks the card up onto the row above. That is how a box thrown
+          // minimal on an expanded map came to draw 227-244px cards into the
+          // 132 its bands reserved, with the last row 88px above its band.
+          //
+          // It is set for a member in either view: the expanded card ignores
+          // it, so one flag says one thing.
+          data: { ...subCardData(c, b.expandedBox), boxed: true },
           zIndex: 10,
         });
       }
