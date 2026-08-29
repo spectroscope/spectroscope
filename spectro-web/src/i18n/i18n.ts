@@ -3805,14 +3805,20 @@ export const dict: Record<string, { de: string; en: string }> = {
   // stamps. The two look different on purpose (solid against dashed), and the
   // legend says the difference in words rather than leaving it to the stroke.
   "lab.lens.legendDeclared": {
-    de: "Kanten zeigen, wer wen gestartet hat — durchgezogen: die Phasen, die dieser Lauf vorher deklariert hat, gestrichelt: aus den Zeitstempeln geraten",
-    en: "edges show who started whom — solid: the phases this run declared before it started, dashed: guessed from the timestamps",
+    de: "durchgezogen: die Phasen, die dieser Lauf vor dem Start deklariert hat, jede führt zur nächsten, die Agenten stehen in ihrer Phase — gestrichelt: ein aus den Ereignissen rekonstruierter Start",
+    en: "solid: the phases this run declared before it started, each one leads to the next, and the agents sit inside their phase — dashed: a start reconstructed from what the run did",
   },
   "lab.lens.sourceDeclared": { de: "deklariert", en: "declared" },
   "lab.lens.sourceRecovered": { de: "rekonstruiert", en: "recovered" },
   "lab.lens.sourceDeclaredHint": {
-    de: "Die Spalten kommen aus der Phasenliste im Skript des Laufs; die Belegung ist das, was wirklich lief",
-    en: "The columns come from the phase list in the run's script; the occupancy is what actually ran",
+    de: "Die Phasen kommen aus dem Skript des Laufs, ihre Reihenfolge auch; wer in einer Phase steht, ist das, was wirklich lief",
+    en: "The phases and their order come from the run's script; who stands in each of them is what actually ran",
+  },
+  // The box for agents a run's own state file named without saying which
+  // phase they belong to. It carries no edge, so it needs a word instead.
+  "lab.lens.unplaced": {
+    de: "keiner deklarierten Phase zugeordnet",
+    en: "in no declared phase",
   },
   "lab.lens.sourceRecoveredHint": {
     de: "Kein Zustandsfile — die Spalten sind aus den Zeitstempeln geraten, nicht deklariert",

@@ -178,7 +178,13 @@ export function WorkflowLens(props: {
           position: { x: p.x, y: p.y },
           draggable: false,
           data: {
-            label: meta?.label ?? p.label,
+            // A phase box the DECLARATION did not place is the one holding
+            // agents the run's file could not place either. It has no title
+            // of its own, and a blank heading would say nothing at all.
+            label:
+              phase && !tree.declaredNodes.has(p.id)
+                ? t(lang, "lab.lens.unplaced")
+                : (meta?.label ?? p.label),
             agentType: meta?.agentType ?? null,
             model: meta?.model ?? (p.id === tree.root ? (props.model ?? null) : null),
             state,

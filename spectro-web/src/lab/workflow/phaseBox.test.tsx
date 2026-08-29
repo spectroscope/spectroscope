@@ -186,3 +186,30 @@ describe("the assembled lens draws the phases, not the agents", () => {
     expect(html).toContain(t(currentLang(), "lab.lens.sourceDeclared"));
   });
 });
+
+describe("the box for agents the file could not place", () => {
+  const EV: RunEvent[] = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+    { type: "agent_spawn", agentId: "one", parentId: "main", task: "scope the pass", ts: 20 },
+    { type: "text_delta", agentId: "one", text: "…", ts: 90 },
+  ];
+  const STRAY: WorkflowDeclaration = new Map([
+    [
+      "main",
+      {
+        phases: [{ title: "scope", detail: null, members: [] }],
+        unplaced: [
+          { agentId: "one", label: "", model: null, state: "done" as const, startedAt: 1, endedAt: 2 },
+        ],
+      },
+    ],
+  ]);
+
+  it("is named rather than left blank — a box with no heading says nothing at all", () => {
+    const scene = EV.reduce((s, e) => advanceScene(s, e), initialScene());
+    const html = renderToStaticMarkup(
+      <WorkflowLens events={EV} applied={EV} scene={scene} declared={STRAY} />,
+    );
+    expect(html).toContain(t(currentLang(), "lab.lens.unplaced"));
+  });
+});

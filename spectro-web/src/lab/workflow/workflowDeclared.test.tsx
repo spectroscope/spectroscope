@@ -124,15 +124,20 @@ describe("the legend says WHICH picture this is, in both locales", () => {
   // spawn of the run itself, and any plain Task child beside it, are still
   // reconstructions — so a legend that named only the solid one would leave
   // the dashed edges on screen unexplained.
-  it("declared, EN and DE — and it explains BOTH strokes, because both are on screen", () => {
+  it("declared, EN and DE — and it says what the SOLID edge means, which is succession", () => {
+    // Card 302 changed what a solid edge is. It used to be a spawn the script
+    // had placed; it is now "this phase leads to the next one". A legend left
+    // saying "who started whom" would describe the picture that was replaced.
     const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={2} reported={2} declared />);
-    expect(en).toContain("declared before it started");
+    expect(en).toContain("leads to the next");
     expect(en).toContain("solid");
     expect(en).toContain("dashed");
+    expect(en).not.toContain("who started whom");
     const de = renderToStaticMarkup(<WorkflowLegend lang="de" resolved={2} reported={2} declared />);
-    expect(de).toContain("vorher deklariert hat");
+    expect(de).toContain("führt zur nächsten");
     expect(de).toContain("durchgezogen");
     expect(de).toContain("gestrichelt");
+    expect(de).not.toContain("wer wen gestartet hat");
   });
 
   it("recovered, EN and DE — the card 293 sentence, unchanged", () => {
