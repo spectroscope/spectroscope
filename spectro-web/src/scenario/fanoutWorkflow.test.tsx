@@ -43,9 +43,10 @@ vi.mock("@xyflow/react", () => ({
   useReactFlow: () => ({ fitView: () => {} }),
 }));
 
-import { SCENARIOS } from "./registry";
+import { releaseCheckSubjects, SCENARIOS } from "./registry";
 import { compile, declarationOf } from "./compile";
 import { loc } from "./dsl";
+import type { Step } from "./dsl";
 import { lensPhaseNodeId, spawnTree } from "../lab/spawnTree";
 import { layoutStateGraph } from "../stategraph/layout";
 import { SEATS_MAX_EXPANDED } from "../lab/flowmap/workerGrid";
@@ -62,6 +63,53 @@ const declaredWidest = (): number => Math.max(...declaredWidths());
 /** Every number in the shown name, in the order it is shown. */
 const numbersInName = (lang: "en" | "de"): number[] =>
   [...loc(dsl.name, lang).matchAll(/\d+/g)].map((m) => Number(m[0]));
+
+/** Every string of the scenario's OWN copy: the name, the ask, the captions,
+ *  and the words the run itself says. A fan-out worker's transcript is its
+ *  own copy and is deliberately left out — those lines talk about one check,
+ *  not about how many there are. */
+const ownCopy = (lang: "en" | "de"): string[] => {
+  const out: string[] = [loc(dsl.name, lang), loc(dsl.prompt, lang)];
+  for (const p of dsl.phases ?? []) {
+    out.push(loc(p.title, lang));
+    if (p.detail !== undefined) out.push(loc(p.detail, lang));
+  }
+  const walk = (steps: Step[]): void => {
+    for (const s of steps) {
+      if ("think" in s) out.push(loc(s.think, lang));
+      else if ("say" in s) out.push(loc(s.say, lang));
+      else if ("status" in s) out.push(loc(s.status, lang));
+      else if ("spawn" in s) {
+        out.push(loc(s.task, lang));
+        walk(s.steps);
+      }
+    }
+  };
+  walk(dsl.steps);
+  return out;
+};
+
+/** The nouns this scenario counts. Hyphens are flattened first so a German
+ *  compound ("Release-Prüfungen") is read as the two words it is. */
+const CHECK_NOUN = String.raw`(?:checks|reports|Prüfungen|Berichten?)`;
+const flat = (s: string): string => s.replace(/[-\u2013\u2014]/g, " ");
+
+/** "8 checks", "8 independent checks", "8 Release Prüfungen" — one adjective
+ *  of slack, which is all the copy uses. */
+const countsIn = (s: string): number[] =>
+  [...flat(s).matchAll(new RegExp(String.raw`(\d+)\s+(?:\S+\s+)?` + CHECK_NOUN, "gi"))].map((m) =>
+    Number(m[1]),
+  );
+
+/** The same shape with the number written out — the form that cannot follow
+ *  the declaration, and the one this scenario shipped in seven places. */
+const SPELLED = new RegExp(
+  String.raw`\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|` +
+    String.raw`ein|eine|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf)\s+` +
+    String.raw`(?:\S+\s+)?` +
+    CHECK_NOUN,
+  "i",
+);
 
 describe("the fan-out workflow scenario", () => {
   it("is registered, and is a chat scenario so it lands in the Lab", () => {
@@ -203,6 +251,51 @@ describe("the fan-out workflow scenario", () => {
           expect(l.y, `${lang} rank ${l.rank}`).toBeLessThan(n.y);
         }
       }
+    }
+  });
+
+  it("counts the checks with the SAME number everywhere its copy counts them", () => {
+    // The name was drift-proofed; the prose was not. Measured before this
+    // case existed: a ninth worker renamed the scenario to "9 abreast" while
+    // the caption under the wide box still read "eight independent checks at
+    // once" and the sign-off still weighed "eight reports".
+    for (const lang of ["en", "de"] as const) {
+      const copy = ownCopy(lang);
+      const counted = copy.flatMap(countsIn);
+      // A green run over zero matches would say nothing, so the copy has to
+      // still count out loud: the two captions, the ask, the think, the scope
+      // agent's answer, the sign-off's task and status, and the closing line.
+      expect(counted.length, lang).toBeGreaterThanOrEqual(8);
+      for (const n of counted) expect(n, lang).toBe(declaredWidest());
+      for (const line of copy) expect(SPELLED.test(flat(line)), `${lang}: ${line}`).toBe(false);
+    }
+  });
+
+  it("asks for exactly the checks the fan-out runs", () => {
+    for (const lang of ["en", "de"] as const) {
+      const prompt = loc(dsl.prompt, lang);
+      expect(countsIn(prompt), lang).toEqual([declaredWidest()]);
+      // And it names them: the list in the ask is joined from the workers, so
+      // a worker added to the array is a check the ask asked for.
+      for (const c of releaseCheckSubjects(lang)) expect(prompt, `${lang} ${c}`).toContain(c);
+    }
+  });
+
+  it("shows the width in the caption drawn under the wide box", () => {
+    // `DslPhase.detail` is not a comment: WorkflowLens puts it in the caption
+    // band as <span class="wf-rankdetail">, directly under the box whose rows
+    // this number counts. So the number is read back OUT OF THE MARKUP.
+    for (const lang of ["en", "de"] as const) {
+      const events = compile(dsl, lang);
+      const scene = events.reduce(advanceScene, initialScene());
+      const html = renderToStaticMarkup(
+        <WorkflowLens events={events} applied={events} scene={scene} declared={declarationOf(dsl, lang)} />,
+      );
+      const details = [...html.matchAll(/class="wf-rankdetail">([^<]*)</g)].map((m) => m[1]);
+      expect(details, lang).toHaveLength(3);
+      // The wide column and the sign-off that weighs it both say the width.
+      expect(countsIn(details[1]), lang).toEqual([declaredWidest()]);
+      expect(countsIn(details[2]), lang).toEqual([declaredWidest()]);
     }
   });
 });
