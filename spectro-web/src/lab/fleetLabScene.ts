@@ -11,7 +11,7 @@
 
 import type { RunEvent } from "../events";
 import type { FleetModel } from "../spectrum/fleetModel";
-import { advanceLoop, initialLoop, isLocalProvider, type Loop } from "./labScene";
+import { advanceLoop, initialLoop, type Loop } from "./labScene";
 
 /** One fleet node's card in the machine room — its loop plus the fleet meta. */
 export interface FleetLabNode extends Loop {
@@ -39,8 +39,6 @@ export interface FleetLabScene {
   /** The node whose event arrived last — the card that pulses. */
   activeNode: string | null;
   /** True when any node runs against a remote / a local backend (LLM stations). */
-  hasRemote: boolean;
-  hasLocal: boolean;
 }
 
 function freshNode(id: string, role: string, connected: boolean, trigger: string | null): FleetLabNode {
@@ -97,8 +95,6 @@ export function buildFleetLabScene(model: FleetModel): FleetLabScene {
   const runOwners = new Map<string, string>(); // runId -> agentId (for run_end)
   const gateOwners = new Map<string, string>(); // callId -> agentId (for decisions)
   let activeNode: string | null = null;
-  let hasRemote = false;
-  let hasLocal = false;
 
   const fold = (id: string, event: RunEvent): void => {
     const card = ensure(id);
@@ -135,8 +131,6 @@ export function buildFleetLabScene(model: FleetModel): FleetLabScene {
         runOwners.set(event.runId, event.agentId);
         const provider = event.provider;
         if (typeof provider === "string" && provider !== "") {
-          if (isLocalProvider(provider)) hasLocal = true;
-          else hasRemote = true;
           const card = ensure(event.agentId);
           byId.set(event.agentId, { ...card, provider });
         }
@@ -181,7 +175,5 @@ export function buildFleetLabScene(model: FleetModel): FleetLabScene {
   return {
     nodes: ids.map((id) => byId.get(id)!),
     activeNode,
-    hasRemote,
-    hasLocal,
   };
 }

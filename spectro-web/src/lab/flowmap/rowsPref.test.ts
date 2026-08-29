@@ -74,7 +74,6 @@ describe("the preference reaches the layout", () => {
     const evs = events(n);
     const scene = evs.reduce(advanceScene, initialScene());
     const flow = sceneToFlow(scene, deriveDetail(evs), {
-      local: false,
       provider: "anthropic",
       model: "m",
       expanded: true,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { advanceScene, clipMiddle, fileLabel, initialScene, isLocalProvider } from "./labScene";
+import { advanceScene, clipMiddle, fileLabel, initialScene } from "./labScene";
 import type { Scene } from "./labScene";
 
 const T = 1700000000000;
@@ -35,19 +35,25 @@ describe("labScene", () => {
     expect(s.activeFile).toBeNull();
     expect(s.activeCommand).toBeNull();
     expect(s.activeMcp).toBeNull();
-    expect(s.llmLocal).toBeNull();
     expect(s.isError).toBe(false);
   });
 
-  it("run_start focuses the agent and reads provider locality", () => {
+  it("run_start focuses the agent, whoever serves the tokens", () => {
     expect(advanceScene(initialScene(), runStart("ollama")).focus).toBe("agent");
-    expect(advanceScene(initialScene(), runStart("ollama")).llmLocal).toBe(true);
-    expect(advanceScene(initialScene(), runStart("anthropic")).llmLocal).toBe(false);
+    expect(advanceScene(initialScene(), runStart("anthropic")).focus).toBe("agent");
   });
 
-  it("run_start without a provider keeps the previously known locality", () => {
-    const s = play([runStart("ollama"), runStart(undefined)]);
-    expect(s.llmLocal).toBe(true);
+  it("the provider is not part of the scene — two backends fold to one state", () => {
+    // The scene used to record whether the model ran on this machine, and the
+    // map drew a different machine for each answer. With ollama serving cloud
+    // models that bit stopped stating a fact worth folding (card 304), so the
+    // fold has no opinion about the provider left to disagree with.
+    expect(advanceScene(initialScene(), runStart("ollama"))).toEqual(
+      advanceScene(initialScene(), runStart("anthropic")),
+    );
+    expect(play([runStart("ollama"), runStart(undefined)])).toEqual(
+      play([runStart("anthropic"), runStart(undefined)]),
+    );
   });
 
   it("turn_start and deltas focus the llm", () => {
@@ -494,14 +500,6 @@ describe("labScene", () => {
         ts: T,
       } as unknown as RunEvent),
     ).toEqual(before);
-  });
-
-  it("isLocalProvider recognises only ollama as local", () => {
-    expect(isLocalProvider("ollama")).toBe(true);
-    expect(isLocalProvider("Ollama")).toBe(true);
-    expect(isLocalProvider("anthropic")).toBe(false);
-    expect(isLocalProvider(undefined)).toBe(false);
-    expect(isLocalProvider(null)).toBe(false);
   });
 
   it("fileLabel strips the path and middle-truncates long names Apple-style", () => {

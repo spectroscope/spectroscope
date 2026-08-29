@@ -298,7 +298,7 @@ interface Zone {
 interface Layout {
   pos: Record<string, XY>;
   zones: Zone[];
-  boundary: { x: number; y: number; h: number } | null;
+  boundary: { x: number; y: number; h: number };
   subBase: XY;
   subGap: number;
 }
@@ -675,37 +675,83 @@ const COMMON: Record<string, XY> = {
   "os-net": { x: 678, y: 748 }, // the network stack sits right of the MCP client — the exit to the outside
 };
 
+// ---------------------------------------------------------------------------
+// The layout. ONE geometry (card 304), where there used to be two picked by the
+// provider: the LLM inside "your mac" for ollama, outside it for everyone else,
+// and — in the local one — no network boundary drawn at all. That branch made
+// the map draw a different MACHINE depending on who served the tokens, and the
+// fact it was drawing has stopped being one: the internal model now hangs
+// behind the agents, and ollama itself serves cloud models, so "local" no
+// longer states anything worth a second layout. The LLM is always outside, the
+// boundary is always drawn, and the mac zone keeps the full width the workers
+// live in.
+//
+// Everything right of the machine derives from the card sizes rather than from
+// pasted seats, so widening a card moves its neighbours instead of landing on
+// top of them.
+// ---------------------------------------------------------------------------
+
+/**
+ * The mac zone's width — the owner's decision, and the one number here that is
+ * a decision rather than a derivation. The WORKERS live in this width: card 287
+ * gave them a grid up to twelve seats and card 296 tied the seating to the room
+ * available, so narrowing it undoes both. Pinned in sceneToFlow.test.ts on the
+ * literal, so an edit that shrinks it fails loudly instead of quietly costing
+ * seats.
+ */
+const MAC_W = 1340;
+/** The boundary wall as it is drawn — matches the `style.width` its zone gets. */
+const BOUNDARY_W = 20;
+/** Air either side of the wall, so neither frame touches it. */
+const BOUNDARY_GAP = 16;
+/** The outside frame's inset around the widest thing it holds. */
+const OUTSIDE_PAD = 40;
+/** Rail room between Netz and the MCP server, the two that share a row. */
+const EXT_GAP = 50;
+
+/** The LLM card's width — flowmap.css pins `.pf-llm` flat at this in BOTH
+ *  shells, so the seat can be derived from it either way. */
+const LLM_W = EXPANDED_CARD.llm.w;
+/** Ditto `.pf-ext` for Netz and the MCP server. */
+const EXT_W = EXPANDED_CARD.ext.w;
+/** The two external stations side by side. */
+const EXT_ROW_W = 2 * EXT_W + EXT_GAP;
+
+const BOUNDARY_X = MAC_W + BOUNDARY_GAP;
+const OUTSIDE_X = BOUNDARY_X + BOUNDARY_W + BOUNDARY_GAP;
+/** Wide enough for whichever of its two rows is wider — the 440px LLM card, or
+ *  the Netz + MCP-Server pair. The local variant's 380 was sized for the pair
+ *  alone and would have cut 60px off the model card. */
+const OUTSIDE_W = Math.max(LLM_W, EXT_ROW_W) + 2 * OUTSIDE_PAD;
+
+/** The LLM's own row, centred in the frame. */
+const LLM_X = OUTSIDE_X + (OUTSIDE_W - LLM_W) / 2;
+/** The station row below it, centred as a pair. */
+const NETZ_X = OUTSIDE_X + (OUTSIDE_W - EXT_ROW_W) / 2;
+const MCPSERVER_X = NETZ_X + EXT_W + EXT_GAP;
+
 // Generous vertical room so an expanded node (context / JSON) never collides with
 // the OS band below it, and a tall aspect so wide screens get side margins that
 // keep the floating panels off the nodes.
-const LAYOUTS: { remote: Layout; local: Layout } = {
-  remote: {
-    // Wider "Dein Mac" box → more room for the subagent loops. Netz + MCP-Server
-    // sit lower and side by side (horizontally aligned) below the LLM. The LLM
-    // card is 440px wide (2.5x), so the OUTSIDE zone is widened to hold it.
-    pos: { ...COMMON, llm: { x: 1092, y: 240 }, netz: { x: 1090, y: 660 }, mcpserver: { x: 1290, y: 660 } },
-    zones: [
-      { id: "z-mac", x: 0, y: 24, w: 1000, h: 900, variant: "mac", label: "AGENTENSYSTEM · DEIN MAC" },
-      { id: "z-os", x: 24, y: OS_BAND_TOP, w: 792, h: OS_BAND_H, variant: "os", label: "BETRIEBSSYSTEM" },
-      { id: "z-outside", x: 1052, y: 24, w: 520, h: 900, variant: "outside", label: "AUSSERHALB" },
-    ],
-    boundary: { x: 1016, y: 24, h: 900 },
-    subBase: { x: 685, y: 110 }, // centered in the free space right of the agent hub, started higher so the 3rd clears the OS band
-    subGap: 180,
+const LAYOUT: Layout = {
+  pos: {
+    ...COMMON,
+    // y240 leaves the expanded card (540 tall) clear of the station row at y660
+    // once the expanded vertical spread has run.
+    llm: { x: LLM_X, y: 240 },
+    netz: { x: NETZ_X, y: 660 },
+    mcpserver: { x: MCPSERVER_X, y: 660 },
   },
-  local: {
-    // The 440px LLM sits inside "Dein Mac", so the mac zone grows and the
-    // OUTSIDE zone (Netz + MCP-Server only) shifts right accordingly.
-    pos: { ...COMMON, llm: { x: 860, y: 260 }, netz: { x: 1400, y: 660 }, mcpserver: { x: 1580, y: 660 } },
-    zones: [
-      { id: "z-mac", x: 0, y: 24, w: 1340, h: 900, variant: "mac", label: "AGENTENSYSTEM · DEIN MAC" },
-      { id: "z-os", x: 24, y: OS_BAND_TOP, w: 792, h: OS_BAND_H, variant: "os", label: "BETRIEBSSYSTEM" },
-      { id: "z-outside", x: 1372, y: 24, w: 380, h: 900, variant: "outside", label: "AUSSERHALB" },
-    ],
-    boundary: null,
-    subBase: { x: 610, y: 110 }, // centered between the agent hub and the inside LLM, started higher so the 3rd clears the OS band
-    subGap: 180,
-  },
+  zones: [
+    { id: "z-mac", x: 0, y: 24, w: MAC_W, h: 900, variant: "mac", label: "AGENTENSYSTEM · DEIN MAC" },
+    { id: "z-os", x: 24, y: OS_BAND_TOP, w: 792, h: OS_BAND_H, variant: "os", label: "BETRIEBSSYSTEM" },
+    { id: "z-outside", x: OUTSIDE_X, y: 24, w: OUTSIDE_W, h: 900, variant: "outside", label: "AUSSERHALB" },
+  ],
+  boundary: { x: BOUNDARY_X, y: 24, h: 900 },
+  // Centred in the free space right of the agent hub, started higher so the
+  // third card clears the OS band.
+  subBase: { x: 610, y: 110 },
+  subGap: 180,
 };
 
 // focus → the node the packet rests on (gate stays at the agent).
@@ -765,7 +811,6 @@ export function sceneToFlow(
   scene: Scene,
   detail: Detail,
   opts: {
-    local: boolean;
     provider: string;
     model: string;
     systemPrompt?: string;
@@ -803,7 +848,7 @@ export function sceneToFlow(
     rowsPref?: RowsPref;
   },
 ): FlowResult {
-  const L = opts.local ? LAYOUTS.local : LAYOUTS.remote;
+  const L = LAYOUT;
   const lang: Lang = opts.lang ?? "en";
   const declutter = opts.declutter ?? false;
   // Expanded seating (never combined with the edu declutter camera, which has
@@ -872,14 +917,9 @@ export function sceneToFlow(
     // than the agent, so a column keyed to the agent alone would stand on the
     // stations (the seat guards caught exactly that).
     const subX = Math.max(agentX + EXPANDED_CARD.agent.w + EXP_GAP, osZone.x + osBandW + EXP_GAP);
-    // The leftmost thing in the right-hand world sets the shift for all of it:
-    // remote that is the boundary wall, local it is the LLM inside the machine.
-    const rightWorld = Math.min(
-      L.boundary?.x ?? Number.POSITIVE_INFINITY,
-      L.pos.llm.x,
-      L.pos.netz.x,
-      L.pos.mcpserver.x,
-    );
+    // The leftmost thing in the right-hand world sets the shift for all of it —
+    // the boundary wall, since card 304 put the LLM beyond it for everyone.
+    const rightWorld = Math.min(L.boundary.x, L.pos.llm.x, L.pos.netz.x, L.pos.mcpserver.x);
     // The grid's right edge plus rail room: subX + cols * (card + gap). With
     // one column this is exactly the single-column shift it replaces. The mac
     // frame must hold the band even with no worker column (zero workers), so
@@ -922,14 +962,9 @@ export function sceneToFlow(
     colGrow = macFrame ? Math.max(0, subBandBottom + FRAME_PAD - (macFrame.y + macFrame.h)) : 0;
   } else if (!declutter && grid.cols > 1) {
     // Compact grows sideways too: a second worker column would otherwise run
-    // into the boundary (remote) or the in-machine LLM (local). Same shift
-    // rule as expanded — the right-hand world clears the grid's right edge.
-    const rightWorld = Math.min(
-      L.boundary?.x ?? Number.POSITIVE_INFINITY,
-      L.pos.llm.x,
-      L.pos.netz.x,
-      L.pos.mcpserver.x,
-    );
+    // into the boundary wall. Same shift rule as expanded — the right-hand
+    // world clears the grid's right edge.
+    const rightWorld = Math.min(L.boundary.x, L.pos.llm.x, L.pos.netz.x, L.pos.mcpserver.x);
     spread = Math.max(0, L.subBase.x + grid.cols * subColPitch - rightWorld);
     for (const id of ["llm", "netz", "mcpserver"]) posL[id] = { ...posL[id], x: posL[id].x + spread };
   }
@@ -946,7 +981,7 @@ export function sceneToFlow(
           : { ...z, y: z.y + vSpread, h: z.h + bandGrow, ...(osBandW !== null ? { w: osBandW } : {}) },
   );
   const boundaryL =
-    L.boundary && (spread > 0 || frameGrow > 0)
+    spread > 0 || frameGrow > 0
       ? { ...L.boundary, x: L.boundary.x + spread, h: L.boundary.h + frameGrow }
       : L.boundary;
   const nodes: Node[] = [];
@@ -972,7 +1007,7 @@ export function sceneToFlow(
       style: { width: z.w, height: z.h },
     });
   }
-  if (boundaryL && !declutter) {
+  if (!declutter) {
     nodes.push({
       id: "z-boundary",
       type: "zone",
@@ -981,7 +1016,7 @@ export function sceneToFlow(
       draggable: false,
       selectable: false,
       zIndex: 1,
-      style: { width: 20, height: boundaryL.h },
+      style: { width: BOUNDARY_W, height: boundaryL.h },
     });
   }
 
@@ -1091,7 +1126,6 @@ export function sceneToFlow(
       .filter((s) => s.text.length > 0);
   N("llm", "llm", {
     active: llmBusy,
-    local: opts.local,
     provider: opts.provider,
     model: opts.model,
     think: streamsOf(detail.think),
@@ -1166,7 +1200,6 @@ export function sceneToFlow(
   });
 
   // ----- edges (the rails) -----
-  const net = !opts.local; // LLM legs cross the boundary only when remote
   const E = (
     id: string,
     source: string,
@@ -1214,7 +1247,9 @@ export function sceneToFlow(
   E("e-user-agent", "user", "agent", "rs", "lt", litUserAgent, {
     err: scene.isError && scene.focus === "user",
   });
-  E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net });
+  // Every LLM leg crosses the boundary now (card 304) — the model card sits
+  // beyond the wall whoever serves the tokens.
+  E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net: true });
   E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", isHot("main", "disk"), { lane: stationLane(null) });
   E("e-agent-osshell", "agent", "os-shell", "bs", "tt", isHot("main", "cmd"), { lane: stationLane(null) });
   // The MCP call rides the whole chain and lights it end to end while in use:
@@ -1248,7 +1283,7 @@ export function sceneToFlow(
     // off its siblings' at the station handle they all arrive on.
     const seat = pool?.seat[c.id] ?? i;
     E(`e-${id}-agent`, id, "agent", "ls", "rt", false, { dim: true });
-    E(`e-${id}-llm`, id, "llm", "rs", "lt", c.focus === "llm", { net });
+    E(`e-${id}-llm`, id, "llm", "rs", "lt", c.focus === "llm", { net: true });
     // A child's OWN rails to the three shared stations. They are STRUCTURAL
     // (card 295): drawn always, dimmed until used — mirroring what main has
     // had all along. They used to exist only while the child stood on the

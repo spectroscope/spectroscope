@@ -52,8 +52,6 @@ export interface SubagentInfo extends Loop {
 }
 
 export interface Scene extends Loop {
-  /** true = LLM runs on this machine (Ollama); false = remote; null = unknown. */
-  llmLocal: boolean | null;
   /** Subagent loops in spawn order — empty means the map renders like before. */
   subagents: SubagentInfo[];
   /** The child whose event arrived last — lets the owning loop pulse. */
@@ -89,11 +87,6 @@ export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
  *  names used to be spelled out as literals in `advanceLoop` below AND copied
  *  into fileTree.ts, which is three declarations of one vocabulary. */
 export const SHELL_TOOLS = new Set(["run_command", "Bash"]);
-
-/** Only Ollama runs the model on the user's machine; everything else is remote. */
-export function isLocalProvider(provider: string | null | undefined): boolean {
-  return typeof provider === "string" && provider.toLowerCase() === "ollama";
-}
 
 /** Middle-ellipsis WITHOUT the basename split — for glob patterns and other
  *  non-path strings the disk pill shows, where the directories are the point. */
@@ -131,7 +124,6 @@ export function initialScene(): Scene {
   return {
     ...initialLoop(),
     focus: "user", // the main agent idles at the user before a run
-    llmLocal: null,
     subagents: [],
     activeChild: null,
     rootRunId: null,
@@ -366,13 +358,10 @@ export function advanceScene(scene: Scene, event: RunEvent): Scene {
   switch (event.type) {
     case "run_start": {
       // Only the ROOT run_start reaches here — a child's carries agentId ≠ main.
-      const provider = "provider" in event ? event.provider : undefined;
-      return {
-        ...initialScene(),
-        llmLocal: provider !== undefined ? isLocalProvider(provider) : scene.llmLocal,
-        focus: "agent",
-        rootRunId: event.runId,
-      };
+      // The provider used to be folded in here as a locality bit the map drew a
+      // second layout from; card 304 dropped that distinction, so the fold has
+      // no opinion about the backend left and a run_start is a plain reset.
+      return { ...initialScene(), focus: "agent", rootRunId: event.runId };
     }
     case "run_end":
       // A CHILD's own run_end (a different runId, no agentId) must NOT clear the

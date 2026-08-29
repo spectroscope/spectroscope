@@ -661,7 +661,6 @@ export function OsNode({ data }: NodeProps) {
 export function LlmNode({ data }: NodeProps) {
   const d = data as {
     active: boolean;
-    local: boolean;
     provider: string;
     model: string;
     think: AgentStream[];
@@ -693,7 +692,7 @@ export function LlmNode({ data }: NodeProps) {
       <div className="pf-llm__name">LLM</div>
       <div className="pf-llm__model">{d.model || d.provider}</div>
       <div className="pf-llm__loc">
-        <b>{d.local ? t(lang, "map.local") : t(lang, "map.remote")}</b> · {d.provider}
+        <b>{t(lang, "map.remote")}</b> · {d.provider}
       </div>
       {(d.think.length > 0 || d.answer.length > 0) && (
         <Disclosure label={t(lang, "map.llm.reasoning")}>

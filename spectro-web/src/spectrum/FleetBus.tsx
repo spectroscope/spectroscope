@@ -14,7 +14,6 @@ import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { buildFleetLabScene, type FleetLabNode } from "../lab/fleetLabScene";
-import { isLocalProvider } from "../lab/labScene";
 import { buildFleetGraph, type FleetGraphNode } from "./fleetGraph";
 import { NodeComposer } from "./NodeComposer";
 import { buildSpectrum, type Lane, type TickKind } from "./spectrumModel";
@@ -91,19 +90,28 @@ interface FleetBusProps {
   onFocusAgent?: (agentId: string) => void;
 }
 
-function osChipState(card: FleetLabNode): {
+/** What the four inline OS chips of a bus card show, folded out of one node.
+ *  Exported so the invariant below is pinned by a test rather than by a
+ *  comment: the cloud mark follows the FOCUS alone (card 304). */
+export interface BusOsChips {
   disk: string | null;
   shell: string | null;
   mcp: string | null;
   llm: string | null;
+  /** True whenever the packet sits at the model — every model call leaves the
+   *  machine now, whoever serves the tokens. */
   llmRemote: boolean;
-} {
+}
+
+export function osChipState(card: FleetLabNode): BusOsChips {
   return {
     disk: card.disk !== "idle" ? (card.activeFile ?? card.disk) : null,
     shell: card.activeCommand,
     mcp: card.activeMcp,
     llm: card.focus === "llm" ? (card.provider ?? "llm") : null,
-    llmRemote: card.focus === "llm" && !isLocalProvider(card.provider),
+    // Every model call leaves the machine now (card 304): the bus used to spare
+    // the cloud mark for ollama, and ollama serves cloud models too.
+    llmRemote: card.focus === "llm",
   };
 }
 
