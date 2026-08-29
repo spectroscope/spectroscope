@@ -108,7 +108,16 @@ export interface Topology {
 }
 
 /** A node's own box, either dimension optional (card 305). An omitted one is
- *  the engine's cell — 132 x 46, the template's density. */
+ *  the engine's cell — 132 x 46, the template's density.
+ *
+ *  A PRODUCER OF `sizes` MUST CHECK ITS RENDERER TOO. This file decides where
+ *  boxes go; it does not draw them, and the two can disagree. The state
+ *  graph's own card is `.sg-card` in `styles/stategraph.css`, which hard-codes
+ *  `width: 132px` and `min-height: 46px` — its comment says outright that a
+ *  card growing past the layout's idea of it puts arcs through text. Today
+ *  nothing states sizes, so the two agree by standing still. The first caller
+ *  that states one has to make its own renderer read `PlacedNode.w` and `.h`,
+ *  or it will place a 240-wide box and paint a 132-wide one inside it. */
 export interface NodeSize {
   w?: number;
   h?: number;
