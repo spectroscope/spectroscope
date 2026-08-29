@@ -81,7 +81,7 @@ export function stateGraphMarkdown({ run, laid, source, lang }: MdInput): string
       const cells = [
         n.label,
         String(n.rank),
-        t(lang, "sg.st." + lifecycleAt(run, end, n.id)),
+        t(lang, "sg.st." + lifecycleAt(run.records, end, n.id)),
         steps.length > 0 ? steps.join(", ") : DASH,
         nr?.durationMs != null ? `${nr.durationMs} ms` : DASH,
         (nr?.updateKeys.length ?? 0) > 0 ? nr!.updateKeys.join(", ") : DASH,

@@ -38,7 +38,7 @@ export function stateGraphSvg({ run, laid, upto, source, theme }: SvgInput): str
   const b = laid.bounds;
   const w = Math.max(1, Math.round(b.x1 - b.x0));
   const h = Math.max(1, Math.round(b.y1 - b.y0));
-  const stats = edgeStatsUpTo(run, upto);
+  const stats = edgeStatsUpTo(run.records, upto);
 
   const css = [
     `.x-bg{fill:${tk.bg}}`,
@@ -108,7 +108,7 @@ export function stateGraphSvg({ run, laid, upto, source, theme }: SvgInput): str
 
   const nodes = laid.nodes
     .map((n) => {
-      const life = lifecycleAt(run, upto, n.id);
+      const life = lifecycleAt(run.records, upto, n.id);
       return (
         `<g data-id="${escapeHtml(n.id)}">` +
         `<rect class="x-n x-n--${life}" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10"/>` +
