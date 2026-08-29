@@ -1465,8 +1465,8 @@ const workflowPhases: Dsl = {
  *
  * `workflowPhases` above is a five-stage pipeline that happens to contain two
  * fan-outs. This one is the other picture: a small scope, ONE wide phase, a
- * sign-off — a release-readiness pass where eight independent checks run at
- * the same time and one agent turns what comes back into a single answer.
+ * sign-off — a release-readiness pass where the checks in `releaseChecks` run
+ * at the same time and one agent turns what comes back into a single answer.
  *
  * WHY EIGHT, and not a number that reads bigger. The Lab's worker grid seats
  * `SEATS_MAX_EXPANDED` = 12 workers expanded and `SEATS_MAX_COMPACT` = 6
@@ -1481,21 +1481,45 @@ const workflowPhases: Dsl = {
  * lowering it below the declaration fails the case — bitten, by setting the
  * ceiling to 4.
  *
- * THE NAME IS COMPUTED, not typed. Both numbers in it are read off
- * `fanoutWorkflowPhases` below, so the count follows the list: measured by
- * adding a ninth worker, the name became "Fan-out workflow · 11 agents, 9
- * abreast" / "· 11 Agenten, 9 nebeneinander" on its own, with all fourteen
- * cases still green. Typing a literal over the derivation is still POSSIBLE —
- * this is a comment, not a lock — which is why the tests read the shown name
- * back and compare it to the declaration, and why typing 12 into either half
- * turns exactly one of them red.
+ * EVERY NUMBER SHOWN IS COMPUTED, not typed — the name, the two captions the
+ * lens draws under the boxes, the ask, and every line the run says out loud.
+ * The first cut derived only the NAME, and that was a defect the review
+ * caught: a ninth worker renamed the scenario to "9 abreast" while the caption
+ * under the wide box still read "eight independent checks at once" and the
+ * sign-off still weighed "eight reports". Re-measured after the fix, with the
+ * same ninth worker: name "Fan-out workflow · 11 agents, 9 abreast", captions
+ * "9 independent checks at once" and "one answer out of 9 reports", and an ask
+ * that both counts nine and NAMES the ninth check, because its list is joined
+ * from `subject` — all seventeen cases green, both locales.
+ *
+ * Typing a literal over a derivation is still POSSIBLE — this is a comment,
+ * not a lock — so the cases read the shown words back: the name against the
+ * declaration, the captions out of the rendered `.wf-rankdetail` markup, and
+ * every count in the copy against the width. Bitten seven ways, one mutation
+ * at a time: a spelled-out "eight" back in the wide caption, the same word
+ * back in the sign-off's status line, a wrong digit in each of the two
+ * captions, a typed 12 in the ask, an ask that stops naming one check, and a
+ * closing line that quietly drops its count. Each one turns red, and only the
+ * cases that own it.
  */
 
 /** One agent inside a fan-out step, named so the array below can be ANNOTATED
  *  rather than inferred. Inference widened `gate: "allow"` to `string` here
  *  and `npx tsc -b` was the only thing that said so — vitest erases types, so
  *  all thirteen cases were green over code that did not compile. */
-type FanoutAgent = { id: string; task: Localized; steps: Step[] };
+type FanoutAgent = {
+  id: string;
+  /** The noun the ASK uses for this check. The prompt's list is joined from
+   *  these, so a worker added to the array is a check the ask asked for and
+   *  one taken out is a check it stops naming. */
+  subject: { en: string; de: string };
+  task: Localized;
+  steps: Step[];
+};
+
+/** "a, b and c" / "a, b und c". */
+const joinList = (items: string[], conj: string): string =>
+  items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} ${conj} ${items[items.length - 1]}`;
 
 /** The wide phase's workers, authored once. The phase's `agents` list and the
  *  fan-out that spawns them both read this array, so the declaration and the
@@ -1503,6 +1527,7 @@ type FanoutAgent = { id: string; task: Localized; steps: Step[] };
 const releaseChecks: FanoutAgent[] = [
   {
     id: "check-changelog",
+    subject: { en: "the changelog", de: "das Changelog" },
     task: { en: "reconcile the changelog", de: "Changelog abgleichen" },
     steps: [
       { status: { en: "reading the merged commits", de: "lese die gemergten Commits" } },
@@ -1519,6 +1544,7 @@ const releaseChecks: FanoutAgent[] = [
   },
   {
     id: "check-pins",
+    subject: { en: "the version pins", de: "die Versions-Pins" },
     task: { en: "verify the version pins", de: "Versions-Pins prüfen" },
     steps: [
       { status: { en: "reading the build files", de: "lese die Build-Dateien" } },
@@ -1535,6 +1561,7 @@ const releaseChecks: FanoutAgent[] = [
   },
   {
     id: "check-licences",
+    subject: { en: "the dependency licences", de: "die Lizenzen" },
     task: { en: "review dependency licences", de: "Lizenzen sichten" },
     steps: [
       { status: { en: "resolving the dependency tree", de: "löse den Abhängigkeitsbaum auf" } },
@@ -1550,6 +1577,7 @@ const releaseChecks: FanoutAgent[] = [
   },
   {
     id: "check-api",
+    subject: { en: "the public API", de: "die öffentliche API" },
     task: { en: "diff the public API", de: "öffentliche API vergleichen" },
     steps: [
       { status: { en: "comparing against the last tag", de: "vergleiche mit dem letzten Tag" } },
@@ -1565,6 +1593,7 @@ const releaseChecks: FanoutAgent[] = [
   },
   {
     id: "check-migrations",
+    subject: { en: "the config migration", de: "die Konfigurations-Migration" },
     task: { en: "migrate config, then back", de: "Konfig vor und zurück fahren" },
     steps: [
       { status: { en: "migrating a 0.10 settings file", de: "migriere eine 0.10-Settings-Datei" } },
@@ -1581,6 +1610,7 @@ const releaseChecks: FanoutAgent[] = [
   },
   {
     id: "check-docs",
+    subject: { en: "the docs commands", de: "die Doku-Befehle" },
     task: { en: "check the docs commands", de: "Doku-Befehle prüfen" },
     steps: [
       { status: { en: "extracting the shell blocks", de: "ziehe die Shell-Blöcke heraus" } },
@@ -1596,6 +1626,7 @@ const releaseChecks: FanoutAgent[] = [
   },
   {
     id: "check-install",
+    subject: { en: "a clean install", de: "eine saubere Installation" },
     task: { en: "smoke-test a clean install", de: "saubere Installation testen" },
     steps: [
       { status: { en: "installing into an empty prefix", de: "installiere in ein leeres Prefix" } },
@@ -1612,6 +1643,7 @@ const releaseChecks: FanoutAgent[] = [
   },
   {
     id: "check-bench",
+    subject: { en: "the benchmarks", de: "die Benchmarks" },
     task: { en: "benchmark against the tag", de: "gegen den Tag benchen" },
     steps: [
       { status: { en: "running the benchmark suite", de: "lasse die Benchmark-Suite laufen" } },
@@ -1627,28 +1659,46 @@ const releaseChecks: FanoutAgent[] = [
   },
 ];
 
-/** The three declared columns. Both numbers in the scenario's name are read
- *  off THIS array, and the tests compare it against the compiled stream. */
+/** The three declared columns, as ids. Every number this scenario shows — both
+ *  halves of its name and every count in its copy — is read off THIS array,
+ *  and the tests compare it against the compiled stream. The ids come first
+ *  and the phases below quote them, because the captions need the width the
+ *  ids give before they can say it. */
+const fanoutWorkflowRanks: string[][] = [["scope-tag"], releaseChecks.map((c) => c.id), ["sign-off"]];
+
+const fanoutWorkflowAgents = fanoutWorkflowRanks.reduce((n, r) => n + r.length, 0);
+const fanoutWorkflowWidth = Math.max(...fanoutWorkflowRanks.map((r) => r.length));
+
+/** The checks the ask names, in the order the fan-out runs them. Exported for
+ *  `fanoutWorkflow.test.tsx`, which reads each one back out of the prompt. */
+export const releaseCheckSubjects = (lang: "en" | "de"): string[] =>
+  releaseChecks.map((c) => c.subject[lang]);
+
+/** `detail` is not a comment: `WorkflowLens` draws it as `.wf-rankdetail` in
+ *  the caption band, under the box whose rows the number counts. */
 const fanoutWorkflowPhases: DslPhase[] = [
   {
     title: { en: "scope", de: "abstecken" },
     detail: { en: "name the checks the tag needs", de: "die nötigen Prüfungen benennen" },
-    agents: ["scope-tag"],
+    agents: fanoutWorkflowRanks[0],
   },
   {
     title: { en: "check", de: "prüfen" },
-    detail: { en: "eight independent checks at once", de: "acht unabhängige Prüfungen gleichzeitig" },
-    agents: releaseChecks.map((c) => c.id),
+    detail: {
+      en: `${fanoutWorkflowWidth} independent checks at once`,
+      de: `${fanoutWorkflowWidth} unabhängige Prüfungen gleichzeitig`,
+    },
+    agents: fanoutWorkflowRanks[1],
   },
   {
     title: { en: "sign off", de: "freigeben" },
-    detail: { en: "one answer out of eight reports", de: "eine Antwort aus acht Berichten" },
-    agents: ["sign-off"],
+    detail: {
+      en: `one answer out of ${fanoutWorkflowWidth} reports`,
+      de: `eine Antwort aus ${fanoutWorkflowWidth} Berichten`,
+    },
+    agents: fanoutWorkflowRanks[2],
   },
 ];
-
-const fanoutWorkflowAgents = fanoutWorkflowPhases.reduce((n, p) => n + p.agents.length, 0);
-const fanoutWorkflowWidth = Math.max(...fanoutWorkflowPhases.map((p) => p.agents.length));
 
 const fanoutWorkflow: Dsl = {
   id: "fanout-workflow",
@@ -1657,16 +1707,16 @@ const fanoutWorkflow: Dsl = {
     de: `Fan-out-Workflow · ${fanoutWorkflowAgents} Agenten, ${fanoutWorkflowWidth} nebeneinander`,
   },
   prompt: {
-    en: "We are cutting 0.11.0. Scope what the tag range touches, then run the release checks in parallel — changelog, version pins, licences, public API, config migration, docs, a clean install and the benchmarks — and give me one go/no-go at the end.",
-    de: "Wir schneiden 0.11.0. Steck ab, was der Tag-Bereich berührt, lass dann die Release-Prüfungen parallel laufen — Changelog, Versions-Pins, Lizenzen, öffentliche API, Konfigurations-Migration, Doku, saubere Installation und Benchmarks — und gib mir am Ende ein einziges Go/No-Go.",
+    en: `We are cutting 0.11.0. Scope what the tag range touches, then run the ${fanoutWorkflowWidth} release checks in parallel — ${joinList(releaseCheckSubjects("en"), "and")} — and give me one go/no-go at the end.`,
+    de: `Wir schneiden 0.11.0. Steck ab, was der Tag-Bereich berührt, lass dann die ${fanoutWorkflowWidth} Release-Prüfungen parallel laufen — ${joinList(releaseCheckSubjects("de"), "und")} — und gib mir am Ende ein einziges Go/No-Go.`,
   },
   provider: "ollama",
   phases: fanoutWorkflowPhases,
   steps: [
     {
       think: {
-        en: "Three phases, and the middle one is the whole point: eight checks that never wait for each other.",
-        de: "Drei Phasen, und die mittlere ist der eigentliche Punkt: acht Prüfungen, die nie aufeinander warten.",
+        en: `${fanoutWorkflowRanks.length} phases, and the middle one is the whole point: ${fanoutWorkflowWidth} checks that never wait for each other.`,
+        de: `${fanoutWorkflowRanks.length} Phasen, und die mittlere ist der eigentliche Punkt: ${fanoutWorkflowWidth} Prüfungen, die nie aufeinander warten.`,
       },
     },
     {
@@ -1680,8 +1730,8 @@ const fanoutWorkflow: Dsl = {
         { usage: { in: 12_000, out: 800 } },
         {
           say: {
-            en: "Six modules moved. The checklist names eight checks, and none of them depends on another.",
-            de: "Sechs Module haben sich bewegt. Die Checkliste nennt acht Prüfungen, keine hängt von einer anderen ab.",
+            en: `6 modules moved. The checklist names ${fanoutWorkflowWidth} checks, and none of them depends on another.`,
+            de: `6 Module haben sich bewegt. Die Checkliste nennt ${fanoutWorkflowWidth} Prüfungen, keine hängt von einer anderen ab.`,
           },
         },
       ],
@@ -1690,9 +1740,17 @@ const fanoutWorkflow: Dsl = {
     {
       spawn: "sign-off",
       label: "sign off",
-      task: { en: "Go/No-Go from eight reports", de: "Go/No-Go aus acht Berichten" },
+      task: {
+        en: `Go/No-Go from ${fanoutWorkflowWidth} reports`,
+        de: `Go/No-Go aus ${fanoutWorkflowWidth} Berichten`,
+      },
       steps: [
-        { status: { en: "weighing the eight reports", de: "wäge die acht Berichte ab" } },
+        {
+          status: {
+            en: `weighing the ${fanoutWorkflowWidth} reports`,
+            de: `wäge die ${fanoutWorkflowWidth} Berichte ab`,
+          },
+        },
         {
           write: "docs/release/0.11.0-readiness.md",
           result: "Wrote: docs/release/0.11.0-readiness.md (3140 bytes)",
@@ -1700,16 +1758,16 @@ const fanoutWorkflow: Dsl = {
         { usage: { in: 58_000, out: 2_400 } },
         {
           say: {
-            en: "Six checks clean, two with findings: three missing changelog entries and one stale flag in the install guide. Both are edits, not code — go, once they are made.",
-            de: "Sechs Prüfungen sauber, zwei mit Funden: drei fehlende Changelog-Einträge und ein veraltetes Flag im Installations-Guide. Beides sind Textänderungen, kein Code — Go, sobald sie gemacht sind.",
+            en: "The changelog is missing three entries, and the install guide still passes a flag that moved into the config file. Everything else came back clean — go, once those two edits are made.",
+            de: "Im Changelog fehlen drei Einträge, und der Installations-Guide übergibt noch ein Flag, das in die Konfigurationsdatei gewandert ist. Alles andere kam sauber zurück — Go, sobald diese zwei Änderungen gemacht sind.",
           },
         },
       ],
     },
     {
       say: {
-        en: "Eight checks ran side by side; the readiness note lists the two things left to fix before the tag.",
-        de: "Acht Prüfungen liefen nebeneinander; die Readiness-Notiz listet die zwei Dinge, die vor dem Tag noch zu erledigen sind.",
+        en: `${fanoutWorkflowWidth} checks ran side by side; the readiness note lists the two things left to fix before the tag.`,
+        de: `${fanoutWorkflowWidth} Prüfungen liefen nebeneinander; die Readiness-Notiz listet die zwei Dinge, die vor dem Tag noch zu erledigen sind.`,
       },
     },
   ],
