@@ -10,7 +10,7 @@ import type { ClientMessage, RunEvent } from "../events";
 import { Chat } from "../components/Chat";
 import { PermissionDialog } from "../components/PermissionDialog";
 import { Resizer } from "../components/Resizer";
-import { setChatW, setTraceW, toggleChat, toggleTrace, useLayout } from "../state/layout";
+import { setChatW, setCtxW, setTraceW, toggleChat, toggleCtx, toggleTrace, useLayout } from "../state/layout";
 import type { PendingAttachment } from "../components/AttachmentPreview";
 import { backToLive, loadReplay, step, useStepper } from "../state/stepper";
 import { labViewDefault } from "./labViewDefault";
@@ -18,6 +18,7 @@ import { LabHint } from "./LabControls";
 import { LabTransport } from "./LabTransport";
 import { FlowMap } from "./FlowMap";
 import { LabTrace } from "./LabTrace";
+import { ContextPeak } from "./ContextPeak";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
 import { lensFrom, WorkflowLens, type LabLens } from "./workflow/WorkflowLens";
@@ -71,6 +72,9 @@ export function persistRowsPref(next: RowsPref): void {
 // centre always keeps room for the stepper visuals.
 const LAB_CHAT_MIN_WIDTH_PX = 220;
 const LAB_TRACE_MIN_WIDTH_PX = 200;
+/** The context dock (card 300): wide enough for a peak, its bar and the
+ *  sentence that says what the bar is a share of. */
+const LAB_CTX_MIN_WIDTH_PX = 260;
 const LAB_CENTER_MIN_WIDTH_PX = 420;
 
 export function LabView(props: {
@@ -216,17 +220,41 @@ export function LabView(props: {
         Math.max(LAB_CHAT_MIN_WIDTH_PX, Math.min(clientX - r.left, r.width - LAB_CENTER_MIN_WIDTH_PX)),
       );
   };
+  // A right-anchored pane's width is the distance from the pointer to that
+  // pane's OWN right edge. It used to be measured against the row's right
+  // edge, which was the same thing while the JSONL strip was the last child;
+  // with the context dock behind it (card 300) it no longer is, and a drag
+  // measured against the row would jump by the dock's width. The row's right
+  // edge stays the fallback for a pane that is not mounted.
+  const paneRight = (selector: string): number | null => {
+    const el = rowRef.current?.querySelector(selector);
+    return el === null || el === undefined ? null : el.getBoundingClientRect().right;
+  };
   const resizeTrace = (clientX: number): void => {
     const r = rowRef.current?.getBoundingClientRect();
     if (r)
       setTraceW(
-        Math.max(LAB_TRACE_MIN_WIDTH_PX, Math.min(r.right - clientX, r.width - LAB_CENTER_MIN_WIDTH_PX)),
+        Math.max(
+          LAB_TRACE_MIN_WIDTH_PX,
+          Math.min((paneRight(".lab-trace") ?? r.right) - clientX, r.width - LAB_CENTER_MIN_WIDTH_PX),
+        ),
+      );
+  };
+  const resizeCtx = (clientX: number): void => {
+    const r = rowRef.current?.getBoundingClientRect();
+    if (r)
+      setCtxW(
+        Math.max(
+          LAB_CTX_MIN_WIDTH_PX,
+          Math.min((paneRight(".lab-ctx") ?? r.right) - clientX, r.width - LAB_CENTER_MIN_WIDTH_PX),
+        ),
       );
   };
   const rowClass = `lab-row${layout.chatOpen ? "" : " lab-row--chat-collapsed"}${layout.traceOpen ? "" : " lab-row--trace-collapsed"}`;
   const rowStyle = {
     "--lab-chat-w": `${layout.chatW}px`,
     "--lab-trace-w": `${layout.traceW}px`,
+    "--lab-ctx-w": `${layout.ctxW}px`,
   } as CSSProperties;
 
   return (
@@ -393,6 +421,22 @@ export function LabView(props: {
         onToggle={toggleTrace}
       />
       <LabTrace applied={st.applied} queue={st.queue} fireSeq={st.fireSeq} />
+
+      {/* The context dock (card 300). Its two neighbours stay MOUNTED while
+          collapsed and hide in CSS — the terminal's idiom, where folding must
+          not kill a shell. This one has no such state, and mounting it would
+          run deriveDetail over the whole applied prefix on every step for a
+          panel nobody opened, so a closed dock is genuinely absent. */}
+      <Resizer
+        collapsed={!layout.ctxOpen}
+        chevron="left"
+        label={t(lang, "lab.ctx.title")}
+        onResize={resizeCtx}
+        onToggle={toggleCtx}
+      />
+      {layout.ctxOpen && (
+        <ContextPeak applied={st.applied} {...(props.model === undefined ? {} : { model: props.model })} />
+      )}
 
       {pendingPermission !== undefined && (
         <PermissionDialog

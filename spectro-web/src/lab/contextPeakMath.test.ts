@@ -2,7 +2,7 @@
 // honesty rules it exists to keep. Each rule gets its own bite below.
 
 import { describe, expect, it } from "vitest";
-import { contextPeaks } from "./contextPeak";
+import { contextPeaks } from "./contextPeakMath";
 import { agentDirectory } from "./agentDirectory";
 import { deriveDetail } from "./flowmap/sceneToFlow";
 import type { RunEvent } from "../events";
@@ -44,7 +44,11 @@ function table(events: RunEvent[], reported: Parameters<typeof contextPeaks>[0][
   });
 }
 
-const CHILDREN = [start("main", "claude-opus-4-6"), spawn("kid-a", "read the docs"), start("kid-a", "claude-haiku-4-5", "main")];
+const CHILDREN = [
+  start("main", "claude-opus-4-6"),
+  spawn("kid-a", "read the docs"),
+  start("kid-a", "claude-haiku-4-5", "main"),
+];
 
 describe("the peak comes from the canon's spend, the handle from the canon's directory", () => {
   it("one row per agent that actually reported usage, root first", () => {

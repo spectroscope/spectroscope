@@ -133,14 +133,11 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
 
   // Rule 3 first: a threshold the harness says it fell back to states that
   // nothing was learned, so it is handed on as nothing.
-  const measured =
-    reported !== null && reported.source !== "fallback" ? reported.threshold : undefined;
+  const measured = reported !== null && reported.source !== "fallback" ? reported.threshold : undefined;
   const rootModel = (rootId === null ? undefined : models[rootId]) ?? input.fallbackModel;
-  const rootWindow =
-    rootModel === undefined || rootModel === "" ? null : contextWindowFor(rootModel);
+  const rootWindow = rootModel === undefined || rootModel === "" ? null : contextWindowFor(rootModel);
 
-  const spent: { id: string; tag: string; name: string; model?: string; peak: number; turns: number }[] =
-    [];
+  const spent: { id: string; tag: string; name: string; model?: string; peak: number; turns: number }[] = [];
   for (const [id, handle] of directory) {
     const s = spend[id];
     if (s === undefined || s.turns <= 0) continue;
