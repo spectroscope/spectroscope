@@ -96,3 +96,83 @@ describe("a stated node size", () => {
     expect(c.x).toBeGreaterThanOrEqual(b.x + 240);
   });
 });
+
+/** Three ranks of mixed sizes: one box far bigger than the cell, one middling,
+ *  one SMALLER than the cell, and three that state nothing. The small one is
+ *  there on purpose — an override that only ever grows a box is a different
+ *  piece of arithmetic from one that also shrinks it. */
+const MIXED: Topology = {
+  entry: "root",
+  nodes: ["root", "a", "b", "c", "d", "e", "f"].map((id) => ({ id, label: id })),
+  edges: [
+    { from: "root", to: "a", kind: "direct" },
+    { from: "root", to: "b", kind: "direct" },
+    { from: "root", to: "c", kind: "direct" },
+    { from: "a", to: "d", kind: "direct" },
+    { from: "b", to: "e", kind: "direct" },
+    { from: "c", to: "f", kind: "direct" },
+  ],
+  ranks: new Map([
+    ["root", 0],
+    ["a", 1],
+    ["b", 1],
+    ["c", 1],
+    ["d", 2],
+    ["e", 2],
+    ["f", 2],
+  ]),
+  sizes: new Map([
+    ["a", { w: 260, h: 180 }],
+    ["e", { w: 200, h: 120 }],
+    ["root", { w: 90, h: 30 }],
+  ]),
+};
+
+/** No two boxes may share a pixel. Takes the layout rather than making it, so
+ *  the two orientations below stay two separate cases. */
+const expectNoOverlap = (l: ReturnType<typeof layoutStateGraph>) => {
+  for (let i = 0; i < l.nodes.length; i++) {
+    for (let j = i + 1; j < l.nodes.length; j++) {
+      const a = l.nodes[i];
+      const b = l.nodes[j];
+      const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+      expect(apart, `${a.id} overlaps ${b.id}`).toBe(true);
+    }
+  }
+};
+
+describe("boxes of stated sizes still never overlap", () => {
+  // The invariant `layout.test.ts` holds over the uniform engine, carried onto
+  // the case the uniform engine could not produce. Two cases, not one loop:
+  // breaking one orientation's arithmetic must turn exactly one of them red,
+  // and that has been checked by doing it rather than by believing it.
+  it("horizontally", () => {
+    expectNoOverlap(layoutStateGraph(MIXED, "horizontal"));
+  });
+
+  it("vertically", () => {
+    expectNoOverlap(layoutStateGraph(MIXED, "vertical"));
+  });
+
+  it("keeps every box inside the reported bounds, horizontally", () => {
+    // The bounds are what the viewport fits to. A box outside them is a box
+    // the reader has to find by scrolling into blank space.
+    const l = layoutStateGraph(MIXED, "horizontal");
+    for (const n of l.nodes) {
+      expect(n.x).toBeGreaterThanOrEqual(l.bounds.x0);
+      expect(n.y).toBeGreaterThanOrEqual(l.bounds.y0);
+      expect(n.x + n.w).toBeLessThanOrEqual(l.bounds.x1);
+      expect(n.y + n.h).toBeLessThanOrEqual(l.bounds.y1);
+    }
+  });
+
+  it("keeps every box inside the reported bounds, vertically", () => {
+    const l = layoutStateGraph(MIXED, "vertical");
+    for (const n of l.nodes) {
+      expect(n.x).toBeGreaterThanOrEqual(l.bounds.x0);
+      expect(n.y).toBeGreaterThanOrEqual(l.bounds.y0);
+      expect(n.x + n.w).toBeLessThanOrEqual(l.bounds.x1);
+      expect(n.y + n.h).toBeLessThanOrEqual(l.bounds.y1);
+    }
+  });
+});
