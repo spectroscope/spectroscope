@@ -122,11 +122,11 @@ describe("chapterLabel — every kind says what happened, in both locales", () =
   });
 
   it("says what the person watching decided", () => {
-    expect(label(everyKind[9], "en")).toContain("carry on");
+    expect(label(everyKind[9], "en")).toContain("carried on");
     expect(label(everyKind[10], "en")).toContain("course");
     expect(label(everyKind[11], "en")).toContain("ended here");
     expect(label(everyKind[12], "en")).toContain("NEW_ONE");
-    expect(label(everyKind[9], "de")).toContain("weitermachen");
+    expect(label(everyKind[9], "de")).toContain("ging weiter");
     expect(label(everyKind[11], "de")).toContain("beendet");
   });
 

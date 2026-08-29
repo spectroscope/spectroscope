@@ -3836,21 +3836,23 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "kein Fortschritt · {detector} ({n}×)",
     en: "no progress · {detector} ({n}×)",
   },
+  // Careful with the actor: CARRY_ON also arrives when NOBODY answered, so a
+  // line saying somebody told the run to go on would be false half the time.
   "lab.mark.intervention.CARRY_ON": {
-    de: "der Lauf sollte weitermachen",
-    en: "the run was told to carry on",
+    de: "der Wächter hat gefragt, der Lauf ging weiter",
+    en: "the guard asked, and the run carried on",
   },
   "lab.mark.intervention.CHANGE_COURSE": {
     de: "am Wächter Kurs geändert",
     en: "course changed at the guard",
   },
   "lab.mark.intervention.END": {
-    de: "der Lauf wurde hier von Hand beendet",
-    en: "the run was ended here, by hand",
+    de: "der Lauf wurde hier beendet",
+    en: "the run was ended here",
   },
   "lab.mark.intervention.other": {
-    de: "die Frage des Wächters wurde beantwortet: {intervention}",
-    en: "the guard's question was answered: {intervention}",
+    de: "am Wächter: {intervention}",
+    en: "at the guard: {intervention}",
   },
   "lab.mark.question": {
     de: "der Lauf hat angehalten und gefragt ({n})",
