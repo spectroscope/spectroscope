@@ -23,6 +23,7 @@ import {
 } from "@xyflow/react";
 import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
+import { agentDirectory } from "./agentDirectory";
 import { deriveDetail, sceneToFlow } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
 import { foldSeatPool, workerChip } from "./flowmap/workerGrid";
@@ -69,6 +70,9 @@ export function FlowMap(props: {
   // The seat pool (card 292): folded over the SAME applied prefix as the scene,
   // so scrubbing re-folds deterministically and seats say what was concurrent.
   const pool = useMemo(() => foldSeatPool(applied), [applied]);
+  // The agent handles (card 298): folded over the SAME applied prefix, so a
+  // station names its occupant by a tag that survives scrubbing.
+  const dir = useMemo(() => agentDirectory(applied), [applied]);
   // The pane's measured aspect (card 292), for the expanded row derivation.
   // null until a real measurement arrives — a HIDDEN pane delivers no frames
   // and no ResizeObserver, so headless (and in tests) this stays null and the
@@ -85,8 +89,9 @@ export function FlowMap(props: {
         expanded: expandAll,
         pool,
         paneAspect,
+        dir,
       }),
-    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool, paneAspect],
+    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool, paneAspect, dir],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);

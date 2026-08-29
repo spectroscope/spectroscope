@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../../events";
+import { agentDirectory } from "../agentDirectory";
 import { advanceScene, initialScene } from "../labScene";
 import { foldSeatPool } from "./workerGrid";
 import { t } from "../../i18n/i18n";
@@ -843,4 +844,48 @@ describe("the agent hub stops claiming a named tool is planning (card 146)", () 
       26,
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// Card 298: the OS stations name their occupant by its handle, not by its
+// position in the live scene array. The fixture is a standalone subagent
+// transcript, because that is where the two answers differ: it roots at its
+// OWN id with no parentId (claudeCode.ts), labScene reads the literal "main"
+// and so files that root under scene.subagents, and the index then numbered
+// the transcript's own root as a worker.
+// ---------------------------------------------------------------------------
+describe("the OS stations take their occupant's tag from the directory", () => {
+  const STATIONS = [
+    { node: "os-disk", tool: "Read", input: { file_path: "a.txt" } },
+    { node: "os-shell", tool: "Bash", input: { command: "ls" } },
+    { node: "os-mcp", tool: "mcp__notes__search_notes", input: {} },
+  ];
+
+  for (const station of STATIONS) {
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "cc-import", agentId: "sub-7", prompt: "hi", ts: T },
+      {
+        type: "tool_call",
+        agentId: "sub-7",
+        callId: "c1",
+        name: station.tool,
+        input: station.input,
+        ts: T + 1,
+      },
+    ];
+    const scene = events.reduce(advanceScene, initialScene());
+    const detail = deriveDetail(events);
+    const byOf = (dir?: ReturnType<typeof agentDirectory>) =>
+      sceneToFlow(scene, detail, { local: true, provider: "p", model: "m", dir }).nodes.find(
+        (n) => n.id === station.node,
+      )?.data.by;
+
+    it(`${station.node}: hands the directory through to the station line`, () => {
+      expect(byOf(agentDirectory(events))).toEqual([{ tag: "main", name: "main" }]);
+    });
+
+    it(`${station.node}: still draws the station with no directory at all`, () => {
+      expect(byOf()).toEqual([{ tag: "w1", name: "w1" }]);
+    });
+  }
 });

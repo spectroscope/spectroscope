@@ -8,6 +8,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { DiskState, Focus, GateState, Loop, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
+import type { AgentDirectory } from "../agentDirectory";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
 import { stationUsers } from "./stationUsers";
@@ -563,6 +564,11 @@ export function sceneToFlow(
      *  measures — absent, the constant row count stands and nothing breaks
      *  headless or in tests. */
     paneAspect?: number | null;
+    /** The agent handles folded over the SAME applied prefix as the scene (card
+     *  298): the OS stations name their occupant by its stable tag instead of
+     *  by its position in the live scene array. Absent — the edu sim has no
+     *  event prefix — the local derivation stands. */
+    dir?: AgentDirectory;
   },
 ): FlowResult {
   const L = opts.local ? LAYOUTS.local : LAYOUTS.remote;
@@ -814,20 +820,20 @@ export function sceneToFlow(
     active: atDisk !== undefined,
     disk: atDisk?.loop.disk ?? "idle",
     file: atDisk?.loop.activeFile ?? null,
-    by: stationUsers(scene, "disk"),
+    by: stationUsers(scene, "disk", opts.dir),
   });
   N("os-shell", "os", {
     kind: "shell",
     active: atCmd !== undefined,
     command: atCmd?.loop.activeCommand ?? null,
-    by: stationUsers(scene, "cmd"),
+    by: stationUsers(scene, "cmd", opts.dir),
   });
   N("os-mcp", "os", {
     kind: "mcp",
     active: mcpInUse,
     mcp: mcpUser?.loop.activeMcp ?? null,
     tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
-    by: stationUsers(scene, "mcp"),
+    by: stationUsers(scene, "mcp", opts.dir),
   });
   N("os-net", "os", { kind: "net", active: mcpInUse });
 
