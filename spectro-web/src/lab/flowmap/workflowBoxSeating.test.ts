@@ -202,6 +202,42 @@ describe("the seat check reads WORLD rectangles", () => {
   });
 });
 
+describe("a boxed agent keeps its rails", () => {
+  // Card 295 fixed exactly this defect once already: a child whose rails only
+  // existed while it stood on a station had no line into the OS band between
+  // two tool calls, and the owner saw floating cards. Moving the members into
+  // a box takes them out of the loop that drew those rails, so it would have
+  // re-introduced it — for every workflow agent, permanently.
+  const edgeIds = (): string[] => flowOf(EVENTS, { declared: DECL }).edges.map((e) => e.id);
+
+  it("has its own leg to the shared model, like every other worker", () => {
+    expect(edgeIds()).toContain("e-sub-a1-llm");
+  });
+
+  it("has its three structural rails into the OS band", () => {
+    const ids = edgeIds();
+    for (const s of ["osdisk", "osshell", "osmcp"]) expect(ids).toContain(`e-sub-b2-${s}`);
+  });
+
+  it("hangs off the run that launched it, not off the session root", () => {
+    const back = flowOf(EVENTS, { declared: DECL }).edges.find((e) => e.id === "e-sub-a1-agent")!;
+    expect(back.target).toBe(BOX);
+  });
+
+  it("keeps a boxed rail off a seated one at the handle they share", () => {
+    // Every rail into a station arrives at the SAME handle, and the lane is
+    // what fans them out. A boxed member numbered from zero would land in the
+    // lane a seated worker is already using and the two would draw one line.
+    const flow = flowOf([...EVENTS, spawn("loner")], { declared: DECL });
+    const laneOf = (id: string) => (flow.edges.find((e) => e.id === id)!.data as { lane: number }).lane;
+    expect(laneOf("e-sub-a1-osdisk")).not.toBe(laneOf("e-sub-loner-osdisk"));
+  });
+
+  it("draws exactly one set — a member is not both boxed and in the pool", () => {
+    expect(edgeIds().filter((id) => id === "e-sub-a1-llm")).toHaveLength(1);
+  });
+});
+
 describe("the per-box switch", () => {
   it("expands ONE box while the map stays compact", () => {
     const flow = flowOf(EVENTS, { declared: DECL, boxExpanded: new Set([BOX]) });

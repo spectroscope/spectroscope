@@ -1499,12 +1499,39 @@ export function sceneToFlow(
     });
   }
 
-  subs.forEach((c, i) => {
-    const id = `sub-${c.id}`;
+  // CARD 306: the boxed members ride the SAME rail rules as the flat ones, and
+  // that is not a nicety. Card 295 already fixed this once — a child whose
+  // rails only existed while it stood on a station had no line into the OS
+  // band between two tool calls, and the owner saw floating cards. Taking the
+  // workflow members out of `subs` would have brought that back for every
+  // workflow agent, permanently, with the rails simply absent instead of
+  // intermittent.
+  //
+  // One difference, and it is the truth rather than a shortcut: a member's leg
+  // home goes to its BOX, because the run is what launched it. The session's
+  // hub did not.
+  const railed: { c: SubagentInfo; seat: number; home: string }[] = subs.map((c, i) => ({
+    c,
     // The same seat the card is drawn on: it is what keeps this worker's rail
     // off its siblings' at the station handle they all arrive on.
-    const seat = pool?.seat[c.id] ?? i;
-    E(`e-${id}-agent`, id, "agent", "ls", "rt", false, { dim: true });
+    seat: pool?.seat[c.id] ?? i,
+    home: "agent",
+  }));
+  // The boxed ones continue the lane numbering past the seated ones, so two
+  // rails never land on one another at the station handle they share.
+  let lane = subs.length;
+  for (const b of boxes) {
+    for (const band of b.layout.bands) {
+      for (const m of band.members) {
+        const c = childOf.get(m.agentId);
+        if (c === undefined) continue;
+        railed.push({ c, seat: lane++, home: b.boxId });
+      }
+    }
+  }
+  railed.forEach(({ c, seat, home }) => {
+    const id = `sub-${c.id}`;
+    E(`e-${id}-agent`, id, home, "ls", "rt", false, { dim: true });
     E(`e-${id}-llm`, id, "llm", "rs", "lt", c.focus === "llm", { net: true });
     // A child's OWN rails to the three shared stations. They are STRUCTURAL
     // (card 295): drawn always, dimmed until used — mirroring what main has
