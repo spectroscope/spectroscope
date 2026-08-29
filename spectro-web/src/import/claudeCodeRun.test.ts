@@ -533,9 +533,10 @@ describe("groupPickedFiles", () => {
       kind: "run",
       session: 0,
       sidecars: [
-        { jsonl: 1, meta: 2 },
-        { jsonl: 3, meta: 4 },
+        { jsonl: 1, meta: 2, runId: null },
+        { jsonl: 3, meta: 4, runId: null },
       ],
+      runStates: [],
     });
   });
 
@@ -544,7 +545,12 @@ describe("groupPickedFiles", () => {
       { name: "sess.jsonl", relativePath: "" },
       { name: "agent-a.jsonl", relativePath: "" },
     ]);
-    expect(group).toEqual({ kind: "run", session: 0, sidecars: [{ jsonl: 1, meta: null }] });
+    expect(group).toEqual({
+      kind: "run",
+      session: 0,
+      sidecars: [{ jsonl: 1, meta: null, runId: null }],
+      runStates: [],
+    });
   });
 
   it("no session .jsonl in the selection is nothing to load", () => {
@@ -563,5 +569,75 @@ describe("groupPickedFiles", () => {
         { name: "two.jsonl", relativePath: "" },
       ]),
     ).toEqual({ kind: "none" });
+  });
+});
+
+// ---- card 297: the workflow runs beside a session --------------------------
+//
+// Claude Code files a workflow's agents under
+// `<session>/subagents/workflows/<runId>/`, next to a `journal.jsonl` the run
+// writes for itself, and keeps the run's own state in
+// `<session>/workflows/<runId>.json`. The layout below is the measured one
+// (2026-08-29, over a real project directory), with synthetic names.
+const FOLDER_PICK = [
+  { name: "sess.jsonl", relativePath: "proj/sess.jsonl" },
+  { name: "agent-direct.jsonl", relativePath: "proj/sess/subagents/agent-direct.jsonl" },
+  { name: "agent-direct.meta.json", relativePath: "proj/sess/subagents/agent-direct.meta.json" },
+  {
+    name: "agent-wfa.jsonl",
+    relativePath: "proj/sess/subagents/workflows/wf_run-one/agent-wfa.jsonl",
+  },
+  {
+    name: "agent-wfa.meta.json",
+    relativePath: "proj/sess/subagents/workflows/wf_run-one/agent-wfa.meta.json",
+  },
+  { name: "journal.jsonl", relativePath: "proj/sess/subagents/workflows/wf_run-one/journal.jsonl" },
+  { name: "wf_run-one.json", relativePath: "proj/sess/workflows/wf_run-one.json" },
+  { name: "board-sweep.js", relativePath: "proj/sess/workflows/scripts/board-sweep.js" },
+  { name: "b1el7nj1s.txt", relativePath: "proj/sess/tool-results/b1el7nj1s.txt" },
+];
+
+describe("groupPickedFiles — a session folder that holds workflow runs", () => {
+  it("does not take a run's journal.jsonl for a second session candidate", () => {
+    // THE BLOCKING DEFECT: every `journal.jsonl` counted as a session, so a
+    // folder with 12 runs offered 13 candidates and the WHOLE import failed
+    // with "no session found". The journal is named by its directory, which
+    // is exactly the kind of statement a directory pick can carry.
+    const group = groupPickedFiles(FOLDER_PICK);
+    expect(group.kind).toBe("run");
+    if (group.kind !== "run") return;
+    expect(FOLDER_PICK[group.session].name).toBe("sess.jsonl");
+  });
+
+  it("tells a workflow child from a direct spawn by the directory it sits in", () => {
+    const group = groupPickedFiles(FOLDER_PICK);
+    if (group.kind !== "run") throw new Error("expected a run");
+    const named = group.sidecars.map((s) => ({
+      name: FOLDER_PICK[s.jsonl].name,
+      runId: s.runId,
+    }));
+    expect(named).toEqual([
+      { name: "agent-direct.jsonl", runId: null },
+      { name: "agent-wfa.jsonl", runId: "wf_run-one" },
+    ]);
+  });
+
+  it("collects each run's own state file, keyed by its run id", () => {
+    const group = groupPickedFiles(FOLDER_PICK);
+    if (group.kind !== "run") throw new Error("expected a run");
+    expect(group.runStates).toEqual([{ runId: "wf_run-one", file: 6 }]);
+  });
+
+  it("a journal.jsonl outside a run directory is still a session candidate", () => {
+    // The rule is the PATH, not the name: only a journal under
+    // subagents/workflows/<runId>/ is a run's own log. Anything else keeping
+    // that name is somebody's session and must stay ambiguous rather than be
+    // quietly dropped.
+    expect(
+      groupPickedFiles([
+        { name: "sess.jsonl", relativePath: "proj/sess.jsonl" },
+        { name: "journal.jsonl", relativePath: "proj/journal.jsonl" },
+      ]).kind,
+    ).toBe("none");
   });
 });

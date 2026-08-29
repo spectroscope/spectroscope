@@ -293,14 +293,40 @@ export interface PickedFile {
   relativePath: string;
 }
 
+/** One picked sidecar: the two file indices, plus the workflow run whose
+ *  directory it sat in (null for a direct `Task` spawn). */
+export interface PickedSidecar {
+  jsonl: number;
+  meta: number | null;
+  runId: string | null;
+}
+
 /** What a selection is. Indices point into the caller's own file list. */
 export type PickedGroup =
   | { kind: "single"; session: number }
-  | { kind: "run"; session: number; sidecars: { jsonl: number; meta: number | null }[] }
+  | {
+      kind: "run";
+      session: number;
+      sidecars: PickedSidecar[];
+      /** Each workflow run's own state file, `workflows/<runId>.json`. */
+      runStates: { runId: string; file: number }[];
+    }
   | { kind: "none" };
 
 const SIDECAR_NAME = /^agent-(.+)\.jsonl$/;
 const META_NAME = /^agent-(.+)\.meta\.json$/;
+/** A workflow run's agents sit in their own directory beside the session
+ *  (card 297, measured 2026-08-29 over a real project folder). */
+const SIDECAR_RUN_PATH = /(?:^|\/)subagents\/workflows\/(wf_[^/]+)\//;
+/** The log a workflow run writes for ITSELF, next to its agents. It is a
+ *  `.jsonl` and it is not a session — which is the whole reason the rule is
+ *  the PATH and not the name: a `journal.jsonl` anywhere else stays a
+ *  candidate, and a folder with 12 runs used to offer 13 of them and fail. */
+const JOURNAL_PATH = /(?:^|\/)subagents\/workflows\/wf_[^/]+\/journal\.jsonl$/;
+/** A run's recorded state: `<session>/workflows/<runId>.json`. The agents'
+ *  directory is `<session>/subagents/workflows/<runId>/`, so no path can be
+ *  read as both. */
+const WF_STATE_PATH = /(?:^|\/)workflows\/(wf_[^/]+)\.json$/;
 
 /**
  * What a picked selection holds.
@@ -317,26 +343,38 @@ export function groupPickedFiles(files: PickedFile[]): PickedGroup {
     return { kind: "single", session: 0 };
   }
   const sessions: number[] = [];
-  const sidecarByAgent = new Map<string, number>();
+  // Keyed by run AND agent: two runs are free to file an agent under the same
+  // hex id, and a key that forgot the directory would silently drop one.
+  const sidecarByAgent = new Map<string, { index: number; runId: string | null }>();
   const metaByAgent = new Map<string, number>();
+  const runStates: { runId: string; file: number }[] = [];
   files.forEach((f, i) => {
+    const runId = SIDECAR_RUN_PATH.exec(f.relativePath)?.[1] ?? null;
+    const key = (agent: string): string => `${runId ?? ""}/${agent}`;
+    if (JOURNAL_PATH.test(f.relativePath)) return;
     const sidecar = SIDECAR_NAME.exec(f.name);
     if (sidecar !== null) {
-      if (!sidecarByAgent.has(sidecar[1])) sidecarByAgent.set(sidecar[1], i);
+      if (!sidecarByAgent.has(key(sidecar[1]))) sidecarByAgent.set(key(sidecar[1]), { index: i, runId });
       return;
     }
     const meta = META_NAME.exec(f.name);
     if (meta !== null) {
-      if (!metaByAgent.has(meta[1])) metaByAgent.set(meta[1], i);
+      if (!metaByAgent.has(key(meta[1]))) metaByAgent.set(key(meta[1]), i);
+      return;
+    }
+    const state = WF_STATE_PATH.exec(f.relativePath);
+    if (state !== null) {
+      runStates.push({ runId: state[1], file: i });
       return;
     }
     if (f.name.endsWith(".jsonl")) sessions.push(i);
   });
   // No session, or two: nothing to load rather than a coin toss.
   if (sessions.length !== 1) return { kind: "none" };
-  const sidecars = [...sidecarByAgent.entries()].map(([agent, jsonl]) => ({
-    jsonl,
-    meta: metaByAgent.get(agent) ?? null,
+  const sidecars = [...sidecarByAgent.entries()].map(([agentKey, { index, runId }]) => ({
+    jsonl: index,
+    meta: metaByAgent.get(agentKey) ?? null,
+    runId,
   }));
-  return { kind: "run", session: sessions[0], sidecars };
+  return { kind: "run", session: sessions[0], sidecars, runStates };
 }
