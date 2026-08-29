@@ -148,6 +148,71 @@ describe("spawnTree — the reconstructed workflow topology", () => {
     expect(tree.topo.ranks!.get("grandchild")).toBe(2);
   });
 
+  it("gives a workflow node's own children their own waves, not one flat rank", () => {
+    // Card 297: an imported workflow run is a node with its agents under it,
+    // and those agents run in phases. The wave grouping used to admit only
+    // children of the ROOT, so every child of a workflow landed flat at
+    // rank(workflow)+1 and four sequential phases drew as one column.
+    const raw: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      ...child("wf", 100, 600, "the workflow run"),
+      ...child("sweep-a", 110, 200, "sweep a", "wf"),
+      ...child("sweep-b", 120, 210, "sweep b", "wf"),
+      ...child("diagnose", 300, 400, "diagnose", "wf"),
+      ...child("write-up", 500, 550, "write up", "wf"),
+    ];
+    const tree = spawnTree(raw.sort((a, b) => a.ts - b.ts));
+    const ranks = tree.topo.ranks!;
+    expect(ranks.get("main")).toBe(0);
+    expect(ranks.get("wf")).toBe(1);
+    // The two overlapping sweepers share the first wave PAST the workflow.
+    expect(ranks.get("sweep-a")).toBe(2);
+    expect(ranks.get("sweep-b")).toBe(2);
+    // Then two more waves, because each began after the one before had ended.
+    expect(ranks.get("diagnose")).toBe(3);
+    expect(ranks.get("write-up")).toBe(4);
+  });
+
+  it("waves each parent's children separately — two runs do not share a sequence", () => {
+    const raw: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      ...child("wf-one", 100, 900, "first run"),
+      ...child("wf-two", 110, 900, "second run"),
+      ...child("one-early", 120, 200, "first run, first phase", "wf-one"),
+      ...child("one-late", 300, 400, "first run, second phase", "wf-one"),
+      ...child("two-only", 500, 600, "second run, only phase", "wf-two"),
+    ];
+    const tree = spawnTree(raw.sort((a, b) => a.ts - b.ts));
+    const ranks = tree.topo.ranks!;
+    // The two runs overlap, so they share a wave off the root.
+    expect(ranks.get("wf-one")).toBe(1);
+    expect(ranks.get("wf-two")).toBe(1);
+    expect(ranks.get("one-early")).toBe(2);
+    expect(ranks.get("one-late")).toBe(3);
+    // The second run's only child starts its OWN sequence at its parent's
+    // next rank — it is not pushed into the first run's third wave just
+    // because it happens to start later on the clock.
+    expect(ranks.get("two-only")).toBe(2);
+  });
+
+  it("still ranks and draws two children that name each other as parent", () => {
+    // The walk down from the root cannot reach a parent cycle, so the guard
+    // is what keeps these two on the picture at all. Nothing here pins WHICH
+    // rank a cycle gets — only that it gets one and is drawn.
+    const raw: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      ...child("chicken", 100, 300, "spawned by the egg", "egg"),
+      ...child("egg", 110, 320, "spawned by the chicken", "chicken"),
+    ];
+    const tree = spawnTree(raw.sort((a, b) => a.ts - b.ts));
+    expect(tree.topo.ranks!.get("chicken")).toBeTypeOf("number");
+    expect(tree.topo.ranks!.get("egg")).toBeTypeOf("number");
+    const laid = layoutStateGraph(tree.topo, "horizontal");
+    expect(laid.nodes.map((n) => n.id)).toEqual(
+      expect.arrayContaining(["main", "chicken", "egg"]),
+    );
+  });
+
   it("reads model and agent type where the run said them", () => {
     const events: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },

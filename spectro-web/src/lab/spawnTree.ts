@@ -108,39 +108,57 @@ export function spawnTree(events: RunEvent[]): SpawnTree {
   const known = new Set<string>([root, ...children.keys()]);
   const resolvedOf = (c: ChildRecord): boolean => c.parentId === root || known.has(c.parentId);
 
-  // Position carries time (variant C): every child drawn off the root — a
-  // direct child, or one whose reported parent never appeared — joins the
-  // wave grouping, in start order. A new wave opens when a child starts
-  // after everything in the wave before it has ended.
-  const offRoot = [...children.values()]
-    .filter((c) => c.parentId === root || !known.has(c.parentId))
-    .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
-  const ranks = new Map<string, number>([[root, 0]]);
-  let wave = 0;
-  let waveEnd = -Infinity;
-  for (const c of offRoot) {
-    if (wave === 0 || c.start > waveEnd) {
-      wave += 1;
-      waveEnd = c.end;
-    } else {
-      waveEnd = Math.max(waveEnd, c.end);
-    }
-    ranks.set(c.id, wave);
+  // Position carries time (variant C): a parent's children sit in their
+  // time-overlap waves, in start order, and a new wave opens when a child
+  // starts after everything in the wave before it has ended.
+  //
+  // Card 297 widened this from "children of the root" to "children of any one
+  // parent". An imported workflow run is a node with its own agents under it,
+  // and those agents run in phases; while the grouping admitted only the
+  // root's children, every child of a workflow landed flat at
+  // rank(workflow) + 1 and four sequential phases drew as one column.
+  //
+  // The waves are derived from the TIMESTAMPS and from nothing else — a
+  // workflow's own state file declares phases, and this function never reads
+  // it. Where a declared phase and a derived wave disagree, the picture shows
+  // the derived one, because that is what the run actually did.
+  const parentOf = (c: ChildRecord): string => (known.has(c.parentId) ? c.parentId : root);
+  const byParent = new Map<string, ChildRecord[]>();
+  for (const c of children.values()) {
+    const p = parentOf(c);
+    const kids = byParent.get(p);
+    if (kids === undefined) byParent.set(p, [c]);
+    else kids.push(c);
   }
-  // A nested child overlaps its parent by construction, so a time wave
-  // cannot separate them — it ranks one step past its parent instead. The
-  // pre-set 1 is the cycle guard: a malformed parent chain stops there
-  // instead of recursing forever.
-  const rankOf = (c: ChildRecord): number => {
-    const got = ranks.get(c.id);
-    if (got !== undefined) return got;
-    ranks.set(c.id, 1);
-    const parent = children.get(c.parentId);
-    const r = parent === undefined ? 1 : rankOf(parent) + 1;
-    ranks.set(c.id, r);
-    return r;
-  };
-  for (const c of children.values()) rankOf(c);
+  const ranks = new Map<string, number>([[root, 0]]);
+  // Down the tree from the root, so a parent's rank is settled before its
+  // children ask for it. `seen` is the cycle guard.
+  const seen = new Set<string>();
+  const queue: string[] = [root];
+  while (queue.length > 0) {
+    const parent = queue.shift()!;
+    if (seen.has(parent)) continue;
+    seen.add(parent);
+    const base = ranks.get(parent) ?? 0;
+    const kids = [...(byParent.get(parent) ?? [])].sort(
+      (a, b) => a.start - b.start || a.id.localeCompare(b.id),
+    );
+    let wave = 0;
+    let waveEnd = -Infinity;
+    for (const c of kids) {
+      if (wave === 0 || c.start > waveEnd) {
+        wave += 1;
+        waveEnd = c.end;
+      } else {
+        waveEnd = Math.max(waveEnd, c.end);
+      }
+      if (!ranks.has(c.id)) ranks.set(c.id, base + wave);
+      queue.push(c.id);
+    }
+  }
+  // A child the walk never reached is in a parent cycle. It still gets drawn,
+  // one step off the root, rather than being left without a rank.
+  for (const c of children.values()) if (!ranks.has(c.id)) ranks.set(c.id, 1);
 
   // The real spawn relation, one edge per child: from its parent when that
   // parent appears in the run, from the root when it does not.
