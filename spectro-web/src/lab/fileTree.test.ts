@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
+import { agentDirectory } from "./agentDirectory";
 import { fileFootprint, shortenPath } from "./fileTree";
 
 const call = (agentId: string, name: string, input: unknown, ts: number): RunEvent => ({
@@ -211,5 +212,41 @@ describe("shortenPath — the workspace root the canon knows", () => {
     expect(shortenPath("src/a.ts", "")).toBe("src/a.ts");
     // A root of nothing but separators is no root either.
     expect(shortenPath("/src/a.ts", "/")).toBe("/src/a.ts");
+  });
+});
+
+// The premise FileFootprint's badge list now rests on. It dropped the fallback
+// that printed an unnamed id as itself — the one place in that panel that could
+// have put a raw `toolu_…` on screen — on the grounds that the fallback cannot
+// fire: both folds read the same prefix, and a tool_call names its agent, so
+// the directory has a handle for every toucher. That is an argument about two
+// modules, so it is measured rather than argued. If the directory's creation
+// rule ever narrows, this goes red where the panel would have gone silent.
+describe("every agent the footprint names, the directory can name too", () => {
+  it("holds a handle for each toucher, over both tool vocabularies", () => {
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 1 },
+      { type: "agent_spawn", agentId: "toolu_01opaque", parentId: "main", task: "read", ts: 2 },
+      call("main", "read_file", { path: "a.ts" }, 10),
+      call("main", "write_file", { path: "a.ts" }, 11),
+      call("toolu_01opaque", "Read", { file_path: "b.ts" }, 12),
+      call("toolu_01opaque", "Edit", { file_path: "a.ts" }, 13),
+      call("never-spawned", "Glob", { pattern: "src/**" }, 14),
+      call("never-spawned", "MultiEdit", { file_path: "c.ts" }, 15),
+    ];
+    const fp = fileFootprint(events);
+    const dir = agentDirectory(events);
+    let checked = 0;
+    for (const touch of fp.touches) {
+      for (const id of [...touch.readers, ...touch.writers]) {
+        checked += 1;
+        expect(dir.has(id), `the directory must hold a handle for ${id}`).toBe(true);
+        expect(dir.get(id)?.tag, `${id} must have a handle to print`).toBeTruthy();
+      }
+    }
+    // The witness: a loop over an empty list proves nothing at all. Six, not
+    // eight: a.ts is one entry that main both read and wrote, so main is
+    // checked on both of its sides, and two of the calls share it.
+    expect(checked).toBe(6);
   });
 });

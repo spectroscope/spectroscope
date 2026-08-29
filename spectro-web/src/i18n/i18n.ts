@@ -4010,8 +4010,19 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "lab.files.readBy": { de: "gelesen von", en: "read by" },
   "lab.files.writtenBy": { de: "geschrieben von", en: "written by" },
+  // Files only. A Glob row is on the list — it is a real disk touch — but it
+  // names a search, not a file, so it is counted beside the paths rather than
+  // inside them: the panel italicises that row and calls it "not a file" in the
+  // same breath, and a number that swept it up said the opposite.
+  //
+  // The noun is the one `lab.files.pattern` already uses, in both languages, on
+  // purpose. A fresh synonym for the count line ("glob", "match expression")
+  // would leave the panel calling one thing two names in two places, which is
+  // the reader's problem long before it is a style one.
   "lab.files.count": { de: "{n} Pfade", en: "{n} paths" },
   "lab.files.countOne": { de: "1 Pfad", en: "1 path" },
+  "lab.files.patterns": { de: "{n} Suchmuster", en: "{n} search patterns" },
+  "lab.files.patternsOne": { de: "1 Suchmuster", en: "1 search pattern" },
   "lab.files.rootNote": {
     de: "Pfade sind relativ zu {root} gekürzt.",
     en: "Paths are shortened against {root}.",

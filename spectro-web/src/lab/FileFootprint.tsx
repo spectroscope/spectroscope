@@ -20,17 +20,24 @@ import { agentDirectory, agentTagColor, type AgentDirectory } from "./agentDirec
 import { fileFootprint, shortenPath, type FileTouch } from "./fileTree";
 import { workspaceBasename } from "../workspace/paths";
 
-/** The worker badges for one side of a touch, in the directory's own order so
- *  w1 is always listed before w2. */
+/**
+ * The worker badges for one side of a touch, in the directory's own order so
+ * w1 is always listed before w2.
+ *
+ * THE DIRECTORY IS THE ONLY SOURCE OF A NAME HERE. A fallback used to append
+ * `[...ids].filter((id) => !dir.has(id))` — every id the directory did not
+ * hold, printed as itself. It was unreachable and it was dangerous, which is a
+ * bad pair: unreachable because both folds read the SAME prefix and a tool_call
+ * names its agent, so an agent that touched a file has a handle by
+ * construction (fileTree.test.ts holds that premise, in case the directory's
+ * creation rule ever narrows); dangerous because it was the one place in this
+ * panel that would have put a raw `toolu_…` on a screen, which is the exact
+ * thing card 298 built the directory to stop.
+ */
 function Badges(props: { ids: ReadonlySet<string>; dir: AgentDirectory; label: string }) {
   const { ids, dir, label } = props;
   if (ids.size === 0) return null;
-  const tags = [...dir]
-    .filter(([id]) => ids.has(id))
-    .map(([, handle]) => handle.tag)
-    // An id the directory never named still gets shown — as itself, rather
-    // than dropped, because a touch by an unknown agent is still a touch.
-    .concat([...ids].filter((id) => !dir.has(id)));
+  const tags = [...dir].filter(([id]) => ids.has(id)).map(([, handle]) => handle.tag);
   return (
     <span className="lab-files-side">
       <span className="lab-files-side-label">{label}</span>
@@ -103,6 +110,26 @@ export function FileFootprint(props: {
           onFocusEvent(agentId, ev);
         };
 
+  // The count says "paths", so it counts paths. A Glob row belongs on the list
+  // — dropping it would make the tree thinner than the run was — but this panel
+  // italicises it and its tooltip calls it "not a file", and a number that
+  // swept it in contradicted both, on screen, at the same time. Patterns are
+  // therefore counted beside the paths, in their own words.
+  const files = fp.touches.filter((touch) => !touch.pattern).length;
+  const patterns = fp.touches.length - files;
+  const countLine = [
+    files === 0
+      ? null
+      : files === 1
+        ? t(lang, "lab.files.countOne")
+        : t(lang, "lab.files.count", { n: files }),
+    patterns === 0
+      ? null
+      : patterns === 1
+        ? t(lang, "lab.files.patternsOne")
+        : t(lang, "lab.files.patterns", { n: patterns }),
+  ].filter((s): s is string => s !== null);
+
   const shellNote =
     fp.shellCalls === 0
       ? null
@@ -120,11 +147,7 @@ export function FileFootprint(props: {
         </p>
       ) : (
         <>
-          <p className="lab-files-count tabular">
-            {fp.touches.length === 1
-              ? t(lang, "lab.files.countOne")
-              : t(lang, "lab.files.count", { n: fp.touches.length })}
-          </p>
+          <p className="lab-files-count tabular">{countLine.join(" · ")}</p>
           <ul className="lab-files-list">
             {fp.touches.map((touch) => (
               <Row key={touch.path} touch={touch} dir={dir} root={root} lang={lang} onOpen={open} />
