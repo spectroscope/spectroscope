@@ -20,6 +20,18 @@
 // used when the tree has no relation between the two ends. Every row says
 // which of the two decided it (`fromTree`), because a reader is entitled to
 // know whether they are looking at a fact or at a guess.
+//
+// AND A DEFAULT IS NOT A FACT. The directory fills `parentId` in for every
+// child, including one no frame ever spawned — the fill is the root, and it is
+// a placeholder. Reading it back here reported `fromTree: true` for a
+// relationship the run never stated, which is precisely the failure `fromTree`
+// exists to prevent, so only a RECORDED parent counts (card 298's own header
+// warns that a child can appear without an agent_spawn frame ever naming it).
+//
+// THE SAME RULE GOVERNS THE NUMBERS. `foldWork` has no item for every agent —
+// its `itemOf` says "or undefined for main" in its own words, and an agent
+// only ever heard from as the sender of a status message has none either. A
+// lane like that carries `counts: null` and `state: null`, not a zeroed set.
 
 import type { RunEvent } from "../events";
 import { agentDirectory } from "./agentDirectory";
@@ -50,8 +62,33 @@ export interface LaneMessage {
   text: string;
   /** The size of the handover, in characters of that text. */
   chars: number;
-  /** Prefix index of the task message this one answers, or null. */
+  /**
+   * Prefix index of the task message this one answers, or null.
+   *
+   * Zero-based, like `index` — these are array positions, not line numbers.
+   * LabTrace, the only line numbering the product puts on screen, prints
+   * `appliedStart + i + 1`, so anything that shows one of these to a reader
+   * has to add the one. The panel does; this module does not, because the
+   * cursor's coordinates are what a caller indexes with.
+   */
   answers: number | null;
+}
+
+/**
+ * Everything foldWork counted for one lane.
+ *
+ * Grouped rather than spread across the lane, because they arrive and vanish as
+ * ONE thing: they all come from a single work item, or from no work item at
+ * all. Five nullable fields would let a caller check one and read the other
+ * four, and would leave the render with four ways to ask the same question —
+ * none of which a mutation test can bite on its own.
+ */
+export interface LaneCounts {
+  inTokens: number;
+  outTokens: number;
+  toolCalls: number;
+  gatesAsked: number;
+  gatesDenied: number;
 }
 
 /** One agent's side of the conversation, with the work fold's numbers. */
@@ -60,15 +97,22 @@ export interface MessageLane {
   /** From the directory. */
   tag: string;
   name: string;
-  /** The rest, from foldWork — joined, never recomputed. */
+  /**
+   * The rest, from foldWork — joined, never recomputed, and NULL when the fold
+   * has no item for this agent.
+   *
+   * That case is real and not rare: `itemOf` says in its own words "the item an
+   * agent's events count towards, or undefined for main", and an agent that was
+   * only ever heard from as the SENDER of a status message has no item either.
+   * Filling the gap with zeros and a "submitted" would report, in the reader's
+   * own coordinates, that an agent which spent tokens and called tools did
+   * nothing and has not started. Absent is the absence of a claim, exactly as
+   * events.ts already records for `fileChange`.
+   */
   intent: string;
-  state: WorkState;
+  state: WorkState | null;
   lastStatus: string | null;
-  inTokens: number;
-  outTokens: number;
-  toolCalls: number;
-  gatesAsked: number;
-  gatesDenied: number;
+  counts: LaneCounts | null;
   messages: LaneMessage[];
 }
 
@@ -99,6 +143,12 @@ function flatten(items: readonly WorkItem[], into: Map<string, WorkItem>): Map<s
  * something handed DOWN, while a `status` or a `result` is something reported
  * back UP. Anything else is sideways, which is the honest answer for two
  * agents whose relationship the run never recorded.
+ *
+ * `parentOf` is the RECORDED parent and only the recorded one. The directory
+ * fills `parentId` in for every child, and for one that no frame ever spawned
+ * the fill is the root — a default. Reading that default here would return
+ * `fromTree: true` for a relationship the run never stated, which defeats the
+ * whole point of reporting the difference.
  */
 function directionOf(
   from: string,
@@ -128,7 +178,10 @@ export function messageLanes(events: readonly RunEvent[], upto?: number): Messag
   // and handed to groupWaves for the phase rows.
   const roots = foldWork(prefix);
   const work = flatten(roots, new Map<string, WorkItem>());
-  const parentOf = (id: string): string | null | undefined => dir.get(id)?.parentId;
+  const parentOf = (id: string): string | null | undefined => {
+    const handle = dir.get(id);
+    return handle === undefined || !handle.parentRecorded ? undefined : handle.parentId;
+  };
   const tagOf = (id: string): string => dir.get(id)?.tag ?? id;
 
   /** agentId -> prefix index of the latest task message sent to it. */
@@ -186,13 +239,19 @@ export function messageLanes(events: readonly RunEvent[], upto?: number): Messag
       tag: handle.tag,
       name: handle.name,
       intent: item?.intent ?? "",
-      state: item?.state ?? "submitted",
+      // No item, no numbers. `?? 0` here would have invented a measurement.
+      state: item === undefined ? null : item.state,
       lastStatus: item?.lastStatus ?? null,
-      inTokens: item?.inTokens ?? 0,
-      outTokens: item?.outTokens ?? 0,
-      toolCalls: item?.toolCalls ?? 0,
-      gatesAsked: item?.gatesAsked ?? 0,
-      gatesDenied: item?.gatesDenied ?? 0,
+      counts:
+        item === undefined
+          ? null
+          : {
+              inTokens: item.inTokens,
+              outTokens: item.outTokens,
+              toolCalls: item.toolCalls,
+              gatesAsked: item.gatesAsked,
+              gatesDenied: item.gatesDenied,
+            },
       messages: own,
     });
   }

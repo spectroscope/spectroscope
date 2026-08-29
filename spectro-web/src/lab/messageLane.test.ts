@@ -180,9 +180,9 @@ describe("messageLanes — the numbers come from foldWork", () => {
       { type: "tool_call", agentId: "kid", callId: "c1", name: "Read", input: {}, ts: 26 } as RunEvent,
     ];
     const { lanes } = messageLanes(events);
-    expect(lanes[0].inTokens).toBe(120);
-    expect(lanes[0].outTokens).toBe(34);
-    expect(lanes[0].toolCalls).toBe(1);
+    expect(lanes[0].counts?.inTokens).toBe(120);
+    expect(lanes[0].counts?.outTokens).toBe(34);
+    expect(lanes[0].counts?.toolCalls).toBe(1);
     expect(lanes[0].state).toBe("completed");
     expect(lanes[0].lastStatus).toBe("halfway");
     expect(lanes[0].intent).toBe("scout the checkout");
@@ -243,5 +243,72 @@ describe("messageLanes — the scrub cursor", () => {
     // The handle a message carries is the handle at THAT cursor, and a tag
     // never moves once assigned.
     expect(messageLanes(events, 3).messages[0].toTag).toBe("w1");
+  });
+});
+
+describe("messageLanes — a lane the work fold never opened claims NOTHING", () => {
+  it("hands back null counters, not zeros, for an agent the fold has no item for", () => {
+    // alpha spent 1300 tokens and called two tools. Nothing ever opened work
+    // for it — no agent_spawn, no child run_start, no task message naming it —
+    // so foldWork's `itemOf` returns undefined, which its own comment spells
+    // out as "or undefined for main". Absent is the absence of a claim, and a
+    // fabricated set of zeros would state, in the reader's own coordinates,
+    // that this agent did nothing and has not started.
+    const events: RunEvent[] = [
+      start("main", 0),
+      usage("alpha", 900, 400, 5),
+      { type: "tool_call", agentId: "alpha", callId: "c1", name: "Read", input: {}, ts: 6 } as RunEvent,
+      { type: "tool_call", agentId: "alpha", callId: "c2", name: "Read", input: {}, ts: 7 } as RunEvent,
+      msg("alpha", "beta", "status", "half way", 8),
+    ];
+    const { lanes } = messageLanes(events);
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0].tag).toBe("w1");
+    expect(lanes[0].state).toBeNull();
+    // One null, not five: the counters come from ONE work item or from none.
+    expect(lanes[0].counts).toBeNull();
+  });
+
+  it("still reports a genuine zero as a zero when the fold DID open the lane", () => {
+    // The distinction only means something if a real zero survives it.
+    const { lanes } = messageLanes(conversation());
+    expect(lanes[0].counts).toEqual({
+      inTokens: 0,
+      outTokens: 0,
+      toolCalls: 0,
+      gatesAsked: 0,
+      gatesDenied: 0,
+    });
+    expect(lanes[0].state).toBe("completed");
+  });
+});
+
+describe("messageLanes — a DEFAULTED parent is not a spawn-tree fact", () => {
+  it("calls the direction guessed when no frame ever recorded the parent", () => {
+    // The directory opens an agent nothing spawned with parentId = the root,
+    // as a DEFAULT. Reading that default back through parentOf would dress a
+    // guess as a fact, which is the one thing `fromTree` exists to prevent —
+    // and card 298's own header warns that a child can appear without an
+    // agent_spawn frame ever naming it.
+    const events = [start("main", 0), msg("main", "ghost", "task", "do this", 10)];
+    const { messages } = messageLanes(events);
+    expect(messages[0].direction).toBe("down");
+    expect(messages[0].fromTree).toBe(false);
+  });
+
+  it("calls it a fact again the moment a spawn frame records the parent", () => {
+    const events = [
+      start("main", 0),
+      spawn("ghost", "do this", 5),
+      msg("main", "ghost", "task", "do this", 10),
+    ];
+    expect(messageLanes(events).messages[0].fromTree).toBe(true);
+  });
+
+  it("counts a child run_start that carries its own parentId as a record", () => {
+    const events = [start("main", 0), start("kid", 5, "main"), msg("kid", "main", "status", "mid", 10)];
+    const { messages } = messageLanes(events);
+    expect(messages[0].direction).toBe("up");
+    expect(messages[0].fromTree).toBe(true);
   });
 });
