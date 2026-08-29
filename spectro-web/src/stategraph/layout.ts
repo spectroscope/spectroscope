@@ -115,6 +115,13 @@ export interface RankLabel {
   rank: number;
   x: number;
   y: number;
+  /** How wide this label may be drawn before it reaches the column next door
+   *  (card 303). A caption is anchored on its column's left edge and carried
+   *  no width at all, so any title wider than the column pitch ran into its
+   *  neighbour — into the neighbour's caption, into the neighbour's box, or
+   *  into both. The renderer draws the caption in a box of exactly this width
+   *  and lets the stylesheet cut what does not fit. */
+  maxWidth: number;
   /** The caller's own words for this column, when it handed any in. */
   caption?: RankCaption;
 }
@@ -149,6 +156,11 @@ const GAP = {
  *  additional lane steps (36) so two loops never share one, how far an edge
  *  steps sideways into the gutter (30, capped below the gap), and the corner
  *  radius that makes a lane read as a loop instead of a wiring diagram. */
+/** The room a rank caption gives up so it cannot touch the column next door
+ *  (card 303). A caption may use its own column's pitch minus this; at the
+ *  10px used here, and a 190px pitch, a caption gets 180. */
+export const RANK_CAPTION_GUTTER = 10;
+
 const BACK_CLEAR = 46;
 const SKIP_CLEAR = 42;
 const LANE_STEP = 36;
@@ -409,16 +421,31 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   // packing reduces to first.y = MARGIN + (Lmax-L)*(NH+gapCross)/2), so the
   // state graph's own captions do not move a pixel. Vertical needs no such
   // clamp: it refuses the height override outright and its widths are uniform.
+  //
+  // CARD 303 GAVE THE LABEL A WIDTH, and it is the same kind of fix one step
+  // sideways. Above, the caption was lifted clear of the box it NAMES; it was
+  // still free to run into the box, and the caption, of the column next door.
+  // Measured in a browser at the shipped fit scale: two captions 14.4px into
+  // one another in the same band, reading "...out of fdraft write it up", and
+  // a third over its neighbour's box. Horizontally a column may use its own
+  // pitch less a gutter, which bounds BOTH collisions with one number: the
+  // caption cannot reach the next column at all, so what stands there — words
+  // or a box — no longer matters. Vertically the captions ride the left margin
+  // ABOVE their own row, where nothing shares the band, so the bound there is
+  // the field itself rather than a pitch.
+  const fieldRight = placed.reduce((a, n) => Math.max(a, n.x + n.w), -Infinity);
   const rankLabels: RankLabel[] = [];
   for (let r = 0; r <= maxRank; r++) {
     const inRank = placed.filter((n) => n.rank === r);
     if (inRank.length === 0) continue;
     const first = inRank.reduce((a, b) => ((horiz ? b.y < a.y : b.x < a.x) ? b : a));
     const caption = topo.rankCaptions?.get(r);
+    const x = horiz ? first.x : MARGIN - 22;
     rankLabels.push({
-      ...(horiz
-        ? { rank: r, x: first.x, y: Math.min(MARGIN - 12, first.y - 12) }
-        : { rank: r, x: MARGIN - 22, y: first.y - 8 }),
+      ...(horiz ? { rank: r, x, y: Math.min(MARGIN - 12, first.y - 12) } : { rank: r, x, y: first.y - 8 }),
+      maxWidth: horiz
+        ? NW + gapAlong - RANK_CAPTION_GUTTER
+        : Math.max(0, fieldRight - x - RANK_CAPTION_GUTTER),
       ...(caption !== undefined ? { caption } : {}),
     });
   }

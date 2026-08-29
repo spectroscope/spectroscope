@@ -493,11 +493,30 @@
   50% { opacity: 0.35; }
 }
 
+/* Card 303: the row is a CONTAINER, and it wraps.
+
+   Measured over .lab-scrub-track with getBoundingClientRect().width, dock
+   closed: a 1440px viewport gave the track 672.9px, 1100 gave 326.3, 900 gave
+   126.3 and 771 gave 4.0 — the scrub and its chapter marks stayed on the page
+   and stopped working. Between 1100 and 900 the track lost exactly the 200px
+   the viewport lost, because `min-width: 0` below had made it the only thing
+   in the row free to shrink.
+
+   Two declarations answer that. `container-type` lets each part measure itself
+   against the ROW rather than the window, so the queries below drop what the
+   row can no longer afford — the order and the four widths are decided in
+   transportFit.ts and held to these numbers by scrubKeepsItsWidth.drift.test.ts.
+   `flex-wrap` is the floor under all of it: when even the stripped row cannot
+   pay for the track's minimum, the scrub takes a line of its own instead of
+   being crushed. */
 .lab-transport {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
   flex: none;
+  flex-wrap: wrap;
+  container-type: inline-size;
+  container-name: labtransport;
 }
 .lab-ctrl-btns {
   display: flex;
@@ -569,11 +588,23 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-width: 0;
+  /* Card 303: the floor, and the whole of the four-pixel defect. `min-width: 0`
+     stood here and made the one control the row exists for the one thing free
+     to shrink to nothing. The number is SCRUB_MIN_WIDTH in transportFit.ts. */
+  min-width: 220px;
 }
 .lab-scrub-track input[type="range"] {
   flex: none;
   width: 100%;
+  /* Card 303: `width: 100%` is 100% OF THE TRACK, and every engine ships
+     `input[type="range"] { margin: 2px }` as a UA default — so the input was
+     always the track plus 4px. Measured here at a 513px row: track clientWidth
+     283, scrollWidth 285. It went unseen while the track could shrink to
+     nothing, because the flex algorithm just took the 4px off the track; once
+     the track carries a floor the surplus has nowhere to go but the row. The
+     vertical margin stays: it is the gap to the tick row below. */
+  margin-left: 0;
+  margin-right: 0;
 }
 /* The row spans the track BOX, not the thumb's travel. A native range thumb is
    inset by half its own width at each end, so a tick at 0% or 100% sits a few
@@ -673,6 +704,33 @@
   background: var(--surface-3);
   color: var(--text);
 }
+/* Card 303: what the row drops, and when. Widths from transportFit.ts —
+   pills first (a multiplier only matters while the run is PLAYING, and the
+   same tempo sits in "more"), then the clock (a second reading of the
+   counter's position), then the counter (the thumb still shows the position),
+   and "more" last, since after the pills it is the only speed control left.
+   The buttons and the scrub never yield. */
+@container labtransport (max-width: 907px) {
+  .lab-speed-pills {
+    display: none;
+  }
+}
+@container labtransport (max-width: 705px) {
+  .lab-clock {
+    display: none;
+  }
+}
+@container labtransport (max-width: 605px) {
+  .lab-counter {
+    display: none;
+  }
+}
+@container labtransport (max-width: 513px) {
+  .lab-advanced {
+    display: none;
+  }
+}
+
 .lab-advanced { flex: none; }
 .lab-advanced > summary {
   list-style: none;

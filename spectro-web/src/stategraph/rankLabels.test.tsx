@@ -37,18 +37,18 @@ describe("layout hands the renderer one label per rank", () => {
   it("places horizontal labels at the template's (first.x, MARGIN-12)", () => {
     const laid = layoutStateGraph(CHAIN, "horizontal");
     expect(laid.rankLabels).toEqual([
-      { rank: 0, x: 40, y: 28 },
-      { rank: 1, x: 230, y: 28 },
-      { rank: 2, x: 420, y: 28 },
+      { rank: 0, x: 40, y: 28, maxWidth: 180 },
+      { rank: 1, x: 230, y: 28, maxWidth: 180 },
+      { rank: 2, x: 420, y: 28, maxWidth: 180 },
     ]);
   });
 
   it("places vertical labels at the template's (MARGIN-22, first.y-8)", () => {
     const laid = layoutStateGraph(CHAIN, "vertical");
     expect(laid.rankLabels).toEqual([
-      { rank: 0, x: 18, y: 32 },
-      { rank: 1, x: 18, y: 124 },
-      { rank: 2, x: 18, y: 216 },
+      { rank: 0, x: 18, y: 32, maxWidth: 144 },
+      { rank: 1, x: 18, y: 124, maxWidth: 144 },
+      { rank: 2, x: 18, y: 216, maxWidth: 144 },
     ]);
   });
 

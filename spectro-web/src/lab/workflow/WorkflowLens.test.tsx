@@ -106,11 +106,27 @@ describe("the legend and the honesty chip", () => {
     expect(de).not.toContain("Eltern-Kante");
   });
 
-  it("pins the chip on VALUES: reconstructed from N of M children", () => {
+  it("pins the chip on VALUES: reconstructed from N of M agents in the run", () => {
     const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={7} reported={9} />);
-    expect(en).toContain("reconstructed from 7 of 9 children");
+    expect(en).toContain("reconstructed from 7 of 9 agents in the run");
     const de = renderToStaticMarkup(<WorkflowLegend lang="de" resolved={7} reported={9} />);
-    expect(de).toContain("rekonstruiert aus 7 von 9 Kind-Agenten");
+    expect(de).toContain("rekonstruiert aus 7 von 9 Agenten des Laufs");
+  });
+
+  it("counts agents, not the boxes standing beside it", () => {
+    // CARD 303, the honest rewording. `resolved`/`reported` are statements
+    // about the CHILDREN IN THE EVENT STREAM, and they stayed true — but the
+    // chip sits beside a canvas holding one root box and five phase boxes, and
+    // "reconstructed from 13 of 13 children" beside that picture reads as a
+    // count of the boxes. It never was: the boxes are phases, the number is
+    // agents. The word had to go, in both locales, and the noun that replaces
+    // it has to name the thing the run has rather than the thing on screen.
+    const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={13} reported={13} />);
+    expect(en).toContain("13 of 13 agents");
+    expect(en).not.toContain("13 of 13 children");
+    const de = renderToStaticMarkup(<WorkflowLegend lang="de" resolved={13} reported={13} />);
+    expect(de).toContain("13 von 13 Agenten");
+    expect(de).not.toContain("13 von 13 Kind-Agenten");
   });
 });
 
@@ -168,7 +184,7 @@ describe("the assembled lens", () => {
   it("feeds the chip from the reconstruction: one resolved of two reported", () => {
     const scene = EVENTS.reduce((s, e) => advanceScene(s, e), initialScene());
     const html = renderToStaticMarkup(<WorkflowLens events={EVENTS} applied={EVENTS} scene={scene} />);
-    expect(html).toContain("reconstructed from 1 of 2 children");
+    expect(html).toContain("reconstructed from 1 of 2 agents in the run");
     // Both children render as nodes, the orphan included.
     expect(html).toContain("scout the target");
     expect(html).toContain("a stray child");

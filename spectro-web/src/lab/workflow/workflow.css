@@ -119,15 +119,27 @@
 
 /* Card 302: a declared column's own words, on the layout's rank anchors.
  * Faint and mono, the same register the state graph's rank label uses —
- * a column caption is a ruler mark, not a heading. */
+ * a column caption is a ruler mark, not a heading.
+ *
+ * Card 303: it is an HTML box inside a foreignObject now, one column wide, and
+ * these three declarations are what does the cutting. A phase carries whatever
+ * title its author wrote, and the shipped scenario's own captions already ran
+ * into each other; the width alone bounds nothing without them, since the
+ * default `overflow: visible` would simply let the words out of the box again.
+ * `fill` is gone with the <text> element — an HTML box takes `color`. */
 .wf-ranklabel {
   font-family: var(--font-mono);
   font-size: 10px;
+  line-height: 14px;
   letter-spacing: 0.14em;
-  fill: var(--text-faint);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wf-rankdetail {
+  margin-left: 8px;
   opacity: 0.7;
 }
 
