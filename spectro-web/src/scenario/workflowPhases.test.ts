@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { SCENARIOS } from "./registry";
 import { compile, declarationOf } from "./compile";
-import { spawnTree } from "../lab/spawnTree";
+import { lensPhaseNodeId, spawnTree } from "../lab/spawnTree";
 import { layoutStateGraph } from "../stategraph/layout";
 
 const dsl = SCENARIOS.find((s) => s.id === "workflow-phases")!;
@@ -24,17 +24,38 @@ describe("the declared-workflow scenario", () => {
     expect(dsl.phases).toHaveLength(5);
   });
 
-  it("draws the measured shape: 13 agents over 5 declared columns, 1/5/1/1/5", () => {
+  it("draws the measured shape: five phase boxes holding 1/5/1/1/5 agents", () => {
     const events = compile(dsl, "en");
     const tree = spawnTree(events, declarationOf(dsl, "en"));
     expect(tree.declared).toBe(true);
     const laid = layoutStateGraph(tree.topo, "horizontal");
-    const width = new Map<number, number>();
-    for (const n of laid.nodes) if (n.id !== tree.root) width.set(n.rank, (width.get(n.rank) ?? 0) + 1);
-    const cols = [...width.keys()].sort((a, b) => a - b);
-    expect(cols).toEqual([1, 2, 3, 4, 5]);
-    expect(cols.map((c) => width.get(c))).toEqual([1, 5, 1, 1, 5]);
-    expect(laid.nodes).toHaveLength(14); // the root and its thirteen agents
+    // Six boxes: main and its five phases. The thirteen agents are ROWS.
+    expect(laid.nodes).toHaveLength(6);
+    expect(laid.nodes.map((n) => n.rank).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5]);
+    const held = [0, 1, 2, 3, 4].map((i) => tree.meta[lensPhaseNodeId("main", i)].members.length);
+    expect(held).toEqual([1, 5, 1, 1, 5]);
+    expect(held.reduce((a, b) => a + b, 0)).toBe(13);
+  });
+
+  it("chains the five, and lets nothing else out of the root", () => {
+    const tree = spawnTree(compile(dsl, "en"), declarationOf(dsl, "en"));
+    const id = (i: number) => lensPhaseNodeId("main", i);
+    expect(tree.topo.edges.map((e) => `${e.from}->${e.to}`)).toEqual([
+      `main->${id(0)}`,
+      `${id(0)}->${id(1)}`,
+      `${id(1)}->${id(2)}`,
+      `${id(2)}->${id(3)}`,
+      `${id(3)}->${id(4)}`,
+    ]);
+    expect(tree.topo.edges.filter((e) => e.from === "main")).toHaveLength(1);
+  });
+
+  it("names each agent from the task the run gave it", () => {
+    const tree = spawnTree(compile(dsl, "en"), declarationOf(dsl, "en"));
+    const rows = tree.meta[lensPhaseNodeId("main", 1)].members.map((m) => m.label);
+    expect(rows).toHaveLength(5);
+    for (const r of rows) expect(r).not.toBe("");
+    expect(rows.some((r) => r.includes("probe"))).toBe(true);
   });
 
   it("captions each column, in both locales", () => {
@@ -57,7 +78,9 @@ describe("the declared-workflow scenario", () => {
         .filter((e) => e.type === "agent_spawn")
         .map((e) => (e as { agentId: string }).agentId),
     );
-    const named = [...declarationOf(dsl, "en")!.values()].flatMap((p) => [...p.rankOf.keys()]);
+    const named = [...declarationOf(dsl, "en")!.values()].flatMap((p) =>
+      p.phases.flatMap((ph) => ph.members.map((m) => m.agentId)),
+    );
     expect(named).toHaveLength(13);
     for (const id of named) expect(spawned.has(id), id).toBe(true);
   });

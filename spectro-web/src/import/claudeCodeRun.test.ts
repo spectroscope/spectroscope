@@ -1124,8 +1124,9 @@ describe("the declared phases travel with the import", () => {
     const decl = run.declared!.get("toolu_workflow_1")!;
     expect(decl.phases.map((p) => p.title)).toEqual(["Sweep", "Diagnose"]);
     expect(decl.phases[0].detail).toBe("read every open card");
-    expect(decl.rankOf.get("a11aaaa")).toBe(0);
-    expect(decl.rankOf.get("b22bbbb")).toBe(1);
+    expect(decl.phases[0].members.map((m) => m.agentId)).toEqual(["a11aaaa"]);
+    expect(decl.phases[1].members.map((m) => m.agentId)).toEqual(["b22bbbb"]);
+    expect(decl.unplaced).toEqual([]);
   });
 
   it("declares nothing for a run whose state file listed no phases", () => {

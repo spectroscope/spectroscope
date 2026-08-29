@@ -426,8 +426,6 @@ export function compile(dsl: Dsl, lang: Lang, baseTs = 1_783_000_000_000): RunEv
  */
 export function declarationOf(dsl: Dsl, lang: Lang): WorkflowDeclaration | undefined {
   if (dsl.phases === undefined || dsl.phases.length === 0) return undefined;
-  const rankOf = new Map<string, number>();
-  dsl.phases.forEach((p, i) => p.agents.forEach((id) => rankOf.set(id, i)));
   return new Map([
     [
       "main",
@@ -435,8 +433,21 @@ export function declarationOf(dsl: Dsl, lang: Lang): WorkflowDeclaration | undef
         phases: dsl.phases.map((p) => ({
           title: loc(p.title, lang),
           detail: p.detail === undefined ? null : loc(p.detail, lang),
+          // The label is left empty and the state pending ON PURPOSE. Both are
+          // the stream's to answer for a scenario: every agent a scenario
+          // declares is one it also spawns, so the lens names each row from
+          // the task the run gave it and lights it from the cursor. A word
+          // invented here would be a second, staler source for the same fact.
+          members: p.agents.map((id) => ({
+            agentId: id,
+            label: "",
+            model: null,
+            state: "pending" as const,
+            startedAt: null,
+            endedAt: null,
+          })),
         })),
-        rankOf,
+        unplaced: [],
       },
     ],
   ]);

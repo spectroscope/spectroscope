@@ -24,7 +24,7 @@ import type { Scene } from "../labScene";
 import { layoutStateGraph, type StateGraphLayout } from "../../stategraph/layout";
 import { GraphCanvas } from "../../reactflow/GraphCanvas";
 import { RefitOnLayout } from "../../reactflow/RefitOnLayout";
-import { nodeStateAt, spawnedIn, spawnTree, terminalStatesIn } from "../spawnTree";
+import { nodeStateAt, phaseStateAt, spawnedIn, spawnTree, terminalStatesIn } from "../spawnTree";
 import type { WorkflowDeclaration } from "../workflowGraph";
 import { WorkflowNode, type WfData } from "./WorkflowNode";
 import { t, type Lang } from "../../i18n/i18n";
@@ -166,7 +166,12 @@ export function WorkflowLens(props: {
     () =>
       laid.nodes.map((p) => {
         const meta = tree.meta[p.id];
-        const state = nodeStateAt(props.scene, spawned, terminal, p.id, tree.root);
+        // A PHASE BOX folds its own state from the agents inside it; every
+        // other node answers for itself, exactly as card 293 had it.
+        const phase = tree.phaseNodes.has(p.id);
+        const state = phase
+          ? phaseStateAt(props.scene, spawned, terminal, tree, p.id)
+          : nodeStateAt(props.scene, spawned, terminal, p.id, tree.root);
         return {
           id: p.id,
           type: "wfNode",
@@ -178,6 +183,21 @@ export function WorkflowLens(props: {
             model: meta?.model ?? (p.id === tree.root ? (props.model ?? null) : null),
             state,
             stateLabel: t(lang, `lab.lens.state.${state}`),
+            phase,
+            members: (meta?.members ?? []).map((m) => {
+              const own = tree.knownAgents.has(m.agentId)
+                ? nodeStateAt(props.scene, spawned, terminal, m.agentId, tree.root)
+                : m.declared === "error"
+                  ? ("failed" as const)
+                  : m.declared;
+              return {
+                agentId: m.agentId,
+                label: m.label,
+                model: m.model,
+                state: own,
+                stateLabel: t(lang, `lab.lens.state.${own}`),
+              };
+            }),
             w: p.w,
             h: p.h,
           } satisfies WfData,

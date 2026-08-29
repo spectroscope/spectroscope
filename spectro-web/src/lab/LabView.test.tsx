@@ -155,10 +155,10 @@ describe("the Lab hands the open run's declaration to the lens", () => {
       "main",
       {
         phases: [
-          { title: "a-declared-column", detail: null },
-          { title: "another-one", detail: null },
+          { title: "a-declared-column", detail: null, members: [] },
+          { title: "another-one", detail: null, members: [] },
         ],
-        rankOf: new Map<string, number>(),
+        unplaced: [],
       },
     ],
   ]);

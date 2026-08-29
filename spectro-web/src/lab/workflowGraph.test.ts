@@ -1,21 +1,32 @@
-// Card 302: a workflow run read as a state graph — declared columns, executed
-// occupancy. Every fixture here is invented; nothing is copied out of a
-// recording.
+// Card 302: a workflow run read as a state graph. THE PHASE IS THE NODE and
+// the edge means what follows what — main → phase 1 → phase 2 → …, a straight
+// chain, with the agents living inside the phase box they belong to.
+//
+// Every fixture here is invented; nothing is copied out of a recording. Only
+// the SHAPE travels, and a shape is numbers: five phases, thirteen agents,
+// occupancy 1/5/1/1/5.
 
 import { describe, expect, it } from "vitest";
 import { lifecycleAt } from "../stategraph/artifact";
 import { layoutStateGraph } from "../stategraph/layout";
-import { WORKFLOW_LIFECYCLE, phaseNodeId, readWorkflowState, workflowGraph } from "./workflowGraph";
+import {
+  WORKFLOW_LIFECYCLE,
+  declarationFor,
+  foldPhase,
+  phaseHeight,
+  phaseNodeId,
+  readWorkflowState,
+  unplacedNodeId,
+  workflowGraph,
+  type PhaseMember,
+} from "./workflowGraph";
 
-/** The measured shape of a real run, rebuilt from nothing but its numbers:
- *  five declared phases, thirteen agents, occupancy 1/5/1/1/5. `phaseIndex`
- *  is ONE-based in the file — measured, not assumed. */
+const TITLES = ["scope", "probe", "merge", "draft", "audit"];
+
+/** The measured shape of a real run, rebuilt from nothing but its numbers.
+ *  `phaseIndex` is ONE-based in the file — measured, not assumed. */
 function sample(): string {
-  const phases = ["scope", "probe", "merge", "draft", "audit"].map((title, i) => ({
-    title,
-    detail: `what ${title} is for`,
-    index: i + 1,
-  }));
+  const phases = TITLES.map((title, i) => ({ title, detail: `what ${title} is for`, index: i + 1 }));
   const widths = [1, 5, 1, 1, 5];
   const agents: unknown[] = [];
   let n = 0;
@@ -49,11 +60,14 @@ function sample(): string {
   });
 }
 
+const read = (json: string) => declarationFor(readWorkflowState(json)!);
+const graph = (json: string) => workflowGraph(read(json), "main");
+
 describe("readWorkflowState", () => {
   it("reads the declared phases and the run's agents", () => {
     const s = readWorkflowState(sample())!;
     expect(s.name).toBe("a run");
-    expect(s.phases.map((p) => p.title)).toEqual(["scope", "probe", "merge", "draft", "audit"]);
+    expect(s.phases.map((p) => p.title)).toEqual(TITLES);
     expect(s.phases[0].detail).toBe("what scope is for");
     expect(s.agents).toHaveLength(13);
   });
@@ -67,165 +81,211 @@ describe("readWorkflowState", () => {
   });
 });
 
-describe("workflowGraph", () => {
-  it("puts every agent in its DECLARED phase column: 13 nodes over 5 ranks, 1/5/1/1/5", () => {
-    const g = workflowGraph(readWorkflowState(sample())!);
-    expect(g.topo.nodes).toHaveLength(13);
-    const ranks = g.topo.ranks!;
-    const width = [0, 0, 0, 0, 0];
-    for (const n of g.topo.nodes) width[ranks.get(n.id)!] += 1;
-    expect(width).toEqual([1, 5, 1, 1, 5]);
+describe("the phase is the node", () => {
+  it("draws five phases and nothing else — the thirteen agents are not nodes", () => {
+    const g = graph(sample());
+    expect(g.topo.nodes.map((n) => n.id)).toEqual(["main", ...TITLES.map((_, i) => phaseNodeId("main", i))]);
+    expect(g.topo.nodes.map((n) => n.label)).toEqual(["main", ...TITLES]);
   });
 
-  it("ranks from ZERO even though the file counts phases from one", () => {
-    const g = workflowGraph(readWorkflowState(sample())!);
-    expect([...new Set(g.topo.ranks!.values())].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
+  it("holds its agents INSIDE it, 1/5/1/1/5, with label, state and model", () => {
+    const run = read(sample());
+    expect(run.phases.map((p) => p.members.length)).toEqual([1, 5, 1, 1, 5]);
+    expect(run.phases[1].members.map((m) => m.label)).toEqual([2, 3, 4, 5, 6].map((n) => `agent ${n}`));
+    expect(run.phases[1].members[0].state).toBe("done");
+    expect(run.phases[1].members[0].model).toBe("some-model");
   });
 
-  it("captions each rank with the phase's own title and detail", () => {
-    const g = workflowGraph(readWorkflowState(sample())!);
-    expect(g.topo.rankCaptions!.get(0)).toEqual({ title: "scope", detail: "what scope is for" });
-    expect(g.topo.rankCaptions!.get(4)?.title).toBe("audit");
-  });
-
-  it("wires phase N to phase N+1 and nowhere else, solid — the ORDER is declared", () => {
-    const g = workflowGraph(readWorkflowState(sample())!);
-    // 1->5, 5->1, 1->1, 1->5.
-    expect(g.topo.edges).toHaveLength(5 + 5 + 1 + 5);
-    expect(new Set(g.topo.edges.map((e) => e.kind))).toEqual(new Set(["direct"]));
-    const ranks = g.topo.ranks!;
-    for (const e of g.topo.edges) expect(ranks.get(e.to)! - ranks.get(e.from)!).toBe(1);
-  });
-
-  it("lights every agent through the SHARED fold, in its own vocabulary", () => {
-    const g = workflowGraph(readWorkflowState(sample())!);
-    const end = g.records.length - 1;
-    for (const n of g.topo.nodes) expect(lifecycleAt(g.records, end, n.id, WORKFLOW_LIFECYCLE)).toBe("done");
-    // And the cursor still means something: before any record, nothing is lit.
-    expect(lifecycleAt(g.records, -1, "a1", WORKFLOW_LIFECYCLE)).toBe("pending");
+  it("states a height that grows with what the box holds", () => {
+    const g = graph(sample());
+    const one = g.topo.heights!.get(phaseNodeId("main", 0))!;
+    const five = g.topo.heights!.get(phaseNodeId("main", 1))!;
+    expect(five).toBeGreaterThan(one);
+    expect(five).toBe(phaseHeight(5));
   });
 });
 
-/** Each state value is bitten on its own. The vocabulary is MEASURED, not the
- *  one the card guessed: the file says done / error / progress / start, and it
- *  has no word for "queued" at all — a queued agent is one with a queuedAt and
- *  no start. */
-describe("the state vocabulary", () => {
-  const one = (state: string | null, extra: Record<string, unknown> = {}): string =>
+describe("the edge means what follows what", () => {
+  it("is a chain of five: main → scope → probe → merge → draft → audit", () => {
+    const g = graph(sample());
+    const id = (i: number) => phaseNodeId("main", i);
+    expect(g.topo.edges.map((e) => `${e.from}->${e.to}`)).toEqual([
+      `main->${id(0)}`,
+      `${id(0)}->${id(1)}`,
+      `${id(1)}->${id(2)}`,
+      `${id(2)}->${id(3)}`,
+      `${id(3)}->${id(4)}`,
+    ]);
+  });
+
+  it("lets NOTHING else fan out of the root — the defect this card exists to undo", () => {
+    // The first attempt drew one edge from the root to each of the thirteen
+    // agents, and thirteen arcs flew across the canvas in nested loops. The
+    // root has exactly one edge out of it, into the first phase.
+    const g = graph(sample());
+    expect(g.topo.edges.filter((e) => e.from === "main")).toHaveLength(1);
+  });
+
+  it("draws the succession SOLID — a declared order is not a reconstruction", () => {
+    expect(new Set(graph(sample()).topo.edges.map((e) => e.kind))).toEqual(new Set(["direct"]));
+  });
+
+  it("ranks the phases in the script's order, from the root at zero", () => {
+    const g = graph(sample());
+    expect(g.topo.ranks!.get("main")).toBe(0);
+    TITLES.forEach((_, i) => expect(g.topo.ranks!.get(phaseNodeId("main", i))).toBe(i + 1));
+  });
+
+  it("captions each phase column with the script's own title and detail", () => {
+    const g = graph(sample());
+    expect(g.topo.rankCaptions!.get(1)).toEqual({ title: "scope", detail: "what scope is for" });
+    expect(g.topo.rankCaptions!.get(5)).toEqual({ title: "audit", detail: "what audit is for" });
+    expect(g.topo.rankCaptions!.get(0)).toBeUndefined();
+  });
+
+  it("carries the captions out to the layout's own rank labels", () => {
+    const laid = layoutStateGraph(graph(sample()).topo, "horizontal");
+    expect(laid.rankLabels.find((l) => l.rank === 2)?.caption?.title).toBe("probe");
+    expect(laid.rankLabels.find((l) => l.rank === 0)?.caption).toBeUndefined();
+  });
+});
+
+describe("a phase's lifecycle folds from its agents", () => {
+  const m = (state: PhaseMember["state"]): PhaseMember => ({
+    agentId: "x",
+    label: "x",
+    model: null,
+    state,
+    startedAt: state === "pending" ? null : 1,
+    endedAt: state === "done" || state === "error" ? 2 : null,
+  });
+
+  it("any running makes the phase active", () => expect(foldPhase([m("done"), m("active")])).toBe("active"));
+  it("all done makes it done", () => expect(foldPhase([m("done"), m("done")])).toBe("done"));
+  it("any error makes it error", () => expect(foldPhase([m("done"), m("error")])).toBe("error"));
+  it("none started leaves it pending", () => expect(foldPhase([m("pending"), m("pending")])).toBe("pending"));
+
+  it("an error outranks a sibling that is still running", () => {
+    // Named on its own because the four rules above do not settle it: a
+    // failure is the fact a viewer must not lose while a neighbour runs on.
+    expect(foldPhase([m("error"), m("active")])).toBe("error");
+  });
+
+  it("a phase part done and part not yet started is active, not done", () => {
+    expect(foldPhase([m("done"), m("pending")])).toBe("active");
+  });
+
+  it("a declared phase with no agents at all is pending — never entered", () => {
+    expect(foldPhase([])).toBe("pending");
+  });
+});
+
+describe("the state vocabulary the file actually uses", () => {
+  const one = (state: string | null, started: number | null = 1100): string =>
     JSON.stringify({
       phases: [{ title: "only", detail: null }],
       workflowProgress: [
         { type: "workflow_phase", index: 1, title: "only" },
         {
           type: "workflow_agent",
-          index: 1,
           agentId: "a1",
-          label: "a",
+          label: "a1",
           phaseIndex: 1,
+          phaseTitle: "only",
           state,
-          queuedAt: 1,
-          startedAt: 2,
-          durationMs: 3,
-          ...extra,
+          queuedAt: 1000,
+          ...(started === null ? {} : { startedAt: started }),
         },
       ],
     });
-  const life = (json: string): string => {
-    const g = workflowGraph(readWorkflowState(json)!);
-    return lifecycleAt(g.records, g.records.length - 1, "a1", WORKFLOW_LIFECYCLE);
-  };
+  const life = (json: string) => read(json).phases[0].members[0].state;
 
   it("done is done", () => expect(life(one("done"))).toBe("done"));
   it("error is error", () => expect(life(one("error"))).toBe("error"));
   it("progress is active", () => expect(life(one("progress"))).toBe("active"));
   it("start is active", () => expect(life(one("start"))).toBe("active"));
-  it("queued but never started is pending", () =>
-    expect(life(one(null, { startedAt: null }))).toBe("pending"));
+  it("queued but never started is pending", () => expect(life(one("start", null))).toBe("pending"));
   it("a word the file has never used is pending, not a guess", () =>
-    expect(life(one("banana", { startedAt: null }))).toBe("pending"));
+    expect(life(one("teleported", null))).toBe("pending"));
 });
 
-describe("a declared phase with no agents", () => {
-  const json = JSON.stringify({
-    phases: [
-      { title: "one", detail: "d1" },
-      { title: "two", detail: "d2" },
-      { title: "three", detail: "d3" },
-    ],
-    workflowProgress: [
-      { type: "workflow_phase", index: 1, title: "one" },
-      { type: "workflow_phase", index: 2, title: "two" },
-      { type: "workflow_phase", index: 3, title: "three" },
-      {
-        type: "workflow_agent",
-        index: 1,
-        agentId: "a1",
-        label: "a",
-        phaseIndex: 1,
-        state: "done",
-        startedAt: 2,
-        durationMs: 1,
-      },
-      {
-        type: "workflow_agent",
-        index: 2,
-        agentId: "a2",
-        label: "b",
-        phaseIndex: 3,
-        state: "done",
-        startedAt: 4,
-        durationMs: 1,
-      },
-    ],
+describe("the phase is lit through the SHARED fold, in its own vocabulary", () => {
+  it("agrees with foldPhase on every one of the four answers", () => {
+    // The seam card 302 bought by generalising lifecycleAt: the workflow's
+    // own three record names light a phase exactly as the fold reads it. If
+    // these two ever disagree, one of them is drawing a lie.
+    const json = JSON.stringify({
+      phases: ["ran", "failed", "running", "never"].map((title) => ({ title, detail: null })),
+      workflowProgress: [
+        ...["ran", "failed", "running", "never"].map((title, i) => ({
+          type: "workflow_phase",
+          index: i + 1,
+          title,
+        })),
+        ...[
+          { title: "ran", state: "done", startedAt: 10 },
+          { title: "failed", state: "error", startedAt: 20 },
+          { title: "running", state: "progress", startedAt: 30 },
+        ].map((a, i) => ({
+          type: "workflow_agent",
+          agentId: `a${i}`,
+          label: `a${i}`,
+          phaseIndex: ["ran", "failed", "running", "never"].indexOf(a.title) + 1,
+          phaseTitle: a.title,
+          state: a.state,
+          startedAt: a.startedAt,
+          durationMs: 5,
+        })),
+        {
+          type: "workflow_agent",
+          agentId: "queued",
+          label: "queued",
+          phaseIndex: 4,
+          phaseTitle: "never",
+          state: "start",
+          queuedAt: 40,
+        },
+      ],
+    });
+    const run = read(json);
+    const g = workflowGraph(run, "main");
+    const last = g.records.length - 1;
+    ["done", "error", "active", "pending"].forEach((want, i) => {
+      expect(foldPhase(run.phases[i].members)).toBe(want);
+      expect(lifecycleAt(g.records, last, phaseNodeId("main", i), WORKFLOW_LIFECYCLE)).toBe(want);
+    });
   });
 
-  it("is a real node, drawn, and never entered", () => {
-    const g = workflowGraph(readWorkflowState(json)!);
-    const id = phaseNodeId(1);
-    expect(g.topo.nodes.map((n) => n.id)).toContain(id);
-    expect(g.topo.ranks!.get(id)).toBe(1);
-    expect(lifecycleAt(g.records, g.records.length - 1, id, WORKFLOW_LIFECYCLE)).toBe("pending");
-    expect(g.emptyPhases).toEqual(new Set([id]));
-  });
-
-  it("keeps the chain unbroken through the gap", () => {
-    const g = workflowGraph(readWorkflowState(json)!);
-    expect(g.topo.edges.map((e) => `${e.from}->${e.to}`).sort()).toEqual(
-      [`a1->${phaseNodeId(1)}`, `${phaseNodeId(1)}->a2`].sort(),
+  it("keeps the records in time order and names them in its own dialect", () => {
+    const g = graph(sample());
+    expect(g.records.map((r) => r.ts)).toEqual([...g.records.map((r) => r.ts)].sort((a, b) => a - b));
+    expect(new Set(g.records.map((r) => r.type))).toEqual(
+      new Set([WORKFLOW_LIFECYCLE.start, WORKFLOW_LIFECYCLE.end]),
     );
   });
 });
 
-describe("an agent whose phaseIndex names no declared phase", () => {
+describe("a declared phase no agent ever occupied", () => {
   const json = JSON.stringify({
-    phases: [{ title: "one", detail: null }],
+    phases: ["a", "b", "c"].map((title) => ({ title, detail: null })),
     workflowProgress: [
-      { type: "workflow_phase", index: 1, title: "one" },
+      ...["a", "b", "c"].map((title, i) => ({ type: "workflow_phase", index: i + 1, title })),
       {
         type: "workflow_agent",
-        index: 1,
-        agentId: "a1",
-        label: "a",
+        agentId: "x",
+        label: "x",
         phaseIndex: 1,
+        phaseTitle: "a",
         state: "done",
         startedAt: 1,
         durationMs: 1,
       },
       {
         type: "workflow_agent",
-        index: 2,
-        agentId: "a2",
-        label: "b",
-        phaseIndex: 9,
-        state: "done",
-        startedAt: 2,
-        durationMs: 1,
-      },
-      {
-        type: "workflow_agent",
-        index: 3,
-        agentId: "a3",
-        label: "c",
+        agentId: "z",
+        label: "z",
+        phaseIndex: 3,
+        phaseTitle: "c",
         state: "done",
         startedAt: 3,
         durationMs: 1,
@@ -233,201 +293,115 @@ describe("an agent whose phaseIndex names no declared phase", () => {
     ],
   });
 
-  it("is drawn in a column of its own, past the declared ones, with no caption to invent", () => {
-    const g = workflowGraph(readWorkflowState(json)!);
-    expect(g.topo.ranks!.get("a1")).toBe(0);
-    expect(g.topo.ranks!.get("a2")).toBe(1);
-    expect(g.topo.ranks!.get("a3")).toBe(1);
-    expect(g.topo.rankCaptions!.has(1)).toBe(false);
-    expect(g.undeclared).toBe(2);
+  it("is still a node, drawn and empty", () => {
+    const g = workflowGraph(read(json), "main");
+    expect(g.topo.nodes.map((n) => n.id)).toContain(phaseNodeId("main", 1));
+    expect(read(json).phases[1].members).toEqual([]);
+  });
+
+  it("is never entered — pending, through the shared fold too", () => {
+    const g = workflowGraph(read(json), "main");
+    expect(lifecycleAt(g.records, g.records.length - 1, phaseNodeId("main", 1), WORKFLOW_LIFECYCLE)).toBe(
+      "pending",
+    );
+  });
+
+  it("keeps the chain unbroken through the gap", () => {
+    const g = workflowGraph(read(json), "main");
+    expect(g.topo.edges.map((e) => `${e.from}->${e.to}`)).toEqual([
+      `main->${phaseNodeId("main", 0)}`,
+      `${phaseNodeId("main", 0)}->${phaseNodeId("main", 1)}`,
+      `${phaseNodeId("main", 1)}->${phaseNodeId("main", 2)}`,
+    ]);
   });
 });
 
-describe("the layout carries the captions out to the renderer", () => {
-  it("captions every occupied rank label, and leaves an uncaptioned column bare", () => {
-    const json = JSON.stringify({
-      phases: [
-        { title: "one", detail: "d1" },
-        { title: "two", detail: null },
-      ],
-      workflowProgress: [
-        { type: "workflow_phase", index: 1, title: "one" },
-        { type: "workflow_phase", index: 2, title: "two" },
-        {
-          type: "workflow_agent",
-          index: 1,
-          agentId: "a1",
-          label: "a",
-          phaseIndex: 1,
-          state: "done",
-          startedAt: 1,
-          durationMs: 1,
-        },
-        {
-          type: "workflow_agent",
-          index: 2,
-          agentId: "a2",
-          label: "b",
-          phaseIndex: 2,
-          state: "done",
-          startedAt: 2,
-          durationMs: 1,
-        },
-        {
-          type: "workflow_agent",
-          index: 3,
-          agentId: "a3",
-          label: "c",
-          phaseIndex: 7,
-          state: "done",
-          startedAt: 3,
-          durationMs: 1,
-        },
-      ],
-    });
-    const laid = layoutStateGraph(workflowGraph(readWorkflowState(json)!).topo, "horizontal");
-    expect(laid.rankLabels.map((l) => l.caption?.title ?? null)).toEqual(["one", "two", null]);
-    expect(laid.rankLabels[0].caption?.detail).toBe("d1");
-    expect(laid.rankLabels[1].caption?.detail).toBeNull();
-  });
-});
-
-/**
- * A state file written BEFORE the run reached its last phase. The reader used
- * to seed every phase's number with its array position and overwrite only the
- * positions a `workflow_phase` marker had reached, which MIXES stated numbers
- * with positional ones: five phases with two markers became [1,2,2,3,4], and
- * every agent past the second marker was drawn under the NEXT phase's word
- * while its own phase was drawn as an empty box. A run that was interrupted,
- * is still going, or failed on its way through is not exotic, and the reader
- * never looks at `status`.
- *
- * The file answers the join itself: a marker carries `title`, an agent carries
- * `phaseTitle`, and both name a phase in `phases`. That is a fact the file
- * states, not a position this module assumed.
- */
-describe("a state file whose phase markers stop early", () => {
-  const TITLES = ["one", "two", "three", "four", "five"];
-  /** Five declared phases, one agent in each, but only the first TWO
-   *  `workflow_phase` markers ever emitted. */
-  const midRun = (agentTitles: boolean): string =>
-    JSON.stringify({
-      phases: TITLES.map((title) => ({ title, detail: null })),
-      workflowProgress: [
-        { type: "workflow_phase", index: 1, title: "one" },
-        { type: "workflow_phase", index: 2, title: "two" },
-        ...TITLES.map((title, p) => ({
-          type: "workflow_agent",
-          index: p + 1,
-          agentId: `a${p + 1}`,
-          label: `agent ${p + 1}`,
-          phaseIndex: p + 1,
-          ...(agentTitles ? { phaseTitle: title } : {}),
-          state: "done",
-          startedAt: 10 + p,
-          durationMs: 1,
-        })),
-      ],
-    });
-
-  it("draws every agent under its OWN phase's word, not the next one's", () => {
-    const g = workflowGraph(readWorkflowState(midRun(true))!);
-    const ranks = g.topo.ranks!;
-    for (let p = 0; p < TITLES.length; p++) {
-      const at = ranks.get(`a${p + 1}`);
-      expect(at, `agent ${p + 1}`).toBe(p);
-      expect(g.topo.rankCaptions!.get(at!)?.title).toBe(TITLES[p]);
-    }
-  });
-
-  it("declares no phase empty while an agent is standing in it", () => {
-    const g = workflowGraph(readWorkflowState(midRun(true))!);
-    expect(g.emptyPhases).toEqual(new Set());
-    expect(g.undeclared).toBe(0);
-    expect(g.topo.nodes).toHaveLength(5);
-  });
-
-  it("with nothing to join on, the unreached agents go to the uncaptioned column rather than under a borrowed word", () => {
-    const g = workflowGraph(readWorkflowState(midRun(false))!);
-    const ranks = g.topo.ranks!;
-    expect(ranks.get("a1")).toBe(0);
-    expect(ranks.get("a2")).toBe(1);
-    // Three agents the file could not place: one column past the declared
-    // ones, and that column carries no caption to lend them.
-    expect([ranks.get("a3"), ranks.get("a4"), ranks.get("a5")]).toEqual([5, 5, 5]);
-    expect(g.topo.rankCaptions!.has(5)).toBe(false);
-    expect(g.undeclared).toBe(3);
-  });
-
-  it("falls back to array positions only when the file stated NO number at all — never mixed", () => {
-    const noMarkers = JSON.stringify({
-      phases: TITLES.map((title) => ({ title, detail: null })),
-      workflowProgress: TITLES.map((_, p) => ({
-        type: "workflow_agent",
-        index: p + 1,
-        agentId: `a${p + 1}`,
-        label: `agent ${p + 1}`,
-        phaseIndex: p,
-        state: "done",
-        startedAt: 10 + p,
-        durationMs: 1,
-      })),
-    });
-    const g = workflowGraph(readWorkflowState(noMarkers)!);
-    for (let p = 0; p < TITLES.length; p++) expect(g.topo.ranks!.get(`a${p + 1}`)).toBe(p);
-    expect(g.undeclared).toBe(0);
-  });
-});
-
-/** A file that contradicts ITSELF about what number a phase carries. The
- *  reader refuses that number rather than picking one of the two: an agent
- *  that names it goes to the uncaptioned column past the declared ones, where
- *  nothing is claimed about it, instead of under a word that may not be its
- *  own. */
-describe("a state file that gives one phase two different numbers", () => {
+describe("an agent whose phaseIndex names no declared phase", () => {
   const json = JSON.stringify({
-    phases: [
-      { title: "one", detail: null },
-      { title: "two", detail: null },
-      { title: "three", detail: null },
-    ],
+    phases: [{ title: "only", detail: null }],
     workflowProgress: [
-      { type: "workflow_phase", index: 1, title: "one" },
-      { type: "workflow_phase", index: 2, title: "two" },
-      { type: "workflow_phase", index: 3, title: "three" },
-      // The markers say "one" is 1; this agent says "one" is 3.
+      { type: "workflow_phase", index: 1, title: "only" },
       {
         type: "workflow_agent",
-        index: 1,
-        agentId: "a1",
-        label: "a",
-        phaseIndex: 3,
-        phaseTitle: "one",
+        agentId: "stray",
+        label: "stray",
+        phaseIndex: 9,
+        phaseTitle: "nowhere",
         state: "done",
         startedAt: 1,
         durationMs: 1,
       },
+    ],
+  });
+
+  it("is never dropped — it is listed as unplaced", () => {
+    expect(read(json).unplaced.map((m) => m.label)).toEqual(["stray"]);
+  });
+
+  it("gets a box past the declared columns and NO edge, because nothing declared its order", () => {
+    const g = workflowGraph(read(json), "main");
+    expect(g.topo.nodes.map((n) => n.id)).toContain(unplacedNodeId("main"));
+    expect(g.topo.ranks!.get(unplacedNodeId("main"))).toBe(2);
+    expect(g.topo.edges.filter((e) => e.to === unplacedNodeId("main"))).toEqual([]);
+  });
+
+  it("leaves that column uncaptioned rather than inventing a phase for it", () => {
+    expect(workflowGraph(read(json), "main").topo.rankCaptions!.get(2)).toBeUndefined();
+  });
+});
+
+describe("a state file whose phase markers stop early", () => {
+  // A file written mid-run has fewer markers than phases. The join goes
+  // through the TITLE, and where a title cannot place a number the number
+  // stays unknown rather than being taken from an array position.
+  const json = JSON.stringify({
+    phases: ["p1", "p2", "p3", "p4", "p5"].map((title) => ({ title, detail: null })),
+    workflowProgress: [
+      { type: "workflow_phase", index: 1, title: "p1" },
+      { type: "workflow_phase", index: 2, title: "p2" },
       {
         type: "workflow_agent",
-        index: 2,
-        agentId: "a2",
-        label: "b",
+        agentId: "late",
+        label: "late",
+        phaseIndex: 3,
+        phaseTitle: "p3",
+        state: "done",
+        startedAt: 1,
+        durationMs: 1,
+      },
+    ],
+  });
+
+  it("puts the agent under its OWN phase's word, not the next one's", () => {
+    const run = read(json);
+    expect(run.phases[2].members.map((m) => m.label)).toEqual(["late"]);
+    expect(run.phases[3].members).toEqual([]);
+    expect(run.unplaced).toEqual([]);
+  });
+});
+
+describe("a state file that gives one phase two different numbers", () => {
+  const json = JSON.stringify({
+    phases: [{ title: "one", detail: null }],
+    workflowProgress: [
+      { type: "workflow_phase", index: 1, title: "one" },
+      { type: "workflow_phase", index: 2, title: "one" },
+      {
+        type: "workflow_agent",
+        agentId: "a",
+        label: "a",
         phaseIndex: 1,
         phaseTitle: "one",
         state: "done",
-        startedAt: 2,
+        startedAt: 1,
         durationMs: 1,
       },
     ],
   });
 
   it("places nobody by the contradicted number", () => {
-    const g = workflowGraph(readWorkflowState(json)!);
-    // 3 and 2 were never contradicted, so they still place.
-    expect(g.topo.ranks!.get("a1")).toBe(2);
-    // 1 was, so the agent that names it lands in the stray column.
-    expect(g.topo.ranks!.get("a2")).toBe(3);
-    expect(g.topo.rankCaptions!.has(3)).toBe(false);
-    expect(g.undeclared).toBe(1);
+    const run = read(json);
+    expect(run.phases[0].members).toEqual([]);
+    expect(run.unplaced.map((m) => m.label)).toEqual(["a"]);
   });
 });

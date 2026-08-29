@@ -42,13 +42,36 @@ const DECL: WorkflowDeclaration = new Map([
     "wf",
     {
       phases: [
-        { title: "plan", detail: "decide what to look at" },
-        { title: "survey", detail: null },
+        {
+          title: "plan",
+          detail: "decide what to look at",
+          members: [
+            {
+              agentId: "one",
+              label: "",
+              model: null,
+              state: "pending" as const,
+              startedAt: null,
+              endedAt: null,
+            },
+          ],
+        },
+        {
+          title: "survey",
+          detail: null,
+          members: [
+            {
+              agentId: "two",
+              label: "",
+              model: null,
+              state: "pending" as const,
+              startedAt: null,
+              endedAt: null,
+            },
+          ],
+        },
       ],
-      rankOf: new Map([
-        ["one", 0],
-        ["two", 1],
-      ]),
+      unplaced: [],
     },
   ],
 ]);
@@ -71,7 +94,7 @@ describe("the stroke says where the columns came from", () => {
     const tree = spawnTree(EVENTS, DECL);
     const laid = layoutStateGraph(tree.topo, "horizontal");
     const html = renderToStaticMarkup(<WorkflowOverlay laid={laid} declared={tree.declaredNodes} />);
-    // main → wf, wf → one, wf → two.
+    // main → wf (a reconstruction), wf → plan, plan → survey (declared).
     expect(laid.edges).toHaveLength(3);
     expect(html.match(/class="wf-arc"/g) ?? []).toHaveLength(3);
     expect(html.match(/stroke-dasharray/g) ?? []).toHaveLength(1);
