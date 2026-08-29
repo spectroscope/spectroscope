@@ -55,6 +55,14 @@ export interface SpawnTree {
 
 const LABEL_MAX = 28;
 
+/** The node id standing for a DECLARED phase this run never filled (card
+ *  302). Namespaced by its parent as well as its position, so two runs that
+ *  each skipped their second phase get two boxes and not one shared one, and
+ *  so it can never collide with an agent id the run handed out. */
+export function lensPhaseNodeId(parent: string, at: number): string {
+  return `phase:${parent}:${at}`;
+}
+
 /** The slice of the shared fold this lens keeps: the children an agent_spawn
  *  frame actually reported. Card 298 moved the fold itself into
  *  agentDirectory.ts so the directory and this lens read ONE identity pass;
@@ -118,6 +126,8 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
   const rankCaptions = new Map<number, RankCaption>();
   const contested = new Set<number>();
   let anyDeclared = false;
+  /** Declared phases nobody filled — drawn, edgeless, never entered. */
+  const emptyPhaseNodes: { id: string; title: string }[] = [];
   const claim = (r: number, p: DeclaredPhase): void => {
     if (contested.has(r)) return;
     const had = rankCaptions.get(r);
@@ -155,6 +165,19 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
         queue.push(c.id);
       }
       said.phases.forEach((p, i) => claim(base + 1 + i, p));
+      // A phase the script promised and the run never filled still gets a
+      // box. A picture that simply left the column out would rewrite the plan
+      // to match what happened, which is the one thing a declared column is
+      // there to stop. It carries no edge — nothing spawned it — and nothing
+      // ever appears under its id, so `nodeStateAt` reports it pending: the
+      // "never entered" the state graph already says in that word.
+      const filled = new Set(kids.map((c) => said.rankOf.get(c.id)));
+      said.phases.forEach((p, i) => {
+        if (filled.has(i)) return;
+        const id = lensPhaseNodeId(parent, i);
+        ranks.set(id, base + 1 + i);
+        emptyPhaseNodes.push({ id, title: p.title });
+      });
       continue;
     }
     let wave = 0;
@@ -190,6 +213,13 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
     const label = c.task !== "" ? clipMiddle(c.task, LABEL_MAX) : c.id;
     meta[c.id] = { label, agentType: c.agentType, model: c.model, parentResolved: resolvedOf(c) };
     nodes.push({ id: c.id, label });
+  }
+  for (const p of emptyPhaseNodes) {
+    // parentResolved is true because there is nothing here that FAILED to
+    // resolve: this box is a declaration, not a child whose parent went
+    // missing, and it is deliberately absent from `reported`/`resolved`.
+    meta[p.id] = { label: p.title, agentType: null, model: null, parentResolved: true };
+    nodes.push({ id: p.id, label: p.title });
   }
 
   return {

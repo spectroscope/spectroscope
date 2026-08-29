@@ -10,7 +10,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { spawnTree } from "./spawnTree";
+import { lensPhaseNodeId, nodeStateAt, spawnTree } from "./spawnTree";
+import { initialScene } from "./labScene";
 import type { WorkflowDeclaration } from "./workflowGraph";
 
 /** Two agents whose lifetimes OVERLAP — one derived wave — but which the
@@ -119,5 +120,56 @@ describe("a run that declared its phases", () => {
     ]);
     const tree = spawnTree(events, two);
     expect(tree.topo.rankCaptions!.get(tree.topo.ranks!.get("c1")!)?.title).toBe("plan");
+  });
+});
+
+describe("a declared phase the run never filled", () => {
+  const decl3: WorkflowDeclaration = new Map([
+    [
+      "wf",
+      {
+        phases: [
+          { title: "plan", detail: null },
+          { title: "survey", detail: null },
+          { title: "verify", detail: null },
+        ],
+        rankOf: new Map([
+          ["one", 0],
+          ["two", 2],
+        ]),
+      },
+    ],
+  ]);
+
+  it("still gets a box, so the picture cannot quietly rewrite the plan", () => {
+    const tree = spawnTree(overlapping(), decl3);
+    const wf = tree.topo.ranks!.get("wf")!;
+    const id = lensPhaseNodeId("wf", 1);
+    expect(tree.topo.nodes.map((n) => n.id)).toContain(id);
+    expect(tree.topo.ranks!.get(id)).toBe(wf + 2);
+    expect(tree.meta[id].label).toBe("survey");
+    // It is a placeholder, not a child: the honesty counts must read exactly
+    // what they read without any declaration at all.
+    const bare = spawnTree(overlapping());
+    expect(tree.reported).toBe(bare.reported);
+    expect(tree.resolved).toBe(bare.resolved);
+  });
+
+  it("reads as never entered — the state graph's own word for it", () => {
+    const tree = spawnTree(overlapping(), decl3);
+    const id = lensPhaseNodeId("wf", 1);
+    expect(nodeStateAt(initialScene(), new Set(), new Map(), id, tree.root)).toBe("pending");
+  });
+
+  it("carries no spawn edge, because nothing spawned it", () => {
+    const tree = spawnTree(overlapping(), decl3);
+    const id = lensPhaseNodeId("wf", 1);
+    expect(tree.topo.edges.some((e) => e.from === id || e.to === id)).toBe(false);
+  });
+
+  it("adds nothing at all for a phase that DID get an agent", () => {
+    const tree = spawnTree(overlapping(), decl3);
+    expect(tree.topo.nodes.map((n) => n.id)).not.toContain(lensPhaseNodeId("wf", 0));
+    expect(tree.topo.nodes.map((n) => n.id)).not.toContain(lensPhaseNodeId("wf", 2));
   });
 });
