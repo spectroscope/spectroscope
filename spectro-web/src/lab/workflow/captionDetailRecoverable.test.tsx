@@ -12,8 +12,9 @@
 // the overlay is `pointer-events: none` by card 293 — it swallowed pans and
 // node clicks near the graph origin — and a 180x14 strip that takes the
 // pointer back is a strip the reader can no longer grab to drag the canvas.
-// The box is already the hover target, already carries the title, and sits
-// directly under the words it completes.
+// The box's heading is already a hover target, already carries the title, and
+// sits directly under the words it completes — see the measured note beside
+// the two pins below for which band of the box answers, and which does not.
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
@@ -94,6 +95,37 @@ describe("the box gives the cut caption somewhere to be read", () => {
     // No dangling separator and no empty second line for a column that said
     // nothing — the bite that tells "carries the detail" from "always appends".
     expect(html).not.toContain("scope · done\n");
+  });
+
+  // WHICH PART OF THE BOX ANSWERS, measured rather than assumed. A `title`
+  // resolves to the NEAREST ancestor carrying one, and every member row of a
+  // phase box carries its own — so over a member row the reader gets that
+  // agent's two words, not the column's. Measured on the shipped `Declared
+  // workflow` scenario by walking elementFromPoint over each box: the phase's
+  // own tooltip answers on 74% of a one-member box and 40% of a five-member
+  // one, and in both cases the whole heading band — the ten rows under the box
+  // top, directly beneath the caption whose words they complete. "Hover the
+  // box" would be the loose version of that sentence; these two pin the exact
+  // one, and they are separate because they can fail apart.
+  const withMember = (over: Partial<WfData> = {}) =>
+    data({
+      members: [{ agentId: "a", label: "one", model: null, state: "done", stateLabel: "done" }],
+      ...over,
+    });
+
+  it("leaves the heading band to the box, with nothing titled in between", () => {
+    const html = render(withMember({ detail: "decide what to look at" }));
+    const open = /<div class="wf-node wf-node--phase[^>]*>/.exec(html);
+    expect(open, "the phase box must render").not.toBeNull();
+    const label = html.indexOf('<span class="wf-node-label">');
+    expect(label).toBeGreaterThan(-1);
+    expect(html.slice(open!.index + open![0].length, label)).not.toContain("title=");
+  });
+
+  it("lets a member row shadow it, which is why the band above is load-bearing", () => {
+    // Not a defect — an agent's own state is the right answer over its own
+    // row. It is the reason the claim is about the heading and not the box.
+    expect(render(withMember())).toContain('<li class="wf-agent wf-agent--done" title="one · done">');
   });
 
   it("gives a plain agent card the same recovery, so the rule is one rule", () => {

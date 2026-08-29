@@ -89,6 +89,18 @@ describe("the scrub keeps a usable width", () => {
     expect(body).toMatch(/container-name:\s*labtransport/);
   });
 
+  it("never hides the drawer that carries the only grain and tempo controls", () => {
+    // A @container query that hides `.lab-advanced` is the one hiding rule
+    // this row must not have. Measured in a browser at a 488px row: the rule
+    // computed `display: none` on the drawer and both grain buttons reported
+    // a width of 0 — and with it the tempo slider, the only one the app has.
+    // The row's honest answer at that width is the one it already has for the
+    // scrub: wrap, and give the drawer a line of its own.
+    for (const q of containerQueries()) {
+      expect(q.body, `the ${q.max}px query must not hide the drawer`).not.toContain(".lab-advanced");
+    }
+  });
+
   it("hides each part at exactly the width the pure function decided", () => {
     const queries = containerQueries();
     expect(queries.length).toBe(TRANSPORT_YIELD_ORDER.length);

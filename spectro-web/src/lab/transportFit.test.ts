@@ -52,7 +52,24 @@ describe("what the transport row gives up, and in what order", () => {
     expect(scrubWidthIn(1440, transportFit(1440))).toBeGreaterThanOrEqual(SCRUB_MIN_WIDTH);
   });
 
-  it("yields in the stated order: pills, then clock, then counter, then more", () => {
+  it("never yields the drawer, because the row's only tempo control is in it", () => {
+    // The first version of this file put "advanced" last in the order and said
+    // the reason for the place: "once the pills are gone it is the only speed
+    // control the row still has". Last is not far enough. A part in this order
+    // is a part the stylesheet HIDES, and hiding the drawer takes the app's
+    // only grain radiogroup and only tempo slider off the screen entirely —
+    // LabTransport.test.tsx measures that both live inside it and nowhere
+    // else. It happened at ordinary sizes, not pathological ones: a 1100px
+    // viewport with the lab dock open measures a 464px row and a 900px one
+    // measures 504px, both under the 513px this query used to fire at.
+    //
+    // The row has a floor that is not a hiding place: below what it can pay
+    // for it WRAPS, and the drawer takes a second line instead of vanishing.
+    // So the drawer is not optional — it is what the row grows a line for.
+    expect(TRANSPORT_YIELD_ORDER).not.toContain("advanced");
+  });
+
+  it("yields in the stated order: pills, then clock, then counter", () => {
     // Stated, and each with its reason:
     //   the speed pills go first — a pill only matters while the run is
     //     PLAYING, which is the opposite of scrubbing, and the same tempo sits
@@ -60,10 +77,9 @@ describe("what the transport row gives up, and in what order", () => {
     //   the clock next — it is a second reading of the position the counter
     //     already gives;
     //   the counter after it — the slider's own thumb still shows the position,
-    //     less precisely;
-    //   "more" last, because once the pills are gone it is the only speed
-    //     control the row still has.
-    expect(TRANSPORT_YIELD_ORDER).toEqual(["pills", "clock", "counter", "advanced"]);
+    //     less precisely.
+    // The list ends there; the test above says why "more" is not a fourth.
+    expect(TRANSPORT_YIELD_ORDER).toEqual(["pills", "clock", "counter"]);
     const order = [...ALL].sort((a, b) => dropWidthOf(b) - dropWidthOf(a));
     expect(order).toEqual([...ALL]);
     for (let i = 1; i < ALL.length; i++) {

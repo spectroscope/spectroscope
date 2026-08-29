@@ -111,9 +111,13 @@ export function WorkflowOverlay({
           against a 180 box) and every word lost is from the detail half. So
           the words are handed to the PHASE BOX below, which puts them on a
           second line of its own tooltip (`WorkflowNode`, `WfData.detail`) —
-          that box is the one the caption names, it is already a hover target,
-          and it is sound because a caption only ever survives over a column
-          of declared boxes. The caption itself still adds no tooltip: this
+          that box is the one the caption names, its HEADING is already a hover
+          target directly under the words it completes, and it is sound because
+          a caption only ever survives over a column of declared boxes. The
+          heading rather than the box: each member row carries its own title
+          and shadows the phase's over its own band, which
+          captionDetailRecoverable.test.tsx pins from both sides. The caption
+          itself still adds no tooltip: this
           overlay is `pointer-events: none` (card 293, where it swallowed pans
           and node clicks near the graph origin), and a 180x14 strip that
           takes the pointer back is a strip the reader can no longer grab. */}

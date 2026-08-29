@@ -707,9 +707,17 @@
 /* Card 303: what the row drops, and when. Widths from transportFit.ts —
    pills first (a multiplier only matters while the run is PLAYING, and the
    same tempo sits in "more"), then the clock (a second reading of the
-   counter's position), then the counter (the thumb still shows the position),
-   and "more" last, since after the pills it is the only speed control left.
-   The buttons and the scrub never yield. */
+   counter's position), then the counter (the thumb still shows the position).
+   The buttons, the scrub and the "more" drawer never yield.
+
+   THERE IS NO FOURTH QUERY, and the missing one is the point. A `max-width:
+   513px` block hid `.lab-advanced` here, and that drawer holds the app's only
+   grain radiogroup and its only tempo slider — measured at a 488px row:
+   display none on the drawer, width 0 on both grain buttons. It fired in
+   ordinary use, not at pathological widths (1100px viewport with the lab dock
+   open = a 464px row; 900px = 504px). Under 514px the row now does what it
+   already does for the scrub: `flex-wrap` above gives the drawer a second
+   line. scrubKeepsItsWidth.drift.test.ts holds this absence. */
 @container labtransport (max-width: 907px) {
   .lab-speed-pills {
     display: none;
@@ -722,11 +730,6 @@
 }
 @container labtransport (max-width: 605px) {
   .lab-counter {
-    display: none;
-  }
-}
-@container labtransport (max-width: 513px) {
-  .lab-advanced {
     display: none;
   }
 }

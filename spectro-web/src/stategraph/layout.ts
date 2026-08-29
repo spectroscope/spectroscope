@@ -156,16 +156,16 @@ const GAP = {
  *  additional lane steps (36) so two loops never share one, how far an edge
  *  steps sideways into the gutter (30, capped below the gap), and the corner
  *  radius that makes a lane read as a loop instead of a wiring diagram. */
-/** The room a rank caption gives up so it cannot touch the column next door
- *  (card 303). A caption may use its own column's pitch minus this; at the
- *  10px used here, and a 190px pitch, a caption gets 180. */
-export const RANK_CAPTION_GUTTER = 10;
-
 const BACK_CLEAR = 46;
 const SKIP_CLEAR = 42;
 const LANE_STEP = 36;
 const GUTTER = 30;
 const CORNER = 18;
+
+/** The room a rank caption gives up so it cannot touch the column next door
+ *  (card 303). A caption may use its own column's pitch minus this; at the
+ *  10px used here, and a 190px pitch, a caption gets 180. */
+export const RANK_CAPTION_GUTTER = 10;
 
 /** An orthogonal polyline with rounded corners — the template's orthoPath. */
 function orthoPath(pts: number[][], r: number): string {

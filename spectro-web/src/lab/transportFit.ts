@@ -21,14 +21,27 @@
 //   3. the counter. The slider's own thumb still shows the position after it
 //      goes, less precisely; this is the last reading to go because it is the
 //      exact one.
-//   4. "more". Last, because once the pills are gone it is the only speed
-//      control the row still has.
 //
-// The buttons and the scrub itself never yield: the buttons are the transport,
-// and the scrub is what the row exists for. Below the floor — a row too narrow
-// even with all four dropped — the row grows a LINE instead (`flex-wrap` plus
-// a track that refuses to shrink, lab.css), which is honest in a way that a
-// four-pixel slider is not.
+// Three parts, and the list stops there. WHAT IS NOT IN IT, and why the first
+// version of this file had it: "more" — the `.lab-advanced` drawer — stood
+// fourth, on the reasoning that it should go last because after the pills it
+// is the only speed control the row has. Last is not far enough. A part in
+// this order is a part the stylesheet HIDES, and there is no drawer left to
+// find the control in: the grain radiogroup and the tempo slider exist once
+// each in the whole row and both live inside it (measured in
+// LabTransport.test.tsx). Hiding it did not move the app's only tempo control,
+// it deleted it — measured at a 488px row, `display: none` on the drawer and a
+// width of 0 on both grain buttons. And at ordinary sizes: a 1100px viewport
+// with the lab dock open measures a 464px row, a 900px one measures 504px,
+// both under the 513px the query fired at.
+//
+// The buttons, the scrub itself and the drawer never yield: the buttons are the
+// transport, the scrub is what the row exists for, and the drawer is the only
+// way to a grain or a tempo. Below the floor — a row too narrow even with all
+// three dropped — the row grows a LINE instead (`flex-wrap` plus a track that
+// refuses to shrink, lab.css), and the drawer takes that second line rather
+// than disappearing. That is honest in a way a four-pixel slider is not, and in
+// a way a vanished tempo is not either.
 //
 // THE WIDTHS BELOW ARE BUDGETS, not browser measurements. Every box number is
 // the stylesheet's own (five 38px buttons 6px apart; 16px between the row's
@@ -66,8 +79,9 @@
  */
 export const SCRUB_MIN_WIDTH = 220;
 
-/** The optional parts, in the order the row gives them up. */
-export const TRANSPORT_YIELD_ORDER = ["pills", "clock", "counter", "advanced"] as const;
+/** The optional parts, in the order the row gives them up. The "more" drawer
+ *  is deliberately NOT one of them — see the head of this file. */
+export const TRANSPORT_YIELD_ORDER = ["pills", "clock", "counter"] as const;
 
 export type TransportPart = (typeof TRANSPORT_YIELD_ORDER)[number];
 
@@ -81,7 +95,6 @@ export const HIDDEN_BY: Record<TransportPart, string> = {
   pills: ".lab-speed-pills",
   clock: ".lab-clock",
   counter: ".lab-counter",
-  advanced: ".lab-advanced",
 };
 
 /** Five 38px buttons, 6px apart (lab.css, .lab-ctrl-btns). */
@@ -90,6 +103,10 @@ const BUTTONS = 214;
 const ROW_GAP = 16;
 /** The literal 12px inside .lab-scrub, between track, counter and clock. */
 const SCRUB_GAP = 12;
+/** The "more" / "mehr" summary, uppercase and tracked, padded --sp-1/--sp-2
+ *  and bordered. It sits with the fixed costs and not in COST below because
+ *  the row never gives it up: it is the only way to a grain or a tempo. */
+const ADVANCED = 48 + ROW_GAP;
 
 /** What each optional part costs the row, its own gap included. */
 const COST: Record<TransportPart, number> = {
@@ -100,13 +117,11 @@ const COST: Record<TransportPart, number> = {
   clock: 88 + SCRUB_GAP,
   // "step 240 / 240" in tabular mono at 11px.
   counter: 80 + SCRUB_GAP,
-  // "more" / "mehr", uppercase and tracked, padded --sp-1/--sp-2 and bordered.
-  advanced: 48 + ROW_GAP,
 };
 
 /** What the scrub track is left with at this row width, given what is kept. */
 export function scrubWidthIn(rowWidth: number, fit: TransportFit): number {
-  let left = rowWidth - BUTTONS - ROW_GAP;
+  let left = rowWidth - BUTTONS - ROW_GAP - ADVANCED;
   for (const part of TRANSPORT_YIELD_ORDER) if (fit[part]) left -= COST[part];
   return Math.max(0, left);
 }
@@ -115,7 +130,7 @@ export function scrubWidthIn(rowWidth: number, fit: TransportFit): number {
  *  a time, and only while the scrub is still short of its minimum — a row that
  *  can pay for everything gives up nothing. */
 export function transportFit(rowWidth: number): TransportFit {
-  const fit: TransportFit = { pills: true, clock: true, counter: true, advanced: true };
+  const fit: TransportFit = { pills: true, clock: true, counter: true };
   for (const part of TRANSPORT_YIELD_ORDER) {
     if (scrubWidthIn(rowWidth, fit) >= SCRUB_MIN_WIDTH) break;
     fit[part] = false;
@@ -128,7 +143,7 @@ export function transportFit(rowWidth: number): TransportFit {
 export function dropWidthOf(part: TransportPart): number {
   // Everything before this part in the order is gone by the time it is asked
   // for, so the row it needs is its own cost plus what still stands after it.
-  let need = BUTTONS + ROW_GAP + SCRUB_MIN_WIDTH;
+  let need = BUTTONS + ROW_GAP + ADVANCED + SCRUB_MIN_WIDTH;
   let seen = false;
   for (const p of TRANSPORT_YIELD_ORDER) {
     if (p === part) seen = true;

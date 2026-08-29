@@ -36,8 +36,13 @@ export interface WfData extends Record<string, unknown> {
   /** CARD 303: the second half of this column's caption, when the column has
    *  one. The caption above is cut at the column pitch and the detail is what
    *  the cut takes first, so the box the caption names carries those words in
-   *  its own tooltip — hovering the box reads back what the strip could not
-   *  show. `null` when the column stated no detail, and then the tooltip is
+   *  its own tooltip — hovering its HEADING reads back what the strip could
+   *  not show. The heading and not the whole box: a `title` resolves to the
+   *  nearest ancestor holding one, and every member row below holds its own,
+   *  so over a member the reader gets that agent's state instead. Measured on
+   *  the shipped scenario, the phase's own tooltip answers on 74% of a
+   *  one-member box and 40% of a five-member one, the heading band included
+   *  in both. `null` when the column stated no detail, and then the tooltip is
    *  the two-part one it always was. */
   detail: string | null;
   /** The agents inside this phase, in the run's own order. Empty for a phase
