@@ -133,6 +133,25 @@ describe("placement", () => {
     }
   });
 
+  it("never overlaps two boxes, vertically", () => {
+    // The twin the invariant never had (card 305). The horizontal case above
+    // has guarded this engine since it was written, and every size-sensitive
+    // case in the suite ran horizontal too — so the vertical path was carrying
+    // the same arithmetic with nothing watching it. Written out rather than
+    // looped over both orientations, because a shared body would go green on a
+    // change that only ever mirrored one path, which is the whole failure mode
+    // card 305 is about.
+    const l = layoutStateGraph(CRAG, "vertical");
+    for (let i = 0; i < l.nodes.length; i++) {
+      for (let j = i + 1; j < l.nodes.length; j++) {
+        const a = l.nodes[i];
+        const b = l.nodes[j];
+        const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+        expect(apart, `${a.id} overlaps ${b.id}`).toBe(true);
+      }
+    }
+  });
+
   it("runs ranks along x when horizontal and along y when vertical", () => {
     const h = layoutStateGraph(CRAG, "horizontal");
     const v = layoutStateGraph(CRAG, "vertical");

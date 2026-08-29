@@ -11,6 +11,39 @@
 // which is the agreed visual reference. Pure on purpose: no React, no DOM, no
 // React Flow types — the renderer maps this onto nodes and edges, and this file
 // can be tested without any of that.
+//
+// ── CALLING THIS ONCE PER BOX, AND OFFSETTING THE RESULTS ──────────────────
+//
+// A lab canvas will eventually hold several workflow boxes at once — a JSON can
+// hold five workflows. That box is a later card and nothing here builds it.
+// What IS settled here, so the later card does not have to guess, is what this
+// function guarantees a caller that runs it once per box. Measured, not
+// assumed; every line below is a case in `multiBox.test.ts` with a bite behind
+// it, and two of them are caveats rather than reassurances.
+//
+// Safe:
+//   · No module-level state. Interleaving other layouts between two calls on
+//     one topology returns the identical answer — no counter, no memo, no
+//     accumulator survives a call.
+//   · The topology handed in is never written to. Every array is copied before
+//     it is sorted, so a caller may lay one topology out repeatedly.
+//   · Every call gets its own objects. Two calls share no node, so a caller
+//     that offsets by mutating cannot move a second box by accident.
+//   · Every path is emitted with ABSOLUTE commands only, in the same space as
+//     the boxes. So the offset belongs OUTSIDE this function: one SVG group
+//     transform per box moves boxes, edges and labels together and stays
+//     exact. Never add a dx into the path strings — that means re-parsing
+//     geometry this file already got right.
+//
+// Still the caller's job, and both would be silent failures:
+//   · IDS ARE THE TOPOLOGY'S OWN and collide across boxes. Two workflows out
+//     of one file both have a `start`, and their edge ids collide too. React
+//     Flow drops a duplicate key rather than complaining, so namespace node
+//     and edge ids per box BEFORE they reach it.
+//   · RANK RULES RUN 4000px PAST THE BOUNDS, deliberately — that is what makes
+//     the slack around a wide, short graph read as ruled space instead of
+//     emptiness. On a shared canvas box A's rules run straight across box B.
+//     Translating is not enough; the rules need clipping to their own box.
 
 /** One node as the artifact's `graph_topology` record names it. */
 export interface TopologyNode {
@@ -51,10 +84,43 @@ export interface Topology {
    *  five of them do not fit in 46 pixels. The producer states the height it
    *  needs and the column is packed around it.
    *
+   *  This is the height-only spelling, kept because the workflow lens writes
+   *  it. `sizes` is the general one and wins where both name a node.
+   *
    *  A topology that states none lays out byte for byte as before: with
    *  uniform heights the packing below reduces to the fixed cell it replaced,
-   *  which is pinned rather than asserted (`nodeHeights.test.ts`). */
+   *  which is pinned rather than asserted (`layoutIdentity.test.ts`). */
   heights?: ReadonlyMap<string, number>;
+  /** Optional per-node SIZE (card 305) — the general form of `heights`.
+   *
+   *  Card 302 could stop at height because its tall node stood in a state
+   *  graph, whose nodes are name plates. The lab map's workflow box holds
+   *  agent CARDS, which are wider than the 132-pixel cell as well as taller,
+   *  and the box reads as one block only when its phases run downwards. Both
+   *  dimensions, both orientations, or the box cannot be drawn.
+   *
+   *  Either key may be left out and falls back to the engine's own cell, so a
+   *  producer that knows only its width says only its width. A topology that
+   *  states no sizes at all is byte-identical to one from before this field
+   *  existed — that is what `layoutIdentity.test.ts` holds the ruler on, and
+   *  it is the reason the rest of the engine could be changed around it. */
+  sizes?: ReadonlyMap<string, NodeSize>;
+}
+
+/** A node's own box, either dimension optional (card 305). An omitted one is
+ *  the engine's cell — 132 x 46, the template's density.
+ *
+ *  A PRODUCER OF `sizes` MUST CHECK ITS RENDERER TOO. This file decides where
+ *  boxes go; it does not draw them, and the two can disagree. The state
+ *  graph's own card is `.sg-card` in `styles/stategraph.css`, which hard-codes
+ *  `width: 132px` and `min-height: 46px` — its comment says outright that a
+ *  card growing past the layout's idea of it puts arcs through text. Today
+ *  nothing states sizes, so the two agree by standing still. The first caller
+ *  that states one has to make its own renderer read `PlacedNode.w` and `.h`,
+ *  or it will place a 240-wide box and paint a 132-wide one inside it. */
+export interface NodeSize {
+  w?: number;
+  h?: number;
 }
 
 /** What a rank is CALLED, when the caller knows. `detail` is the phase's own
@@ -355,19 +421,27 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   //   new  across = AXIS - total/2 + offset(i),  AXIS = MARGIN - minSlot*(NH+gapCross) + NH/2
   // and with uniform NH the two reduce to the same number, which is why
   // adding this to a SHARED layout does not move the state graph's pictures.
-  // READ IN HORIZONTAL ONLY, and ignored outright in vertical rather than
-  // half-honoured. Vertical runs the ranks down the height axis, so a stated
-  // height would have to move the ALONG spacing too; reporting the tall box
-  // while spacing for the short one is the exact overlap this override exists
-  // to prevent. The one caller that states heights lays out horizontally.
-  const heightOf = (id: string): number => (horiz ? (topo.heights?.get(id) ?? NH) : NH);
+  // Card 302 READ THIS IN HORIZONTAL ONLY, and ignored it outright in vertical
+  // rather than half-honouring it: vertical runs the ranks down the height
+  // axis, whose spacing was a constant, so a stated height would have been
+  // reported without being spaced for — the exact overlap the override exists
+  // to prevent.
+  //
+  // Card 305 generalises the override to a SIZE and lifts that refusal, in
+  // that order. Both dimensions are now read on both paths, because the rank
+  // pitch above follows the rank's longest box: whatever a node reports along
+  // the rank axis, the axis has already made room for. The refusal was a
+  // consequence of the constant pitch, and it went when the constant did
+  // (`nodeHeights.test.ts` carries the replaced pin, and says so).
+  const widthOf = (id: string): number => topo.sizes?.get(id)?.w ?? NW;
+  const heightOf = (id: string): number => topo.sizes?.get(id)?.h ?? topo.heights?.get(id) ?? NH;
   const crossSize = horiz ? NH : NW;
   const AXIS = MARGIN - minSlot * (crossSize + gapCross) + crossSize / 2;
   /** Node id → its distance across the rank axis, packed within its layer. */
   const across = new Map<string, number>();
   layers.forEach((layer) => {
     if (layer.length === 0) return;
-    const sizes = layer.map((id) => (horiz ? heightOf(id) : NW));
+    const sizes = layer.map((id) => (horiz ? heightOf(id) : widthOf(id)));
     const total = sizes.reduce((a, b) => a + b, 0) + gapCross * (layer.length - 1);
     let at = AXIS - total / 2;
     layer.forEach((id, i) => {
@@ -375,6 +449,35 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       at += sizes[i] + gapCross;
     });
   });
+
+  // Card 305: the ALONG axis stops being a constant too. It stepped by
+  // `NW + gapAlong` (or `NH + gapAlong`) whatever stood in the rank, so
+  // NEITHER orientation reacted to a box growing along it — a tall box in
+  // horizontal was safe only because it happened to grow across the packed
+  // axis instead. A rank now takes the length of its LONGEST box.
+  //
+  // The rule reduces to the old constant exactly when every box is the cell,
+  // which is what keeps the state graph on its pixels (`layoutIdentity`), and
+  // it accumulates FORWARDS only: an oversized rank pushes what comes after it
+  // and never touches what came before, so one big node cannot re-centre a run.
+  // A rank nothing landed in — supplied ranks can leave gaps — still takes one
+  // cell, because that is what the constant gave it.
+  const alongOf = (id: string): number => (horiz ? widthOf(id) : heightOf(id));
+  const defaultAlong = horiz ? NW : NH;
+  const rankStart: number[] = [];
+  /** How long each rank turned out to be along the axis — its longest box.
+   *  Kept, not just accumulated, because the edge routing below needs to know
+   *  where a rank ENDS: that is where its gutter begins, and a box whose own
+   *  exit face is short of it is not standing at the edge of empty space. */
+  const rankExtent: number[] = [];
+  let alongAt = MARGIN;
+  for (let r = 0; r <= maxRank; r++) {
+    rankStart.push(alongAt);
+    const layer = layers[r];
+    const extent = layer.length === 0 ? defaultAlong : Math.max(...layer.map(alongOf));
+    rankExtent.push(extent);
+    alongAt += extent + gapAlong;
+  }
 
   const placed: PlacedNode[] = nodes.map((n) => {
     const r = rank.get(n.id)!;
@@ -384,10 +487,10 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       label: n.label,
       rank: r,
       slot: slotOf.get(n.id)!,
-      x: horiz ? MARGIN + r * (NW + gapAlong) : a,
-      y: horiz ? a : MARGIN + r * (NH + gapAlong),
-      w: NW,
-      h: horiz ? heightOf(n.id) : NH,
+      x: horiz ? rankStart[r] : a,
+      y: horiz ? a : rankStart[r],
+      w: widthOf(n.id),
+      h: heightOf(n.id),
     };
   });
   const byId = new Map(placed.map((n) => [n.id, n]));
@@ -407,8 +510,17 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   // lower of the two keeps the caption above whatever the column turned out
   // to hold, and with uniform heights first.y >= MARGIN always holds (the
   // packing reduces to first.y = MARGIN + (Lmax-L)*(NH+gapCross)/2), so the
-  // state graph's own captions do not move a pixel. Vertical needs no such
-  // clamp: it refuses the height override outright and its widths are uniform.
+  // state graph's own captions do not move a pixel.
+  //
+  // VERTICAL NOW NEEDS THE SAME CEILING, and it did not before (card 305).
+  // MARGIN-22 was a bare constant there, and while widths were uniform that
+  // was right for the same reason MARGIN-12 was right before card 302: the
+  // widest row starts at exactly MARGIN, every narrower row starts further in,
+  // so first.x >= MARGIN always held. Per-node width ends that. Measured on a
+  // row of three with the middle box at 400 wide: the row's leftmost box moves
+  // from x=40 to x=-94 while the caption stays at x=18 — inside that box,
+  // which spans -94 to 38 — and the overlay renders on top of its heading.
+  // Same defect, same shape, same fix, so the two paths now read alike.
   const rankLabels: RankLabel[] = [];
   for (let r = 0; r <= maxRank; r++) {
     const inRank = placed.filter((n) => n.rank === r);
@@ -418,7 +530,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     rankLabels.push({
       ...(horiz
         ? { rank: r, x: first.x, y: Math.min(MARGIN - 12, first.y - 12) }
-        : { rank: r, x: MARGIN - 22, y: first.y - 8 }),
+        : { rank: r, x: Math.min(MARGIN - 22, first.x - 22), y: first.y - 8 }),
       ...(caption !== undefined ? { caption } : {}),
     });
   }
@@ -468,6 +580,41 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   };
   const curve = (p: number[]): string => `M${p[0]},${p[1]} C${p[2]},${p[3]} ${p[4]},${p[5]} ${p[6]},${p[7]}`;
 
+  // WHICH forward edges are worth sampling — and why the cheap answer used to
+  // be "only the rank-skipping ones".
+  //
+  // That gate was not laziness, it was a PROOF. While every box in a rank was
+  // the same length along the rank axis, an edge between neighbouring ranks
+  // left its source's exit face already inside the gutter — the strip between
+  // two rank columns, where no box can sit — and it arrived at the next
+  // column's leading face, which no box in that column starts before. Nothing
+  // could be in the way, so nothing was sampled, and 39 points against every
+  // box stayed off the common path.
+  //
+  // A stated size ends the first half of that proof, and only that half. A
+  // rank is now as long as its LONGEST box, so a narrow box finishes early and
+  // its longer siblings are still standing in the strip in front of it; its
+  // forward edge travels back across their column. Measured before this guard
+  // widened, on root → {wide, small} → tail with ranks supplied: `small → tail`
+  // put 18 of 39 sampled points strictly inside a 420x240 `wide` horizontally,
+  // and 3 of 39 inside a 200x300 one vertically (`cutThrough.test.ts`).
+  //
+  // So the gate widens by exactly what the proof lost and no more: a one-rank
+  // hop is tested only when its source rank is RAGGED — some box in it runs
+  // further along the axis than the source does. A rank whose boxes all share
+  // one length is not ragged, which is EVERY rank of a topology that states no
+  // sizes, so the sizeless case is sampled exactly where it always was and its
+  // routes cannot move (`layoutIdentity.test.ts` holds the ruler on that).
+  //
+  // The other end needs no such clause: every box in a rank is flush with its
+  // leading face, so an edge aimed at that face cannot be inside a box of the
+  // target rank before it lands.
+  const needsBoxTest = (a: PlacedNode, b: PlacedNode): boolean => {
+    const spanned = b.rank - a.rank;
+    if (spanned > 1) return true;
+    return spanned === 1 && (horiz ? a.w : a.h) < rankExtent[a.rank];
+  };
+
   let bx0 = fx0;
   let by0 = fy0;
   let bx1 = fx1;
@@ -493,6 +640,19 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     // corner radius is what makes it read as a loop instead of a wiring
     // diagram. A back edge re-enters through the target's ENTRY face, so its
     // arrowhead points INTO the box — never a reversed arrow.
+    //
+    // "PROVABLY EMPTY" IS MEASURED FROM THE RANK, NOT FROM THE BOX. Stepping
+    // `gutter` past the source's own exit face rested on the same identity a
+    // stated size breaks: a narrow box's exit face is short of its rank's end,
+    // so that step lands beside its longer siblings and the lane runs down
+    // through them — which would turn the curve-through-a-box the guard above
+    // now catches into a LANE through the same box, with nothing gained. The
+    // step is taken from the END OF THE RANK instead, which is where the
+    // gutter actually starts. With one length per rank the two are the same
+    // number, so no lane that exists today moves. The other three anchors
+    // need no such care: they are all leading faces, and every box in a rank
+    // is flush with its own.
+    const laneOutOf = (n: PlacedNode): number => rankStart[n.rank] + rankExtent[n.rank];
     const lane = (side: -1 | 1, baseClear: number, idx: number) => {
       const clear = baseClear + idx * LANE_STEP;
       if (horiz) {
@@ -500,7 +660,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
         const sy = a.y + a.h / 2;
         const ty = b.y + b.h / 2;
         const sx = side < 0 ? a.x + a.w : a.x;
-        const g1 = side < 0 ? sx + gutter : sx - gutter;
+        const g1 = side < 0 ? laneOutOf(a) + gutter : sx - gutter;
         const g2 = b.x - gutter;
         const pts = [
           [sx, sy],
@@ -522,7 +682,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       const sx = a.x + a.w / 2;
       const tx = b.x + b.w / 2;
       const sy = side < 0 ? a.y + a.h : a.y;
-      const g1 = side < 0 ? sy + gutter : sy - gutter;
+      const g1 = side < 0 ? laneOutOf(a) + gutter : sy - gutter;
       const g2 = b.y - gutter;
       const pts = [
         [sx, sy],
@@ -555,7 +715,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       const y2 = b.y + b.h / 2;
       const c = Math.max(24, (x2 - x1) * 0.45);
       const p = [x1, y1, x1 + c, y1, x2 - c, y2, x2, y2];
-      if (b.rank - a.rank > 1 && cutsThrough(p, e.from, e.to)) {
+      if (needsBoxTest(a, b) && cutsThrough(p, e.from, e.to)) {
         return { ...base, skip: true, ...lane(-1, SKIP_CLEAR, skipIdx++) };
       }
       const path = Math.abs(y1 - y2) < 0.5 ? `M${x1},${y1} L${x2},${y2}` : curve(p);
@@ -567,7 +727,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     const y2 = b.y;
     const c = Math.max(24, (y2 - y1) * 0.45);
     const p = [x1, y1, x1, y1 + c, x2, y2 - c, x2, y2];
-    if (b.rank - a.rank > 1 && cutsThrough(p, e.from, e.to)) {
+    if (needsBoxTest(a, b) && cutsThrough(p, e.from, e.to)) {
       return { ...base, skip: true, ...lane(-1, SKIP_CLEAR, skipIdx++) };
     }
     const path = Math.abs(x1 - x2) < 0.5 ? `M${x1},${y1} L${x2},${y2}` : curve(p);
