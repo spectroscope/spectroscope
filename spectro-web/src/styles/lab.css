@@ -536,30 +536,38 @@
 
 /* Card 299: the chapter ticks, the clock and the speed pills.
 
-   The ticks are absolutely positioned OVER the range input, so the track needs
-   a positioning parent of its own — putting them straight into .lab-scrub would
-   measure them against the step counter as well and land every one of them too
-   far left. Colour rides on 1px lines only, out of the event-type vocabulary in
+   The track is a COLUMN: the range input on top, the tick row under it. The
+   ticks used to be absolutely positioned across the input itself, each an 11px
+   hit box with pointer-events: auto — and a plain 60-turn run draws 61 of them
+   1.65% apart (9.9px on a 600px bar), so they touched and the slider beneath
+   them could not be dragged at all. A row of its own cannot take the pointer
+   from the slider however many ticks it ends up carrying; the density floor in
+   stepper.ts (MARK_MIN_GAP_PCT) keeps the ticks apart from each other.
+
+   Colour rides on 1px lines only, out of the event-type vocabulary in
    tokens.css, so all three designs get it from their own ramps. */
 .lab-scrub-track {
   position: relative;
   flex: 1 1 auto;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
 }
-/* The layer spans the track BOX, not the thumb's travel. A native range thumb
-   is inset by half its own width at each end, so a tick at 0% or 100% sits a
-   few pixels outside the thumb's reachable centre. The offset is largest at the
-   two ends and zero in the middle, and it is left uncorrected on purpose: the
+.lab-scrub-track input[type="range"] {
+  flex: none;
+  width: 100%;
+}
+/* The row spans the track BOX, not the thumb's travel. A native range thumb is
+   inset by half its own width at each end, so a tick at 0% or 100% sits a few
+   pixels outside the thumb's reachable centre. The offset is largest at the two
+   ends and zero in the middle, and it is left uncorrected on purpose: the
    correction would be half a thumb width, and nobody here has measured what
    that is in each browser the app ships to. */
 .lab-marks {
-  position: absolute;
-  inset: 0;
-  /* The layer is a pass-through; only the ticks themselves take the pointer,
-     so dragging the slider still works everywhere between them. */
-  pointer-events: none;
+  position: relative;
+  height: 9px;
+  margin-top: 1px;
 }
 .lab-mark {
   position: absolute;
@@ -571,7 +579,6 @@
   border: 0;
   background: none;
   cursor: pointer;
-  pointer-events: auto;
 }
 .lab-mark::before {
   content: "";
