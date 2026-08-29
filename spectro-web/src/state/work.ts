@@ -46,13 +46,17 @@ export interface WorkEvidence {
 }
 
 /**
- * Counts a launched task REPORTS about work that is not in this stream.
+ * Counts a launched task REPORTS about itself, in its own words.
  *
  * A Claude Code workflow settles with a `<usage>` block naming its agent count
  * and tool uses; the per-agent detail lives in sibling files the transcript
- * never references. These numbers are therefore quoted, never folded — the
- * panel prints them as a claim by the task and draws no rows underneath,
- * because there are none to draw.
+ * never references. These numbers are therefore quoted, never folded.
+ *
+ * They do NOT say where the agents are. This comment did until card 313 — it
+ * read "work that is not in this stream", and card 297 had already made that
+ * false for an import that merged the run's sidecars, whose agents hang off
+ * this very item as children. Where a row may say that is decided in one place
+ * and against the agents roster: `components/workLevels.ts` besideReading.
  */
 export interface OpaqueCounts {
   agents: number | null;
@@ -129,7 +133,9 @@ const SUMMARY = /^Summary:\s*(.+)$/m;
  * The `Run ID:` a Workflow receipt prints — the docking point for card 177.
  *
  * A workflow's agents live in `<session>/subagents/workflows/<runId>/`, so this
- * one string joins a row on screen to the transcripts sitting beside the file.
+ * one string joins a row on screen to that folder — to its transcripts while
+ * they are only files, and to the agents themselves once an import has read
+ * them into the stream (card 297).
  * Unanchored, unlike RECEIPT: the run id arrives several lines down, and the
  * pattern is specific enough (`wf_` plus the id's alphabet) that a line quoting
  * one is a line about this run either way.

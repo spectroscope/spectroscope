@@ -11,6 +11,12 @@
 // work it does not record. This module hands it the evidence instead, and the
 // refusal stays exactly as it is wherever the evidence is absent.
 //
+// Card 313 narrows where this listing speaks. A run whose agents an import has
+// read INTO the stream is not a row of files any more, whatever this listing
+// found on the disk; the panel asks the agents roster first and only reaches
+// for these paths when the roster knows nothing (components/workLevels.ts
+// besideReading).
+//
 // A LISTING, never a join at import time. Opening a session costs one directory
 // walk; the bodies arrive one at a time, when a reader opens a row. Reading
 // 4,045 files to open one session is the defect card 151 recorded for the

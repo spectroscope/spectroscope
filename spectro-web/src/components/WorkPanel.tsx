@@ -5,9 +5,11 @@
 // The rule this file exists to keep: THE PANEL RENDERS NO NUMBER IT CANNOT TAKE
 // YOU TO. Every figure below is either a button carrying the frame that produced
 // it (App's onFocusEvent seam, already built for Spectrum and the fleet canvas)
-// or it is not drawn. Counts a background task REPORTED about work outside this
-// stream are quoted as claims and get no rows underneath, because there are
-// none — see konzept/CHAT-V2.md section 4.3.
+// or it is not drawn. Counts a background task REPORTED are quoted as claims —
+// see konzept/CHAT-V2.md section 4.3 — and whether there are rows to draw
+// underneath them is one question with one answer (card 313): the agents panel
+// lists the agents of a loaded run, and this panel reads that same roster
+// rather than calling them files a second time.
 
 import { useState } from "react";
 import type { CSSProperties } from "react";

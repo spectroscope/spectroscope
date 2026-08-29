@@ -131,7 +131,11 @@ describe("besideReading — the one fact, read from the agents panel's roster", 
   });
 
   it("says nothing at all about an ordinary lane — no receipt, no run id", () => {
-    const lane = child("plain");
+    // The lane that makes this a real question: a plain fan-out parent DOES
+    // have agents under it in the roster. It never launched a run, so "N
+    // agents of this run" is not a sentence about it, and the row it has
+    // always had is the whole of what it gets.
+    const lane = launchNode({ opaque: null, runId: null });
     expect(besideReading(lane, roster, index(FILES))).toBeNull();
   });
 
