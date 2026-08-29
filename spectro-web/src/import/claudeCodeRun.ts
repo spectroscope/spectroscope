@@ -147,16 +147,37 @@ const RECEIPT_RUN_ID = /\brun\s*id[:\s]\s*(wf_[A-Za-z0-9_-]{4,})\b/i;
 /** The receipt's own one-line intent, the fallback name for a run whose state
  *  file was not picked (or not written yet). */
 const RECEIPT_SUMMARY = /^Summary:\s*(.+)$/m;
+/**
+ * The outcome header `import/claudeCode.ts` folds under a receipt when the
+ * task reports back: `--- task <id> · <status> ---`.
+ *
+ * A background launch is the one thing a session records TWICE — the receipt
+ * where it went out, and a `<task-notification>` where it came back, minutes
+ * or hours later. Without reading the second one the run node is spawned and
+ * never ended, and every imported run reads "still running": measured
+ * 2026-08-29 over one real session, 49 runs and 49 cards stuck at submitted.
+ *
+ * Duplicated from `state/work.ts` rather than imported, for the reason
+ * RECEIPT_RUN_ID is: the two readers must not be able to disagree about what
+ * an ending looks like, and neither may reach into the other to find out.
+ */
+const RECEIPT_OUTCOME = /^--- task (\S+)(?: · ([^-]+?))? ---$/gm;
 /** How much of a child's own prompt survives into the spawn's task when
  *  nothing better names it. The lens clips again for its card; this only
  *  keeps a multi-kilobyte prompt out of the frame. */
 const PROMPT_TASK_MAX = 120;
 
-/** One `workflow_agent` line of a run's state file, as far as labelling reads it. */
+/** One `workflow_agent` line of a run's state file, as far as this module
+ *  reads it: what to call the agent, and how the run says it ended. */
 interface WfAgentEntry {
   agentId: string | null;
   label: string | null;
   promptPreview: string | null;
+  /** The run's own word for this agent's lifecycle. Measured 2026-08-29 over
+   *  the 536 state files in the store: 4,666 `done`, 211 `error`, 81
+   *  `progress`, 25 `start` — so two of the four values are endings and two
+   *  are not, and only an ending may close a card. */
+  state: string | null;
 }
 
 /** A run's state file, as far as this module reads it. */
@@ -185,6 +206,7 @@ function readRunState(json: string): WfState | null {
         agentId: nonEmpty(o.agentId),
         label: nonEmpty(o.label),
         promptPreview: nonEmpty(o.promptPreview),
+        state: nonEmpty(o.state),
       });
     }
     return { name: nonEmpty(d.workflowName) ?? nonEmpty(d.summary), agents };
@@ -202,7 +224,31 @@ interface ResolvedRun {
   ts: number;
   /** What to call the run: its state file's name, else the receipt's Summary. */
   task: string;
+  /** How the transcript says the run ENDED, and when — off the notification
+   *  the launch's own tool_result carries. Null for a run still out there
+   *  when the session file stops, which is a real state and not a gap. */
+  end: { ts: number; state: "completed" | "failed" } | null;
   state: WfState | null;
+}
+
+/**
+ * How a launch's output says it ended, or null while it does not say.
+ *
+ * Last header wins: a monitor reports many times and the newest word is the
+ * one that stands. "no result by the end of the transcript" is the importer's
+ * own marker for a launch that never settled — it is the ABSENCE of an
+ * ending, not one. Everything that is not `completed` reads as failed, so a
+ * `killed` run (37 of the 536 state files in the store, measured 2026-08-29)
+ * still ends rather than running forever.
+ */
+function lastOutcome(output: string): "completed" | "failed" | null {
+  let out: "completed" | "failed" | null = null;
+  RECEIPT_OUTCOME.lastIndex = 0;
+  for (let m = RECEIPT_OUTCOME.exec(output); m !== null; m = RECEIPT_OUTCOME.exec(output)) {
+    const said = (m[2] ?? "").trim();
+    out = said === "" || said.startsWith("no result") ? null : said === "completed" ? "completed" : "failed";
+  }
+  return out;
 }
 
 /**
@@ -216,6 +262,8 @@ interface ResolvedRun {
 function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<string, ResolvedRun> {
   const receipts = new Map<string, { callId: string; ts: number; summary: string | null }>();
   const callTs = new Map<string, number>();
+  /** callId -> the last ending its results reported, and when. */
+  const endings = new Map<string, { ts: number; state: "completed" | "failed" }>();
   for (const { ev } of sessionStream) {
     const f = shape(ev);
     if (f.type === "tool_call" && typeof f.callId === "string") {
@@ -223,6 +271,11 @@ function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<stri
       continue;
     }
     if (f.type !== "tool_result" || typeof f.output !== "string" || typeof f.callId !== "string") continue;
+    // The ending is read from EVERY result of the call, not only the first
+    // one: the receipt goes out at the launch and the outcome arrives on a
+    // later result for the same callId, carrying the stamp of when it landed.
+    const ended = lastOutcome(f.output);
+    if (ended !== null) endings.set(f.callId, { ts: f.ts ?? 0, state: ended });
     const named = RECEIPT_RUN_ID.exec(f.output);
     if (named === null || receipts.has(named[1])) continue;
     receipts.set(named[1], {
@@ -242,6 +295,7 @@ function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<stri
       // otherwise, which is the next-earliest honest point.
       ts: callTs.get(hit.callId) ?? hit.ts,
       task: state?.name ?? hit.summary ?? runId,
+      end: endings.get(hit.callId) ?? null,
       state,
     });
   }
@@ -249,8 +303,10 @@ function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<stri
 }
 
 /**
- * What to call one workflow child, in a fixed precedence, each honest about
- * where it came from.
+ * The run's own line about one of its children, in a fixed precedence, each
+ * step honest about where it came from. The label AND the ending come from
+ * that one line, so a card cannot end up named by one entry and closed by
+ * another.
  *
  * 1. the state file's `label` for exactly this agent id — the exact answer.
  *    Measured 2026-08-29: 76 of 76 agents in one session, 4,956 of 5,521 over
@@ -268,18 +324,39 @@ function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<stri
  *    measured against a session whose two newest runs had no state file, every
  *    label there began "\nCONTEXT — …".
  */
-function labelForChild(state: WfState | null, agentId: string, prompt: string): string {
-  const exact = state?.agents.find((a) => a.agentId === agentId)?.label;
-  if (exact != null) return exact;
+function entryForChild(state: WfState | null, agentId: string, prompt: string): WfAgentEntry | null {
+  const exact = state?.agents.find((a) => a.agentId === agentId) ?? null;
+  if (exact !== null && exact.label !== null) return exact;
   if (state !== null && prompt !== "") {
-    const byPrompt = new Set<string>();
-    for (const a of state.agents) {
-      if (a.label === null || a.promptPreview === null) continue;
-      if (prompt.startsWith(a.promptPreview.replace(/\u2026\s*$/, ""))) byPrompt.add(a.label);
-    }
-    if (byPrompt.size === 1) return [...byPrompt][0];
+    const hits = state.agents.filter(
+      (a) =>
+        a.label !== null &&
+        a.promptPreview !== null &&
+        prompt.startsWith(a.promptPreview.replace(/\u2026\s*$/, "")),
+    );
+    if (new Set(hits.map((h) => h.label)).size === 1) return hits[0];
   }
-  return clipMiddle(prompt.trim(), PROMPT_TASK_MAX);
+  return exact;
+}
+
+/** The label itself: the entry's when one was found, the child's own prompt
+ *  otherwise — rule 3, trimmed and clipped. */
+function labelForChild(entry: WfAgentEntry | null, prompt: string): string {
+  return entry?.label ?? clipMiddle(prompt.trim(), PROMPT_TASK_MAX);
+}
+
+/**
+ * How the run says one of its agents ended, or null while it does not say.
+ *
+ * Without this every merged child works forever: the session stream never
+ * spawned it, so nothing in it can end it either. Measured 2026-08-29 over one
+ * real session, driving the importer and `foldWork` over the files on disk:
+ * 462 agents merged, 462 of them stuck at working.
+ */
+function endOfChild(entry: WfAgentEntry | null): "completed" | "failed" | null {
+  if (entry === null) return null;
+  if (entry.state === "done") return "completed";
+  return entry.state === "error" ? "failed" : null;
 }
 
 /** The file's own opening prompt, off the root run_start the importer built
@@ -391,7 +468,15 @@ export function importClaudeCodeRun(input: {
   const mergedPerRun = new Map<string, Set<string>>();
   const skippedPerRun = new Map<string, number>();
   /** The frames the merge synthesizes for the runs and their children. */
-  const wfChildren: { runId: string; childId: string; ts: number; task: string; kind: string | null }[] = [];
+  const wfChildren: {
+    runId: string;
+    childId: string;
+    ts: number;
+    endTs: number;
+    end: "completed" | "failed" | null;
+    task: string;
+    kind: string | null;
+  }[] = [];
 
   for (const side of input.sidecars) {
     const metaId = joinable ? metaToolUseId(side.metaJson) : null;
@@ -480,13 +565,18 @@ export function importClaudeCodeRun(input: {
       const seen = mergedPerRun.get(side.runId);
       if (seen === undefined) mergedPerRun.set(side.runId, new Set([childId]));
       else seen.add(childId);
+      const entry = entryForChild(run.state, childId, promptOf(child.events));
       wfChildren.push({
         runId: side.runId,
         childId,
         // The child's own first stamp, so its spawn lands immediately in front
         // of its run_start rather than back at the run's launch.
         ts: stream.length > 0 ? (shape(stream[0].ev).ts ?? run.ts) : run.ts,
-        task: labelForChild(run.state, childId, promptOf(child.events)),
+        // Its own LAST stamp, which is where its transcript stops — the only
+        // moment this import can honestly say it was last seen working.
+        endTs: stream.length > 0 ? (shape(stream[stream.length - 1].ev).ts ?? run.ts) : run.ts,
+        end: endOfChild(entry),
+        task: labelForChild(entry, promptOf(child.events)),
         kind: metaAgentType(side.metaJson),
       });
     }
@@ -536,6 +626,26 @@ export function importClaudeCodeRun(input: {
         },
         origin: -1,
       });
+      // AND the frame that ends it. A node that is spawned and never closed
+      // reads "still running" for as long as the import is on screen, and it
+      // drags the run's drawn lifetime down to its last child spawn — under
+      // "position carries time" that put two runs which genuinely overlapped
+      // in different waves. The text is empty on purpose: the run's answer is
+      // the receipt the session already carries, and repeating it here would
+      // print it twice.
+      if (run.end !== null)
+        synth.push({
+          ev: {
+            type: "agent_message",
+            from: run.workflowId,
+            to: sessionRoot,
+            role: "result",
+            state: run.end.state,
+            text: "",
+            ts: run.end.ts,
+          },
+          origin: -1,
+        });
     }
     synth.push({
       ev: {
@@ -560,6 +670,24 @@ export function importClaudeCodeRun(input: {
       },
       origin: -1,
     });
+    // What ends the child. Nothing in the session stream can: it never
+    // spawned this agent, so it never receives its result either. The run's
+    // own state file is the only record of how it went, and a value that is
+    // not an ending (`progress`, `start`) leaves the card open, because it
+    // was.
+    if (c.end !== null)
+      synth.push({
+        ev: {
+          type: "agent_message",
+          from: c.childId,
+          to: run.workflowId,
+          role: "result",
+          state: c.end,
+          text: "",
+          ts: c.endTs,
+        },
+        origin: -1,
+      });
   }
   // The merge below keeps each stream's order unconditionally, so this one
   // has to BE in order. A stable sort keeps a run's two frames in front of

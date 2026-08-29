@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { detectAndLoad } from "./detect";
 import { groupPickedFiles, importClaudeCodeRun } from "./claudeCodeRun";
+import { spawnTree } from "../lab/spawnTree";
 import type { RunEvent } from "../events";
 
 // ---- synthetic fixtures --------------------------------------------------
@@ -125,6 +126,10 @@ type Frame = RunEvent & {
   parentId?: string;
   agentId?: string;
   task?: string;
+  from?: string;
+  to?: string;
+  role?: string;
+  state?: string;
   ts?: number;
 };
 const frames = (events: RunEvent[]): Frame[] => events as Frame[];
@@ -666,7 +671,7 @@ const WF_RECEIPT = [
 ].join("\n");
 
 /** The session: a Workflow tool_use and the receipt that names its run. */
-const WF_SESSION = [
+const WF_SESSION_LINES = [
   line({
     type: "user",
     uuid: "wu1",
@@ -703,7 +708,36 @@ const WF_SESSION = [
       content: [{ type: "tool_result", tool_use_id: "toolu_workflow_1", content: WF_RECEIPT }],
     },
   }),
+];
+
+/**
+ * The `<task-notification>` a background run files when it comes back.
+ *
+ * This is the ONE place a session says how a launch ended: `claudeCode.ts`
+ * folds the block into the launch's own tool_result under its
+ * `--- task <id> · <status> ---` header, and that header is the outcome this
+ * importer reads. A transcript without one recorded a launch and no ending,
+ * which is a real state and not a gap to fill in.
+ */
+const wfNotification = (uuid: string, callId: string, taskId: string, status: string, at: number): string =>
+  line({
+    type: "user",
+    uuid,
+    timestamp: iso(at),
+    message: {
+      role: "user",
+      content:
+        `<task-notification>\n<task-id>${taskId}</task-id>\n<tool-use-id>${callId}</tool-use-id>\n` +
+        `<status>${status}</status>\n<summary>the run came back</summary>\n</task-notification>`,
+    },
+  });
+
+const WF_SESSION = [
+  ...WF_SESSION_LINES,
+  wfNotification("wu3", "toolu_workflow_1", "wntzxz4mx", "completed", WF_T0 + 60_000),
 ].join("\n");
+/** The same session while the run is still out there. */
+const WF_SESSION_OPEN = WF_SESSION_LINES.join("\n");
 
 /** The meta a workflow child really gets — it names no tool_use at all. */
 const WF_META = line({ agentType: "workflow-subagent", spawnDepth: 1 });
@@ -755,6 +789,59 @@ const WF_RUN = {
   ],
 };
 
+/** A second run, launched while the first one is still out there. */
+const WF_RECEIPT_2 = [
+  "Workflow launched in background. Task ID: wnsecond1",
+  "Summary: the second sweep",
+  "Run ID: wf_run-two",
+].join("\n");
+
+const WF_TWO_RUNS = {
+  sessionText: [
+    ...WF_SESSION_LINES,
+    line({
+      type: "assistant",
+      uuid: "wa2",
+      parentUuid: "wu2",
+      timestamp: iso(WF_T0 + 10_000),
+      message: {
+        id: "msg_w2",
+        role: "assistant",
+        model: "test-model-parent",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_workflow_2",
+            name: "Workflow",
+            input: { script: "export const meta = {}" },
+          },
+        ],
+      },
+    }),
+    line({
+      type: "user",
+      uuid: "wu4",
+      parentUuid: "wa2",
+      timestamp: iso(WF_T0 + 11_000),
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "toolu_workflow_2", content: WF_RECEIPT_2 }],
+      },
+    }),
+    wfNotification("wu5", "toolu_workflow_1", "wntzxz4mx", "completed", WF_T0 + 60_000),
+  ].join("\n"),
+  sidecars: [
+    { jsonlText: WF_CHILD_A, metaJson: WF_META, runId: "wf_run-one" },
+    { jsonlText: WF_CHILD_B, metaJson: WF_META, runId: "wf_run-one" },
+    {
+      jsonlText: sidecar("f66ffff", "the second sweep's only agent", "done", WF_T0 + 12_000),
+      metaJson: WF_META,
+      runId: "wf_run-two",
+    },
+  ],
+  runStates: [] as { runId: string; json: string }[],
+};
+
 const spawnOf = (events: RunEvent[], agentId: string): Frame[] =>
   frames(events).filter((e) => e.type === "agent_spawn" && e.agentId === agentId);
 
@@ -782,11 +869,23 @@ describe("importClaudeCodeRun — a workflow run brings its agents (card 297)", 
     expect(wf).toHaveLength(1);
     expect(wf[0].parentId).toBe("main");
     expect(wf[0].ts).toBe(WF_T0 + 1_000);
-    const msg = frames(run.events).filter(
-      (e) => e.type === "agent_message" && (e as { to?: string }).to === "toolu_workflow_1",
-    );
-    expect(msg).toHaveLength(1);
-    expect(msg[0]).toMatchObject({ from: "main", role: "task", label: "workflow" });
+    // Exactly ONE task message opens the run. The node is also the address
+    // its own children report back to, so the filter names the role: without
+    // that, this count would drift with every agent the run brings.
+    const msg = frames(run.events).filter((e) => e.type === "agent_message" && e.to === "toolu_workflow_1");
+    expect(msg.filter((e) => e.role === "task")).toHaveLength(1);
+    expect(msg.filter((e) => e.role === "task")[0]).toMatchObject({
+      from: "main",
+      role: "task",
+      label: "workflow",
+    });
+    // and everything else addressed to it is one of its agents ending.
+    expect(
+      msg
+        .filter((e) => e.role !== "task")
+        .map((e) => e.from)
+        .sort(),
+    ).toEqual(["a11aaaa", "b22bbbb"]);
   });
 
   it("names the run by what the state file called it, falling back to the receipt's Summary", () => {
@@ -895,6 +994,90 @@ describe("importClaudeCodeRun — a workflow run brings its agents (card 297)", 
     expect(run.childrenMerged).toBe(1);
     expect(run.childrenSkipped).toBe(0);
     expect(run.childrenUnrecorded).toBe(1);
+  });
+
+  it("closes the run node on the outcome the transcript recorded", () => {
+    // Without this frame every imported run reads "still running" forever:
+    // the synthesized node was spawned and never ended. Measured 2026-08-29
+    // over one real session, driving the importer and foldWork over the files
+    // on disk: 49 runs, 49 cards stuck at submitted, not one of them settled.
+    const run = importClaudeCodeRun(WF_RUN);
+    const done = frames(run.events).filter(
+      (e) => e.type === "agent_message" && e.from === "toolu_workflow_1" && e.role === "result",
+    );
+    expect(done).toHaveLength(1);
+    expect(done[0]).toMatchObject({ to: "main", state: "completed", ts: WF_T0 + 60_000 });
+  });
+
+  it("leaves a run the transcript never settled open", () => {
+    // A launch with no notification behind it is a run still out there. The
+    // importer must not invent an ending for it.
+    const run = importClaudeCodeRun({ ...WF_RUN, sessionText: WF_SESSION_OPEN });
+    expect(
+      frames(run.events).filter(
+        (e) => e.type === "agent_message" && e.from === "toolu_workflow_1" && e.role === "result",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("closes each child by what the run's state file recorded about it", () => {
+    // The state file is the run's own bookkeeping, and `state` is its word for
+    // how each agent ended. Measured 2026-08-29 over 536 state files in the
+    // store: 4,666 agents `done`, 211 `error`, 81 `progress`, 25 `start`.
+    const run = importClaudeCodeRun({
+      ...WF_RUN,
+      runStates: [
+        {
+          runId: "wf_run-one",
+          json: wfState([
+            wfAgent("a11aaaa", "sweep-the-todo-column", "the shared preamble"),
+            { ...wfAgent("b22bbbb", "card-146-lab-map", "the shared preamble"), state: "error" },
+          ]),
+        },
+      ],
+    });
+    const resultOf = (id: string): Frame[] =>
+      frames(run.events).filter((e) => e.type === "agent_message" && e.from === id && e.role === "result");
+    expect(resultOf("a11aaaa")).toHaveLength(1);
+    // The child's own last frame: the point at which its transcript stops.
+    expect(resultOf("a11aaaa")[0]).toMatchObject({
+      to: "toolu_workflow_1",
+      state: "completed",
+      ts: WF_T0 + 4_000,
+    });
+    expect(resultOf("b22bbbb")).toHaveLength(1);
+    expect(resultOf("b22bbbb")[0]).toMatchObject({ state: "failed" });
+  });
+
+  it("leaves a child the state file still calls running open", () => {
+    const run = importClaudeCodeRun({
+      ...WF_RUN,
+      sidecars: [{ jsonlText: WF_CHILD_A, metaJson: WF_META, runId: "wf_run-one" }],
+      runStates: [
+        {
+          runId: "wf_run-one",
+          json: wfState([
+            { ...wfAgent("a11aaaa", "sweep-the-todo-column", "the shared preamble"), state: "progress" },
+          ]),
+        },
+      ],
+    });
+    expect(
+      frames(run.events).filter(
+        (e) => e.type === "agent_message" && e.from === "a11aaaa" && e.role === "result",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("draws two runs that overlap in time in ONE wave", () => {
+    // Position carries time. While the run node's end reached only its LAST
+    // CHILD SPAWN, a run's drawn lifetime collapsed to seconds where its real
+    // span was tens of minutes, and two runs that genuinely overlapped landed
+    // in different waves. Here run two opens at +10s, long after run one's
+    // last child spawn at +4s and long before run one's outcome at +60s.
+    const tree = spawnTree(importClaudeCodeRun(WF_TWO_RUNS).events);
+    expect(tree.topo.ranks!.get("toolu_workflow_1")).toBe(1);
+    expect(tree.topo.ranks!.get("toolu_workflow_2")).toBe(1);
   });
 
   it("leaves a Task child's join exactly as it was — the meta still rules", () => {
