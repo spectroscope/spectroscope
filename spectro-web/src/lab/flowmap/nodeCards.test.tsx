@@ -11,7 +11,7 @@ vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
 }));
 
-import { AgentCardBody, SubagentNode, type AgentData } from "./nodes";
+import { AgentCardBody, OsNode, SubagentNode, type AgentData } from "./nodes";
 
 const agentData: AgentData = {
   active: true,
@@ -127,5 +127,73 @@ describe("the full worker card (card 287)", () => {
     const m = renderToStaticMarkup(<Sub data={{ ...workerData, full: undefined }} />);
     expect(m).not.toContain("pf-sub--full");
     expect(m).toContain("pf-sub__task");
+  });
+});
+
+// ---- card 295: the station says WHO is on it, and looks busy while they are.
+const Os = OsNode as unknown as (p: { data: unknown }) => ReturnType<typeof AgentCardBody>;
+const osMarkup = (data: Record<string, unknown>) => renderToStaticMarkup(<Os data={data} />);
+
+describe("OsNode occupancy (card 295)", () => {
+  it("an idle station is neither busy nor tinted", () => {
+    const m = osMarkup({ kind: "shell", active: false, command: null, by: [], byTag: null });
+    expect(m).not.toContain("pf-os--busy");
+    expect(m).not.toContain("pf-os--worker");
+  });
+
+  it("main at the station: busy, but no worker tint", () => {
+    const m = osMarkup({
+      kind: "shell",
+      active: true,
+      command: "ls",
+      by: [{ tag: "main", name: "main", agentId: "main" }],
+      byTag: "main",
+    });
+    expect(m).toContain("pf-os--busy");
+    expect(m).not.toContain("pf-os--worker");
+  });
+
+  it("a worker at the station wears the worker accent", () => {
+    const m = osMarkup({
+      kind: "disk",
+      active: true,
+      disk: "write",
+      file: "a.md",
+      by: [{ tag: "w2", name: "Scout the checkout", agentId: "toolu_x" }],
+      byTag: "w2",
+    });
+    expect(m).toContain("pf-os--busy");
+    expect(m).toContain("pf-os--worker");
+    expect(m).toContain("w2");
+  });
+
+  it("a demoted occupant is NAMED, not silently reduced to a tag", () => {
+    const m = osMarkup({
+      kind: "disk",
+      active: true,
+      disk: "read",
+      file: "a.md",
+      by: [
+        { tag: "main", name: "main", agentId: "main" },
+        { tag: "w3", name: "Scout the checkout", agentId: "toolu_y" },
+      ],
+      byTag: "main",
+    });
+    expect(m).toContain(">w3 · Scout the checkout</span>"); // the visible chip, not just the title
+    expect(m).not.toContain("toolu_y"); // an opaque id is never a visible name
+  });
+
+  it("a crowded station names two extras and COUNTS the rest — never silently drops one", () => {
+    const by = ["main", "w1", "w2", "w3", "w4", "w5"].map((tag, i) => ({
+      tag,
+      name: tag === "main" ? "main" : `worker ${i}`,
+      agentId: `id-${i}`,
+    }));
+    const m = osMarkup({ kind: "disk", active: true, disk: "read", file: "a.md", by, byTag: "main" });
+    expect(m).toContain(">w1 · worker 1</span>");
+    expect(m).toContain(">w2 · worker 2</span>");
+    expect(m).toContain("+3"); // three more, counted rather than dropped
+    // and the full roster is still reachable, on the row's own title
+    expect(m).toContain("w5 · worker 5");
   });
 });

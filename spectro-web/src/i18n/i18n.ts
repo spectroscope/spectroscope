@@ -1446,6 +1446,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "fleetlab.behind": { de: "{n} Events voraus", en: "{n} events ahead" },
   "map.zone.os": { de: "BETRIEBSSYSTEM", en: "OPERATING SYSTEM" },
   "map.station.also": { de: "auch", en: "also" },
+  "map.station.shared": { de: "Mehrere Agenten sind gerade an dieser Station", en: "Several agents are on this station right now" },
   "map.zone.outside": { de: "AUSSERHALB", en: "OUTSIDE" },
   "map.zone.boundary": { de: "NETZGRENZE", en: "NETWORK BOUNDARY" },
   "map.you": { de: "Du", en: "You" },

@@ -88,11 +88,7 @@ export function PacketEdge({
     .trim();
 
   const pathId = `p-${id}`;
-  const cometCls = d.err
-    ? "pf-comet pf-comet--err"
-    : d.worker
-      ? "pf-comet pf-comet--worker"
-      : "pf-comet";
+  const cometCls = d.err ? "pf-comet pf-comet--err" : d.worker ? "pf-comet pf-comet--worker" : "pf-comet";
 
   return (
     <>

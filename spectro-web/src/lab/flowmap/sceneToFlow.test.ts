@@ -216,7 +216,14 @@ describe("sceneToFlow", () => {
     const events: RunEvent[] = [
       runStart("ollama"),
       spawn("worker-1"),
-      { type: "tool_call", agentId: "main", callId: "m1", name: "read_file", input: { path: "a" }, ts: T } as RunEvent,
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "m1",
+        name: "read_file",
+        input: { path: "a" },
+        ts: T,
+      } as RunEvent,
       {
         type: "tool_call",
         agentId: "worker-1",

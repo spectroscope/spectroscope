@@ -187,7 +187,15 @@ describe("labScene", () => {
       runStart("anthropic"),
       toolCall("run_command", { command: "ls" }),
       { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: {}, ts: T },
-      { type: "tool_result", agentId: "main", callId: "c1", output: "", isError: false, durationMs: 1, ts: T },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "",
+        isError: false,
+        durationMs: 1,
+        ts: T,
+      },
     ]);
     expect(s.gateFrom).toBeNull();
   });
