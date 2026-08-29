@@ -24,6 +24,7 @@ describe("registry", () => {
       "imagegen",
       "permission",
       "research",
+      "workflow-phases",
     ]);
   });
 

@@ -1187,12 +1187,261 @@ const fleetswarm: Dsl = {
   ],
 };
 
+/** Card 302: the DECLARED workflow — the demo the fan-out deserved.
+ *
+ * The shape is measured, not invented: one real 13-agent run declared five
+ * phases and filled them 1 / 5 / 1 / 1 / 5, two fan-outs of five with three
+ * single agents between them. That recording is not in this repo and will not
+ * be — it is tens of megabytes and it is the owner's own material. It loads
+ * through the folder dialog cards 291 and 297 already taught to take a
+ * directory. This scenario carries the SHAPE so the picture has a demo that
+ * ships, and nothing else of it.
+ *
+ * `phases` is what makes this the declared picture rather than the recovered
+ * one: the columns exist before a single event is compiled, so the lens draws
+ * them solid and captions them with these words.
+ */
+const workflowPhases: Dsl = {
+  id: "workflow-phases",
+  name: {
+    en: "Declared workflow · 5 phases, 13 agents",
+    de: "Deklarierter Workflow · 5 Phasen, 13 Agenten",
+  },
+  prompt: {
+    en: "Research the checkout flow in phases: plan it, survey it five ways, consolidate, deliver, then verify every finding.",
+    de: "Untersuche den Checkout-Flow in Phasen: planen, fünffach untersuchen, zusammenführen, ausliefern, jeden Fund prüfen.",
+  },
+  provider: "ollama",
+  phases: [
+    {
+      title: { en: "plan", de: "planen" },
+      detail: { en: "decide what to look at", de: "festlegen, was betrachtet wird" },
+      agents: ["plan"],
+    },
+    {
+      title: { en: "survey", de: "untersuchen" },
+      detail: { en: "five angles at once", de: "fünf Blickwinkel gleichzeitig" },
+      agents: ["survey-1", "survey-2", "survey-3", "survey-4", "survey-5"],
+    },
+    {
+      title: { en: "consolidate", de: "zusammenführen" },
+      detail: { en: "one picture out of five", de: "ein Bild aus fünfen" },
+      agents: ["consolidate"],
+    },
+    {
+      title: { en: "deliver", de: "ausliefern" },
+      detail: { en: "write it up", de: "aufschreiben" },
+      agents: ["deliver"],
+    },
+    {
+      title: { en: "verify", de: "prüfen" },
+      detail: { en: "every finding, on its own", de: "jeden Fund einzeln" },
+      agents: ["verify-1", "verify-2", "verify-3", "verify-4", "verify-5"],
+    },
+  ],
+  steps: [
+    {
+      think: {
+        en: "Five phases, and the middle one and the last one fan out.",
+        de: "Fünf Phasen, die mittlere und die letzte fächern auf.",
+      },
+    },
+    {
+      spawn: "plan",
+      label: "plan",
+      task: { en: "plan the pass", de: "plane den Durchgang" },
+      steps: [
+        { status: { en: "planning", de: "plane" } },
+        { list: "src/checkout", result: "Form.tsx  Payment.tsx  Address.tsx  errors.ts  track.ts" },
+        { usage: { in: 9_000, out: 600 } },
+        { say: { en: "five angles to survey", de: "fünf Blickwinkel zu untersuchen" } },
+      ],
+    },
+    {
+      fanout: {
+        label: "survey",
+        tool: "survey",
+        agents: [
+          {
+            id: "survey-1",
+            task: { en: "survey the checkout form", de: "untersuche das Checkout-Formular" },
+            steps: [
+              { status: { en: "reading the form", de: "lese das Formular" } },
+              { read: "src/checkout/Form.tsx", result: "export function Form() { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: {
+                  en: "survey the checkout form — done",
+                  de: "untersuche das Checkout-Formular — fertig",
+                },
+              },
+            ],
+          },
+          {
+            id: "survey-2",
+            task: { en: "survey the payment step", de: "untersuche den Zahlungsschritt" },
+            steps: [
+              { status: { en: "reading the payment step", de: "lese den Zahlungsschritt" } },
+              { read: "src/checkout/Payment.tsx", result: "export function Payment() { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: { en: "survey the payment step — done", de: "untersuche den Zahlungsschritt — fertig" },
+              },
+            ],
+          },
+          {
+            id: "survey-3",
+            task: { en: "survey the address step", de: "untersuche den Adressschritt" },
+            steps: [
+              { status: { en: "reading the address step", de: "lese den Adressschritt" } },
+              { read: "src/checkout/Address.tsx", result: "export function Address() { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              { say: { en: "survey the address step — done", de: "untersuche den Adressschritt — fertig" } },
+            ],
+          },
+          {
+            id: "survey-4",
+            task: { en: "survey the error states", de: "untersuche die Fehlerzustände" },
+            steps: [
+              { status: { en: "reading the error states", de: "lese die Fehlerzustände" } },
+              { read: "src/checkout/errors.ts", result: "export const ERRORS = { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              { say: { en: "survey the error states — done", de: "untersuche die Fehlerzustände — fertig" } },
+            ],
+          },
+          {
+            id: "survey-5",
+            task: { en: "survey the analytics hooks", de: "untersuche die Analytics-Hooks" },
+            steps: [
+              { status: { en: "reading the hooks", de: "lese die Hooks" } },
+              { read: "src/checkout/track.ts", result: "export function track(step: string) { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: {
+                  en: "survey the analytics hooks — done",
+                  de: "untersuche die Analytics-Hooks — fertig",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      spawn: "consolidate",
+      label: "consolidate",
+      task: { en: "consolidate the five surveys", de: "führe die fünf Untersuchungen zusammen" },
+      steps: [
+        { status: { en: "consolidating", de: "führe zusammen" } },
+        { write: "docs/checkout/findings.md", result: "Wrote: docs/checkout/findings.md (4102 bytes)" },
+        { usage: { in: 44_000, out: 2_100 } },
+        { say: { en: "one picture, five sources", de: "ein Bild, fünf Quellen" } },
+      ],
+    },
+    {
+      spawn: "deliver",
+      label: "deliver",
+      task: { en: "write the report", de: "schreibe den Bericht" },
+      steps: [
+        { status: { en: "writing the report", de: "schreibe den Bericht" } },
+        { write: "docs/checkout/report.md", result: "Wrote: docs/checkout/report.md (6820 bytes)" },
+        { usage: { in: 31_000, out: 1_900 } },
+        { say: { en: "report is out", de: "Bericht ist raus" } },
+      ],
+    },
+    {
+      fanout: {
+        label: "verify",
+        tool: "verify",
+        agents: [
+          {
+            id: "verify-1",
+            task: { en: "verify the form findings", de: "prüfe die Formular-Funde" },
+            steps: [
+              { status: { en: "re-running the form checks", de: "prüfe das Formular erneut" } },
+              { run: "npm test -- checkout/Form", result: "12 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: { en: "verify the form findings — checks out", de: "prüfe die Formular-Funde — stimmt" },
+              },
+            ],
+          },
+          {
+            id: "verify-2",
+            task: { en: "verify the payment findings", de: "prüfe die Zahlungs-Funde" },
+            steps: [
+              { status: { en: "re-running the payment checks", de: "prüfe die Zahlung erneut" } },
+              { run: "npm test -- checkout/Payment", result: "9 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "verify the payment findings — checks out",
+                  de: "prüfe die Zahlungs-Funde — stimmt",
+                },
+              },
+            ],
+          },
+          {
+            id: "verify-3",
+            task: { en: "verify the address findings", de: "prüfe die Adress-Funde" },
+            steps: [
+              { status: { en: "re-running the address checks", de: "prüfe die Adresse erneut" } },
+              { run: "npm test -- checkout/Address", result: "7 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "verify the address findings — checks out",
+                  de: "prüfe die Adress-Funde — stimmt",
+                },
+              },
+            ],
+          },
+          {
+            id: "verify-4",
+            task: { en: "verify the error findings", de: "prüfe die Fehler-Funde" },
+            steps: [
+              { status: { en: "re-running the error checks", de: "prüfe die Fehler erneut" } },
+              { run: "npm test -- checkout/errors", result: "5 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: { en: "verify the error findings — checks out", de: "prüfe die Fehler-Funde — stimmt" },
+              },
+            ],
+          },
+          {
+            id: "verify-5",
+            task: { en: "verify the analytics findings", de: "prüfe die Analytics-Funde" },
+            steps: [
+              { status: { en: "re-running the analytics checks", de: "prüfe Analytics erneut" } },
+              { run: "npm test -- checkout/track", result: "4 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "verify the analytics findings — checks out",
+                  de: "prüfe die Analytics-Funde — stimmt",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      say: {
+        en: "Five phases done: 13 agents, every finding checked on its own.",
+        de: "Fünf Phasen fertig: 13 Agenten, jeder Fund einzeln geprüft.",
+      },
+    },
+  ],
+};
+
 export const SCENARIOS: Dsl[] = [
   buildplan,
   bughunt,
   adversarial,
   fanout,
   fanoutEight,
+  workflowPhases,
   permission,
   diskshell,
   agentsmd,

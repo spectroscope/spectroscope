@@ -75,7 +75,7 @@ import {
 } from "./components/localNoticeFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { StarterDialog } from "./components/StarterDialog";
-import { compile } from "./scenario/compile";
+import { compile, declarationOf } from "./scenario/compile";
 import type { Dsl } from "./scenario/dsl";
 import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
@@ -1278,11 +1278,17 @@ export function App() {
       return;
     }
     navNonce.issue(); // a scenario supersedes any in-flight session open
+    const sessionId = `scenario:${dsl.id}`;
     setReplay({
-      id: `scenario:${dsl.id}`,
+      id: sessionId,
       state: foldArchive(events),
       events,
     });
+    // Card 302: a workflow-shaped scenario declares its columns the way a real
+    // run's state file does, so the demo shows the DECLARED picture rather
+    // than a guess at it. Every other scenario clears the field.
+    const declared = declarationOf(dsl, lang);
+    setImportedPhases(declared === undefined ? null : { sessionId, declared });
     // Loading a CHAT scenario must LEAVE an entered fleet — otherwise the
     // header shows the scenario while every tab (the lab included) still
     // renders the fleet's events. Owner-found: dialog-load after a fleet.
