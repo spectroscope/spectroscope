@@ -548,6 +548,12 @@
   align-items: center;
   min-width: 0;
 }
+/* The layer spans the track BOX, not the thumb's travel. A native range thumb
+   is inset by half its own width at each end, so a tick at 0% or 100% sits a
+   few pixels outside the thumb's reachable centre. The offset is largest at the
+   two ends and zero in the middle, and it is left uncorrected on purpose: the
+   correction would be half a thumb width, and nobody here has measured what
+   that is in each browser the app ships to. */
 .lab-marks {
   position: absolute;
   inset: 0;
