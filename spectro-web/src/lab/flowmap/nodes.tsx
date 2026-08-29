@@ -789,6 +789,12 @@ export function SubagentNode({ data }: NodeProps) {
      *  is a bound measured with everything open (cardGeometry.ts), so a card
      *  drawn with them shut fits a seat sized for them open. */
     boxExpanded?: boolean;
+    /** CARD 306: true for a member card a workflow box seated, absent for a
+     *  loose one. It puts `.pf-sub--boxed` on the compact card, and that class
+     *  is what the caps in flowmap.css hang off — the caps that make the
+     *  band's reserve a bound rather than an observation about the thirteen
+     *  cards somebody happened to measure. */
+    boxed?: boolean;
   };
   if (d.full !== undefined) {
     // The opaque agent id lives ONLY in the title attribute — the visible
@@ -846,7 +852,11 @@ export function SubagentNode({ data }: NodeProps) {
     );
   }
   return (
-    <div className={`pf-card pf-sub${d.active ? " pf-card--active" : ""}`}>
+    <div
+      className={`pf-card pf-sub${d.boxed === true ? " pf-sub--boxed" : ""}${
+        d.active ? " pf-card--active" : ""
+      }`}
+    >
       <div className="pf-sub__head">
         <span className="pf-sub__id">
           <span className="pf-sub__dot" style={{ background: d.stateColor }} />

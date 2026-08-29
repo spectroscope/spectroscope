@@ -71,3 +71,23 @@ describe("a minimal worker card and the switch that opens it", () => {
     expect(open(markup(false, { boxExpanded: false }))).toBe(false);
   });
 });
+
+// The caps that make the band's reserve a BOUND only reach a card that says it
+// is in a box, and the class is the only thing that says so. Without it every
+// cap in flowmap.css misses and the reserve is back to being an observation
+// about the thirteen cards somebody happened to measure.
+describe("a boxed member says it is boxed, so the caps reach it", () => {
+  it("carries the boxed class when the seating put it in a box", () => {
+    expect(markup(false, { boxed: true })).toContain("pf-sub--boxed");
+  });
+
+  it("leaves a loose card exactly what it was", () => {
+    expect(markup(false)).not.toContain("pf-sub--boxed");
+  });
+
+  it("keeps the active card's own class beside it, not instead of it", () => {
+    const html = markup(false, { boxed: true, active: true });
+    expect(html).toContain("pf-sub--boxed");
+    expect(html).toContain("pf-card--active");
+  });
+});

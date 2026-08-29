@@ -11,7 +11,16 @@ import {
   BOX_BAND_GAP,
   BOX_BAND_LABEL_H,
   BOX_HEADER_H,
+  BOX_MEMBER_CAP_HEAD_PX,
+  BOX_MEMBER_CAP_STATUS_PX,
+  BOX_MEMBER_CAP_TASK_PX,
+  BOX_MEMBER_DISC_SHUT_H,
+  BOX_MEMBER_FRAME_H,
   BOX_MEMBER_GAP,
+  BOX_MEMBER_H_COMPACT,
+  BOX_MEMBER_MEASURED_MAX,
+  BOX_MEMBER_MEASURED_MIN,
+  BOX_MEMBER_ROW_GAP,
   BOX_PAD,
   boxMemberSize,
   workflowBoxLayout,
@@ -164,5 +173,75 @@ describe("the box header has ONE height", () => {
     expect(at).toBeGreaterThan(-1);
     const rule = css.slice(at, css.indexOf("}", at));
     expect(rule).toMatch(new RegExp(`height:\\s*${BOX_HEADER_H}px`));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE RESERVE IS A MEASUREMENT, and it was 17px short of the card it holds.
+//
+// The handover said the minimal member "now measures 133 against the 132
+// reserved". Measured on the shipped "declared workflow" scenario at 141/188,
+// compact, through offsetHeight (React Flow's zoom is a viewport transform and
+// is not in these numbers): three cards at 149, eight at 133, two at 112 —
+// eleven of thirteen over the 132 that was reserved. The map's own compact
+// seat is 132 too, but there a 44px rail gap swallows the difference; a band
+// has 10px of foot and 12px of gap, so the same card crossed the dashed frame
+// of the phase it is supposed to be standing in.
+// ---------------------------------------------------------------------------
+describe("what a compact member card costs", () => {
+  it("reserves at least the tallest card the browser laid out in a box", () => {
+    expect(BOX_MEMBER_H_COMPACT).toBeGreaterThanOrEqual(BOX_MEMBER_MEASURED_MAX);
+  });
+
+  it("does not reserve twice the shortest one either — the under-fill rule", () => {
+    expect(BOX_MEMBER_H_COMPACT).toBeLessThan(2 * BOX_MEMBER_MEASURED_MIN);
+  });
+
+  // A value pin alone is green in both directions: write 165 back as a literal
+  // and the equality still holds, because the parts sum to 165 today. What has
+  // to hold is the LINK between the reserve and the caps that bound it, so the
+  // sum is spelled out here and each cap is bitten against the CSS on its own.
+  it("is the sum of the parts the CSS bounds, not a literal", () => {
+    expect(BOX_MEMBER_H_COMPACT).toBe(
+      BOX_MEMBER_FRAME_H +
+        BOX_MEMBER_CAP_HEAD_PX +
+        BOX_MEMBER_ROW_GAP +
+        BOX_MEMBER_CAP_TASK_PX +
+        BOX_MEMBER_ROW_GAP +
+        BOX_MEMBER_CAP_STATUS_PX +
+        BOX_MEMBER_DISC_SHUT_H,
+    );
+  });
+
+  it("flowmap.css caps every region of a boxed member that grows with content", () => {
+    const css = readFileSync(new URL("./flowmap.css", import.meta.url), "utf8");
+    for (const [selector, cap] of [
+      [".pf-sub--boxed .pf-sub__head", BOX_MEMBER_CAP_HEAD_PX],
+      [".pf-sub--boxed .pf-sub__task", BOX_MEMBER_CAP_TASK_PX],
+      [".pf-sub--boxed .pf-sub__status", BOX_MEMBER_CAP_STATUS_PX],
+    ] as const) {
+      const at = css.indexOf(`${selector} {`);
+      expect(at, selector).toBeGreaterThan(-1);
+      expect(css.slice(at, css.indexOf("}", at)), selector).toContain(`max-height: ${cap}px`);
+    }
+  });
+
+  it("a band always holds the card it reserved for, in every phase shape", () => {
+    for (const counts of [[1], [5], [1, 5, 1], [0, 3]]) {
+      const run: RunPhases = {
+        phases: counts.map((n, i) => ({
+          title: `p${i}`,
+          detail: null,
+          members: Array.from({ length: n }, (_, k) => member(`p${i}-${k}`)),
+        })),
+        unplaced: [],
+      };
+      const box = workflowBoxLayout(run, { expanded: false, present: null, unplacedTitle: "unplaced" });
+      for (const band of box.bands) {
+        for (const m of band.members) {
+          expect(m.y + BOX_MEMBER_MEASURED_MAX, band.title).toBeLessThanOrEqual(band.y + band.h);
+        }
+      }
+    }
   });
 });

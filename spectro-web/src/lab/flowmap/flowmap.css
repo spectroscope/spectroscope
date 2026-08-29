@@ -1870,6 +1870,29 @@
   color: var(--text-dim);
   pointer-events: auto;
 }
+/* A MEMBER CARD STANDING IN A BOX.
+
+   Its band reserves BOX_MEMBER_H_COMPACT, and `extent: "parent"` does not let
+   a child stick out of its parent — it CLAMPS, so a card that outgrows its
+   band does not spill over the frame, it lands on the row above. Every region
+   of the compact card that grows with content is therefore capped here, and
+   workflowBox.ts sums exactly these three numbers plus the frame, the two 8px
+   gaps and the shut disclosure. workflowBox.test.ts reads them back out of
+   this file, so the two cannot drift.
+
+   Compact only: an expanded box draws its members as `.pf-sub--full`, which
+   carries its own caps (card 296) and never this class. */
+.pf-sub--boxed .pf-sub__head {
+  max-height: 37px;
+  overflow: hidden;
+}
+.pf-sub--boxed .pf-sub__task {
+  max-height: 32px;
+}
+.pf-sub--boxed .pf-sub__status {
+  max-height: 17px;
+  overflow: hidden;
+}
 .pf-wfband__note {
   font-style: normal;
   font-weight: 400;

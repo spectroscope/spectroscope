@@ -1473,7 +1473,11 @@ export function sceneToFlow(
           // stick out, it clamps: the last band's row came to rest 88px above
           // its own band, on top of the row before it. Two switches
           // disagreeing, the geometry following one and the markup the other.
-          data: { ...subCardData(c, b.expandedBox), boxExpanded: b.expandedBox },
+          // `boxed` is what puts `.pf-sub--boxed` on the compact card, and
+          // that class carries the caps that make this band's reserve a bound
+          // (workflowBox.ts). It is set for a member in either view: the
+          // expanded card ignores it, so one flag says one thing.
+          data: { ...subCardData(c, b.expandedBox), boxExpanded: b.expandedBox, boxed: true },
           zIndex: 10,
         });
       }
