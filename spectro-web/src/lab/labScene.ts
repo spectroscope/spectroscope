@@ -67,7 +67,11 @@ export interface Scene extends Loop {
 }
 
 const MAIN = "main";
-const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
+/** The native disk verbs. EXPORTED (card 301) so the file footprint folds the
+ *  same names this map lights a station for: the map and the tree must never
+ *  disagree about what counts as a disk touch, and two copies of a set is
+ *  exactly how they would. */
+export const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
 // Imported Claude Code transcripts carry Claude Code's tool names. The fold
 // routes them to the same stations the native names reach — the recorded name
 // itself is NEVER rewritten (the wire is evidence), so activeTool keeps the
@@ -76,8 +80,8 @@ const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
 // would read as finished. WebFetch/WebSearch stay dark on purpose: the map has
 // no rail from the agent to the network stack, and lighting a station with no
 // path to it would claim an MCP chain that never ran.
-const CC_DISK_READ = new Set(["Read", "Glob"]);
-const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
+export const CC_DISK_READ = new Set(["Read", "Glob"]);
+export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
 
 /** Only Ollama runs the model on the user's machine; everything else is remote. */
 export function isLocalProvider(provider: string | null | undefined): boolean {
