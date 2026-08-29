@@ -5,6 +5,7 @@
 // the point: a band that runs through its neighbour is arithmetic, and
 // arithmetic is measurable without a browser.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BOX_BAND_GAP,
@@ -144,5 +145,24 @@ describe("workflowBoxLayout", () => {
     // Wide enough for the card that would have stood in it — a box narrower
     // than one member reads as a rule, not as a frame.
     expect(box.w).toBe(2 * BOX_PAD + boxMemberSize(false).w);
+  });
+});
+
+// The header is written TWICE — as BOX_HEADER_H here, and as a literal height
+// in flowmap.css, because a CSS `height` cannot read a TS constant. The pure
+// geometry seats the first band under the header and the renderer places that
+// band inside the header-offset body, so the two drifting apart moves every
+// band by the difference and every member card sits half a band off its own
+// title. Nothing renders that as an error; it reads as a design choice.
+//
+// The same pin cardGeometry.test.ts puts on the worker card's caps.
+describe("the box header has ONE height", () => {
+  const css = readFileSync(new URL("./flowmap.css", import.meta.url), "utf8");
+
+  it("the CSS header is exactly the height the geometry seated the bands under", () => {
+    const at = css.indexOf(".pf-wfbox__head {");
+    expect(at).toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf("}", at));
+    expect(rule).toMatch(new RegExp(`height:\\s*${BOX_HEADER_H}px`));
   });
 });
