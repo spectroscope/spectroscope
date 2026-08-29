@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 import { useLang } from "../state/lang";
+import { t } from "../i18n/i18n";
 
 /** One backend option row. */
 function Option(props: { badge: string; free: boolean; title: string; body: ReactNode }) {
@@ -148,6 +149,20 @@ export function Onboarding(props: {
                   <code>lmstudio</code> in the header.
                 </>
               )
+            }
+          />
+          <Option
+            badge="llamacpp"
+            free
+            title="llama.cpp"
+            body={
+              <>
+                {t(de ? "de" : "en", "onb.llamacppBody")}{" "}
+                <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noreferrer">
+                  llama.cpp
+                </a>
+                . {t(de ? "de" : "en", "onb.llamacppModelIsALabel")}
+              </>
             }
           />
           <Option

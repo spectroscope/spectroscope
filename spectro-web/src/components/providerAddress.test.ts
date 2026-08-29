@@ -21,7 +21,7 @@ describe("addressSpecFor", () => {
 
   it("answers null for every provider without an address — the field stays hidden", () => {
     for (const p of PROVIDERS) {
-      if (p === "ollama" || p === "lmstudio") continue;
+      if (p === "ollama" || p === "lmstudio" || p === "llamacpp") continue;
       expect(addressSpecFor(p), p).toBeNull();
     }
   });

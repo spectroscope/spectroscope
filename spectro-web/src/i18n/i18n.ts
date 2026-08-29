@@ -2106,6 +2106,15 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "wo dieses Backend läuft — auch auf einer anderen Maschine",
     en: "where this backend runs — another machine works too",
   },
+  // Card 312: llama.cpp as its own connector.
+  "onb.llamacppBody": {
+    de: "Starte deinen eigenen llama-server mit einem GGUF-Modell und wähl oben den Anbieter llamacpp. Voreingestellt ist Port 8080; eine andere Adresse trägst du in den Einstellungen ein.",
+    en: "Start your own llama-server with a GGUF model, then pick provider llamacpp in the header. Port 8080 is the preset; any other address goes in Settings.",
+  },
+  "onb.llamacppModelIsALabel": {
+    de: "Ein llama-server bedient genau das Modell, mit dem er gestartet wurde, und ignoriert das Modellfeld einer Anfrage — der Name oben ist eine Beschriftung, keine Auswahl. Dafür sagt der Server selbst, wie groß sein Kontextfenster wirklich ist.",
+    en: "One llama-server serves the single model it was started with and ignores the model field in a request — the name above is a label, not a chooser. In exchange the server itself says how large its context window really is.",
+  },
   "set.thinking": { de: "Thinking", en: "Thinking" },
   "set.imageBackend": { de: "Bild-Backend", en: "Image backend" },
   "set.on": { de: "An", en: "On" },

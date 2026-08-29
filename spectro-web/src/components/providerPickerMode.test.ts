@@ -77,6 +77,7 @@ describe("modelFieldMode", () => {
       "ollama",
       "openai",
       "lmstudio",
+      "llamacpp",
       "openrouter",
       "gemini",
       "spectro-local",

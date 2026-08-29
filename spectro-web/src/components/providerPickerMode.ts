@@ -1,13 +1,16 @@
 // Pure logic for the provider picker, split out so it is testable without a DOM.
 
 /** Every selectable LLM backend. The two OpenAI-compatible presets (lmstudio,
- *  openrouter) sit next to the cloud ones; spectro-local is the bundled model,
+ *  openrouter) sit next to the cloud ones; llamacpp is an operator's own
+ *  llama-server, kept apart from lmstudio because it answers what it has
+ *  loaded (card 312); spectro-local is the bundled model,
  *  its own first-class entry; the picker treats them uniformly. */
 export const PROVIDERS = [
   "anthropic",
   "ollama",
   "openai",
   "lmstudio",
+  "llamacpp",
   "openrouter",
   "gemini",
   "spectro-local",
