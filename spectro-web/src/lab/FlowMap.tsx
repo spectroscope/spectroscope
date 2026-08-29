@@ -22,7 +22,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import type { RunEvent } from "../events";
-import { isLocalProvider, type Scene } from "./labScene";
+import type { Scene } from "./labScene";
 import { agentDirectory } from "./agentDirectory";
 import {
   UNDER_SETTLE_MS,
@@ -57,7 +57,8 @@ export function FlowMap(props: {
   scene: Scene;
   /** The applied events, for the derived detail (context/tool-input/streams). */
   applied: RunEvent[];
-  /** Selected backend — decides remote (beyond the boundary) vs local (inside). */
+  /** Selected backend — named on the LLM card. Since card 304 it no longer
+   *  decides WHERE that card is drawn: the model always sits outside. */
   provider?: string;
   /** Current model name, shown in the LLM node. */
   model?: string;
@@ -72,7 +73,6 @@ export function FlowMap(props: {
 }) {
   const { scene, applied, provider, model, systemPrompt } = props;
   const rowsPref = props.rowsPref ?? "auto";
-  const local = isLocalProvider(provider);
   const lang = useLang();
 
   const expandAll = useContext(ExpandAllContext);
@@ -91,7 +91,6 @@ export function FlowMap(props: {
   const flow = useMemo(
     () =>
       sceneToFlow(scene, detail, {
-        local,
         provider: provider ?? "",
         model: model ?? "",
         systemPrompt,
@@ -102,18 +101,20 @@ export function FlowMap(props: {
         dir,
         rowsPref,
       }),
-    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool, paneAspect, dir, rowsPref],
+    [scene, detail, provider, model, systemPrompt, lang, expandAll, pool, paneAspect, dir, rowsPref],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   // Which seating the rendered nodes came from. Compact and expanded are two
-  // different seatings, so switching the card view is as much a re-layout as
-  // flipping local/remote — without this the cards keep the seats of the view
-  // they were rendered in and the map reads as a mix of both. The measured
-  // pane aspect is part of the seating since card 292: it drives the expanded
-  // row derivation, so a real resize re-places the map the same way.
-  const layoutRef = useRef(`${local}:${expandAll}:${paneAspect}:${rowsPref}`);
+  // different seatings, so switching the card view IS a re-layout — without
+  // this the cards keep the seats of the view they were rendered in and the map
+  // reads as a mix of both. The measured pane aspect is part of the seating
+  // since card 292: it drives the expanded row derivation, so a real resize
+  // re-places the map the same way. The provider is NOT part of it any more
+  // (card 304): one geometry serves every backend, so a backend switch moves
+  // nothing and must not throw the reader's pinned cards away.
+  const layoutRef = useRef(`${expandAll}:${paneAspect}:${rowsPref}`);
   const rfRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   // Nodes the user has dragged. Once pinned, a node keeps its position across
   // every step (even a subagent, which otherwise re-centres) — so dragging a card
@@ -147,16 +148,16 @@ export function FlowMap(props: {
   // keeps its position by default; a subagent keeps its freshly computed one so a
   // new worker re-centres the group instead of stranding earlier cards (the clump
   // bug from the prototype) — UNLESS the user dragged it, in which case it is
-  // pinned and stays. A local/remote flip or a compact/expanded flip re-lays-out
-  // everything and drops pins.
+  // pinned and stays. A compact/expanded flip re-lays-out everything and drops
+  // pins.
   useEffect(() => {
-    const seating = `${local}:${expandAll}:${paneAspect}:${rowsPref}`;
+    const seating = `${expandAll}:${paneAspect}:${rowsPref}`;
     const relayout = layoutRef.current !== seating;
     layoutRef.current = seating;
     if (relayout) pinned.current.clear();
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout));
     setEdges(flow.edges);
-  }, [flow, local, expandAll, paneAspect, rowsPref, setNodes, setEdges]);
+  }, [flow, expandAll, paneAspect, rowsPref, setNodes, setEdges]);
 
   // The envelope check's runtime half (card 296). Every expanded seat is
   // derived from EXPANDED_CARD, and until now NOTHING in src/ ever held the
@@ -266,7 +267,7 @@ export function FlowMap(props: {
           // A disclosure seeds its open/closed state when the card mounts, so a
           // view flip has to remount the canvas — otherwise the cards carry the
           // other view's open panels into seats that never reserved for them.
-          key={`${local ? "local" : "remote"}:${expandAll ? "expanded" : "compact"}`}
+          key={expandAll ? "expanded" : "compact"}
           className="pf-flow"
           onInit={(inst) => {
             rfRef.current = inst;
