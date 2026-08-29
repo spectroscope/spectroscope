@@ -106,6 +106,39 @@ describe("the shipped workflow scenario draws its box", () => {
     }
   });
 
+  it("counts a phase as entered when an agent is standing in it", () => {
+    // Measured in the running app before this pin: the header read "0/5
+    // phases" with all five bands full and thirteen cards in them. The count
+    // came from the declaration's own `startedAt`, and `declarationOf` leaves
+    // that null on purpose — a scenario's stream, not its DSL, is what says
+    // when an agent began. So the box contradicted the picture it is drawn
+    // around, in the one line a reader takes as the run's progress.
+    const full = flowOf().flow.nodes.find((n) => n.type === "wfbox")!.data as {
+      phasesEntered: number;
+      phasesTotal: number;
+    };
+    expect([full.phasesEntered, full.phasesTotal]).toEqual([5, 5]);
+  });
+
+  it("counts only the phases the reader has actually scrubbed into", () => {
+    // The other half: a count that always equals the total is not a count.
+    // Cut the stream where only the first phase's agent has been spawned.
+    const events = compile(DSL, "en");
+    const upto = events.findIndex((e) => e.type === "agent_spawn" && e.agentId === "probe-1");
+    expect(upto).toBeGreaterThan(0);
+    const scene = events.slice(0, upto).reduce(advanceScene, initialScene());
+    const flow = sceneToFlow(scene, deriveDetail(events.slice(0, upto)), {
+      provider: "ollama",
+      model: "m",
+      declared: declarationOf(DSL, "en"),
+    });
+    const d = flow.nodes.find((n) => n.type === "wfbox")!.data as {
+      phasesEntered: number;
+      phasesTotal: number;
+    };
+    expect([d.phasesEntered, d.phasesTotal]).toEqual([1, 5]);
+  });
+
   it("names itself in words rather than in the fold's own id for the root", () => {
     // A run hanging on the session has no child card to take a name from, and
     // "main" is this fold's internal spelling. Both locales, because a box

@@ -6,6 +6,7 @@
 // `WorkflowNode` out for the same reason; this follows it.
 
 import { type NodeProps } from "@xyflow/react";
+import { Handles } from "./handles";
 import { BOX_HEADER_H } from "./workflowBox";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
@@ -54,6 +55,13 @@ export function WorkflowBoxNode({ data }: NodeProps) {
   const toggle = d.onToggle;
   return (
     <div className={`pf-wfbox${d.expanded ? " pf-wfbox--expanded" : ""}`}>
+      {/* The same eight every other card carries. A member's leg home targets
+          this box on "rt" — the run is what launched it — and React Flow drops
+          an edge whose handle does not exist, with a console warning and no
+          error. Measured on the shipped scenario before these were here: the
+          warning for every member, and not one rail from a member to its box
+          on screen. That is card 295's floating cards, back. */}
+      <Handles />
       <div className="pf-wfbox__head">
         <span className="pf-wfbox__title" title={d.title}>
           {d.stateColor !== null && <span className="pf-wfbox__dot" style={{ background: d.stateColor }} />}

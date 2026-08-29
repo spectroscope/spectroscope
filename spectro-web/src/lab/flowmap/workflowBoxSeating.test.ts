@@ -161,6 +161,29 @@ describe("the box in the map", () => {
   });
 });
 
+describe("the box's progress line counts phases, and only phases", () => {
+  // `phasesTotal` is the DECLARED count, so `phasesEntered` has to be counted
+  // over the same thing. The unplaced band is where agents whose run named no
+  // phase are put — counting it would make a phase out of the absence of one,
+  // and the header would read 3/2.
+  const STRAY: RunPhases = {
+    phases: RUN.phases,
+    unplaced: [member("odd")],
+  };
+
+  it("leaves the unplaced band out of the count", () => {
+    const flow = flowOf([...EVENTS, spawn("odd")], { declared: new Map([["wf1", STRAY]]) });
+    const d = flow.nodes.find((n) => n.id === BOX)!.data as {
+      phasesEntered: number;
+      phasesTotal: number;
+    };
+    expect([d.phasesEntered, d.phasesTotal]).toEqual([2, 2]);
+    // and the band itself IS drawn — it is left out of the count, not dropped
+    const bands = (flow.nodes.find((n) => n.id === BOX)!.data as { bands: { unplaced: boolean }[] }).bands;
+    expect(bands.filter((b) => b.unplaced)).toHaveLength(1);
+  });
+});
+
 describe("the parents-first order is PRODUCED, not inherited", () => {
   // The invariant itself, over a real map.
   it("holds over every node the map emits", () => {

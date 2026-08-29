@@ -1403,7 +1403,19 @@ export function sceneToFlow(
         // in front of a reader is this file talking to itself.
         title: runCard?.task ?? t(lang, "map.wf.run"),
         phasesTotal: run.phases.length,
-        phasesEntered: run.phases.filter((ph) => ph.members.some((m) => m.startedAt !== null)).length,
+        // Counted off the BANDS this box actually drew, not off the
+        // declaration's `startedAt`. A band holds exactly the agents the scene
+        // has reached, so this number and the picture around it cannot
+        // disagree — and disagreeing is what it did: measured on the shipped
+        // scenario, the header read "0/5 phases" with all five bands full and
+        // thirteen cards standing in them. `declarationOf` leaves `startedAt`
+        // null on purpose, because for a compiled run it is the stream and not
+        // the DSL that says when an agent began.
+        //
+        // The unplaced band is left out: it is where agents whose run named no
+        // phase are put, so counting it would make a phase out of the absence
+        // of one, and `phasesTotal` does not count it either.
+        phasesEntered: b.layout.bands.filter((band) => !band.unplaced && band.members.length > 0).length,
         agents: b.layout.placed.length,
         state: runCard?.state ?? null,
         stateLabel: runCard === undefined ? null : lifecycleLabel(runCard.state, lang),

@@ -4,8 +4,9 @@
 // beats a hand-rolled SVG for this view. All styling is design-token based, so
 // every node reskins with the 6 genomes; the disk animates via CSS.
 
-import { Fragment, useContext, useState, type CSSProperties, type ReactNode } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useContext, useState, type CSSProperties, type ReactNode } from "react";
+import { type NodeProps } from "@xyflow/react";
+import { Handles } from "./handles";
 import { ExpandAllContext } from "./expandContext";
 import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
@@ -16,27 +17,6 @@ import type { Focus, GateState, SubagentInfo } from "../labScene";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
-
-const SIDES = [
-  ["l", Position.Left],
-  ["r", Position.Right],
-  ["t", Position.Top],
-  ["b", Position.Bottom],
-] as const;
-
-/** Eight invisible handles (source+target per side); edges pick by id. */
-function Handles() {
-  return (
-    <>
-      {SIDES.map(([k, pos]) => (
-        <Fragment key={k}>
-          <Handle id={`${k}s`} type="source" position={pos} isConnectable={false} />
-          <Handle id={`${k}t`} type="target" position={pos} isConnectable={false} />
-        </Fragment>
-      ))}
-    </>
-  );
-}
 
 function Disclosure({
   label,

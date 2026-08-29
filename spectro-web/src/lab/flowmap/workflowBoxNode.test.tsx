@@ -6,8 +6,19 @@
 // are drawn as bands — separated, in order — because the owner asked for the
 // flow with its stages visible, not a bag of agents.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+
+// The box carries the same eight connection points every other card does
+// (card 306, after the running map dropped every rail into it), and a real
+// `Handle` wants the canvas store no server render has. Stubbed exactly the
+// way `nodeCards.test.tsx` stubs it: these pins are about OUR markup. What the
+// handles themselves have to be is pinned in `workflowBoxHandles.test.tsx`.
+vi.mock("@xyflow/react", () => ({
+  Handle: () => null,
+  Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
+}));
+
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { BOX_HEADER_H, boxSwitchKey, toggleBox } from "./workflowBox";
 import { dict } from "../../i18n/i18n";
