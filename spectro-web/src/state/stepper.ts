@@ -122,7 +122,7 @@ function foldFrom(events: RunEvent[]): Pick<StepperState, "ui" | "marking" | "sc
 /** Block step size (the "blocks" grain): a block is the maximal run of consecutive
  *  deltas OF THE SAME TYPE (one thinking run, one answer run — separate
  *  clicks), or exactly one non-delta event. */
-function blockCount(queue: RunEvent[]): number {
+function blockCount(queue: readonly RunEvent[]): number {
   if (queue.length === 0 || !isDelta(queue[0])) return Math.min(queue.length, 1);
   const runType = queue[0].type;
   let n = 1;
@@ -132,7 +132,7 @@ function blockCount(queue: RunEvent[]): number {
 
 /** The coarse-step boundaries of a stream: [0, b1, b2, …, length]. The replay
  *  scrubber walks these, so a drag lands on a whole step, never mid-block. */
-export function stepBoundaries(events: RunEvent[]): number[] {
+export function stepBoundaries(events: readonly RunEvent[]): number[] {
   const bs = [0];
   let cursor = 0;
   while (cursor < events.length) {
@@ -303,6 +303,26 @@ export interface MarkPosition {
 }
 
 /**
+ * The coarse step that SHOWS the event at `at`: the first boundary past it,
+ * never the one before, because the step before stops the run just short of the
+ * thing the caller pointed at.
+ *
+ * ONE PLACE, THREE READERS (card 309). The tick has used this rule since card
+ * 299; the moments panel and the file rows now print the same number and seek
+ * to it. Copied a second time, the panel and the tick would eventually name
+ * different steps for one moment, and neither would look wrong on its own.
+ *
+ * @param boundaries stepBoundaries of the stream `at` indexes into
+ * @param at an event index in that stream
+ * @return an index INTO `boundaries` — the step number the transport counter
+ *         shows, and `boundaries[step]` is the cursor to seek to
+ */
+export function stepOfEvent(boundaries: readonly number[], at: number): number {
+  const found = boundaries.findIndex((b) => b > at);
+  return found < 0 ? Math.max(0, boundaries.length - 1) : found;
+}
+
+/**
  * Place marks on the coarse-step bar the scrubber walks.
  *
  * @param marks what chapterMarks read off the same stream
@@ -311,8 +331,7 @@ export interface MarkPosition {
 export function markPositions(marks: readonly ChapterMark[], boundaries: readonly number[]): MarkPosition[] {
   const last = Math.max(0, boundaries.length - 1);
   return marks.map((mark) => {
-    const found = boundaries.findIndex((b) => b > mark.at);
-    const index = found < 0 ? last : found;
+    const index = stepOfEvent(boundaries, mark.at);
     return { mark, index, pct: last === 0 ? 0 : (index / last) * 100 };
   });
 }

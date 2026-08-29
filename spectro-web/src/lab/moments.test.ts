@@ -51,9 +51,7 @@ describe("momentsOf — one bite per kind, and who each moment belongs to", () =
   });
 
   it("gives a compaction to the agent whose history was folded", () => {
-    const row = only([
-      ev({ type: "compaction", agentId: "w1", removedTurns: 7, summaryChars: 90, ts: T }),
-    ]);
+    const row = only([ev({ type: "compaction", agentId: "w1", removedTurns: 7, summaryChars: 90, ts: T })]);
     expect(row.mark.kind).toBe("compaction");
     expect(row.agentId).toBe("w1");
   });
@@ -122,16 +120,21 @@ describe("momentsOf — one bite per kind, and who each moment belongs to", () =
   });
 
   it("gives a question to the agent that asked it", () => {
-    const row = only([
-      ev({ type: "question_asked", agentId: "main", callId: "q1", questions: [{}], ts: T }),
-    ]);
+    const row = only([ev({ type: "question_asked", agentId: "main", callId: "q1", questions: [{}], ts: T })]);
     expect(row.mark.kind).toBe("question");
     expect(row.agentId).toBe("main");
   });
 
   it("gives a skill load to the agent that loaded it", () => {
     const row = only([
-      ev({ type: "tool_call", agentId: "w3", callId: "c1", name: "Skill", input: { name: "research" }, ts: T }),
+      ev({
+        type: "tool_call",
+        agentId: "w3",
+        callId: "c1",
+        name: "Skill",
+        input: { name: "research" },
+        ts: T,
+      }),
     ]);
     expect(row.mark.kind).toBe("skill");
     expect(row.agentId).toBe("w3");
@@ -187,7 +190,8 @@ describe("momentsOf — a row seeks exactly where the tick seeks", () => {
     // panel: the moments the ticks could not fit are exactly the ones a reader
     // came looking for.
     const crowded: RunEvent[] = [];
-    for (let i = 0; i < 60; i += 1) crowded.push(ev({ type: "turn_start", agentId: "main", turn: i, ts: T + i }));
+    for (let i = 0; i < 60; i += 1)
+      crowded.push(ev({ type: "turn_start", agentId: "main", turn: i, ts: T + i }));
     crowded.push(ev({ type: "error", agentId: "main", message: "the only one", ts: T + 99 }));
     const boundaries = stepBoundaries(crowded);
     const thinned = thinMarks(markPositions(chapterMarks(crowded), boundaries), MARK_MIN_GAP_PCT);
@@ -218,9 +222,12 @@ describe("the kind word — a reader never meets the raw enum", () => {
       expect(entry, `no dictionary entry for ${kind}`).toBeDefined();
       expect(entry.en.length).toBeGreaterThan(0);
       expect(entry.de.length).toBeGreaterThan(0);
-      // `no_progress` as itself is the wire word, not a word a person reads.
-      expect(entry.en).not.toBe(kind);
-      expect(entry.de).not.toBe(kind);
+      // The wire's own spelling never reaches a reader. Not "differs from the
+      // enum" — English "turn" IS the word for a turn, and pinning that would
+      // force a worse word to satisfy a test. What must never appear is the
+      // snake_case field name: `no_progress` printed as itself is a wire key.
+      expect(entry.en).not.toContain("_");
+      expect(entry.de).not.toContain("_");
     }
   });
 
