@@ -11,6 +11,39 @@
 // which is the agreed visual reference. Pure on purpose: no React, no DOM, no
 // React Flow types — the renderer maps this onto nodes and edges, and this file
 // can be tested without any of that.
+//
+// ── CALLING THIS ONCE PER BOX, AND OFFSETTING THE RESULTS ──────────────────
+//
+// A lab canvas will eventually hold several workflow boxes at once — a JSON can
+// hold five workflows. That box is a later card and nothing here builds it.
+// What IS settled here, so the later card does not have to guess, is what this
+// function guarantees a caller that runs it once per box. Measured, not
+// assumed; every line below is a case in `multiBox.test.ts` with a bite behind
+// it, and two of them are caveats rather than reassurances.
+//
+// Safe:
+//   · No module-level state. Interleaving other layouts between two calls on
+//     one topology returns the identical answer — no counter, no memo, no
+//     accumulator survives a call.
+//   · The topology handed in is never written to. Every array is copied before
+//     it is sorted, so a caller may lay one topology out repeatedly.
+//   · Every call gets its own objects. Two calls share no node, so a caller
+//     that offsets by mutating cannot move a second box by accident.
+//   · Every path is emitted with ABSOLUTE commands only, in the same space as
+//     the boxes. So the offset belongs OUTSIDE this function: one SVG group
+//     transform per box moves boxes, edges and labels together and stays
+//     exact. Never add a dx into the path strings — that means re-parsing
+//     geometry this file already got right.
+//
+// Still the caller's job, and both would be silent failures:
+//   · IDS ARE THE TOPOLOGY'S OWN and collide across boxes. Two workflows out
+//     of one file both have a `start`, and their edge ids collide too. React
+//     Flow drops a duplicate key rather than complaining, so namespace node
+//     and edge ids per box BEFORE they reach it.
+//   · RANK RULES RUN 4000px PAST THE BOUNDS, deliberately — that is what makes
+//     the slack around a wide, short graph read as ruled space instead of
+//     emptiness. On a shared canvas box A's rules run straight across box B.
+//     Translating is not enough; the rules need clipping to their own box.
 
 /** One node as the artifact's `graph_topology` record names it. */
 export interface TopologyNode {
