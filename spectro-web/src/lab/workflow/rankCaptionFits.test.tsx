@@ -3,11 +3,14 @@
 // USES it, and that an over-long title is cut with an ellipsis instead of being
 // allowed to run on into the column next door.
 //
-// The full words are not lost by the cut: a phase box carries the same title as
-// its own heading and its own native tooltip (WorkflowNode), directly under the
-// caption. That is why the caption does not add a second tooltip of its own —
-// the overlay is `pointer-events: none` on purpose (card 293: it swallowed pans
-// and node clicks near the graph origin), and a tooltip would need that back.
+// The cut is real, and it takes the DETAIL half first — on the shipped scenario
+// four of five captions are already clipped at the fit zoom. The recovery path
+// is the phase box directly below: it carries the column's title as its heading
+// and the column's detail on a second line of its own tooltip
+// (`captionDetailRecoverable.test.tsx`). The caption adds no tooltip of its own,
+// because the overlay is `pointer-events: none` on purpose (card 293: it
+// swallowed pans and node clicks near the graph origin) and a 180x14 strip that
+// takes the pointer back is a strip the reader can no longer grab.
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";

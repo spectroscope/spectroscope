@@ -49,6 +49,7 @@ const data = (over: Partial<WfData> = {}): WfData => ({
   state: "active",
   stateLabel: "running",
   phase: true,
+  detail: null,
   members: [],
   w: 132,
   h: 90,

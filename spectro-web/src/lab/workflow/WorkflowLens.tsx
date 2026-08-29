@@ -103,11 +103,20 @@ export function WorkflowOverlay({
           title is whatever the author wrote, and the shipped one already ran
           14.4px into its neighbour at the fit scale the lens opens on; SVG
           text cannot be truncated by a stylesheet, so the caption moved into a
-          foreignObject where `text-overflow` works. Nothing is lost by the
-          cut: the phase box directly below carries the same title and its own
-          tooltip, which is also why the caption adds no tooltip of its own —
-          the overlay is `pointer-events: none` (card 293) and a tooltip would
-          want that back. */}
+          foreignObject where `text-overflow` works.
+
+          THE CUT IS REAL AND IT TAKES THE DETAIL FIRST. Measured on the
+          shipped `Declared workflow` scenario at the fit zoom this lens opens
+          on, four of five captions are clipped (scrollWidth 208/186/215/215
+          against a 180 box) and every word lost is from the detail half. So
+          the words are handed to the PHASE BOX below, which puts them on a
+          second line of its own tooltip (`WorkflowNode`, `WfData.detail`) —
+          that box is the one the caption names, it is already a hover target,
+          and it is sound because a caption only ever survives over a column
+          of declared boxes. The caption itself still adds no tooltip: this
+          overlay is `pointer-events: none` (card 293, where it swallowed pans
+          and node clicks near the graph origin), and a 180x14 strip that
+          takes the pointer back is a strip the reader can no longer grab. */}
       {laid.rankLabels.map((l) =>
         l.caption === undefined ? null : (
           <foreignObject
@@ -184,6 +193,15 @@ export function WorkflowLens(props: {
   const laid = useMemo(() => layoutStateGraph(tree.topo, "horizontal"), [tree]);
   const spawned = useMemo(() => spawnedIn(props.applied), [props.applied]);
   const terminal = useMemo(() => terminalStatesIn(props.applied), [props.applied]);
+  // Card 303: a column's caption is cut at the column pitch, and what the cut
+  // takes first is the detail. The boxes standing in that column carry those
+  // words in their own tooltip, so the reader can get them back — which is
+  // sound because a caption only survives over a column of DECLARED boxes:
+  // `spawnTree` deletes the word the moment a guessed node stands there too.
+  const detailByRank = useMemo(
+    () => new Map(laid.rankLabels.map((l) => [l.rank, l.caption?.detail ?? null])),
+    [laid],
+  );
 
   const nodes: FlowNode[] = useMemo(
     () =>
@@ -213,6 +231,7 @@ export function WorkflowLens(props: {
             state,
             stateLabel: t(lang, `lab.lens.state.${state}`),
             phase,
+            detail: detailByRank.get(p.rank) ?? null,
             members: (meta?.members ?? []).map((m) => {
               const own = tree.knownAgents.has(m.agentId)
                 ? nodeStateAt(props.scene, spawned, terminal, m.agentId, tree.root)
@@ -232,7 +251,7 @@ export function WorkflowLens(props: {
           } satisfies WfData,
         };
       }),
-    [laid, tree, props.scene, spawned, terminal, props.model, lang],
+    [laid, detailByRank, tree, props.scene, spawned, terminal, props.model, lang],
   );
 
   return (
