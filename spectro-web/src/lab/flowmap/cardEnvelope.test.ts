@@ -7,7 +7,7 @@
 //
 // No caller: the function existed nowhere in src/ outside its own test, so the
 // half of the check that needs a real browser never ran at all.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { EXPANDED_CARD, measuredCards, reportOversizeCards, underfilledCards } from "./sceneToFlow";
 
@@ -34,6 +34,25 @@ describe("the under-fill arm", () => {
 
   it("ignores a card the browser has not measured yet", () => {
     expect(underfilledCards([{ id: "u-zero", type: "subagent", h: 0 }])).toEqual([]);
+  });
+
+  // Live on the "scaling fan-out" scenario the new arm named five more seats
+  // at once (agent 364 against 780, llm 168 against 540, two stations 65
+  // against 340, disk 104 against 240). Every one of those is TRUE and none of
+  // them is a broken card, so the two arms do not shout at the same volume: a
+  // card overflowing its seat draws over its neighbour and is an error, a seat
+  // holding air is a design smell and is a warning.
+  it("routes the two arms to error and warn, so a smell is not read as a defect", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    reportOversizeCards([
+      { id: "u-loud-over", type: "subagent", h: EXPANDED_CARD.subagent.h + 40 },
+      { id: "u-loud-under", type: "subagent", h: 40 },
+    ]);
+    expect(err.mock.calls.map((c) => String(c[0]))).toEqual([expect.stringContaining("u-loud-over")]);
+    expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([expect.stringContaining("u-loud-under")]);
+    err.mockRestore();
+    warn.mockRestore();
   });
 
   it("reports through the same sink as the oversize arm, once", () => {

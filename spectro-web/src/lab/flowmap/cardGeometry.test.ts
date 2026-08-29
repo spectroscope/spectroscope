@@ -50,7 +50,7 @@ describe("the worker card's geometry has ONE source", () => {
     // card in its real .pf-flow / .react-flow__node-subagent context and read
     // through getBoundingClientRect (so `zoom: 0.6` is already in the number):
     // bare 237.59 · typical 304.44 · toolJson 323.72 · launchPhases 327.83 ·
-    // longHead 323.06 · longMeta 319.19 · attach4 420.61 · worst 477.38.
+    // longHead 323.06 · longMeta 319.19 · attach4 423.00 · worst 479.77.
     expect(SUB_CARD_H).toBe(480);
   });
 });

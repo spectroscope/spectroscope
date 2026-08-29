@@ -16,6 +16,7 @@ import {
   SEATS_MAX_COMPACT,
   SEATS_MAX_EXPANDED,
   rowsFor,
+  type RowsPref,
   seatGrid,
   seatOf,
   type SeatPool,
@@ -483,7 +484,16 @@ const spoken = new Set<string>();
  */
 export function reportOversizeCards(
   measured: Iterable<{ id: string; type?: string; h: number }>,
-  sink: (message: string) => void = (m) => console.error(m),
+  /**
+   * Where a finding goes. The two arms are not the same severity and the
+   * default says so: a card OVER its seat draws on top of its neighbour and is
+   * a defect; a seat holding air is a design smell that costs spread and
+   * nothing else. Live on the "scaling fan-out" scenario the under-fill arm
+   * named five seats in its first run — all of them true, none of them broken
+   * — and five console errors would have read as breakage.
+   */
+  sink: (message: string, kind: "over" | "under") => void = (m, kind) =>
+    kind === "over" ? console.error(m) : console.warn(m),
 ): { over: { id: string; h: number; bound: number }[]; under: { id: string; h: number; bound: number }[] } {
   const seen = [...measured];
   const over = oversizeCards(seen);
@@ -493,6 +503,7 @@ export function reportOversizeCards(
     sink(
       `flow map: the ${c.id} card rendered ${c.h}px tall against an envelope of ${c.bound}px — ` +
         `every seat derived from it is ${c.h - c.bound}px short, so cards will overlap.`,
+      "over",
     );
   }
   const under = underfilledCards(seen);
@@ -503,6 +514,7 @@ export function reportOversizeCards(
       `flow map: the tallest ${c.id} card measured ${c.h}px against an envelope of ${c.bound}px — ` +
         `every seat derived from it reserves more than twice the card, so the map spreads into ` +
         `${c.bound - c.h}px per seat that nothing ever fills.`,
+      "under",
     );
   }
   return { over, under };
@@ -645,6 +657,10 @@ export function sceneToFlow(
      *  measures — absent, the constant row count stands and nothing breaks
      *  headless or in tests. */
     paneAspect?: number | null;
+    /** The reader's row choice (card 296). `auto` — the default — derives the
+     *  rows from the seats and the measured pane exactly as before; a number
+     *  holds the grid at that depth. */
+    rowsPref?: RowsPref;
   },
 ): FlowResult {
   const L = opts.local ? LAYOUTS.local : LAYOUTS.remote;
@@ -683,7 +699,9 @@ export function sceneToFlow(
   const slotCount = Math.min(seatCeiling, Math.max(seatsInUse, opts.subSlots ?? seatsInUse));
   // Expanded rows follow the seats in use and the measured pane (card 292);
   // with no measurement the constant stands. Compact keeps its three rows.
-  const seatRows = isExpanded ? rowsFor(slotCount, opts.paneAspect) : SEAT_ROWS_COMPACT;
+  const seatRows = isExpanded
+    ? rowsFor(slotCount, opts.paneAspect, opts.rowsPref ?? "auto")
+    : SEAT_ROWS_COMPACT;
   const grid = seatGrid(slotCount, seatRows);
   let subColPitch = COMPACT_SUB_W + SUB_MIN_GAP;
   /** Expanded only: the band width derived from the widened stations. */

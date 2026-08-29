@@ -27,8 +27,8 @@
 //   a launch with 14 declared phases                     327.83
 //   a 14-word task title                                 323.06
 //   a long brief + long model + long last status         319.19
-//   four attached pictures (the owner's own transcript)  420.61
-//   everything at once                                   477.38
+//   four attached pictures (the owner's own transcript)  423.00
+//   everything at once                                   479.77
 //
 // The last two only hold BECAUSE of the caps below. Uncapped, the same worst
 // case measured 712.30 and four attachments alone 423.09 — the picture shelf
@@ -73,6 +73,12 @@ export const SUB_COL_PITCH = SUB_CARD_W + RAIL_GAP;
 export const SUB_CAP_HEAD_PX = 50;
 /** Brief, spend, model and last status: scrolls past this. */
 export const SUB_CAP_META_PX = 136;
-/** The picture shelf (generated + attached). One row of thumbnails whole, the
- *  rest scrolls — the region that made the card unbounded. */
-export const SUB_CAP_SHELF_PX = 168;
+/**
+ * The picture shelf (generated + attached), the region that made the card
+ * unbounded. Sized off the shelf the owner's own transcript produces: four
+ * attached pictures measure 184px of content, so at 172 they stand whole and
+ * a fifth is what starts the scroll. Everything at once then lands on 479.77
+ * against the 480 above — the bound is tight on purpose, and cardGeometry's
+ * measured table is what says so.
+ */
+export const SUB_CAP_SHELF_PX = 172;
