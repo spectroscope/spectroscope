@@ -32,6 +32,10 @@ export interface Loop {
   activeCommand: string | null;
   /** "server · tool" for an mcp__server__tool call. */
   activeMcp: string | null;
+  /** Where the packet stood when a permission gate stopped it, so an ALLOWED
+   *  decision can put it back (card 295). null whenever no gate is pending —
+   *  a denied decision clears it too, because nothing ran. */
+  gateFrom: Focus | null;
   isError: boolean;
 }
 
@@ -107,6 +111,7 @@ export function initialLoop(): Loop {
     activeFile: null,
     activeCommand: null,
     activeMcp: null,
+    gateFrom: null,
     isError: false,
   };
 }
@@ -147,7 +152,7 @@ function prettyMcp(name: string): string {
 /** The clean-slate activity fields, reused by run_start / tool_result / run_end. */
 function idleActivity(): Pick<
   Loop,
-  "disk" | "gate" | "activeTool" | "activeFile" | "activeCommand" | "activeMcp"
+  "disk" | "gate" | "activeTool" | "activeFile" | "activeCommand" | "activeMcp" | "gateFrom"
 > {
   return {
     disk: "idle",
@@ -156,6 +161,7 @@ function idleActivity(): Pick<
     activeFile: null,
     activeCommand: null,
     activeMcp: null,
+    gateFrom: null,
   };
 }
 
@@ -205,9 +211,26 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       return { ...base, focus: "agent" }; // unknown tool: no dedicated station
     }
     case "permission_request":
-      return { ...loop, focus: "gate", gate: "pending" };
+      // Remember the station the packet was pulled off. A repeated request (or
+      // one with no preceding tool_call) must not record the gate as its own
+      // origin, or the decision would "return" the packet to where it stands.
+      return {
+        ...loop,
+        gateFrom: loop.focus === "gate" ? loop.gateFrom : loop.focus,
+        focus: "gate",
+        gate: "pending",
+      };
     case "permission_decision":
-      return { ...loop, gate: event.allowed ? "allowed" : "denied", isError: !event.allowed };
+      // Allowed: the tool NOW runs, so the packet goes back to its station and
+      // the station lights for the whole call. Denied: nothing ran, the packet
+      // stays at the gate. Either way the memory is spent.
+      return {
+        ...loop,
+        focus: event.allowed ? (loop.gateFrom ?? loop.focus) : loop.focus,
+        gateFrom: null,
+        gate: event.allowed ? "allowed" : "denied",
+        isError: !event.allowed,
+      };
     case "tool_result":
       return { ...loop, ...idleActivity(), focus: "agent", isError: event.isError };
     case "run_end":
