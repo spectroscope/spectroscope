@@ -20,6 +20,8 @@
 import type { WorkItem, WorkKind, WorkState } from "../state/work";
 import { groupWaves } from "../state/work";
 import { formatDuration } from "../format";
+import type { AgentInfo } from "../state/reducer";
+import type { SidecarAgent, SidecarIndex } from "../import/sidecarAgents";
 
 export interface WorkGroup {
   id: string;
@@ -118,10 +120,55 @@ export function tokenLabel(n: number): string {
   return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
 }
 
-/** What an item reports about work that is NOT in this stream, or null. */
-export function opaqueLabel(item: WorkItem): { agents: number; toolUses: number | null } | null {
-  if (item.opaque === null || item.opaque.agents === null) return null;
-  return { agents: item.opaque.agents, toolUses: item.opaque.toolUses };
+/** What a launch row may say about the agents of its run. See {@link besideReading}. */
+export type BesideReading =
+  | { kind: "inStream"; agents: readonly string[]; claimed: number | null }
+  | { kind: "files"; files: readonly SidecarAgent[]; claimed: number | null }
+  | { kind: "claim"; claimed: number; toolUses: number | null };
+
+/**
+ * Which of the three a row gets — ONE decision.
+ *
+ * Card 313. The panel used to hold two: an opaque line ("none of them in this
+ * stream") and a file list with byte sizes, each with its own condition. Card
+ * 297 then loaded a workflow run's agents INTO the stream, and the two folds
+ * disagreed with the agents panel about the same agents on the same screen.
+ *
+ * Presence is therefore not derived a second time here. It is read off the
+ * AGENTS PANEL'S OWN ROSTER — `UiState.agents`, the array AgentsTab renders,
+ * typed {@link AgentInfo} so the compiler holds a caller to that source — by
+ * the parent link the roster itself carries. What the agents panel lists as an
+ * agent of this node is what this row calls an agent.
+ *
+ * Three readings, in the order that outranks:
+ *   inStream — the roster lists agents under this item. They are agents; the
+ *              rows are already drawn under this one, and no file is named.
+ *   files    — none are in the stream, and their transcripts sit beside the
+ *              session. The old list, byte sizes and all, unchanged.
+ *   claim    — neither. All this row has is the number the receipt reported,
+ *              and it says so in the words it always used.
+ *
+ * @param item     the row
+ * @param roster   the agents panel's own roster
+ * @param sidecars what the store listed beside the session (card 177)
+ * @return the reading, or null for a row that never launched anything
+ */
+export function besideReading(
+  item: WorkItem,
+  roster: readonly AgentInfo[],
+  sidecars: SidecarIndex,
+): BesideReading | null {
+  // A row that carries neither a receipt nor a run id never launched anything
+  // this question is about: an ordinary fan-out lane has children and must not
+  // grow a sentence about "this run" because of them.
+  if (item.opaque === null && item.runId === null) return null;
+  const claimed = item.opaque?.agents ?? null;
+  const inStream = roster.filter((a) => a.parentId === item.id).map((a) => a.id);
+  if (inStream.length > 0) return { kind: "inStream", agents: inStream, claimed };
+  const files = item.runId === null ? [] : sidecars.forRun(item.runId);
+  if (files.length > 0) return { kind: "files", files, claimed };
+  if (claimed === null) return null;
+  return { kind: "claim", claimed, toolUses: item.opaque?.toolUses ?? null };
 }
 
 /**
@@ -129,10 +176,24 @@ export function opaqueLabel(item: WorkItem): { agents: number; toolUses: number 
  *
  * A prototype that quietly omits what it lacks teaches the reader to trust a
  * card that is lying by silence. These codes become a visible line instead.
+ *
+ * `agentsInStream` carries the same condition as {@link besideReading}, and it
+ * is required rather than defaulted: every code below except the span is a
+ * claim that this row's work happened SOMEWHERE ELSE, and a caller that has
+ * not answered the question has not earned any of them. Card 313 — the codes
+ * were written when a launch's agents could not be loaded, and card 297 made
+ * that false for a workflow run whose agents are right here.
+ *
+ * @param item          the row
+ * @param agentsInStream whether the agents panel lists this row's agents
+ * @return the reason codes, in reading order
  */
-export function absences(item: WorkItem): string[] {
+export function absences(item: WorkItem, agentsInStream: boolean): string[] {
   const out: string[] = [];
   if (item.firstTs === null || item.lastTs === null) out.push("span");
+  // The span is measured either way; everything below is about work that is
+  // not here, and with the agents loaded there is no such work to report.
+  if (agentsInStream) return out;
   if (item.kind === "launched") {
     // The measured shape of the reference's record: eight numbers at
     // settlement, and the per-agent detail in sibling files this stream never
