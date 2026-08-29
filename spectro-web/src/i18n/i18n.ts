@@ -2106,6 +2106,17 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "wo dieses Backend läuft — auch auf einer anderen Maschine",
     en: "where this backend runs — another machine works too",
   },
+  // Card 311: the general address field loses to a provider's own, and used to
+  // lose in silence. Same voice as the doctor's line (DoctorCommand
+  // #perProviderAddressLines) and the same two facts — the address that will
+  // actually be dialled, and the layer each of the two values came from.
+  // Every placeholder appears exactly ONCE: t() substitutes with
+  // String#replace over a string pattern, so a second {provider} would stay a
+  // literal hole in the rendered sentence.
+  "set.addressOverride": {
+    de: "{field} (aus {winner}) ist die Adresse, die {provider} wählt — {addr}. Die allgemeine Adresse (aus {loser}) ist ebenfalls gesetzt und gilt hier nicht: die eigene Adresse eines Providers gewinnt, aus welcher Ebene die beiden auch stammen.",
+    en: "{field} (from {winner}) is what {provider} dials — {addr}. The general address (from {loser}) is set too and does not apply here: a provider's own address wins, whichever layer either one came from.",
+  },
   "set.thinking": { de: "Thinking", en: "Thinking" },
   "set.imageBackend": { de: "Bild-Backend", en: "Image backend" },
   "set.on": { de: "An", en: "On" },

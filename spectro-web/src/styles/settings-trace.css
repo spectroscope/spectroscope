@@ -519,6 +519,14 @@
 .provider-field-note--warn {
   color: var(--sp-amber);
 }
+/* Card 311: the note that says the general address is being overridden. A
+   left rule rather than tinted text — colour lives on lines here, and this is
+   a statement of fact about a legitimate configuration, not a warning. */
+.provider-field-note--override {
+  border-left: 2px solid var(--accent);
+  padding-left: 0.5rem;
+  margin-top: 0.4rem;
+}
 /* Paste-a-key affordance under the needs-key note. */
 .pp-keyinput {
   display: flex;

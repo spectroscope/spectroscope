@@ -131,8 +131,12 @@ const LAYER_KEY: Record<string, string> = {
 };
 
 /** A layer's display name in `lang`; an unrecognized layer name (should not
- *  happen against a real server) shows itself verbatim rather than blank. */
-function layerLabel(name: string, lang: Lang): string {
+ *  happen against a real server) shows itself verbatim rather than blank.
+ *
+ *  Exported since card 311: the settings page's address-override note names
+ *  two layers in one sentence, and a second mapping there would drift the day
+ *  a scope is added. */
+export function layerLabel(name: string, lang: Lang): string {
   const key = LAYER_KEY[name];
   return key ? t(lang, key) : name;
 }
