@@ -76,13 +76,26 @@ describe("a stated node height", () => {
     expect(e.path).toContain(`${b.y + 70}`);
   });
 
-  it("ignores a stated height in the vertical orientation rather than half-honouring it", () => {
-    // Vertical runs the ranks down the height axis. Reporting a tall box
-    // while spacing for a short one is exactly the overlap the override is
-    // there to prevent, so vertical refuses the whole override instead.
+  it("honours a stated height in the vertical orientation too (card 305)", () => {
+    // THIS CASE REPLACES A REFUSAL, and the refusal was right when it was
+    // written. Card 302 read the override in horizontal only and ignored it
+    // outright in vertical, because vertical runs the ranks down the HEIGHT
+    // axis while the pitch along that axis was a constant: reporting a tall
+    // box and spacing for a short one is exactly the overlap the override
+    // exists to prevent, and half-honouring it would have been worse than
+    // refusing it.
+    //
+    // Card 305 made the rank pitch follow the rank's longest box on both
+    // paths, so the spacing now carries whatever the box reports and the
+    // reason for the refusal is gone. The decision recorded here is the new
+    // one: vertical honours the override the same way horizontal does. The
+    // second assertion is what makes it a decision rather than a report — the
+    // rank BELOW moves down by the box's real height, not by a cell.
     const l = layoutStateGraph({ ...FAN, heights: new Map([["b", 140]]) }, "vertical");
-    expect(at(l, "b").h).toBe(46);
-    expect(l.nodes).toEqual(layoutStateGraph(FAN, "vertical").nodes);
+    expect(at(l, "b").h).toBe(140);
+    const plain = layoutStateGraph(FAN, "vertical");
+    expect(at(l, "root").y).toBe(at(plain, "root").y);
+    expect(l.nodes).not.toEqual(plain.nodes);
   });
 });
 

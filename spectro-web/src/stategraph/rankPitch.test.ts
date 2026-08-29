@@ -34,8 +34,10 @@ const at = (l: ReturnType<typeof layoutStateGraph>, id: string) => l.nodes.find(
 /** The engine's own numbers, spelled out so a failure reads as arithmetic
  *  rather than as four unexplained integers. */
 const NW = 132;
+const NH = 46;
 const MARGIN = 40;
 const GAP_ALONG_H = 58;
+const GAP_ALONG_V = 46;
 
 describe("the rank pitch follows the rank's longest box", () => {
   it("keeps the constant pitch for a graph whose boxes are all the engine's cell", () => {
@@ -124,5 +126,64 @@ describe("the rank pitch follows the rank's longest box", () => {
         expect(b.x, `${a.id} reaches into ${b.id}`).toBeGreaterThanOrEqual(a.x + a.w);
       }
     }
+  });
+});
+
+// The vertical twin, written out rather than looped over both orientations.
+// Two orientations that share one parameterised body pass together on a change
+// that only ever wired up one of them, which is the failure this whole card is
+// about: the along axis was a constant on BOTH paths and nobody noticed,
+// because every size-sensitive case in the suite ran horizontal.
+describe("the rank pitch follows the rank's longest box, vertically", () => {
+  it("keeps the constant pitch for a graph whose boxes are all the engine's cell", () => {
+    const l = layoutStateGraph(CHAIN, "vertical");
+    expect(at(l, "r0").y).toBe(MARGIN);
+    expect(at(l, "r1").y).toBe(MARGIN + (NH + GAP_ALONG_V));
+    expect(at(l, "r2").y).toBe(MARGIN + 2 * (NH + GAP_ALONG_V));
+    expect(at(l, "r3").y).toBe(MARGIN + 3 * (NH + GAP_ALONG_V));
+  });
+
+  it("makes room after a rank holding a box taller than the cell", () => {
+    // Vertical's along dimension is HEIGHT, which is the dimension card 302
+    // refused here. Measured against the stated 200, so a layout that reported
+    // the height without spacing for it clears only its own fiction.
+    const l = layoutStateGraph({ ...CHAIN, sizes: new Map([["r2", { h: 200 }]]) }, "vertical");
+    expect(at(l, "r2").h).toBe(200);
+    expect(at(l, "r3").y).toBe(at(l, "r2").y + 200 + GAP_ALONG_V);
+  });
+
+  it("leaves the ranks ABOVE the oversized one exactly where they were", () => {
+    const plain = layoutStateGraph(CHAIN, "vertical");
+    const tall = layoutStateGraph({ ...CHAIN, sizes: new Map([["r2", { h: 200 }]]) }, "vertical");
+    for (const id of ["r0", "r1", "r2"]) expect(at(tall, id).y).toBe(at(plain, id).y);
+  });
+
+  it("never lets a box reach into the next rank's row", () => {
+    const l = layoutStateGraph(
+      {
+        ...CHAIN,
+        sizes: new Map([
+          ["r1", { h: 300 }],
+          ["r2", { h: 200 }],
+        ]),
+      },
+      "vertical",
+    );
+    for (const a of l.nodes) {
+      for (const b of l.nodes) {
+        if (b.rank !== a.rank + 1) continue;
+        expect(b.y, `${a.id} reaches into ${b.id}`).toBeGreaterThanOrEqual(a.y + a.h);
+      }
+    }
+  });
+
+  it("keeps the width override working on the packed axis while it does so", () => {
+    // Both dimensions at once on one path, because the vertical box this card
+    // is for states both: the width packs the row, the height sets the pitch,
+    // and a change that read one map key into both axes would show up here.
+    const l = layoutStateGraph({ ...CHAIN, sizes: new Map([["r2", { w: 240, h: 200 }]]) }, "vertical");
+    expect(at(l, "r2").w).toBe(240);
+    expect(at(l, "r2").h).toBe(200);
+    expect(at(l, "r3").y).toBe(at(l, "r2").y + 200 + GAP_ALONG_V);
   });
 });

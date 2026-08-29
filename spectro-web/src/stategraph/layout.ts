@@ -379,20 +379,20 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   //   new  across = AXIS - total/2 + offset(i),  AXIS = MARGIN - minSlot*(NH+gapCross) + NH/2
   // and with uniform NH the two reduce to the same number, which is why
   // adding this to a SHARED layout does not move the state graph's pictures.
-  // READ IN HORIZONTAL ONLY, and ignored outright in vertical rather than
-  // half-honoured. Vertical runs the ranks down the height axis, so a stated
-  // height would have to move the ALONG spacing too; reporting the tall box
-  // while spacing for the short one is the exact overlap this override exists
-  // to prevent. The one caller that states heights lays out horizontally.
+  // Card 302 READ THIS IN HORIZONTAL ONLY, and ignored it outright in vertical
+  // rather than half-honouring it: vertical runs the ranks down the height
+  // axis, whose spacing was a constant, so a stated height would have been
+  // reported without being spaced for — the exact overlap the override exists
+  // to prevent.
   //
-  // Card 305 generalises the override from a height to a SIZE. Width is read
-  // on both paths from the start: in horizontal it grows ALONG the rank axis,
-  // in vertical ACROSS it, and the packing below is what makes the vertical
-  // case safe. Height is still refused in vertical here — that is card 302's
-  // decision, lifted a step later once the rank pitch can carry it.
+  // Card 305 generalises the override to a SIZE and lifts that refusal, in
+  // that order. Both dimensions are now read on both paths, because the rank
+  // pitch above follows the rank's longest box: whatever a node reports along
+  // the rank axis, the axis has already made room for. The refusal was a
+  // consequence of the constant pitch, and it went when the constant did
+  // (`nodeHeights.test.ts` carries the replaced pin, and says so).
   const widthOf = (id: string): number => topo.sizes?.get(id)?.w ?? NW;
-  const heightOf = (id: string): number =>
-    horiz ? (topo.sizes?.get(id)?.h ?? topo.heights?.get(id) ?? NH) : NH;
+  const heightOf = (id: string): number => topo.sizes?.get(id)?.h ?? topo.heights?.get(id) ?? NH;
   const crossSize = horiz ? NH : NW;
   const AXIS = MARGIN - minSlot * (crossSize + gapCross) + crossSize / 2;
   /** Node id → its distance across the rank axis, packed within its layer. */
@@ -442,7 +442,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       x: horiz ? rankStart[r] : a,
       y: horiz ? a : rankStart[r],
       w: widthOf(n.id),
-      h: horiz ? heightOf(n.id) : NH,
+      h: heightOf(n.id),
     };
   });
   const byId = new Map(placed.map((n) => [n.id, n]));
