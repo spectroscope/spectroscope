@@ -9,9 +9,11 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import type { Node } from "@xyflow/react";
 import type { RunEvent } from "../../events";
 import { advanceScene, initialScene } from "../labScene";
 import { boxNodeId, deriveDetail, resetEnvelopeMemory, sceneToFlow } from "./sceneToFlow";
+import { mergeNodePositions } from "./positions";
 import { worldBoxes } from "./worldBox";
 import { BOX_HEADER_H, boxMemberSize, workflowBoxLayout } from "./workflowBox";
 import type { PhaseMember, RunPhases, WorkflowDeclaration } from "../workflowGraph";
@@ -389,5 +391,63 @@ describe("a tall box grows the map downward — in COMPACT too", () => {
     const right = box.position.x + (box.style as { width: number }).width;
     const loner = flow.nodes.find((n) => n.id === "sub-loner")!;
     expect(loner.position.x).toBeGreaterThanOrEqual(right);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE SEAM, because both halves were green while the product was wrong.
+//
+// The three pins above assert on the ARRAY sceneToFlow returns, and every one
+// of them was true while the running app drew the box straight through the OS
+// band, the boundary and the LLM. What sits between the array and the screen
+// is `mergeNodePositions`, and it kept the seat every non-"sub-" node had from
+// the step before. So the two are composed here: fold one prefix, render it,
+// fold a longer one, render THAT the way FlowMap does, and ask the rendered
+// map — not the fresh array — where the band ended up.
+// ---------------------------------------------------------------------------
+describe("the map the reader SEES follows the box, not only the array", () => {
+  // Wide AND deep, so both shifts are exercised: the first phase fans out to
+  // five (the box gets wider, the right-hand world has to step aside) and
+  // eleven more phases follow it (the box gets deeper, the OS band has to drop
+  // below it).
+  const TALL: RunPhases = {
+    phases: [
+      { title: "fan out", detail: null, members: Array.from({ length: 5 }, (_, i) => member(`w${i}`)) },
+      ...Array.from({ length: 11 }, (_, i) => ({
+        title: `phase ${i}`,
+        detail: null,
+        members: [member(`m${i}`)],
+      })),
+    ],
+    unplaced: [],
+  };
+  const decl: WorkflowDeclaration = new Map([["wf1", TALL]]);
+  const early = [runStart(), spawn("wf1"), spawn("w0")];
+  const late = [
+    ...early,
+    ...Array.from({ length: 4 }, (_, i) => spawn(`w${i + 1}`)),
+    ...Array.from({ length: 11 }, (_, i) => spawn(`m${i}`)),
+  ];
+
+  /** Exactly what FlowMap's sync effect does, twice, with nothing pinned. */
+  const rendered = (): Node[] => {
+    const a = flowOf(early, { declared: decl });
+    const b = flowOf(late, { declared: decl });
+    const first = mergeNodePositions([], a.nodes, new Set(), false, []);
+    return mergeNodePositions(first, b.nodes, new Set(), false, a.nodes);
+  };
+
+  it("pushes the OS band below the grown box on the SCREEN, not only in the fold", () => {
+    const nodes = rendered();
+    const box = nodes.find((n) => n.id === BOX)!;
+    const bottom = box.position.y + (box.style as { height: number }).height;
+    expect(nodes.find((n) => n.id === "z-os")!.position.y).toBeGreaterThanOrEqual(bottom);
+  });
+
+  it("moves the LLM clear of the grown box on the SCREEN too", () => {
+    const nodes = rendered();
+    const box = nodes.find((n) => n.id === BOX)!;
+    const right = box.position.x + (box.style as { width: number }).width;
+    expect(nodes.find((n) => n.id === "llm")!.position.x).toBeGreaterThanOrEqual(right);
   });
 });

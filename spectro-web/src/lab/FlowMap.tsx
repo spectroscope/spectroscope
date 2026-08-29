@@ -159,6 +159,9 @@ export function FlowMap(props: {
   // every step (even a subagent, which otherwise re-centres) — so dragging a card
   // is never undone by the next step. Cleared when the layout world flips.
   const pinned = useRef(new Set<string>());
+  // The nodes the PREVIOUS fold produced — where the layout said each card went
+  // last step, which is not the same question as where each card is now.
+  const freshRef = useRef<Node[]>([]);
 
   // Record a drag so the node stays put across the next step.
   const onNodesChangePinned = useCallback(
@@ -183,18 +186,25 @@ export function FlowMap(props: {
     return () => clearTimeout(id);
   }, [props.fitSignal]);
 
-  // Sync folded scene -> flow, preserving positions across steps. A main card
-  // keeps its position by default; a subagent keeps its freshly computed one so a
-  // new worker re-centres the group instead of stranding earlier cards (the clump
-  // bug from the prototype) — UNLESS the user dragged it, in which case it is
-  // pinned and stays. A compact/expanded flip re-lays-out everything and drops
-  // pins.
+  // Sync folded scene -> flow, preserving positions across steps. A card keeps
+  // the seat it is ON for as long as the layout keeps computing that same seat
+  // for it, so a step never snaps the reader's cards back; when the layout
+  // itself moves a card, the card follows. A dragged card overrides that, and a
+  // compact/expanded flip re-lays-out everything and drops the pins.
+  //
+  // CARD 306: `freshRef` is the previous FOLD, and it is what makes "the layout
+  // moved this" a question the merge can answer. Without it the rule was "a
+  // main card keeps its previous position", and a growing workflow box then
+  // pushed the OS band, the boundary and the LLM in the fold while the screen
+  // kept all three where they were — the box drawn through them, with a green
+  // suite either side of the seam.
   useEffect(() => {
     const seating = seatingKey(expandAll, paneAspect, rowsPref, boxSwitch);
     const relayout = layoutRef.current !== seating;
     layoutRef.current = seating;
     if (relayout) pinned.current.clear();
-    setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout));
+    setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout, freshRef.current));
+    freshRef.current = flow.nodes;
     setEdges(flow.edges);
   }, [flow, expandAll, paneAspect, rowsPref, boxSwitch, setNodes, setEdges]);
 
