@@ -83,9 +83,11 @@ export interface AgentFold {
   rootFirstSeen: number;
 }
 
-/** Which agent ids one event names. The parent of a spawn is NOT named by it:
- *  a parent that never shows up on its own must stay unknown, which is exactly
- *  what spawnTree counts as unresolved. */
+/** Which agent ids one event CREATES a record for. The parent of a spawn is NOT
+ *  named by it: a parent that never shows up on its own must stay unknown,
+ *  which is exactly what spawnTree counts as unresolved. This is the creation
+ *  rule and nothing else — it decides tag order, so widening it renumbers every
+ *  handle. Lifetime is a separate question and answered separately below. */
 function namedBy(e: RunEvent): string[] {
   if (e.type === "agent_message") return e.role === "task" ? [e.to] : [e.from];
   return "agentId" in e && typeof e.agentId === "string" ? [e.agentId] : [];
@@ -147,6 +149,17 @@ export function foldAgents(events: readonly RunEvent[]): AgentFold {
       .map((id) => agents.get(id))
       .find((r) => r !== undefined);
     if (touched !== undefined) touched.end = Math.max(touched.end, e.ts);
+    // A message is evidence that its SENDER was alive when it was sent, and
+    // `namedBy` cannot say so for a task message: it names the receiver,
+    // because that is the creation rule (widening it would renumber tags).
+    // So the sender's lifetime is extended here, separately. This is not
+    // decoration — the importer emits a task message for every dispatch, so a
+    // child that dispatches a nested subagent is only ever heard from again as
+    // a sender, and spawnTree's wave grouping reads exactly these lifetimes.
+    if (e.type === "agent_message") {
+      const sender = agents.get(e.from);
+      if (sender !== undefined) sender.end = Math.max(sender.end, e.ts);
+    }
     if (e.type === "agent_message" && e.role === "task") {
       const c = agents.get(e.to);
       if (c !== undefined) {

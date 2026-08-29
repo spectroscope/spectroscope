@@ -54,7 +54,16 @@ const LABEL_MAX = 28;
  *  frame actually reported. Card 298 moved the fold itself into
  *  agentDirectory.ts so the directory and this lens read ONE identity pass;
  *  filtering to `spawned` here is what keeps `reported` meaning exactly what
- *  its doc comment says it means. */
+ *  its doc comment says it means.
+ *
+ *  ONE THING THE MOVE CHANGED, deliberately and pinned. The shared fold opens a
+ *  record at FIRST APPEARANCE, not at the spawn frame, so a task message that
+ *  names a child before its spawn arrives now decides that child's position in
+ *  `nodes`/`edges` and gives it its label. The old fold dropped such a message
+ *  (the child was not in its map yet) and the card printed the opaque id
+ *  instead. Both halves are held by "lets a task message that arrives before
+ *  the spawn frame name the child". Not reachable from the importer, which
+ *  emits the spawn first, but reachable from a hand-built stream. */
 type ChildRecord = AgentRecord;
 
 /** Build the reconstructed workflow topology from the FULL event list. */
