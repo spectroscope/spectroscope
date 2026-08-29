@@ -19,11 +19,14 @@ import { getSmoothStepPath, type EdgeProps } from "@xyflow/react";
 import { RailBoxes } from "./railBoxes";
 import { RAIL_STUB, splitAxis, trunkFor, type RailEnd, type Side } from "./railRoute";
 
-/** -10 | 0 | +10, stable per edge id. */
+/** -20 | -10 | 0 | +10 | +20, stable per edge id. Five lanes, not three:
+ *  since card 295 every worker keeps a rail to every station, so up to seven
+ *  rails converge on one station handle and three lanes put most of them on
+ *  top of each other. */
 export function railLane(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return ((Math.abs(h) % 3) - 1) * 10;
+  return ((Math.abs(h) % 5) - 2) * 10;
 }
 
 export function PacketEdge({
@@ -62,20 +65,34 @@ export function PacketEdge({
     offset: RAIL_STUB,
     ...steer,
   });
-  const d = (data ?? {}) as { active?: boolean; net?: boolean; err?: boolean; dim?: boolean; flow?: boolean };
+  const d = (data ?? {}) as {
+    active?: boolean;
+    net?: boolean;
+    err?: boolean;
+    dim?: boolean;
+    flow?: boolean;
+    /** A subagent's own leg — painted in the worker accent, so a lit station
+     *  says WHO is on it before the chip is read (card 295). */
+    worker?: boolean;
+  };
 
   const cls = [
     "pf-rail",
     d.net ? "pf-rail--net" : "",
     d.active ? "pf-rail--active" : "",
     d.active && d.flow ? "pf-rail--flow" : "",
+    d.active && d.worker ? "pf-rail--worker" : "",
     d.err ? "pf-rail--err" : "",
   ]
     .join(" ")
     .trim();
 
   const pathId = `p-${id}`;
-  const cometCls = d.err ? "pf-comet pf-comet--err" : "pf-comet";
+  const cometCls = d.err
+    ? "pf-comet pf-comet--err"
+    : d.worker
+      ? "pf-comet pf-comet--worker"
+      : "pf-comet";
 
   return (
     <>

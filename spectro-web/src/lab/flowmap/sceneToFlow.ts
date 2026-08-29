@@ -6,11 +6,11 @@
 // local/remote flip literally re-places the LLM inside vs. outside "Dein Mac".
 
 import type { Edge, Node } from "@xyflow/react";
-import type { DiskState, Focus, GateState, Loop, Scene, SubagentInfo } from "../labScene";
+import type { DiskState, Focus, GateState, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
-import { stationUsers } from "./stationUsers";
+import { stationOccupants, type Station, type StationOccupant } from "./stationUsers";
 import {
   SEAT_ROWS_COMPACT,
   SEATS_MAX_COMPACT,
@@ -800,36 +800,47 @@ export function sceneToFlow(
   // ----- OS band ----- Stations are SHARED infrastructure: disk, shell and
   // the whole MCP chain (client → net → Netz → server) light for WHICHEVER
   // loop is on them right now — the main agent or any subagent.
-  const loops: { id: string; loop: Loop }[] = [
-    { id: "main", loop: scene },
-    ...scene.subagents.map((c) => ({ id: c.id, loop: c })),
-  ];
-  const atDisk = loops.find((l) => l.loop.focus === "disk");
-  const atCmd = loops.find((l) => l.loop.focus === "cmd");
-  const mcpUser = loops.find((l) => l.loop.activeMcp !== null);
+  // Occupancy is derived ONCE (stationOccupants, card 295) and then read three
+  // ways: the node's active state, the "who is on it" chip, and — below — which
+  // rail is hot. It used to be worked out here a second time with a per-station
+  // `loops.find`, free to disagree with the chip beside it.
+  const occupants = stationOccupants(scene);
+  const on = (st: Station): StationOccupant[] => occupants.filter((o) => o.station === st);
+  const usersOf = (st: Station) => on(st).map(({ tag, name, agentId }) => ({ tag, name, agentId }));
+  // First match wins, main first: with main AND a worker at the disk the station
+  // shows MAIN. The demoted occupants are not dropped — the chip names them.
+  const atDisk = on("disk")[0];
+  const atCmd = on("cmd")[0];
+  const mcpUser = on("mcp")[0];
   const mcpInUse = mcpUser !== undefined;
-  const mcpTool = mcpUser ? detail.tool[mcpUser.id] : undefined;
+  const mcpTool = mcpUser ? detail.tool[mcpUser.agentId] : undefined;
+  /** The rails that are hot right now, keyed agent+station. */
+  const hot = new Set(occupants.map((o) => `${o.agentId}\u0000${o.station}`));
+  const isHot = (agentId: string, st: Station) => hot.has(`${agentId}\u0000${st}`);
   N("os-disk", "os", {
     kind: "disk",
     active: atDisk !== undefined,
     disk: atDisk?.loop.disk ?? "idle",
     file: atDisk?.loop.activeFile ?? null,
-    by: stationUsers(scene, "disk"),
+    by: usersOf("disk"),
+    byTag: atDisk?.tag ?? null,
   });
   N("os-shell", "os", {
     kind: "shell",
     active: atCmd !== undefined,
     command: atCmd?.loop.activeCommand ?? null,
-    by: stationUsers(scene, "cmd"),
+    by: usersOf("cmd"),
+    byTag: atCmd?.tag ?? null,
   });
   N("os-mcp", "os", {
     kind: "mcp",
     active: mcpInUse,
     mcp: mcpUser?.loop.activeMcp ?? null,
     tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
-    by: stationUsers(scene, "mcp"),
+    by: usersOf("mcp"),
+    byTag: mcpUser?.tag ?? null,
   });
-  N("os-net", "os", { kind: "net", active: mcpInUse });
+  N("os-net", "os", { kind: "net", active: mcpInUse, byTag: mcpUser?.tag ?? null });
 
   // ----- LLM ----- (the SHARED model — it works for main and every subagent,
   // so it animates and streams for whichever agent is at it right now)
@@ -923,7 +934,7 @@ export function sceneToFlow(
     sh: string,
     th: string,
     active: boolean,
-    opt: { net?: boolean; err?: boolean; dim?: boolean; flow?: boolean } = {},
+    opt: { net?: boolean; err?: boolean; dim?: boolean; flow?: boolean; worker?: boolean } = {},
   ) => {
     edges.push({
       id,
@@ -938,6 +949,9 @@ export function sceneToFlow(
         err: opt.err ?? false,
         dim: opt.dim ?? false,
         flow: opt.flow ?? active,
+        // A worker's leg is tinted with the worker accent, so a lit station
+        // says at a glance WHO is on it even before the chip is read.
+        worker: opt.worker ?? false,
       },
       zIndex: active ? 1001 : 1,
     });
@@ -949,33 +963,53 @@ export function sceneToFlow(
     err: scene.isError && scene.focus === "user",
   });
   E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net });
-  E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", mainLit === "os-disk");
-  E("e-agent-osshell", "agent", "os-shell", "bs", "tt", mainLit === "os-shell");
+  E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", isHot("main", "disk"));
+  E("e-agent-osshell", "agent", "os-shell", "bs", "tt", isHot("main", "cmd"));
   // The MCP call rides the whole chain and lights it end to end while in use:
   //   <caller> → MCP-client → network stack →⟂ Netz → MCP-server
   // The first leg belongs to the CALLING agent (main's rail or the child's
   // own rail below); the chain from the client outward is shared.
   const mcpErr = !!mcpUser?.loop.isError;
-  const mainOnMcp = scene.activeMcp !== null;
-  E("e-agent-osmcp", "agent", "os-mcp", "bs", "tt", mainLit === "os-mcp" || mainOnMcp, {
-    err: mcpErr && mcpUser?.id === "main",
+  const mcpByWorker = mcpUser !== undefined && mcpUser.agentId !== "main";
+  E("e-agent-osmcp", "agent", "os-mcp", "bs", "tt", isHot("main", "mcp"), {
+    err: mcpErr && mcpUser?.agentId === "main",
   });
-  E("e-osmcp-osnet", "os-mcp", "os-net", "rs", "lt", mcpInUse, { err: mcpErr });
+  E("e-osmcp-osnet", "os-mcp", "os-net", "rs", "lt", mcpInUse, { err: mcpErr, worker: mcpByWorker });
   if (!declutter) {
     // the legs out to Netz + MCP-Server only exist when the "outside" is drawn.
-    E("e-osnet-netz", "os-net", "netz", "rs", "lt", mcpInUse, { net: true, err: mcpErr });
-    E("e-netz-mcpserver", "netz", "mcpserver", "rs", "lt", mcpInUse, { net: true, err: mcpErr });
+    E("e-osnet-netz", "os-net", "netz", "rs", "lt", mcpInUse, {
+      net: true,
+      err: mcpErr,
+      worker: mcpByWorker,
+    });
+    E("e-netz-mcpserver", "netz", "mcpserver", "rs", "lt", mcpInUse, {
+      net: true,
+      err: mcpErr,
+      worker: mcpByWorker,
+    });
   }
 
   subs.forEach((c) => {
     const id = `sub-${c.id}`;
     E(`e-${id}-agent`, id, "agent", "ls", "rt", false, { dim: true });
     E(`e-${id}-llm`, id, "llm", "rs", "lt", c.focus === "llm", { net });
-    // A child's packet flies its OWN rail to the shared station it is using;
-    // these rails only exist while in use (no permanent clutter).
-    if (c.focus === "disk") E(`e-${id}-osdisk`, id, "os-disk", "bs", "tt", true, { err: c.isError });
-    if (c.focus === "cmd") E(`e-${id}-osshell`, id, "os-shell", "bs", "tt", true, { err: c.isError });
-    if (c.focus === "mcp") E(`e-${id}-osmcp`, id, "os-mcp", "bs", "tt", true, { err: c.isError });
+    // A child's OWN rails to the three shared stations. They are STRUCTURAL
+    // (card 295): drawn always, dimmed until used — mirroring what main has
+    // had all along. They used to exist only while the child stood on the
+    // station, so between two tool calls a worker card had no line into the OS
+    // band at all, and the owner saw floating cards. Keeping them alive off
+    // the child's lifecycle state was the other candidate and was rejected:
+    // only a report_status message ever sets state "working", so a child that
+    // never reports would float again — the very defect.
+    const stationRail = (suffix: string, target: string, st: Station) =>
+      E(`e-${id}-${suffix}`, id, target, "bs", "tt", isHot(c.id, st), {
+        err: c.isError && isHot(c.id, st),
+        dim: !isHot(c.id, st),
+        worker: true,
+      });
+    stationRail("osdisk", "os-disk", "disk");
+    stationRail("osshell", "os-shell", "cmd");
+    stationRail("osmcp", "os-mcp", "mcp");
   });
 
   // Only the expanded map has envelopes to check against; compact cards are the

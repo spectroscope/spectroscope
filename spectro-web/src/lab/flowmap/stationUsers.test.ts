@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialLoop, initialScene, type Scene, type SubagentInfo } from "../labScene";
-import { stationUsers } from "./stationUsers";
+import { stationOccupants, stationUsers } from "./stationUsers";
 
 const child = (id: string, task: string, patch: Partial<SubagentInfo> = {}): SubagentInfo => ({
   id,
@@ -17,7 +17,7 @@ const sceneWith = (patch: Partial<Scene>): Scene => ({ ...initialScene(), ...pat
 describe("stationUsers", () => {
   it("names main when the main loop is on the station", () => {
     const s = sceneWith({ focus: "cmd" });
-    expect(stationUsers(s, "cmd")).toEqual([{ tag: "main", name: "main" }]);
+    expect(stationUsers(s, "cmd")).toEqual([{ tag: "main", name: "main", agentId: "main" }]);
   });
 
   it("names a child by its task, tagged by spawn order, never by its id", () => {
@@ -25,8 +25,10 @@ describe("stationUsers", () => {
       subagents: [child("toolu_abc123", "Scout Flink checkout", { focus: "disk" })],
     });
     const users = stationUsers(s, "disk");
-    expect(users).toEqual([{ tag: "w1", name: "Scout Flink checkout" }]);
-    expect(JSON.stringify(users)).not.toContain("toolu_abc123");
+    expect(users).toEqual([{ tag: "w1", name: "Scout Flink checkout", agentId: "toolu_abc123" }]);
+    // The opaque id is DATA now (it addresses the rail), never a visible name.
+    expect(users[0].name).not.toContain("toolu_abc123");
+    expect(users[0].tag).not.toContain("toolu_abc123");
   });
 
   it("orders two occupants main-first, then spawn order — the fold's own resolution", () => {
@@ -59,11 +61,53 @@ describe("stationUsers", () => {
     const s = sceneWith({
       subagents: [child("a", "", { focus: "disk", label: "build_plan" }), child("b", "", { focus: "cmd" })],
     });
-    expect(stationUsers(s, "disk")).toEqual([{ tag: "w1", name: "build_plan" }]);
-    expect(stationUsers(s, "cmd")).toEqual([{ tag: "w2", name: "w2" }]);
+    expect(stationUsers(s, "disk")).toEqual([{ tag: "w1", name: "build_plan", agentId: "a" }]);
+    expect(stationUsers(s, "cmd")).toEqual([{ tag: "w2", name: "w2", agentId: "b" }]);
   });
 
   it("returns empty when nobody is on the station", () => {
     expect(stationUsers(initialScene(), "disk")).toEqual([]);
+  });
+});
+
+describe("stationOccupants", () => {
+  it("is the ONE derivation: every (agent, station) pair, main first then spawn order", () => {
+    const s = sceneWith({
+      focus: "disk",
+      subagents: [child("a", "first", { focus: "cmd" }), child("b", "second", { focus: "disk" })],
+    });
+    expect(stationOccupants(s).map((o) => [o.agentId, o.station])).toEqual([
+      ["main", "disk"],
+      ["a", "cmd"],
+      ["b", "disk"],
+    ]);
+  });
+
+  it("carries the occupant's own loop, so the station can show ITS content", () => {
+    const s = sceneWith({
+      subagents: [child("a", "t", { focus: "cmd", activeCommand: "npm ci" })],
+    });
+    expect(stationOccupants(s)[0].loop.activeCommand).toBe("npm ci");
+  });
+
+  it("counts the mcp station by the HELD call, not by focus — a gated caller still holds it", () => {
+    const s = sceneWith({ subagents: [child("a", "t", { focus: "gate", activeMcp: "notes · search" })] });
+    expect(stationOccupants(s).map((o) => o.station)).toEqual(["mcp"]);
+  });
+
+  it("stationUsers is exactly stationOccupants filtered by station", () => {
+    const s = sceneWith({
+      focus: "cmd",
+      subagents: [child("a", "first", { focus: "cmd" })],
+    });
+    expect(stationUsers(s, "cmd")).toEqual(
+      stationOccupants(s)
+        .filter((o) => o.station === "cmd")
+        .map(({ tag, name, agentId }) => ({ tag, name, agentId })),
+    );
+  });
+
+  it("is empty when nobody is on any station", () => {
+    expect(stationOccupants(initialScene())).toEqual([]);
   });
 });

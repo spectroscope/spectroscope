@@ -19,13 +19,28 @@ const edgeProps = {
   targetPosition: Position.Top,
 } as never;
 
+const LANES = [-20, -10, 0, 10, 20];
+
 describe("railLane", () => {
-  it("is stable per id and lands in the three lanes", () => {
+  it("is stable per id and lands in the five lanes", () => {
     const a = railLane("e-sub-w1-llm");
     expect(railLane("e-sub-w1-llm")).toBe(a);
     for (const id of ["e-agent-llm", "e-sub-x-osdisk", "e-osmcp-osnet"]) {
-      expect([-10, 0, 10]).toContain(railLane(id));
+      expect(LANES).toContain(railLane(id));
     }
+  });
+
+  // Card 295 wired every worker to every station, so up to seven rails now
+  // converge on ONE station handle. Three lanes could not hold them; five can.
+  it("spreads the real converging rail ids over more than three lanes", () => {
+    const lanes = new Set<number>();
+    for (let i = 1; i <= 8; i++) {
+      for (const s of ["osdisk", "osshell", "osmcp", "llm", "agent"]) {
+        lanes.add(railLane(`e-sub-worker-${i}-${s}`));
+      }
+    }
+    expect(lanes.size).toBeGreaterThan(3);
+    for (const l of lanes) expect(LANES).toContain(l);
   });
 });
 
@@ -48,5 +63,23 @@ describe("PacketEdge without an obstacle provider", () => {
     );
     expect(dim).toContain("opacity:0.4");
     expect(dim).not.toContain("pf-comet");
+  });
+
+  it("a worker's live leg carries the worker classes; main's does not", () => {
+    const Edge = PacketEdge as unknown as (p: Record<string, unknown>) => ReturnType<typeof PacketEdge>;
+    const worker = renderToStaticMarkup(
+      <svg>
+        <Edge {...(edgeProps as Record<string, unknown>)} data={{ active: true, worker: true }} />
+      </svg>,
+    );
+    expect(worker).toContain("pf-rail--worker");
+    expect(worker).toContain("pf-comet--worker");
+    const main = renderToStaticMarkup(
+      <svg>
+        <Edge {...(edgeProps as Record<string, unknown>)} data={{ active: true }} />
+      </svg>,
+    );
+    expect(main).not.toContain("pf-rail--worker");
+    expect(main).not.toContain("pf-comet--worker");
   });
 });
