@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { lensPhaseNodeId, nodeStateAt, phaseStateAt, spawnTree } from "./spawnTree";
 import { initialScene } from "./labScene";
-import { phaseHeight, type RunPhases, type WorkflowDeclaration } from "./workflowGraph";
+import { phaseHeight, workflowGraph, type RunPhases, type WorkflowDeclaration } from "./workflowGraph";
 
 /** Two agents whose lifetimes OVERLAP — one derived wave — but which the
  *  script put in two different phases. The stamps and the declaration
@@ -230,5 +230,29 @@ describe("what the declaration does NOT govern", () => {
   it("keeps nodeStateAt untouched for everything that is still an agent", () => {
     const tree = spawnTree(mixed(), decl(["plan", "do"], [["one"], ["two"]]));
     expect(nodeStateAt(initialScene(), new Set(["task"]), new Map(), "task", tree.root)).toBe("done");
+  });
+});
+
+describe("the reader and the lens draw ONE chain", () => {
+  // Two callers build the same succession: the reader, for a state file read
+  // on its own, and the lens, splicing it into a tree that can hold other
+  // children beside it. They must not drift, so the agreement is pinned
+  // rather than trusted to two sets of tests that never meet.
+  it("agrees edge for edge and height for height", () => {
+    const run: RunPhases = {
+      phases: ["plan", "survey", "gap", "verify"].map((title, i) => ({
+        title,
+        detail: null,
+        members: i === 1 ? [member("one"), member("two")] : i === 2 ? [] : [member(`only-${i}`)],
+      })),
+      unplaced: [],
+    };
+    const tree = spawnTree(overlapping(), new Map([["wf", run]]));
+    const read = workflowGraph(run, "wf");
+    const chain = (es: { from: string; to: string; kind: string }[]) =>
+      es.filter((e) => e.kind === "direct").map((e) => `${e.from}->${e.to}`);
+    expect(chain(tree.topo.edges)).toEqual(chain(read.topo.edges));
+    expect(chain(read.topo.edges)).toHaveLength(4);
+    for (const [id, h] of read.topo.heights!) expect(tree.topo.heights!.get(id)).toBe(h);
   });
 });
