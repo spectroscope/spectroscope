@@ -114,6 +114,36 @@ describe("the full worker card (card 287)", () => {
     expect(withoutTitles).not.toContain("toolu_opaque99");
   });
 
+  // Card 296 re-review. The card 296 head cap (max-height 50px, overflow
+  // hidden) is what makes the seat a BOUND — measured here, dropping it and
+  // paying the 15 world px back moves the reserve to 495, and at 495 rowsFor
+  // sends three seats back to 2 rows and twelve back to 3, which is the
+  // owner's own complaint returning. So the cap stays and the clipped text
+  // has to be recoverable somewhere: the head's title carries the opaque
+  // agent id (pinned above), so the NAME needs its own.
+  it("a clipped task name is still readable — the name carries its own title", () => {
+    const long =
+      "Scout the Flink checkout end to end, then write down every place the " +
+      "session id is read back out of local storage instead of the wire";
+    const m = renderToStaticMarkup(
+      <ExpandAllContext.Provider value={true}>
+        <Sub data={{ ...workerData, task: long }} />
+      </ExpandAllContext.Provider>,
+    );
+    expect(m).toContain(`<span class="pf-sub__id" title="${long}">`);
+  });
+
+  // The title follows what is VISIBLE, not the task field: a worker the wire
+  // gave no task shows its kind, and hovering must not offer an empty tooltip.
+  it("the name's title is whatever the card actually shows", () => {
+    const m = renderToStaticMarkup(
+      <ExpandAllContext.Provider value={true}>
+        <Sub data={{ ...workerData, task: "" }} />
+      </ExpandAllContext.Provider>,
+    );
+    expect(m).toContain('<span class="pf-sub__id" title="app-scout">');
+  });
+
   it("a worker the wire gave no kind renders no kind badge", () => {
     const m = renderToStaticMarkup(
       <ExpandAllContext.Provider value={true}>

@@ -16,6 +16,7 @@
 
 import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
+import { SUB_COL_PITCH, SUB_ROW_PITCH } from "./cardGeometry";
 
 export const SEAT_ROWS_EXPANDED = 4;
 export const SEAT_ROWS_COMPACT = 3;
@@ -135,13 +136,38 @@ export function foldSeatPool(events: readonly RunEvent[]): SeatPool {
 //
 // The world model below is MEASURED off sceneToFlow's own expanded output
 // (vitest probe, 2026-08-28): with no worker column the world is 2110 wide
-// and floors at 1426 tall; each grid column adds 468 (subagent envelope 408 +
-// rail gap 60); r rows bottom out at 50 + 620·r. The numbers live here rather
-// than being imported because sceneToFlow imports this module — and the cliff
-// test in sceneToFlow.test.ts re-measures the real output, so drift between
-// model and layout surfaces as a failing threshold, not as a silent lie.
+// and floors at 1426 tall. What a column and a row COST is no longer written
+// out here — card 296 found the same two numbers in this file and in
+// sceneToFlow's envelope table with nothing linking them, so both now come
+// from cardGeometry, and cardGeometry.test.ts holds the model's row pitch
+// against the pitch the real layout emits. The cliff test in
+// sceneToFlow.test.ts re-measures the real output on top of that, so drift
+// between model and layout surfaces as a failing threshold, not a silent lie.
 // ---------------------------------------------------------------------------
-const WORLD = { fixedW: 2110, colW: 468, floorH: 1426, rowBase: 50, rowH: 620 };
+const WORLD = {
+  fixedW: 2110,
+  colW: SUB_COL_PITCH,
+  floorH: 1426,
+  rowBase: 50,
+  rowH: SUB_ROW_PITCH,
+};
+
+/**
+ * The reader's own answer to "how deep do the workers stack" (card 296).
+ *
+ * `auto` is the honest default and is what the map did before this existed —
+ * the corrected seat already stacks three seats three deep at 16:9, so this is
+ * a preference and not the fix. The two forced shapes are for a person who
+ * wants the map to hold still while the seat count moves under it.
+ */
+export type RowsPref = "auto" | 2 | 3;
+
+/** The read half of the stored choice — anything that is not one of the two
+ *  forced shapes is auto, so a stale or hand-edited value cannot wedge the
+ *  map into a grid nothing offers. */
+export function rowsPrefFrom(raw: string | null | undefined): RowsPref {
+  return raw === "2" ? 2 : raw === "3" ? 3 : "auto";
+}
 
 /**
  * The row count whose grid fits the pane biggest: for each candidate the model
@@ -152,9 +178,14 @@ const WORLD = { fixedW: 2110, colW: 468, floorH: 1426, rowBase: 50, rowH: 620 };
  * @param aspect pane width / height, or null/undefined when never measured —
  *   a hidden pane delivers no frames and no ResizeObserver, so no measurement
  *   ever arrives; the fallback is the constant the map always used.
+ * @param pref the reader's choice; `auto` derives, a number is obeyed — a
+ *   preference is not a measurement, so it holds even on a pane that never
+ *   measured, and it is still capped by the seats that exist.
  */
-export function rowsFor(seats: number, aspect: number | null | undefined): number {
-  if (seats <= 0 || aspect == null || !Number.isFinite(aspect) || aspect <= 0) {
+export function rowsFor(seats: number, aspect: number | null | undefined, pref: RowsPref = "auto"): number {
+  if (seats <= 0) return SEAT_ROWS_EXPANDED;
+  if (pref !== "auto") return Math.min(pref, seats);
+  if (aspect == null || !Number.isFinite(aspect) || aspect <= 0) {
     return SEAT_ROWS_EXPANDED;
   }
   let best = SEAT_ROWS_EXPANDED;

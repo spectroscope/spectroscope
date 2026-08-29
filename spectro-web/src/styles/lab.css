@@ -446,6 +446,11 @@
 .lab-now {
   display: flex;
   align-items: center;
+  /* Card 296 adds a fourth segment to this band, and a fourth is what pushes
+     it past a narrow centre pane: unwrapped, the last segment was simply cut
+     off at the edge. It wraps now — a control the pane cannot show is a
+     control that is not there. */
+  flex-wrap: wrap;
   gap: 10px;
   flex: none;
   padding: 9px 15px;
@@ -592,6 +597,12 @@
    aside when the face seg (which now carries it) sits in front. */
 .lab-face-seg { margin-left: auto; }
 .lab-face-seg + .lab-view-seg { margin-left: 0; }
+/* Card 296 docks the worker-row seg between them. The auto margin belongs to
+   whichever seg opens the group, so every following seg gives it up — without
+   this the view seg would take its own auto margin back the moment the rows
+   seg stopped being adjacent to the face seg, and the band would split. */
+.lab-face-seg + .lab-rows-seg,
+.lab-rows-seg + .lab-view-seg { margin-left: 0; }
 .lab-seg-label {
   color: var(--text-faint);
   font-size: var(--fs-11);

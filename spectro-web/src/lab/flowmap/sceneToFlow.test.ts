@@ -3,6 +3,7 @@ import type { RunEvent } from "../../events";
 import { agentDirectory } from "../agentDirectory";
 import { advanceScene, initialScene } from "../labScene";
 import { foldSeatPool } from "./workerGrid";
+import { SUB_CARD_TYPICAL_H, SUB_ROW_PITCH } from "./cardGeometry";
 import { t } from "../../i18n/i18n";
 import {
   activity,
@@ -671,16 +672,33 @@ describe("sceneToFlow — the fitted card never falls off a cliff (card 292)", (
     return EXPANDED_CARD.subagent.w * fit;
   };
 
-  it("adjacent seat counts 1..12 never drop the card past 16%, and never under 160 px", () => {
+  // Card 296 re-measured this on the corrected seat. The 16% / 160px pair was
+  // a true reading of the 620-pitch world and is now slack: on the same pane
+  // the fitted card runs 253.2, 253.2, 219.9, 214.3, 214.3, 214.3, 185.8,
+  // 185.8, 185.8, 166.2, 166.2, 166.2 device px — worst adjacent drop 13.3%
+  // (n=6→7), floor 166.2 at n=10..12. A test whose premise moved is replaced,
+  // not loosened: the thresholds below sit just under the NEW measurement and
+  // go red on the old geometry (which dropped 15.4% at n=2→3 and floored at
+  // 163.9), so this can never be re-satisfied by putting 560 back.
+  it("adjacent seat counts 1..12 never drop the card past 14%, and never under 165 px", () => {
     const sizes = Array.from({ length: 12 }, (_, i) => cardPx(i + 1));
     for (let i = 1; i < sizes.length; i++) {
-      // e.g. the old N=3→4 cliff was a 24.5% drop; anything past 16% is a cliff.
       expect(
         sizes[i],
         `n=${i + 1} vs n=${i}: ${sizes.map((s) => s.toFixed(1)).join(", ")}`,
-      ).toBeGreaterThanOrEqual(sizes[i - 1] * 0.84);
-      expect(sizes[i]).toBeGreaterThanOrEqual(160);
+      ).toBeGreaterThanOrEqual(sizes[i - 1] * 0.86);
+      expect(sizes[i], `n=${i + 1}: ${sizes.map((s) => s.toFixed(1)).join(", ")}`).toBeGreaterThanOrEqual(
+        165,
+      );
     }
+  });
+
+  // The owner's actual complaint, as a number the gate can hold: the row the
+  // seat reserves must not be twice the card that usually stands in it. At
+  // 560 + 60 it was — 620 against a card measured at 304.44 in the browser —
+  // and that is what "more gap than card" meant on his screen.
+  it("a row reserves less than twice the card it usually holds", () => {
+    expect(SUB_ROW_PITCH).toBeLessThan(2 * SUB_CARD_TYPICAL_H);
   });
 
   it("expanded seats stay collision-free at every count the rows derivation can pick", () => {

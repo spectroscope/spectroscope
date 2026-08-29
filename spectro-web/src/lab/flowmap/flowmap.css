@@ -1642,8 +1642,24 @@
   zoom: 0.6;
   width: 680px;
 }
+/* The caps that make the worker card's seat a BOUND (card 296). Every other
+ * growth region on a card is capped (prose 120, the tool JSON 240, a
+ * disclosure body 300) — the worker's head, its meta block and its picture
+ * shelf never were, so the card could render 712 world px into a seat that
+ * reserved 560. The numbers live in cardGeometry.ts, which derives the seat
+ * from them, and cardGeometry.test.ts holds these declarations against it. */
 .pf-sub--full .pf-sub__head {
   margin-bottom: 8px;
+  max-height: 50px;
+  overflow: hidden;
+}
+.pf-sub--full .pf-sub__meta {
+  max-height: 136px;
+  overflow-y: auto;
+}
+.pf-sub--full .pf-agent__genfull {
+  max-height: 172px;
+  overflow-y: auto;
 }
 .pf-sub__meta {
   display: flex;

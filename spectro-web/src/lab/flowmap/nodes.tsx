@@ -180,7 +180,16 @@ export type AgentData = {
  *  and the context panels — WITHOUT the outer card frame and WITHOUT handles.
  *  Extracted so the expanded worker card renders the same instrument with the
  *  child's own data (card 287); AgentNode below is the frame around it. */
-export function AgentCardBody({ data: d }: { data: AgentData }) {
+export function AgentCardBody({
+  data: d,
+  scrollShelf = false,
+}: {
+  data: AgentData;
+  /** The worker card caps its picture shelf (card 296), so the shelf is a
+   *  scroll region and needs the canvas to keep its hands off it. The agent
+   *  hub's shelf is uncapped and stays a plain block. */
+  scrollShelf?: boolean;
+}) {
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
@@ -374,7 +383,7 @@ export function AgentCardBody({ data: d }: { data: AgentData }) {
             </div>
           </div>
           {(genImagePanel || attachedPanel) && (
-            <div className="pf-agent__genfull">
+            <div className={`pf-agent__genfull${scrollShelf ? " nowheel nodrag" : ""}`}>
               {genImagePanel}
               {attachedPanel}
             </div>
@@ -757,12 +766,21 @@ export function SubagentNode({ data }: NodeProps) {
   if (d.full !== undefined) {
     // The opaque agent id lives ONLY in the title attribute — the visible
     // name is the task the spawner phrased, then the kind label, then nothing.
+    //
+    // That name gets its OWN title (card 296 re-review). Card 296 capped this
+    // head at two lines to make the worker seat a bound, and the head's title
+    // carries the agent id, not the task — so a long task title was clipped
+    // with nowhere left to read it. The cap earns its place (measured: paying
+    // the 15 world px back moves the reserve to 495, and at 495 three seats
+    // fall back to two rows and twelve to three, which is the complaint card
+    // 296 exists to fix), so the text is made recoverable instead.
+    const name = d.task || d.label || "worker";
     return (
       <div className={`pf-card pf-sub pf-sub--full${d.active ? " pf-card--active" : ""}`}>
         <div className="pf-sub__head" title={d.id}>
-          <span className="pf-sub__id">
+          <span className="pf-sub__id" title={name}>
             <span className="pf-sub__dot" style={{ background: d.stateColor }} />
-            {d.task || d.label || "worker"}
+            {name}
           </span>
           {d.label !== null && <span className="pf-badge">{d.label}</span>}
           <span className="pf-badge" style={{ color: d.stateColor }}>
@@ -770,9 +788,10 @@ export function SubagentNode({ data }: NodeProps) {
           </span>
         </div>
         <AgentCardBody
+          scrollShelf
           data={workerAgentData({ active: d.active, focus: d.focus, activity: d.activity, full: d.full })}
         />
-        <div className="pf-sub__meta">
+        <div className="pf-sub__meta nowheel nodrag">
           {d.full.brief !== null && (
             <Disclosure label={t(lang, "map.sub.brief")}>
               <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
