@@ -533,6 +533,113 @@
   color: var(--text-dim);
   white-space: nowrap;
 }
+
+/* Card 299: the chapter ticks, the clock and the speed pills.
+
+   The ticks are absolutely positioned OVER the range input, so the track needs
+   a positioning parent of its own — putting them straight into .lab-scrub would
+   measure them against the step counter as well and land every one of them too
+   far left. Colour rides on 1px lines only, out of the event-type vocabulary in
+   tokens.css, so all three designs get it from their own ramps. */
+.lab-scrub-track {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.lab-marks {
+  position: absolute;
+  inset: 0;
+  /* The layer is a pass-through; only the ticks themselves take the pointer,
+     so dragging the slider still works everywhere between them. */
+  pointer-events: none;
+}
+.lab-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  margin-left: -5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.lab-mark::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--tick, var(--text-faint));
+  opacity: 0.75;
+  transition: opacity var(--t-fast), transform var(--t-fast);
+}
+.lab-mark:hover::before,
+.lab-mark:focus-visible::before {
+  opacity: 1;
+  transform: scaleX(3);
+}
+.lab-mark--turn,
+.lab-mark--end {
+  --tick: var(--ev-lifecycle);
+}
+.lab-mark--spawn {
+  --tick: var(--ev-subagent);
+}
+.lab-mark--gate,
+.lab-mark--denied {
+  --tick: var(--ev-gate);
+}
+.lab-mark--error {
+  --tick: var(--error);
+}
+.lab-mark--no_progress,
+.lab-mark--intervention {
+  --tick: var(--warn);
+}
+.lab-mark--question {
+  --tick: var(--ev-pending);
+}
+.lab-mark--skill {
+  --tick: var(--ev-tool);
+}
+.lab-clock {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.lab-speed-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  flex: none;
+}
+.lab-speed-pill {
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.lab-speed-pill:hover {
+  color: var(--text-dim);
+}
+.lab-speed-pill--on {
+  background: var(--surface-3);
+  color: var(--text);
+}
 .lab-advanced { flex: none; }
 .lab-advanced > summary {
   list-style: none;

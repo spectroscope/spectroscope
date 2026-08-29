@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
+import type { ChapterMark } from "./stepper";
 import {
   SPEED_FACTORS,
   chapterMarks,
@@ -182,9 +183,9 @@ describe("chapterMarks — one bite per kind", () => {
 });
 
 describe("markPositions — a mark lands on the boundary that SHOWS its event", () => {
-  const marks = [
-    { at: 1, kind: "turn" as const, labelKey: "lab.mark.turn", vars: { n: 1 } },
-    { at: 4, kind: "end" as const, labelKey: "lab.mark.end", vars: { reason: "end_turn" } },
+  const marks: ChapterMark[] = [
+    { at: 1, kind: "turn", labelKey: "lab.mark.turn", vars: { n: 1 } },
+    { at: 4, kind: "end", labelKey: "lab.mark.end", vars: { reason: "end_turn" } },
   ];
 
   it("seeks past the marked event, never to the boundary before it", () => {

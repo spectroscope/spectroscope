@@ -1,26 +1,44 @@
 // The Lab's replay transport (edu port): a floating "now" band that names the
 // current station, the map, then a scrub bar below it — reset / prev / play /
-// next plus a slider that walks the COARSE-step boundaries and a step counter.
-// It replaces the old Step toolbar; grain + tempo move behind a small "advanced"
-// disclosure, since a live run rarely needs them. Keyboard: space or → steps,
-// ← steps back, f toggles flow, r resets (documented in the ? keymap). The map
-// is passed as children so the band sits above it and the transport below.
+// next / end plus a slider that walks the COARSE-step boundaries and a step
+// counter. It replaces the old Step toolbar; grain and the free tempo slider
+// sit behind a small "advanced" disclosure, since a live run rarely needs them.
+// Keyboard: space or → steps, ← steps back, f toggles flow, r resets
+// (documented in the ? keymap). The map is passed as children so the band sits
+// above it and the transport below.
+//
+// Card 299: the bar answered "where am I" three ways and "where is the
+// interesting part" not at all. Over several hundred coarse steps that is the
+// only question a presenter has. So the bar now carries CHAPTER TICKS (one per
+// thing the run did that is worth stopping at, each one a control that seeks
+// there), a wall clock beside the step counter, a jump to the end, and five
+// speed pills with a real multiplier vocabulary instead of a bare "0.8×/s"
+// with nothing to compare it to. Every reading behind them is pure and lives
+// in state/stepper.ts; this file only draws them.
 
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import {
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
+  SPEED_FACTORS,
+  chapterMarks,
+  clockLabel,
+  intervalForFactor,
+  markPositions,
   reset,
+  runClock,
   seek,
   setGrain,
   setMode,
   setSpeed,
+  speedFactorOf,
   step,
   stepBack,
   stepBoundaries,
   useStepper,
 } from "../state/stepper";
+import { chapterLabel } from "./chapterLabel";
 import { sceneNow } from "./sceneNow";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -67,6 +85,17 @@ export function LabTransport(props: {
     if (flowing) setMode("step"); // scrubbing pauses auto-play
     seek(boundaries[Math.max(0, Math.min(maxIndex, i))]);
   };
+  const jumpToEnd = (): void => {
+    if (flowing) setMode("step");
+    seek(all.length);
+  };
+
+  // The chapters, placed on the very boundaries the slider walks. A live run
+  // grows, so both are read from `all` on every render rather than cached.
+  const marks = markPositions(chapterMarks(all), boundaries);
+  // The wall clock, or null when this recording never carried one.
+  const clock = runClock(all, cursor);
+  const factor = speedFactorOf(st.intervalMs);
 
   // Keyboard transport — the Lab reads like the step controls. Guarded while
   // typing; the full list lives in the ? keymap. Tab-gated by this mount.
@@ -156,21 +185,75 @@ export function LabTransport(props: {
           >
             ›
           </button>
+          <button
+            type="button"
+            onClick={jumpToEnd}
+            disabled={atEnd}
+            title={t(lang, "lab.jumpEnd")}
+            aria-label={t(lang, "lab.jumpEnd")}
+          >
+            ⇥
+          </button>
         </div>
         <div className="lab-scrub">
-          <input
-            type="range"
-            min={0}
-            max={maxIndex}
-            step={1}
-            value={stepIndex}
-            disabled={flowing}
-            aria-label={de ? "replay-position" : "replay position"}
-            onChange={(e) => scrubTo(Number(e.target.value))}
-          />
+          <div className="lab-scrub-track">
+            <input
+              type="range"
+              min={0}
+              max={maxIndex}
+              step={1}
+              value={stepIndex}
+              disabled={flowing}
+              aria-label={de ? "replay-position" : "replay position"}
+              onChange={(e) => scrubTo(Number(e.target.value))}
+            />
+            {marks.length > 0 && (
+              <div className="lab-marks" role="group" aria-label={t(lang, "lab.marksAria")}>
+                {marks.map((m, i) => {
+                  const line = chapterLabel(m.mark, lang);
+                  return (
+                    <button
+                      key={`${m.mark.at}-${i}`}
+                      type="button"
+                      title={line}
+                      aria-label={line}
+                      className={`lab-mark lab-mark--${m.mark.kind}`}
+                      style={{ left: `${m.pct}%` }}
+                      onClick={() => scrubTo(m.index)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <span className="lab-counter mono tabular">
             {(de ? "schritt " : "step ") + stepIndex + " / " + maxIndex}
           </span>
+          {/* Coarse steps are not time. The clock appears only where the
+              recording carries one — see runClock. */}
+          {clock !== null && (
+            <span className="lab-clock mono tabular" title={t(lang, "lab.clockTitle")}>
+              {clockLabel(clock.elapsedMs) + " / " + clockLabel(clock.totalMs)}
+            </span>
+          )}
+        </div>
+        <div className="lab-speed-pills" role="radiogroup" aria-label={t(lang, "lab.speedAria")}>
+          {SPEED_FACTORS.map((f) => {
+            const ms = intervalForFactor(f);
+            return (
+              <button
+                key={f}
+                type="button"
+                role="radio"
+                title={t(lang, "lab.speedPillTitle", { f: String(f), ms })}
+                aria-checked={factor === f}
+                className={`lab-speed-pill${factor === f ? " lab-speed-pill--on" : ""}`}
+                onClick={() => setSpeed(ms)}
+              >
+                {`${f}×`}
+              </button>
+            );
+          })}
         </div>
         <details className="lab-advanced">
           <summary title={de ? "grain + tempo" : "grain + tempo"}>{de ? "mehr" : "more"}</summary>
