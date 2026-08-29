@@ -161,6 +161,9 @@ export interface ContextSnapshot {
   messages: number;
   estimatedTokens: number;
   threshold: number;
+  /** Where `threshold` came from, when the frame said (card 300). Absent =
+   *  the frame stated nothing, which is not the same as "fallback". */
+  thresholdSource?: "override" | "window" | "fallback";
   parts: { label: string; chars: number; estTokens: number; text?: string }[];
 }
 
@@ -1265,6 +1268,9 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           messages: event.messages,
           estimatedTokens: event.estimatedTokens,
           threshold: event.threshold,
+          // Spread rather than assign: a frame that stated no provenance must
+          // leave the KEY absent, not present-and-undefined.
+          ...(event.thresholdSource === undefined ? {} : { thresholdSource: event.thresholdSource }),
           parts: event.parts,
         },
       };

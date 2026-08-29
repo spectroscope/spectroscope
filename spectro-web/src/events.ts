@@ -113,6 +113,14 @@ export type RunEvent =
       messages: number;
       estimatedTokens: number;
       threshold: number;
+      /** Which fact produced `threshold` — the harness's own
+       *  CompactionThreshold.Source, lowercased onto the wire. Absent on a
+       *  pre-card-263 line and on any producer that states no provenance, and
+       *  an absence must stay one: a reader that defaults it would turn "we
+       *  learned nothing" into "we measured this". Additive on the Java side
+       *  (ContextInfoThresholdSourceAdditivityTest), declared here so a
+       *  consumer can tell a measurement from a stand-in. */
+      thresholdSource?: "override" | "window" | "fallback";
       parts: { label: string; chars: number; estTokens: number; text?: string }[];
       ts: number;
     } // additive: context introspection
