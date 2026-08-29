@@ -22,12 +22,19 @@ function Disclosure({
   label,
   children,
   open: openDefault = false,
+  expandAll: override,
 }: {
   label: string;
   children: ReactNode;
   open?: boolean;
+  /** The switch that governs this disclosure, when it is not the map's.
+   *  A card inside a workflow box (card 306) has its own — the box's — and
+   *  reading the map's instead is how the geometry and the markup ended up
+   *  following two switches that disagree. */
+  expandAll?: boolean;
 }) {
-  const expandAll = useContext(ExpandAllContext);
+  const fromMap = useContext(ExpandAllContext);
+  const expandAll = override ?? fromMap;
   const [open, setOpen] = useState(openDefault || expandAll);
   return (
     <div className="pf-disc">
@@ -772,6 +779,16 @@ export function SubagentNode({ data }: NodeProps) {
      *  own card with this data (card 287). Absent = compact, byte-identical
      *  to what shipped. */
     full?: SubFull;
+    /** CARD 306: the switch of the workflow box this card stands in, present
+     *  only for a boxed member and absent for a loose one.
+     *
+     *  It governs the MINIMAL card's disclosure below, in place of the map's
+     *  switch — that is the case where the two disagreed and the card rendered
+     *  past what its band reserved. The full card's own disclosures still
+     *  follow the map, and that is not an oversight: the full card's reserve
+     *  is a bound measured with everything open (cardGeometry.ts), so a card
+     *  drawn with them shut fits a seat sized for them open. */
+    boxExpanded?: boolean;
   };
   if (d.full !== undefined) {
     // The opaque agent id lives ONLY in the title attribute — the visible
@@ -845,7 +862,13 @@ export function SubagentNode({ data }: NodeProps) {
         {d.activity.text}
       </div>
       {(d.lastStatus || d.think) && (
-        <Disclosure label={t(lang, "map.sub.disc")}>
+        // CARD 306: a member of a box the reader threw minimal keeps this shut
+        // whatever the MAP's switch says. Its box reserves the minimal card's
+        // measured height, and an open body renders about 95px past it — which
+        // React Flow does not draw past the box, it CLAMPS, landing the last
+        // band's row on top of the row above it. `boxExpanded` is absent for a
+        // loose card, so the map's switch stays the map's switch.
+        <Disclosure label={t(lang, "map.sub.disc")} expandAll={d.boxExpanded}>
           <div className="pf-panelbox">
             <div className="pf-panelbox__label">{t(lang, "map.sub.order")}</div>
             <div className="pf-prose nowheel">{d.task}</div>

@@ -382,8 +382,17 @@ interface SeatNode {
   id: string;
   type?: string;
   position: { x: number; y: number };
+  /** CARD 306: the seat this ONE node was actually given, where its type does
+   *  not say. A workflow box carries its own switch, so a member of a box
+   *  thrown minimal is a 216x132 card at the minimal pitch while every other
+   *  subagent on the same expanded map is 408x480 — and judged by the type
+   *  alone it reads as five cards lying on top of each other. Measured in the
+   *  running app: twenty such reports on the shipped scenario, none of them
+   *  true, which costs more than the check is worth because the next real one
+   *  is now one line among twenty. */
+  env?: { w: number; h: number };
 }
-const envelopeOf = (id: string, type?: string) => EXPANDED_CARD[id] ?? EXPANDED_CARD[type ?? ""];
+const envelopeOf = (n: SeatNode) => n.env ?? EXPANDED_CARD[n.id] ?? EXPANDED_CARD[n.type ?? ""];
 
 /**
  * Pairs of expanded cards whose reserved seats intersect, as `a/b WxH`.
@@ -395,7 +404,7 @@ const envelopeOf = (id: string, type?: string) => EXPANDED_CARD[id] ?? EXPANDED_
 export function seatCollisions(nodes: readonly SeatNode[]): string[] {
   const boxes = nodes
     .map((n) => {
-      const env = envelopeOf(n.id, n.type);
+      const env = envelopeOf(n);
       return env === undefined ? null : { id: n.id, x: n.position.x, y: n.position.y, ...env };
     })
     .filter((b): b is { id: string; x: number; y: number; w: number; h: number } => b !== null);
@@ -418,7 +427,7 @@ export function oversizeCards(
 ): { id: string; h: number; bound: number }[] {
   const out: { id: string; h: number; bound: number }[] = [];
   for (const m of measured) {
-    const env = envelopeOf(m.id, m.type);
+    const env = envelopeOf({ id: m.id, type: m.type, position: { x: 0, y: 0 } });
     if (env !== undefined && m.h > env.h) out.push({ id: m.id, h: m.h, bound: env.h });
   }
   return out.sort((a, b) => b.h - b.bound - (a.h - a.bound));
@@ -942,10 +951,19 @@ export function sceneToFlow(
     for (const [runId, run] of opts.declared) {
       if (!onMap(runId)) continue;
       const boxId = boxNodeId(runId);
-      // The per-box switch, falling back to the global one. Both stay true:
-      // a reader who flipped the whole map sees every box open, and a reader
-      // who threw one box's switch changes exactly that box.
-      const expandedBox = opts.boxExpanded?.has(boxId) ?? isExpanded;
+      // The per-box switch. The set names the boxes the reader has thrown AWAY
+      // from the global one, so both stay true: a box nobody touched follows
+      // the map, and a thrown box is the map's opposite — minimal on an
+      // expanded map, expanded on a compact one.
+      //
+      // It used to read `opts.boxExpanded?.has(boxId) ?? isExpanded`, which
+      // looks like the same sentence and is not: `??` falls back on undefined,
+      // and FlowMap holds a Set and passes it on every render. An empty Set is
+      // not undefined and `.has` answers false, so the global switch stopped
+      // reaching any box the moment the option was wired up. Measured in the
+      // running app: an expanded map, every box drawing minimal cards, and the
+      // box's own switch offering to expand what the map had already expanded.
+      const expandedBox = opts.boxExpanded?.has(boxId) === true ? !isExpanded : isExpanded;
       boxes.push({
         runId,
         boxId,
@@ -1448,7 +1466,14 @@ export function sceneToFlow(
           parentId: b.boxId,
           extent: "parent",
           position: { x: m.x, y: m.y },
-          data: subCardData(c, b.expandedBox),
+          // The box's own switch travels WITH the card. A minimal card opens
+          // its disclosure off the MAP's switch, and a box thrown minimal on
+          // an expanded map then rendered 227px into the 132 its band reserved
+          // — measured, and `extent: "parent"` does not let that stick out, it
+          // clamps: the last band's row came to rest on top of the row above.
+          // Two switches disagreeing, the geometry following one and the
+          // markup the other.
+          data: { ...subCardData(c, b.expandedBox), boxExpanded: b.expandedBox },
           zIndex: 10,
         });
       }
@@ -1599,8 +1624,29 @@ export function sceneToFlow(
   // have thrown: 14 is a perfectly good number.
   if (!declutter && opts.expanded === true) {
     const world = worldBoxes(nodes as { id: string; position: XY; parentId?: string }[]);
+    // A boxed member is judged against the seat its OWN box gave it, because
+    // its box carries its own switch: on an expanded map a box thrown minimal
+    // holds 216x132 cards at the minimal pitch, and the expanded envelope
+    // would read those five as five cards lying on top of each other.
+    //
+    // Taken off the SEAT rather than re-derived from the switch. Re-deriving
+    // would be a second expression for one number, and the failure it can have
+    // is the invisible direction: an envelope smaller than the seat reports
+    // nothing and hides the collisions that ARE there. There is no second
+    // number to disagree now.
+    const boxedSeat = new Map<string, { w: number; h: number }>();
+    for (const b of boxes) {
+      for (const band of b.layout.bands) {
+        for (const m of band.members) boxedSeat.set(`sub-${m.agentId}`, { w: m.w, h: m.h });
+      }
+    }
     reportSeatCollisions(
-      nodes.map((n) => ({ id: n.id, type: n.type, position: world.get(n.id) ?? n.position })),
+      nodes.map((n) => ({
+        id: n.id,
+        type: n.type,
+        position: world.get(n.id) ?? n.position,
+        ...(boxedSeat.has(n.id) ? { env: boxedSeat.get(n.id) } : {}),
+      })),
     );
   }
   // CARD 306: React Flow REQUIRES a parent to appear before its children, and

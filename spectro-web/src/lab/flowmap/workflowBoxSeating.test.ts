@@ -223,6 +223,24 @@ describe("the seat check reads WORLD rectangles", () => {
     }
     expect(said.filter((m) => m.includes("seated on top of each other"))).toEqual([]);
   });
+
+  it("reports no collision for a box the reader threw MINIMAL on an expanded map", () => {
+    // The check reads every subagent's seat against the EXPANDED envelope,
+    // which is what a subagent is on an expanded map — unless it stands in a
+    // box whose own switch is minimal, and then it is 216x132 seated at the
+    // minimal pitch. Measured in the running app on the shipped scenario:
+    // twenty console errors naming pairs that are not touching, which is worse
+    // than none, because the next real one is now indistinguishable from them.
+    resetEnvelopeMemory();
+    const said: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((m: unknown) => void said.push(String(m)));
+    try {
+      flowOf(EVENTS, { declared: DECL, expanded: true, boxExpanded: new Set([BOX]) });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(said.filter((m) => m.includes("seated on top of each other"))).toEqual([]);
+  });
 });
 
 describe("a boxed agent keeps its rails", () => {
@@ -283,6 +301,39 @@ describe("the per-box switch", () => {
     });
     const w = (id: string) => (flow.nodes.find((n) => n.id === id)!.style as { width: number }).width;
     expect(w(boxNodeId("wf1"))).toBeGreaterThan(w(boxNodeId("wf2")));
+  });
+
+  it("follows the global switch when the reader has thrown NO box's switch", () => {
+    // The state FlowMap is always in: it holds a Set and hands it down on
+    // every render, empty until a switch is clicked. Measured in the running
+    // app: the map was expanded, every box drew minimal cards, and the box's
+    // own switch offered to "expand the agents" that the map had already
+    // expanded. `?? isExpanded` cannot fire against an empty Set — a Set is
+    // not undefined, and `.has` says false — so the global switch reached no
+    // box at all once FlowMap was wired to this option.
+    const flow = flowOf(EVENTS, { declared: DECL, expanded: true, boxExpanded: new Set() });
+    expect((flow.nodes.find((n) => n.id === "sub-a1")!.data as { full?: unknown }).full).toBeDefined();
+  });
+
+  it("throws a box AWAY from the global, in both directions", () => {
+    // The set names the boxes the reader has changed, so on an expanded map a
+    // thrown box goes minimal. Read as "these are the expanded ones" it would
+    // do nothing here, and the switch would be dead on an expanded map.
+    const flow = flowOf(EVENTS, { declared: DECL, expanded: true, boxExpanded: new Set([BOX]) });
+    expect((flow.nodes.find((n) => n.id === "sub-a1")!.data as { full?: unknown }).full).toBeUndefined();
+  });
+
+  it("hands each member its BOX's switch, so the card and the band agree", () => {
+    // Without it the card reads the map's switch and the band reserves off the
+    // box's: measured in the running app at 216x227 rendered into 216x132
+    // reserved, with the last row clamped on top of the one above it.
+    const flow = flowOf(EVENTS, { declared: DECL, expanded: true, boxExpanded: new Set([BOX]) });
+    const kid = flow.nodes.find((n) => n.id === "sub-a1")!.data as { boxExpanded?: boolean };
+    expect(kid.boxExpanded).toBe(false);
+    const loose = flowOf([...EVENTS, spawn("loner")], { declared: DECL }).nodes.find(
+      (n) => n.id === "sub-loner",
+    )!.data as { boxExpanded?: boolean };
+    expect(loose.boxExpanded).toBeUndefined();
   });
 
   it("follows the GLOBAL switch when no per-box choice was made", () => {
