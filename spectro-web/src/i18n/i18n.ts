@@ -1482,6 +1482,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.wf.expand": { de: "Agenten ausklappen", en: "Expand the agents" },
   "map.wf.collapse": { de: "Agenten einklappen", en: "Collapse the agents" },
   "map.wf.empty": { de: "nie betreten", en: "never entered" },
+  // What a box is called when the run it frames is the session itself: there
+  // is no child card to take a name from, and the run's own id ("main") is
+  // this fold's internal spelling rather than a word for a reader.
+  "map.wf.run": { de: "Workflow-Lauf", en: "workflow run" },
   "map.legend.inside": { de: "im Agentensystem", en: "inside the agent system" },
   "map.legend.out": { de: "nach außen (Netz)", en: "outbound (network)" },
   "map.legend.read": { de: "lesen", en: "read" },

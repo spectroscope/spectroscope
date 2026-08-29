@@ -6,6 +6,7 @@
 // local/remote flip literally re-places the LLM inside vs. outside "Dein Mac".
 
 import type { Edge, Node } from "@xyflow/react";
+import { ROOT_AGENT } from "../labScene";
 import type { DiskState, Focus, GateState, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
 import type { AgentDirectory } from "../agentDirectory";
@@ -923,12 +924,23 @@ export function sceneToFlow(
   // A declaration about a run the scene has not drawn is skipped: the box
   // stands where the run's own card stands, and a box for a card the reader
   // has not reached would be a claim about a run that is not on screen.
+  //
+  // ON SCREEN IS TWO CARDS, NOT ONE, and asking only about the first is why no
+  // scenario ever drew a box. A declaration hangs on the node its agents were
+  // spawned under. For an imported run that node is the `Workflow` tool_use's
+  // own child card, so it is in `scene.subagents`. For everything compiled
+  // from the DSL it is the SESSION's agent — `expandSpawn` and `expandFanout`
+  // both write `parentId: "main"` — and a session's agent is never one of its
+  // own children, so `sceneIds` alone answered "not on screen" about the one
+  // card this map always draws. One rule, both readers: the run's node is on
+  // screen when it is a child card the scene folded, or the root agent card.
   const sceneIds = new Set(scene.subagents.map((c) => c.id));
+  const onMap = (runId: string): boolean => runId === ROOT_AGENT || sceneIds.has(runId);
   const unplacedTitle = t(lang, "map.wf.unplaced");
   const boxes: { runId: string; boxId: string; layout: BoxLayout; expandedBox: boolean }[] = [];
   if (opts.declared !== undefined && !declutter) {
     for (const [runId, run] of opts.declared) {
-      if (!sceneIds.has(runId)) continue;
+      if (!onMap(runId)) continue;
       const boxId = boxNodeId(runId);
       // The per-box switch, falling back to the global one. Both stay true:
       // a reader who flipped the whole map sees every box open, and a reader
@@ -944,7 +956,13 @@ export function sceneToFlow(
   }
   /** Every agent a box seated — and the runs themselves, whose cards the boxes
    *  ARE. Both come out of the concurrency pool: a member drawn twice would be
-   *  two agents, and a run drawn beside its own box would be one run twice. */
+   *  two agents, and a run drawn beside its own box would be one run twice.
+   *
+   *  A run hanging on the ROOT agent adds "main" to this set and nothing to
+   *  the map: "main" is never in `scene.subagents`, so the pool it filters had
+   *  no such card to lose. The session's agent card stays exactly where it is
+   *  — it is the hub every rail on the map runs through, and it is not the
+   *  run's card in the sense the sentence above means. */
   const boxed = new Set<string>();
   for (const b of boxes) {
     boxed.add(b.runId);
@@ -1378,7 +1396,12 @@ export function sceneToFlow(
         // What the box NAMES: the run, how far through its phases it is, how
         // many agents stand in it, and how it is doing. The run's own card is
         // gone from the pool, so everything that card said has to be here.
-        title: runCard?.task ?? b.runId,
+        //
+        // No card at all is the root-hung run: the session IS the run, and its
+        // agent card is a hub rather than a name for one. It gets the
+        // translated word instead of the fold's internal id — "main" on a box
+        // in front of a reader is this file talking to itself.
+        title: runCard?.task ?? t(lang, "map.wf.run"),
         phasesTotal: run.phases.length,
         phasesEntered: run.phases.filter((ph) => ph.members.some((m) => m.startedAt !== null)).length,
         agents: b.layout.placed.length,
