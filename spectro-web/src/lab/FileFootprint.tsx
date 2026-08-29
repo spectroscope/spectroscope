@@ -93,9 +93,10 @@ export function FileFootprint(props: {
       ? undefined
       : (touch: FileTouch): void => {
           const ev = touch.firstEvent;
-          const agentId = typeof (ev as { agentId?: unknown }).agentId === "string"
-            ? (ev as { agentId: string }).agentId
-            : "";
+          const agentId =
+            typeof (ev as { agentId?: unknown }).agentId === "string"
+              ? (ev as { agentId: string }).agentId
+              : "";
           onFocusEvent(agentId, ev);
         };
 
@@ -132,9 +133,7 @@ export function FileFootprint(props: {
           the list, not only about an empty one. */}
       {shellNote !== null && fp.touches.length > 0 && <p className="lab-files-note">{shellNote}</p>}
       {root !== null && fp.touches.length > 0 && (
-        <p className="lab-files-note">
-          {t(lang, "lab.files.rootNote", { root: workspaceBasename(root) })}
-        </p>
+        <p className="lab-files-note">{t(lang, "lab.files.rootNote", { root: workspaceBasename(root) })}</p>
       )}
     </div>
   );

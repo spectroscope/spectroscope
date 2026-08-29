@@ -62,11 +62,7 @@ export function LabDock(props: {
         {tab === "ctx" && <ContextPeak applied={applied} embedded />}
         {tab === "msg" && <HandoverLane applied={applied} onFocusEvent={onFocusEvent} />}
         {tab === "files" && (
-          <FileFootprint
-            applied={applied}
-            workspaceRoot={workspaceRoot}
-            onFocusEvent={onFocusEvent}
-          />
+          <FileFootprint applied={applied} workspaceRoot={workspaceRoot} onFocusEvent={onFocusEvent} />
         )}
       </div>
     </aside>

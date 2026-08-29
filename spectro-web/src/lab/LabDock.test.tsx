@@ -169,10 +169,7 @@ describe("the handovers panel", () => {
 
 describe("the files panel", () => {
   it("lists a touched path with the agent that touched it", () => {
-    const html = dock("files", [
-      start("main", 0),
-      call("main", "Write", { file_path: "src/thing.ts" }, 10),
-    ]);
+    const html = dock("files", [start("main", 0), call("main", "Write", { file_path: "src/thing.ts" }, 10)]);
     expect(html).toContain("src/thing.ts");
     expect(html).toContain(t(lang, "lab.files.writtenBy"));
     // Anchored to the element boundary: "1 paths" CONTAINS "1 path", so a bare

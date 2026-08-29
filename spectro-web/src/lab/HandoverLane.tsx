@@ -114,9 +114,7 @@ export function HandoverLane(props: {
   // row with none through (TraceView: `e.agentId !== undefined` guards it), so
   // the focused row can never be hidden by the scope this sets.
   const open =
-    onFocusEvent === undefined
-      ? undefined
-      : (msg: LaneMessage): void => onFocusEvent(msg.from, msg.event);
+    onFocusEvent === undefined ? undefined : (msg: LaneMessage): void => onFocusEvent(msg.from, msg.event);
 
   return (
     <div className="lab-msg">

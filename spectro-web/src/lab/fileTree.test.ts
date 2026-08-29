@@ -155,10 +155,7 @@ describe("fileFootprint — what it refuses to record", () => {
   });
 
   it("ignores a Glob whose pattern is blank or missing", () => {
-    const fp = fileFootprint([
-      call("main", "Glob", { pattern: "   " }, 10),
-      call("main", "Glob", {}, 20),
-    ]);
+    const fp = fileFootprint([call("main", "Glob", { pattern: "   " }, 10), call("main", "Glob", {}, 20)]);
     expect(fp.touches).toEqual([]);
   });
 

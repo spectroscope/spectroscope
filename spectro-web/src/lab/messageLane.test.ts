@@ -64,11 +64,7 @@ describe("messageLanes — direction comes from the spawn tree", () => {
   it("uses the TREE even when the role word disagrees with it", () => {
     // A "result" that in fact runs parent -> child. The spawn tree says down;
     // the role word would say up. The tree wins.
-    const events = [
-      start("main", 0),
-      spawn("kid", "t", 10),
-      msg("main", "kid", "result", "here you go", 20),
-    ];
+    const events = [start("main", 0), spawn("kid", "t", 10), msg("main", "kid", "result", "here you go", 20)];
     const { messages } = messageLanes(events);
     expect(messages[0].direction).toBe("down");
   });
