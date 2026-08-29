@@ -10,13 +10,47 @@
 // DECLARATION, the declaration against the STREAM, and the stream against the
 // BOX that draws it. Break any one link and exactly one case goes red.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
+
+// The lens reaches for React Flow's runtime. This stand-in RENDERS THE NODES
+// through the lens's own node-type map — the plain children-only mock the
+// other lens suites use draws no card at all, and the first run of the case
+// below reported zero rows for exactly that reason.
+vi.mock("@xyflow/react", () => ({
+  ReactFlow: ({
+    children,
+    nodes,
+    nodeTypes,
+  }: {
+    children?: ReactNode;
+    nodes?: { id: string; type: string; data: unknown }[];
+    nodeTypes?: Record<string, (p: { data: unknown; id: string }) => ReactNode>;
+  }) => (
+    <div>
+      {(nodes ?? []).map((n) => (
+        <div key={n.id}>{nodeTypes?.[n.type]?.({ data: n.data, id: n.id })}</div>
+      ))}
+      {children}
+    </div>
+  ),
+  Background: () => null,
+  Controls: () => null,
+  ViewportPortal: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  Handle: () => null,
+  Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
+  useReactFlow: () => ({ fitView: () => {} }),
+}));
+
 import { SCENARIOS } from "./registry";
 import { compile, declarationOf } from "./compile";
 import { loc } from "./dsl";
 import { lensPhaseNodeId, spawnTree } from "../lab/spawnTree";
 import { layoutStateGraph } from "../stategraph/layout";
 import { SEATS_MAX_EXPANDED } from "../lab/flowmap/workerGrid";
+import { advanceScene, initialScene } from "../lab/labScene";
+import { WorkflowLens } from "../lab/workflow/WorkflowLens";
 
 const dsl = SCENARIOS.find((s) => s.id === "fanout-workflow")!;
 
@@ -125,6 +159,30 @@ describe("the fan-out workflow scenario", () => {
     // A row that fell back to its raw id is a row the stream never named.
     const ids = new Set((dsl.phases ?? [])[1].agents);
     for (const r of rows) expect(ids.has(r), r).toBe(false);
+  });
+
+  it("renders the wide box with one row per agent the phase declared", () => {
+    // Every case above stops at the tree the lens is BUILT from. This one
+    // renders the assembled lens, because a box that computes eight members
+    // and draws six would leave all of them green.
+    for (const lang of ["en", "de"] as const) {
+      const events = compile(dsl, lang);
+      const scene = events.reduce(advanceScene, initialScene());
+      const html = renderToStaticMarkup(
+        <WorkflowLens events={events} applied={events} scene={scene} declared={declarationOf(dsl, lang)} />,
+      );
+      // One <li class="wf-agent…"> per agent, across all three boxes.
+      expect((html.match(/class="wf-agent /g) ?? []).length, lang).toBe(declaredTotal());
+      // And every worker of the wide phase is named on screen, by the task.
+      // Read out of the LABEL SPAN, not out of the whole page: the row's
+      // tooltip carries the same words, so a card printing the raw id in the
+      // visible span passed a plain `toContain` — measured, not guessed.
+      const shown = [...html.matchAll(/class="wf-agent-label">([^<]*)</g)].map((m) => m[1]);
+      const tree = spawnTree(events, declarationOf(dsl, lang));
+      const wide = tree.meta[lensPhaseNodeId("main", 1)].members.map((m) => m.label);
+      expect(shown, lang).toHaveLength(declaredTotal());
+      for (const label of wide) expect(shown, `${lang} ${label}`).toContain(label);
+    }
   });
 
   it("captions all three columns, in both locales, clear of the boxes", () => {
