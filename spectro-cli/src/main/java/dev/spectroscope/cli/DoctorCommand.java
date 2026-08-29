@@ -240,6 +240,11 @@ public final class DoctorCommand implements Callable<Integer> {
                             probe(endpoint + "/v1/models"),
                             SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(config.provider()))));
                 }
+                case LLAMACPP -> {
+                    String endpoint = config.endpointFor("llamacpp");
+                    emit(llamaCppLines(endpoint, status(endpoint + "/health"),
+                            propsWindow(endpoint + "/props")));
+                }
                 case BUILT_IN -> emit(builtInProviderLines(LlamaServerBinary.find(),
                         config.model(),
                         LocalCatalog.bundled().resolve(config.model()),
@@ -424,7 +429,10 @@ public final class DoctorCommand implements Callable<Integer> {
         /** An OpenAI-compatible endpoint: a cheap GET against {@code /v1/models}. */
         OPENAI_COMPAT,
         /** The built-in provider: a llama-server binary and a model file on disk. */
-        BUILT_IN
+        BUILT_IN,
+        /** llama.cpp: ask {@code GET /health} whether it is ready, and
+         *  {@code GET /props} what the loaded model's window is (card 312). */
+        LLAMACPP
     }
 
     /**
@@ -443,6 +451,10 @@ public final class DoctorCommand implements Callable<Integer> {
             case "anthropic", "openrouter", "gemini" -> ProviderCheck.API_KEY;
             case "ollama" -> ProviderCheck.OLLAMA;
             case "openai", "lmstudio" -> ProviderCheck.OPENAI_COMPAT;
+            // Not OPENAI_COMPAT: llama.cpp has a real readiness route, and the
+            // shared probe's "anything under 500 answers" rule reads /health's
+            // 503-while-loading as an absent server.
+            case "llamacpp" -> ProviderCheck.LLAMACPP;
             case "spectro-local" -> ProviderCheck.BUILT_IN;
             default -> null;
         };
@@ -583,12 +595,13 @@ public final class DoctorCommand implements Callable<Integer> {
      * backends and to nobody else).
      *
      * @param provider the configured provider name
-     * @return "ollamaBaseUrl" | "lmstudioBaseUrl" | null
+     * @return "ollamaBaseUrl" | "lmstudioBaseUrl" | "llamacppBaseUrl" | null
      */
     static String addressFieldFor(String provider) {
         return switch (provider) {
             case "ollama" -> "ollamaBaseUrl";
             case "lmstudio" -> "lmstudioBaseUrl";
+            case "llamacpp" -> "llamacppBaseUrl";
             default -> null;
         };
     }
@@ -667,6 +680,13 @@ public final class DoctorCommand implements Callable<Integer> {
                     + " a vision model (e.g. ollama pull qwen3-vl); a text-only model fails fast";
             case "lmstudio" -> "vision: lmstudio serves whatever model is loaded — attach images"
                     + " only when that one is vision-capable; a text-only model fails fast";
+            // llama.cpp is the one remote backend that answers this itself:
+            // /props carries modalities.vision for the loaded model (measured
+            // 2026-08-30 on b10107, where it read false).
+            case "llamacpp" -> "vision: llama-server answers this itself — GET /props reports"
+                    + " modalities.vision for the model it has loaded; a server started"
+                    + " without an --mmproj projector reports false and an attached image"
+                    + " never reaches the model";
             // No model name here on purpose: the answer does not depend on one.
             // Naming the CONFIGURED model would also print the wrong id whenever
             // the catalogue swapped it out one line above.
@@ -904,6 +924,91 @@ public final class DoctorCommand implements Callable<Integer> {
      * @param url the endpoint to hit with short connect/request timeouts
      * @return true for any status below 500; false for 5xx, timeouts, or refusal
      */
+    /**
+     * llama.cpp's own answers, assembled pure.
+     *
+     * <p>{@code GET /health} is a readiness route, not a reachability one, and
+     * that is the whole reason this provider does not share
+     * {@link #openAiCompatLines}: it answers <b>503</b> with
+     * {@code {"error":{"code":503,"message":"Loading model"}}} while weights are
+     * still being read. Doctor's shared probe treats anything from 500 up as
+     * unreachable, so a healthy server mid-load would have been reported as
+     * missing and the operator sent looking for a process already running.</p>
+     *
+     * @param endpoint     the address a run would dial
+     * @param healthStatus the HTTP status {@code /health} answered, or 0 when
+     *                     nothing answered at all
+     * @param loadedWindow the window {@code /props} reported, or 0 when unknown
+     * @return the lines to print
+     */
+    static List<Line> llamaCppLines(String endpoint, int healthStatus, int loadedWindow) {
+        List<Line> lines = new java.util.ArrayList<>();
+        lines.add(switch (healthStatus) {
+            case 200 -> new Line(Kind.PASS, "llama-server at " + endpoint + " is ready");
+            case 503 -> new Line(Kind.INFO, "llama-server at " + endpoint
+                    + " is up but still loading its model — it answers /health with 503"
+                    + " until the weights are in; try again in a moment");
+            case 0 -> new Line(Kind.FAIL, "llama-server at " + endpoint + " — unreachable"
+                    + " (nothing answered /health; start it with"
+                    + " llama-server -m <model.gguf> --port 8080)");
+            default -> new Line(Kind.FAIL, "llama-server at " + endpoint
+                    + " answered /health with " + healthStatus
+                    + " — that is not a llama.cpp health route; check the address");
+        });
+        // 0 means "nothing was learned", never "a zero-token window". Printing
+        // it as a size would be a measurement doctor never made.
+        lines.add(loadedWindow > 0
+                ? new Line(Kind.INFO, "context: " + loadedWindow + " tokens, measured — "
+                        + "llama-server reports the window the model is actually loaded at"
+                        + " (GET /props), so compaction is not sized from a published table")
+                : new Line(Kind.INFO, "context: not reported — /props said nothing, so"
+                        + " compaction falls back to the published limits for the model id"));
+        lines.add(new Line(Kind.INFO, "model: one llama-server serves the one model it was"
+                + " started with and ignores the model field in a request — the configured"
+                + " id is a label, not a chooser"));
+        return lines;
+    }
+
+    /** The HTTP status of one best-effort GET — 0 when nothing answered. Unlike
+     *  {@link #probe} this keeps the CODE, because llama.cpp's /health says
+     *  "loading" with a 503 and that is not the same thing as absent.
+     *  @param url the absolute URL to ask
+     *  @return the status code, or 0 when the request never completed */
+    private static int status(String url) {
+        try (HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(2)).build()) {
+            return client.send(
+                    HttpRequest.newBuilder(URI.create(url)).GET()
+                            .timeout(Duration.ofSeconds(3)).build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode();
+        } catch (Exception unreachable) {
+            return 0;
+        }
+    }
+
+    /** The loaded window from one best-effort {@code GET /props}. Never throws:
+     *  a doctor line may not fail the doctor.
+     *  @param url the absolute /props URL
+     *  @return the reported window, or 0 when nothing was learned */
+    private static int propsWindow(String url) {
+        try (HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(2)).build()) {
+            HttpResponse<String> response = client.send(
+                    HttpRequest.newBuilder(URI.create(url)).GET()
+                            .timeout(Duration.ofSeconds(3)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                return 0;
+            }
+            // The field path lives in ONE place (card 312): the provider that
+            // already reads it for the compactor.
+            return dev.spectroscope.core.provider.OpenAiCompatProvider.loadedWindowFromProps(
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.body()));
+        } catch (Exception nothingLearned) {
+            return 0;
+        }
+    }
+
     private static boolean probe(String url) {
         try (HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(2)).build()) {

@@ -354,10 +354,14 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * spells "unset" as {@code -1} in neighbouring fields, and a negative window
      * would reach the compactor as a negative divisor.</p>
      *
+     * <p>Public so the doctor reads the window through THIS function rather than
+     * spelling the field path a second time; a shape that changes must break one
+     * place, not drift between two.</p>
+     *
      * @param props the parsed {@code /props} body, or null
      * @return the loaded context length in tokens, or 0 when nothing is known
      */
-    static int loadedWindowFromProps(JsonNode props) {
+    public static int loadedWindowFromProps(JsonNode props) {
         if (props == null) {
             return 0;
         }
