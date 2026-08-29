@@ -38,6 +38,21 @@ export interface Topology {
    *  Everything downstream (in-rank ordering, coordinates, routing, skip
    *  lanes, the `__end__` last-column rule) works off the ranks unchanged. */
   ranks?: ReadonlyMap<string, number>;
+  /** Optional rank captions (card 302): a caller whose columns MEAN something
+   *  says so, and the layout carries the words to `rankLabels` instead of the
+   *  renderer having to reach back for them. The state graph hands none in and
+   *  keeps printing "rank N" — the number IS the whole truth about a column
+   *  that came out of a longest-path ranking. The workflow lens hands in the
+   *  script's declared phases, which existed before the run did. */
+  rankCaptions?: ReadonlyMap<number, RankCaption>;
+}
+
+/** What a rank is CALLED, when the caller knows. `detail` is the phase's own
+ *  second line — kept apart from the title so a renderer can drop it rather
+ *  than having to split a string somebody joined. */
+export interface RankCaption {
+  title: string;
+  detail: string | null;
 }
 
 export interface PlacedNode {
@@ -90,6 +105,8 @@ export interface RankLabel {
   rank: number;
   x: number;
   y: number;
+  /** The caller's own words for this column, when it handed any in. */
+  caption?: RankCaption;
 }
 
 export interface StateGraphLayout {
@@ -346,9 +363,11 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     const inRank = placed.filter((n) => n.rank === r);
     if (inRank.length === 0) continue;
     const first = inRank.reduce((a, b) => ((horiz ? b.y < a.y : b.x < a.x) ? b : a));
-    rankLabels.push(
-      horiz ? { rank: r, x: first.x, y: MARGIN - 12 } : { rank: r, x: MARGIN - 22, y: first.y - 8 },
-    );
+    const caption = topo.rankCaptions?.get(r);
+    rankLabels.push({
+      ...(horiz ? { rank: r, x: first.x, y: MARGIN - 12 } : { rank: r, x: MARGIN - 22, y: first.y - 8 }),
+      ...(caption !== undefined ? { caption } : {}),
+    });
   }
 
   // The node field's bounds. Every arc is aimed to clear them, which is what
