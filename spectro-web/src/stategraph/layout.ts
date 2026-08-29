@@ -408,6 +408,29 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     });
   });
 
+  // Card 305: the ALONG axis stops being a constant too. It stepped by
+  // `NW + gapAlong` (or `NH + gapAlong`) whatever stood in the rank, so
+  // NEITHER orientation reacted to a box growing along it — a tall box in
+  // horizontal was safe only because it happened to grow across the packed
+  // axis instead. A rank now takes the length of its LONGEST box.
+  //
+  // The rule reduces to the old constant exactly when every box is the cell,
+  // which is what keeps the state graph on its pixels (`layoutIdentity`), and
+  // it accumulates FORWARDS only: an oversized rank pushes what comes after it
+  // and never touches what came before, so one big node cannot re-centre a run.
+  // A rank nothing landed in — supplied ranks can leave gaps — still takes one
+  // cell, because that is what the constant gave it.
+  const alongOf = (id: string): number => (horiz ? widthOf(id) : heightOf(id));
+  const defaultAlong = horiz ? NW : NH;
+  const rankStart: number[] = [];
+  let alongAt = MARGIN;
+  for (let r = 0; r <= maxRank; r++) {
+    rankStart.push(alongAt);
+    const layer = layers[r];
+    const extent = layer.length === 0 ? defaultAlong : Math.max(...layer.map(alongOf));
+    alongAt += extent + gapAlong;
+  }
+
   const placed: PlacedNode[] = nodes.map((n) => {
     const r = rank.get(n.id)!;
     const a = across.get(n.id)!;
@@ -416,8 +439,8 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       label: n.label,
       rank: r,
       slot: slotOf.get(n.id)!,
-      x: horiz ? MARGIN + r * (NW + gapAlong) : a,
-      y: horiz ? a : MARGIN + r * (NH + gapAlong),
+      x: horiz ? rankStart[r] : a,
+      y: horiz ? a : rankStart[r],
       w: widthOf(n.id),
       h: horiz ? heightOf(n.id) : NH,
     };
