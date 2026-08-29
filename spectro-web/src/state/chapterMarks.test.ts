@@ -7,14 +7,16 @@
 
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import type { ChapterMark } from "./stepper";
+import type { ChapterMark, MarkPosition } from "./stepper";
 import {
+  MARK_MIN_GAP_PCT,
   SPEED_FACTORS,
   chapterMarks,
   clockLabel,
   intervalForFactor,
   markPositions,
   runClock,
+  thinMarks,
   speedFactorOf,
   stepBoundaries,
   MAX_INTERVAL_MS,
@@ -297,5 +299,98 @@ describe("the speed pills say what they do", () => {
     expect(speedFactorOf(DEFAULT_INTERVAL_MS)).toBe(1);
     expect(speedFactorOf(250)).toBe(5);
     expect(speedFactorOf(1000)).toBeNull();
+  });
+});
+
+// ---- the fix round: a wall of ticks is not a chapter list ------------------
+//
+// The first build drew every mark. Measured with these very functions on a
+// plain 60-turn single-agent run — 422 events, 242 coarse steps — that is 61
+// ticks, 1.65% apart, and at the 11px hit box lab.css gives them they touch
+// each other on any bar narrower than 671px. The density is therefore a rule
+// of its own, pure and pinned, rather than a property of whatever the browser
+// happened to do.
+
+/** The same plain run the fix round was measured on: 60 turns, one agent, no
+ *  spawns — a text block, a tool call and its result per turn. */
+function plainRun(turns: number): RunEvent[] {
+  const out: RunEvent[] = [ev({ type: "run_start", runId: "r", agentId: "main", prompt: "p", ts: T })];
+  for (let i = 1; i <= turns; i++) {
+    out.push(ev({ type: "turn_start", agentId: "main", turn: i, ts: T + i * 1000 }));
+    for (let d = 0; d < 4; d++) {
+      out.push(ev({ type: "text_delta", agentId: "main", text: "x", ts: T + i * 1000 }));
+    }
+    out.push(
+      ev({
+        type: "tool_call",
+        agentId: "main",
+        callId: `c${i}`,
+        name: "read_file",
+        input: {},
+        ts: T + i * 1000,
+      }),
+    );
+    out.push(ev({ type: "tool_result", agentId: "main", callId: `c${i}`, ok: true, ts: T + i * 1000 }));
+  }
+  out.push(ev({ type: "run_end", runId: "r", stopReason: "end_turn", ts: T + turns * 1000 }));
+  return out;
+}
+
+/** A placed mark at a percentage, which is all thinMarks reads. */
+const at = (pct: number): MarkPosition => ({
+  mark: { at: pct, kind: "turn", labelKey: "lab.mark.turn", vars: { n: pct } },
+  index: pct,
+  pct,
+});
+
+describe("thinMarks — the bar carries chapters, not a picket fence", () => {
+  it("drops a tick that stands closer to its neighbour than the floor", () => {
+    expect(thinMarks([at(0), at(1), at(10)], 2).map((p) => p.pct)).toEqual([1, 10]);
+  });
+
+  it("keeps a tick that stands exactly the floor away", () => {
+    // The >= / > bite: at exactly the floor the ticks no longer overlap, so
+    // dropping one here would thin the bar for nothing.
+    expect(thinMarks([at(0), at(2), at(4)], 2).map((p) => p.pct)).toEqual([0, 2, 4]);
+  });
+
+  it("never lets a crowd swallow the last chapter of the run", () => {
+    // The end of a run is the one tick a presenter always jumps to. Thinning
+    // from the front would keep 99 and throw 100 away.
+    const kept = thinMarks([at(0), at(99), at(99.5), at(100)], 2);
+    expect(kept[kept.length - 1].pct).toBe(100);
+  });
+
+  it("hands the ticks back in the run's own order", () => {
+    const kept = thinMarks([at(0), at(5), at(50), at(100)], 2).map((p) => p.pct);
+    expect(kept).toEqual([...kept].sort((a, b) => a - b));
+    expect(kept).toEqual([0, 5, 50, 100]);
+  });
+
+  it("gives nothing back for a run with no chapters", () => {
+    expect(thinMarks([], 2)).toEqual([]);
+  });
+
+  it("thins the 60-turn run the wall was measured on", () => {
+    const events = plainRun(60);
+    const bounds = stepBoundaries(events);
+    const raw = markPositions(chapterMarks(events), bounds);
+    expect(events).toHaveLength(422);
+    expect(bounds.length - 1).toBe(242);
+    expect(raw).toHaveLength(61); // the wall this rule exists to prevent
+    const kept = thinMarks(raw, MARK_MIN_GAP_PCT);
+    expect(kept.length).toBeLessThan(raw.length);
+    // The rule itself: no two ticks closer than the floor, whatever the run.
+    for (let i = 1; i < kept.length; i++) {
+      expect(kept[i].pct - kept[i - 1].pct).toBeGreaterThanOrEqual(MARK_MIN_GAP_PCT);
+    }
+  });
+
+  it("bounds how many ticks any run can put on the bar", () => {
+    // A floor of g% admits at most 100/g + 1 ticks, so the count cannot grow
+    // with the run the way 61 did.
+    const ceiling = Math.floor(100 / MARK_MIN_GAP_PCT) + 1;
+    const dense = Array.from({ length: 400 }, (_, i) => at((i / 399) * 100));
+    expect(thinMarks(dense, MARK_MIN_GAP_PCT).length).toBeLessThanOrEqual(ceiling);
   });
 });

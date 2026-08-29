@@ -317,6 +317,40 @@ export function markPositions(marks: readonly ChapterMark[], boundaries: readonl
   });
 }
 
+/**
+ * The narrowest gap two ticks may keep, in percent of the scrub bar.
+ *
+ * Not a taste question. A tick's clickable box is 11px wide (lab.css
+ * `.lab-mark`), so two ticks closer than that overlap and the nearer half of
+ * each stops being reachable. Measured on a plain 60-turn single-agent run —
+ * 422 events, 242 coarse steps, the "several hundred coarse steps" this card
+ * was written for — every turn drew a tick: 61 of them, 1.65% apart, which is
+ * 9.9px on a 600px bar. At 2% they stand 12px apart on that same bar, one hit
+ * box clear of each other, and no run can put more than 51 of them up.
+ */
+export const MARK_MIN_GAP_PCT = 2;
+
+/**
+ * Thin placed marks down to ticks a reader can tell apart and a pointer can
+ * hit, dropping the ones that crowd their neighbour.
+ *
+ * Read from the END backwards, so the last chapter of the run always survives:
+ * it is the tick a presenter jumps to, and thinning from the front would keep
+ * the turn just before the finish and throw the finish away.
+ *
+ * @param marks placed marks, in the run's own order
+ * @param minGapPct the floor, in percent of the bar
+ * @return the survivors, still in the run's order
+ */
+export function thinMarks(marks: readonly MarkPosition[], minGapPct: number): MarkPosition[] {
+  const kept: MarkPosition[] = [];
+  for (let i = marks.length - 1; i >= 0; i -= 1) {
+    const m = marks[i];
+    if (kept.length === 0 || kept[kept.length - 1].pct - m.pct >= minGapPct) kept.push(m);
+  }
+  return kept.reverse();
+}
+
 /** The run's wall clock, in milliseconds. */
 export interface RunClock {
   elapsedMs: number;
