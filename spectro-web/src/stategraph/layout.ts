@@ -462,8 +462,17 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   // lower of the two keeps the caption above whatever the column turned out
   // to hold, and with uniform heights first.y >= MARGIN always holds (the
   // packing reduces to first.y = MARGIN + (Lmax-L)*(NH+gapCross)/2), so the
-  // state graph's own captions do not move a pixel. Vertical needs no such
-  // clamp: it refuses the height override outright and its widths are uniform.
+  // state graph's own captions do not move a pixel.
+  //
+  // VERTICAL NOW NEEDS THE SAME CEILING, and it did not before (card 305).
+  // MARGIN-22 was a bare constant there, and while widths were uniform that
+  // was right for the same reason MARGIN-12 was right before card 302: the
+  // widest row starts at exactly MARGIN, every narrower row starts further in,
+  // so first.x >= MARGIN always held. Per-node width ends that. Measured on a
+  // row of three with the middle box at 400 wide: the row's leftmost box moves
+  // from x=40 to x=-94 while the caption stays at x=18 — inside that box,
+  // which spans -94 to 38 — and the overlay renders on top of its heading.
+  // Same defect, same shape, same fix, so the two paths now read alike.
   const rankLabels: RankLabel[] = [];
   for (let r = 0; r <= maxRank; r++) {
     const inRank = placed.filter((n) => n.rank === r);
@@ -473,7 +482,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     rankLabels.push({
       ...(horiz
         ? { rank: r, x: first.x, y: Math.min(MARGIN - 12, first.y - 12) }
-        : { rank: r, x: MARGIN - 22, y: first.y - 8 }),
+        : { rank: r, x: Math.min(MARGIN - 22, first.x - 22), y: first.y - 8 }),
       ...(caption !== undefined ? { caption } : {}),
     });
   }

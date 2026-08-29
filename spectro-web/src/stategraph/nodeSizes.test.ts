@@ -176,3 +176,62 @@ describe("boxes of stated sizes still never overlap", () => {
     }
   });
 });
+
+/** One rank of three with captions, so a row's caption has a row that can grow
+ *  out from under it. */
+const CAPTIONED: Topology = {
+  entry: "root",
+  nodes: ["root", "a", "b", "c"].map((id) => ({ id, label: id })),
+  edges: [
+    { from: "root", to: "a", kind: "direct" },
+    { from: "root", to: "b", kind: "direct" },
+    { from: "root", to: "c", kind: "direct" },
+  ],
+  rankCaptions: new Map([
+    [0, { title: "Plan", detail: "one scout" }],
+    [1, { title: "Survey", detail: null }],
+  ]),
+};
+
+const labelAt = (l: ReturnType<typeof layoutStateGraph>, rank: number) =>
+  l.rankLabels.find((x) => x.rank === rank)!;
+
+describe("a vertical row's caption against a box wider than the cell", () => {
+  // The horizontal path clamps its caption to `min(MARGIN - 12, first.y - 12)`
+  // because a packed COLUMN can start above the margin (card 302). Vertical
+  // kept a bare constant `MARGIN - 22`, and that was correct while widths were
+  // uniform: with every box a cell, the widest row starts at exactly MARGIN
+  // and every narrower row starts further in, so `first.x >= MARGIN` always
+  // held — the same equality that made the horizontal clamp a no-op there.
+  //
+  // Per-node width breaks it, and the measurement is this topology: with `b`
+  // at 400 the row's leftmost box moves from x=40 to x=-94 while the caption
+  // stays at x=18 — which is INSIDE that box, spanning -94 to 38. The overlay
+  // renders after the nodes in the same transformed viewport, so it lands on
+  // top of the heading, exactly the way it did horizontally before card 302.
+
+  it("steps out of the way of a row grown past the caption's own line", () => {
+    const l = layoutStateGraph({ ...CAPTIONED, sizes: new Map([["b", { w: 400 }]]) }, "vertical");
+    const first = l.nodes.filter((n) => n.rank === 1).reduce((p, q) => (q.x < p.x ? q : p));
+    expect(first.x).toBeLessThan(40);
+    expect(labelAt(l, 1).x).toBeLessThan(first.x);
+  });
+
+  it("leaves the caption of a row whose boxes did not grow where it was", () => {
+    // The other half, bitten apart: a caption must not chase a box outwards.
+    // Rank 0 holds one ordinary node in the same picture as the wide row.
+    const l = layoutStateGraph({ ...CAPTIONED, sizes: new Map([["b", { w: 400 }]]) }, "vertical");
+    expect(labelAt(l, 0).x).toBe(18);
+  });
+
+  it("does not move a vertical caption in a topology that states no sizes", () => {
+    // The state graph's own vertical pictures ride on this. Rank 0 holds one
+    // node against a row of three, so its box sits well to the RIGHT of the
+    // margin (x=212). A clamp that simply followed the box would drag this
+    // caption across the canvas, and a chain — every row the same width — would
+    // never notice.
+    const plain = layoutStateGraph(CAPTIONED, "vertical");
+    expect(plain.nodes.find((n) => n.id === "root")!.x).toBeGreaterThan(40);
+    for (const l of plain.rankLabels) expect(l.x).toBe(18);
+  });
+});
