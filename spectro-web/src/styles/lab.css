@@ -826,3 +826,208 @@
   font-size: var(--fs-11);
   color: var(--text-dim);
 }
+
+/* ---- the dock's tab strip (card 301) ---- */
+.lab-dock-tabs {
+  display: flex;
+  gap: var(--sp-1);
+}
+.lab-dock-tab {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-faint);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-dock-tab:hover {
+  color: var(--text-dim);
+}
+/* Colour rides on the LINE, per the house rule. */
+.lab-dock-tab.is-on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- A. handovers (card 301) ---- */
+.lab-msg-hint,
+.lab-msg-empty {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lab-msg-lanes,
+.lab-msg-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lab-msg-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.lab-msg-lane-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+}
+.lab-msg-tag {
+  font-size: var(--fs-11);
+}
+.lab-msg-lane-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-msg-state {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.lab-msg-state--failed {
+  color: var(--error);
+}
+.lab-msg-lane-counts {
+  margin: var(--sp-1) 0 var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.lab-msg-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  /* The lane's own line: the thread the handovers hang off. */
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+}
+.lab-msg-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.lab-msg-open:hover {
+  background: var(--surface-2);
+}
+.lab-msg-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-11);
+}
+.lab-msg-arrow {
+  color: var(--text-dim);
+}
+/* A guessed direction is dimmed and marked — never drawn as a fact. */
+.lab-msg-arrow--guessed {
+  color: var(--text-faint);
+  border-bottom: 1px dotted var(--border);
+}
+.lab-msg-role {
+  color: var(--text-faint);
+  font-size: var(--fs-11);
+}
+.lab-msg-text {
+  font-size: var(--fs-12);
+  line-height: 1.45;
+  /* The handover's own words, wrapped, clamped to keep a lane scannable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lab-msg-meta {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+
+/* ---- B. file footprint (card 301) ---- */
+.lab-files-hint,
+.lab-files-empty,
+.lab-files-note {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lab-files-note {
+  margin: var(--sp-3) 0 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+.lab-files-count {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.lab-files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.lab-files-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.lab-files-open:hover {
+  background: var(--surface-2);
+}
+.lab-files-path {
+  font-size: var(--fs-11);
+  overflow-wrap: anywhere;
+}
+/* A pattern is not a file, and does not get to look like one. */
+.lab-files-path--pattern {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.lab-files-sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-size: var(--fs-11);
+}
+.lab-files-side {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.lab-files-side-label {
+  color: var(--text-faint);
+}
+.lab-files-badge {
+  font-size: var(--fs-11);
+}

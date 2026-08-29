@@ -2527,6 +2527,11 @@ export function App() {
               onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
               onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
               sendClient={sendClient}
+              /* Card 301: the dock's handover and file rows are clickable, and
+                 they use the SAME seam the work panel and the fleet use — a
+                 fourth way to reach a trace row would be a fourth thing to
+                 keep in step. */
+              onFocusEvent={focusInTrace}
             />
           )
         ) : tab === "browser" ? (
