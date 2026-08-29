@@ -22,6 +22,7 @@ import type { RunEvent } from "../events";
 import { detectAndLoad, type ImportKind, type ImportSource } from "./detect";
 import { claudeCodeWithOrigin } from "./claudeCode";
 import { readSubagentTranscript, type SubagentTranscript } from "./subagentFile";
+import { clipMiddle } from "../lab/labScene";
 
 /** One child's two files, already read to text. The meta arrives as raw text
  *  because reading it is this module's job — a caller that parsed it would
@@ -29,6 +30,18 @@ import { readSubagentTranscript, type SubagentTranscript } from "./subagentFile"
 export interface SidecarText {
   jsonlText: string;
   metaJson: string;
+  /** The workflow run whose directory the sidecar sat in, when the pick
+   *  carried a path to read one from (card 297). A workflow child's meta is
+   *  the WHOLE meta — `{"agentType":"workflow-subagent","spawnDepth":1}` — so
+   *  the directory is the only attribution there is. */
+  runId?: string;
+}
+
+/** One workflow run's own recorded state, `<session>/workflows/<runId>.json`,
+ *  already read to text. */
+export interface RunStateText {
+  runId: string;
+  json: string;
 }
 
 /** What the banner and the workspace pane need to know about a run import.
@@ -40,6 +53,11 @@ export interface ImportedRunSummary {
   workspace: string | null;
   childrenMerged: number;
   childrenSkipped: number;
+  /** Card 297: agents a workflow run's state file NAMES and no transcript
+   *  recorded. Neither merged nor skipped — nothing was there to skip — and
+   *  it needs its own count, or a run that reports four agents shows three
+   *  with nothing admitting the fourth. */
+  childrenUnrecorded: number;
 }
 
 export interface ClaudeCodeRunImport extends ImportedRunSummary {
@@ -72,6 +90,9 @@ interface FrameShape {
   from?: string;
   to?: string;
   cwd?: string;
+  callId?: string;
+  output?: string;
+  prompt?: string;
 }
 
 /** Every field a frame can carry an AGENT id in, measured over the importer's
@@ -105,6 +126,177 @@ function metaToolUseId(metaJson: string): string | null {
     if (meta === null || typeof meta !== "object") return null;
     const id = (meta as { toolUseId?: unknown }).toolUseId;
     return typeof id === "string" && id !== "" ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---- card 297: the workflow runs the session names --------------------------
+
+/**
+ * The run id a Workflow receipt prints.
+ *
+ * Deliberately the same grammar `state/work.ts` already owns for the launch
+ * row, and duplicated for the same reason it duplicated the importer's: the
+ * two readers must not be able to disagree about what a run id looks like,
+ * and neither may reach into the other to find out. Measured 2026-08-29 over
+ * a real session: 12 run directories, 12 tool_results naming a run id, one
+ * `Workflow` tool_use each — no run resolved to two, none to none.
+ */
+const RECEIPT_RUN_ID = /\brun\s*id[:\s]\s*(wf_[A-Za-z0-9_-]{4,})\b/i;
+/** The receipt's own one-line intent, the fallback name for a run whose state
+ *  file was not picked (or not written yet). */
+const RECEIPT_SUMMARY = /^Summary:\s*(.+)$/m;
+/** How much of a child's own prompt survives into the spawn's task when
+ *  nothing better names it. The lens clips again for its card; this only
+ *  keeps a multi-kilobyte prompt out of the frame. */
+const PROMPT_TASK_MAX = 120;
+
+/** One `workflow_agent` line of a run's state file, as far as labelling reads it. */
+interface WfAgentEntry {
+  agentId: string | null;
+  label: string | null;
+  promptPreview: string | null;
+}
+
+/** A run's state file, as far as this module reads it. */
+interface WfState {
+  /** `workflowName`, else `summary` — what the run called itself. */
+  name: string | null;
+  agents: WfAgentEntry[];
+}
+
+const nonEmpty = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+
+/** A run's state, or null for anything that is not a JSON object. Every field
+ *  is optional: a state file written mid-run has fewer of them, and a missing
+ *  one must degrade to "not known", never to a guess. */
+function readRunState(json: string): WfState | null {
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (parsed === null || typeof parsed !== "object") return null;
+    const d = parsed as Record<string, unknown>;
+    const raw = Array.isArray(d.workflowProgress) ? d.workflowProgress : [];
+    const agents: WfAgentEntry[] = [];
+    for (const entry of raw) {
+      const o = entry as Record<string, unknown> | null;
+      if (o === null || typeof o !== "object" || o.type !== "workflow_agent") continue;
+      agents.push({
+        agentId: nonEmpty(o.agentId),
+        label: nonEmpty(o.label),
+        promptPreview: nonEmpty(o.promptPreview),
+      });
+    }
+    return { name: nonEmpty(d.workflowName) ?? nonEmpty(d.summary), agents };
+  } catch {
+    return null;
+  }
+}
+
+/** A workflow run the SESSION named, joined to whatever state file came with it. */
+interface ResolvedRun {
+  /** The `Workflow` tool_use the receipt came back on — the run's identity on
+   *  screen, and the parent every one of its agents hangs under. */
+  workflowId: string;
+  /** The tool_use's own stamp, so the run's node lands where the reader met it. */
+  ts: number;
+  /** What to call the run: its state file's name, else the receipt's Summary. */
+  task: string;
+  state: WfState | null;
+}
+
+/**
+ * Which workflow runs this session actually launched.
+ *
+ * The join key is the RUN, and the session prints it exactly once — in the
+ * receipt the `Workflow` tool_use returned. First receipt wins: a later line
+ * quoting the same run id is a line about the same run either way, and taking
+ * the first keeps the resolution independent of how far the reader scrolled.
+ */
+function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<string, ResolvedRun> {
+  const receipts = new Map<string, { callId: string; ts: number; summary: string | null }>();
+  const callTs = new Map<string, number>();
+  for (const { ev } of sessionStream) {
+    const f = shape(ev);
+    if (f.type === "tool_call" && typeof f.callId === "string") {
+      if (!callTs.has(f.callId)) callTs.set(f.callId, f.ts ?? 0);
+      continue;
+    }
+    if (f.type !== "tool_result" || typeof f.output !== "string" || typeof f.callId !== "string")
+      continue;
+    const named = RECEIPT_RUN_ID.exec(f.output);
+    if (named === null || receipts.has(named[1])) continue;
+    receipts.set(named[1], {
+      callId: f.callId,
+      ts: f.ts ?? 0,
+      summary: RECEIPT_SUMMARY.exec(f.output)?.[1]?.trim() ?? null,
+    });
+  }
+  const stateOf = new Map<string, WfState | null>();
+  for (const s of states) if (!stateOf.has(s.runId)) stateOf.set(s.runId, readRunState(s.json));
+  const out = new Map<string, ResolvedRun>();
+  for (const [runId, hit] of receipts) {
+    const state = stateOf.get(runId) ?? null;
+    out.set(runId, {
+      workflowId: hit.callId,
+      // The tool_use's stamp where the stream carried one; the receipt's
+      // otherwise, which is the next-earliest honest point.
+      ts: callTs.get(hit.callId) ?? hit.ts,
+      task: state?.name ?? hit.summary ?? runId,
+      state,
+    });
+  }
+  return out;
+}
+
+/**
+ * What to call one workflow child, in a fixed precedence, each honest about
+ * where it came from.
+ *
+ * 1. the state file's `label` for exactly this agent id — the exact answer.
+ *    Measured 2026-08-29: 76 of 76 agents in one session, 4,956 of 5,521 over
+ *    the whole store.
+ * 2. the state file's `promptPreview`, whole, as a prefix of the child's own
+ *    first prompt — for a superseded attempt, whose transcript is on disk
+ *    under an id the state file no longer names. The WHOLE preview and a
+ *    UNIQUE label, because a run's agents routinely share hundreds of leading
+ *    characters: measured over the 565 agents rule 1 missed, a 400-character
+ *    preview matched 36 uniquely and 134 ambiguously, and a short prefix would
+ *    have handed those 134 somebody else's name.
+ * 3. the child's own prompt, clipped — the fallback for a live run whose state
+ *    file is not written yet. 395 of those 565.
+ */
+function labelForChild(state: WfState | null, agentId: string, prompt: string): string {
+  const exact = state?.agents.find((a) => a.agentId === agentId)?.label;
+  if (exact != null) return exact;
+  if (state !== null && prompt !== "") {
+    const byPrompt = new Set<string>();
+    for (const a of state.agents) {
+      if (a.label === null || a.promptPreview === null) continue;
+      if (prompt.startsWith(a.promptPreview.replace(/\u2026\s*$/, ""))) byPrompt.add(a.label);
+    }
+    if (byPrompt.size === 1) return [...byPrompt][0];
+  }
+  return clipMiddle(prompt, PROMPT_TASK_MAX);
+}
+
+/** The file's own opening prompt, off the root run_start the importer built
+ *  for it. "" when the file opened with something else. */
+function promptOf(events: RunEvent[]): string {
+  for (const ev of events) {
+    const f = shape(ev);
+    if (f.type === "run_start") return f.prompt ?? "";
+  }
+  return "";
+}
+
+/** The meta's `agentType`, which is the only readable kind a workflow child
+ *  has ("workflow-subagent"). Null for a meta that names none. */
+function metaAgentType(metaJson: string): string | null {
+  try {
+    const meta = JSON.parse(metaJson) as unknown;
+    if (meta === null || typeof meta !== "object") return null;
+    return nonEmpty((meta as { agentType?: unknown }).agentType);
   } catch {
     return null;
   }
@@ -151,6 +343,8 @@ function mergeByTs(streams: Sourced[][]): Sourced[] {
 export function importClaudeCodeRun(input: {
   sessionText: string;
   sidecars: SidecarText[];
+  /** Card 297: each workflow run's own state file, when the pick carried one. */
+  runStates?: RunStateText[];
 }): ClaudeCodeRunImport {
   const session = detectAndLoad(input.sessionText);
   const sessionStream: Sourced[] = session.events.map((ev, i) => ({
@@ -177,9 +371,42 @@ export function importClaudeCodeRun(input: {
   // every sidecar beside it is unjoinable and says so in the count.
   const joinable = session.kind === "claude-code";
 
+  // The session's own root, the parent a workflow node hangs under. Read the
+  // same way the lens reads it — the first run_start reporting no parent.
+  let sessionRoot = "main";
+  for (const { ev } of sessionStream) {
+    const f = shape(ev);
+    if (f.type === "run_start" && f.parentId === undefined) {
+      sessionRoot = f.agentId ?? "main";
+      break;
+    }
+  }
+
+  // Card 297: the workflow runs this session launched, by run id.
+  const runs = joinable
+    ? resolveRuns(sessionStream, input.runStates ?? [])
+    : new Map<string, ResolvedRun>();
+  /** Per run, the children that actually made it in — the other half of the
+   *  unrecorded count, and what decides whether a run gets a node at all. */
+  const mergedPerRun = new Map<string, Set<string>>();
+  const skippedPerRun = new Map<string, number>();
+  /** The frames the merge synthesizes for the runs and their children. */
+  const wfChildren: { runId: string; childId: string; ts: number; task: string; kind: string | null }[] = [];
+
   for (const side of input.sidecars) {
-    const toolUseId = joinable ? metaToolUseId(side.metaJson) : null;
-    if (toolUseId === null || !spawned.has(toolUseId)) {
+    const metaId = joinable ? metaToolUseId(side.metaJson) : null;
+    // BRANCH A, unchanged: the meta names the tool_use the spawn rode in on,
+    // and the session spawned the child under exactly that id.
+    const toolUseId = metaId !== null && spawned.has(metaId) ? metaId : null;
+    // BRANCH B: no toolUseId anywhere in the meta — the run directory is the
+    // whole attribution, and the session named that run once, in the receipt.
+    const run = toolUseId === null && side.runId !== undefined ? runs.get(side.runId) : undefined;
+    const countSkip = (): void => {
+      childrenSkipped++;
+      if (run !== undefined && side.runId !== undefined)
+        skippedPerRun.set(side.runId, (skippedPerRun.get(side.runId) ?? 0) + 1);
+    };
+    if (toolUseId === null && run === undefined) {
       childrenSkipped++;
       continue;
     }
@@ -187,7 +414,7 @@ export function importClaudeCodeRun(input: {
     try {
       records = parseJsonl(side.jsonlText);
     } catch {
-      childrenSkipped++;
+      countSkip();
       continue;
     }
     // The shape rule decides what the file is, exactly as on a lone import: a
@@ -198,10 +425,15 @@ export function importClaudeCodeRun(input: {
     // reads the base only when no record in the file is dated).
     const transcript = readSubagentTranscript(records);
     if (transcript === null) {
-      childrenSkipped++;
+      countSkip();
       continue;
     }
-    const join = spawned.get(toolUseId)!;
+    // Where the child hangs, and from when. A Task child ladders from its own
+    // spawn; a workflow child from the tool_use its whole run rode in on.
+    const join =
+      toolUseId !== null
+        ? spawned.get(toolUseId)!
+        : { ts: run!.ts, parentId: run!.workflowId };
     const child = claudeCodeWithOrigin(records, join.ts);
     // THE RE-KEY (twin repair). The sidecar knows itself by its own hex
     // agentId; the session already spawned the same child under the Task
@@ -212,13 +444,18 @@ export function importClaudeCodeRun(input: {
     // grandchild spawned INSIDE the sidecar keeps its own id — only values
     // equal to the sidecar's root id move, wherever an agent id can ride.
     const hexRoot = transcript.agentId;
+    // A WORKFLOW child has no second identity to collapse onto: the run's
+    // state file knows it by exactly the hex id its own file carries, so the
+    // re-key below is the identity and the guard skips the copy.
+    const childId = toolUseId ?? hexRoot;
     const rekey = (ev: RunEvent): RunEvent => {
+      if (childId === hexRoot) return ev;
       const f = shape(ev);
       let patched: Record<string, unknown> | null = null;
       for (const k of ID_FIELDS)
         if (f[k] === hexRoot) {
           patched = patched ?? { ...(ev as object) };
-          patched[k] = toolUseId;
+          patched[k] = childId;
         }
       return patched === null ? ev : (patched as unknown as RunEvent);
     };
@@ -233,7 +470,7 @@ export function importClaudeCodeRun(input: {
       if (f.runId === ROOT_RUN_ID && (f.type === "run_start" || f.type === "run_end")) {
         const renamed = {
           ...(ev as object),
-          runId: `cc-${toolUseId}`,
+          runId: `cc-${childId}`,
           ...(f.type === "run_start" ? { parentId: join.parentId } : {}),
         };
         return { ev: renamed as RunEvent, origin: -1 };
@@ -241,7 +478,21 @@ export function importClaudeCodeRun(input: {
       return { ev, origin: -1 };
     });
     childStreams.push(stream);
-    mergedIds.push(toolUseId);
+    mergedIds.push(childId);
+    if (run !== undefined && side.runId !== undefined) {
+      const seen = mergedPerRun.get(side.runId);
+      if (seen === undefined) mergedPerRun.set(side.runId, new Set([childId]));
+      else seen.add(childId);
+      wfChildren.push({
+        runId: side.runId,
+        childId,
+        // The child's own first stamp, so its spawn lands immediately in front
+        // of its run_start rather than back at the run's launch.
+        ts: stream.length > 0 ? (shape(stream[0].ev).ts ?? run.ts) : run.ts,
+        task: labelForChild(run.state, childId, promptOf(child.events)),
+        kind: metaAgentType(side.metaJson),
+      });
+    }
   }
 
   // The launch record's `usage` summarises the child's whole run. With the
@@ -254,7 +505,84 @@ export function importClaudeCodeRun(input: {
     return !(f.type === "usage" && typeof f.agentId === "string" && merged.has(f.agentId));
   });
 
-  const all = mergeByTs([dedupedSession, ...childStreams]);
+  // Card 297: the run itself becomes a node, and its agents hang under it.
+  // Only a run that actually brought agents gets one — a lone workflow box
+  // with nothing under it would be a claim about a run this import cannot
+  // show. Everything here carries origin -1: it is the merge's own reading,
+  // not a line of the session file.
+  const synth: Sourced[] = [];
+  const runNodes = new Set<string>();
+  for (const c of wfChildren) {
+    const run = runs.get(c.runId)!;
+    if (!runNodes.has(c.runId)) {
+      runNodes.add(c.runId);
+      synth.push({
+        ev: {
+          type: "agent_spawn",
+          agentId: run.workflowId,
+          parentId: sessionRoot,
+          task: run.task,
+          ts: run.ts,
+        },
+        origin: -1,
+      });
+      synth.push({
+        ev: {
+          type: "agent_message",
+          from: sessionRoot,
+          to: run.workflowId,
+          role: "task",
+          state: "submitted",
+          text: run.task,
+          label: "workflow",
+          ts: run.ts,
+        },
+        origin: -1,
+      });
+    }
+    synth.push({
+      ev: {
+        type: "agent_spawn",
+        agentId: c.childId,
+        parentId: run.workflowId,
+        task: c.task,
+        ts: c.ts,
+      },
+      origin: -1,
+    });
+    synth.push({
+      ev: {
+        type: "agent_message",
+        from: run.workflowId,
+        to: c.childId,
+        role: "task",
+        state: "submitted",
+        text: c.task,
+        ...(c.kind !== null ? { label: c.kind } : {}),
+        ts: c.ts,
+      },
+      origin: -1,
+    });
+  }
+  // The merge below keeps each stream's order unconditionally, so this one
+  // has to BE in order. A stable sort keeps a run's two frames in front of
+  // the children that share their stamp.
+  synth.sort((a, b) => (shape(a.ev).ts ?? 0) - (shape(b.ev).ts ?? 0));
+
+  // What a run's state file named and no transcript recorded. The skips of
+  // that same run come off first: a sidecar that WAS there and could not be
+  // read is already counted once, and must not be counted twice.
+  let childrenUnrecorded = 0;
+  for (const [runId, run] of runs) {
+    if (run.state === null || !runNodes.has(runId)) continue;
+    const here = mergedPerRun.get(runId) ?? new Set<string>();
+    const named = run.state.agents.filter(
+      (a) => a.agentId !== null && a.label !== null && !here.has(a.agentId),
+    ).length;
+    childrenUnrecorded += Math.max(0, named - (skippedPerRun.get(runId) ?? 0));
+  }
+
+  const all = mergeByTs([dedupedSession, synth, ...childStreams]);
   const events = all.map((s) => s.ev);
   const origin = Int32Array.from(all.map((s) => s.origin));
 
@@ -281,6 +609,7 @@ export function importClaudeCodeRun(input: {
     workspace,
     childrenMerged: mergedIds.length,
     childrenSkipped,
+    childrenUnrecorded,
   };
 }
 

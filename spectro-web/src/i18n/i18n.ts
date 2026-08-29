@@ -429,6 +429,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "{n} Kind-Agenten übersprungen (unlesbar oder nicht zuordenbar).",
     en: "{n} children skipped (unreadable or unmatched).",
   },
+  // Card 297: a workflow run's state file names agents whose transcript is not
+  // here at all. Neither merged nor skipped — there was nothing to skip.
+  "imp.childrenUnrecorded": {
+    de: "{n} vom Workflow genannte Agenten ohne Transkript.",
+    en: "{n} agents named by a workflow with no transcript.",
+  },
   "imp.pickFolder": { de: "Session-Ordner wählen …", en: "Pick a session folder …" },
   "imp.err.noSession": {
     de: "Keine Session-.jsonl in der Auswahl gefunden.",

@@ -21,6 +21,7 @@ import {
   groupPickedFiles,
   importClaudeCodeRun,
   type ImportedRunSummary,
+  type RunStateText,
   type SidecarText,
 } from "../import/claudeCodeRun";
 import { reportBrowserError } from "../state/browserLog";
@@ -296,14 +297,23 @@ export function ImportDialog(props: {
         sidecars.push({
           jsonlText: await list[s.jsonl].text().catch(() => ""),
           metaJson: s.meta === null ? "" : await list[s.meta].text().catch(() => ""),
+          ...(s.runId !== null ? { runId: s.runId } : {}),
         });
       }
-      const run = importClaudeCodeRun({ sessionText, sidecars });
+      // Card 297: a workflow run's own state file, when the pick carried one.
+      // An unreadable one degrades to "" — the coordinator then labels that
+      // run's children off their own prompts instead of losing them.
+      const runStates: RunStateText[] = [];
+      for (const r of group.runStates) {
+        runStates.push({ runId: r.runId, json: await list[r.file].text().catch(() => "") });
+      }
+      const run = importClaudeCodeRun({ sessionText, sidecars, runStates });
       setNote(run.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
       props.onLoad(run.events, session.name, run.kind, run.source, run.subagent, undefined, {
         workspace: run.workspace,
         childrenMerged: run.childrenMerged,
         childrenSkipped: run.childrenSkipped,
+        childrenUnrecorded: run.childrenUnrecorded,
       });
     };
     void readRun().catch((err) => {

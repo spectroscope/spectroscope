@@ -105,11 +105,11 @@ describe("what the bar says about a run import's children", () => {
   });
 
   it("says nothing when the run had no sidecars at all", () => {
-    expect(childrenNote("en", { workspace: null, childrenMerged: 0, childrenSkipped: 0 })).toBeNull();
+    expect(childrenNote("en", { workspace: null, childrenMerged: 0, childrenSkipped: 0, childrenUnrecorded: 0 })).toBeNull();
   });
 
   it("counts the merged children, in both languages", () => {
-    const run = { workspace: "/workspaces/demo", childrenMerged: 2, childrenSkipped: 0 };
+    const run = { workspace: "/workspaces/demo", childrenMerged: 2, childrenSkipped: 0, childrenUnrecorded: 0 };
     expect(childrenNote("en", run)).toContain("2");
     expect(childrenNote("en", run)).toContain("merged");
     expect(childrenNote("de", run)).toContain("2");
@@ -118,8 +118,26 @@ describe("what the bar says about a run import's children", () => {
     expect(childrenNote("en", run)?.toLowerCase()).not.toContain("skip");
   });
 
+  it("says when a workflow named an agent that left no transcript", () => {
+    // Card 297: neither merged nor skipped — there was nothing there to skip.
+    // Without its own clause the agent simply vanishes, and a run that
+    // reports four agents shows three with nothing admitting the fourth.
+    const run = { workspace: null, childrenMerged: 3, childrenSkipped: 0, childrenUnrecorded: 1 };
+    expect(childrenNote("en", run)?.toLowerCase()).toContain("no transcript");
+    expect(childrenNote("en", run)).toContain("1");
+    expect(childrenNote("de", run)).toContain("1");
+    expect(childrenNote("de", run)).not.toMatch(/\{[a-z]+\}/);
+    // Nothing was skipped, so nothing claims it was.
+    expect(childrenNote("en", run)?.toLowerCase()).not.toContain("skip");
+  });
+
+  it("stays silent about agents no run ever named", () => {
+    const run = { workspace: null, childrenMerged: 2, childrenSkipped: 0, childrenUnrecorded: 0 };
+    expect(childrenNote("en", run)?.toLowerCase()).not.toContain("transcript");
+  });
+
   it("says when children were skipped", () => {
-    const run = { workspace: null, childrenMerged: 1, childrenSkipped: 2 };
+    const run = { workspace: null, childrenMerged: 1, childrenSkipped: 2, childrenUnrecorded: 0 };
     expect(childrenNote("en", run)?.toLowerCase()).toContain("skipped");
     expect(childrenNote("en", run)).toContain("2");
     expect(childrenNote("de", run)).toContain("2");
