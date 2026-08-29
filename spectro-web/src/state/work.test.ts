@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { countWork, foldWork, groupWaves, readReceipt } from "./work";
+import { countWork, foldWork, foldWorkIndexed, groupWaves, readReceipt } from "./work";
 import type { WorkItem } from "./work";
 import type { RunEvent } from "../events";
 
@@ -502,5 +502,52 @@ describe("the run a launch names", () => {
 
   it("is not fooled by a run id that is not one", () => {
     expect(readReceipt(receipt("Run ID: not-a-workflow-id\n"))?.runId).toBeNull();
+  });
+});
+
+// Card 301 fix round. The fold's items are keyed TWO different ways, and only
+// the fold knows which: a spawn item is keyed by its agent, a triggered item by
+// its RUN. Every caller that wants "the item this agent's events counted
+// towards" was left to guess, and the message lane guessed the first rule and
+// missed every triggered lane. The index is therefore published beside the
+// tree, from the same single pass, so the answer comes from the fold that made
+// the keys rather than from a second reading of the rule.
+describe("foldWorkIndexed — the join key, published by the fold that owns it", () => {
+  it("indexes a spawn item under the agent it is keyed by anyway", () => {
+    const { byAgent } = foldWorkIndexed(fanOut(2));
+    expect(byAgent.get("worker-1")?.id).toBe("worker-1");
+    expect(byAgent.get("worker-2")?.inTokens).toBe(200);
+  });
+
+  it("indexes a TRIGGERED item under its agent, though the item is keyed by its run", () => {
+    const events: RunEvent[] = [
+      {
+        type: "run_start",
+        runId: "r-fs-4",
+        agentId: "node-a",
+        prompt: "handle the dropped file",
+        trigger: "fs #4 watch:/drop",
+        ts: 100,
+      },
+      { type: "usage", agentId: "node-a", inputTokens: 40, outputTokens: 8, ts: 200 },
+    ];
+    const { roots, byAgent } = foldWorkIndexed(events);
+    // The two keys really are different, which is the whole reason this exists.
+    expect(roots[0].id).toBe("r-fs-4");
+    expect(byAgent.get("r-fs-4")).toBeUndefined();
+    expect(byAgent.get("node-a")).toBe(roots[0]);
+    expect(byAgent.get("node-a")?.inTokens).toBe(40);
+  });
+
+  it("indexes nothing for an agent the fold opened no item for", () => {
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 1 },
+      { type: "usage", agentId: "main", inputTokens: 9, outputTokens: 1, ts: 2 },
+    ];
+    expect(foldWorkIndexed(events).byAgent.get("main")).toBeUndefined();
+  });
+
+  it("folds the same tree foldWork does, from one pass", () => {
+    expect(foldWorkIndexed(fanOut(3)).roots).toEqual(foldWork(fanOut(3)));
   });
 });

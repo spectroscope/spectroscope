@@ -26,6 +26,7 @@ vi.mock("@xyflow/react", () => ({
 
 import { LabDock, dockTitleKey } from "./LabDock";
 import { LabTrace } from "./LabTrace";
+import { formatTokens } from "../format";
 import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
 import type { RunEvent } from "../events";
@@ -386,5 +387,130 @@ describe("a row that cannot navigate says so instead of looking clickable", () =
         "lab-files-open",
       ),
     ).not.toContain("disabled");
+  });
+});
+
+describe("a TRIGGERED lane prints its counters, not the sentence that denies them", () => {
+  // The fold keys a triggered item by its RUN and a spawn item by its agent, so
+  // a lane joined on the item id found nothing here and the panel stated, in
+  // the reader's own words, that the run never opened work for this lane. It
+  // had: 700 in, 250 out, one tool call, and a lifecycle it reached.
+  const triggered: RunEvent[] = [
+    start("main", 0),
+    {
+      type: "run_start",
+      runId: "r-fs-4",
+      agentId: "node-a",
+      parentId: "main",
+      prompt: "handle the dropped file",
+      trigger: "fs #4 watch:/drop",
+      ts: 10,
+    } as RunEvent,
+    { type: "usage", agentId: "node-a", inputTokens: 700, outputTokens: 250, ts: 12 } as RunEvent,
+    call("node-a", "Read", { file_path: "a.ts" }, 13),
+    msg("node-a", "main", "result", "handled", 20, "completed"),
+  ];
+
+  it("prints the numbers the fold counted for it", () => {
+    expect(dock("msg", triggered)).toContain(
+      t(lang, "lab.msg.laneCounts", {
+        in: formatTokens(700),
+        out: formatTokens(250),
+        tools: 1,
+      }),
+    );
+  });
+
+  it("does not claim the run never opened work for it", () => {
+    expect(dock("msg", triggered)).not.toContain(t(lang, "lab.msg.laneNoCounts"));
+  });
+
+  it("shows the lifecycle chip the fold reached", () => {
+    expect(dock("msg", triggered)).toContain(
+      `<span class="lab-msg-state lab-msg-state--completed">${t(lang, "map.life.completed")}</span>`,
+    );
+  });
+});
+
+describe("the file count counts files, and a search pattern is not one", () => {
+  // The panel takes care to italicise a Glob row and to say in its tooltip that
+  // a pattern names no concrete path — and then counted it into "{n} paths"
+  // anyway. Two claims about the same row, in the same panel, one of them
+  // wrong. The number now counts what the word says, and the patterns are
+  // reported as what they are.
+  const twoFilesOnePattern: RunEvent[] = [
+    start("main", 0),
+    call("main", "Read", { file_path: "one.ts" }, 10),
+    call("main", "Read", { file_path: "two.ts" }, 11),
+    call("main", "Glob", { pattern: "src/**/*.ts" }, 12),
+  ];
+
+  it("counts the files and leaves the pattern out of that number", () => {
+    const html = dock("files", twoFilesOnePattern);
+    expect(html).toContain(t(lang, "lab.files.count", { n: 2 }));
+    expect(html).not.toContain(t(lang, "lab.files.count", { n: 3 }));
+  });
+
+  it("still lists the pattern, and says how many of the rows are patterns", () => {
+    const html = dock("files", twoFilesOnePattern);
+    expect(html).toContain("src/**/*.ts");
+    expect(html).toContain(t(lang, "lab.files.patternsOne"));
+  });
+
+  it("counts more than one pattern in the plural", () => {
+    const html = dock("files", [
+      start("main", 0),
+      call("main", "Read", { file_path: "one.ts" }, 10),
+      call("main", "Glob", { pattern: "src/**/*.ts" }, 11),
+      call("main", "Glob", { pattern: "docs/**/*.md" }, 12),
+    ]);
+    expect(html).toContain(t(lang, "lab.files.countOne"));
+    expect(html).toContain(t(lang, "lab.files.patterns", { n: 2 }));
+  });
+
+  it("says nothing about patterns when there are none", () => {
+    const html = dock("files", [start("main", 0), call("main", "Read", { file_path: "one.ts" }, 10)]);
+    expect(html).toContain(t(lang, "lab.files.countOne"));
+    expect(html).not.toContain(t(lang, "lab.files.patternsOne"));
+  });
+
+  it("prints no count of files at all for a run that only globbed", () => {
+    // "0 paths" over a list with a row in it is the same lie from the other
+    // side. The pattern line carries this run on its own.
+    const html = dock("files", [start("main", 0), call("main", "Glob", { pattern: "src/**/*.ts" }, 10)]);
+    expect(html).not.toContain(t(lang, "lab.files.count", { n: 0 }));
+    expect(html).not.toContain(t(lang, "lab.files.countOne"));
+    expect(html).toContain(t(lang, "lab.files.patternsOne"));
+    expect(html).toContain("src/**/*.ts");
+    // And it is NOT the empty state: the run did touch disk.
+    expect(html).not.toContain(t(lang, "lab.files.empty"));
+  });
+});
+
+describe("a file badge is a HANDLE, never a raw agent id", () => {
+  // Card 298's rule, and the reason the directory exists: the opaque id has
+  // nowhere to leak out. The badge list carried a fallback that concatenated
+  // every id the directory did not hold — unreachable, because both the
+  // footprint and the directory are folded from the SAME prefix and a tool_call
+  // names its agent, so an agent that touched a file is always in the
+  // directory. Unreachable and, if it ever had fired, the one place in this
+  // panel that would have printed a raw `toolu_…` on screen.
+  const opaque = "toolu_01xyzopaque";
+  const touched: RunEvent[] = [
+    start("main", 0),
+    spawn(opaque, "read the ledger", 5),
+    call(opaque, "Read", { file_path: "one.ts" }, 10),
+  ];
+
+  it("prints the handle the directory gives it", () => {
+    expect(dock("files", touched)).toMatch(/class="lab-files-badge mono"[^>]*>w1</);
+  });
+
+  it("prints the opaque id nowhere at all", () => {
+    expect(dock("files", touched)).not.toContain("toolu_");
+  });
+
+  it("prints one badge for one toucher, not the handle AND the id", () => {
+    expect(dock("files", touched).match(/class="lab-files-badge mono"/g) ?? []).toHaveLength(1);
   });
 });

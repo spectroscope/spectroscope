@@ -6,12 +6,22 @@
 // the message answers. The workflow lens draws who tasked whom; it cannot draw
 // what was said. This module folds exactly that, and nothing else.
 //
-// IT RE-DERIVES NOTHING. Three folds already exist and all three are called
-// rather than reimplemented:
+// IT RE-DERIVES NOTHING. Two folds already exist and both are called rather
+// than reimplemented:
 //   · agentDirectory (card 298) for the handle and the parent map,
-//   · foldWork (state/work.ts) for a lane's name/intent/state/lastStatus and
-//     its token, tool and gate counters — every one with a RunEvent behind it,
-//   · groupWaves (state/work.ts) for the time-overlap phase rows.
+//   · foldWorkIndexed (state/work.ts) for a lane's name/intent/state/lastStatus
+//     and its token, tool and gate counters — every one with a RunEvent behind
+//     it, and joined through the index THAT fold publishes rather than through
+//     the item ids, which are not one key: a spawn item is keyed by its agent
+//     and a triggered item by its run. Joining on the id found no item for a
+//     triggered lane and made the panel say the run had opened no work for it,
+//     over counters the fold had already counted.
+//
+// AND IT FOLDS NOTHING NOBODY READS. `groupWaves` was called here for phase
+// rows no panel draws, on every step of the scrub. Card 300 paid for exactly
+// one fold per step and LabDock's tab strip exists to keep it; a phase grouping
+// that reaches no screen hands that back. It is a call away when a panel wants
+// it — it is not free while none does.
 //
 // DIRECTION COMES FROM THE SPAWN TREE, NOT THE ROLE WORD. The directory's
 // `parentId` is folded from the run's own agent_spawn frames, so "who tasked
@@ -35,7 +45,7 @@
 
 import type { RunEvent } from "../events";
 import { agentDirectory } from "./agentDirectory";
-import { foldWork, groupWaves, type Wave, type WorkItem, type WorkState } from "../state/work";
+import { foldWorkIndexed, type WorkState } from "../state/work";
 
 /** Which way a handover went, as seen from the spawn tree. */
 export type Handover = "down" | "up" | "side";
@@ -121,18 +131,6 @@ export interface MessageLanes {
   lanes: MessageLane[];
   /** Every message in arrival order, whatever lane it belongs to. */
   messages: LaneMessage[];
-  /** The work fold's own time-overlap phases, for a panel that wants to group
-   *  lanes into the waves they actually ran in. */
-  waves: Wave[];
-}
-
-/** Every item in the work tree, flattened, so a lane can be looked up by id. */
-function flatten(items: readonly WorkItem[], into: Map<string, WorkItem>): Map<string, WorkItem> {
-  for (const item of items) {
-    into.set(item.id, item);
-    flatten(item.children, into);
-  }
-  return into;
 }
 
 /**
@@ -174,10 +172,10 @@ export function messageLanes(events: readonly RunEvent[], upto?: number): Messag
   const prefix = upto === undefined ? events : events.slice(0, Math.max(0, upto));
 
   const dir = agentDirectory(prefix);
-  // ONE pass of the work fold, read twice: flattened for the per-lane join,
-  // and handed to groupWaves for the phase rows.
-  const roots = foldWork(prefix);
-  const work = flatten(roots, new Map<string, WorkItem>());
+  // ONE pass of the work fold. The INDEX is the join, not the item ids: the
+  // fold keys a spawn item by its agent and a triggered item by its run, and
+  // only the fold knows which rule applied.
+  const work = foldWorkIndexed(prefix).byAgent;
   const parentOf = (id: string): string | null | undefined => {
     const handle = dir.get(id);
     return handle === undefined || !handle.parentRecorded ? undefined : handle.parentId;
@@ -256,5 +254,5 @@ export function messageLanes(events: readonly RunEvent[], upto?: number): Messag
     });
   }
 
-  return { lanes, messages, waves: groupWaves(roots) };
+  return { lanes, messages };
 }

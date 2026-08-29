@@ -188,21 +188,14 @@ describe("messageLanes — the numbers come from foldWork", () => {
     expect(lanes[0].intent).toBe("scout the checkout");
   });
 
-  it("hands back the work fold's waves as phase rows", () => {
-    const events = [
-      start("main", 0),
-      spawn("a", "ta", 10),
-      msg("main", "a", "task", "ta", 11),
-      msg("a", "main", "result", "done", 20, "completed"),
-      // b starts after a finished: a second wave, not the same one.
-      spawn("b", "tb", 60),
-      msg("main", "b", "task", "tb", 61),
-      msg("b", "main", "result", "done", 70, "completed"),
-    ];
-    const { waves } = messageLanes(events);
-    expect(waves).toHaveLength(2);
-    expect(waves[0].items.map((i) => i.id)).toEqual(["a"]);
-    expect(waves[1].items.map((i) => i.id)).toEqual(["b"]);
+  // The fold used to hand back `groupWaves(roots)` as well, on every step of
+  // the scrub, and no panel ever destructured it — HandoverLane takes `lanes`
+  // and nothing else. Card 300 bought one fold per step and LabDock's tab strip
+  // exists to keep it, so a phase grouping nothing renders is that purchase
+  // being handed straight back. The surface is pinned rather than the absence
+  // of one call, because the next output nobody reads will not be named waves.
+  it("computes nothing the panel does not render", () => {
+    expect(Object.keys(messageLanes(conversation()))).toEqual(["lanes", "messages"]);
   });
 });
 
@@ -310,5 +303,55 @@ describe("messageLanes — a DEFAULTED parent is not a spawn-tree fact", () => {
     const { messages } = messageLanes(events);
     expect(messages[0].direction).toBe("up");
     expect(messages[0].fromTree).toBe(true);
+  });
+});
+
+describe("messageLanes — a TRIGGERED lane is joined by its AGENT, not by the item's id", () => {
+  // The fold keys its items two ways and only it knows which: a spawn item by
+  // its agent, a triggered item by its RUN (work.ts, the run_start case). A
+  // join over the item ids therefore finds nothing for a triggered lane — and
+  // the panel then prints "the run never opened work for this lane" over an
+  // item that exists and carries real counters. The sentence is confident and
+  // it is false, which is the failure `counts: null` was written to prevent,
+  // not an instance of it.
+  const triggered = (): RunEvent[] => [
+    start("main", 0),
+    {
+      type: "run_start",
+      runId: "r-fs-4",
+      agentId: "node-a",
+      parentId: "main",
+      prompt: "handle the dropped file",
+      trigger: "fs #4 watch:/drop",
+      ts: 10,
+    } as RunEvent,
+    usage("node-a", 700, 250, 12),
+    { type: "tool_call", agentId: "node-a", callId: "c1", name: "Read", input: {}, ts: 13 } as RunEvent,
+    msg("node-a", "main", "status", "half way", 14),
+    msg("node-a", "main", "result", "handled", 20, "completed"),
+  ];
+
+  it("hands the lane the counters the fold actually counted", () => {
+    const { lanes } = messageLanes(triggered());
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0].counts).toEqual({
+      inTokens: 700,
+      outTokens: 250,
+      toolCalls: 1,
+      gatesAsked: 0,
+      gatesDenied: 0,
+    });
+  });
+
+  it("hands it the lifecycle the fold reached", () => {
+    expect(messageLanes(triggered()).lanes[0].state).toBe("completed");
+  });
+
+  it("hands it the last status the fold recorded", () => {
+    expect(messageLanes(triggered()).lanes[0].lastStatus).toBe("half way");
+  });
+
+  it("hands it what the run was woken to do", () => {
+    expect(messageLanes(triggered()).lanes[0].intent).toBe("handle the dropped file");
   });
 });
