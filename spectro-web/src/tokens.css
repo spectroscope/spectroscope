@@ -71,6 +71,19 @@
   --agent-worker: #8b7cf0;
   --agent-extra: #ce9440;
 
+  /* The handle ramp (card 298): one slot per worker tag, picked by the tag and
+     not by a position, so w1 is the same line on every surface that draws it.
+     FIVE slots because the brand carries exactly five spectral lines and colour
+     lives only on those - a sixth hue would be an invented line, so the ramp
+     repeats instead. The last two slots are the lines that already speak
+     elsewhere (teal is the root's own accent, red is the gate), which is why
+     they sit last: a run has to reach w4 before the ramp reuses a meaning. */
+  --agent-w1: #2cb1c4; /* ocean */
+  --agent-w2: #8b7cf0; /* violet */
+  --agent-w3: #ce9440; /* amber */
+  --agent-w4: #2dd4a7; /* teal, shared with --agent-root */
+  --agent-w5: #c05a4c; /* red, shared with the gate line */
+
   /* ---------- Typography (brand: Inter + JetBrains Mono, self-hosted) ---------- */
   --font-ui:
     "Inter Variable", Inter, Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -177,6 +190,12 @@
   --agent-explore: #0b8799;
   --agent-worker: #6c5ce7;
   --agent-extra: #a9762a;
+
+  --agent-w1: #0b8799;
+  --agent-w2: #6c5ce7;
+  --agent-w3: #a9762a;
+  --agent-w4: #0f9d77;
+  --agent-w5: #c24b3e;
 }
 
 /* Focus: always visible, always accent. Never outline: none without a replacement. */

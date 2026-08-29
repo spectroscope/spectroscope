@@ -178,6 +178,86 @@ describe("spawnTree — the reconstructed workflow topology", () => {
     expect(tree.meta["worker"].label).toBe("scout target a");
   });
 
+  // Card 298 moved the identity fold into agentDirectory.ts, where it now
+  // records EVERY agent the stream names. This lens keeps only the reported
+  // ones, which is what makes `reported` mean what its doc says it means.
+  it("reports only the children an agent_spawn frame named", () => {
+    const only: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      {
+        type: "agent_message",
+        from: "main",
+        to: "no-spawn",
+        role: "task",
+        state: "submitted",
+        text: "do it",
+        ts: 1,
+      },
+      ...child("spawned", 2, 3, "the reported one"),
+    ];
+    const tree = spawnTree(only);
+    expect(tree.reported).toBe(1);
+    expect(tree.topo.nodes.map((n) => n.id)).toEqual(["main", "spawned"]);
+  });
+
+  // Card 298, fix round. The importer emits an agent_spawn and an
+  // agent_message role="task" back to back for every dispatch
+  // (import/claudeCode.ts), so a child that dispatches a nested subagent is
+  // the SENDER of a task message stamped long after its own spawn. That
+  // message is the only frame saying the parent was still alive at that
+  // moment, and the wave grouping reads lifetimes: drop it and a sibling that
+  // started inside the parent's real lifetime opens a wave of its own and
+  // moves a column. Measured against the pre-298 fold, which extended the
+  // sender's end for every agent_message regardless of role.
+  it("keeps a sibling in the wave of a child that was still dispatching", () => {
+    const dispatch = (from: string, to: string, task: string, ts: number): RunEvent[] => [
+      { type: "agent_spawn", agentId: to, parentId: from, task, ts },
+      { type: "agent_message", from, to, role: "task", state: "submitted", text: task, ts },
+    ];
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      ...dispatch("main", "c1", "first leg", 10),
+      ...dispatch("main", "c2", "second leg", 50),
+      ...dispatch("c1", "n1", "nested leg", 100),
+    ];
+    const ranks = spawnTree(events).topo.ranks!;
+    // c1 is alive from 10 to at least 100 because it dispatched at 100, so c2
+    // (started at 50) overlaps it and shares its wave. n1 is nested and ranks
+    // one past its parent either way — it is c2 that the lifetime decides.
+    expect([...ranks].sort()).toEqual([
+      ["c1", 1],
+      ["c2", 1],
+      ["main", 0],
+      ["n1", 2],
+    ]);
+  });
+
+  // The other half of the same move, pinned rather than left to be
+  // rediscovered: the shared fold opens a record at FIRST APPEARANCE, so a
+  // task message that names a child before its spawn frame now decides both
+  // the child's position and its label. Before card 298 the early message was
+  // dropped on the floor (the child was not in the map yet) and the card fell
+  // back to printing the opaque id.
+  it("lets a task message that arrives before the spawn frame name the child", () => {
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      {
+        type: "agent_message",
+        from: "main",
+        to: "early",
+        role: "task",
+        state: "submitted",
+        text: "named early",
+        ts: 1,
+      },
+      { type: "agent_spawn", agentId: "late", parentId: "main", task: "the late one", ts: 2 },
+      { type: "agent_spawn", agentId: "early", parentId: "main", task: "", ts: 3 },
+    ];
+    const tree = spawnTree(events);
+    expect(tree.topo.nodes.map((n) => n.id)).toEqual(["main", "early", "late"]);
+    expect(tree.meta.early.label).toBe("named early");
+  });
+
   it("yields a lone root for a run with no children", () => {
     const tree = spawnTree([{ type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 }]);
     expect(tree.topo.nodes.map((n) => n.id)).toEqual(["main"]);

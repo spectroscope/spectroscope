@@ -115,6 +115,14 @@
   --agent-explore: #248a3d;
   --agent-worker: #8944ab;
   --agent-extra: #c07600;
+  /* The handle ramp in this design's own palette: `still` declares its accents
+     rather than inheriting them, so it has to declare the ramp too - otherwise
+     a white ground would paint espresso's lines. */
+  --agent-w1: #248a3d;
+  --agent-w2: #8944ab;
+  --agent-w3: #c07600;
+  --agent-w4: #0071e3;
+  --agent-w5: #d70015;
   --font-ui: Geist, Inter, "Helvetica Neue", Helvetica, system-ui, sans-serif;
   --radius-chip: 8px;
   --radius-control: 10px;

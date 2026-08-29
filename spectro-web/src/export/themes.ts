@@ -43,7 +43,8 @@ export const STILL_BORROWS_FROM_PAPER = ["sp-red", "sp-amber", "sp-teal", "sp-oc
  * set of near-identical hexes would be two things to retune instead of one.
  *
  * So the list is longer than `still`'s: not just the spectral lines but the
- * status colours and agent accents derived from them, and the typography. In
+ * status colours, the agent accents and the five handle slots derived from
+ * them, and the typography. In
  * the app these simply inherit from :root; a file has nothing to inherit from,
  * which is why they are written out here and named to their source.
  */
@@ -62,6 +63,11 @@ export const GRAPHITE_BORROWS_FROM_ESPRESSO = [
   "agent-explore",
   "agent-worker",
   "agent-extra",
+  "agent-w1",
+  "agent-w2",
+  "agent-w3",
+  "agent-w4",
+  "agent-w5",
   "font-ui",
   "font-mono",
 ] as const;
@@ -110,6 +116,14 @@ const ESPRESSO = {
   "agent-explore": "#2cb1c4",
   "agent-worker": "#8b7cf0",
   "agent-extra": "#ce9440",
+  // The handle ramp (card 298). It rides along because an exported document has
+  // no stylesheet: a slot missing here is an invalid declaration in the file,
+  // silently thrown away, and the badge inherits whatever is above it.
+  "agent-w1": "#2cb1c4",
+  "agent-w2": "#8b7cf0",
+  "agent-w3": "#ce9440",
+  "agent-w4": "#2dd4a7",
+  "agent-w5": "#c05a4c",
   "font-ui": FONT_UI,
   "font-mono": FONT_MONO,
 } as const;
@@ -155,6 +169,11 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       "agent-explore": "#0b8799",
       "agent-worker": "#6c5ce7",
       "agent-extra": "#a9762a",
+      "agent-w1": "#0b8799",
+      "agent-w2": "#6c5ce7",
+      "agent-w3": "#a9762a",
+      "agent-w4": "#0f9d77",
+      "agent-w5": "#c24b3e",
       "font-ui": FONT_UI,
       "font-mono": FONT_MONO,
     },
@@ -186,6 +205,11 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       "agent-explore": "#248a3d",
       "agent-worker": "#8944ab",
       "agent-extra": "#c07600",
+      "agent-w1": "#248a3d",
+      "agent-w2": "#8944ab",
+      "agent-w3": "#c07600",
+      "agent-w4": "#0071e3",
+      "agent-w5": "#d70015",
       "font-ui": 'Geist, Inter, "Helvetica Neue", Helvetica, system-ui, sans-serif',
       "font-mono": FONT_MONO,
     },
@@ -229,6 +253,11 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       "agent-explore": ESPRESSO["agent-explore"],
       "agent-worker": ESPRESSO["agent-worker"],
       "agent-extra": ESPRESSO["agent-extra"],
+      "agent-w1": ESPRESSO["agent-w1"],
+      "agent-w2": ESPRESSO["agent-w2"],
+      "agent-w3": ESPRESSO["agent-w3"],
+      "agent-w4": ESPRESSO["agent-w4"],
+      "agent-w5": ESPRESSO["agent-w5"],
       "font-ui": FONT_UI,
       "font-mono": FONT_MONO,
     },
