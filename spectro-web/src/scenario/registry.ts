@@ -2,7 +2,7 @@
 // Each is a Dsl the compiler turns into a deterministic RunEvent stream —
 // scripted demo runs that need no server, no key and no Ollama.
 
-import type { Dsl } from "./dsl";
+import type { Dsl, DslPhase, Localized, Step } from "./dsl";
 
 const buildplan: Dsl = {
   id: "buildplan",
@@ -1461,6 +1461,253 @@ const workflowPhases: Dsl = {
   ],
 };
 
+/* ── Card 314: the workflow whose SHAPE IS THE FAN-OUT ────────────────────
+ *
+ * `workflowPhases` above is a five-stage pipeline that happens to contain two
+ * fan-outs. This one is the other picture: a small scope, ONE wide phase, a
+ * sign-off — a release-readiness pass where eight independent checks run at
+ * the same time and one agent turns what comes back into a single answer.
+ *
+ * WHY EIGHT, and not a number that reads bigger. The Lab's worker grid seats
+ * `SEATS_MAX_EXPANDED` = 12 workers expanded and 6 compact; above the ceiling
+ * seats stop being drawn. Eight is the width the grid was measured against
+ * (card 287's `fanout-eight`), it is under the ceiling with room left, and it
+ * makes a phase box `phaseHeight(8)` = 152px tall against the 107px card 302's
+ * fan-outs of five ever drew — wide enough to be the point of the scenario,
+ * still a box the lens draws whole. `fanoutWorkflowTest.ts` pins the width
+ * against `SEATS_MAX_EXPANDED` rather than against the number 8, so raising
+ * the ceiling frees the width and lowering it fails the case.
+ *
+ * THE NAME IS COMPUTED, not typed. Both numbers in it are read off
+ * `fanoutWorkflowPhases` below, so a ninth worker renames the scenario by
+ * itself and a name claiming twelve while the DSL holds ten cannot be
+ * written here at all.
+ */
+
+/** One agent inside a fan-out step, named so the array below can be ANNOTATED
+ *  rather than inferred. Inference widened `gate: "allow"` to `string` here
+ *  and `npx tsc -b` was the only thing that said so — vitest erases types, so
+ *  all thirteen cases were green over code that did not compile. */
+type FanoutAgent = { id: string; task: Localized; steps: Step[] };
+
+/** The wide phase's workers, authored once. The phase's `agents` list and the
+ *  fan-out that spawns them both read this array, so the declaration and the
+ *  stream cannot disagree about who ran. */
+const releaseChecks: FanoutAgent[] = [
+  {
+    id: "check-changelog",
+    task: { en: "reconcile the changelog", de: "Changelog abgleichen" },
+    steps: [
+      { status: { en: "reading the merged commits", de: "lese die gemergten Commits" } },
+      { run: "git log --oneline v0.10.0..HEAD", result: "31 commits" },
+      { read: "CHANGELOG.md", result: "## Unreleased\n- fleet message verb\n- deep links\n…" },
+      { usage: { in: 26_000, out: 900 } },
+      {
+        say: {
+          en: "31 commits, 28 of them in the changelog. Three merges are missing an entry.",
+          de: "31 Commits, 28 davon im Changelog. Drei Merges fehlt ein Eintrag.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-pins",
+    task: { en: "verify the version pins", de: "Versions-Pins prüfen" },
+    steps: [
+      { status: { en: "reading the build files", de: "lese die Build-Dateien" } },
+      { read: "gradle.properties", result: "version=0.11.0" },
+      { run: "grep -rn '0\\.1[01]\\.0' --include=*.kts --include=package.json .", result: "6 matches" },
+      { usage: { in: 18_000, out: 700 } },
+      {
+        say: {
+          en: "Six files carry the version; all six say 0.11.0.",
+          de: "Sechs Dateien tragen die Version; alle sechs sagen 0.11.0.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-licences",
+    task: { en: "review dependency licences", de: "Lizenzen sichten" },
+    steps: [
+      { status: { en: "resolving the dependency tree", de: "löse den Abhängigkeitsbaum auf" } },
+      { run: "./gradlew licenseReport --quiet", result: "214 dependencies, 9 licences" },
+      { usage: { in: 22_000, out: 800 } },
+      {
+        say: {
+          en: "Two dependencies are new since the last tag, both Apache-2.0. Nothing copyleft.",
+          de: "Zwei Abhängigkeiten sind seit dem letzten Tag neu, beide Apache-2.0. Nichts Copyleft.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-api",
+    task: { en: "diff the public API", de: "öffentliche API vergleichen" },
+    steps: [
+      { status: { en: "comparing against the last tag", de: "vergleiche mit dem letzten Tag" } },
+      { run: "./gradlew apiDiff --quiet", result: "+14 added, 0 removed, 0 changed" },
+      { usage: { in: 31_000, out: 1_100 } },
+      {
+        say: {
+          en: "Fourteen additions, nothing removed or changed. The release stays source-compatible.",
+          de: "Vierzehn Ergänzungen, nichts entfernt oder geändert. Das Release bleibt quell-kompatibel.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-migrations",
+    task: { en: "migrate config, then back", de: "Konfig vor und zurück fahren" },
+    steps: [
+      { status: { en: "migrating a 0.10 settings file", de: "migriere eine 0.10-Settings-Datei" } },
+      { run: "./spectro-app migrate --from 0.10 --dry-run", result: "3 keys moved, 1 key renamed" },
+      { run: "./spectro-app migrate --rollback --dry-run", result: "restored, checksum matches" },
+      { usage: { in: 24_000, out: 900 } },
+      {
+        say: {
+          en: "Forward and back both clean, and the rolled-back file matches the original byte for byte.",
+          de: "Vor und zurück beide sauber, und die zurückgerollte Datei stimmt Byte für Byte mit dem Original.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-docs",
+    task: { en: "check the docs commands", de: "Doku-Befehle prüfen" },
+    steps: [
+      { status: { en: "extracting the shell blocks", de: "ziehe die Shell-Blöcke heraus" } },
+      { run: "scripts/check-docs-commands.sh docs/", result: "41 commands, 40 ok, 1 unknown flag" },
+      { usage: { in: 19_000, out: 700 } },
+      {
+        say: {
+          en: "One command in the install guide still passes --port, which moved to the config file.",
+          de: "Ein Befehl im Installations-Guide übergibt noch --port, das in die Konfigurationsdatei gewandert ist.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-install",
+    task: { en: "smoke-test a clean install", de: "saubere Installation testen" },
+    steps: [
+      { status: { en: "installing into an empty prefix", de: "installiere in ein leeres Prefix" } },
+      { run: "./spectro-env install --clean", gate: "allow", result: "installed in 41s" },
+      { run: "spectro --version", result: "spectroscope 0.11.0" },
+      { usage: { in: 15_000, out: 600 } },
+      {
+        say: {
+          en: "A machine with nothing installed gets to a working CLI in 41 seconds.",
+          de: "Eine Maschine ohne Vorinstallation kommt in 41 Sekunden zu einer laufenden CLI.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-bench",
+    task: { en: "benchmark against the tag", de: "gegen den Tag benchen" },
+    steps: [
+      { status: { en: "running the benchmark suite", de: "lasse die Benchmark-Suite laufen" } },
+      { run: "./gradlew jmh --quiet", result: "12 benchmarks, median delta -2.1%" },
+      { usage: { in: 28_000, out: 1_000 } },
+      {
+        say: {
+          en: "Twelve benchmarks, all within 5% of the last tag. Event replay is 2% faster.",
+          de: "Zwölf Benchmarks, alle innerhalb von 5% des letzten Tags. Event-Replay ist 2% schneller.",
+        },
+      },
+    ],
+  },
+];
+
+/** The three declared columns. Both numbers in the scenario's name are read
+ *  off THIS array, and the tests compare it against the compiled stream. */
+const fanoutWorkflowPhases: DslPhase[] = [
+  {
+    title: { en: "scope", de: "abstecken" },
+    detail: { en: "name the checks the tag needs", de: "die nötigen Prüfungen benennen" },
+    agents: ["scope-tag"],
+  },
+  {
+    title: { en: "check", de: "prüfen" },
+    detail: { en: "eight independent checks at once", de: "acht unabhängige Prüfungen gleichzeitig" },
+    agents: releaseChecks.map((c) => c.id),
+  },
+  {
+    title: { en: "sign off", de: "freigeben" },
+    detail: { en: "one answer out of eight reports", de: "eine Antwort aus acht Berichten" },
+    agents: ["sign-off"],
+  },
+];
+
+const fanoutWorkflowAgents = fanoutWorkflowPhases.reduce((n, p) => n + p.agents.length, 0);
+const fanoutWorkflowWidth = Math.max(...fanoutWorkflowPhases.map((p) => p.agents.length));
+
+const fanoutWorkflow: Dsl = {
+  id: "fanout-workflow",
+  name: {
+    en: `Fan-out workflow · ${fanoutWorkflowAgents} agents, ${fanoutWorkflowWidth} abreast`,
+    de: `Fan-out-Workflow · ${fanoutWorkflowAgents} Agenten, ${fanoutWorkflowWidth} nebeneinander`,
+  },
+  prompt: {
+    en: "We are cutting 0.11.0. Scope what the tag range touches, then run the release checks in parallel — changelog, version pins, licences, public API, config migration, docs, a clean install and the benchmarks — and give me one go/no-go at the end.",
+    de: "Wir schneiden 0.11.0. Steck ab, was der Tag-Bereich berührt, lass dann die Release-Prüfungen parallel laufen — Changelog, Versions-Pins, Lizenzen, öffentliche API, Konfigurations-Migration, Doku, saubere Installation und Benchmarks — und gib mir am Ende ein einziges Go/No-Go.",
+  },
+  provider: "ollama",
+  phases: fanoutWorkflowPhases,
+  steps: [
+    {
+      think: {
+        en: "Three phases, and the middle one is the whole point: eight checks that never wait for each other.",
+        de: "Drei Phasen, und die mittlere ist der eigentliche Punkt: acht Prüfungen, die nie aufeinander warten.",
+      },
+    },
+    {
+      spawn: "scope-tag",
+      label: "scope",
+      task: { en: "scope the release tag range", de: "Tag-Bereich abstecken" },
+      steps: [
+        { status: { en: "reading the tag range", de: "lese den Tag-Bereich" } },
+        { run: "git diff --stat v0.10.0..HEAD", result: "184 files changed, 6 modules" },
+        { list: "docs/release", result: "CHECKLIST.md  RELEASE-PLAYBOOK.md  DESKTOP-SIGNING.md" },
+        { usage: { in: 12_000, out: 800 } },
+        {
+          say: {
+            en: "Six modules moved. The checklist names eight checks, and none of them depends on another.",
+            de: "Sechs Module haben sich bewegt. Die Checkliste nennt acht Prüfungen, keine hängt von einer anderen ab.",
+          },
+        },
+      ],
+    },
+    { fanout: { label: "check", tool: "release_check", agents: releaseChecks } },
+    {
+      spawn: "sign-off",
+      label: "sign off",
+      task: { en: "Go/No-Go from eight reports", de: "Go/No-Go aus acht Berichten" },
+      steps: [
+        { status: { en: "weighing the eight reports", de: "wäge die acht Berichte ab" } },
+        {
+          write: "docs/release/0.11.0-readiness.md",
+          result: "Wrote: docs/release/0.11.0-readiness.md (3140 bytes)",
+        },
+        { usage: { in: 58_000, out: 2_400 } },
+        {
+          say: {
+            en: "Six checks clean, two with findings: three missing changelog entries and one stale flag in the install guide. Both are edits, not code — go, once they are made.",
+            de: "Sechs Prüfungen sauber, zwei mit Funden: drei fehlende Changelog-Einträge und ein veraltetes Flag im Installations-Guide. Beides sind Textänderungen, kein Code — Go, sobald sie gemacht sind.",
+          },
+        },
+      ],
+    },
+    {
+      say: {
+        en: "Eight checks ran side by side; the readiness note lists the two things left to fix before the tag.",
+        de: "Acht Prüfungen liefen nebeneinander; die Readiness-Notiz listet die zwei Dinge, die vor dem Tag noch zu erledigen sind.",
+      },
+    },
+  ],
+};
+
 export const SCENARIOS: Dsl[] = [
   buildplan,
   bughunt,
@@ -1468,6 +1715,7 @@ export const SCENARIOS: Dsl[] = [
   fanout,
   fanoutEight,
   workflowPhases,
+  fanoutWorkflow,
   permission,
   diskshell,
   agentsmd,

@@ -132,7 +132,10 @@ describe("the fan-out workflow scenario", () => {
       const tree = spawnTree(compile(dsl, lang), declarationOf(dsl, lang));
       const laid = layoutStateGraph(tree.topo, "horizontal");
       const titles = [1, 2, 3].map((r) => tree.topo.rankCaptions!.get(r)?.title ?? null);
-      expect(titles.every((x) => x !== null && x !== ""), lang).toBe(true);
+      expect(
+        titles.every((x) => x !== null && x !== ""),
+        lang,
+      ).toBe(true);
       // The wide box is the tall one, and it is the reason this case exists:
       // the caption is pinned above a column whose height the widest box in
       // it sets, so a taller box than card 302 ever drew is where an overlap
