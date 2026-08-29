@@ -7,12 +7,13 @@
 
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import type { ChapterMark, MarkPosition } from "./stepper";
+import type { ChapterKind, ChapterMark, MarkPosition } from "./stepper";
 import {
   MARK_MIN_GAP_PCT,
   SPEED_FACTORS,
   chapterMarks,
   clockLabel,
+  endSeekTarget,
   intervalForFactor,
   markPositions,
   runClock,
@@ -141,14 +142,39 @@ describe("chapterMarks — one bite per kind", () => {
     ).toEqual([{ at: 0, kind: "question", labelKey: "lab.mark.question", vars: { n: 2 } }]);
   });
 
+  // markMessage has TWO branches and only one of them was pinned: replacing the
+  // whole body with an unconditional truncation left this file and
+  // chapterLabel.test.ts green, and a 20-character error would then have read
+  // with a trailing ellipsis promising text that does not exist. Both branches
+  // are asserted by EQUALITY below, so a message can neither grow nor shrink
+  // by a character without a red test.
+  const shownFor = (message: string): string =>
+    String(chapterMarks([ev({ type: "error", agentId: "main", message, ts: T })])[0].vars.message);
+
+  /** MARK_MESSAGE_CAP in stepper.ts — moving it there is meant to be red here. */
+  const CAP = 60;
+
   it("marks an error with its message, cut at the label's bound", () => {
     const long = "x".repeat(200);
     const marks = chapterMarks([ev({ type: "error", agentId: "main", message: long, ts: T })]);
     expect(marks[0].kind).toBe("error");
     expect(marks[0].labelKey).toBe("lab.mark.error");
-    const shown = String(marks[0].vars.message);
-    expect(shown.length).toBeLessThan(long.length);
-    expect(shown.endsWith("…")).toBe(true);
+    // The ellipsis costs a character, so the whole label stays inside the cap.
+    expect(marks[0].vars.message).toBe("x".repeat(CAP - 1) + "…");
+    expect(shownFor("x".repeat(CAP + 1))).toBe("x".repeat(CAP - 1) + "…");
+  });
+
+  it("hands a short error message back UNCHANGED, with no ellipsis promising more", () => {
+    expect(shownFor("disk on fire")).toBe("disk on fire");
+    // Twenty characters is the length the reviewer's bite used: an
+    // unconditional truncation would read "…" here and lie about the text.
+    expect(shownFor("connection refused!!")).toBe("connection refused!!");
+    // Exactly the cap is still the whole message — the > / >= bite.
+    expect(shownFor("x".repeat(CAP))).toBe("x".repeat(CAP));
+  });
+
+  it("folds a multi-line message into the one line a tooltip is", () => {
+    expect(shownFor("  boom\n  at Foo.java:12\t\tand again  ")).toBe("boom at Foo.java:12 and again");
   });
 
   it("marks a run_end and carries the stop reason verbatim", () => {
@@ -312,8 +338,11 @@ describe("the speed pills say what they do", () => {
 // happened to do.
 
 /** The same plain run the fix round was measured on: 60 turns, one agent, no
- *  spawns — a text block, a tool call and its result per turn. */
-function plainRun(turns: number): RunEvent[] {
+ *  spawns — a text block, a tool call and its result per turn.
+ *
+ *  `errorAtTurn` drops ONE error into that turn's block, which is the run this
+ *  card exists for: sixty ordinary boundaries and one thing that went wrong. */
+function plainRun(turns: number, errorAtTurn: number | null = null): RunEvent[] {
   const out: RunEvent[] = [ev({ type: "run_start", runId: "r", agentId: "main", prompt: "p", ts: T })];
   for (let i = 1; i <= turns; i++) {
     out.push(ev({ type: "turn_start", agentId: "main", turn: i, ts: T + i * 1000 }));
@@ -331,17 +360,24 @@ function plainRun(turns: number): RunEvent[] {
       }),
     );
     out.push(ev({ type: "tool_result", agentId: "main", callId: `c${i}`, ok: true, ts: T + i * 1000 }));
+    if (i === errorAtTurn) {
+      out.push(ev({ type: "error", agentId: "main", message: "disk on fire", ts: T + i * 1000 }));
+    }
   }
   out.push(ev({ type: "run_end", runId: "r", stopReason: "end_turn", ts: T + turns * 1000 }));
   return out;
 }
 
-/** A placed mark at a percentage, which is all thinMarks reads. */
-const at = (pct: number): MarkPosition => ({
-  mark: { at: pct, kind: "turn", labelKey: "lab.mark.turn", vars: { n: pct } },
+/** A placed mark of a given kind at a percentage — the two things thinMarks
+ *  reads. */
+const kindAt = (kind: ChapterKind, pct: number): MarkPosition => ({
+  mark: { at: pct, kind, labelKey: `lab.mark.${kind}`, vars: {} },
   index: pct,
   pct,
 });
+
+/** A placed mark at a percentage; a plain turn, the kind that makes the crowd. */
+const at = (pct: number): MarkPosition => kindAt("turn", pct);
 
 describe("thinMarks — the bar carries chapters, not a picket fence", () => {
   it("drops a tick that stands closer to its neighbour than the floor", () => {
@@ -386,11 +422,92 @@ describe("thinMarks — the bar carries chapters, not a picket fence", () => {
     }
   });
 
+  // ---- the second fix round: the thinning ate the marks it exists for ------
+  //
+  // Ranking by position alone kept whichever of two crowded ticks stood later.
+  // `turn` is the only kind that fires every turn, so on any long run the
+  // turns ARE the crowd — and a rarer kind standing beside one lost its place
+  // to it. Measured with these functions on the 60-turn run below carrying a
+  // single error: 62 marks in, 31 out, and the one failure of the whole run
+  // was not among them.
+
+  it("lets a rarer kind take the place a plain turn was holding", () => {
+    const seen = (ms: MarkPosition[]): [ChapterKind, number][] =>
+      thinMarks(ms, 2).map((p) => [p.mark.kind, p.pct]);
+    // The later tick used to win on position alone; now the rarer kind does,
+    // whichever side of the crowd it stands on.
+    expect(seen([kindAt("turn", 10), kindAt("error", 10.5)])).toEqual([["error", 10.5]]);
+    expect(seen([kindAt("error", 10), kindAt("turn", 10.5)])).toEqual([["error", 10]]);
+    // spawn is the other kind that fires per agent rather than per exception.
+    expect(seen([kindAt("spawn", 10), kindAt("gate", 10.5)])).toEqual([["gate", 10.5]]);
+    expect(seen([kindAt("gate", 10), kindAt("spawn", 10.5)])).toEqual([["gate", 10]]);
+  });
+
+  it("keeps the LATER of two ticks the ranking cannot tell apart", () => {
+    // The tie rule is what protects the run's last chapter, so it stays: two
+    // rare kinds, or two crowd kinds, still resolve by position.
+    expect(thinMarks([kindAt("error", 10), kindAt("gate", 10.5)], 2).map((p) => p.pct)).toEqual([10.5]);
+    expect(thinMarks([kindAt("turn", 10), kindAt("spawn", 10.5)], 2).map((p) => p.pct)).toEqual([10.5]);
+    // …including an error standing on the doorstep of the ending.
+    expect(thinMarks([kindAt("error", 99.5), kindAt("end", 100)], 2).map((p) => p.mark.kind)).toEqual([
+      "end",
+    ]);
+  });
+
+  it("keeps the ONE error of a 60-turn run that thirty turn boundaries crowd", () => {
+    const events = plainRun(60, 30);
+    const bounds = stepBoundaries(events);
+    const raw = markPositions(chapterMarks(events), bounds);
+    expect(events).toHaveLength(423);
+    expect(bounds.length - 1).toBe(243);
+    expect(raw).toHaveLength(62); // 60 turns, the error, the end
+
+    // Measured on this very fixture: the error stands at 50.21% of the bar and
+    // the next turn_start 0.41% later — a fifth of the floor, so one of the
+    // two has to go, and it used to be the error.
+    const err = raw.find((p) => p.mark.kind === "error");
+    expect(err).toBeDefined();
+    expect(err!.pct).toBeCloseTo(50.206, 3);
+    const next = raw.filter((p) => p.pct > err!.pct)[0];
+    expect(next.mark.kind).toBe("turn");
+    expect(next.pct - err!.pct).toBeLessThan(MARK_MIN_GAP_PCT);
+
+    const kept = thinMarks(raw, MARK_MIN_GAP_PCT);
+    expect(kept).toHaveLength(31);
+    // The whole point: the only failure in the run survives the thinning.
+    expect(kept.map((p) => p.mark.kind)).toContain("error");
+    // And it took the crowding turn's place rather than being drawn beside it.
+    expect(kept.filter((p) => Math.abs(p.pct - err!.pct) < MARK_MIN_GAP_PCT)).toHaveLength(1);
+    // The floor still holds after the swap — a replaced tick moves EARLIER,
+    // never later, so the gap to the neighbour behind it can only grow.
+    for (let i = 1; i < kept.length; i++) {
+      expect(kept[i].pct - kept[i - 1].pct).toBeGreaterThanOrEqual(MARK_MIN_GAP_PCT);
+    }
+  });
+
   it("bounds how many ticks any run can put on the bar", () => {
     // A floor of g% admits at most 100/g + 1 ticks, so the count cannot grow
     // with the run the way 61 did.
     const ceiling = Math.floor(100 / MARK_MIN_GAP_PCT) + 1;
     const dense = Array.from({ length: 400 }, (_, i) => at((i / 399) * 100));
     expect(thinMarks(dense, MARK_MIN_GAP_PCT).length).toBeLessThanOrEqual(ceiling);
+  });
+});
+
+describe("endSeekTarget — where the jump to the end lands", () => {
+  // The transport's ⇥ was pinned by its LABEL alone: seeking one event short
+  // of the run's ending renders exactly the same button. The destination is a
+  // reading, so it lives in this module and is pinned without a DOM.
+  it("applies every event of the stream", () => {
+    const events = plainRun(3);
+    expect(endSeekTarget(events)).toBe(events.length);
+    expect(endSeekTarget([])).toBe(0);
+  });
+
+  it("lands on the very boundary the slider's right end walks to", () => {
+    for (const events of [plainRun(1), plainRun(7), plainRun(60, 30)]) {
+      const bounds = stepBoundaries(events);
+      expect(endSeekTarget(events)).toBe(bounds[bounds.length - 1]);
+    }
   });
 });

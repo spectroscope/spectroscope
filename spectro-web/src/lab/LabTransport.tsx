@@ -20,6 +20,11 @@
 // to a floor. Drawn over the slider — the first build — the 61 ticks a plain
 // 60-turn run produces formed one unbroken row of 11px hit boxes and the scrub
 // bar could no longer be dragged at all.
+//
+// The thinning ranks by KIND before position (stepper.ts, MARK_RANK). Its
+// first build compared percentages only, and on a 60-turn run carrying one
+// error it kept thirty turn boundaries and dropped the error — the exact
+// opposite of what the ticks are for.
 
 import { useEffect } from "react";
 import type { ReactNode } from "react";
@@ -30,6 +35,7 @@ import {
   SPEED_FACTORS,
   chapterMarks,
   clockLabel,
+  endSeekTarget,
   intervalForFactor,
   markPositions,
   reset,
@@ -94,7 +100,9 @@ export function LabTransport(props: {
   };
   const jumpToEnd = (): void => {
     if (flowing) setMode("step");
-    seek(all.length);
+    // The destination is a reading, not a literal — see endSeekTarget, which is
+    // pinned against the last boundary the slider itself walks to.
+    seek(endSeekTarget(all));
   };
 
   // The chapters, placed on the very boundaries the slider walks. A live run

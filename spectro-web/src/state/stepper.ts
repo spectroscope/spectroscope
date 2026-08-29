@@ -318,6 +318,23 @@ export function markPositions(marks: readonly ChapterMark[], boundaries: readonl
 }
 
 /**
+ * Where the transport's jump-to-the-end lands: the whole stream applied.
+ *
+ * A one-line reading that lives here rather than inside the view because the
+ * view pinned it by the button's LABEL alone — seeking to `all.length - 1`,
+ * which stops the run one event short of its own ending, renders an identical
+ * button. It is also the tie to the slider: this is the LAST value
+ * stepBoundaries hands back for the same stream, so the ⇥ and the bar's right
+ * end are one place and cannot drift into two.
+ *
+ * @param all the whole stream — applied plus queued
+ * @return the cursor to seek to
+ */
+export function endSeekTarget(all: readonly RunEvent[]): number {
+  return all.length;
+}
+
+/**
  * The narrowest gap two ticks may keep, in percent of the scrub bar.
  *
  * Not a taste question. A tick's clickable box is 11px wide (lab.css
@@ -331,12 +348,46 @@ export function markPositions(marks: readonly ChapterMark[], boundaries: readonl
 export const MARK_MIN_GAP_PCT = 2;
 
 /**
+ * Which of two crowding ticks keeps the place: the rarer kind.
+ *
+ * `turn` is the only kind that fires every turn, and `spawn` fires per child —
+ * on any run long enough to need thinning those two ARE the crowd. The other
+ * nine are exceptions, and being rare is exactly what makes them the part
+ * somebody scrubbing several hundred coarse steps is looking for.
+ *
+ * The number is a rank, not a weight: nothing adds these up, they are only ever
+ * compared. A Record over the whole ChapterKind union on purpose — a twelfth
+ * kind will not COMPILE until somebody says whether it is crowd or chapter.
+ */
+const MARK_RANK: Record<ChapterKind, number> = {
+  turn: 0,
+  spawn: 0,
+  compaction: 1,
+  gate: 1,
+  denied: 1,
+  no_progress: 1,
+  intervention: 1,
+  question: 1,
+  skill: 1,
+  error: 1,
+  end: 1,
+};
+
+/**
  * Thin placed marks down to ticks a reader can tell apart and a pointer can
  * hit, dropping the ones that crowd their neighbour.
  *
  * Read from the END backwards, so the last chapter of the run always survives:
  * it is the tick a presenter jumps to, and thinning from the front would keep
  * the turn just before the finish and throw the finish away.
+ *
+ * Position alone is not enough to choose between two ticks that crowd. Measured
+ * on a plain 60-turn run carrying ONE error (chapterMarks.test.ts builds it):
+ * 62 marks thin to 31, and by position alone the error was not among them — it
+ * stood 0.41% before an ordinary turn boundary, the backwards walk kept the
+ * later one, and the single failure of the run vanished behind thirty turns
+ * that all said the same thing. So a crowded pair is settled by MARK_RANK
+ * first and by position only on a tie.
  *
  * @param marks placed marks, in the run's own order
  * @param minGapPct the floor, in percent of the bar
@@ -346,7 +397,18 @@ export function thinMarks(marks: readonly MarkPosition[], minGapPct: number): Ma
   const kept: MarkPosition[] = [];
   for (let i = marks.length - 1; i >= 0; i -= 1) {
     const m = marks[i];
-    if (kept.length === 0 || kept[kept.length - 1].pct - m.pct >= minGapPct) kept.push(m);
+    const held = kept[kept.length - 1];
+    if (held === undefined || held.pct - m.pct >= minGapPct) {
+      kept.push(m);
+      continue;
+    }
+    // They crowd, so one of the two goes. The rarer kind takes the place; on a
+    // tie the later one holds it, which is what keeps the run's ending.
+    //
+    // Swapping is safe without a second pass: m stands EARLIER than the tick it
+    // replaces, so its gap to the neighbour already kept behind it can only
+    // grow, and the floor holds for the whole row.
+    if (MARK_RANK[m.mark.kind] > MARK_RANK[held.mark.kind]) kept[kept.length - 1] = m;
   }
   return kept.reverse();
 }
