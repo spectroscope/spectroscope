@@ -45,4 +45,35 @@ describe("the tick layer sits beside the slider, not on top of it", () => {
   it("stacks the track's two rows, slider above ticks", () => {
     expect(rule(".lab-scrub-track")).toMatch(/flex-direction:\s*column/);
   });
+
+  // The second fix round. The two assertions above forbid ONE of the three
+  // shapes that put a tick back over the slider, and the third was a single
+  // declaration away.
+  //
+  // `.lab-mark` is `position: absolute; top: 0; bottom: 0`, so its containing
+  // block is the nearest POSITIONED ancestor — the tick row only because
+  // `.lab-marks` says `position: relative`. Measured in a browser on this
+  // stylesheet, one 900px transport, all four shapes:
+  //
+  //   track static  + marks relative  ticks y 63–72 under an input y 44–60,
+  //                                   a 3px gap, elementFromPoint → INPUT
+  //   track relative + marks relative  every number identical to the above
+  //   track relative + marks static    ticks y 42–72 ACROSS the input y 44–60,
+  //                                   16px overlap, elementFromPoint → the tick
+  //   track static  + marks static     ticks 1260px tall, spanning the page
+  //
+  // The third row is the original blocker, and one deleted declaration was all
+  // that stood between it and the shipped build — 4813 tests saw none of it.
+  // The first two rows are why dropping the track's `position: relative` is
+  // safe: it moved nothing.
+  it("keeps the tick row itself positioned, so a tick resolves against IT", () => {
+    expect(rule(".lab-marks")).toMatch(/position:\s*relative/);
+  });
+
+  it("leaves nothing else in the track for a tick to resolve against", () => {
+    // Rather than guard the escape route, remove it: the track is a flex
+    // column now and needs no containing block of its own, so the shape where
+    // a tick spans the whole track cannot be built at all.
+    expect(rule(".lab-scrub-track")).not.toMatch(/position:\s*(relative|absolute|fixed|sticky)/);
+  });
 });

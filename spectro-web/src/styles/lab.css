@@ -544,10 +544,21 @@
    from the slider however many ticks it ends up carrying; the density floor in
    stepper.ts (MARK_MIN_GAP_PCT) keeps the ticks apart from each other.
 
+   The track carries NO position of its own, and that is load-bearing rather
+   than tidiness. A tick is `position: absolute; top: 0; bottom: 0`, so it
+   resolves against the nearest POSITIONED ancestor. While the track was still
+   `position: relative`, deleting the one `position: relative` from .lab-marks
+   put every tick back across the input: measured in a browser on this very
+   stylesheet, ticks 30px tall at y 42–72 over an input at y 44–60, 16px of
+   overlap, and elementFromPoint above the slider returning the tick instead of
+   the input. Now that the track is a flex column it needs no containing block,
+   so that shape cannot be built at all. Dropping the declaration moved nothing:
+   input y 44–60, tick row y 63–72, ticks at x 452/545/638/732 either way.
+   scrubStaysDraggable.drift.test.ts holds both halves.
+
    Colour rides on 1px lines only, out of the event-type vocabulary in
    tokens.css, so all three designs get it from their own ramps. */
 .lab-scrub-track {
-  position: relative;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -565,6 +576,9 @@
    correction would be half a thumb width, and nobody here has measured what
    that is in each browser the app ships to. */
 .lab-marks {
+  /* The ticks' containing block. Nothing above this row is positioned any
+     more, so taking this away does not move a tick a little — it lets every
+     one of them span the page. */
   position: relative;
   height: 9px;
   margin-top: 1px;
