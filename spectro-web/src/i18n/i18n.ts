@@ -2038,6 +2038,19 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "{n} agent transcripts sit beside this file",
   },
   "work.besideClaim": { de: "die Aufgabe meldete {n}", en: "the task reported {n}" },
+  // Card 313: the third reading, and the one the two above were written before
+  // it existed. Card 297 loads a workflow run's agents INTO the stream, so the
+  // row above them is no longer talking about files somebody else has to open.
+  // The two sentences above stay for the case they are still true of: a run
+  // whose agents are not here at all.
+  "work.inStream": {
+    de: "{n} Agenten dieses Laufs stehen in diesem Stream",
+    en: "{n} agents of this run are in this stream",
+  },
+  "work.inStreamOne": {
+    de: "{n} Agent dieses Laufs steht in diesem Stream",
+    en: "{n} agent of this run is in this stream",
+  },
   "work.opaqueCalls": {
     de: "meldet {n} Tool-Calls · keiner davon als Frame",
     en: "reports {n} tool calls · none of them as a frame",

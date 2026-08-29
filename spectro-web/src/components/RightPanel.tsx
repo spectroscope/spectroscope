@@ -283,6 +283,7 @@ export function RightPanel({
             highlight={workHighlight ?? null}
             onFocusEvent={onFocusEvent}
             sidecars={sidecars}
+            roster={agents}
             onOpenAgent={onOpenAgent}
           />
         );

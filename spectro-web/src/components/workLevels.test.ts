@@ -119,9 +119,13 @@ const workedItem = (over: Partial<WorkItem> = {}): WorkItem =>
     ...over,
   });
 
+// The `false` every call below carries is card 313's second argument: the
+// agents panel lists no agent under these rows, which is the state every one
+// of these assertions was written in. The other arm is pinned in
+// workAgentsInStream.test.ts, apart, because it is a different claim.
 describe("absences", () => {
   it("a lane with a span and its own frames hides nothing", () => {
-    expect(absences(workedItem())).toEqual([]);
+    expect(absences(workedItem(), false)).toEqual([]);
   });
 
   it("a launched task always declares that its agent rows are missing", () => {
@@ -129,13 +133,13 @@ describe("absences", () => {
       kind: "launched",
       opaque: { agents: 24, agentsDone: 15, agentsError: 9, toolUses: 368, durationMs: 613990 },
     });
-    expect(absences(launched)).toContain("agentRows");
-    expect(absences(launched)).toContain("tokens");
-    expect(absences(launched)).toContain("calls");
+    expect(absences(launched, false)).toContain("agentRows");
+    expect(absences(launched, false)).toContain("tokens");
+    expect(absences(launched, false)).toContain("calls");
   });
 
   it("an item with no span says so", () => {
-    expect(absences(workedItem({ firstTs: null, lastTs: null }))).toContain("span");
+    expect(absences(workedItem({ firstTs: null, lastTs: null }), false)).toContain("span");
   });
 });
 
@@ -199,20 +203,20 @@ describe("absences · a lane the file names and never records", () => {
   // result 17 ms apart and nothing in between.
   it("marks a lane with no usage frame and no calls", () => {
     const named = item({ firstTs: 500, lastTs: 517, inTokens: 0, outTokens: 0, toolCalls: 0 });
-    expect(absences(named)).toEqual(["noWork"]);
+    expect(absences(named, false)).toEqual(["noWork"]);
   });
 
   it("a lane that did work is not marked, even if it was quick", () => {
-    expect(absences(workedItem({ firstTs: 500, lastTs: 500 }))).toEqual([]);
+    expect(absences(workedItem({ firstTs: 500, lastTs: 500 }), false)).toEqual([]);
   });
 
   it("a lane with a tool call but no usage is not marked — it left a frame", () => {
-    expect(absences(item({ toolCalls: 1 }))).toEqual([]);
+    expect(absences(item({ toolCalls: 1 }), false)).toEqual([]);
   });
 
   it("a launched task never gets the lane marker — it gets its own", () => {
     const launched = item({ kind: "launched", firstTs: 1, lastTs: 1 });
-    expect(absences(launched)).not.toContain("noWork");
-    expect(absences(launched)).toContain("agentRows");
+    expect(absences(launched, false)).not.toContain("noWork");
+    expect(absences(launched, false)).toContain("agentRows");
   });
 });

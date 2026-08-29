@@ -171,11 +171,7 @@ describe("absences — the same condition on the neighbouring sentence", () => {
   });
 });
 
-function panel(extra: {
-  roster?: AgentInfo[];
-  sidecars?: SidecarIndex;
-  item?: WorkItem;
-}): string {
+function panel(extra: { roster?: AgentInfo[]; sidecars?: SidecarIndex; item?: WorkItem }): string {
   return renderToStaticMarkup(
     <WorkPanel
       items={[extra.item ?? launchNode()]}
