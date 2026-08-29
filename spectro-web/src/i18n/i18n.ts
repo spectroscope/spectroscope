@@ -3805,8 +3805,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // stamps. The two look different on purpose (solid against dashed), and the
   // legend says the difference in words rather than leaving it to the stroke.
   "lab.lens.legendDeclared": {
-    de: "Kanten zeigen, wer wen gestartet hat, Spalten sind die Phasen, die dieser Lauf vorher deklariert hat — durchgezogen: deklariert, nicht geraten",
-    en: "edges show who started whom, columns are the phases this run declared before it started — solid: declared, not guessed",
+    de: "Kanten zeigen, wer wen gestartet hat — durchgezogen: die Phasen, die dieser Lauf vorher deklariert hat, gestrichelt: aus den Zeitstempeln geraten",
+    en: "edges show who started whom — solid: the phases this run declared before it started, dashed: guessed from the timestamps",
   },
   "lab.lens.sourceDeclared": { de: "deklariert", en: "declared" },
   "lab.lens.sourceRecovered": { de: "rekonstruiert", en: "recovered" },

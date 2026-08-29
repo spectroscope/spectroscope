@@ -173,3 +173,67 @@ describe("a declared phase the run never filled", () => {
     expect(tree.topo.nodes.map((n) => n.id)).not.toContain(lensPhaseNodeId("wf", 2));
   });
 });
+
+/**
+ * A declared workflow does not get the tree to itself. The run's main agent
+ * spawns plain Task children beside the workflow, and their GUESSED waves land
+ * on the same columns the workflow's script named — so a caption saying "plan"
+ * would be standing over an agent the script never mentioned, and its
+ * time-guessed spawn edge would be drawn in the stroke that means "declared".
+ *
+ * The declaration is per NODE, not per tree. A column a guess also occupies
+ * loses its word, the same way a column two runs claim with different words
+ * does; and only the boxes a declaration placed are named as declared, so the
+ * lens can draw the rest the way card 293 always drew them.
+ */
+describe("a declared workflow beside plain Task siblings", () => {
+  const mixed = (): RunEvent[] => [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+    { type: "agent_spawn", agentId: "wf", parentId: "main", task: "a run", ts: 10 },
+    { type: "agent_spawn", agentId: "p1", parentId: "wf", task: "phase one", ts: 12 },
+    { type: "agent_spawn", agentId: "p2", parentId: "wf", task: "phase two", ts: 13 },
+    { type: "agent_spawn", agentId: "p3", parentId: "wf", task: "phase three", ts: 14 },
+    { type: "text_delta", agentId: "wf", text: "…", ts: 20 },
+    // Two plain siblings of the workflow, in their own derived waves.
+    { type: "agent_spawn", agentId: "sibB", parentId: "main", task: "something else", ts: 30 },
+    { type: "text_delta", agentId: "sibB", text: "…", ts: 40 },
+    { type: "agent_spawn", agentId: "sibC", parentId: "main", task: "another thing", ts: 50 },
+    { type: "text_delta", agentId: "sibC", text: "…", ts: 60 },
+  ];
+  const three = decl({ p1: 0, p2: 1, p3: 2 }, ["plan", "survey", "verify"]);
+
+  it("puts the siblings in the same columns the script named — the case that makes this reachable", () => {
+    const tree = spawnTree(mixed(), three);
+    const r = tree.topo.ranks!;
+    expect([r.get("p1"), r.get("p2"), r.get("p3")]).toEqual([2, 3, 4]);
+    expect([r.get("sibB"), r.get("sibC")]).toEqual([2, 3]);
+  });
+
+  it("takes the script's word off any column a guess also stands in", () => {
+    const tree = spawnTree(mixed(), three);
+    expect(tree.topo.rankCaptions!.has(2)).toBe(false);
+    expect(tree.topo.rankCaptions!.has(3)).toBe(false);
+    // The column no guess reached keeps its word.
+    expect(tree.topo.rankCaptions!.get(4)?.title).toBe("verify");
+  });
+
+  it("names as declared only the boxes a declaration placed", () => {
+    const tree = spawnTree(mixed(), three);
+    expect([...tree.declaredNodes].sort()).toEqual(["p1", "p2", "p3"]);
+    expect(tree.declared).toBe(true);
+  });
+
+  it("says nothing is declared when no declaration placed anything", () => {
+    const tree = spawnTree(mixed());
+    expect(tree.declaredNodes.size).toBe(0);
+    expect(tree.declared).toBe(false);
+  });
+
+  it("counts a declared phase the run never filled as a declared box", () => {
+    const tree = spawnTree(mixed(), decl({ p1: 0 }, ["plan", "survey"]));
+    // p2 and p3 were not named, so they go to the stray column; phase 1 was
+    // never filled, so it gets its own box — and that box is declared.
+    expect(tree.declaredNodes.has(lensPhaseNodeId("wf", 1))).toBe(true);
+    expect(tree.declaredNodes.has("p2")).toBe(false);
+  });
+});

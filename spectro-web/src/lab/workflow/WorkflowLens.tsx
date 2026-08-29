@@ -6,9 +6,14 @@
 // apart. Dashed still means reconstructed from what happened — a Task spawn
 // tree, columns guessed from the stamps. Solid means the run declared its
 // columns before it started: a workflow's `phases` sit in its script before a
-// token flows, and the lens ranks and captions by them. The legend says which
-// of the two a viewer is looking at in words, and the honesty chip counts what
-// the reconstruction resolved either way.
+// token flows, and the lens ranks and captions by them.
+//
+// One picture can hold BOTH, which is why the stroke is decided per edge and
+// not once for the canvas: the spawn of a workflow is itself a reconstruction,
+// and a run can spawn plain Task children beside a declared workflow. The
+// legend therefore explains both strokes rather than only the one the tree
+// happens to lead with, and the honesty chip counts what the reconstruction
+// resolved either way.
 
 import { useMemo } from "react";
 import type { ReactNode } from "react";
@@ -40,9 +45,21 @@ export { WorkflowNode };
 
 const NODE_TYPES: NodeTypes = { wfNode: WorkflowNode };
 
-/** The one edge renderer of this lens: every routed path dashed, keyed by
- *  the edge's OWN id (layout.ts, card 293) so parallel edges both survive. */
-export function WorkflowOverlay({ laid, declared = false }: { laid: StateGraphLayout; declared?: boolean }) {
+/** The one edge renderer of this lens, keyed by the edge's OWN id (layout.ts,
+ *  card 293) so parallel edges both survive.
+ *
+ *  THE STROKE IS PER EDGE, not per picture. `declared` names the nodes a
+ *  script placed; an edge INTO one of them was declared before the run and is
+ *  drawn solid, and everything else keeps card 293's dash because it was
+ *  reconstructed from the stamps. One run holds both: the spawn of a workflow
+ *  is itself a reconstruction, and plain Task children can sit beside it. */
+export function WorkflowOverlay({
+  laid,
+  declared,
+}: {
+  laid: StateGraphLayout;
+  declared?: ReadonlySet<string>;
+}) {
   return (
     <svg className="wf-arcs" aria-hidden="true" style={{ overflow: "visible" }}>
       <defs>
@@ -64,7 +81,7 @@ export function WorkflowOverlay({ laid, declared = false }: { laid: StateGraphLa
           key={e.id}
           d={e.path}
           className="wf-arc"
-          {...(declared ? {} : { strokeDasharray: "7 5" })}
+          {...(declared?.has(e.to) === true ? {} : { strokeDasharray: "7 5" })}
           markerEnd="url(#wf-ar)"
         />
       ))}
@@ -189,7 +206,7 @@ export function WorkflowLens(props: {
       >
         <RefitOnLayout laid={laid} />
         <ViewportPortal>
-          <WorkflowOverlay laid={laid} declared={tree.declared} />
+          <WorkflowOverlay laid={laid} declared={tree.declaredNodes} />
         </ViewportPortal>
       </GraphCanvas>
     </div>

@@ -22,8 +22,11 @@ vi.mock("@xyflow/react", () => ({
 import type { RunEvent } from "../../events";
 import { layoutStateGraph } from "../../stategraph/layout";
 import { spawnTree } from "../spawnTree";
+import { advanceScene, initialScene } from "../labScene";
+import { t } from "../../i18n/i18n";
+import { currentLang } from "../../state/lang";
 import type { WorkflowDeclaration } from "../workflowGraph";
-import { WorkflowLegend, WorkflowOverlay } from "./WorkflowLens";
+import { WorkflowLegend, WorkflowLens, WorkflowOverlay } from "./WorkflowLens";
 
 const EVENTS: RunEvent[] = [
   { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
@@ -60,18 +63,27 @@ describe("the stroke says where the columns came from", () => {
     expect(html.match(/stroke-dasharray/g) ?? []).toHaveLength(laid.edges.length);
   });
 
-  it("declared: every edge solid — no dash anywhere", () => {
-    const laid = laidFor(DECL);
-    const html = renderToStaticMarkup(<WorkflowOverlay laid={laid} declared />);
-    expect(laid.edges.length).toBeGreaterThan(0);
-    expect(html.match(/class="wf-arc"/g) ?? []).toHaveLength(laid.edges.length);
-    expect(html).not.toContain("stroke-dasharray");
+  // REPLACED, not loosened. This used to assert that a declared tree draws
+  // every edge solid, which was the whole-tree boolean talking: the workflow's
+  // OWN spawn was reconstructed from the events like any other, and drawing it
+  // solid said the script had declared it. The stroke is per edge.
+  it("declared: the boxes the script placed go solid, the spawn of the run itself stays dashed", () => {
+    const tree = spawnTree(EVENTS, DECL);
+    const laid = layoutStateGraph(tree.topo, "horizontal");
+    const html = renderToStaticMarkup(<WorkflowOverlay laid={laid} declared={tree.declaredNodes} />);
+    // main → wf, wf → one, wf → two.
+    expect(laid.edges).toHaveLength(3);
+    expect(html.match(/class="wf-arc"/g) ?? []).toHaveLength(3);
+    expect(html.match(/stroke-dasharray/g) ?? []).toHaveLength(1);
   });
 });
 
 describe("the columns carry the script's words", () => {
   it("declared: the phase title is drawn on its column, the detail beside it", () => {
-    const html = renderToStaticMarkup(<WorkflowOverlay laid={laidFor(DECL)} declared />);
+    const tree = spawnTree(EVENTS, DECL);
+    const html = renderToStaticMarkup(
+      <WorkflowOverlay laid={layoutStateGraph(tree.topo, "horizontal")} declared={tree.declaredNodes} />,
+    );
     expect(html).toContain("plan");
     expect(html).toContain("decide what to look at");
     expect(html).toContain("survey");
@@ -84,16 +96,20 @@ describe("the columns carry the script's words", () => {
 });
 
 describe("the legend says WHICH picture this is, in both locales", () => {
-  it("declared, EN and DE", () => {
+  // The `not.toContain("dashed")` this test used to carry has been REPLACED
+  // rather than dropped: a declared tree really does hold both strokes — the
+  // spawn of the run itself, and any plain Task child beside it, are still
+  // reconstructions — so a legend that named only the solid one would leave
+  // the dashed edges on screen unexplained.
+  it("declared, EN and DE — and it explains BOTH strokes, because both are on screen", () => {
     const en = renderToStaticMarkup(<WorkflowLegend lang="en" resolved={2} reported={2} declared />);
     expect(en).toContain("declared before it started");
     expect(en).toContain("solid");
-    expect(en).toContain("declared");
-    expect(en).not.toContain("dashed");
+    expect(en).toContain("dashed");
     const de = renderToStaticMarkup(<WorkflowLegend lang="de" resolved={2} reported={2} declared />);
     expect(de).toContain("vorher deklariert hat");
     expect(de).toContain("durchgezogen");
-    expect(de).not.toContain("gestrichelt");
+    expect(de).toContain("gestrichelt");
   });
 
   it("recovered, EN and DE — the card 293 sentence, unchanged", () => {
@@ -105,5 +121,41 @@ describe("the legend says WHICH picture this is, in both locales", () => {
     expect(de).toContain("Spalten folgen der Zeit");
     expect(de).toContain("gestrichelt");
     expect(de).toContain("rekonstruiert");
+  });
+});
+
+/**
+ * THE DELIVERY CHAIN. Every test above hands the presentational components
+ * their booleans and sets BY HAND, which pins how they draw and nothing about
+ * whether the lens ever computes or forwards the truth. Cut at either seam —
+ * the overlay's set or the legend's flag — the whole suite stayed green, and a
+ * declared workflow could draw dashed under a legend reading "recovered".
+ * These render the ASSEMBLED lens instead.
+ */
+describe("the lens hands its own reconstruction down to both", () => {
+  const scene = EVENTS.reduce((s, e) => advanceScene(s, e), initialScene());
+  const lang = currentLang();
+
+  it("declared: the legend says declared, the columns carry the words, the declared edges are solid", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowLens events={EVENTS} applied={EVENTS} scene={scene} declared={DECL} />,
+    );
+    expect(html).toContain(t(lang, "lab.lens.legendDeclared"));
+    expect(html).toContain(t(lang, "lab.lens.sourceDeclared"));
+    expect(html).toContain("wf-ranklabel");
+    expect(html).toContain("plan");
+    // Three edges on screen, one of them the run's own reconstructed spawn.
+    expect(html.match(/class="wf-arc"/g) ?? []).toHaveLength(3);
+    expect(html.match(/stroke-dasharray/g) ?? []).toHaveLength(1);
+  });
+
+  it("recovered: the legend says recovered, no column is named, every edge dashed", () => {
+    const html = renderToStaticMarkup(<WorkflowLens events={EVENTS} applied={EVENTS} scene={scene} />);
+    expect(html).not.toContain(t(lang, "lab.lens.legendDeclared"));
+    expect(html).toContain(t(lang, "lab.lens.sourceRecovered"));
+    expect(html).not.toContain("wf-ranklabel");
+    const arcs = (html.match(/class="wf-arc"/g) ?? []).length;
+    expect(arcs).toBeGreaterThan(0);
+    expect(html.match(/stroke-dasharray/g) ?? []).toHaveLength(arcs);
   });
 });

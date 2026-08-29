@@ -47,10 +47,16 @@ export interface SpawnTree {
   resolved: number;
   /** The root's node id ("main" unless the root run_start says otherwise). */
   root: string;
-  /** True when at least one parent's columns came from a DECLARATION rather
-   *  than from the time-overlap guess — the one bit the legend needs to say
-   *  which of the two pictures a viewer is looking at. */
+  /** True when anything on screen came from a DECLARATION rather than from
+   *  the time-overlap guess — the one bit the legend needs to say which of the
+   *  two pictures a viewer is looking at. Exactly `declaredNodes.size > 0`. */
   declared: boolean;
+  /** The nodes a declaration PLACED — the agents a run's script named, and the
+   *  boxes standing for phases it named and never filled. Per node, not per
+   *  tree: a workflow can share a run with plain Task children whose columns
+   *  are still a guess, and the lens draws the stroke of each edge from THIS
+   *  set. Everything outside it keeps card 293's dash. */
+  declaredNodes: ReadonlySet<string>;
 }
 
 const LABEL_MAX = 28;
@@ -111,6 +117,11 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
   // is every Task spawn tree and every workflow whose state file the reader
   // never got. The lens says WHICH of the two a viewer is looking at rather
   // than letting the two look alike.
+  //
+  // AND IT IS PER NODE, NOT PER TREE. One run can hold both: a declared
+  // workflow and, beside it, plain Task children whose columns are still a
+  // guess. `declaredNodes` is therefore the unit the lens draws from — the
+  // stroke of every edge, and whether a column may keep the script's word.
   const parentOf = (c: ChildRecord): string => (known.has(c.parentId) ? c.parentId : root);
   const byParent = new Map<string, ChildRecord[]>();
   for (const c of children.values()) {
@@ -125,7 +136,9 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
   // meanings would be a lie, an unnamed column is only a column.
   const rankCaptions = new Map<number, RankCaption>();
   const contested = new Set<number>();
-  let anyDeclared = false;
+  /** The nodes a declaration placed. Everything else got its column from the
+   *  time-overlap guess, and says so in its stroke. */
+  const declaredNodes = new Set<string>();
   /** Declared phases nobody filled — drawn, edgeless, never entered. */
   const emptyPhaseNodes: { id: string; title: string }[] = [];
   const claim = (r: number, p: DeclaredPhase): void => {
@@ -153,7 +166,6 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
     );
     const said = declared?.get(parent);
     if (said !== undefined) {
-      anyDeclared = true;
       // The declared columns open at base + 1, in the script's own order. An
       // agent the declaration never named goes one column PAST them — the
       // same place `workflowGraph` puts an undeclared agent, so the two
@@ -161,7 +173,13 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
       const stray = base + 1 + said.phases.length;
       for (const c of kids) {
         const at = said.rankOf.get(c.id);
-        if (!ranks.has(c.id)) ranks.set(c.id, at === undefined ? stray : base + 1 + at);
+        if (!ranks.has(c.id)) {
+          ranks.set(c.id, at === undefined ? stray : base + 1 + at);
+          // Only a child the declaration NAMED is a declared box. One it did
+          // not is standing in the stray column on this module's say-so, and
+          // must not borrow the stroke that means "declared".
+          if (at !== undefined) declaredNodes.add(c.id);
+        }
         queue.push(c.id);
       }
       said.phases.forEach((p, i) => claim(base + 1 + i, p));
@@ -176,6 +194,7 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
         if (filled.has(i)) return;
         const id = lensPhaseNodeId(parent, i);
         ranks.set(id, base + 1 + i);
+        declaredNodes.add(id);
         emptyPhaseNodes.push({ id, title: p.title });
       });
       continue;
@@ -196,6 +215,20 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
   // A child the walk never reached is in a parent cycle. It still gets drawn,
   // one step off the root, rather than being left without a rank.
   for (const c of children.values()) if (!ranks.has(c.id)) ranks.set(c.id, 1);
+
+  // A COLUMN A GUESS ALSO STANDS IN LOSES THE SCRIPT'S WORD. The declaration
+  // governs where its own run's agents go; it says nothing about the root's
+  // other children, and their waves land on the very same ranks — measured:
+  // main spawning a declared three-phase workflow plus two plain Task
+  // siblings put each sibling inside a column captioned with the script's own
+  // words. One word over two meanings is the same lie `contested` already
+  // refuses between two runs, so it is refused here for the same reason and
+  // in the same vocabulary: an unnamed column is only a column.
+  // (The walk is over, so this deletes rather than going through `contested`,
+  // which is the same refusal applied while the walk is still claiming.)
+  for (const [id, r] of ranks) {
+    if (!declaredNodes.has(id)) rankCaptions.delete(r);
+  }
 
   // The real spawn relation, one edge per child: from its parent when that
   // parent appears in the run, from the root when it does not.
@@ -225,7 +258,8 @@ export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): S
   return {
     topo: { entry: root, nodes, edges, ranks, rankCaptions },
     meta,
-    declared: anyDeclared,
+    declared: declaredNodes.size > 0,
+    declaredNodes,
     reported: children.size,
     resolved: [...children.values()].filter(resolvedOf).length,
     root,
