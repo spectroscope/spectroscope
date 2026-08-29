@@ -1142,6 +1142,14 @@ describe("sceneToFlow — one geometry, whoever serves the tokens", () => {
           const netz = box(flow, "netz")!;
           const mcp = box(flow, "mcpserver")!;
           if (spans(netz, mcp)) escapes.push(`${at}: netz ${span(netz)} runs into mcpserver ${span(mcp)}`);
+          // A frame that merely CONTAINS its widest row still hugs it, and a
+          // centred card slides into any frame down to its own width — so
+          // containment alone cannot catch a frame sized for the wrong row.
+          // The air on each side is the half the earlier check cannot see.
+          const air = Math.min(
+            ...[llm, netz, mcp].map((b) => Math.min(b.x - outside.x, outside.x + outside.w - (b.x + b.w))),
+          );
+          if (air < 24) escapes.push(`${at}: the outside frame leaves ${air}px of air around its content`);
         }
       }
     }

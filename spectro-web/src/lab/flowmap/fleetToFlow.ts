@@ -7,15 +7,18 @@
 // stations move outward so nothing ever overlaps.
 //
 // Honesty notes baked into the geometry:
-//   - the boundary + remote LLM only claim "outside" for genuinely remote
-//     providers; nodes on ollama rail to a LOCAL station inside the machine;
+//   - ONE model station, beyond the boundary, whoever serves the tokens (card
+//     304). The fleet used to split its cards into a local set and a remote set
+//     and draw a box for each, so a pure-ollama fleet showed no boundary
+//     traffic at all and a mixed fleet showed two models. With the internal
+//     model behind the agents and ollama serving cloud models, "local" no
+//     longer named a fact worth a second station;
 //   - the user station only exists when a "main" node exists (a process fleet
 //     without main has no user-facing entry, so none is drawn).
 
 import type { Edge, Node } from "@xyflow/react";
 import type { Lang } from "../../i18n/i18n";
 import { t } from "../../i18n/i18n";
-import { isLocalProvider } from "../labScene";
 import type { FleetLabNode, FleetLabScene } from "../fleetLabScene";
 import {
   activity,
@@ -37,7 +40,6 @@ const GRID_Y = 110; // first row
 const OS_GAP = 56; // space between the deepest card and the OS band
 const OS_H = 236; // the OS band's height (matches the single-run map)
 const OS_W = 792; // the OS band's width (disk/shell/mcp/net row)
-const LLM_W = 440; // .pf-llm width
 const MAC_PAD = 24;
 const USER_X = 40; // the user station's own column, left of the card grid
 
@@ -87,16 +89,11 @@ export function fleetToFlow(
   const gridBottom = GRID_Y + (rows - 1) * stepY + cardH;
   const osTop = Math.max(668, gridBottom + OS_GAP);
   const gridRight = gridX + (cols - 1) * CARD_STEP_X + CARD_W;
-  // The mac zone must hold the card grid, the OS band, and (when a local
-  // backend is in play) the local LLM station right of the OS band. An expanded
-  // local station is a card with its reasoning open — three times the compact
-  // height, and the band's own 236px never covers it.
-  const localLlmX = MAC_PAD + OS_W + 64;
-  const macW = Math.max(1000, gridRight + 120, scene.hasLocal ? localLlmX + LLM_W + MAC_PAD : 0);
-  const macH = Math.max(
-    osTop + OS_H + 36,
-    expanded && scene.hasLocal ? osTop + 8 + EXPANDED_CARD.llm.h + MAC_PAD : 0,
-  );
+  // The mac zone must hold the card grid and the OS band. It used to have to
+  // hold a local model station beside the band as well; that station is gone
+  // (card 304), so the frame is back to the two things that live in it.
+  const macW = Math.max(1000, gridRight + 120);
+  const macH = osTop + OS_H + 36;
   const boundaryX = macW + 16;
   const outsideX = macW + 52;
   const llmX = outsideX + 40;
@@ -236,49 +233,24 @@ export function fleetToFlow(
     });
   }
 
-  // ---- LLM stations --------------------------------------------------------
-  const remoteNodes = cards.filter((c) => c.provider !== null && !isLocalProvider(c.provider));
-  const localNodes = cards.filter((c) => c.provider !== null && isLocalProvider(c.provider));
+  // ---- the LLM station -----------------------------------------------------
+  // One station for the whole fleet, and every card's provider on its label.
+  const withProvider = cards.filter((c) => c.provider !== null);
   const streamsOf = (rec: Record<string, string>, of: FleetLabNode[]): AgentStream[] =>
     of.map((c) => ({ agent: c.id, text: rec[c.id] ?? "" })).filter((s) => s.text.length > 0);
-
-  // The remote station shows when remote traffic exists — or before ANY
-  // provider is known (the default expectation, like the single-run map). A
-  // purely local fleet hides it: an unused remote box would claim traffic
-  // that never crosses the boundary.
-  const remoteShown = scene.hasRemote || !scene.hasLocal;
-  if (remoteShown) {
-    nodes.push({
-      id: "llm",
-      type: "llm",
-      position: { x: llmX, y: llmY },
-      data: {
-        active: remoteNodes.some((c) => c.focus === "llm"),
-        local: false,
-        provider: providerLabel(remoteNodes),
-        model: "",
-        think: streamsOf(detail.think, remoteNodes),
-        answer: streamsOf(detail.answer, remoteNodes),
-      },
-      zIndex: 10,
-    });
-  }
-  if (scene.hasLocal) {
-    nodes.push({
-      id: "llm-local",
-      type: "llm",
-      position: { x: localLlmX, y: osTop + 8 },
-      data: {
-        active: localNodes.some((c) => c.focus === "llm"),
-        local: true,
-        provider: providerLabel(localNodes),
-        model: "",
-        think: streamsOf(detail.think, localNodes),
-        answer: streamsOf(detail.answer, localNodes),
-      },
-      zIndex: 10,
-    });
-  }
+  nodes.push({
+    id: "llm",
+    type: "llm",
+    position: { x: llmX, y: llmY },
+    data: {
+      active: cards.some((c) => c.focus === "llm"),
+      provider: providerLabel(withProvider),
+      model: "",
+      think: streamsOf(detail.think, cards),
+      answer: streamsOf(detail.answer, cards),
+    },
+    zIndex: 10,
+  });
 
   // ---- external services (the MCP chain's far side) ------------------------
   nodes.push({
@@ -330,14 +302,9 @@ export function fleetToFlow(
   const mcpErr = mcpUser?.isError === true;
   for (const card of cards) {
     const id = `card-${card.id}`;
-    // A local-provider card rails locally; everyone else rails to the remote
-    // station — unless it is hidden (pure-local fleet), where the local
-    // station is the only one left to ride to.
-    const local = (card.provider !== null && isLocalProvider(card.provider)) || !remoteShown;
-    const llmTarget = local ? "llm-local" : "llm";
-    E(`e-${id}-llm`, id, llmTarget, "rs", "lt", card.focus === "llm", {
-      net: llmTarget === "llm",
-    });
+    // Every card rails to the one station, and every one of those legs crosses
+    // the boundary (card 304).
+    E(`e-${id}-llm`, id, "llm", "rs", "lt", card.focus === "llm", { net: true });
     if (card.focus === "disk") E(`e-${id}-osdisk`, id, "os-disk", "bs", "tt", true, { err: card.isError });
     if (card.focus === "cmd") E(`e-${id}-osshell`, id, "os-shell", "bs", "tt", true, { err: card.isError });
     if (card.focus === "mcp") E(`e-${id}-osmcp`, id, "os-mcp", "bs", "tt", true, { err: card.isError });

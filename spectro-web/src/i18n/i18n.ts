@@ -1464,7 +1464,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.node.netz": { de: "Netz", en: "Net" },
   "map.node.mcpServer": { de: "MCP-SERVER", en: "MCP SERVER" },
   "map.extServer": { de: "externer Server", en: "external server" },
-  "map.local": { de: "lokal", en: "local" },
   "map.remote": { de: "remote", en: "remote" },
   "map.more": { de: "+{n} weitere", en: "+{n} more" },
   "map.aria": {

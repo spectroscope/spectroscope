@@ -194,24 +194,33 @@ describe("fleetToFlow — the machine-room layout", () => {
     expect(byId(flow, "card-worker-1")!.position).toEqual({ x: 250, y: 300 });
     expect(byId(flow, "z-os")!.position).toEqual({ x: 24, y: 668 });
     expect(byId(flow, "os-disk")!.position).toEqual({ x: 58, y: 748 });
-    expect(byId(flow, "llm-local")!.position).toEqual({ x: 880, y: 676 });
+    // The one model station, beyond the wall — an ollama fleet used to put a
+    // second box beside the OS band at {880, 676} and widen the frame by 344px
+    // to hold it (card 304).
+    expect(byId(flow, "llm")!.position).toEqual({ x: 1092, y: 240 });
     const mac = byId(flow, "z-mac")! as unknown as { style: { width: number; height: number } };
-    expect(mac.style).toEqual({ width: 1344, height: 940 });
+    expect(mac.style).toEqual({ width: 1000, height: 940 });
   });
 
-  it("streams think/answer into the station the speaking node belongs to", () => {
+  it("streams every node's think/answer into the one station, each marked by agent", () => {
+    // The streams used to be split across two boxes by the speaker's provider,
+    // so a mixed fleet's reasoning was read in two places. One station now, and
+    // the entries stay marked by agent — which is what made them readable.
     const { flow } = flowOf(
       [node("main", "root"), node("worker-1", "worker")],
       [
         { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts },
         { type: "run_start", runId: "r2", agentId: "worker-1", prompt: "sub", provider: "ollama", ts },
-        { type: "thinking_delta", agentId: "main", text: "remote thought", ts },
-        { type: "thinking_delta", agentId: "worker-1", text: "local thought", ts },
+        { type: "thinking_delta", agentId: "main", text: "a remote thought", ts },
+        { type: "thinking_delta", agentId: "worker-1", text: "a local thought", ts },
       ],
     );
-    const remoteThink = byId(flow, "llm")!.data.think as { agent: string; text: string }[];
-    const localThink = byId(flow, "llm-local")!.data.think as { agent: string; text: string }[];
-    expect(remoteThink).toEqual([{ agent: "main", text: "remote thought" }]);
-    expect(localThink).toEqual([{ agent: "worker-1", text: "local thought" }]);
+    const llm = byId(flow, "llm")!;
+    expect(llm.data.think).toEqual([
+      { agent: "main", text: "a remote thought" },
+      { agent: "worker-1", text: "a local thought" },
+    ]);
+    // and the label names both backends rather than one box's half
+    expect(llm.data.provider).toBe("anthropic · ollama");
   });
 });

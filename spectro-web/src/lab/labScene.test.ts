@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { advanceScene, clipMiddle, fileLabel, initialScene, isLocalProvider } from "./labScene";
+import { advanceScene, clipMiddle, fileLabel, initialScene } from "./labScene";
 import type { Scene } from "./labScene";
 
 const T = 1700000000000;
@@ -35,7 +35,6 @@ describe("labScene", () => {
     expect(s.activeFile).toBeNull();
     expect(s.activeCommand).toBeNull();
     expect(s.activeMcp).toBeNull();
-    expect(s.llmLocal).toBeNull();
     expect(s.isError).toBe(false);
   });
 
@@ -501,14 +500,6 @@ describe("labScene", () => {
         ts: T,
       } as unknown as RunEvent),
     ).toEqual(before);
-  });
-
-  it("isLocalProvider recognises only ollama as local", () => {
-    expect(isLocalProvider("ollama")).toBe(true);
-    expect(isLocalProvider("Ollama")).toBe(true);
-    expect(isLocalProvider("anthropic")).toBe(false);
-    expect(isLocalProvider(undefined)).toBe(false);
-    expect(isLocalProvider(null)).toBe(false);
   });
 
   it("fileLabel strips the path and middle-truncates long names Apple-style", () => {

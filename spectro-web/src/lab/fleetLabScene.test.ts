@@ -65,7 +65,11 @@ describe("buildFleetLabScene — the fleet machine-room fold", () => {
     expect(scene.nodes[0].activeTool).toBeNull();
   });
 
-  it("tracks provider per node and summarizes local/remote presence", () => {
+  it("tracks the provider per node, and summarizes nothing about where it runs", () => {
+    // The fold used to carry hasLocal/hasRemote so the machine room could draw
+    // a model station per side. One station serves the whole fleet since card
+    // 304, so the summary has no reader and the fold has no opinion left: what
+    // survives is the per-node provider, which is a fact off the wire.
     const events: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts },
       { type: "run_start", runId: "r2", agentId: "worker-1", prompt: "sub", provider: "ollama", ts },
@@ -73,8 +77,8 @@ describe("buildFleetLabScene — the fleet machine-room fold", () => {
     const scene = buildFleetLabScene(model([node("main", "root"), node("worker-1", "worker")], events));
     expect(scene.nodes.find((n) => n.id === "main")!.provider).toBe("anthropic");
     expect(scene.nodes.find((n) => n.id === "worker-1")!.provider).toBe("ollama");
-    expect(scene.hasRemote).toBe(true);
-    expect(scene.hasLocal).toBe(true);
+    expect(Object.keys(scene)).not.toContain("hasLocal");
+    expect(Object.keys(scene)).not.toContain("hasRemote");
   });
 
   it("carries task/status/result meta from agent_message like the single-run cards", () => {
