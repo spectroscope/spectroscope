@@ -24,11 +24,8 @@
 // Without that number a quiet panel is a lie.
 
 import type { RunEvent } from "../events";
-import { CC_DISK_READ, CC_DISK_WRITE, DISK_TOOLS } from "./labScene";
+import { CC_DISK_READ, CC_DISK_WRITE, DISK_TOOLS, SHELL_TOOLS } from "./labScene";
 import { workspaceBasename } from "../workspace/paths";
-
-/** The shell verbs, native and imported. Counted, never folded into paths. */
-const SHELL_TOOLS = new Set(["run_command", "Bash"]);
 
 /** One path the run touched, and everyone who touched it. */
 export interface FileTouch {

@@ -82,6 +82,13 @@ export const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
 // path to it would claim an MCP chain that never ran.
 export const CC_DISK_READ = new Set(["Read", "Glob"]);
 export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
+/** The shell verbs, native and imported — the two that reach the cmd station
+ *  and leave a command instead of a path. EXPORTED for the same reason the
+ *  disk sets are (card 301): the file footprint counts exactly what the map
+ *  lights here, and it can only be exactly that if there is one set. Both
+ *  names used to be spelled out as literals in `advanceLoop` below AND copied
+ *  into fileTree.ts, which is three declarations of one vocabulary. */
+export const SHELL_TOOLS = new Set(["run_command", "Bash"]);
 
 /** Only Ollama runs the model on the user's machine; everything else is remote. */
 export function isLocalProvider(provider: string | null | undefined): boolean {
@@ -193,7 +200,9 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       if (event.name.startsWith("mcp__")) {
         return { ...base, focus: "mcp", activeMcp: prettyMcp(event.name) };
       }
-      if (event.name === "run_command") {
+      // Both shell verbs, from the one set: they were two branches with
+      // identical bodies, and each retyped a name the set already declares.
+      if (SHELL_TOOLS.has(event.name)) {
         return { ...base, focus: "cmd", activeCommand: inputStr(event.input, "command") };
       }
       if (DISK_TOOLS.has(event.name)) {
@@ -204,9 +213,6 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
           disk: event.name === "write_file" ? "write" : "read",
           activeFile: path !== null ? fileLabel(path) : null,
         };
-      }
-      if (event.name === "Bash") {
-        return { ...base, focus: "cmd", activeCommand: inputStr(event.input, "command") };
       }
       if (CC_DISK_READ.has(event.name) || CC_DISK_WRITE.has(event.name)) {
         const path = inputStr(event.input, "path") ?? inputStr(event.input, "file_path");
