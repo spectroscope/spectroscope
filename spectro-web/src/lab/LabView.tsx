@@ -434,9 +434,7 @@ export function LabView(props: {
         onResize={resizeCtx}
         onToggle={toggleCtx}
       />
-      {layout.ctxOpen && (
-        <ContextPeak applied={st.applied} {...(props.model === undefined ? {} : { model: props.model })} />
-      )}
+      {layout.ctxOpen && <ContextPeak applied={st.applied} />}
 
       {pendingPermission !== undefined && (
         <PermissionDialog

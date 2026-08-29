@@ -20,9 +20,16 @@ import { agentDirectory, agentTagColor } from "./agentDirectory";
 import { contextPeaks, type ContextPeakRow, type ContextPeakTable } from "./contextPeakMath";
 import { deriveDetail } from "./flowmap/sceneToFlow";
 
-/** The join, over exactly the events the cursor has applied — so the panel
- *  scrubs with everything else on the lab's row. */
-export function contextPeakOf(applied: RunEvent[], model?: string): ContextPeakTable {
+/**
+ * The join, over exactly the events the cursor has applied — so the panel
+ * scrubs with everything else on the lab's row.
+ *
+ * It takes the events and nothing else ON PURPOSE. The lab replays and
+ * imports, so the model the app currently has selected says nothing about the
+ * run on screen; handing it in as a fallback would divide an imported
+ * transcript by a model that never appears in it.
+ */
+export function contextPeakOf(applied: RunEvent[]): ContextPeakTable {
   const detail = deriveDetail([...applied]);
   const totals = detail.ctxTotals;
   return contextPeaks({
@@ -36,7 +43,6 @@ export function contextPeakOf(applied: RunEvent[], model?: string): ContextPeakT
             threshold: totals.threshold,
             ...(totals.thresholdSource === undefined ? {} : { source: totals.thresholdSource }),
           },
-    ...(model === undefined ? {} : { fallbackModel: model }),
   });
 }
 
@@ -78,15 +84,17 @@ function Row(props: { row: ContextPeakRow; lang: ReturnType<typeof useLang> }) {
   );
 }
 
-export function ContextPeak(props: { applied: RunEvent[]; model?: string }) {
+export function ContextPeak(props: { applied: RunEvent[] }) {
   const lang = useLang();
-  const { applied, model } = props;
-  const table = useMemo(() => contextPeakOf(applied, model), [applied, model]);
+  const { applied } = props;
+  const table = useMemo(() => contextPeakOf(applied), [applied]);
 
   const root = table.rows.find((r) => r.root);
   const limit =
     root?.denominator === undefined || root.denominator === null ? "" : formatTokens(root.denominator.value);
-  const noteModel = root?.model ?? model ?? "—";
+  // Only ever the recorded run's own model. The `published` note is the one
+  // that names it, and it is raised only when that model produced the divisor.
+  const noteModel = root?.model ?? "—";
 
   return (
     <aside className="lab-ctx" aria-label={t(lang, "lab.ctx.aria")}>

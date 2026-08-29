@@ -21,19 +21,42 @@
 //    prints its peak, a bar relative to the biggest peak on the panel, and no
 //    percent sign — and the panel says why in one line.
 //
-// 2. A MEASURED THRESHOLD BEATS THE TABLE. contextWindowFor is a prefix guess
+// 2. THE RUN'S OWN THRESHOLD BEATS THE TABLE. contextWindowFor is a prefix guess
 //    and has already been wrong once in production: claude-fable-5 fell to the
 //    200k row and the ring read 379% on a healthy session. When the run said
 //    what its own threshold is, that number wins.
 //
-// 3. A THRESHOLD THE HARNESS FELL BACK TO IS NOT A MEASUREMENT. This is what
-//    thresholdSource buys: the number 100000 arrives on the wire whether the
-//    harness measured a window or learned nothing at all, and only the
-//    provenance separates the two. `fallback` is therefore passed on as ABSENT,
-//    so the divisor drops to the model table (labelled as published) or to the
-//    constant (labelled as neither). An absent provenance is NOT `fallback` —
-//    a pre-card-263 frame stated nothing, and its threshold is taken at its
-//    word the way it always was.
+// 3. A THRESHOLD THE HARNESS FELL BACK TO IS NOT A MEASUREMENT — AND IS STILL
+//    THE DIVISOR. This is what thresholdSource buys: the number 100000 arrives
+//    on the wire whether the harness measured a window or learned nothing at
+//    all, and only the provenance separates the two. The provenance therefore
+//    decides the WORDS and never the number.
+//
+//    This rule was first built the other way round — `fallback` dropped, the
+//    divisor falling to the model table — and that was measured wrong on the
+//    shape every Anthropic run has. AnthropicProvider does not override
+//    LlmProvider.contextWindow(), so it answers 0, and CompactionThreshold
+//    .derive returns (100_000, FALLBACK); its javadoc names both this case and
+//    the OpenAI wire. Dropping it read 8 % of a published 1,000,000 where the
+//    header ring read 77 % of the same spend — two surfaces, one run, a factor
+//    of ten. The 8 % was the dishonest one twice over: 100,000 is where the run
+//    WILL compact, and the 1,000,000 came from the same prefix table that
+//    already misread claude-fable-5 as 379 %.
+//
+//    So the reported threshold is passed to contextDenominator UNCONDITIONALLY,
+//    exactly as ContextRing.tsx passes it, and a `fallback` provenance raises
+//    the `fellBack` note instead: the run compacts here, and nobody measured
+//    it. An absent provenance is NOT `fallback` — a pre-card-263 frame stated
+//    nothing, and its threshold is taken at its word the way it always was.
+//
+// AND THE WHOLE DIVISOR COMES FROM THE RECORDED RUN. The root's model is read
+// from the transcript's own run_start, never from what the operator has
+// selected in the app right now. The lab replays and imports; a live selection
+// is not evidence about a recorded run, and a note naming a model that appears
+// nowhere in the events on screen is the worst kind of wrong on a panel whose
+// whole job is telling a measurement from a stand-in. So this module takes the
+// events and nothing else — there is no fallback-model parameter to hand one
+// in through.
 
 import { contextDenominator, type ContextDenominator } from "../components/contextRingMath";
 import { contextWindowFor } from "../components/contextWindow";
@@ -73,12 +96,16 @@ export interface ContextPeakRow {
  * What the panel has to say out loud. One per fact, never a sentence built
  * here: the words live in i18n and this module only decides which are true.
  *
- * - `measured`          the root's divisor is the threshold the run reported
- * - `published`         it is a published limit from the model table instead
- * - `unknown`           it is neither: a constant stand-in
+ * - `measured`          the root's divisor is a threshold the run MEASURED
+ * - `fellBack`          it is the threshold the run reported, but the harness
+ *                       said it fell back to it — the run compacts there and
+ *                       nothing about the backend's window was learned
+ * - `published`         the run reported no threshold; a published limit from
+ *                       the model table is used instead
+ * - `unknown`           neither: a constant stand-in
  * - `childrenNoWindow`  a child is on the panel and prints no percentage
  */
-export type ContextPeakNote = "measured" | "published" | "unknown" | "childrenNoWindow";
+export type ContextPeakNote = "measured" | "fellBack" | "published" | "unknown" | "childrenNoWindow";
 
 export interface ContextPeakTable {
   rows: ContextPeakRow[];
@@ -101,9 +128,6 @@ export interface ContextPeakInput {
   directory: AgentDirectory;
   /** The ROOT's latest context_info totals, or null when none arrived. */
   reported: ReportedThreshold | null;
-  /** The model to fall back to for the ROOT when its run_start named none —
-   *  the app's currently selected model. Never used for a child. */
-  fallbackModel?: string;
 }
 
 /** The tag's numeric part, for ordering w1 before w10. Non-numeric tags sort
@@ -131,10 +155,16 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
     }
   }
 
-  // Rule 3 first: a threshold the harness says it fell back to states that
-  // nothing was learned, so it is handed on as nothing.
-  const measured = reported !== null && reported.source !== "fallback" ? reported.threshold : undefined;
-  const rootModel = (rootId === null ? undefined : models[rootId]) ?? input.fallbackModel;
+  // Rule 3: the reported threshold is passed on WHATEVER its provenance —
+  // the same argument ContextRing.tsx passes, so the two surfaces cannot
+  // divide by different numbers. The provenance is kept aside for the words.
+  const reportedThreshold = reported === null ? undefined : reported.threshold;
+  const fellBack = reported !== null && reported.source === "fallback";
+  // The recorded run's own model, and nothing else. `models` is the only place
+  // it can come from: agentDirectory builds the root handle with no model at
+  // all (foldAgents keeps records for children only), so reading the handle
+  // here would be a dead branch dressed up as a fallback.
+  const rootModel = rootId === null ? undefined : models[rootId];
   const rootWindow = rootModel === undefined || rootModel === "" ? null : contextWindowFor(rootModel);
 
   const spent: { id: string; tag: string; name: string; model?: string; peak: number; turns: number }[] = [];
@@ -162,7 +192,7 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
   const rows: ContextPeakRow[] = spent.map((r) => {
     const isRoot = r.id === rootId;
     // Rule 1: only the root has anything a percentage could honestly divide by.
-    const denominator = isRoot ? contextDenominator(measured, rootWindow) : null;
+    const denominator = isRoot ? contextDenominator(reportedThreshold, rootWindow) : null;
     const share = denominator === null ? null : r.peak / denominator.value;
     return {
       agentId: r.id,
@@ -184,7 +214,9 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
   if (rootRow !== undefined && rootRow.denominator !== null) {
     notes.push(
       rootRow.denominator.of === "compaction"
-        ? "measured"
+        ? fellBack
+          ? "fellBack"
+          : "measured"
         : rootRow.denominator.of === "window"
           ? "published"
           : "unknown",

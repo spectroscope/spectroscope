@@ -3920,10 +3920,14 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Balken relativ zur größten Spitze auf dieser Liste — kein Anteil an einem Fenster",
     en: "bar relative to the largest peak on this list — not a share of any window",
   },
-  /* The four notes contextPeaks can raise, one sentence each. */
+  /* The five notes contextPeaks can raise, one sentence each. */
   "lab.ctx.note.measured": {
     de: "Bezugsgröße: {limit} — die Schwelle, die dieser Lauf selbst gemeldet hat.",
     en: "Divisor: {limit} — the threshold this run reported itself.",
+  },
+  "lab.ctx.note.fellBack": {
+    de: "Bezugsgröße: {limit} — hier kompaktiert dieser Lauf. Die Schwelle ist allerdings ein Rückfallwert: über das Fenster des Backends hat der Harness nichts erfahren.",
+    en: "Divisor: {limit} — this is where the run compacts. The threshold is a fall-back, though: the harness learned nothing about the window this backend serves.",
   },
   "lab.ctx.note.published": {
     de: "Bezugsgröße: {limit} — ein veröffentlichtes Limit für {model}, keine Messung.",

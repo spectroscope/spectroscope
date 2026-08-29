@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import { contextPeaks } from "./contextPeakMath";
+import { contextDenominator } from "../components/contextRingMath";
+import { contextWindowFor } from "../components/contextWindow";
 import { agentDirectory } from "./agentDirectory";
 import { deriveDetail } from "./flowmap/sceneToFlow";
 import type { RunEvent } from "../events";
@@ -126,15 +128,38 @@ describe("HONESTY 2 — a measured threshold wins over the published table", () 
     expect(t.notes).toContain("measured");
   });
 
-  it("a threshold the harness said it FELL BACK to is not a measurement", () => {
-    // This is the whole reason thresholdSource had to reach TypeScript: the
-    // number 100000 arrives on the wire either way, and only the provenance
-    // says whether anything was learned. Falling to the model table here is
-    // the honest move, and it must be LABELLED as the table.
-    const t = table([...CHILDREN, usage("main", 100_000)], { threshold: 100_000, source: "fallback" });
-    expect(t.rows[0].denominator).toEqual({ value: 1_000_000, of: "window" });
-    expect(t.notes).toContain("published");
+  // REPLACED, not loosened. The test that stood here demanded the OPPOSITE:
+  // that a `fallback` threshold be dropped and the model table divided by
+  // instead. Its premise was measured false. On the shape every Anthropic run
+  // has — AnthropicProvider does not override LlmProvider.contextWindow(), so
+  // it answers 0 and CompactionThreshold.derive returns (100_000, FALLBACK) —
+  // that rule made the header ring read 77 % and this panel 8 % of the same
+  // spend, and the 8 % was the dishonest one: 100,000 is where the run WILL
+  // compact, and the 1,000,000 came from the prefix table that already misread
+  // claude-fable-5 as 379 %. So the divisor is the run's own threshold, always,
+  // and the provenance decides the WORDS.
+  it("a threshold the harness FELL BACK to is still the divisor, and is not called a measurement", () => {
+    const t = table([...CHILDREN, usage("main", 76_608)], { threshold: 100_000, source: "fallback" });
+    expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "compaction" });
+    expect(t.rows[0].pct).toBe(77);
+    expect(t.notes).toContain("fellBack");
     expect(t.notes).not.toContain("measured");
+    expect(t.notes).not.toContain("published");
+  });
+
+  it("a fallen-back threshold beside an UNKNOWN model still says what the run reported", () => {
+    // The panel used to print "the run reported no threshold" here. The run
+    // reported one — 100,000, provenance fallback. The number was accidentally
+    // right and the sentence about the run's own data was false.
+    const t = table([...CHILDREN, usage("main", 25_000)], { threshold: 100_000, source: "fallback" });
+    const local = table([start("main", "some-local-build"), usage("main", 25_000)], {
+      threshold: 100_000,
+      source: "fallback",
+    });
+    expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "compaction" });
+    expect(local.rows[0].denominator).toEqual({ value: 100_000, of: "compaction" });
+    expect(local.notes).toContain("fellBack");
+    expect(local.notes).not.toContain("unknown");
   });
 
   it("a frame from before card 263 states no provenance and is taken at its word", () => {
@@ -165,6 +190,56 @@ describe("HONESTY 3 — a published divisor says it is published", () => {
     const t = table([start("main"), usage("main", 25_000)]);
     expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
     expect(t.notes).toContain("unknown");
+  });
+});
+
+describe("the lab and the header ring divide by the same number", () => {
+  // The card's own words: use contextDenominator VERBATIM "so the lab and the
+  // header ring cannot disagree". Same function is not enough — it has to be
+  // the same ARGUMENT, or the guarantee is defeated in exactly the case the
+  // provenance field was added for.
+  it("the shape every Anthropic run has divides identically on both surfaces", () => {
+    const model = "claude-opus-4-6";
+    const reported = { threshold: 100_000, source: "fallback" as const };
+    const lab = table([start("main", model), usage("main", 76_608)], reported);
+    // what components/ContextRing.tsx computes, in its own words:
+    // contextDenominator(context?.threshold, modelWindow)
+    const ring = contextDenominator(reported.threshold, contextWindowFor(model));
+    expect(lab.rows[0].denominator).toEqual(ring);
+    expect(lab.rows[0].pct).toBe(77);
+  });
+
+  it("and so does a run whose threshold the operator typed", () => {
+    const lab = table([start("main", "gpt-4o"), usage("main", 2_500)], {
+      threshold: 5_000,
+      source: "override",
+    });
+    expect(lab.rows[0].denominator).toEqual(contextDenominator(5_000, contextWindowFor("gpt-4o")));
+  });
+
+  it("and so does a run that reported no threshold at all", () => {
+    const lab = table([start("main", "gpt-4o"), usage("main", 64_000)]);
+    expect(lab.rows[0].denominator).toEqual(contextDenominator(undefined, contextWindowFor("gpt-4o")));
+  });
+});
+
+describe("the divisor comes from the RECORDED run, never from what is selected now", () => {
+  it("a transcript that named no model gets the stand-in, not the operator's current pick", () => {
+    // The lab's primary mode is replay and import. Dividing an imported
+    // transcript by whatever model happens to be selected in the app would
+    // print "a published limit for {model}" naming a model that never appears
+    // anywhere in the events on screen.
+    const t = table([start("main"), usage("main", 25_000)]);
+    expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
+    expect(t.notes).toContain("unknown");
+  });
+
+  it("the root's model is read from the recorded run_start, and from nowhere else", () => {
+    const named = table([start("main", "gpt-4o"), usage("main", 64_000)]);
+    const unnamed = table([start("main"), usage("main", 64_000)]);
+    expect(named.rows[0].denominator).toEqual({ value: 128_000, of: "window" });
+    expect(unnamed.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
+    expect(unnamed.rows[0].model).toBeUndefined();
   });
 });
 

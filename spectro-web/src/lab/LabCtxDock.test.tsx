@@ -80,8 +80,8 @@ describe("the dock is collapsed until it is asked for", () => {
 // contextPeak.test.ts, so these check only that the right sentence is shown.
 // ---------------------------------------------------------------------------
 
-const panel = (applied: RunEvent[], model?: string): string =>
-  renderToStaticMarkup(<ContextPeak applied={applied} {...(model === undefined ? {} : { model })} />);
+// No model argument: the panel reads the recorded events and nothing else.
+const panel = (applied: RunEvent[]): string => renderToStaticMarkup(<ContextPeak applied={applied} />);
 
 const rootStart = (model?: string): RunEvent =>
   ({
@@ -131,6 +131,27 @@ describe("the panel says what its divisor is", () => {
   it("a stand-in divisor says it is a stand-in", () => {
     const html = panel([rootStart("some-local-build"), usage("main", 25_000)]);
     expect(html).toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
+  });
+
+  it("a fallen-back threshold is named as one, and the percentage is the ring's", () => {
+    // The shape every Anthropic run has. The panel used to print 8 % of a
+    // published 1,000,000 here while the header ring printed 77 % of the same
+    // spend, and justified the million with a table that has been wrong before.
+    const html = panel([rootStart("claude-opus-4-6"), ctxInfo(100_000, "fallback"), usage("main", 76_608)]);
+    expect(html).toContain(t(lang, "lab.ctx.note.fellBack", { limit: "100k" }));
+    expect(html).toContain(t(lang, "lab.ctx.share", { peak: "76.6k", limit: "100k", pct: 77 }));
+    expect(html).not.toContain(t(lang, "lab.ctx.note.measured", { limit: "100k" }));
+    expect(html).not.toContain(
+      t(lang, "lab.ctx.note.published", { limit: "1.0M", model: "claude-opus-4-6" }),
+    );
+  });
+
+  it("and it never claims the run reported nothing, whatever the model is", () => {
+    // The old wording for this case read "The run reported no threshold and no
+    // limit is on file for this model." The run reported one: 100,000.
+    const html = panel([rootStart("some-local-build"), ctxInfo(100_000, "fallback"), usage("main", 25_000)]);
+    expect(html).toContain(t(lang, "lab.ctx.note.fellBack", { limit: "100k" }));
+    expect(html).not.toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
   });
 });
 
