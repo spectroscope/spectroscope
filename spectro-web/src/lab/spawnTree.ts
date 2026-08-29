@@ -20,6 +20,7 @@
 
 import type { RunEvent } from "../events";
 import type { Topology } from "../stategraph/layout";
+import { foldAgents, type AgentRecord } from "./agentDirectory";
 import { clipMiddle, type Scene } from "./labScene";
 
 export interface SpawnNodeMeta {
@@ -47,63 +48,22 @@ export interface SpawnTree {
   root: string;
 }
 
-const DEFAULT_ROOT = "main";
 const LABEL_MAX = 28;
 
-interface ChildRecord {
-  id: string;
-  parentId: string;
-  task: string;
-  start: number;
-  end: number;
-  agentType: string | null;
-  model: string | null;
-}
+/** The slice of the shared fold this lens keeps: the children an agent_spawn
+ *  frame actually reported. Card 298 moved the fold itself into
+ *  agentDirectory.ts so the directory and this lens read ONE identity pass;
+ *  filtering to `spawned` here is what keeps `reported` meaning exactly what
+ *  its doc comment says it means. */
+type ChildRecord = AgentRecord;
 
 /** Build the reconstructed workflow topology from the FULL event list. */
 export function spawnTree(events: RunEvent[]): SpawnTree {
-  // The root: the first run_start that reports no parent. Falls back to
-  // "main" so an event-less call still yields a drawable lone root.
-  let root = DEFAULT_ROOT;
-  for (const e of events) {
-    if (e.type === "run_start" && e.parentId === undefined) {
-      root = e.agentId;
-      break;
-    }
-  }
-
-  // One pass: children in first-spawn order, lifetimes, labels, models.
-  const children = new Map<string, ChildRecord>();
-  for (const e of events) {
-    if (e.type === "agent_spawn" && e.agentId !== root && !children.has(e.agentId)) {
-      children.set(e.agentId, {
-        id: e.agentId,
-        parentId: e.parentId,
-        task: e.task,
-        start: e.ts,
-        end: e.ts,
-        agentType: null,
-        model: null,
-      });
-      continue;
-    }
-    const touched =
-      "agentId" in e && typeof e.agentId === "string" && children.has(e.agentId)
-        ? children.get(e.agentId)!
-        : e.type === "agent_message" && children.has(e.from)
-          ? children.get(e.from)!
-          : null;
-    if (touched !== null) touched.end = Math.max(touched.end, e.ts);
-    if (e.type === "agent_message" && e.role === "task" && children.has(e.to)) {
-      const c = children.get(e.to)!;
-      if (e.label !== undefined) c.agentType = e.label;
-      if (c.task === "" && e.text !== "") c.task = e.text;
-      c.end = Math.max(c.end, e.ts);
-    }
-    if (e.type === "run_start" && children.has(e.agentId) && e.model !== undefined) {
-      children.get(e.agentId)!.model = e.model;
-    }
-  }
+  // ONE identity pass, shared with the directory (card 298): the root, and one
+  // record per agent the stream named. This lens keeps the reported children.
+  const fold = foldAgents(events);
+  const root = fold.root;
+  const children = new Map<string, ChildRecord>([...fold.agents].filter(([, c]) => c.spawned));
 
   const known = new Set<string>([root, ...children.keys()]);
   const resolvedOf = (c: ChildRecord): boolean => c.parentId === root || known.has(c.parentId);

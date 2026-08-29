@@ -36,6 +36,7 @@ const task = (to: string, text: string, ts: number, label?: string): RunEvent =>
   from: "main",
   to,
   role: "task",
+  state: "submitted",
   text,
   ...(label === undefined ? {} : { label }),
   ts,
@@ -130,10 +131,32 @@ describe("agentDirectory — every agent gets a handle", () => {
   });
 
   it("falls back to the agent type when the task is empty, then to the tag", () => {
-    const events: RunEvent[] = [start("main", 0), spawn("a", "", 10), task("a", "", 20, "build_plan"), spawn("b", "", 30)];
+    const events: RunEvent[] = [
+      start("main", 0),
+      spawn("a", "", 10),
+      task("a", "", 20, "build_plan"),
+      spawn("b", "", 30),
+    ];
     const dir = agentDirectory(events);
     expect(dir.get("a")?.name).toBe("build_plan");
     expect(dir.get("b")?.name).toBe("w2");
+  });
+
+  it("treats a task of blanks as no task at all", () => {
+    const dir = agentDirectory([start("main", 0), spawn("a", "   ", 10)]);
+    expect(dir.get("a")?.title).toBeNull();
+    expect(dir.get("a")?.name).toBe("w1");
+  });
+
+  it("the FIRST spawn frame owns the record — a repeat never re-parents or renames it", () => {
+    const events: RunEvent[] = [
+      start("main", 0),
+      spawn("a", "the real order", 10),
+      spawn("a", "a later echo", 20, "somebody-else"),
+    ];
+    const dir = agentDirectory(events);
+    expect(dir.get("a")?.title).toBe("the real order");
+    expect(dir.get("a")?.parentId).toBe("main");
   });
 
   it("clips a long name to the display width with a middle ellipsis, keeping the title whole", () => {

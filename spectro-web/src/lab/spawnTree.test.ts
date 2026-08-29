@@ -178,6 +178,28 @@ describe("spawnTree — the reconstructed workflow topology", () => {
     expect(tree.meta["worker"].label).toBe("scout target a");
   });
 
+  // Card 298 moved the identity fold into agentDirectory.ts, where it now
+  // records EVERY agent the stream names. This lens keeps only the reported
+  // ones, which is what makes `reported` mean what its doc says it means.
+  it("reports only the children an agent_spawn frame named", () => {
+    const only: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 },
+      {
+        type: "agent_message",
+        from: "main",
+        to: "no-spawn",
+        role: "task",
+        state: "submitted",
+        text: "do it",
+        ts: 1,
+      },
+      ...child("spawned", 2, 3, "the reported one"),
+    ];
+    const tree = spawnTree(only);
+    expect(tree.reported).toBe(1);
+    expect(tree.topo.nodes.map((n) => n.id)).toEqual(["main", "spawned"]);
+  });
+
   it("yields a lone root for a run with no children", () => {
     const tree = spawnTree([{ type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 0 }]);
     expect(tree.topo.nodes.map((n) => n.id)).toEqual(["main"]);
