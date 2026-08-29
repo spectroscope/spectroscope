@@ -23,7 +23,7 @@ import {
 } from "@xyflow/react";
 import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
-import { deriveDetail, sceneToFlow } from "./flowmap/sceneToFlow";
+import { deriveDetail, measuredCards, reportOversizeCards, sceneToFlow } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
 import { foldSeatPool, workerChip } from "./flowmap/workerGrid";
 import { RailBoxes } from "./flowmap/railBoxes";
@@ -141,6 +141,17 @@ export function FlowMap(props: {
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout));
     setEdges(flow.edges);
   }, [flow, local, expandAll, paneAspect, setNodes, setEdges]);
+
+  // The envelope check's runtime half (card 296). Every expanded seat is
+  // derived from EXPANDED_CARD, and until now NOTHING in src/ ever held the
+  // cards the browser actually laid out against those numbers —
+  // reportOversizeCards had no caller outside its own test, so the half of the
+  // check that needs a real browser never ran, and a seat that reserved twice
+  // its card shipped in silence. It is cheap: the report is once per card, and
+  // a hidden pane measures nothing, so nothing is said.
+  useEffect(() => {
+    reportOversizeCards(measuredCards(nodes, expandAll));
+  }, [nodes, expandAll]);
 
   // The rails' live obstacle set: every card's rendered box (zones excluded),
   // recomputed from the node state so a dragged card re-routes its rails.

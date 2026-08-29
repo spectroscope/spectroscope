@@ -404,19 +404,89 @@ export function oversizeCards(
   return out.sort((a, b) => b.h - b.bound - (a.h - a.bound));
 }
 
+/**
+ * The tallest each card has ever been measured at, for the under-fill arm.
+ *
+ * The peak, not the last reading: a run whose first worker is bare and whose
+ * second carries four pictures would otherwise be reported as over-reserved on
+ * the strength of the bare one, and the seat has to hold the second.
+ */
+const tallest = new Map<string, number>();
+
+/**
+ * Cards whose SEAT reserves at least twice the tallest card that ever stood in
+ * it — the arm oversizeCards is blind to by construction.
+ *
+ * A seat is derived from an envelope, and an envelope that is far too GENEROUS
+ * fails as quietly as one that is too small: nothing overlaps, so nothing
+ * shows, and the map simply spreads into room no card ever needed. That is the
+ * defect the owner reported on card 296 — a 620px row for a card measured at
+ * 304 — and the check that existed could not have seen it.
+ *
+ * Twice is not a taste: at twice the card, the air under it is the card again.
+ */
+export function underfilledCards(
+  measured: Iterable<{ id: string; type?: string; h: number }>,
+): { id: string; h: number; bound: number }[] {
+  const out: { id: string; h: number; bound: number }[] = [];
+  for (const m of measured) {
+    const env = envelopeOf(m.id, m.type);
+    // h <= 0 is "not laid out yet", not "a card of no height".
+    if (env === undefined || m.h <= 0) continue;
+    const peak = Math.max(tallest.get(m.id) ?? 0, m.h);
+    tallest.set(m.id, peak);
+    if (peak * 2 <= env.h) out.push({ id: m.id, h: peak, bound: env.h });
+  }
+  return out.sort((a, b) => b.bound - b.h - (a.bound - a.h));
+}
+
+/**
+ * The rendered nodes, as the envelope check reads them: zones dropped (a frame
+ * has no envelope) and anything the browser has not measured yet dropped too.
+ *
+ * Its own function so the wiring in FlowMap is one line and these rules are
+ * under the gate. Two of them are traps:
+ *
+ *  · a hidden pane delivers no frames, so `measured` stays undefined there —
+ *    a zero must read as "not laid out", never as a card of no height;
+ *  · COMPACT is not this table's world. Only the expanded seating derives from
+ *    EXPANDED_CARD; compact seats are hand-authored and its cards are a third
+ *    the size, so running the check there would report every worker as
+ *    over-reserved and be wrong about all of them.
+ *
+ * @param nodes what the canvas rendered, with whatever it has measured
+ * @param expanded the seating these nodes came from
+ */
+export function measuredCards(
+  nodes: readonly { id: string; type?: string; measured?: { height?: number } }[],
+  expanded: boolean,
+): { id: string; type?: string; h: number }[] {
+  if (!expanded) return [];
+  const out: { id: string; type?: string; h: number }[] = [];
+  for (const n of nodes) {
+    if (n.type === "zone") continue;
+    const h = n.measured?.height ?? 0;
+    if (h > 0) out.push({ id: n.id, type: n.type, h });
+  }
+  return out;
+}
+
 const spoken = new Set<string>();
 
 /**
  * The runtime half: hand it the heights the browser actually laid out and it
  * names every card that no longer fits the envelope its neighbours were seated
- * around. Once per card — a layout that runs per frame would otherwise shout
- * per frame, and a report nobody can read is the silence it was meant to break.
+ * around — and, since card 296, every seat that reserves more than twice the
+ * card it holds. Once per card — a layout that runs per frame would otherwise
+ * shout per frame, and a report nobody can read is the silence it was meant to
+ * break.
  */
 export function reportOversizeCards(
   measured: Iterable<{ id: string; type?: string; h: number }>,
   sink: (message: string) => void = (m) => console.error(m),
-): { id: string; h: number; bound: number }[] {
-  const over = oversizeCards(measured);
+): { over: { id: string; h: number; bound: number }[]; under: { id: string; h: number; bound: number }[] } {
+  const seen = [...measured];
+  const over = oversizeCards(seen);
   for (const c of over) {
     if (spoken.has(`size:${c.id}`)) continue;
     spoken.add(`size:${c.id}`);
@@ -425,7 +495,17 @@ export function reportOversizeCards(
         `every seat derived from it is ${c.h - c.bound}px short, so cards will overlap.`,
     );
   }
-  return over;
+  const under = underfilledCards(seen);
+  for (const c of under) {
+    if (spoken.has(`slack:${c.id}`)) continue;
+    spoken.add(`slack:${c.id}`);
+    sink(
+      `flow map: the tallest ${c.id} card measured ${c.h}px against an envelope of ${c.bound}px — ` +
+        `every seat derived from it reserves more than twice the card, so the map spreads into ` +
+        `${c.bound - c.h}px per seat that nothing ever fills.`,
+    );
+  }
+  return { over, under };
 }
 
 function reportSeatCollisions(nodes: readonly SeatNode[]): void {
