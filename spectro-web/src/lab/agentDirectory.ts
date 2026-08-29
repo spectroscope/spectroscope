@@ -38,6 +38,17 @@ export interface AgentHandle {
   /** The parent's agent id; null for the root. An id the run never showed is
    *  still reported here — the directory does not resolve, it reports. */
   parentId: string | null;
+  /**
+   * Whether the RUN named that parent, or the directory defaulted it.
+   *
+   * `parentId` is filled in for every child, and for one that nothing spawned
+   * the fill is the root — a placeholder, not a claim. A consumer that reads
+   * the placeholder back as a fact about the spawn tree is stating a guess as
+   * a measurement, so the difference is reported rather than left to be
+   * guessed at from `parentId` alone. False for the root: it has no parent to
+   * record.
+   */
+  parentRecorded: boolean;
   /** The task as the spawner phrased it, unclipped; null when nothing named one. */
   title: string | null;
   /** The model the agent's OWN run_start named. Absent = the run never said. */
@@ -71,6 +82,11 @@ export interface AgentRecord {
   agentType: string | null;
   model: string | null;
   spawned: boolean;
+  /** Whether `parentId` came from a frame (an agent_spawn, or a child run_start
+   *  carrying one) or is still the default the record opened with. Wider than
+   *  `spawned` on purpose: a run_start is a record of a parent even where no
+   *  spawn frame exists, and spawnTree's slice is unaffected either way. */
+  parentRecorded: boolean;
   firstSeen: number;
 }
 
@@ -124,6 +140,7 @@ export function foldAgents(events: readonly RunEvent[]): AgentFold {
       agentType: null,
       model: null,
       spawned: false,
+      parentRecorded: false,
       firstSeen: at,
     };
     agents.set(id, fresh);
@@ -139,6 +156,7 @@ export function foldAgents(events: readonly RunEvent[]): AgentFold {
       if (!rec.spawned) {
         rec.spawned = true;
         rec.parentId = e.parentId;
+        rec.parentRecorded = true;
         rec.start = e.ts;
         if (e.task !== "") rec.task = e.task;
       }
@@ -173,6 +191,17 @@ export function foldAgents(events: readonly RunEvent[]): AgentFold {
       const c = agents.get(e.agentId);
       if (c !== undefined) c.model = e.model;
     }
+    // A child's own run_start carries a parentId, and that is the run SAYING
+    // who the parent is — as good a record as a spawn frame, and the only one
+    // some children ever get. The spawn frame still outranks it (it is checked
+    // above and sets `parentRecorded` itself), so this only ever fills a gap.
+    if (e.type === "run_start" && typeof e.parentId === "string" && e.parentId !== "") {
+      const c = agents.get(e.agentId);
+      if (c !== undefined && !c.parentRecorded) {
+        c.parentId = e.parentId;
+        c.parentRecorded = true;
+      }
+    }
   });
 
   return { root, agents, rootFirstSeen };
@@ -201,6 +230,8 @@ export function agentDirectory(events: readonly RunEvent[], upto?: number): Agen
     tag: ROOT_TAG,
     name: ROOT_TAG,
     parentId: null,
+    // Nothing to record: the root is the frame of reference, not a child.
+    parentRecorded: false,
     title: null,
     firstSeen: rootFirstSeen,
   });
@@ -219,6 +250,7 @@ export function agentDirectory(events: readonly RunEvent[], upto?: number): Agen
       tag,
       name: clipMiddle(shown, NAME_MAX),
       parentId: rec.parentId,
+      parentRecorded: rec.parentRecorded,
       title,
       ...(rec.model === null ? {} : { model: rec.model }),
       firstSeen: rec.firstSeen,

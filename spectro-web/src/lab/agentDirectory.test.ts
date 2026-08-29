@@ -167,6 +167,40 @@ describe("agentDirectory — every agent gets a handle", () => {
     expect(dir.get("a")?.title).toBe(long);
   });
 
+  it("says whether the run RECORDED a parent, or the directory defaulted one", () => {
+    // `parentId` is filled in for EVERY child, including one nothing ever
+    // spawned — the root is the default there, not a claim. A consumer that
+    // reads a default back as a fact (messageLane's `fromTree` is exactly one)
+    // needs the difference stated, so the handle states it.
+    const defaulted = agentDirectory([start("main", 0), task("ghost", "do this", 10)]);
+    expect(defaulted.get("ghost")?.parentId).toBe("main");
+    expect(defaulted.get("ghost")?.parentRecorded).toBe(false);
+
+    // An agent_spawn frame is a record.
+    const spawned = agentDirectory([start("main", 0), spawn("a", "t", 10)]);
+    expect(spawned.get("a")?.parentRecorded).toBe(true);
+
+    // So is a child run_start that carries a parentId of its own.
+    const started = agentDirectory([start("main", 0), start("b", 10)]);
+    expect(started.get("b")?.parentId).toBe("main");
+    expect(started.get("b")?.parentRecorded).toBe(true);
+  });
+
+  it("a child run_start names the parent it carries, not the root by default", () => {
+    const events: RunEvent[] = [
+      start("main", 0),
+      spawn("a", "outer", 10),
+      { type: "run_start", runId: "r-g", agentId: "g", parentId: "a", prompt: "go", ts: 20 },
+    ];
+    const dir = agentDirectory(events);
+    expect(dir.get("g")?.parentId).toBe("a");
+    expect(dir.get("g")?.parentRecorded).toBe(true);
+  });
+
+  it("the root claims no recorded parent — it has none to record", () => {
+    expect(agentDirectory([start("main", 0)]).get("main")?.parentRecorded).toBe(false);
+  });
+
   it("a root that does not call itself main is still tagged main", () => {
     const events: RunEvent[] = [
       { type: "run_start", runId: "r0", agentId: "sub-7", prompt: "go", ts: 0 },
