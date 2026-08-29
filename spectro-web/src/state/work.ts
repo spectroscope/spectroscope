@@ -243,6 +243,30 @@ function blank(id: string, kind: WorkKind): WorkItem {
 const settled = (s: WorkState): boolean => s === "completed" || s === "failed";
 
 /**
+ * The fold, plus the index a caller needs to join an AGENT to its item.
+ *
+ * The two are published together because the keys are not one rule. A spawn
+ * item is keyed by its agent id, a triggered item by its RUN id — the branch
+ * below says so in its own words — and `id` is therefore not a join key for
+ * anybody outside this function. Card 301's message lane joined on it, missed
+ * every triggered lane, and printed "the run never opened work for this lane"
+ * over an item that existed and carried real counters: the exact false claim
+ * the null counters were written to prevent.
+ */
+export interface WorkFold {
+  /** Top-level items, children nested under their parent. */
+  roots: WorkItem[];
+  /**
+   * agentId -> the item that agent's events counted towards.
+   *
+   * Absent for the main agent, which is not a work item, and for an agent the
+   * stream only ever named as the sender of a status message. Absent is the
+   * absence of a claim; it is not a zeroed item.
+   */
+  byAgent: Map<string, WorkItem>;
+}
+
+/**
  * Fold a stream into the work items running beside the main agent.
  *
  * The MAIN agent is not a work item. It is the left column, and listing it in
@@ -256,6 +280,19 @@ const settled = (s: WorkState): boolean => s === "completed" || s === "failed";
  * @return top-level items, children nested under their parent
  */
 export function foldWork(events: readonly RunEvent[]): WorkItem[] {
+  return foldWorkIndexed(events).roots;
+}
+
+/**
+ * {@link foldWork}, keeping the agent index the fold builds on its way.
+ *
+ * ONE pass: `foldWork` is this function with the index dropped, so a caller
+ * that wants both is not asking for a second fold.
+ *
+ * @param events the stream, in arrival order
+ * @return the tree and the agent -> item index
+ */
+export function foldWorkIndexed(events: readonly RunEvent[]): WorkFold {
   const items = new Map<string, WorkItem>();
   /** agentId -> the item it acts for (spawn and trigger items only). */
   const byAgent = new Map<string, string>();
@@ -487,7 +524,15 @@ export function foldWork(events: readonly RunEvent[]): WorkItem[] {
     for (const item of list) sortDeep(item.children);
   };
   sortDeep(roots);
-  return roots;
+  // The index resolved to the items themselves. Built here, from the very map
+  // whose two keying rules made it necessary, so no caller has to re-derive
+  // which rule applied to which item.
+  const index = new Map<string, WorkItem>();
+  for (const [agentId, itemId] of byAgent) {
+    const item = items.get(itemId);
+    if (item !== undefined) index.set(agentId, item);
+  }
+  return { roots, byAgent: index };
 }
 
 /**

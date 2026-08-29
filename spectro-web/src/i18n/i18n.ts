@@ -3941,6 +3941,92 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kind-Agenten zeigen keinen Prozentwert: sie laufen ohne Introspektion und melden keine Schwelle, also gibt es nichts, wodurch man ehrlich teilen könnte.",
     en: "Children show no percentage: they run without introspection and report no threshold, so there is nothing to divide by honestly.",
   },
+
+  // Card 301: the dock's tab strip, and the two panels it grew.
+  "lab.dock.aria": { de: "Panel der Andockleiste", en: "Dock panel" },
+  "lab.dock.tab.ctx": { de: "Kontext", en: "context" },
+  "lab.dock.tab.msg": { de: "Übergaben", en: "handovers" },
+  "lab.dock.tab.files": { de: "Dateien", en: "files" },
+
+  // A. The message lane. Every line here is written so a reader can tell a
+  // direction the SPAWN TREE established from one the role word guessed.
+  "lab.msg.title": { de: "Übergaben", en: "handovers" },
+  "lab.msg.aria": { de: "Übergaben zwischen Agenten", en: "Handovers between agents" },
+  "lab.msg.hint": {
+    de: "Was die Agenten einander tatsächlich geschrieben haben. Die Richtung stammt aus dem Spawn-Baum des Laufs, nicht aus dem Rollenwort.",
+    en: "What the agents actually wrote to each other. Direction comes from the run's own spawn tree, not from the role word.",
+  },
+  "lab.msg.empty": {
+    de: "Noch keine Übergabe. Sobald ein Agent einem anderen etwas aufträgt oder zurückmeldet, steht es hier.",
+    en: "No handover yet. As soon as one agent tasks another or reports back, it appears here.",
+  },
+  "lab.msg.chars": { de: "{n} Zeichen", en: "{n} characters" },
+  "lab.msg.answers": { de: "antwortet auf Zeile {n}", en: "answers line {n}" },
+  "lab.msg.guessed": {
+    de: "Richtung aus dem Rollenwort geraten — der Lauf hat für diese beiden nie festgehalten, wer wen gestartet hat.",
+    en: "direction guessed from the role word — the run never recorded which of these two started the other.",
+  },
+  "lab.msg.open": { de: "Im Trace zeigen", en: "Show in the trace" },
+  "lab.msg.laneCounts": {
+    de: "{in} rein / {out} raus · {tools} Werkzeugaufrufe",
+    en: "{in} in / {out} out · {tools} tool calls",
+  },
+  "lab.msg.laneDenied": { de: "{n} abgelehnt", en: "{n} denied" },
+  // Printed INSTEAD of the counters when the work fold has no item for this
+  // lane. Zeros there would say the agent did nothing, which is a different
+  // claim from the run never having opened work for it.
+  "lab.msg.laneNoCounts": {
+    de: "keine Zähler — der Lauf hat für diese Spur nie Arbeit eröffnet",
+    en: "no counters — the run never opened work for this lane",
+  },
+
+  // B. The file footprint. The empty state is the load-bearing string: a run
+  // that worked through the shell must NOT read as a broken panel.
+  "lab.files.title": { de: "Dateien", en: "files" },
+  "lab.files.aria": { de: "Dateien, die dieser Lauf angefasst hat", en: "Files this run touched" },
+  "lab.files.hint": {
+    de: "Welche Pfade dieser Lauf angefasst hat, in der Reihenfolge des ersten Zugriffs, und von welchem Agenten.",
+    en: "Which paths this run touched, in order of first access, and by which agent.",
+  },
+  "lab.files.empty": {
+    de: "Dieser Lauf hat kein Datei-Werkzeug benutzt.",
+    en: "This run used no file tool.",
+  },
+  "lab.files.emptyShell": {
+    de: "Kein Datei-Werkzeug — dieser Lauf hat über die Shell gearbeitet. Was dort geschrieben wurde, hinterlässt einen Befehl und keinen Pfad, also kann diese Liste es nicht zeigen.",
+    en: "No file tool — this run worked through the shell. What was written there leaves a command and no path, so this list cannot show it.",
+  },
+  "lab.files.shellNote": {
+    de: "Dazu {n} Shell-Befehle. Was die angefasst haben, steht nicht auf dieser Liste.",
+    en: "Plus {n} shell commands. What those touched is not on this list.",
+  },
+  "lab.files.shellNoteOne": {
+    de: "Dazu ein Shell-Befehl. Was der angefasst hat, steht nicht auf dieser Liste.",
+    en: "Plus one shell command. What that touched is not on this list.",
+  },
+  "lab.files.pattern": {
+    de: "Ein Suchmuster, keine Datei — ein Glob nennt keinen konkreten Pfad.",
+    en: "A search pattern, not a file — a Glob names no concrete path.",
+  },
+  "lab.files.readBy": { de: "gelesen von", en: "read by" },
+  "lab.files.writtenBy": { de: "geschrieben von", en: "written by" },
+  // Files only. A Glob row is on the list — it is a real disk touch — but it
+  // names a search, not a file, so it is counted beside the paths rather than
+  // inside them: the panel italicises that row and calls it "not a file" in the
+  // same breath, and a number that swept it up said the opposite.
+  //
+  // The noun is the one `lab.files.pattern` already uses, in both languages, on
+  // purpose. A fresh synonym for the count line ("glob", "match expression")
+  // would leave the panel calling one thing two names in two places, which is
+  // the reader's problem long before it is a style one.
+  "lab.files.count": { de: "{n} Pfade", en: "{n} paths" },
+  "lab.files.countOne": { de: "1 Pfad", en: "1 path" },
+  "lab.files.patterns": { de: "{n} Suchmuster", en: "{n} search patterns" },
+  "lab.files.patternsOne": { de: "1 Suchmuster", en: "1 search pattern" },
+  "lab.files.rootNote": {
+    de: "Pfade sind relativ zu {root} gekürzt.",
+    en: "Paths are shortened against {root}.",
+  },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

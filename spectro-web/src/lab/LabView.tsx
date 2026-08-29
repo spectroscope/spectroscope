@@ -18,7 +18,8 @@ import { LabHint } from "./LabControls";
 import { LabTransport } from "./LabTransport";
 import { FlowMap } from "./FlowMap";
 import { LabTrace } from "./LabTrace";
-import { ContextPeak } from "./ContextPeak";
+import { LabDock, dockTitleKey } from "./LabDock";
+import { DOCK_TAB_STORAGE_KEY, dockTabFrom, persistDockTab, type DockTab } from "./labDockTabs";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
 import { lensFrom, WorkflowLens, type LabLens } from "./workflow/WorkflowLens";
@@ -33,6 +34,10 @@ export const VIEW_STORAGE_KEY = "spectroscope.lab.view";
 export const LENS_STORAGE_KEY = "spectroscope.lab.lens";
 /** And the worker-row choice (card 296). */
 export const ROWS_STORAGE_KEY = "spectroscope.lab.rows";
+/** And the dock's panel choice (card 301). Re-exported beside the lab's other
+ *  storage keys so a reader finds all four in one place; the pair that reads
+ *  and writes it lives in labDockTabs.ts. */
+export { DOCK_TAB_STORAGE_KEY } from "./labDockTabs";
 
 function stored(key: string): string | null {
   try {
@@ -97,6 +102,10 @@ export function LabView(props: {
   onDelete?: () => void;
   /** Passed through to the Lab's own Chat — its composer gear needs it too. */
   sendClient: (msg: ClientMessage) => boolean;
+  /** App's focusInTrace seam (card 301): a click on a handover or a file row
+   *  lands the trace on the event that recorded it. Absent = the dock's rows
+   *  render but do not navigate. */
+  onFocusEvent?: (agentId: string, event: RunEvent) => void;
 }) {
   const st = useStepper();
   const lang = useLang();
@@ -110,6 +119,13 @@ export function LabView(props: {
   // agent, the prompt beside the user — exactly the edu lessons' reading.
   // Default (card 287, owner-decided): replay and import open expanded (the
   // player), live opens compact; an explicit choice wins and sticks.
+  // Which dock panel is showing (card 301). One at a time, so only that
+  // panel's fold ever runs — see the note at the top of LabDock.tsx.
+  const [dockTab, setDockTab] = useState<DockTab>(() => dockTabFrom(stored(DOCK_TAB_STORAGE_KEY)));
+  const pickDockTab = (next: DockTab): void => {
+    setDockTab(next);
+    persistDockTab(next);
+  };
   const [expanded, setExpanded] = useState<boolean>(() => labViewDefault(storedView(), replay !== null));
   const pickView = (next: boolean): void => {
     setExpanded(next);
@@ -430,11 +446,24 @@ export function LabView(props: {
       <Resizer
         collapsed={!layout.ctxOpen}
         chevron="left"
-        label={t(lang, "lab.ctx.title")}
+        /* The rail names the panel it will OPEN, not the dock in general — a
+           collapsed dock that says "context" while it would open the file list
+           is a label that lies. */
+        label={t(lang, dockTitleKey(dockTab))}
         onResize={resizeCtx}
         onToggle={toggleCtx}
       />
-      {layout.ctxOpen && <ContextPeak applied={st.applied} />}
+      {layout.ctxOpen && (
+        <LabDock
+          tab={dockTab}
+          onPickTab={pickDockTab}
+          applied={st.applied}
+          /* The workspace the canon knows, for shortening displayed paths. A
+             replay and an import have none, and then nothing is shortened. */
+          workspaceRoot={st.ui.workspace?.path ?? null}
+          onFocusEvent={props.onFocusEvent}
+        />
+      )}
 
       {pendingPermission !== undefined && (
         <PermissionDialog

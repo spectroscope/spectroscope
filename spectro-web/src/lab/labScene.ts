@@ -67,7 +67,11 @@ export interface Scene extends Loop {
 }
 
 const MAIN = "main";
-const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
+/** The native disk verbs. EXPORTED (card 301) so the file footprint folds the
+ *  same names this map lights a station for: the map and the tree must never
+ *  disagree about what counts as a disk touch, and two copies of a set is
+ *  exactly how they would. */
+export const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
 // Imported Claude Code transcripts carry Claude Code's tool names. The fold
 // routes them to the same stations the native names reach — the recorded name
 // itself is NEVER rewritten (the wire is evidence), so activeTool keeps the
@@ -76,8 +80,15 @@ const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
 // would read as finished. WebFetch/WebSearch stay dark on purpose: the map has
 // no rail from the agent to the network stack, and lighting a station with no
 // path to it would claim an MCP chain that never ran.
-const CC_DISK_READ = new Set(["Read", "Glob"]);
-const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
+export const CC_DISK_READ = new Set(["Read", "Glob"]);
+export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
+/** The shell verbs, native and imported — the two that reach the cmd station
+ *  and leave a command instead of a path. EXPORTED for the same reason the
+ *  disk sets are (card 301): the file footprint counts exactly what the map
+ *  lights here, and it can only be exactly that if there is one set. Both
+ *  names used to be spelled out as literals in `advanceLoop` below AND copied
+ *  into fileTree.ts, which is three declarations of one vocabulary. */
+export const SHELL_TOOLS = new Set(["run_command", "Bash"]);
 
 /** Only Ollama runs the model on the user's machine; everything else is remote. */
 export function isLocalProvider(provider: string | null | undefined): boolean {
@@ -189,7 +200,9 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       if (event.name.startsWith("mcp__")) {
         return { ...base, focus: "mcp", activeMcp: prettyMcp(event.name) };
       }
-      if (event.name === "run_command") {
+      // Both shell verbs, from the one set: they were two branches with
+      // identical bodies, and each retyped a name the set already declares.
+      if (SHELL_TOOLS.has(event.name)) {
         return { ...base, focus: "cmd", activeCommand: inputStr(event.input, "command") };
       }
       if (DISK_TOOLS.has(event.name)) {
@@ -200,9 +213,6 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
           disk: event.name === "write_file" ? "write" : "read",
           activeFile: path !== null ? fileLabel(path) : null,
         };
-      }
-      if (event.name === "Bash") {
-        return { ...base, focus: "cmd", activeCommand: inputStr(event.input, "command") };
       }
       if (CC_DISK_READ.has(event.name) || CC_DISK_WRITE.has(event.name)) {
         const path = inputStr(event.input, "path") ?? inputStr(event.input, "file_path");

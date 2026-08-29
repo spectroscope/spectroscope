@@ -84,7 +84,7 @@ function Row(props: { row: ContextPeakRow; lang: ReturnType<typeof useLang> }) {
   );
 }
 
-export function ContextPeak(props: { applied: RunEvent[] }) {
+export function ContextPeak(props: { applied: RunEvent[]; embedded?: boolean }) {
   const lang = useLang();
   const { applied } = props;
   const table = useMemo(() => contextPeakOf(applied), [applied]);
@@ -96,28 +96,38 @@ export function ContextPeak(props: { applied: RunEvent[] }) {
   // that names it, and it is raised only when that model produced the divisor.
   const noteModel = root?.model ?? "—";
 
+  // The body, which is all of it. Card 301 put the panel inside a tabbed dock
+  // that owns the frame and the scroller, so `embedded` renders the body
+  // ALONE — nesting a second <aside class="lab-ctx"> inside the dock's own
+  // would give the panel two borders and two scrollers.
+  const body = (
+    <>
+      <p className="lab-ctx-hint">{t(lang, "lab.ctx.hint")}</p>
+      {table.rows.length === 0 ? (
+        <p className="lab-ctx-empty">{t(lang, "lab.ctx.empty")}</p>
+      ) : (
+        <ul className="lab-ctx-list">
+          {table.rows.map((row) => (
+            <Row key={row.agentId} row={row} lang={lang} />
+          ))}
+        </ul>
+      )}
+      {table.notes.map((note) => (
+        <p key={note} className="lab-ctx-note">
+          {t(lang, `lab.ctx.note.${note}`, { limit, model: noteModel })}
+        </p>
+      ))}
+    </>
+  );
+
+  if (props.embedded === true) return body;
+
   return (
     <aside className="lab-ctx" aria-label={t(lang, "lab.ctx.aria")}>
       <div className="lab-ctx-head">
         <span className="eyebrow">{t(lang, "lab.ctx.title")}</span>
       </div>
-      <div className="lab-ctx-scroll">
-        <p className="lab-ctx-hint">{t(lang, "lab.ctx.hint")}</p>
-        {table.rows.length === 0 ? (
-          <p className="lab-ctx-empty">{t(lang, "lab.ctx.empty")}</p>
-        ) : (
-          <ul className="lab-ctx-list">
-            {table.rows.map((row) => (
-              <Row key={row.agentId} row={row} lang={lang} />
-            ))}
-          </ul>
-        )}
-        {table.notes.map((note) => (
-          <p key={note} className="lab-ctx-note">
-            {t(lang, `lab.ctx.note.${note}`, { limit, model: noteModel })}
-          </p>
-        ))}
-      </div>
+      <div className="lab-ctx-scroll">{body}</div>
     </aside>
   );
 }
