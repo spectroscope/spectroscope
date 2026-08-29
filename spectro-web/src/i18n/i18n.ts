@@ -3804,6 +3804,26 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lab.lens.state.active": { de: "aktiv", en: "active" },
   "lab.lens.state.done": { de: "fertig", en: "done" },
   "lab.lens.state.failed": { de: "gescheitert", en: "failed" },
+  // The worker-row setting (card 296)
+  "lab.rows": { de: "reihen", en: "rows" },
+  "lab.rowsAria": { de: "Reihen der Worker-Karten", en: "Worker card rows" },
+  "lab.rowsHint": {
+    de: "Wie tief die Kind-Agenten stapeln. Auto wählt die Reihenzahl, die auf diesem Fenster die größten Karten ergibt; 2 oder 3 halten die Form fest, während die Zahl der Kinder sich ändert.",
+    en: "How deep the children stack. Auto picks the row count that draws the biggest cards on this pane; 2 or 3 hold the shape while the number of children moves.",
+  },
+  "lab.rowsAuto": { de: "auto", en: "auto" },
+  "lab.rowsAutoTitle": {
+    de: "Die Reihenzahl folgt den Sitzen und dem gemessenen Fenster",
+    en: "The row count follows the seats and the measured pane",
+  },
+  "lab.rows2Title": {
+    de: "Immer zwei Reihen, egal wie viele Kinder laufen",
+    en: "Always two rows, however many children are running",
+  },
+  "lab.rows3Title": {
+    de: "Immer drei Reihen, egal wie viele Kinder laufen",
+    en: "Always three rows, however many children are running",
+  },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

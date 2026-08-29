@@ -21,6 +21,7 @@ import { LabTrace } from "./LabTrace";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
 import { lensFrom, WorkflowLens, type LabLens } from "./workflow/WorkflowLens";
+import { rowsPrefFrom, type RowsPref } from "./flowmap/workerGrid";
 import { AnalyzeRun } from "../components/AnalyzeRun";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -29,6 +30,8 @@ import { useLang } from "../state/lang";
 const VIEW_STORAGE_KEY = "spectroscope.lab.view";
 /** The lens choice persists the same way (card 293). */
 export const LENS_STORAGE_KEY = "spectroscope.lab.lens";
+/** And the worker-row choice (card 296). */
+export const ROWS_STORAGE_KEY = "spectroscope.lab.rows";
 
 function stored(key: string): string | null {
   try {
@@ -51,6 +54,17 @@ export function persistLens(next: LabLens): void {
 
 function storedView(): string | null {
   return stored(VIEW_STORAGE_KEY);
+}
+
+/** The write half of the row preference (card 296) — `rowsPrefFrom` in
+ *  workerGrid is the read half. Exported so the gate can bite the key and the
+ *  round-trip without a DOM to click in. */
+export function persistRowsPref(next: RowsPref): void {
+  try {
+    localStorage.setItem(ROWS_STORAGE_KEY, String(next));
+  } catch {
+    // private mode: the choice simply does not stick
+  }
 }
 
 // Pane-resize clamps: neither side pane shrinks below its minimum, and the
@@ -114,6 +128,15 @@ export function LabView(props: {
   const pickLens = (next: LabLens): void => {
     setLens(next);
     persistLens(next);
+  };
+
+  // How deep the worker cards stack (card 296). A PREFERENCE on top of the
+  // corrected default: auto derives the rows from the seats and the pane the
+  // way the map always did, and is what a reader who never touches this gets.
+  const [rowsPref, setRowsPref] = useState<RowsPref>(() => rowsPrefFrom(stored(ROWS_STORAGE_KEY)));
+  const pickRowsPref = (next: RowsPref): void => {
+    setRowsPref(next);
+    persistRowsPref(next);
   };
 
   // Flow = paced auto-play: a timer calls step() every intervalMs (fine/coarse
@@ -279,6 +302,23 @@ export function LabView(props: {
                       </button>
                     ))}
                   </div>
+                  <div className="lab-seg lab-rows-seg" role="group" aria-label={t(lang, "lab.rowsAria")}>
+                    <span className="lab-seg-label mono" title={t(lang, "lab.rowsHint")}>
+                      {t(lang, "lab.rows")}
+                    </span>
+                    {(["auto", 2, 3] as const).map((r) => (
+                      <button
+                        key={String(r)}
+                        type="button"
+                        className={rowsPref === r ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                        aria-pressed={rowsPref === r}
+                        title={t(lang, r === "auto" ? "lab.rowsAutoTitle" : `lab.rows${r}Title`)}
+                        onClick={() => pickRowsPref(r)}
+                      >
+                        {r === "auto" ? t(lang, "lab.rowsAuto") : String(r)}
+                      </button>
+                    ))}
+                  </div>
                   <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
                     <button
                       type="button"
@@ -326,6 +366,7 @@ export function LabView(props: {
                 provider={props.provider}
                 model={props.model}
                 systemPrompt={sysPrompt ?? undefined}
+                rowsPref={rowsPref}
               />
             </ExpandAllContext.Provider>
           )}

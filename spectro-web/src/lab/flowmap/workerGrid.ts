@@ -153,6 +153,23 @@ const WORLD = {
 };
 
 /**
+ * The reader's own answer to "how deep do the workers stack" (card 296).
+ *
+ * `auto` is the honest default and is what the map did before this existed —
+ * the corrected seat already stacks three seats three deep at 16:9, so this is
+ * a preference and not the fix. The two forced shapes are for a person who
+ * wants the map to hold still while the seat count moves under it.
+ */
+export type RowsPref = "auto" | 2 | 3;
+
+/** The read half of the stored choice — anything that is not one of the two
+ *  forced shapes is auto, so a stale or hand-edited value cannot wedge the
+ *  map into a grid nothing offers. */
+export function rowsPrefFrom(raw: string | null | undefined): RowsPref {
+  return raw === "2" ? 2 : raw === "3" ? 3 : "auto";
+}
+
+/**
  * The row count whose grid fits the pane biggest: for each candidate the model
  * predicts the world extent, and the candidate with the best fit-zoom wins
  * (ties go to the fewest rows). Pure and deterministic over (seats, aspect).
@@ -161,9 +178,14 @@ const WORLD = {
  * @param aspect pane width / height, or null/undefined when never measured —
  *   a hidden pane delivers no frames and no ResizeObserver, so no measurement
  *   ever arrives; the fallback is the constant the map always used.
+ * @param pref the reader's choice; `auto` derives, a number is obeyed — a
+ *   preference is not a measurement, so it holds even on a pane that never
+ *   measured, and it is still capped by the seats that exist.
  */
-export function rowsFor(seats: number, aspect: number | null | undefined): number {
-  if (seats <= 0 || aspect == null || !Number.isFinite(aspect) || aspect <= 0) {
+export function rowsFor(seats: number, aspect: number | null | undefined, pref: RowsPref = "auto"): number {
+  if (seats <= 0) return SEAT_ROWS_EXPANDED;
+  if (pref !== "auto") return Math.min(pref, seats);
+  if (aspect == null || !Number.isFinite(aspect) || aspect <= 0) {
     return SEAT_ROWS_EXPANDED;
   }
   let best = SEAT_ROWS_EXPANDED;

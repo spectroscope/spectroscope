@@ -25,7 +25,7 @@ import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
 import { deriveDetail, measuredCards, reportOversizeCards, sceneToFlow } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
-import { foldSeatPool, workerChip } from "./flowmap/workerGrid";
+import { foldSeatPool, workerChip, type RowsPref } from "./flowmap/workerGrid";
 import { RailBoxes } from "./flowmap/railBoxes";
 import { panMove, panStart, type PanDrag } from "./flowmap/panDrag";
 import { ExpandAllContext } from "./flowmap/expandContext";
@@ -59,8 +59,12 @@ export function FlowMap(props: {
   /** Bump this to re-fit the map when its container resizes (e.g. a side drawer
    *  opened/closed) — the `fitView` prop only fits on init. */
   fitSignal?: number;
+  /** How deep the expanded worker grid stacks (card 296). Absent or "auto" is
+   *  the derivation the map always did. */
+  rowsPref?: RowsPref;
 }) {
   const { scene, applied, provider, model, systemPrompt } = props;
+  const rowsPref = props.rowsPref ?? "auto";
   const local = isLocalProvider(provider);
   const lang = useLang();
 
@@ -85,8 +89,9 @@ export function FlowMap(props: {
         expanded: expandAll,
         pool,
         paneAspect,
+        rowsPref,
       }),
-    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool, paneAspect],
+    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool, paneAspect, rowsPref],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -97,7 +102,7 @@ export function FlowMap(props: {
   // they were rendered in and the map reads as a mix of both. The measured
   // pane aspect is part of the seating since card 292: it drives the expanded
   // row derivation, so a real resize re-places the map the same way.
-  const layoutRef = useRef(`${local}:${expandAll}:${paneAspect}`);
+  const layoutRef = useRef(`${local}:${expandAll}:${paneAspect}:${rowsPref}`);
   const rfRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   // Nodes the user has dragged. Once pinned, a node keeps its position across
   // every step (even a subagent, which otherwise re-centres) — so dragging a card
@@ -134,13 +139,13 @@ export function FlowMap(props: {
   // pinned and stays. A local/remote flip or a compact/expanded flip re-lays-out
   // everything and drops pins.
   useEffect(() => {
-    const seating = `${local}:${expandAll}:${paneAspect}`;
+    const seating = `${local}:${expandAll}:${paneAspect}:${rowsPref}`;
     const relayout = layoutRef.current !== seating;
     layoutRef.current = seating;
     if (relayout) pinned.current.clear();
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout));
     setEdges(flow.edges);
-  }, [flow, local, expandAll, paneAspect, setNodes, setEdges]);
+  }, [flow, local, expandAll, paneAspect, rowsPref, setNodes, setEdges]);
 
   // The envelope check's runtime half (card 296). Every expanded seat is
   // derived from EXPANDED_CARD, and until now NOTHING in src/ ever held the
