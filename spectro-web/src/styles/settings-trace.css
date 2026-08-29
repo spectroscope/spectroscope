@@ -526,6 +526,11 @@
   border-left: 2px solid var(--accent);
   padding-left: 0.5rem;
   margin-top: 0.4rem;
+  /* One step up from --text-faint: its neighbours are hints somebody may
+     read, this one answers the question an operator is asking right now
+     ("why is my address ignored?"). Still a neutral ink token — the colour
+     on this row lives on the rule. */
+  color: var(--text-dim);
 }
 /* Paste-a-key affordance under the needs-key note. */
 .pp-keyinput {
