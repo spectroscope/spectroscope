@@ -85,3 +85,67 @@ describe("a stated node height", () => {
     expect(l.nodes).toEqual(layoutStateGraph(FAN, "vertical").nodes);
   });
 });
+
+/** A chain, so a tall box is ALONE in its column — the workflow shape, where
+ *  the phase holding five agents has no neighbour to be pushed aside by. The
+ *  only thing left in that column for the box to run into is the column's
+ *  own caption. */
+const CHAIN: Topology = {
+  entry: "root",
+  nodes: ["root", "p0", "p1"].map((id) => ({ id, label: id })),
+  edges: [
+    { from: "root", to: "p0", kind: "direct" },
+    { from: "p0", to: "p1", kind: "direct" },
+  ],
+  rankCaptions: new Map([
+    [1, { title: "Survey", detail: "five probes" }],
+    [2, { title: "Consolidate", detail: null }],
+  ]),
+};
+
+const labelAt = (l: ReturnType<typeof layoutStateGraph>, rank: number) =>
+  l.rankLabels.find((x) => x.rank === rank)!;
+
+describe("a column's caption against a box that states its own height", () => {
+  it("stays clear of a box grown past the caption's own line", () => {
+    // The caption used to be pinned to the margin, which held only while every
+    // node was one cell tall and the topmost box therefore started at MARGIN.
+    // A packed column centres on the axis, so a phase holding five agents
+    // starts ABOVE the margin and the caption landed on its heading.
+    const l = layoutStateGraph({ ...CHAIN, heights: new Map([["p0", 107]]) }, "horizontal");
+    const box = at(l, "p0");
+    expect(box.h).toBe(107);
+    expect(labelAt(l, 1).y).toBeLessThan(box.y);
+  });
+
+  it("leaves the caption of a column whose box did not grow where it was", () => {
+    // The other half of the same rule, bitten apart: a caption must not chase
+    // a box downwards. Rank 2 holds an ordinary node in the same picture as
+    // the tall one, and its caption keeps the margin anchor.
+    const l = layoutStateGraph({ ...CHAIN, heights: new Map([["p0", 107]]) }, "horizontal");
+    expect(labelAt(l, 2).y).toBe(28);
+  });
+
+  it("does not move a caption in a topology that states no heights", () => {
+    // The state graph's own pictures ride on this: every caption it draws must
+    // land on the exact pixel it landed on before heights existed.
+    //
+    // FAN, not CHAIN, and that is the whole point of the case: its rank 0
+    // holds one node against a rank of three, so its topmost box sits well
+    // BELOW the margin (first.y = 40 + 46 + gap). A clamp that simply followed
+    // the box would drag this caption down the canvas, and a chain — every
+    // rank the same size, every first.y exactly MARGIN — would never notice.
+    const captions = new Map([
+      [0, { title: "Plan", detail: "one scout" }],
+      [1, { title: "Survey", detail: null }],
+    ]);
+    const plain = layoutStateGraph({ ...FAN, rankCaptions: captions }, "horizontal");
+    const uniform = layoutStateGraph(
+      { ...FAN, rankCaptions: captions, heights: new Map(FAN.nodes.map((n) => [n.id, 46])) },
+      "horizontal",
+    );
+    expect(at(plain, "root").y).toBeGreaterThan(40);
+    expect(uniform.rankLabels).toEqual(plain.rankLabels);
+    for (const l of plain.rankLabels) expect(l.y).toBe(28);
+  });
+});

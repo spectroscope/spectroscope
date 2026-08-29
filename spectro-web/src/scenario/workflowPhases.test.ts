@@ -66,6 +66,31 @@ describe("the declared-workflow scenario", () => {
     }
   });
 
+  it("keeps every caption off the box it names, in both locales", () => {
+    // The half the caption test above cannot see: that the words EXIST says
+    // nothing about where they land. A phase box states its own height and the
+    // column is packed around it, so the two fan-outs of five start above the
+    // margin the caption used to be pinned to — and the caption was painted
+    // onto the box's own heading, on exactly the two columns this scenario
+    // exists to show. The overlay renders after the nodes in the same
+    // transformed viewport, so an overlap is a cover-up, not a near miss.
+    for (const lang of ["en", "de"] as const) {
+      const laid = layoutStateGraph(
+        spawnTree(compile(dsl, lang), declarationOf(dsl, lang)).topo,
+        "horizontal",
+      );
+      // The two fan-outs of five are the tall ones, and they are the reason
+      // this case exists: 107px against the 46 a plain node has always been.
+      const tall = laid.nodes.filter((n) => n.h >= 107);
+      expect(tall).toHaveLength(2);
+      for (const l of laid.rankLabels) {
+        for (const n of laid.nodes.filter((x) => x.rank === l.rank)) {
+          expect(l.y, `${lang} rank ${l.rank}`).toBeLessThan(n.y);
+        }
+      }
+    }
+  });
+
   it("says nothing about a scenario that declared no phases", () => {
     const plain = SCENARIOS.find((s) => s.id === "fanout-eight")!;
     expect(declarationOf(plain, "en")).toBeUndefined();

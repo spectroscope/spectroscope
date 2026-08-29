@@ -396,6 +396,19 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   // the template's anchors: (first.x, MARGIN-12) along, (MARGIN-22, first.y-8)
   // across. Computed here rather than in the renderer so the export SVG and
   // the live overlay cannot disagree about where a column is.
+  //
+  // THE ALONG ANCHOR IS A CEILING, NOT A CONSTANT. MARGIN-12 held only while
+  // every node was NH tall and the topmost box therefore started at exactly
+  // MARGIN. A packed column centres on AXIS, so a box that states a height h
+  // starts at AXIS - h/2 and a tall one starts ABOVE the margin: a phase
+  // holding five agents (h = 107) starts at 9.5 and the fixed caption at 28
+  // was painted onto its own heading — the overlay portal renders after the
+  // nodes in the same transformed viewport, so it lands ON TOP. Taking the
+  // lower of the two keeps the caption above whatever the column turned out
+  // to hold, and with uniform heights first.y >= MARGIN always holds (the
+  // packing reduces to first.y = MARGIN + (Lmax-L)*(NH+gapCross)/2), so the
+  // state graph's own captions do not move a pixel. Vertical needs no such
+  // clamp: it refuses the height override outright and its widths are uniform.
   const rankLabels: RankLabel[] = [];
   for (let r = 0; r <= maxRank; r++) {
     const inRank = placed.filter((n) => n.rank === r);
@@ -403,7 +416,9 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     const first = inRank.reduce((a, b) => ((horiz ? b.y < a.y : b.x < a.x) ? b : a));
     const caption = topo.rankCaptions?.get(r);
     rankLabels.push({
-      ...(horiz ? { rank: r, x: first.x, y: MARGIN - 12 } : { rank: r, x: MARGIN - 22, y: first.y - 8 }),
+      ...(horiz
+        ? { rank: r, x: first.x, y: Math.min(MARGIN - 12, first.y - 12) }
+        : { rank: r, x: MARGIN - 22, y: first.y - 8 }),
       ...(caption !== undefined ? { caption } : {}),
     });
   }
