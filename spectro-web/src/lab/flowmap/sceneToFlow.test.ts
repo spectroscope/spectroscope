@@ -216,9 +216,10 @@ describe("sceneToFlow", () => {
     const events: RunEvent[] = [runStart("ollama"), ...[1, 2, 3, 4, 5, 6].map((i) => spawn(`worker-${i}`))];
     const flow = build(events, true, "ollama");
     for (const target of ["os-disk", "os-shell", "os-mcp"]) {
-      const arriving = flow.edges.filter((e) => e.target === target && e.source !== "os-mcp");
-      // main plus one per seated worker — the set that shares the handle
+      // main plus one per seated worker — every rail that shares the handle
+      const arriving = flow.edges.filter((e) => e.target === target);
       expect(arriving).toHaveLength(7);
+      expect(new Set(arriving.map((e) => e.targetHandle)).size).toBe(1);
       const lanes = arriving.map((e) => (e.data as { lane: number | null }).lane);
       expect(lanes.every((l) => typeof l === "number")).toBe(true);
       expect(new Set(lanes).size).toBe(arriving.length);
