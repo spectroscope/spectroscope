@@ -273,6 +273,38 @@
   }
 }
 
+/* ---- A station that is BEING USED (card 295) ----------------------------
+ * .pf-card--active is a static border + shadow — a lit station and a merely
+ * selected one looked the same. A station in use breathes, and it breathes in
+ * the colour of whoever is on it: the accent for main, the worker accent for a
+ * subagent. Both colours come from one pair of local properties so the
+ * keyframe is written once. */
+.pf-os--busy {
+  --pf-station: var(--accent);
+  --pf-station-glow: var(--accent-glow);
+  animation: pf-os-busy 1.6s ease-in-out infinite;
+}
+.pf-os--worker {
+  --pf-station: var(--agent-worker);
+  --pf-station-glow: color-mix(in srgb, var(--agent-worker) 34%, transparent);
+  border-color: var(--pf-station);
+}
+@keyframes pf-os-busy {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px var(--pf-station),
+      0 0 22px var(--pf-station-glow),
+      0 12px 34px rgba(0, 0, 0, 0.34);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--pf-station),
+      0 0 46px var(--pf-station-glow),
+      0 12px 34px rgba(0, 0, 0, 0.34);
+  }
+}
+
 .pf-row {
   display: flex;
   align-items: center;
@@ -1196,6 +1228,17 @@
   fill: var(--error);
   filter: drop-shadow(0 0 6px var(--error));
 }
+/* A subagent's own leg to a shared station, and the comet riding it (card
+ * 295) — the worker accent, so a lit station names its occupant by colour
+ * before the chip beneath it is read. The error tint still wins. */
+.pf-rail--active.pf-rail--worker:not(.pf-rail--err) {
+  stroke: var(--agent-worker);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--agent-worker) 40%, transparent));
+}
+.pf-comet--worker {
+  fill: var(--agent-worker);
+  filter: drop-shadow(0 0 6px var(--agent-worker));
+}
 .pf-comet-glow {
   fill: var(--accent-glow);
 }
@@ -1438,6 +1481,7 @@
     stroke-dasharray: none;
   }
   .pf-platter,
+  .pf-os--busy,
   .pf-ripple,
   .pf-llm--active .pf-llm__halo,
   .pf-pulse,
@@ -1594,6 +1638,7 @@
 /* ---- Who is on the station (stationUsers, owner call 2026-08-26) -------- */
 .pf-os__by {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
   gap: 6px;
@@ -1611,7 +1656,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A demoted occupant keeps its NAME — a worker reduced to a bare tag reads as
+ * a worker doing nothing (card 295). The compact station card is ~152px wide,
+ * so the extras take their OWN full-width lines: side by side both names were
+ * clipped to nothing, measured in the browser. */
 .pf-os__by-also {
+  color: var(--text-faint);
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.pf-os__by-extra {
+  flex-basis: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-os__by-more {
   color: var(--text-faint);
 }
 

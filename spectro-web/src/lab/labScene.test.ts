@@ -123,6 +123,102 @@ describe("labScene", () => {
     expect(deny.isError).toBe(true);
   });
 
+  // Card 295: the gate used to be a one-way street. focus went to "gate" on the
+  // request and STAYED there for the whole tool run, so every gated write and
+  // every gated shell command ran with its station dark and its rail gone.
+  it("an allowed decision sends the packet BACK to the station it was gated on", () => {
+    const s = play([
+      runStart("anthropic"),
+      toolCall("run_command", { command: "ls" }),
+      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: {}, ts: T },
+      { type: "permission_decision", callId: "c1", allowed: true, ts: T },
+    ]);
+    expect(s.focus).toBe("cmd");
+    expect(s.gate).toBe("allowed");
+    expect(s.activeCommand).toBe("ls");
+  });
+
+  it("an allowed decision on a write returns to the disk, still in write state", () => {
+    const s = play([
+      runStart("anthropic"),
+      toolCall("write_file", { path: "/x/a.txt" }),
+      { type: "permission_request", agentId: "main", callId: "c1", name: "write_file", input: {}, ts: T },
+      { type: "permission_decision", callId: "c1", allowed: true, ts: T },
+    ]);
+    expect(s.focus).toBe("disk");
+    expect(s.disk).toBe("write");
+  });
+
+  it("a DENIED decision keeps the packet at the gate — nothing ran", () => {
+    const s = play([
+      runStart("anthropic"),
+      toolCall("run_command", { command: "rm -rf /" }),
+      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: {}, ts: T },
+      { type: "permission_decision", callId: "c1", allowed: false, ts: T },
+    ]);
+    expect(s.focus).toBe("gate");
+    expect(s.gate).toBe("denied");
+  });
+
+  it("a CHILD's allowed decision returns THAT child to its station, not the main loop", () => {
+    const s = play([
+      runStart("anthropic"),
+      toolCall("write_file", { path: "a.txt" }, "c1", "w1"),
+      { type: "permission_request", agentId: "w1", callId: "c1", name: "write_file", input: {}, ts: T },
+      { type: "permission_decision", callId: "c1", allowed: true, ts: T },
+    ]);
+    expect(s.subagents[0].focus).toBe("disk");
+    expect(s.focus).toBe("agent"); // the main packet never moved
+  });
+
+  it("a second request while already at the gate does not remember the gate itself", () => {
+    const s = play([
+      runStart("anthropic"),
+      toolCall("run_command", { command: "ls" }),
+      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: {}, ts: T },
+      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: {}, ts: T },
+      { type: "permission_decision", callId: "c1", allowed: true, ts: T },
+    ]);
+    expect(s.focus).toBe("cmd");
+  });
+
+  // The fix round's own finding. Agent.java's approvedCheck asks under
+  // GOAL_CHECK_GATE with NO preceding tool_call: the packet is wherever the turn
+  // left it, which after the final text_delta is the LLM. Sending it "back"
+  // there on an allowed decision would light the model for the whole duration of
+  // the check COMMAND — a full test run, minutes — and the caption would say the
+  // model is thinking while a shell command works. Only a STATION is a place a
+  // packet can be returned to.
+  it("an allowed goal-check decision does not send the packet back to the llm", () => {
+    const s = play([
+      runStart("anthropic"),
+      { type: "turn_start", agentId: "main", turn: 1, ts: T },
+      { type: "text_delta", agentId: "main", text: "done", ts: T },
+      { type: "permission_request", agentId: "main", callId: "gc1", name: "goal_check", input: {}, ts: T },
+      { type: "permission_decision", callId: "gc1", allowed: true, ts: T },
+    ]);
+    expect(s.focus).toBe("gate");
+    expect(s.gate).toBe("allowed");
+  });
+
+  it("the gate memory is spent when the tool ends without a decision", () => {
+    const s = play([
+      runStart("anthropic"),
+      toolCall("run_command", { command: "ls" }),
+      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: {}, ts: T },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "",
+        isError: false,
+        durationMs: 1,
+        ts: T,
+      },
+    ]);
+    expect(s.gateFrom).toBeNull();
+  });
+
   it("tool_result returns focus to the agent and clears all activity", () => {
     const s = play([
       runStart("anthropic"),

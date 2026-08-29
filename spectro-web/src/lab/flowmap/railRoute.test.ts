@@ -6,7 +6,8 @@
 // verified against a map that really existed.
 
 import { test, expect, describe } from "vitest";
-import { trunkFor, pathCost, splitAxis, gap, RAIL_STUB, type RailBox } from "./railRoute";
+import { trunkFor, pathCost, splitAxis, gap, stationLane, RAIL_STUB, type RailBox } from "./railRoute";
+import { railLane } from "./PacketEdge";
 
 /** An eight-worker map. Zones are excluded exactly as the canvas excludes
  *  them: they are the drawn frames, not cards. */
@@ -184,5 +185,58 @@ describe("degenerate ends", () => {
   test("an empty map routes at the midpoint and costs nothing", () => {
     const t = trunkFor(right("w1"), left("llm"), []);
     expect(pathCost(right("w1"), left("llm"), t.at, "x", [])).toBe(0);
+  });
+});
+
+// Card 295 gave every worker a permanent rail to every station, so main's rail
+// and one rail per seated worker now arrive at the SAME station handle. Rails to
+// different targets never share a handle and cannot collide; this converging set
+// is the only one that can, and it is the one the lane has to separate.
+describe("the lanes of the rails that converge on ONE station", () => {
+  const converging = (station: string) => [
+    { from: bottom("agent"), id: `e-agent-${station.replace("-", "")}`, seat: null as number | null },
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({
+      from: bottom(`w${i}`),
+      id: `e-sub-worker-${i}-${station}`,
+      seat: i - 1,
+    })),
+  ];
+  /** The deepest pile of rails sharing one trunk — 1 means every rail has its own. */
+  const worstStack = (station: string, laneOf: (r: { id: string; seat: number | null }) => number) => {
+    const seen = new Map<string, number>();
+    for (const r of converging(station)) {
+      const t = trunkFor(r.from, top(station), SESSION, laneOf(r));
+      const key = `${t.axis}@${Math.round(t.at * 10) / 10}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    return Math.max(...seen.values());
+  };
+
+  for (const station of ["os-disk", "os-shell", "os-mcp"]) {
+    test(`${station}: nine converging rails, nine trunks — none stacked`, () => {
+      expect(worstStack(station, (r) => stationLane(r.seat))).toBe(1);
+    });
+  }
+
+  test("the seat beats the id hash, which cannot see the rails arriving beside it", () => {
+    // Measured on this fixture: with no lane at all the nine rails share five
+    // trunks at every station, and the id hash leaves os-shell exactly as bad.
+    // The hash cannot do better by design — the lane it picks for one rail is
+    // computed without the other eight in view.
+    expect(worstStack("os-shell", () => 0)).toBe(2);
+    expect(worstStack("os-shell", (r) => railLane(r.id))).toBe(2);
+  });
+
+  test("main holds the middle; the seats step outward around it", () => {
+    expect(stationLane(null)).toBe(0);
+    expect([0, 1, 2, 3].map((seat) => stationLane(seat))).toEqual([-5, 5, -10, 10]);
+    // A rail with no seat to speak of takes the middle rather than an edge.
+    expect(stationLane(-1)).toBe(0);
+  });
+
+  test("twelve seats plus main are thirteen distinct lanes, and none leaves the gutter", () => {
+    const lanes = [stationLane(null), ...Array.from({ length: 12 }, (_, s) => stationLane(s))];
+    expect(new Set(lanes).size).toBe(13);
+    for (const l of lanes) expect(Math.abs(l)).toBeLessThanOrEqual(30);
   });
 });

@@ -135,6 +135,129 @@ describe("sceneToFlow", () => {
     expect((rail.data as { active: boolean }).active).toBe(true);
   });
 
+  // ---- card 295: the child's line into the OS band -----------------------
+  // The complaint was that worker cards float. They had a rail to a station
+  // ONLY while standing on it, so between two tool calls — and, before the
+  // fold fix, for the whole length of every gated one — there was no line at
+  // all. The rails are structural now: always drawn, dimmed until used.
+  const rails = (id: string) => [`e-${id}-osdisk`, `e-${id}-osshell`, `e-${id}-osmcp`];
+
+  it("a spawned child is wired to all three stations before it touches any", () => {
+    const flow = build([runStart("ollama"), spawn("worker-1")], true, "ollama");
+    for (const id of rails("sub-worker-1")) {
+      const e = flow.edges.find((x) => x.id === id);
+      expect(e, id).toBeTruthy();
+      const d = e!.data as { active: boolean; dim: boolean };
+      expect(d.active, id).toBe(false);
+      expect(d.dim, id).toBe(true); // structural, not hot — same treatment as the rail home to the agent
+    }
+  });
+
+  it("a GATED child command keeps its shell rail and its station lit end to end", () => {
+    const events: RunEvent[] = [
+      runStart("ollama"),
+      spawn("worker-1"),
+      {
+        type: "tool_call",
+        agentId: "worker-1",
+        callId: "k1",
+        name: "run_command",
+        input: { command: "npm ci" },
+        ts: T,
+      } as RunEvent,
+      {
+        type: "permission_request",
+        agentId: "worker-1",
+        callId: "k1",
+        name: "run_command",
+        input: {},
+        ts: T,
+      } as RunEvent,
+      { type: "permission_decision", callId: "k1", allowed: true, ts: T } as RunEvent,
+    ];
+    const flow = build(events, true, "ollama");
+    const shell = flow.nodes.find((n) => n.id === "os-shell")!;
+    expect(shell.data.active).toBe(true);
+    expect(shell.data.command).toBe("npm ci");
+    const rail = flow.edges.find((e) => e.id === "e-sub-worker-1-osshell")!;
+    const d = rail.data as { active: boolean; dim: boolean };
+    expect(d.active).toBe(true);
+    expect(d.dim).toBe(false);
+  });
+
+  it("a child's live station rail is marked as a worker's, main's is not", () => {
+    const events: RunEvent[] = [
+      runStart("ollama"),
+      spawn("worker-1"),
+      {
+        type: "tool_call",
+        agentId: "worker-1",
+        callId: "k1",
+        name: "write_file",
+        input: { path: "a.md" },
+        ts: T,
+      } as RunEvent,
+    ];
+    const flow = build(events, true, "ollama");
+    const child = flow.edges.find((e) => e.id === "e-sub-worker-1-osdisk")!;
+    expect((child.data as { worker: boolean }).worker).toBe(true);
+    const main = flow.edges.find((e) => e.id === "e-agent-osdisk")!;
+    expect((main.data as { worker: boolean }).worker).toBe(false);
+  });
+
+  it("MEASURED cost: six workers add eighteen station rails, and every idle one is dimmed", () => {
+    const events: RunEvent[] = [runStart("ollama"), ...[1, 2, 3, 4, 5, 6].map((i) => spawn(`worker-${i}`))];
+    const flow = build(events, true, "ollama");
+    const station = flow.edges.filter((e) => /^e-sub-.*-os(disk|shell|mcp)$/.test(e.id));
+    expect(station).toHaveLength(18);
+    expect(station.every((e) => (e.data as { dim: boolean }).dim)).toBe(true);
+    expect(station.every((e) => !(e.data as { active: boolean }).active)).toBe(true);
+  });
+
+  it("every rail arriving at one station carries a lane of its own", () => {
+    const events: RunEvent[] = [runStart("ollama"), ...[1, 2, 3, 4, 5, 6].map((i) => spawn(`worker-${i}`))];
+    const flow = build(events, true, "ollama");
+    for (const target of ["os-disk", "os-shell", "os-mcp"]) {
+      // main plus one per seated worker — every rail that shares the handle
+      const arriving = flow.edges.filter((e) => e.target === target);
+      expect(arriving).toHaveLength(7);
+      expect(new Set(arriving.map((e) => e.targetHandle)).size).toBe(1);
+      const lanes = arriving.map((e) => (e.data as { lane: number | null }).lane);
+      expect(lanes.every((l) => typeof l === "number")).toBe(true);
+      expect(new Set(lanes).size).toBe(arriving.length);
+    }
+  });
+
+  it("the OS node names the demoted occupant too, with its id available to address the rail", () => {
+    const events: RunEvent[] = [
+      runStart("ollama"),
+      spawn("worker-1"),
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "m1",
+        name: "read_file",
+        input: { path: "a" },
+        ts: T,
+      } as RunEvent,
+      {
+        type: "tool_call",
+        agentId: "worker-1",
+        callId: "k1",
+        name: "read_file",
+        input: { path: "b" },
+        ts: T,
+      } as RunEvent,
+    ];
+    const flow = build(events, true, "ollama");
+    const disk = flow.nodes.find((n) => n.id === "os-disk")!;
+    const by = disk.data.by as { tag: string; name: string; agentId: string }[];
+    expect(by.map((u) => u.tag)).toEqual(["main", "w1"]);
+    expect(by[1].agentId).toBe("worker-1");
+    expect(by[1].name).toBe("task worker-1"); // demoted, but NAMED
+    expect(disk.data.byTag).toBe("main"); // the occupant whose content is shown
+  });
+
   it("the shared LLM animates and streams per agent when a child thinks", () => {
     const events: RunEvent[] = [
       runStart("ollama"),
@@ -582,6 +705,18 @@ describe("sceneToFlow — the seat pool on the map (card 292)", () => {
     expect(at(after, "sub-b")).toEqual(at(before, "sub-b"));
   });
 
+  it("and its rails keep their lane through that churn, like its card keeps its seat", () => {
+    const before = flowOf([start, spawnE("a"), spawnE("b")], true);
+    const after = flowOf([start, spawnE("a"), spawnE("b"), resultE("a"), spawnE("c")], true);
+    const laneOf = (flow: { edges: { id: string; data?: unknown }[] }, id: string) =>
+      (flow.edges.find((e) => e.id === id)?.data as { lane: number | null } | undefined)?.lane;
+    // b's rail into the disk is drawn from b's SEAT, not from its place in the
+    // list of drawn children — a's departure shortens that list by one.
+    expect(laneOf(after, "e-sub-b-osdisk")).toBe(laneOf(before, "e-sub-b-osdisk"));
+    // and c, taking a's seat, takes the lane that went with it.
+    expect(laneOf(after, "e-sub-c-osdisk")).toBe(laneOf(before, "e-sub-a-osdisk"));
+  });
+
   it("nine sequential children draw the peak, not the lifetime — the grid stays small", () => {
     const events: RunEvent[] = [start];
     for (let i = 0; i < 9; i++) {
@@ -898,12 +1033,17 @@ describe("the OS stations take their occupant's tag from the directory", () => {
         (n) => n.id === station.node,
       )?.data.by;
 
+    // The `agentId` rides along since card 295 merged: the station line is the
+    // ONE occupancy derivation, and the rail keying addresses its occupant by
+    // id. The tag/name — what card 298 is about — are unchanged by that.
     it(`${station.node}: hands the directory through to the station line`, () => {
-      expect(byOf(agentDirectory(events))).toEqual([{ tag: "main", name: "main" }]);
+      expect(byOf(agentDirectory(events))).toEqual([
+        { tag: "main", name: "main", agentId: "sub-7" },
+      ]);
     });
 
     it(`${station.node}: still draws the station with no directory at all`, () => {
-      expect(byOf()).toEqual([{ tag: "w1", name: "w1" }]);
+      expect(byOf()).toEqual([{ tag: "w1", name: "w1", agentId: "sub-7" }]);
     });
   }
 });

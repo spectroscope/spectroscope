@@ -571,8 +571,13 @@ export function OsNode({ data }: NodeProps) {
     mcp?: string | null;
     tool?: { name: string; input: unknown } | null;
     /** Who is on the station right now — first entry is the occupant whose
-     *  content shows, the rest are "also" (stationUsers, owner call 2026-08-26). */
-    by?: { tag: string; name: string }[];
+     *  content shows, the rest are "also" (stationUsers, owner call 2026-08-26).
+     *  Each carries its agentId since card 295, so a caller can address the
+     *  occupant's own rail. */
+    by?: { tag: string; name: string; agentId: string }[];
+    /** The tag of that first occupant — "main" or a worker's "wN". The card and
+     *  its rail wear the worker accent when a worker holds the station. */
+    byTag?: string | null;
   };
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
@@ -598,23 +603,48 @@ export function OsNode({ data }: NodeProps) {
     // (EXPANDED_CARD / stationSeats) — the compact widths in the stylesheet
     // would leave the reserved room empty and the command clipped anyway.
     <div
-      className={`pf-card pf-os pf-os--${d.kind}${expandAll ? " pf-os--wide" : ""}${d.active ? " pf-card--active" : ""}`}
+      className={
+        `pf-card pf-os pf-os--${d.kind}` +
+        `${expandAll ? " pf-os--wide" : ""}` +
+        `${d.active ? " pf-card--active pf-os--busy" : ""}` +
+        `${d.active && d.byTag !== undefined && d.byTag !== null && d.byTag !== "main" ? " pf-os--worker" : ""}`
+      }
     >
       <div className="pf-os__head">
         <span className="pf-eyebrow">{station.title}</span>
       </div>
       {d.by !== undefined && d.by.length > 0 && (
-        <div className="pf-os__by">
+        // The station shows ONE occupant's content — the fold's first match,
+        // main before the workers. The others are not dropped: each is named
+        // here, because a worker that is silently demoted looks like a worker
+        // that is doing nothing (card 295).
+        <div
+          className="pf-os__by"
+          title={
+            d.by.length > 1
+              ? `${t(lang, "map.station.shared")}: ${d.by
+                  .map((u) => (u.tag === "main" ? "main" : `${u.tag} · ${u.name}`))
+                  .join(", ")}`
+              : undefined
+          }
+        >
           <span className="pf-os__by-user" title={d.by[0].name}>
             {d.by[0].tag === "main" ? "main" : `${d.by[0].tag} · ${d.by[0].name}`}
           </span>
           {d.by.length > 1 && (
+            // The extras wrap onto their own lines. The compact station card is
+            // ~152px wide, so a second name on the SAME line clipped both of
+            // them to nothing — measured in the browser, not guessed. Two named
+            // extras at most, then a count, so a station shared by six workers
+            // cannot grow the card without bound; the full list is in the title.
             <span className="pf-os__by-also">
-              {t(lang, "map.station.also")}{" "}
-              {d.by
-                .slice(1)
-                .map((u) => u.tag)
-                .join(" ")}
+              {t(lang, "map.station.also")}
+              {d.by.slice(1, 3).map((u) => (
+                <span key={u.tag} className="pf-os__by-extra" title={u.name}>
+                  {u.tag} · {u.name}
+                </span>
+              ))}
+              {d.by.length > 3 && <span className="pf-os__by-more">+{d.by.length - 3}</span>}
             </span>
           )}
         </div>
