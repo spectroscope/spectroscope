@@ -22,7 +22,7 @@ vi.mock("@xyflow/react", () => ({
   getSmoothStepPath: () => ["M0,0 L1,1", 0, 0],
 }));
 
-import { LabView, ROWS_STORAGE_KEY, persistRowsPref } from "./LabView";
+import { LabView, ROWS_STORAGE_KEY, VIEW_STORAGE_KEY, persistRowsPref } from "./LabView";
 import { rowsPrefFrom } from "./flowmap/workerGrid";
 import { LENS_STORAGE_KEY } from "./LabView";
 import { t } from "../i18n/i18n";
@@ -72,6 +72,14 @@ const button = (html: string, label: string): string => {
 };
 
 describe("the rows segment renders", () => {
+  // The seating the preference actually steers is the EXPANDED one, so every
+  // pin below opens the view the control belongs to. Live with no stored
+  // choice the Lab opens COMPACT (labViewDefault), which is the state the
+  // re-review caught the control shipping into.
+  beforeEach(() => {
+    storage.store.set(VIEW_STORAGE_KEY, "expanded");
+  });
+
   it("offers auto, 2 and 3 with auto pressed — auto stays the default", () => {
     const html = render();
     expect(html).toContain("lab-rows-seg");
@@ -91,6 +99,26 @@ describe("the rows segment renders", () => {
   it("hides under the workflow lens, like the other machine-only controls", () => {
     storage.store.set(LENS_STORAGE_KEY, "workflow");
     expect(render()).not.toContain("lab-rows-seg");
+  });
+
+  // Re-review, card 296. The control shipped clickable in the compact view,
+  // where sceneToFlow never reads it: the expanded branch alone passes
+  // opts.rowsPref into rowsFor, compact seats from SEAT_ROWS_COMPACT. The
+  // file's own doctrine nine lines above the segment says why that is worse
+  // than hiding it — "a control that does nothing is the worse default (card
+  // 293 re-review)" — and compact is where a live run opens.
+  it("hides in the COMPACT view, where the seating never reads the preference", () => {
+    storage.store.set(VIEW_STORAGE_KEY, "compact");
+    expect(render()).not.toContain("lab-rows-seg");
+  });
+
+  // The guard is on the view, not on the lens: the face segment beside it is
+  // machine-only but view-independent and must survive the same render.
+  it("leaves the other machine-only segments alone in compact", () => {
+    storage.store.set(VIEW_STORAGE_KEY, "compact");
+    const html = render();
+    expect(html).toContain("lab-face-seg");
+    expect(html).toContain("lab-view-seg");
   });
 });
 

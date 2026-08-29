@@ -27,7 +27,7 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 /** The card-view choice survives tab switches and reloads (TextView pattern). */
-const VIEW_STORAGE_KEY = "spectroscope.lab.view";
+export const VIEW_STORAGE_KEY = "spectroscope.lab.view";
 /** The lens choice persists the same way (card 293). */
 export const LENS_STORAGE_KEY = "spectroscope.lab.lens";
 /** And the worker-row choice (card 296). */
@@ -302,23 +302,33 @@ export function LabView(props: {
                       </button>
                     ))}
                   </div>
-                  <div className="lab-seg lab-rows-seg" role="group" aria-label={t(lang, "lab.rowsAria")}>
-                    <span className="lab-seg-label mono" title={t(lang, "lab.rowsHint")}>
-                      {t(lang, "lab.rows")}
-                    </span>
-                    {(["auto", 2, 3] as const).map((r) => (
-                      <button
-                        key={String(r)}
-                        type="button"
-                        className={rowsPref === r ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
-                        aria-pressed={rowsPref === r}
-                        title={t(lang, r === "auto" ? "lab.rowsAutoTitle" : `lab.rows${r}Title`)}
-                        onClick={() => pickRowsPref(r)}
-                      >
-                        {r === "auto" ? t(lang, "lab.rowsAuto") : String(r)}
-                      </button>
-                    ))}
-                  </div>
+                  {/* The rows preference steers the EXPANDED seating only —
+                      sceneToFlow passes opts.rowsPref into rowsFor on the
+                      expanded branch and seats compact from SEAT_ROWS_COMPACT
+                      — so it follows the same doctrine as the guard above and
+                      hides in compact (card 296 re-review). A live run with no
+                      stored choice opens compact, which is exactly where a
+                      clickable control that changes nothing would have been
+                      met first. */}
+                  {expanded && (
+                    <div className="lab-seg lab-rows-seg" role="group" aria-label={t(lang, "lab.rowsAria")}>
+                      <span className="lab-seg-label mono" title={t(lang, "lab.rowsHint")}>
+                        {t(lang, "lab.rows")}
+                      </span>
+                      {(["auto", 2, 3] as const).map((r) => (
+                        <button
+                          key={String(r)}
+                          type="button"
+                          className={rowsPref === r ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                          aria-pressed={rowsPref === r}
+                          title={t(lang, r === "auto" ? "lab.rowsAutoTitle" : `lab.rows${r}Title`)}
+                          onClick={() => pickRowsPref(r)}
+                        >
+                          {r === "auto" ? t(lang, "lab.rowsAuto") : String(r)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
                     <button
                       type="button"
