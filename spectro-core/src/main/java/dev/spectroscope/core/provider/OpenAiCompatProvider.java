@@ -209,12 +209,18 @@ public final class OpenAiCompatProvider implements LlmProvider {
      *  capability question may not be able to fail a run.
      *  @return the loaded window, or 0 on any refusal, timeout or surprise */
     private int probeContextWindow() {
+        boolean props = readsWindowFromProps(dialect);
         try {
             String body = capabilities.get()
-                    .uri(capabilityUrl(baseUrl))
+                    .uri(props ? propsUrl(baseUrl) : capabilityUrl(baseUrl))
                     .retrieve()
                     .body(String.class);
-            return body == null ? 0 : loadedWindow(JSON.readTree(body), model);
+            if (body == null) {
+                return 0;
+            }
+            return props
+                    ? loadedWindowFromProps(JSON.readTree(body))
+                    : loadedWindow(JSON.readTree(body), model);
         } catch (HttpClientErrorException definitive) {
             // The server answered, and its answer is "no such route here". That
             // is a verdict, not a moment — unlike an empty listing, which is
@@ -290,6 +296,73 @@ public final class OpenAiCompatProvider implements LlmProvider {
         String root = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
         root = root.replaceAll("/v1beta/openai$", "").replaceAll("/v\\d+$", "");
         return root + "/api/v1/models";
+    }
+
+    /**
+     * Whether this endpoint answers the context window at {@code GET /props}
+     * instead of the LM Studio-shaped model listing.
+     *
+     * <p>True for exactly the two dialects that ARE a llama.cpp server: the
+     * operator's own ({@code llamacpp}, card 312) and the bundled runtime
+     * ({@code spectro-local}). They are one engine behind two names — the
+     * bundled binary is a stock {@code llama-server} — so they must not answer
+     * the same question through two different doors, one of them a guess.</p>
+     *
+     * <p>Everything else keeps the listing route. A null dialect in particular
+     * is an operator's own OpenAI-compatible server of unknown make: asking it
+     * for {@code /props} would spend a request on a route it probably does not
+     * serve.</p>
+     *
+     * @param dialect the provider label this endpoint answers to, or null
+     * @return whether to ask {@code /props} for the loaded window
+     */
+    static boolean readsWindowFromProps(String dialect) {
+        return "llamacpp".equals(dialect) || "spectro-local".equals(dialect);
+    }
+
+    /**
+     * The absolute URL of llama.cpp's {@code /props}. It hangs off the server
+     * ROOT, not the OpenAI-compatible {@code /v1} path, so a base URL that was
+     * pasted with the version suffix is trimmed the same way
+     * {@link #capabilityUrl} trims it.
+     *
+     * @param baseUrl the configured server root, versioned or not
+     * @return the absolute URL of the properties endpoint
+     */
+    static String propsUrl(String baseUrl) {
+        String root = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
+        root = root.replaceAll("/v1beta/openai$", "").replaceAll("/v\\d+$", "");
+        return root + "/props";
+    }
+
+    /**
+     * What llama.cpp's {@code /props} says the loaded model's window is.
+     *
+     * <p>The shape, read off the bundled binary on 2026-08-30 (build b10107,
+     * started with {@code -c 4096}):
+     * {@code {"default_generation_settings":{"n_ctx":4096},"total_slots":4,…}}.
+     * {@code n_ctx} there is the window ONE request gets, not the sum across
+     * slots — the same run's server log reads {@code n_slots = 4, n_ctx_slot =
+     * 4096} — and it tracked {@code -c} exactly when the server was restarted
+     * at 2048.</p>
+     *
+     * <p>Unlike the LM Studio listing this needs no model id to match on: one
+     * llama-server holds one model, and the model field in a request is
+     * ignored, so there is nothing a window could be keyed by.</p>
+     *
+     * <p>A non-positive value teaches nothing rather than being taken: llama.cpp
+     * spells "unset" as {@code -1} in neighbouring fields, and a negative window
+     * would reach the compactor as a negative divisor.</p>
+     *
+     * @param props the parsed {@code /props} body, or null
+     * @return the loaded context length in tokens, or 0 when nothing is known
+     */
+    static int loadedWindowFromProps(JsonNode props) {
+        if (props == null) {
+            return 0;
+        }
+        int window = props.path("default_generation_settings").path("n_ctx").asInt(0);
+        return Math.max(window, 0);
     }
 
     /**
