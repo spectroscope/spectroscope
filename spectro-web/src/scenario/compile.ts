@@ -9,6 +9,7 @@
 import type { RunEvent } from "../events";
 import type { Dsl, Gate, Lang, Step } from "./dsl";
 import { loc } from "./dsl";
+import type { WorkflowDeclaration } from "../lab/workflowGraph";
 
 const TOOL_SCHEMA_CHARS = 4224; // fixed estimate, matches the demo
 /** The compaction threshold every scenario's context meter runs against. */
@@ -409,4 +410,45 @@ export function compile(dsl: Dsl, lang: Lang, baseTs = 1_783_000_000_000): RunEv
   push({ type: "run_end", runId, stopReason: "end_turn" });
 
   return out.map((e, i) => ({ ...e, ts: baseTs + i * EVENT_SPACING_MS }));
+}
+
+/**
+ * Card 302: what a scenario DECLARED about its columns, in one language, or
+ * nothing at all.
+ *
+ * Keyed by "main" because that is the parent every scenario child is spawned
+ * under — `expandSpawn` and `expandFanout` both write `parentId: "main"`, and
+ * the lens ranks a parent's children against that parent's declaration.
+ *
+ * Undefined, never an empty map, for a scenario with no phases: the lens's two
+ * pictures are told apart by whether a declaration exists, so "declared
+ * nothing" and "declared zero phases" must not arrive looking alike.
+ */
+export function declarationOf(dsl: Dsl, lang: Lang): WorkflowDeclaration | undefined {
+  if (dsl.phases === undefined || dsl.phases.length === 0) return undefined;
+  return new Map([
+    [
+      "main",
+      {
+        phases: dsl.phases.map((p) => ({
+          title: loc(p.title, lang),
+          detail: p.detail === undefined ? null : loc(p.detail, lang),
+          // The label is left empty and the state pending ON PURPOSE. Both are
+          // the stream's to answer for a scenario: every agent a scenario
+          // declares is one it also spawns, so the lens names each row from
+          // the task the run gave it and lights it from the cursor. A word
+          // invented here would be a second, staler source for the same fact.
+          members: p.agents.map((id) => ({
+            agentId: id,
+            label: "",
+            model: null,
+            state: "pending" as const,
+            startedAt: null,
+            endedAt: null,
+          })),
+        })),
+        unplaced: [],
+      },
+    ],
+  ]);
 }

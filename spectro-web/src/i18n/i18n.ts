@@ -3799,6 +3799,31 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kanten zeigen, wer wen gestartet hat, Spalten folgen der Zeit — gestrichelt: aus den Ereignissen des Laufs rekonstruiert, nicht vorher deklariert",
     en: "edges show who started whom, columns follow time — dashed: reconstructed from the run's events, not declared before it",
   },
+  // Card 302: the lens says WHICH of its two pictures the viewer is looking
+  // at. Declared = the run's own state file named the columns before it ran;
+  // recovered = there was no such file and the columns are a guess from the
+  // stamps. The two look different on purpose (solid against dashed), and the
+  // legend says the difference in words rather than leaving it to the stroke.
+  "lab.lens.legendDeclared": {
+    de: "durchgezogen: die Phasen, die dieser Lauf vor dem Start deklariert hat, jede führt zur nächsten, die Agenten stehen in ihrer Phase — gestrichelt: ein aus den Ereignissen rekonstruierter Start",
+    en: "solid: the phases this run declared before it started, each one leads to the next, and the agents sit inside their phase — dashed: a start reconstructed from what the run did",
+  },
+  "lab.lens.sourceDeclared": { de: "deklariert", en: "declared" },
+  "lab.lens.sourceRecovered": { de: "rekonstruiert", en: "recovered" },
+  "lab.lens.sourceDeclaredHint": {
+    de: "Die Phasen kommen aus dem Skript des Laufs, ihre Reihenfolge auch; wer in einer Phase steht, ist das, was wirklich lief",
+    en: "The phases and their order come from the run's script; who stands in each of them is what actually ran",
+  },
+  // The box for agents a run's own state file named without saying which
+  // phase they belong to. It carries no edge, so it needs a word instead.
+  "lab.lens.unplaced": {
+    de: "keiner deklarierten Phase zugeordnet",
+    en: "in no declared phase",
+  },
+  "lab.lens.sourceRecoveredHint": {
+    de: "Kein Zustandsfile — die Spalten sind aus den Zeitstempeln geraten, nicht deklariert",
+    en: "No state file — the columns are guessed from the timestamps, not declared",
+  },
   "lab.lens.reconstructed": {
     de: "rekonstruiert aus {n} von {m} Kind-Agenten",
     en: "reconstructed from {n} of {m} children",

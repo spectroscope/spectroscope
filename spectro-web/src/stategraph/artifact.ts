@@ -305,26 +305,66 @@ export function readStateGraphRun(graphJsonl: string, stateJsonl: string | null)
  *  the same truth, and two folds would drift. */
 export type Lifecycle = "pending" | "active" | "done" | "error";
 
-/** The node's lifecycle with the transport standing on record `upto`. */
-export function lifecycleAt(run: StateGraphRun, upto: number, id: string): Lifecycle {
+/**
+ * What a producer calls the three moments the lighting reads.
+ *
+ * Card 302: a workflow run is the same PATTERN as a state graph — things that
+ * start, end and fail, read up to a cursor — and it may share this fold. It is
+ * NOT the same artefact, so its records must not have to call themselves
+ * `node_start` to be lit. The names come in as data; L1's own three are one
+ * caller's vocabulary (`L1_LIFECYCLE`), not the only one that exists.
+ */
+export interface LifecycleTypes {
+  start: string;
+  end: string;
+  error: string;
+}
+
+/** The L1 graph dialect's three lifecycle record types. */
+export const L1_LIFECYCLE: LifecycleTypes = {
+  start: "node_start",
+  end: "node_end",
+  error: "node_error",
+};
+
+/** The L1 graph dialect's edge-walked record type. */
+export const L1_EDGE_TAKEN = "edge_taken";
+
+/** The node's lifecycle with the transport standing on record `upto`.
+ *
+ * @param records the run's records, in transport order
+ * @param upto index of the record the transport stands on
+ * @param id the node to light
+ * @param types what THIS producer calls start, end and error
+ */
+export function lifecycleAt(
+  records: readonly TimelineRecord[],
+  upto: number,
+  id: string,
+  types: LifecycleTypes = L1_LIFECYCLE,
+): Lifecycle {
   let seen: Lifecycle = "pending";
-  for (let i = 0; i <= upto && i < run.records.length; i++) {
-    const r = run.records[i];
+  for (let i = 0; i <= upto && i < records.length; i++) {
+    const r = records[i];
     if (r.node !== id) continue;
-    if (r.type === "node_start") seen = "active";
-    else if (r.type === "node_end") seen = "done";
-    else if (r.type === "node_error") seen = "error";
+    if (r.type === types.start) seen = "active";
+    else if (r.type === types.end) seen = "done";
+    else if (r.type === types.error) seen = "error";
   }
   return seen;
 }
 
 /** `from->to` for every edge walked up to record `upto` — the whole-run
  *  `taken` set, cut to where the transport stands. */
-export function takenUpTo(run: StateGraphRun, upto: number): Set<string> {
+export function takenUpTo(
+  records: readonly TimelineRecord[],
+  upto: number,
+  edgeType: string = L1_EDGE_TAKEN,
+): Set<string> {
   const s = new Set<string>();
-  for (let i = 0; i <= upto && i < run.records.length; i++) {
-    const r = run.records[i];
-    if (r.type === "edge_taken" && r.from !== undefined && r.to !== undefined) {
+  for (let i = 0; i <= upto && i < records.length; i++) {
+    const r = records[i];
+    if (r.type === edgeType && r.from !== undefined && r.to !== undefined) {
       s.add(`${r.from}->${r.to}`);
     }
   }
@@ -339,12 +379,16 @@ export interface EdgeStats {
   last: string | null;
 }
 
-export function edgeStatsUpTo(run: StateGraphRun, upto: number): EdgeStats {
+export function edgeStatsUpTo(
+  records: readonly TimelineRecord[],
+  upto: number,
+  edgeType: string = L1_EDGE_TAKEN,
+): EdgeStats {
   const counts = new Map<string, number>();
   let last: string | null = null;
-  for (let i = 0; i <= upto && i < run.records.length; i++) {
-    const r = run.records[i];
-    if (r.type === "edge_taken" && r.from !== undefined && r.to !== undefined) {
+  for (let i = 0; i <= upto && i < records.length; i++) {
+    const r = records[i];
+    if (r.type === edgeType && r.from !== undefined && r.to !== undefined) {
       const key = `${r.from}->${r.to}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
       last = key;

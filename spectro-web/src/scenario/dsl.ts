@@ -33,6 +33,17 @@ export type Step =
   | { spawn: string; label?: string; task: Localized; steps: Step[] }
   | { fanout: { label?: string; tool: string; agents: { id: string; task: Localized; steps: Step[] }[] } };
 
+/** Card 302: a workflow-shaped scenario DECLARES its columns, the way a real
+ *  run's state file does — before a single event is compiled. Titles are
+ *  localized like every other text; `agents` names the ids this phase's
+ *  fan-out spawns, which is what lets the lens rank by the declaration
+ *  instead of guessing waves off the stamps. */
+export interface DslPhase {
+  title: Localized;
+  detail?: Localized;
+  agents: string[];
+}
+
 export interface Dsl {
   id: string;
   name: Localized;
@@ -44,6 +55,9 @@ export interface Dsl {
    *  agents), not a single chat run. The picker lists these under the "fleet"
    *  tab and loads them into the fleet canvas instead of the Lab stepper. */
   fleet?: boolean;
+  /** The declared phases, when this scenario is a workflow. Absent for every
+   *  other scenario, which then draws the recovered picture and says so. */
+  phases?: DslPhase[];
 }
 
 export function loc(v: Localized, lang: Lang): string {

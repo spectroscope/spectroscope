@@ -1187,12 +1187,287 @@ const fleetswarm: Dsl = {
   ],
 };
 
+/** Card 302: the DECLARED workflow — the demo the fan-out deserved.
+ *
+ * ONLY THE SHAPE IS TAKEN FROM THE MEASUREMENT, and the shape is numbers: one
+ * real 13-agent run declared five phases and filled them 1 / 5 / 1 / 1 / 5,
+ * two fan-outs of five with three single agents between them. The words here
+ * are this file's own — the recording's phase list, its subject and its name
+ * are not in this repo and are not going to be. The recording itself never
+ * was: it is tens of megabytes of the owner's own material, and it loads
+ * through the folder dialog cards 291 and 297 already taught to take a
+ * directory.
+ *
+ * `phases` is what makes this the declared picture rather than the recovered
+ * one: the columns exist before a single event is compiled, so the lens draws
+ * the spawns into them solid and captions them with these words.
+ */
+const workflowPhases: Dsl = {
+  id: "workflow-phases",
+  name: {
+    en: "Declared workflow · 5 phases, 13 agents",
+    de: "Deklarierter Workflow · 5 Phasen, 13 Agenten",
+  },
+  prompt: {
+    en: "Go over the settings screen in phases: scope it, probe it five ways, merge what comes back, draft the write-up, then audit every claim in it.",
+    de: "Geh den Einstellungs-Screen in Phasen durch: abstecken, fünffach abtasten, zusammenlegen, entwerfen, dann jede Aussage nachprüfen.",
+  },
+  provider: "ollama",
+  phases: [
+    {
+      title: { en: "scope", de: "abstecken" },
+      detail: { en: "decide what to look at", de: "festlegen, was betrachtet wird" },
+      agents: ["scope"],
+    },
+    {
+      title: { en: "probe", de: "abtasten" },
+      detail: { en: "five angles at once", de: "fünf Blickwinkel gleichzeitig" },
+      agents: ["probe-1", "probe-2", "probe-3", "probe-4", "probe-5"],
+    },
+    {
+      title: { en: "merge", de: "zusammenlegen" },
+      detail: { en: "one picture out of five", de: "ein Bild aus fünfen" },
+      agents: ["merge"],
+    },
+    {
+      title: { en: "draft", de: "entwerfen" },
+      detail: { en: "write it up", de: "aufschreiben" },
+      agents: ["draft"],
+    },
+    {
+      title: { en: "audit", de: "nachprüfen" },
+      detail: { en: "every claim, on its own", de: "jede Aussage einzeln" },
+      agents: ["audit-1", "audit-2", "audit-3", "audit-4", "audit-5"],
+    },
+  ],
+  steps: [
+    {
+      think: {
+        en: "Five phases, and the middle one and the last one fan out.",
+        de: "Fünf Phasen, die mittlere und die letzte fächern auf.",
+      },
+    },
+    {
+      spawn: "scope",
+      label: "scope",
+      task: { en: "scope the pass", de: "stecke den Durchgang ab" },
+      steps: [
+        { status: { en: "scoping", de: "stecke ab" } },
+        {
+          list: "src/settings",
+          result: "Panel.tsx  Profile.tsx  Notifications.tsx  errors.ts  track.ts",
+        },
+        { usage: { in: 9_000, out: 600 } },
+        { say: { en: "five angles to probe", de: "fünf Blickwinkel zum Abtasten" } },
+      ],
+    },
+    {
+      fanout: {
+        label: "probe",
+        tool: "probe",
+        agents: [
+          {
+            id: "probe-1",
+            task: { en: "probe the settings panel", de: "taste das Einstellungs-Panel ab" },
+            steps: [
+              { status: { en: "reading the panel", de: "lese das Panel" } },
+              { read: "src/settings/Panel.tsx", result: "export function Panel() { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: {
+                  en: "probe the settings panel — done",
+                  de: "taste das Einstellungs-Panel ab — fertig",
+                },
+              },
+            ],
+          },
+          {
+            id: "probe-2",
+            task: { en: "probe the profile section", de: "taste den Profil-Abschnitt ab" },
+            steps: [
+              { status: { en: "reading the profile section", de: "lese den Profil-Abschnitt" } },
+              { read: "src/settings/Profile.tsx", result: "export function Profile() { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: {
+                  en: "probe the profile section — done",
+                  de: "taste den Profil-Abschnitt ab — fertig",
+                },
+              },
+            ],
+          },
+          {
+            id: "probe-3",
+            task: { en: "probe the notification toggles", de: "taste die Benachrichtigungs-Schalter ab" },
+            steps: [
+              { status: { en: "reading the toggles", de: "lese die Schalter" } },
+              {
+                read: "src/settings/Notifications.tsx",
+                result: "export function Notifications() { … }",
+              },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: {
+                  en: "probe the notification toggles — done",
+                  de: "taste die Benachrichtigungs-Schalter ab — fertig",
+                },
+              },
+            ],
+          },
+          {
+            id: "probe-4",
+            task: { en: "probe the error states", de: "taste die Fehlerzustände ab" },
+            steps: [
+              { status: { en: "reading the error states", de: "lese die Fehlerzustände" } },
+              { read: "src/settings/errors.ts", result: "export const ERRORS = { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              { say: { en: "probe the error states — done", de: "taste die Fehlerzustände ab — fertig" } },
+            ],
+          },
+          {
+            id: "probe-5",
+            task: { en: "probe the analytics hooks", de: "taste die Analytics-Hooks ab" },
+            steps: [
+              { status: { en: "reading the hooks", de: "lese die Hooks" } },
+              { read: "src/settings/track.ts", result: "export function track(step: string) { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: {
+                  en: "probe the analytics hooks — done",
+                  de: "taste die Analytics-Hooks ab — fertig",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      spawn: "merge",
+      label: "merge",
+      task: { en: "merge the five probes", de: "lege die fünf Abtastungen zusammen" },
+      steps: [
+        { status: { en: "merging", de: "lege zusammen" } },
+        { write: "docs/settings/findings.md", result: "Wrote: docs/settings/findings.md (4102 bytes)" },
+        { usage: { in: 44_000, out: 2_100 } },
+        { say: { en: "one picture, five sources", de: "ein Bild, fünf Quellen" } },
+      ],
+    },
+    {
+      spawn: "draft",
+      label: "draft",
+      task: { en: "draft the write-up", de: "entwirf die Ausarbeitung" },
+      steps: [
+        { status: { en: "drafting", de: "entwerfe" } },
+        { write: "docs/settings/report.md", result: "Wrote: docs/settings/report.md (6820 bytes)" },
+        { usage: { in: 31_000, out: 1_900 } },
+        { say: { en: "draft is out", de: "Entwurf ist raus" } },
+      ],
+    },
+    {
+      fanout: {
+        label: "audit",
+        tool: "audit",
+        agents: [
+          {
+            id: "audit-1",
+            task: { en: "audit the panel claims", de: "prüfe die Panel-Aussagen nach" },
+            steps: [
+              { status: { en: "re-running the panel checks", de: "prüfe das Panel erneut" } },
+              { run: "npm test -- settings/Panel", result: "12 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "audit the panel claims — checks out",
+                  de: "prüfe die Panel-Aussagen nach — stimmt",
+                },
+              },
+            ],
+          },
+          {
+            id: "audit-2",
+            task: { en: "audit the profile claims", de: "prüfe die Profil-Aussagen nach" },
+            steps: [
+              { status: { en: "re-running the profile checks", de: "prüfe das Profil erneut" } },
+              { run: "npm test -- settings/Profile", result: "9 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "audit the profile claims — checks out",
+                  de: "prüfe die Profil-Aussagen nach — stimmt",
+                },
+              },
+            ],
+          },
+          {
+            id: "audit-3",
+            task: { en: "audit the notification claims", de: "prüfe die Benachrichtigungs-Aussagen nach" },
+            steps: [
+              {
+                status: {
+                  en: "re-running the notification checks",
+                  de: "prüfe die Benachrichtigungen erneut",
+                },
+              },
+              { run: "npm test -- settings/Notifications", result: "7 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "audit the notification claims — checks out",
+                  de: "prüfe die Benachrichtigungs-Aussagen nach — stimmt",
+                },
+              },
+            ],
+          },
+          {
+            id: "audit-4",
+            task: { en: "audit the error claims", de: "prüfe die Fehler-Aussagen nach" },
+            steps: [
+              { status: { en: "re-running the error checks", de: "prüfe die Fehler erneut" } },
+              { run: "npm test -- settings/errors", result: "5 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "audit the error claims — checks out",
+                  de: "prüfe die Fehler-Aussagen nach — stimmt",
+                },
+              },
+            ],
+          },
+          {
+            id: "audit-5",
+            task: { en: "audit the analytics claims", de: "prüfe die Analytics-Aussagen nach" },
+            steps: [
+              { status: { en: "re-running the analytics checks", de: "prüfe Analytics erneut" } },
+              { run: "npm test -- settings/track", result: "4 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "audit the analytics claims — checks out",
+                  de: "prüfe die Analytics-Aussagen nach — stimmt",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      say: {
+        en: "Five phases done: 13 agents, every claim checked on its own.",
+        de: "Fünf Phasen fertig: 13 Agenten, jede Aussage einzeln geprüft.",
+      },
+    },
+  ],
+};
+
 export const SCENARIOS: Dsl[] = [
   buildplan,
   bughunt,
   adversarial,
   fanout,
   fanoutEight,
+  workflowPhases,
   permission,
   diskshell,
   agentsmd,

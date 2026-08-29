@@ -104,7 +104,9 @@ describe("edge state on the one renderer", () => {
   const l = layoutStateGraph(run.topology, "horizontal");
 
   const render = (upto: number) =>
-    renderToStaticMarkup(<CanvasOverlay laid={l} stats={edgeStatsUpTo(run, upto)} started={upto >= 0} />);
+    renderToStaticMarkup(
+      <CanvasOverlay laid={l} stats={edgeStatsUpTo(run.records, upto)} started={upto >= 0} />,
+    );
 
   it("carries the three arrowhead markers in its defs", () => {
     const html = render(0);
@@ -145,12 +147,12 @@ describe("edge state on the one renderer", () => {
 describe("edgeStatsUpTo", () => {
   it("counts per edge and names the cursor's last edge", () => {
     const firstTaken = run.records.findIndex((r) => r.type === "edge_taken");
-    const stats = edgeStatsUpTo(run, firstTaken);
+    const stats = edgeStatsUpTo(run.records, firstTaken);
     const r = run.records[firstTaken];
     expect(stats.last).toBe(`${r.from}->${r.to}`);
     expect(stats.counts.get(`${r.from}->${r.to}`)).toBe(1);
 
-    const all = edgeStatsUpTo(run, run.records.length - 1);
+    const all = edgeStatsUpTo(run.records, run.records.length - 1);
     expect(all.last).not.toBeNull();
     expect(Math.max(...all.counts.values())).toBeGreaterThan(1);
   });

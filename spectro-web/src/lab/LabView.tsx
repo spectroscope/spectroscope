@@ -23,6 +23,7 @@ import { DOCK_TAB_STORAGE_KEY, dockTabFrom, persistDockTab, type DockTab } from 
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
 import { lensFrom, WorkflowLens, type LabLens } from "./workflow/WorkflowLens";
+import type { WorkflowDeclaration } from "./workflowGraph";
 import { rowsPrefFrom, type RowsPref } from "./flowmap/workerGrid";
 import { AnalyzeRun } from "../components/AnalyzeRun";
 import { t } from "../i18n/i18n";
@@ -83,8 +84,11 @@ const LAB_CTX_MIN_WIDTH_PX = 260;
 const LAB_CENTER_MIN_WIDTH_PX = 420;
 
 export function LabView(props: {
-  /** The open archive, or null for the live run (mirrors App's replay state). */
-  replay: { id: string; events: RunEvent[] } | null;
+  /** The open archive, or null for the live run (mirrors App's replay state).
+   *  `declared` (card 302) rides beside the events, never in them: what the
+   *  imported run's own state file said about its columns, when the pick
+   *  carried one. Absent is the normal case and the workflow lens says so. */
+  replay: { id: string; events: RunEvent[]; declared?: WorkflowDeclaration } | null;
   /** App's raw live event list — the source for backToLive(). */
   liveEvents: RunEvent[];
   /** True while the live run is active (drives the "waiting" hint). */
@@ -401,6 +405,7 @@ export function LabView(props: {
           {lens === "workflow" ? (
             <WorkflowLens
               events={allEvents}
+              declared={replay?.declared}
               applied={st.applied}
               scene={st.scene}
               model={props.model}

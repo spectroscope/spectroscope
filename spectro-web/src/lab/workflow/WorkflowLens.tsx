@@ -2,10 +2,18 @@
 // spawn tree ranked by time overlap — instead of the machine map. Same
 // stepper, same cursor, same scene fold; only the projection changes.
 //
-// Every edge here is DASHED on purpose: solid means declared before the run
-// (the state graph); dashed means reconstructed from what happened. The
-// legend says it once in words, and the honesty chip counts what the
-// reconstruction actually resolved.
+// CARD 302 gave the lens a SECOND picture, and the stroke is what tells them
+// apart. Dashed still means reconstructed from what happened — a Task spawn
+// tree, columns guessed from the stamps. Solid means the run declared its
+// columns before it started: a workflow's `phases` sit in its script before a
+// token flows, and the lens ranks and captions by them.
+//
+// One picture can hold BOTH, which is why the stroke is decided per edge and
+// not once for the canvas: the spawn of a workflow is itself a reconstruction,
+// and a run can spawn plain Task children beside a declared workflow. The
+// legend therefore explains both strokes rather than only the one the tree
+// happens to lead with, and the honesty chip counts what the reconstruction
+// resolved either way.
 
 import { useMemo } from "react";
 import type { ReactNode } from "react";
@@ -16,7 +24,8 @@ import type { Scene } from "../labScene";
 import { layoutStateGraph, type StateGraphLayout } from "../../stategraph/layout";
 import { GraphCanvas } from "../../reactflow/GraphCanvas";
 import { RefitOnLayout } from "../../reactflow/RefitOnLayout";
-import { nodeStateAt, spawnedIn, spawnTree, terminalStatesIn } from "../spawnTree";
+import { nodeStateAt, phaseStateAt, spawnedIn, spawnTree, terminalStatesIn } from "../spawnTree";
+import type { WorkflowDeclaration } from "../workflowGraph";
 import { WorkflowNode, type WfData } from "./WorkflowNode";
 import { t, type Lang } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
@@ -36,9 +45,21 @@ export { WorkflowNode };
 
 const NODE_TYPES: NodeTypes = { wfNode: WorkflowNode };
 
-/** The one edge renderer of this lens: every routed path dashed, keyed by
- *  the edge's OWN id (layout.ts, card 293) so parallel edges both survive. */
-export function WorkflowOverlay({ laid }: { laid: StateGraphLayout }) {
+/** The one edge renderer of this lens, keyed by the edge's OWN id (layout.ts,
+ *  card 293) so parallel edges both survive.
+ *
+ *  THE STROKE IS PER EDGE, not per picture. `declared` names the nodes a
+ *  script placed; an edge INTO one of them was declared before the run and is
+ *  drawn solid, and everything else keeps card 293's dash because it was
+ *  reconstructed from the stamps. One run holds both: the spawn of a workflow
+ *  is itself a reconstruction, and plain Task children can sit beside it. */
+export function WorkflowOverlay({
+  laid,
+  declared,
+}: {
+  laid: StateGraphLayout;
+  declared?: ReadonlySet<string>;
+}) {
   return (
     <svg className="wf-arcs" aria-hidden="true" style={{ overflow: "visible" }}>
       <defs>
@@ -56,8 +77,30 @@ export function WorkflowOverlay({ laid }: { laid: StateGraphLayout }) {
         </marker>
       </defs>
       {laid.edges.map((e) => (
-        <path key={e.id} d={e.path} className="wf-arc" strokeDasharray="7 5" markerEnd="url(#wf-ar)" />
+        <path
+          key={e.id}
+          d={e.path}
+          className="wf-arc"
+          {...(declared?.has(e.to) === true ? {} : { strokeDasharray: "7 5" })}
+          markerEnd="url(#wf-ar)"
+        />
       ))}
+      {/* The declared columns' own words, on the layout's own anchors. A
+          column nobody named gets nothing — the state graph prints "rank N"
+          there because a longest-path column has no other name, but a phase
+          column either carries the script's word or carries none. */}
+      {laid.rankLabels.map((l) =>
+        l.caption === undefined ? null : (
+          <text key={l.rank} className="wf-ranklabel" x={l.x} y={l.y}>
+            {l.caption.title}
+            {l.caption.detail !== null && (
+              <tspan className="wf-rankdetail" dx={8}>
+                {l.caption.detail}
+              </tspan>
+            )}
+          </text>
+        ),
+      )}
     </svg>
   );
 }
@@ -67,14 +110,25 @@ export function WorkflowLegend({
   lang,
   resolved,
   reported,
+  declared = false,
 }: {
   lang: Lang;
   resolved: number;
   reported: number;
+  /** True when at least one run's columns came from its own declaration. */
+  declared?: boolean;
 }) {
   return (
     <div className="wf-legend">
-      <span className="wf-legend-words">{t(lang, "lab.lens.legend")}</span>
+      <span className="wf-legend-words">
+        {t(lang, declared ? "lab.lens.legendDeclared" : "lab.lens.legend")}
+      </span>
+      <span
+        className="wf-chip mono"
+        title={t(lang, declared ? "lab.lens.sourceDeclaredHint" : "lab.lens.sourceRecoveredHint")}
+      >
+        {t(lang, declared ? "lab.lens.sourceDeclared" : "lab.lens.sourceRecovered")}
+      </span>
       <span
         className="wf-chip mono"
         title={t(lang, "lab.lens.reconstructedHint", { n: resolved, m: reported })}
@@ -97,9 +151,13 @@ export function WorkflowLens(props: {
   /** The run-analysis affordance (card 294) — handed in only for an imported
    *  run, so the lens itself stays ignorant of imports and stores. */
   analyze?: ReactNode;
+  /** Card 302: what each workflow run in this stream declared about its own
+   *  columns, when the reader got a state file. Absent is the normal case and
+   *  the honest one — the lens then draws the recovered picture and says so. */
+  declared?: WorkflowDeclaration;
 }) {
   const lang = useLang();
-  const tree = useMemo(() => spawnTree(props.events), [props.events]);
+  const tree = useMemo(() => spawnTree(props.events, props.declared), [props.events, props.declared]);
   const laid = useMemo(() => layoutStateGraph(tree.topo, "horizontal"), [tree]);
   const spawned = useMemo(() => spawnedIn(props.applied), [props.applied]);
   const terminal = useMemo(() => terminalStatesIn(props.applied), [props.applied]);
@@ -108,18 +166,44 @@ export function WorkflowLens(props: {
     () =>
       laid.nodes.map((p) => {
         const meta = tree.meta[p.id];
-        const state = nodeStateAt(props.scene, spawned, terminal, p.id, tree.root);
+        // A PHASE BOX folds its own state from the agents inside it; every
+        // other node answers for itself, exactly as card 293 had it.
+        const phase = tree.phaseNodes.has(p.id);
+        const state = phase
+          ? phaseStateAt(props.scene, spawned, terminal, tree, p.id)
+          : nodeStateAt(props.scene, spawned, terminal, p.id, tree.root);
         return {
           id: p.id,
           type: "wfNode",
           position: { x: p.x, y: p.y },
           draggable: false,
           data: {
-            label: meta?.label ?? p.label,
+            // A phase box the DECLARATION did not place is the one holding
+            // agents the run's file could not place either. It has no title
+            // of its own, and a blank heading would say nothing at all.
+            label:
+              phase && !tree.declaredNodes.has(p.id)
+                ? t(lang, "lab.lens.unplaced")
+                : (meta?.label ?? p.label),
             agentType: meta?.agentType ?? null,
             model: meta?.model ?? (p.id === tree.root ? (props.model ?? null) : null),
             state,
             stateLabel: t(lang, `lab.lens.state.${state}`),
+            phase,
+            members: (meta?.members ?? []).map((m) => {
+              const own = tree.knownAgents.has(m.agentId)
+                ? nodeStateAt(props.scene, spawned, terminal, m.agentId, tree.root)
+                : m.declared === "error"
+                  ? ("failed" as const)
+                  : m.declared;
+              return {
+                agentId: m.agentId,
+                label: m.label,
+                model: m.model,
+                state: own,
+                stateLabel: t(lang, `lab.lens.state.${own}`),
+              };
+            }),
             w: p.w,
             h: p.h,
           } satisfies WfData,
@@ -130,7 +214,12 @@ export function WorkflowLens(props: {
 
   return (
     <div className="wf-lens">
-      <WorkflowLegend lang={lang} resolved={tree.resolved} reported={tree.reported} />
+      <WorkflowLegend
+        lang={lang}
+        resolved={tree.resolved}
+        reported={tree.reported}
+        declared={tree.declared}
+      />
       {props.analyze}
       <GraphCanvas
         className="wf-canvas"
@@ -143,7 +232,7 @@ export function WorkflowLens(props: {
       >
         <RefitOnLayout laid={laid} />
         <ViewportPortal>
-          <WorkflowOverlay laid={laid} />
+          <WorkflowOverlay laid={laid} declared={tree.declaredNodes} />
         </ViewportPortal>
       </GraphCanvas>
     </div>

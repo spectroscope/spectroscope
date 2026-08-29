@@ -272,7 +272,7 @@ export function StateGraphView({
           draggable: false,
           data: {
             placed: p,
-            lifecycle: lifecycleAt(run, upto, p.id),
+            lifecycle: lifecycleAt(run.records, upto, p.id),
             entered: nr?.entered ?? 0,
             durationMs: nr?.durationMs ?? null,
             updateKeys: nr?.updateKeys ?? [],
@@ -287,7 +287,7 @@ export function StateGraphView({
   // which one the cursor stands on. The not-taken path STAYS and steps back —
   // it is not removed. That is the difference from a trace, and removing it
   // would turn this into one.
-  const edgeStats = useMemo(() => edgeStatsUpTo(run, upto), [run, upto]);
+  const edgeStats = useMemo(() => edgeStatsUpTo(run.records, upto), [run, upto]);
 
   const onPick = useCallback((_: unknown, n: FlowNode) => patch({ picked: n.id }), [patch]);
 
@@ -612,8 +612,8 @@ export function NodeDetail({ run, rank, upto, picked }: NodeDetailProps) {
             values and gets a status chip. Learned the expensive way. */}
         <dt>{t(lang, "sg.lifecycle")}</dt>
         <dd>
-          <span className={`sg-life sg-life--${lifecycleAt(run, upto, picked)}`}>
-            {t(lang, "sg.st." + lifecycleAt(run, upto, picked))}
+          <span className={`sg-life sg-life--${lifecycleAt(run.records, upto, picked)}`}>
+            {t(lang, "sg.st." + lifecycleAt(run.records, upto, picked))}
           </span>
         </dd>
         <dt>{t(lang, "sg.rank")}</dt>

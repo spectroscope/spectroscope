@@ -23,6 +23,7 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 import { LabView, LENS_STORAGE_KEY, persistLens } from "./LabView";
+import type { WorkflowDeclaration } from "./workflowGraph";
 import { lensFrom } from "./workflow/WorkflowLens";
 import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
@@ -136,5 +137,59 @@ describe("machine-only controls hide under the workflow lens", () => {
     expect(html).toContain("lab-lens-seg");
     expect(html).not.toContain("lab-face-seg");
     expect(html).not.toContain("lab-view-seg");
+  });
+});
+
+/**
+ * THE OUTER SEAM (card 302 re-review). Everything else about the declared
+ * picture is pinned one layer down, on a lens handed a declaration by hand.
+ * Nothing held that the LAB hands the OPEN RUN's declaration to that lens:
+ * dropping `declared={replay?.declared}` left the entire suite green while a
+ * declared workflow drew as a guess. Rendered like the pins above — the effect
+ * that loads the replay does not run under react-dom/server, which is exactly
+ * why the declared columns a run never filled are the visible half here.
+ */
+describe("the Lab hands the open run's declaration to the lens", () => {
+  const DECL: WorkflowDeclaration = new Map([
+    [
+      "main",
+      {
+        phases: [
+          { title: "a-declared-column", detail: null, members: [] },
+          { title: "another-one", detail: null, members: [] },
+        ],
+        unplaced: [],
+      },
+    ],
+  ]);
+
+  const withReplay = (declared?: WorkflowDeclaration): string => {
+    storage.store.set(LENS_STORAGE_KEY, "workflow");
+    return renderToStaticMarkup(
+      <LabView
+        replay={{ id: "import:one", events: [], ...(declared !== undefined ? { declared } : {}) }}
+        liveEvents={[]}
+        running={false}
+        onSend={() => {}}
+        onDecide={() => {}}
+        onReturnToLive={() => {}}
+        sendClient={() => true}
+      />,
+    );
+  };
+
+  it("draws the declared columns and says declared", () => {
+    const html = withReplay(DECL);
+    expect(html).toContain(t(lang, "lab.lens.legendDeclared"));
+    expect(html).toContain(t(lang, "lab.lens.sourceDeclared"));
+    expect(html).toContain("a-declared-column");
+    expect(html).toContain("another-one");
+  });
+
+  it("says recovered, and names no column, for a run that declared nothing", () => {
+    const html = withReplay();
+    expect(html).not.toContain(t(lang, "lab.lens.legendDeclared"));
+    expect(html).toContain(t(lang, "lab.lens.sourceRecovered"));
+    expect(html).not.toContain("wf-ranklabel");
   });
 });

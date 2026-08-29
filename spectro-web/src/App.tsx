@@ -75,7 +75,7 @@ import {
 } from "./components/localNoticeFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { StarterDialog } from "./components/StarterDialog";
-import { compile } from "./scenario/compile";
+import { compile, declarationOf } from "./scenario/compile";
 import type { Dsl } from "./scenario/dsl";
 import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
@@ -149,6 +149,7 @@ import { attachSources, sourceStats } from "./state/traceSource";
 import { traceProvenance } from "./components/traceDetail";
 import { childrenNote, shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
+import type { WorkflowDeclaration } from "./lab/workflowGraph";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
 import { useImageRequest } from "./state/imageViewer";
 import { ImageLightbox } from "./components/ImageLightbox";
@@ -205,6 +206,15 @@ export function App() {
   // SESSION like `importedPath`, for the same reason — a recorded folder shown
   // over somebody else's session would be worse than none. Display only.
   const [importedCwd, setImportedCwd] = useState<{ sessionId: string; cwd: string } | null>(null);
+  // Card 302: what an imported run DECLARED about its own columns. STAMPED
+  // WITH THE SESSION, for the third time and the same reason — one run's
+  // phases drawn over another run's agents would be a lie the picture cannot
+  // walk back. The wire is untouched: this rides beside the events, never in
+  // them, exactly as the recorded cwd does.
+  const [importedPhases, setImportedPhases] = useState<{
+    sessionId: string;
+    declared: WorkflowDeclaration;
+  } | null>(null);
   // What the llm-wire index answered for the opened session (leg E): how many
   // recorded exchanges sit in the sidecar. STAMPED WITH THE SESSION like
   // `importedPath`, for the same reason — a download link pointing at the
@@ -904,6 +914,11 @@ export function App() {
   // the Files pane labels it as recorded and touches nothing on disk.
   const shownRecordedCwd =
     importedCwd !== null && importedCwd.sessionId === (replay?.id ?? null) ? importedCwd.cwd : null;
+  /** The declared phases belonging to the session on screen, or none. */
+  const shownDeclared =
+    importedPhases !== null && importedPhases.sessionId === (replay?.id ?? null)
+      ? importedPhases.declared
+      : undefined;
   // How the visible view is being read, straight from the module store the two
   // views report into (card 181). Subscribed rather than lifted into App state,
   // so a spectrum drag re-renders on its own terms and this only wakes when the
@@ -1012,6 +1027,7 @@ export function App() {
   const leaveToLiveCore = (): void => {
     navNonce.issue(); // outdate any in-flight session open
     setReplay(null);
+    setImportedPhases(null); // a fresh chat declared nothing
     setEnteredFleet(null);
   };
 
@@ -1190,6 +1206,11 @@ export function App() {
     setImportedCwd(
       run?.workspace !== undefined && run.workspace !== null ? { sessionId, cwd: run.workspace } : null,
     );
+    // Card 302: and the run's declared columns, or nothing — an import with
+    // no state file must clear the previous one rather than inherit it.
+    setImportedPhases(
+      run?.declared !== undefined && run.declared.size > 0 ? { sessionId, declared: run.declared } : null,
+    );
     if (storePath !== undefined) void loadSidecarAgents(storePath).then(setSidecars);
     setReplay({
       id: sessionId,
@@ -1257,11 +1278,17 @@ export function App() {
       return;
     }
     navNonce.issue(); // a scenario supersedes any in-flight session open
+    const sessionId = `scenario:${dsl.id}`;
     setReplay({
-      id: `scenario:${dsl.id}`,
+      id: sessionId,
       state: foldArchive(events),
       events,
     });
+    // Card 302: a workflow-shaped scenario declares its columns the way a real
+    // run's state file does, so the demo shows the DECLARED picture rather
+    // than a guess at it. Every other scenario clears the field.
+    const declared = declarationOf(dsl, lang);
+    setImportedPhases(declared === undefined ? null : { sessionId, declared });
     // Loading a CHAT scenario must LEAVE an entered fleet — otherwise the
     // header shows the scenario while every tab (the lab included) still
     // renders the fleet's events. Owner-found: dialog-load after a fleet.
@@ -1629,8 +1656,15 @@ export function App() {
   useEffect(() => setLightboxAt(null), [replay?.id, enteredFleet]);
 
   const labReplay = useMemo(
-    () => (replay === null ? null : { id: replay.id, events: shownEvents }),
-    [replay, shownEvents],
+    () =>
+      replay === null
+        ? null
+        : {
+            id: replay.id,
+            events: shownEvents,
+            ...(shownDeclared !== undefined ? { declared: shownDeclared } : {}),
+          },
+    [replay, shownEvents, shownDeclared],
   );
   // chat-v2: the work fold, over the SHOWN stream, so the panel and the
   // transcript can never describe different sessions. Folded only while v2 is

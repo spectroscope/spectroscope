@@ -38,6 +38,31 @@ export interface Topology {
    *  Everything downstream (in-rank ordering, coordinates, routing, skip
    *  lanes, the `__end__` last-column rule) works off the ranks unchanged. */
   ranks?: ReadonlyMap<string, number>;
+  /** Optional rank captions (card 302): a caller whose columns MEAN something
+   *  says so, and the layout carries the words to `rankLabels` instead of the
+   *  renderer having to reach back for them. The state graph hands none in and
+   *  keeps printing "rank N" — the number IS the whole truth about a column
+   *  that came out of a longest-path ranking. The workflow lens hands in the
+   *  script's declared phases, which existed before the run did. */
+  rankCaptions?: ReadonlyMap<number, RankCaption>;
+  /** Optional per-node height (card 302). A node that only NAMES something
+   *  fits the one cell every state-graph node has always had; a node that
+   *  HOLDS something does not — a workflow phase box lists its agents, and
+   *  five of them do not fit in 46 pixels. The producer states the height it
+   *  needs and the column is packed around it.
+   *
+   *  A topology that states none lays out byte for byte as before: with
+   *  uniform heights the packing below reduces to the fixed cell it replaced,
+   *  which is pinned rather than asserted (`nodeHeights.test.ts`). */
+  heights?: ReadonlyMap<string, number>;
+}
+
+/** What a rank is CALLED, when the caller knows. `detail` is the phase's own
+ *  second line — kept apart from the title so a renderer can drop it rather
+ *  than having to split a string somebody joined. */
+export interface RankCaption {
+  title: string;
+  detail: string | null;
 }
 
 export interface PlacedNode {
@@ -90,6 +115,8 @@ export interface RankLabel {
   rank: number;
   x: number;
   y: number;
+  /** The caller's own words for this column, when it handed any in. */
+  caption?: RankCaption;
 }
 
 export interface StateGraphLayout {
@@ -321,18 +348,46 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   });
   if (!isFinite(minSlot)) minSlot = 0;
 
+  // Card 302: a column is PACKED, not indexed into fixed cells, so a node
+  // that states its own height can sit beside ones that did not. The packing
+  // is exact-equal to the old cell arithmetic when every height is NH:
+  //   old  across = MARGIN + (i - (L-1)/2 - minSlot) * (NH + gapCross)
+  //   new  across = AXIS - total/2 + offset(i),  AXIS = MARGIN - minSlot*(NH+gapCross) + NH/2
+  // and with uniform NH the two reduce to the same number, which is why
+  // adding this to a SHARED layout does not move the state graph's pictures.
+  // READ IN HORIZONTAL ONLY, and ignored outright in vertical rather than
+  // half-honoured. Vertical runs the ranks down the height axis, so a stated
+  // height would have to move the ALONG spacing too; reporting the tall box
+  // while spacing for the short one is the exact overlap this override exists
+  // to prevent. The one caller that states heights lays out horizontally.
+  const heightOf = (id: string): number => (horiz ? (topo.heights?.get(id) ?? NH) : NH);
+  const crossSize = horiz ? NH : NW;
+  const AXIS = MARGIN - minSlot * (crossSize + gapCross) + crossSize / 2;
+  /** Node id → its distance across the rank axis, packed within its layer. */
+  const across = new Map<string, number>();
+  layers.forEach((layer) => {
+    if (layer.length === 0) return;
+    const sizes = layer.map((id) => (horiz ? heightOf(id) : NW));
+    const total = sizes.reduce((a, b) => a + b, 0) + gapCross * (layer.length - 1);
+    let at = AXIS - total / 2;
+    layer.forEach((id, i) => {
+      across.set(id, at);
+      at += sizes[i] + gapCross;
+    });
+  });
+
   const placed: PlacedNode[] = nodes.map((n) => {
     const r = rank.get(n.id)!;
-    const s = slotOf.get(n.id)! - minSlot;
+    const a = across.get(n.id)!;
     return {
       id: n.id,
       label: n.label,
       rank: r,
       slot: slotOf.get(n.id)!,
-      x: MARGIN + (horiz ? r * (NW + gapAlong) : s * (NW + gapCross)),
-      y: MARGIN + (horiz ? s * (NH + gapCross) : r * (NH + gapAlong)),
+      x: horiz ? MARGIN + r * (NW + gapAlong) : a,
+      y: horiz ? a : MARGIN + r * (NH + gapAlong),
       w: NW,
-      h: NH,
+      h: horiz ? heightOf(n.id) : NH,
     };
   });
   const byId = new Map(placed.map((n) => [n.id, n]));
@@ -341,14 +396,31 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   // the template's anchors: (first.x, MARGIN-12) along, (MARGIN-22, first.y-8)
   // across. Computed here rather than in the renderer so the export SVG and
   // the live overlay cannot disagree about where a column is.
+  //
+  // THE ALONG ANCHOR IS A CEILING, NOT A CONSTANT. MARGIN-12 held only while
+  // every node was NH tall and the topmost box therefore started at exactly
+  // MARGIN. A packed column centres on AXIS, so a box that states a height h
+  // starts at AXIS - h/2 and a tall one starts ABOVE the margin: a phase
+  // holding five agents (h = 107) starts at 9.5 and the fixed caption at 28
+  // was painted onto its own heading — the overlay portal renders after the
+  // nodes in the same transformed viewport, so it lands ON TOP. Taking the
+  // lower of the two keeps the caption above whatever the column turned out
+  // to hold, and with uniform heights first.y >= MARGIN always holds (the
+  // packing reduces to first.y = MARGIN + (Lmax-L)*(NH+gapCross)/2), so the
+  // state graph's own captions do not move a pixel. Vertical needs no such
+  // clamp: it refuses the height override outright and its widths are uniform.
   const rankLabels: RankLabel[] = [];
   for (let r = 0; r <= maxRank; r++) {
     const inRank = placed.filter((n) => n.rank === r);
     if (inRank.length === 0) continue;
     const first = inRank.reduce((a, b) => ((horiz ? b.y < a.y : b.x < a.x) ? b : a));
-    rankLabels.push(
-      horiz ? { rank: r, x: first.x, y: MARGIN - 12 } : { rank: r, x: MARGIN - 22, y: first.y - 8 },
-    );
+    const caption = topo.rankCaptions?.get(r);
+    rankLabels.push({
+      ...(horiz
+        ? { rank: r, x: first.x, y: Math.min(MARGIN - 12, first.y - 12) }
+        : { rank: r, x: MARGIN - 22, y: first.y - 8 }),
+      ...(caption !== undefined ? { caption } : {}),
+    });
   }
 
   // The node field's bounds. Every arc is aimed to clear them, which is what
