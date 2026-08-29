@@ -82,7 +82,6 @@ describe("a rank caption is given the room it may use", () => {
     }
   });
 
-
   it("takes a NARROW rank's room from that rank, not from the cell constant", () => {
     // THE MERGE SEAM of cards 303 and 305, and nothing in the merge showed it.
     // 303 wrote this bound as the constant `NW + gapAlong`, which WAS every
