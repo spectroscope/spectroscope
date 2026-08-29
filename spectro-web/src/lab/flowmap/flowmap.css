@@ -282,25 +282,38 @@
 .pf-os--busy {
   --pf-station: var(--accent);
   --pf-station-glow: var(--accent-glow);
-  animation: pf-os-busy 1.6s ease-in-out infinite;
+  /* The resting frame, and the only one reduced motion ever sees. Without it
+     `animation: none` drops the station back to .pf-card--active's plain
+     accent glow, and a child's station stops naming its occupant (card 308). */
+  box-shadow:
+    0 0 0 1px var(--pf-station),
+    0 0 16px var(--pf-station-glow),
+    0 12px 34px rgba(0, 0, 0, 0.34);
+  animation: pf-os-busy 2.8s ease-in-out infinite;
 }
 .pf-os--worker {
   --pf-station: var(--agent-worker);
   --pf-station-glow: color-mix(in srgb, var(--agent-worker) 34%, transparent);
   border-color: var(--pf-station);
 }
+/* Card 308 halves the swing (22px→46px became 16px→28px) and slows the cycle.
+   No z-index is needed here and none is added: an outer box-shadow is drawn
+   outside the border edge and clipped inside it, so this glow was never on the
+   card face to begin with — it is already a rim, it was only a loud one. The
+   1px ring is a line, not a glow, and stays untouched: it is what says whether
+   the accent or a worker's colour is on the station. */
 @keyframes pf-os-busy {
   0%,
   100% {
     box-shadow:
       0 0 0 1px var(--pf-station),
-      0 0 22px var(--pf-station-glow),
+      0 0 16px var(--pf-station-glow),
       0 12px 34px rgba(0, 0, 0, 0.34);
   }
   50% {
     box-shadow:
       0 0 0 1px var(--pf-station),
-      0 0 46px var(--pf-station-glow),
+      0 0 28px var(--pf-station-glow),
       0 12px 34px rgba(0, 0, 0, 0.34);
   }
 }
@@ -964,9 +977,23 @@
   text-align: center;
   position: relative;
 }
+/* The halo paints BEHIND the card, so only the rim breathes (card 308).
+ *
+ * `z-index: -1` is the whole mechanism. `.pf-llm` above is `position:
+ * relative` with no z-index, so it opens no stacking context of its own; a
+ * negative-z child therefore paints before its parent's background rather
+ * than after it. `.pf-card` covers it with an opaque `--surface-2`, and what
+ * is left is the 18px the halo overhangs. The glow cannot escape the node
+ * either: the `.react-flow__node` ancestor carries a transform and does open
+ * a stacking context, which traps the halo inside it.
+ *
+ * Anything that would make `.pf-llm` a stacking context — a z-index, a
+ * transform, isolation, an opacity below 1 — puts the halo back on the card
+ * face without a word of warning. shimmerBehind.drift.test.ts measures that. */
 .pf-llm__halo {
   position: absolute;
   inset: -18px;
+  z-index: -1;
   border-radius: 50%;
   background: radial-gradient(circle, var(--accent-glow), transparent 68%);
   opacity: 0;
@@ -974,18 +1001,26 @@
   pointer-events: none;
 }
 .pf-llm--active .pf-llm__halo {
-  opacity: 1;
-  animation: pf-breathe 2.4s ease-in-out infinite;
+  /* Ignored for as long as the animation runs — keyframes beat a declared
+     value for every property they set — and therefore exactly the frame a
+     reduced-motion reader is left with once `animation: none !important`
+     takes the cycle away. `opacity: 1` here handed them the crassest frame of
+     all, permanently. */
+  opacity: 0.3;
+  animation: pf-breathe 4.2s ease-in-out infinite;
 }
+/* Half the amplitude, a little under twice the period, and an opacity band
+   lowered from 0.7–1.0 to 0.3–0.48. Lowering `opacity` on the rule alone did
+   nothing at all: the running animation set it every cycle. */
 @keyframes pf-breathe {
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.7;
+    opacity: 0.3;
   }
   50% {
-    transform: scale(1.12);
-    opacity: 1;
+    transform: scale(1.06);
+    opacity: 0.48;
   }
 }
 .pf-llm__net {
