@@ -47,7 +47,14 @@ export interface Moment {
  * printed as itself is a field name, not a sentence.
  *
  * A Record over the whole union on purpose, the same way MARK_RANK is: a
- * twelfth kind will not COMPILE until somebody has written its word.
+ * twelfth kind will not COMPILE until somebody has given it a KEY. That is all
+ * the compiler can ask for, and this comment used to claim more — it said the
+ * WORD, and a twelfth kind whose key pointed at a dictionary entry nobody had
+ * written compiled clean and ran the whole suite green (measured). The word is
+ * asked for one step later instead: moments.test.ts and LabDock.test.tsx read
+ * their kind lists out of THIS Record rather than copying it, so the same
+ * twelfth kind is red until the entry exists in both locales and a row on
+ * screen shows it.
  */
 export const MOMENT_KIND_KEY: Record<ChapterKind, string> = {
   turn: "lab.moment.kind.turn",

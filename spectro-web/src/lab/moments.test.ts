@@ -201,19 +201,12 @@ describe("momentsOf — a row seeks exactly where the tick seeks", () => {
 });
 
 describe("the kind word — a reader never meets the raw enum", () => {
-  const KINDS: ChapterKind[] = [
-    "turn",
-    "spawn",
-    "compaction",
-    "gate",
-    "denied",
-    "no_progress",
-    "intervention",
-    "question",
-    "skill",
-    "error",
-    "end",
-  ];
+  // READ OFF THE RECORD, never copied out of it. The Record over ChapterKind
+  // makes the compiler demand a KEY for a twelfth kind; it cannot demand a
+  // WORD, and a key pointing at a dictionary entry nobody wrote compiled and
+  // ran green while this list was typed by hand. Derived, the same twelfth kind
+  // is red here until somebody writes its word in both locales.
+  const KINDS = Object.keys(MOMENT_KIND_KEY) as ChapterKind[];
 
   it("has a word for every kind, in both locales, and never prints the enum", () => {
     for (const kind of KINDS) {

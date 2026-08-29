@@ -622,19 +622,10 @@ describe("the moments panel", () => {
 // other. Bitten kind by kind, because that is what the contract asked for and
 // what card 299's thinning shipped past.
 describe("each moment row wears its kind and its agent, in columns of their own", () => {
-  const ALL_KINDS: ChapterKind[] = [
-    "turn",
-    "spawn",
-    "compaction",
-    "gate",
-    "denied",
-    "no_progress",
-    "intervention",
-    "question",
-    "skill",
-    "error",
-    "end",
-  ];
+  // Read off the Record rather than listed here, so a twelfth kind cannot be
+  // added with eleven view bites still green: the fixture below has to grow to
+  // carry it before this describe can pass again.
+  const ALL_KINDS = Object.keys(MOMENT_KIND_KEY) as ChapterKind[];
 
   /** One run carrying all eleven, so no kind is bitten against a fixture built
    *  to suit it. */
