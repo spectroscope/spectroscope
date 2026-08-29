@@ -7,7 +7,6 @@
 
 import { type NodeProps } from "@xyflow/react";
 import { Handles } from "./handles";
-import { BOX_HEADER_H } from "./workflowBox";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 
@@ -32,10 +31,13 @@ interface WfBoxBand {
  * which phase holds five.
  *
  * The bands are positioned from the SAME numbers the members were seated from,
- * offset by the header the members' own coordinates already include. Reading a
- * band's top out of CSS instead would be a second geometry, free to disagree
- * with the first, and a band drawn half a card off is exactly the kind of
- * wrongness that looks like a design choice.
+ * in the same frame of reference: `workflowBoxLayout` measures everything from
+ * the box's own top-left, and so does an absolutely positioned child of
+ * `.pf-wfbox`. Reading a band's top out of CSS instead would be a second
+ * geometry, free to disagree with the first, and a band drawn half a card off
+ * is exactly the kind of wrongness that looks like a design choice — which is
+ * what it looked like for eight of thirteen cards until
+ * `workflowBoxNode.test.tsx` started comparing the two rectangles.
  */
 export function WorkflowBoxNode({ data }: NodeProps) {
   const lang = useLang();
@@ -101,10 +103,13 @@ export function WorkflowBoxNode({ data }: NodeProps) {
           className={`pf-wfband${b.unplaced ? " pf-wfband--unplaced" : ""}${
             b.count === 0 ? " pf-wfband--empty" : ""
           }`}
-          // The band's own coordinates are the members' coordinates, which
-          // include the header — and this element is laid out INSIDE the
-          // header-offset body, so the header comes back off.
-          style={{ top: `${b.y - BOX_HEADER_H}px`, height: `${b.h}px` }}
+          // The band's own coordinates ARE the members' coordinates: both are
+          // measured from the frame's top-left, and both already carry the
+          // header. `.pf-wfbox` is the positioned ancestor and the header is
+          // static, so nothing displaces this element — subtracting the header
+          // here drew every band 46px above the agents it holds, and every
+          // card landed on the next phase's title.
+          style={{ top: `${b.y}px`, height: `${b.h}px` }}
         >
           <span className="pf-wfband__label" title={b.detail ?? undefined}>
             {b.title}

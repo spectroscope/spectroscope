@@ -1761,9 +1761,14 @@
 
    A frame, not a card: it holds React Flow CHILD nodes, so it must never draw
    over them. Every colour rides a border (the house rule); the bands are
-   background only. The header keeps its own height — the pure geometry seated
-   the members below it, and a header that grew would put the first band under
-   the first card.
+   background only.
+
+   THE FRAME IS THE ORIGIN. `.pf-wfbox` is the positioned ancestor and every
+   band is absolutely placed against it, which is the same top-left a member's
+   own React Flow position counts from. Nothing in between may take a
+   `position`, or the two geometries stop meaning the same thing. Held by
+   workflowBoxNode.test.tsx, which reads these three declarations back out of
+   this file.
    --------------------------------------------------------------------------- */
 .pf-wfbox {
   width: 100%;
@@ -1778,7 +1783,11 @@
   pointer-events: none;
 }
 .pf-wfbox__head {
-  height: 46px; /* BOX_HEADER_H — the geometry seated the bands under it */
+  /* BOX_HEADER_H. Static on purpose: the geometry already counts this height
+     into every band's y, so a header that displaced its siblings would apply
+     it twice. Its own value is held against the constant by
+     workflowBox.test.ts, which reads this rule back out of this file. */
+  height: 46px;
   box-sizing: border-box;
   display: flex;
   align-items: center;

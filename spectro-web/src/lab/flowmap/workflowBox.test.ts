@@ -150,10 +150,10 @@ describe("workflowBoxLayout", () => {
 
 // The header is written TWICE — as BOX_HEADER_H here, and as a literal height
 // in flowmap.css, because a CSS `height` cannot read a TS constant. The pure
-// geometry seats the first band under the header and the renderer places that
-// band inside the header-offset body, so the two drifting apart moves every
-// band by the difference and every member card sits half a band off its own
-// title. Nothing renders that as an error; it reads as a design choice.
+// geometry seats the first band BELOW the header by this many px, and the
+// header is what fills that space on screen, so the two drifting apart leaves
+// either a gap under the title or a title over the first band. Nothing renders
+// that as an error; it reads as a design choice.
 //
 // The same pin cardGeometry.test.ts puts on the worker card's caps.
 describe("the box header has ONE height", () => {
