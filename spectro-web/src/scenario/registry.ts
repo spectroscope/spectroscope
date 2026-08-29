@@ -1469,19 +1469,26 @@ const workflowPhases: Dsl = {
  * the same time and one agent turns what comes back into a single answer.
  *
  * WHY EIGHT, and not a number that reads bigger. The Lab's worker grid seats
- * `SEATS_MAX_EXPANDED` = 12 workers expanded and 6 compact; above the ceiling
- * seats stop being drawn. Eight is the width the grid was measured against
- * (card 287's `fanout-eight`), it is under the ceiling with room left, and it
- * makes a phase box `phaseHeight(8)` = 152px tall against the 107px card 302's
- * fan-outs of five ever drew — wide enough to be the point of the scenario,
- * still a box the lens draws whole. `fanoutWorkflowTest.ts` pins the width
- * against `SEATS_MAX_EXPANDED` rather than against the number 8, so raising
- * the ceiling frees the width and lowering it fails the case.
+ * `SEATS_MAX_EXPANDED` = 12 workers expanded and `SEATS_MAX_COMPACT` = 6
+ * compact; past the ceiling the map stops drawing and the chip confesses the
+ * gap. Eight is the width already exercised at both ends of that range: it is
+ * card 287's shipped `fanout-eight`, and `FlowMap`'s fit zoom was dropped to
+ * 0.1 for "an expanded eight-worker map". It leaves four seats spare under the
+ * ceiling, and it makes a phase box `phaseHeight(8)` = 152px tall against the
+ * 107px of card 302's fan-outs of five (both measured, not derived here).
+ * `fanoutWorkflow.test.tsx` pins the width against `SEATS_MAX_EXPANDED` rather
+ * than against the literal 8, so raising the ceiling frees the width and
+ * lowering it below the declaration fails the case — bitten, by setting the
+ * ceiling to 4.
  *
  * THE NAME IS COMPUTED, not typed. Both numbers in it are read off
- * `fanoutWorkflowPhases` below, so a ninth worker renames the scenario by
- * itself and a name claiming twelve while the DSL holds ten cannot be
- * written here at all.
+ * `fanoutWorkflowPhases` below, so the count follows the list: measured by
+ * adding a ninth worker, the name became "Fan-out workflow · 11 agents, 9
+ * abreast" / "· 11 Agenten, 9 nebeneinander" on its own, with all fourteen
+ * cases still green. Typing a literal over the derivation is still POSSIBLE —
+ * this is a comment, not a lock — which is why the tests read the shown name
+ * back and compare it to the declaration, and why typing 12 into either half
+ * turns exactly one of them red.
  */
 
 /** One agent inside a fan-out step, named so the array below can be ANNOTATED
@@ -1561,8 +1568,8 @@ const releaseChecks: FanoutAgent[] = [
     task: { en: "migrate config, then back", de: "Konfig vor und zurück fahren" },
     steps: [
       { status: { en: "migrating a 0.10 settings file", de: "migriere eine 0.10-Settings-Datei" } },
-      { run: "./spectro-app migrate --from 0.10 --dry-run", result: "3 keys moved, 1 key renamed" },
-      { run: "./spectro-app migrate --rollback --dry-run", result: "restored, checksum matches" },
+      { run: "scripts/migrate-settings.sh --from 0.10 --dry-run", result: "3 keys moved, 1 renamed" },
+      { run: "scripts/migrate-settings.sh --rollback --dry-run", result: "restored, checksum matches" },
       { usage: { in: 24_000, out: 900 } },
       {
         say: {
@@ -1592,13 +1599,13 @@ const releaseChecks: FanoutAgent[] = [
     task: { en: "smoke-test a clean install", de: "saubere Installation testen" },
     steps: [
       { status: { en: "installing into an empty prefix", de: "installiere in ein leeres Prefix" } },
-      { run: "./spectro-env install --clean", gate: "allow", result: "installed in 41s" },
-      { run: "spectro --version", result: "spectroscope 0.11.0" },
+      { run: "scripts/install-smoke.sh --clean", gate: "allow", result: "installed in 41s" },
+      { run: "spectro doctor", result: "12 checks, all green" },
       { usage: { in: 15_000, out: 600 } },
       {
         say: {
-          en: "A machine with nothing installed gets to a working CLI in 41 seconds.",
-          de: "Eine Maschine ohne Vorinstallation kommt in 41 Sekunden zu einer laufenden CLI.",
+          en: "A machine with nothing installed gets to a CLI that passes doctor in 41 seconds.",
+          de: "Eine Maschine ohne Vorinstallation kommt in 41 Sekunden zu einer CLI, die doctor besteht.",
         },
       },
     ],

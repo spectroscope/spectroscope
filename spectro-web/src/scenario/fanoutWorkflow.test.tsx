@@ -80,10 +80,10 @@ describe("the fan-out workflow scenario", () => {
   });
 
   it("keeps the wide phase inside the seat grid the map can actually draw", () => {
-    // Eight is the width card 287 measured the expanded seat grid against;
-    // SEATS_MAX_EXPANDED is the ceiling above which seats stop being drawn.
-    // A name promising more agents than the map seats is the drift this card
-    // exists to avoid.
+    // SEATS_MAX_EXPANDED is the ceiling past which the map stops drawing the
+    // seats and the chip confesses the gap. A name promising a fan-out wider
+    // than the map seats is the drift this card exists to avoid — so this
+    // reads the ceiling rather than repeating the literal 8.
     expect(declaredWidest()).toBeLessThanOrEqual(SEATS_MAX_EXPANDED);
   });
 
