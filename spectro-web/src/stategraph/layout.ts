@@ -51,10 +51,34 @@ export interface Topology {
    *  five of them do not fit in 46 pixels. The producer states the height it
    *  needs and the column is packed around it.
    *
+   *  This is the height-only spelling, kept because the workflow lens writes
+   *  it. `sizes` is the general one and wins where both name a node.
+   *
    *  A topology that states none lays out byte for byte as before: with
    *  uniform heights the packing below reduces to the fixed cell it replaced,
-   *  which is pinned rather than asserted (`nodeHeights.test.ts`). */
+   *  which is pinned rather than asserted (`layoutIdentity.test.ts`). */
   heights?: ReadonlyMap<string, number>;
+  /** Optional per-node SIZE (card 305) — the general form of `heights`.
+   *
+   *  Card 302 could stop at height because its tall node stood in a state
+   *  graph, whose nodes are name plates. The lab map's workflow box holds
+   *  agent CARDS, which are wider than the 132-pixel cell as well as taller,
+   *  and the box reads as one block only when its phases run downwards. Both
+   *  dimensions, both orientations, or the box cannot be drawn.
+   *
+   *  Either key may be left out and falls back to the engine's own cell, so a
+   *  producer that knows only its width says only its width. A topology that
+   *  states no sizes at all is byte-identical to one from before this field
+   *  existed — that is what `layoutIdentity.test.ts` holds the ruler on, and
+   *  it is the reason the rest of the engine could be changed around it. */
+  sizes?: ReadonlyMap<string, NodeSize>;
+}
+
+/** A node's own box, either dimension optional (card 305). An omitted one is
+ *  the engine's cell — 132 x 46, the template's density. */
+export interface NodeSize {
+  w?: number;
+  h?: number;
 }
 
 /** What a rank is CALLED, when the caller knows. `detail` is the phase's own
@@ -360,14 +384,22 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   // height would have to move the ALONG spacing too; reporting the tall box
   // while spacing for the short one is the exact overlap this override exists
   // to prevent. The one caller that states heights lays out horizontally.
-  const heightOf = (id: string): number => (horiz ? (topo.heights?.get(id) ?? NH) : NH);
+  //
+  // Card 305 generalises the override from a height to a SIZE. Width is read
+  // on both paths from the start: in horizontal it grows ALONG the rank axis,
+  // in vertical ACROSS it, and the packing below is what makes the vertical
+  // case safe. Height is still refused in vertical here — that is card 302's
+  // decision, lifted a step later once the rank pitch can carry it.
+  const widthOf = (id: string): number => topo.sizes?.get(id)?.w ?? NW;
+  const heightOf = (id: string): number =>
+    horiz ? (topo.sizes?.get(id)?.h ?? topo.heights?.get(id) ?? NH) : NH;
   const crossSize = horiz ? NH : NW;
   const AXIS = MARGIN - minSlot * (crossSize + gapCross) + crossSize / 2;
   /** Node id → its distance across the rank axis, packed within its layer. */
   const across = new Map<string, number>();
   layers.forEach((layer) => {
     if (layer.length === 0) return;
-    const sizes = layer.map((id) => (horiz ? heightOf(id) : NW));
+    const sizes = layer.map((id) => (horiz ? heightOf(id) : widthOf(id)));
     const total = sizes.reduce((a, b) => a + b, 0) + gapCross * (layer.length - 1);
     let at = AXIS - total / 2;
     layer.forEach((id, i) => {
@@ -386,7 +418,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       slot: slotOf.get(n.id)!,
       x: horiz ? MARGIN + r * (NW + gapAlong) : a,
       y: horiz ? a : MARGIN + r * (NH + gapAlong),
-      w: NW,
+      w: widthOf(n.id),
       h: horiz ? heightOf(n.id) : NH,
     };
   });
