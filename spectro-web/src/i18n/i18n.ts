@@ -1475,6 +1475,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "live packet (where it happens right now)",
   },
   "map.legend.activeRail": { de: "aktive Schiene (wo es passiert)", en: "active rail (where it happens)" },
+  // Card 306: the workflow box in the lab map.
+  "map.wf.unplaced": { de: "ohne Phase", en: "no phase stated" },
+  "map.wf.phases": { de: "Phasen", en: "phases" },
+  "map.wf.agents": { de: "Agenten", en: "agents" },
+  "map.wf.expand": { de: "Agenten ausklappen", en: "Expand the agents" },
+  "map.wf.collapse": { de: "Agenten einklappen", en: "Collapse the agents" },
+  "map.wf.empty": { de: "nie betreten", en: "never entered" },
   "map.legend.inside": { de: "im Agentensystem", en: "inside the agent system" },
   "map.legend.out": { de: "nach außen (Netz)", en: "outbound (network)" },
   "map.legend.read": { de: "lesen", en: "read" },
