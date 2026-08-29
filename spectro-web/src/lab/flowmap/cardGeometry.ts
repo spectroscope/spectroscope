@@ -69,7 +69,24 @@ export const SUB_COL_PITCH = SUB_CARD_W + RAIL_GAP;
 // by 0.6 for world px. cardGeometry.test.ts holds the CSS against them.
 // ---------------------------------------------------------------------------
 
-/** The task title in the card's head: two lines, then it clips. */
+/**
+ * The task title in the card's head: two lines, then it clips.
+ *
+ * The clip is a real cost — the task is the worker card's only visible name —
+ * and the re-review asked whether it is worth 15 world px. MEASURED, by
+ * setting SUB_CARD_H and reading rowsFor and the fitted card out of a real
+ * sceneToFlow run on a 1600x900 pane:
+ *
+ *   480..487  three seats stack 3 deep, twelve stack 4 deep   (both wins)
+ *   490..493  three still 3 deep, twelve falls back to 3      (half gone)
+ *   495       three falls back to 2x2, world 2578 -> 3046 wide (the complaint)
+ *
+ * Paying the cap back costs 15 px and lands on 495, which is the owner's own
+ * complaint returning. So the cap stays and nodes.tsx makes the clipped name
+ * recoverable instead: `.pf-sub__id` carries it in its own title attribute.
+ * Whether the clip is acceptable at all is an OWNER call and stands open on
+ * card 296 — the alternative on the table is a taller card, not a free one.
+ */
 export const SUB_CAP_HEAD_PX = 50;
 /** Brief, spend, model and last status: scrolls past this. */
 export const SUB_CAP_META_PX = 136;

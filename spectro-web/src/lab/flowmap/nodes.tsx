@@ -766,12 +766,21 @@ export function SubagentNode({ data }: NodeProps) {
   if (d.full !== undefined) {
     // The opaque agent id lives ONLY in the title attribute — the visible
     // name is the task the spawner phrased, then the kind label, then nothing.
+    //
+    // That name gets its OWN title (card 296 re-review). Card 296 capped this
+    // head at two lines to make the worker seat a bound, and the head's title
+    // carries the agent id, not the task — so a long task title was clipped
+    // with nowhere left to read it. The cap earns its place (measured: paying
+    // the 15 world px back moves the reserve to 495, and at 495 three seats
+    // fall back to two rows and twelve to three, which is the complaint card
+    // 296 exists to fix), so the text is made recoverable instead.
+    const name = d.task || d.label || "worker";
     return (
       <div className={`pf-card pf-sub pf-sub--full${d.active ? " pf-card--active" : ""}`}>
         <div className="pf-sub__head" title={d.id}>
-          <span className="pf-sub__id">
+          <span className="pf-sub__id" title={name}>
             <span className="pf-sub__dot" style={{ background: d.stateColor }} />
-            {d.task || d.label || "worker"}
+            {name}
           </span>
           {d.label !== null && <span className="pf-badge">{d.label}</span>}
           <span className="pf-badge" style={{ color: d.stateColor }}>
