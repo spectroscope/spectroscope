@@ -183,7 +183,12 @@ Both are unit-tested (`labScene.test.ts` — 29 cases, `petriModel.test.ts` — 
   first. The box stands where the run's own node stands — the `Workflow`
   tool_use's card for an imported run, the session's agent card for a run
   compiled from the scenario DSL — and it carries its own minimal/expanded
-  switch, which its member cards follow instead of the map-wide one.
+  switch, which its member cards follow instead of the map-wide one. Because a
+  box GROWS as the run fills it, everything it pushes aside moves with it, and
+  `flowmap/positions.ts` is what lets that reach the screen: a card keeps the
+  seat it is on for as long as the layout keeps computing that same seat for
+  it, and follows the layout the moment the layout moves it. A dragged card
+  overrides that; a compact/expanded flip overrides the drags.
 - `LabTrace` shows applied lines, the just-fired line highlighted, a **dam
   divider**, then the dimmed queue; each row expands to the full event via the
   shared `JsonTree`.
