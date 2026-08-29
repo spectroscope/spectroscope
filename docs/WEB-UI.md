@@ -175,6 +175,15 @@ Both are unit-tested (`labScene.test.ts` — 29 cases, `petriModel.test.ts` — 
 - `FlowMap` renders the scene as a React Flow canvas (`sceneToFlow.ts` maps
   scene → nodes/edges, pure; the render pieces live in `lab/flowmap/`). It
   reskins with every design because nodes and edges read the token variables.
+- **A run that declared its phases gets a box** (`flowmap/workflowBox.ts` for
+  the geometry, `WorkflowBoxNode.tsx` for the frame). The box is the only place
+  the map uses React Flow's parent/child containment: the agents inside it are
+  child nodes, so a member's position is measured from its box and anything
+  reading positions as world rectangles has to go through `flowmap/worldBox.ts`
+  first. The box stands where the run's own node stands — the `Workflow`
+  tool_use's card for an imported run, the session's agent card for a run
+  compiled from the scenario DSL — and it carries its own minimal/expanded
+  switch, which its member cards follow instead of the map-wide one.
 - `LabTrace` shows applied lines, the just-fired line highlighted, a **dam
   divider**, then the dimmed queue; each row expands to the full event via the
   shared `JsonTree`.
@@ -215,5 +224,5 @@ spectro-web/
         ├── LabControls.tsx        # step/flow/grain controls
         ├── LabTrace.tsx           # the JSONL strip
         ├── LabView.tsx            # 3-column layout
-        └── flowmap/               # nodes, edges, glyphs, css
+        └── flowmap/               # nodes, edges, glyphs, css, the workflow box
 ```
