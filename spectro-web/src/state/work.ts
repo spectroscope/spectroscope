@@ -435,26 +435,42 @@ export function foldWork(events: readonly RunEvent[]): WorkItem[] {
     if (settle === undefined) continue;
     const receipt = readReceipt(settle.output);
     if (receipt === null) continue;
-    const item = ensure(receipt.taskId, "launched");
+    // Card 297. An IMPORTED workflow run is already a node in this stream,
+    // spawned under the very tool_use that returned this receipt, with the
+    // run's own agents hanging off it. That node IS this launch, so the
+    // receipt fills it in rather than opening a second card: keyed apart, one
+    // run stood on screen twice — once completed off the receipt, once
+    // submitted forever off the node. Its kind stays "spawn", which is what it
+    // now is: a run whose agents are in the stream, not a launch known only by
+    // the number in its receipt.
+    const node = items.get(callId);
+    const item = node ?? ensure(receipt.taskId, "launched");
     item.parentId = call.agentId;
     item.name = call.name;
-    item.intent = receipt.intent;
+    // A node's intent came from the run's own state file, which names the run
+    // better than the receipt's one-line Summary.
+    if (node === undefined || item.intent === "") item.intent = receipt.intent;
     item.opaque = receipt.opaque;
     item.runId = receipt.runId;
+    // Launch to settlement, for a node exactly as for a bare launch: the
+    // node's own three frames are the tool_use stamp and the ending this same
+    // result carries, so the two spans are the same span.
     item.evidence.start = call.event;
     item.evidence.end = settle.event;
     item.firstTs = call.ts;
     item.lastTs = settle.ts;
     // No status yet means it never reported back: the transcript ended with
-    // the task still out there. That is "working", not "completed".
-    item.state =
-      receipt.status === null
-        ? "working"
-        : receipt.status === "completed"
-          ? "completed"
-          : receipt.status === "failed"
-            ? "failed"
-            : "working";
+    // the task still out there. That is "working", not "completed". A node the
+    // stream already closed keeps its ending — a finished state never reopens.
+    if (!settled(item.state))
+      item.state =
+        receipt.status === null
+          ? "working"
+          : receipt.status === "completed"
+            ? "completed"
+            : receipt.status === "failed"
+              ? "failed"
+              : "working";
   }
 
   // Nest: an item whose parent is another item hangs under it; everything else

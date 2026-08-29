@@ -332,6 +332,109 @@ describe("foldWork · launched background tasks", () => {
     expect(items[0].state).toBe("working");
   });
 
+  // Card 297. The importer gives a workflow run a NODE, under the very
+  // tool_use its receipt came back on, so the run's own agents have a parent
+  // to hang under. This fold reads the same receipt and opens a launched card
+  // for it. Keyed apart, one run stood on screen twice — once completed off
+  // the receipt, once submitted forever off the node. Measured 2026-08-29 by
+  // driving the importer and this fold over one real session on disk: 49 runs,
+  // 51 roots before, 100 after.
+  it("an imported run's node and its launch are ONE card", () => {
+    const receipt =
+      "Workflow launched in background. Task ID: w82qt1zg0\nSummary: Recon the seams\nRun ID: wf_run-one";
+    const items = foldWork([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "recon", ts: 1000 },
+      { type: "tool_call", agentId: "main", callId: "toolu_A", name: "Workflow", input: {}, ts: 1100 },
+      { type: "agent_spawn", agentId: "toolu_A", parentId: "main", task: "board-sweep-and-three", ts: 1100 },
+      {
+        type: "agent_message",
+        from: "main",
+        to: "toolu_A",
+        role: "task",
+        state: "submitted",
+        text: "board-sweep-and-three",
+        label: "workflow",
+        ts: 1100,
+      },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "toolu_A",
+        output: receipt,
+        isError: false,
+        durationMs: 0,
+        ts: 1132,
+      },
+      { type: "agent_spawn", agentId: "a11aaaa", parentId: "toolu_A", task: "sweep", ts: 1200 },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "toolu_A",
+        output: `${receipt}\n\n--- task w82qt1zg0 · completed ---\nusage: agent_count=2 tool_uses=9`,
+        isError: false,
+        durationMs: 600000,
+        ts: 601132,
+      },
+      {
+        type: "agent_message",
+        from: "toolu_A",
+        to: "main",
+        role: "result",
+        state: "completed",
+        text: "",
+        ts: 601132,
+      },
+    ]);
+    expect(items).toHaveLength(1);
+    const w = items[0];
+    expect(w.id).toBe("toolu_A");
+    expect(w.state).toBe("completed");
+    expect(w.name).toBe("Workflow");
+    expect(w.runId).toBe("wf_run-one");
+    expect(w.opaque?.agents).toBe(2);
+    // The run's state file named it; the receipt's one-line Summary does not
+    // get to overwrite that.
+    expect(w.intent).toBe("board-sweep-and-three");
+    expect(w.firstTs).toBe(1100);
+    expect(w.lastTs).toBe(601132);
+    expect(w.children.map((c) => c.id)).toEqual(["a11aaaa"]);
+  });
+
+  it("an ending the stream already recorded is not reopened by a status this fold cannot read", () => {
+    // A killed run. The importer closes the node off the same header — its
+    // rule is "anything that is not completed ended badly" — while this
+    // fold's own mapping has no word for `killed` and falls to "working".
+    // Without the guard the card would report a run still out there that the
+    // transcript says was killed. Measured 2026-08-29 over the 536 workflow
+    // state files in the store: 37 runs ended `killed`.
+    const receipt = "Workflow launched in background. Task ID: w82qt1zg0\nSummary: Recon";
+    const items = foldWork([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "recon", ts: 1000 },
+      { type: "tool_call", agentId: "main", callId: "toolu_A", name: "Workflow", input: {}, ts: 1100 },
+      { type: "agent_spawn", agentId: "toolu_A", parentId: "main", task: "a run", ts: 1100 },
+      {
+        type: "agent_message",
+        from: "toolu_A",
+        to: "main",
+        role: "result",
+        state: "failed",
+        text: "",
+        ts: 601132,
+      },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "toolu_A",
+        output: `${receipt}\n\n--- task w82qt1zg0 · killed ---`,
+        isError: true,
+        durationMs: 600000,
+        ts: 601132,
+      },
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0].state).toBe("failed");
+  });
+
   it("an ordinary tool call is not a work item", () => {
     const events: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "x", ts: 1 },

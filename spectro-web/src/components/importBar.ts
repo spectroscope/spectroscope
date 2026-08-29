@@ -69,13 +69,22 @@ export function subagentNote(lang: Lang, sub: SubagentTranscript | null | undefi
  * to merge. Skips are stated whenever they happened, the worker chip's rule:
  * the honest count is both halves or neither.
  *
+ * Card 297 adds a third half to the same rule: a workflow run's state file
+ * can NAME an agent whose transcript is not beside the session at all. That
+ * is neither merged nor skipped — nothing was there to skip — and it is said
+ * whenever it happened, for the same reason a skip is: without it the run
+ * quietly shows fewer agents than it reported.
+ *
  * @param lang the chrome language
  * @param run  what the coordinator measured, or nothing for a lone file
  * @return the sentence(s), or null when there is nothing of the kind to say
  */
 export function childrenNote(lang: Lang, run: ImportedRunSummary | null | undefined): string | null {
-  if (!run || (run.childrenMerged === 0 && run.childrenSkipped === 0)) return null;
+  if (!run || (run.childrenMerged === 0 && run.childrenSkipped === 0 && run.childrenUnrecorded === 0))
+    return null;
   const parts = [t(lang, "imp.childrenMerged", { n: run.childrenMerged })];
   if (run.childrenSkipped > 0) parts.push(t(lang, "imp.childrenSkipped", { n: run.childrenSkipped }));
+  if (run.childrenUnrecorded > 0)
+    parts.push(t(lang, "imp.childrenUnrecorded", { n: run.childrenUnrecorded }));
   return parts.join(" ");
 }
