@@ -406,17 +406,63 @@ export function oversizeCards(
 }
 
 /**
- * The tallest each card has ever been measured at, for the under-fill arm.
+ * The envelopes the under-fill arm watches.
  *
- * The peak, not the last reading: a run whose first worker is bare and whose
- * second carries four pictures would otherwise be reported as over-reserved on
- * the strength of the bare one, and the seat has to hold the second.
+ * Card 296 corrected exactly ONE — the worker seat — and the arm that found it
+ * names five more the moment it is let loose: the agent hub reserves 780 for a
+ * card that measured 364, llm 540 for 168, os-shell and os-mcp 340 for 65,
+ * os-disk 240 for 104. Every one of those readings is TRUE and none of them is
+ * broken, so widening the arm to all of them would ship it already shouting —
+ * six standing warnings out of the box, burying the first real finding exactly
+ * the way this check's missing caller buried it for two cards.
+ *
+ * So the arm watches what this card measured. Widening it belongs to whichever
+ * card corrects the next envelope, one at a time, with its own measurement.
  */
-const tallest = new Map<string, number>();
+export const UNDER_WATCHED_TYPES: ReadonlySet<string> = new Set(["subagent"]);
 
 /**
- * Cards whose SEAT reserves at least twice the tallest card that ever stood in
- * it — the arm oversizeCards is blind to by construction.
+ * How long a watched envelope's tallest card has to stand still before the
+ * under-fill arm believes it.
+ *
+ * The re-review's find: judging a card the frame it appears cannot work, and
+ * no peak map can rescue it. A bare worker card measures 237.59 world px, so
+ * 237.59 * 2 <= 480 the instant a worker is laid out — the FIRST reading is
+ * the peak, and the card only grows afterwards (304 typical, 423 with four
+ * pictures). Peak-per-id protects tall-then-short, which is the one order a
+ * real run cannot produce first.
+ *
+ * A settled reading can. The caller reports twice: once now, for the oversize
+ * arm, which is a defect and must be loud immediately — and once more after
+ * the layout has not moved for this long, which is the only call the under
+ * arm can ever speak on.
+ */
+export const UNDER_SETTLE_MS = 3000;
+
+/**
+ * The tallest card ever measured in each WATCHED envelope, and since when.
+ *
+ * Per envelope, not per card id — the docstring this replaces promised "a run
+ * whose first worker is bare and whose second carries four pictures must not
+ * be reported on the strength of the bare one", and that sentence is about two
+ * DIFFERENT ids, which a per-id map can say nothing about. One seat shape, one
+ * peak.
+ *
+ * `since` is the clock the settle window runs on: it restarts whenever the
+ * peak grows, so a card that is still filling up never reports.
+ */
+const peaks = new Map<string, { envelope: string; peak: number; since: number }>();
+
+/** What either arm has already said, keyed `size:<id>` / `slack:<envelope>`
+ *  — a layout runs per frame and a report nobody can read is the silence
+ *  this check was built to break. */
+const spoken = new Set<string>();
+
+/** Envelopes the under arm has already spoken about, so it speaks once. */
+const warnedUnder = new Set<string>();
+
+/**
+ * A watched envelope whose tallest settled card fills at most half of it.
  *
  * A seat is derived from an envelope, and an envelope that is far too GENEROUS
  * fails as quietly as one that is too small: nothing overlaps, so nothing
@@ -425,20 +471,69 @@ const tallest = new Map<string, number>();
  * 304 — and the check that existed could not have seen it.
  *
  * Twice is not a taste: at twice the card, the air under it is the card again.
+ *
+ * The envelope is read by TYPE, never by id: this arm judges a seat SHAPE that
+ * many cards share, and envelopeOf's id-first lookup would tie the verdict to
+ * whichever card happens to share a name with an envelope.
+ *
+ * @param measured what the browser laid out this pass
+ * @param now the clock the settle window runs on; injected so the gate can
+ *            move it instead of sleeping
  */
 export function underfilledCards(
   measured: Iterable<{ id: string; type?: string; h: number }>,
-): { id: string; h: number; bound: number }[] {
-  const out: { id: string; h: number; bound: number }[] = [];
+  now: number = Date.now(),
+): { envelope: string; peak: number; bound: number }[] {
   for (const m of measured) {
-    const env = envelopeOf(m.id, m.type);
+    const type = m.type ?? "";
     // h <= 0 is "not laid out yet", not "a card of no height".
-    if (env === undefined || m.h <= 0) continue;
-    const peak = Math.max(tallest.get(m.id) ?? 0, m.h);
-    tallest.set(m.id, peak);
-    if (peak * 2 <= env.h) out.push({ id: m.id, h: peak, bound: env.h });
+    if (!UNDER_WATCHED_TYPES.has(type) || m.h <= 0 || EXPANDED_CARD[type] === undefined) continue;
+    // The key is the ENVELOPE, not the card. Keyed by id, the second worker's
+    // four pictures could never clear the first worker's bare reading.
+    const key = type;
+    const seen = peaks.get(key);
+    if (seen === undefined || m.h > seen.peak) peaks.set(key, { envelope: type, peak: m.h, since: now });
   }
-  return out.sort((a, b) => b.bound - b.h - (a.bound - a.h));
+  const out: { envelope: string; peak: number; bound: number }[] = [];
+  for (const seen of peaks.values()) {
+    const env = EXPANDED_CARD[seen.envelope];
+    if (env === undefined || now - seen.since < UNDER_SETTLE_MS) continue;
+    if (seen.peak * 2 <= env.h) out.push({ envelope: seen.envelope, peak: seen.peak, bound: env.h });
+  }
+  return out.sort((a, b) => b.bound - b.peak - (a.bound - a.peak));
+}
+
+/**
+ * Envelopes the arm reported and the run has since disproved — a card taller
+ * than half the seat finally stood in one.
+ *
+ * The re-review's other half: a report that can never be withdrawn is worse
+ * than no report, because the reader learns to ignore the channel. A worker
+ * that sits bare past the settle window and only then picks up a tool is an
+ * ordinary run, not a corner case.
+ */
+function withdrawnUnder(): { envelope: string; peak: number; bound: number }[] {
+  const out: { envelope: string; peak: number; bound: number }[] = [];
+  for (const envelope of warnedUnder) {
+    const seen = peaks.get(envelope);
+    const env = EXPANDED_CARD[envelope];
+    if (seen === undefined || env === undefined) continue;
+    if (seen.peak * 2 > env.h) out.push({ envelope, peak: seen.peak, bound: env.h });
+  }
+  return out;
+}
+
+/**
+ * Forget everything both arms have measured and said.
+ *
+ * A test seam, and it has to be one: the memory is per module, so a suite that
+ * shares this module shares the peaks and the once-only locks, and one test's
+ * peak would silently decide the next one's verdict.
+ */
+export function resetEnvelopeMemory(): void {
+  spoken.clear();
+  peaks.clear();
+  warnedUnder.clear();
 }
 
 /**
@@ -454,6 +549,11 @@ export function underfilledCards(
  *    EXPANDED_CARD; compact seats are hand-authored and its cards are a third
  *    the size, so running the check there would report every worker as
  *    over-reserved and be wrong about all of them.
+ *
+ * It passes every non-zone card through on purpose: the OVERSIZE arm has to
+ * see all of them, because any card that outgrows its seat draws over its
+ * neighbour. Which envelopes the under-fill arm judges is that arm's own
+ * business — UNDER_WATCHED_TYPES — not a filter here.
  *
  * @param nodes what the canvas rendered, with whatever it has measured
  * @param expanded the seating these nodes came from
@@ -472,29 +572,39 @@ export function measuredCards(
   return out;
 }
 
-const spoken = new Set<string>();
-
 /**
  * The runtime half: hand it the heights the browser actually laid out and it
  * names every card that no longer fits the envelope its neighbours were seated
- * around — and, since card 296, every seat that reserves more than twice the
- * card it holds. Once per card — a layout that runs per frame would otherwise
- * shout per frame, and a report nobody can read is the silence it was meant to
- * break.
+ * around — and, since card 296, every watched seat that reserves more than
+ * twice the card it holds.
+ *
+ * The two arms speak on different clocks, and the re-review is why. A card
+ * OVER its seat is a defect drawing on top of its neighbour: it is said the
+ * moment it is seen. A seat holding air is a judgement about a run, and a run
+ * that has been going for one frame has nothing to judge — so the under arm
+ * speaks only once the tallest card in a watched envelope has stood still for
+ * UNDER_SETTLE_MS, and takes it back if the run goes on to disprove it.
+ *
+ * Once per finding either way.
+ *
+ * @param measured the heights the browser laid out
+ * @param sink where a finding goes
+ * @param now the clock the under arm's settle window runs on
  */
 export function reportOversizeCards(
   measured: Iterable<{ id: string; type?: string; h: number }>,
   /**
-   * Where a finding goes. The two arms are not the same severity and the
-   * default says so: a card OVER its seat draws on top of its neighbour and is
-   * a defect; a seat holding air is a design smell that costs spread and
-   * nothing else. Live on the "scaling fan-out" scenario the under-fill arm
-   * named five seats in its first run — all of them true, none of them broken
-   * — and five console errors would have read as breakage.
+   * The two arms are not the same severity and the default says so: a card
+   * OVER its seat draws on top of its neighbour and is a defect; a seat
+   * holding air costs spread and nothing else.
    */
   sink: (message: string, kind: "over" | "under") => void = (m, kind) =>
     kind === "over" ? console.error(m) : console.warn(m),
-): { over: { id: string; h: number; bound: number }[]; under: { id: string; h: number; bound: number }[] } {
+  now: number = Date.now(),
+): {
+  over: { id: string; h: number; bound: number }[];
+  under: { envelope: string; peak: number; bound: number }[];
+} {
   const seen = [...measured];
   const over = oversizeCards(seen);
   for (const c of over) {
@@ -506,14 +616,24 @@ export function reportOversizeCards(
       "over",
     );
   }
-  const under = underfilledCards(seen);
+  const under = underfilledCards(seen, now);
   for (const c of under) {
-    if (spoken.has(`slack:${c.id}`)) continue;
-    spoken.add(`slack:${c.id}`);
+    if (spoken.has(`slack:${c.envelope}`)) continue;
+    spoken.add(`slack:${c.envelope}`);
+    warnedUnder.add(c.envelope);
     sink(
-      `flow map: the tallest ${c.id} card measured ${c.h}px against an envelope of ${c.bound}px — ` +
-        `every seat derived from it reserves more than twice the card, so the map spreads into ` +
-        `${c.bound - c.h}px per seat that nothing ever fills.`,
+      `flow map: the tallest ${c.envelope} card measured ${c.peak}px against an envelope of ` +
+        `${c.bound}px — every seat derived from it reserves more than twice the card, so the map ` +
+        `spreads into ${c.bound - c.peak}px per seat that nothing ever fills.`,
+      "under",
+    );
+  }
+  for (const c of withdrawnUnder()) {
+    warnedUnder.delete(c.envelope);
+    spoken.delete(`slack:${c.envelope}`);
+    sink(
+      `flow map: withdrawing the under-fill report on the ${c.envelope} envelope — a ${c.peak}px ` +
+        `card has since stood in its ${c.bound}px seat.`,
       "under",
     );
   }

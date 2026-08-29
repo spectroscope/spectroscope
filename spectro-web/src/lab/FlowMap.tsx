@@ -23,7 +23,13 @@ import {
 } from "@xyflow/react";
 import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
-import { deriveDetail, measuredCards, reportOversizeCards, sceneToFlow } from "./flowmap/sceneToFlow";
+import {
+  UNDER_SETTLE_MS,
+  deriveDetail,
+  measuredCards,
+  reportOversizeCards,
+  sceneToFlow,
+} from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
 import { foldSeatPool, workerChip, type RowsPref } from "./flowmap/workerGrid";
 import { RailBoxes } from "./flowmap/railBoxes";
@@ -152,10 +158,21 @@ export function FlowMap(props: {
   // cards the browser actually laid out against those numbers —
   // reportOversizeCards had no caller outside its own test, so the half of the
   // check that needs a real browser never ran, and a seat that reserved twice
-  // its card shipped in silence. It is cheap: the report is once per card, and
-  // a hidden pane measures nothing, so nothing is said.
+  // its card shipped in silence. It is cheap: each finding is said once, and a
+  // hidden pane measures nothing, so nothing is said.
+  //
+  // TWO CALLS, because the two arms judge different things (re-review). A card
+  // OVER its seat is drawing on top of its neighbour right now, so it is said
+  // on the spot. A seat holding air is a judgement about a whole run, and this
+  // effect fires while cards are still filling up — a worker is bare for its
+  // first frames and 237 world px trips the check against a 480 seat. So the
+  // second call is scheduled for UNDER_SETTLE_MS later and cancelled by the
+  // next change: it only ever lands on a layout that has stopped moving.
   useEffect(() => {
-    reportOversizeCards(measuredCards(nodes, expandAll));
+    const cards = measuredCards(nodes, expandAll);
+    reportOversizeCards(cards);
+    const settled = setTimeout(() => reportOversizeCards(cards), UNDER_SETTLE_MS);
+    return () => clearTimeout(settled);
   }, [nodes, expandAll]);
 
   // The rails' live obstacle set: every card's rendered box (zones excluded),
