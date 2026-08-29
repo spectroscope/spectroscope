@@ -1090,3 +1090,53 @@ describe("importClaudeCodeRun — a workflow run brings its agents (card 297)", 
     expect(after.childrenUnrecorded).toBe(0);
   });
 });
+
+/** Card 302: the run's DECLARED phases come out of the importer, keyed by the
+ *  node its agents hang under, so the lens can rank by them instead of
+ *  guessing waves from the stamps. */
+describe("the declared phases travel with the import", () => {
+  const twoPhases = (): string =>
+    JSON.stringify({
+      runId: "wf_run-one",
+      workflowName: "board-sweep-and-three",
+      status: "completed",
+      phases: [
+        { title: "Sweep", detail: "read every open card" },
+        { title: "Diagnose", detail: "three of them in depth" },
+      ],
+      workflowProgress: [
+        { type: "workflow_phase", index: 1, title: "Sweep" },
+        { type: "workflow_phase", index: 2, title: "Diagnose" },
+        { ...wfAgent("a11aaaa", "sweep-the-todo-column", "the shared preamble"), phaseIndex: 1 },
+        {
+          ...wfAgent("b22bbbb", "card-146-lab-map", "the shared preamble"),
+          phaseIndex: 2,
+          phaseTitle: "Diagnose",
+        },
+      ],
+    });
+
+  it("names the phases and the column each agent was declared in", () => {
+    const run = importClaudeCodeRun({
+      ...WF_RUN,
+      runStates: [{ runId: "wf_run-one", json: twoPhases() }],
+    });
+    const decl = run.declared!.get("toolu_workflow_1")!;
+    expect(decl.phases.map((p) => p.title)).toEqual(["Sweep", "Diagnose"]);
+    expect(decl.phases[0].detail).toBe("read every open card");
+    expect(decl.rankOf.get("a11aaaa")).toBe(0);
+    expect(decl.rankOf.get("b22bbbb")).toBe(1);
+  });
+
+  it("declares nothing for a run whose state file listed no phases", () => {
+    // The card-297 fixture's state file has agents and no `phases` array at
+    // all. A run that declared nothing must not arrive looking declared.
+    const run = importClaudeCodeRun(WF_RUN);
+    expect(run.declared?.size ?? 0).toBe(0);
+  });
+
+  it("declares nothing when no state file came with the pick", () => {
+    const run = importClaudeCodeRun({ ...WF_RUN, runStates: [] });
+    expect(run.declared?.size ?? 0).toBe(0);
+  });
+});

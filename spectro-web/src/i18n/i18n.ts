@@ -3799,6 +3799,25 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kanten zeigen, wer wen gestartet hat, Spalten folgen der Zeit — gestrichelt: aus den Ereignissen des Laufs rekonstruiert, nicht vorher deklariert",
     en: "edges show who started whom, columns follow time — dashed: reconstructed from the run's events, not declared before it",
   },
+  // Card 302: the lens says WHICH of its two pictures the viewer is looking
+  // at. Declared = the run's own state file named the columns before it ran;
+  // recovered = there was no such file and the columns are a guess from the
+  // stamps. The two look different on purpose (solid against dashed), and the
+  // legend says the difference in words rather than leaving it to the stroke.
+  "lab.lens.legendDeclared": {
+    de: "Kanten zeigen, wer wen gestartet hat, Spalten sind die Phasen, die dieser Lauf vorher deklariert hat — durchgezogen: deklariert, nicht geraten",
+    en: "edges show who started whom, columns are the phases this run declared before it started — solid: declared, not guessed",
+  },
+  "lab.lens.sourceDeclared": { de: "deklariert", en: "declared" },
+  "lab.lens.sourceRecovered": { de: "rekonstruiert", en: "recovered" },
+  "lab.lens.sourceDeclaredHint": {
+    de: "Die Spalten kommen aus der Phasenliste im Skript des Laufs; die Belegung ist das, was wirklich lief",
+    en: "The columns come from the phase list in the run's script; the occupancy is what actually ran",
+  },
+  "lab.lens.sourceRecoveredHint": {
+    de: "Kein Zustandsfile — die Spalten sind aus den Zeitstempeln geraten, nicht deklariert",
+    en: "No state file — the columns are guessed from the timestamps, not declared",
+  },
   "lab.lens.reconstructed": {
     de: "rekonstruiert aus {n} von {m} Kind-Agenten",
     en: "reconstructed from {n} of {m} children",

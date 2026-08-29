@@ -19,7 +19,8 @@
 // appears still shows — attached to the root — and counts as unresolved.
 
 import type { RunEvent } from "../events";
-import type { Topology } from "../stategraph/layout";
+import type { RankCaption, Topology } from "../stategraph/layout";
+import type { DeclaredPhase, WorkflowDeclaration } from "./workflowGraph";
 import { foldAgents, type AgentRecord } from "./agentDirectory";
 import { clipMiddle, type Scene } from "./labScene";
 
@@ -46,6 +47,10 @@ export interface SpawnTree {
   resolved: number;
   /** The root's node id ("main" unless the root run_start says otherwise). */
   root: string;
+  /** True when at least one parent's columns came from a DECLARATION rather
+   *  than from the time-overlap guess — the one bit the legend needs to say
+   *  which of the two pictures a viewer is looking at. */
+  declared: boolean;
 }
 
 const LABEL_MAX = 28;
@@ -67,7 +72,7 @@ const LABEL_MAX = 28;
 type ChildRecord = AgentRecord;
 
 /** Build the reconstructed workflow topology from the FULL event list. */
-export function spawnTree(events: RunEvent[]): SpawnTree {
+export function spawnTree(events: RunEvent[], declared?: WorkflowDeclaration): SpawnTree {
   // ONE identity pass, shared with the directory (card 298): the root, and one
   // record per agent the stream named. This lens keeps the reported children.
   const fold = foldAgents(events);
@@ -87,10 +92,17 @@ export function spawnTree(events: RunEvent[]): SpawnTree {
   // root's children, every child of a workflow landed flat at
   // rank(workflow) + 1 and four sequential phases drew as one column.
   //
-  // The waves are derived from the TIMESTAMPS and from nothing else — a
-  // workflow's own state file declares phases, and this function never reads
-  // it. Where a declared phase and a derived wave disagree, the picture shows
-  // the derived one, because that is what the run actually did.
+  // THE RULE, INVERTED BY CARD 302. Where a declared phase and a derived wave
+  // disagree, the picture now shows the DECLARED one. A workflow's `phases`
+  // sit in its script before a token flows; a wave is guessed afterwards from
+  // stamps that a slow start or a long tail moves — so the declaration is the
+  // earlier and firmer fact, and the guess is the fallback, not the other way
+  // round. Card 297 had it backwards in this very comment.
+  //
+  // The waves stay exactly what they were for a parent nothing declared, which
+  // is every Task spawn tree and every workflow whose state file the reader
+  // never got. The lens says WHICH of the two a viewer is looking at rather
+  // than letting the two look alike.
   const parentOf = (c: ChildRecord): string => (known.has(c.parentId) ? c.parentId : root);
   const byParent = new Map<string, ChildRecord[]>();
   for (const c of children.values()) {
@@ -100,6 +112,23 @@ export function spawnTree(events: RunEvent[]): SpawnTree {
     else kids.push(c);
   }
   const ranks = new Map<string, number>([[root, 0]]);
+  // The columns' words, and whether any run supplied any. A rank two runs
+  // claim with DIFFERENT words gets no word at all: one name over two
+  // meanings would be a lie, an unnamed column is only a column.
+  const rankCaptions = new Map<number, RankCaption>();
+  const contested = new Set<number>();
+  let anyDeclared = false;
+  const claim = (r: number, p: DeclaredPhase): void => {
+    if (contested.has(r)) return;
+    const had = rankCaptions.get(r);
+    if (had === undefined) {
+      rankCaptions.set(r, { title: p.title, detail: p.detail });
+      return;
+    }
+    if (had.title === p.title && had.detail === p.detail) return;
+    rankCaptions.delete(r);
+    contested.add(r);
+  };
   // Down the tree from the root, so a parent's rank is settled before its
   // children ask for it. `seen` is the cycle guard.
   const seen = new Set<string>();
@@ -112,6 +141,22 @@ export function spawnTree(events: RunEvent[]): SpawnTree {
     const kids = [...(byParent.get(parent) ?? [])].sort(
       (a, b) => a.start - b.start || a.id.localeCompare(b.id),
     );
+    const said = declared?.get(parent);
+    if (said !== undefined) {
+      anyDeclared = true;
+      // The declared columns open at base + 1, in the script's own order. An
+      // agent the declaration never named goes one column PAST them — the
+      // same place `workflowGraph` puts an undeclared agent, so the two
+      // readings of the same run cannot disagree about where it belongs.
+      const stray = base + 1 + said.phases.length;
+      for (const c of kids) {
+        const at = said.rankOf.get(c.id);
+        if (!ranks.has(c.id)) ranks.set(c.id, at === undefined ? stray : base + 1 + at);
+        queue.push(c.id);
+      }
+      said.phases.forEach((p, i) => claim(base + 1 + i, p));
+      continue;
+    }
     let wave = 0;
     let waveEnd = -Infinity;
     for (const c of kids) {
@@ -148,8 +193,9 @@ export function spawnTree(events: RunEvent[]): SpawnTree {
   }
 
   return {
-    topo: { entry: root, nodes, edges, ranks },
+    topo: { entry: root, nodes, edges, ranks, rankCaptions },
     meta,
+    declared: anyDeclared,
     reported: children.size,
     resolved: [...children.values()].filter(resolvedOf).length,
     root,

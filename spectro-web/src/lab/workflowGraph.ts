@@ -256,3 +256,32 @@ export function workflowGraph(state: WorkflowState): WorkflowGraph {
     undeclared,
   };
 }
+
+/** What ONE run declared about its own columns, in the lens's terms. */
+export interface RunPhases {
+  phases: DeclaredPhase[];
+  /** Agent node id → its 0-based column inside `phases`. An agent this map
+   *  does not name is one the state file could not place, and the lens puts
+   *  it one column past the declared ones rather than inventing a phase. */
+  rankOf: ReadonlyMap<string, number>;
+}
+
+/** Every run whose state file the reader got, keyed by the node that run
+ *  hangs on in the lens's picture — for the importer, the `Workflow` tool_use
+ *  id the receipt came back on. */
+export type WorkflowDeclaration = ReadonlyMap<string, RunPhases>;
+
+/** One run's state file → what the lens needs to rank and caption its agents. */
+export function declarationFor(state: WorkflowState): RunPhases {
+  const rankOfDeclared = new Map<number, number>();
+  state.declaredIndex.forEach((declared, at) => {
+    if (!rankOfDeclared.has(declared)) rankOfDeclared.set(declared, at);
+  });
+  const rankOf = new Map<string, number>();
+  for (const a of state.agents) {
+    if (a.agentId === "" || a.phaseIndex === null) continue;
+    const r = rankOfDeclared.get(a.phaseIndex);
+    if (r !== undefined) rankOf.set(a.agentId, r);
+  }
+  return { phases: state.phases, rankOf };
+}

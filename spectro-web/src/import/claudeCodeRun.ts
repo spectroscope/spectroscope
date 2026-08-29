@@ -23,6 +23,12 @@ import { detectAndLoad, type ImportKind, type ImportSource } from "./detect";
 import { claudeCodeWithOrigin } from "./claudeCode";
 import { readSubagentTranscript, type SubagentTranscript } from "./subagentFile";
 import { clipMiddle } from "../lab/labScene";
+import {
+  declarationFor,
+  readWorkflowState,
+  type RunPhases,
+  type WorkflowDeclaration,
+} from "../lab/workflowGraph";
 
 /** One child's two files, already read to text. The meta arrives as raw text
  *  because reading it is this module's job — a caller that parsed it would
@@ -58,6 +64,12 @@ export interface ImportedRunSummary {
    *  it needs its own count, or a run that reports four agents shows three
    *  with nothing admitting the fourth. */
   childrenUnrecorded: number;
+  /** Card 302: what each workflow run in this import DECLARED about its own
+   *  columns, keyed by the node the run's agents hang under — the `Workflow`
+   *  tool_use id. Absent, or empty, for a pick that carried no state file or
+   *  whose state files listed no phases: the lens then draws its recovered
+   *  picture and says so, which is the honest reading, not a degraded one. */
+  declared?: WorkflowDeclaration;
 }
 
 export interface ClaudeCodeRunImport extends ImportedRunSummary {
@@ -707,6 +719,21 @@ export function importClaudeCodeRun(input: {
     childrenUnrecorded += Math.max(0, named - (skippedPerRun.get(runId) ?? 0));
   }
 
+  // Card 302: the phases the runs declared before they ran. Only for a run
+  // that actually got a node — a declaration about a run nothing drew would
+  // rank agents that are not on screen.
+  const declared = new Map<string, RunPhases>();
+  for (const [runId, run] of runs) {
+    if (!runNodes.has(runId)) continue;
+    const raw = (input.runStates ?? []).find((s) => s.runId === runId);
+    if (raw === undefined) continue;
+    const parsed = readWorkflowState(raw.json);
+    // No `phases` array is a run that declared nothing, not a run that
+    // declared zero phases. It must not arrive looking declared.
+    if (parsed === null || parsed.phases.length === 0) continue;
+    declared.set(run.workflowId, declarationFor(parsed));
+  }
+
   const all = mergeByTs([dedupedSession, synth, ...childStreams]);
   const events = all.map((s) => s.ev);
   const origin = Int32Array.from(all.map((s) => s.origin));
@@ -735,6 +762,7 @@ export function importClaudeCodeRun(input: {
     childrenMerged: mergedIds.length,
     childrenSkipped,
     childrenUnrecorded,
+    declared,
   };
 }
 

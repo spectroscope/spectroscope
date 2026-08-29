@@ -116,3 +116,17 @@
 .wf-ar-head {
   fill: var(--border-strong);
 }
+
+/* Card 302: a declared column's own words, on the layout's rank anchors.
+ * Faint and mono, the same register the state graph's rank label uses —
+ * a column caption is a ruler mark, not a heading. */
+.wf-ranklabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  fill: var(--text-faint);
+}
+
+.wf-rankdetail {
+  opacity: 0.7;
+}
