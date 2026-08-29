@@ -163,3 +163,38 @@ describe("the clock", () => {
     expect(html).not.toContain("0:00 /");
   });
 });
+
+describe('the "more" drawer', () => {
+  // CARD 303 rests a decision on this: `.lab-advanced` is left out of
+  // TRANSPORT_YIELD_ORDER, so no width hides it, and the row wraps instead.
+  // The reason is a fact about the markup rather than a memory of it, and this
+  // is where the fact is measured — if a second tempo slider ever grows in the
+  // row proper, the drawer stops being the only way to a tempo and the
+  // decision above it is free to be revisited.
+  const drawer = (html: string): { before: string; inside: string } => {
+    const at = html.indexOf('<details class="lab-advanced">');
+    expect(at, "the drawer must be in the row").toBeGreaterThan(-1);
+    return { before: html.slice(0, at), inside: html.slice(at) };
+  };
+  const count = (s: string, cls: string) => (s.match(new RegExp(`class="${cls}"`, "g")) ?? []).length;
+
+  it("is the only place in the row that carries a grain choice", () => {
+    loadReplay("s1", timed);
+    const html = render();
+    const { before, inside } = drawer(html);
+    expect(count(html, "lab-grain")).toBe(1);
+    expect(count(before, "lab-grain")).toBe(0);
+    expect(count(inside, "lab-grain")).toBe(1);
+  });
+
+  it("is the only place in the row that carries a tempo slider", () => {
+    // The speed PILLS are a different control and they do yield: five fixed
+    // multipliers, against a continuous slider over the whole interval range.
+    loadReplay("s1", timed);
+    const html = render();
+    const { before, inside } = drawer(html);
+    expect(count(html, "lab-speed")).toBe(1);
+    expect(count(before, "lab-speed")).toBe(0);
+    expect(count(inside, "lab-speed")).toBe(1);
+  });
+});

@@ -181,6 +181,13 @@ export interface RankLabel {
   rank: number;
   x: number;
   y: number;
+  /** How wide this label may be drawn before it reaches the column next door
+   *  (card 303). A caption is anchored on its column's left edge and carried
+   *  no width at all, so any title wider than the column pitch ran into its
+   *  neighbour — into the neighbour's caption, into the neighbour's box, or
+   *  into both. The renderer draws the caption in a box of exactly this width
+   *  and lets the stylesheet cut what does not fit. */
+  maxWidth: number;
   /** The caller's own words for this column, when it handed any in. */
   caption?: RankCaption;
 }
@@ -220,6 +227,11 @@ const SKIP_CLEAR = 42;
 const LANE_STEP = 36;
 const GUTTER = 30;
 const CORNER = 18;
+
+/** The room a rank caption gives up so it cannot touch the column next door
+ *  (card 303). A caption may use its own column's pitch minus this; at the
+ *  10px used here, and a 190px pitch, a caption gets 180. */
+export const RANK_CAPTION_GUTTER = 10;
 
 /** An orthogonal polyline with rounded corners — the template's orthoPath. */
 function orthoPath(pts: number[][], r: number): string {
@@ -521,16 +533,42 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   // from x=40 to x=-94 while the caption stays at x=18 — inside that box,
   // which spans -94 to 38 — and the overlay renders on top of its heading.
   // Same defect, same shape, same fix, so the two paths now read alike.
+  //
+  // CARD 303 GAVE THE LABEL A WIDTH, and it is the same kind of fix one step
+  // sideways. Above, the caption was lifted clear of the box it NAMES; it was
+  // still free to run into the box, and the caption, of the column next door.
+  // Measured in a browser at the shipped fit scale: two captions 14.4px into
+  // one another in the same band, reading "...out of fdraft write it up", and
+  // a third over its neighbour's box. Horizontally a column may use its own
+  // pitch less a gutter, which bounds BOTH collisions with one number: the
+  // caption cannot reach the next column at all, so what stands there — words
+  // or a box — no longer matters. Vertically the captions ride the left margin
+  // ABOVE their own row, where nothing shares the band, so the bound there is
+  // the field itself rather than a pitch.
+  //
+  // THE PITCH IS READ FROM THE RANK, NOT FROM THE CONSTANT — this is where the
+  // two cards meet, and nothing in the merge showed it. Card 303 wrote that
+  // bound as `NW + gapAlong`, which WAS the pitch while every box was a cell.
+  // Card 305 made a rank as long as its longest box, and `widthOf` honours any
+  // width a caller states, including one BELOW NW. A rank narrower than the
+  // cell would then have been handed more room than it owns and the caption
+  // would reach into the neighbour again — card 303's own defect, restored by
+  // a textually clean merge. `rankExtent[r] + gapAlong` is that rank's real
+  // pitch and reduces to the old constant exactly when the boxes are cells,
+  // so the state graph keeps its pixels and the ragged case stays honest.
+  const fieldRight = placed.reduce((a, n) => Math.max(a, n.x + n.w), -Infinity);
   const rankLabels: RankLabel[] = [];
   for (let r = 0; r <= maxRank; r++) {
     const inRank = placed.filter((n) => n.rank === r);
     if (inRank.length === 0) continue;
     const first = inRank.reduce((a, b) => ((horiz ? b.y < a.y : b.x < a.x) ? b : a));
     const caption = topo.rankCaptions?.get(r);
+    const x = horiz ? first.x : Math.min(MARGIN - 22, first.x - 22);
     rankLabels.push({
-      ...(horiz
-        ? { rank: r, x: first.x, y: Math.min(MARGIN - 12, first.y - 12) }
-        : { rank: r, x: Math.min(MARGIN - 22, first.x - 22), y: first.y - 8 }),
+      ...(horiz ? { rank: r, x, y: Math.min(MARGIN - 12, first.y - 12) } : { rank: r, x, y: first.y - 8 }),
+      maxWidth: horiz
+        ? rankExtent[r] + gapAlong - RANK_CAPTION_GUTTER
+        : Math.max(0, fieldRight - x - RANK_CAPTION_GUTTER),
       ...(caption !== undefined ? { caption } : {}),
     });
   }

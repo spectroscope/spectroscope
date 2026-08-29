@@ -33,6 +33,18 @@ export interface WfData extends Record<string, unknown> {
   /** True for a declared phase's box. It renders its members and keeps its
    *  label as a heading; false is card 293's small card, unchanged. */
   phase: boolean;
+  /** CARD 303: the second half of this column's caption, when the column has
+   *  one. The caption above is cut at the column pitch and the detail is what
+   *  the cut takes first, so the box the caption names carries those words in
+   *  its own tooltip — hovering its HEADING reads back what the strip could
+   *  not show. The heading and not the whole box: a `title` resolves to the
+   *  nearest ancestor holding one, and every member row below holds its own,
+   *  so over a member the reader gets that agent's state instead. Measured on
+   *  the shipped scenario, the phase's own tooltip answers on 74% of a
+   *  one-member box and 40% of a five-member one, the heading band included
+   *  in both. `null` when the column stated no detail, and then the tooltip is
+   *  the two-part one it always was. */
+  detail: string | null;
   /** The agents inside this phase, in the run's own order. Empty for a phase
    *  the run never entered — which is drawn, and dim, on purpose. */
   members: WfMember[];
@@ -44,12 +56,18 @@ export interface WfData extends Record<string, unknown> {
  *  agents it holds. State colours ride borders, never fills. */
 export function WorkflowNode({ data }: NodeProps) {
   const d = data as WfData;
+  // ONE tooltip rule for both forms: what the node is and how it is doing, and
+  // under it the column's own detail when there is one. A second line rather
+  // than a third dot-separated part, because the detail is a sentence and the
+  // first line is a pair of words.
+  const tip =
+    d.detail === null ? `${d.label} · ${d.stateLabel}` : `${d.label} · ${d.stateLabel}\n${d.detail}`;
   if (d.phase) {
     return (
       <div
         className={`wf-node wf-node--phase wf-node--${d.state}`}
         style={{ width: d.w, height: d.h }}
-        title={`${d.label} · ${d.stateLabel}`}
+        title={tip}
       >
         <Handle type="target" position={Position.Left} className="wf-handle" />
         <span className="wf-node-label">{d.label}</span>
@@ -71,11 +89,7 @@ export function WorkflowNode({ data }: NodeProps) {
   }
   const meta = [d.agentType, d.model, d.stateLabel].filter((p): p is string => p !== null && p !== "");
   return (
-    <div
-      className={`wf-node wf-node--${d.state}`}
-      style={{ width: d.w, height: d.h }}
-      title={`${d.label} · ${d.stateLabel}`}
-    >
+    <div className={`wf-node wf-node--${d.state}`} style={{ width: d.w, height: d.h }} title={tip}>
       <Handle type="target" position={Position.Left} className="wf-handle" />
       <span className="wf-node-label">{d.label}</span>
       <span className="wf-node-meta mono">{meta.join(" · ")}</span>

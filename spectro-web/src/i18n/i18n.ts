@@ -3823,9 +3823,16 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kein Zustandsfile — die Spalten sind aus den Zeitstempeln geraten, nicht deklariert",
     en: "No state file — the columns are guessed from the timestamps, not declared",
   },
+  // Card 303: this counts AGENTS, and it used to say "children". Both numbers
+  // are statements about the children in the event stream and both are still
+  // true — but the chip sits beside a canvas of one root box and five phase
+  // boxes, and "reconstructed from 13 of 13 children" beside that picture
+  // reads as a count of the boxes. The boxes are phases; the number is the
+  // agents the run started. Naming them, and saying where they live, ends the
+  // misreading without weakening the claim.
   "lab.lens.reconstructed": {
-    de: "rekonstruiert aus {n} von {m} Kind-Agenten",
-    en: "reconstructed from {n} of {m} children",
+    de: "rekonstruiert aus {n} von {m} Agenten des Laufs",
+    en: "reconstructed from {n} of {m} agents in the run",
   },
   "lab.lens.reconstructedHint": {
     de: "{m} gemeldete Spawns, {n} davon mit einem Elternteil, das im Lauf vorkommt — der Rest hängt an der Wurzel",
