@@ -465,11 +465,17 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   const alongOf = (id: string): number => (horiz ? widthOf(id) : heightOf(id));
   const defaultAlong = horiz ? NW : NH;
   const rankStart: number[] = [];
+  /** How long each rank turned out to be along the axis — its longest box.
+   *  Kept, not just accumulated, because the edge routing below needs to know
+   *  where a rank ENDS: that is where its gutter begins, and a box whose own
+   *  exit face is short of it is not standing at the edge of empty space. */
+  const rankExtent: number[] = [];
   let alongAt = MARGIN;
   for (let r = 0; r <= maxRank; r++) {
     rankStart.push(alongAt);
     const layer = layers[r];
     const extent = layer.length === 0 ? defaultAlong : Math.max(...layer.map(alongOf));
+    rankExtent.push(extent);
     alongAt += extent + gapAlong;
   }
 
@@ -574,6 +580,41 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   };
   const curve = (p: number[]): string => `M${p[0]},${p[1]} C${p[2]},${p[3]} ${p[4]},${p[5]} ${p[6]},${p[7]}`;
 
+  // WHICH forward edges are worth sampling — and why the cheap answer used to
+  // be "only the rank-skipping ones".
+  //
+  // That gate was not laziness, it was a PROOF. While every box in a rank was
+  // the same length along the rank axis, an edge between neighbouring ranks
+  // left its source's exit face already inside the gutter — the strip between
+  // two rank columns, where no box can sit — and it arrived at the next
+  // column's leading face, which no box in that column starts before. Nothing
+  // could be in the way, so nothing was sampled, and 39 points against every
+  // box stayed off the common path.
+  //
+  // A stated size ends the first half of that proof, and only that half. A
+  // rank is now as long as its LONGEST box, so a narrow box finishes early and
+  // its longer siblings are still standing in the strip in front of it; its
+  // forward edge travels back across their column. Measured before this guard
+  // widened, on root → {wide, small} → tail with ranks supplied: `small → tail`
+  // put 18 of 39 sampled points strictly inside a 420x240 `wide` horizontally,
+  // and 3 of 39 inside a 200x300 one vertically (`cutThrough.test.ts`).
+  //
+  // So the gate widens by exactly what the proof lost and no more: a one-rank
+  // hop is tested only when its source rank is RAGGED — some box in it runs
+  // further along the axis than the source does. A rank whose boxes all share
+  // one length is not ragged, which is EVERY rank of a topology that states no
+  // sizes, so the sizeless case is sampled exactly where it always was and its
+  // routes cannot move (`layoutIdentity.test.ts` holds the ruler on that).
+  //
+  // The other end needs no such clause: every box in a rank is flush with its
+  // leading face, so an edge aimed at that face cannot be inside a box of the
+  // target rank before it lands.
+  const needsBoxTest = (a: PlacedNode, b: PlacedNode): boolean => {
+    const spanned = b.rank - a.rank;
+    if (spanned > 1) return true;
+    return spanned === 1 && (horiz ? a.w : a.h) < rankExtent[a.rank];
+  };
+
   let bx0 = fx0;
   let by0 = fy0;
   let bx1 = fx1;
@@ -599,6 +640,19 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     // corner radius is what makes it read as a loop instead of a wiring
     // diagram. A back edge re-enters through the target's ENTRY face, so its
     // arrowhead points INTO the box — never a reversed arrow.
+    //
+    // "PROVABLY EMPTY" IS MEASURED FROM THE RANK, NOT FROM THE BOX. Stepping
+    // `gutter` past the source's own exit face rested on the same identity a
+    // stated size breaks: a narrow box's exit face is short of its rank's end,
+    // so that step lands beside its longer siblings and the lane runs down
+    // through them — which would turn the curve-through-a-box the guard above
+    // now catches into a LANE through the same box, with nothing gained. The
+    // step is taken from the END OF THE RANK instead, which is where the
+    // gutter actually starts. With one length per rank the two are the same
+    // number, so no lane that exists today moves. The other three anchors
+    // need no such care: they are all leading faces, and every box in a rank
+    // is flush with its own.
+    const laneOutOf = (n: PlacedNode): number => rankStart[n.rank] + rankExtent[n.rank];
     const lane = (side: -1 | 1, baseClear: number, idx: number) => {
       const clear = baseClear + idx * LANE_STEP;
       if (horiz) {
@@ -606,7 +660,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
         const sy = a.y + a.h / 2;
         const ty = b.y + b.h / 2;
         const sx = side < 0 ? a.x + a.w : a.x;
-        const g1 = side < 0 ? sx + gutter : sx - gutter;
+        const g1 = side < 0 ? laneOutOf(a) + gutter : sx - gutter;
         const g2 = b.x - gutter;
         const pts = [
           [sx, sy],
@@ -628,7 +682,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       const sx = a.x + a.w / 2;
       const tx = b.x + b.w / 2;
       const sy = side < 0 ? a.y + a.h : a.y;
-      const g1 = side < 0 ? sy + gutter : sy - gutter;
+      const g1 = side < 0 ? laneOutOf(a) + gutter : sy - gutter;
       const g2 = b.y - gutter;
       const pts = [
         [sx, sy],
@@ -661,7 +715,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
       const y2 = b.y + b.h / 2;
       const c = Math.max(24, (x2 - x1) * 0.45);
       const p = [x1, y1, x1 + c, y1, x2 - c, y2, x2, y2];
-      if (b.rank - a.rank > 1 && cutsThrough(p, e.from, e.to)) {
+      if (needsBoxTest(a, b) && cutsThrough(p, e.from, e.to)) {
         return { ...base, skip: true, ...lane(-1, SKIP_CLEAR, skipIdx++) };
       }
       const path = Math.abs(y1 - y2) < 0.5 ? `M${x1},${y1} L${x2},${y2}` : curve(p);
@@ -673,7 +727,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     const y2 = b.y;
     const c = Math.max(24, (y2 - y1) * 0.45);
     const p = [x1, y1, x1, y1 + c, x2, y2 - c, x2, y2];
-    if (b.rank - a.rank > 1 && cutsThrough(p, e.from, e.to)) {
+    if (needsBoxTest(a, b) && cutsThrough(p, e.from, e.to)) {
       return { ...base, skip: true, ...lane(-1, SKIP_CLEAR, skipIdx++) };
     }
     const path = Math.abs(x1 - x2) < 0.5 ? `M${x1},${y1} L${x2},${y2}` : curve(p);
