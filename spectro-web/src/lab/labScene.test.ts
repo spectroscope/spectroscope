@@ -182,6 +182,25 @@ describe("labScene", () => {
     expect(s.focus).toBe("cmd");
   });
 
+  // The fix round's own finding. Agent.java's approvedCheck asks under
+  // GOAL_CHECK_GATE with NO preceding tool_call: the packet is wherever the turn
+  // left it, which after the final text_delta is the LLM. Sending it "back"
+  // there on an allowed decision would light the model for the whole duration of
+  // the check COMMAND — a full test run, minutes — and the caption would say the
+  // model is thinking while a shell command works. Only a STATION is a place a
+  // packet can be returned to.
+  it("an allowed goal-check decision does not send the packet back to the llm", () => {
+    const s = play([
+      runStart("anthropic"),
+      { type: "turn_start", agentId: "main", turn: 1, ts: T },
+      { type: "text_delta", agentId: "main", text: "done", ts: T },
+      { type: "permission_request", agentId: "main", callId: "gc1", name: "goal_check", input: {}, ts: T },
+      { type: "permission_decision", callId: "gc1", allowed: true, ts: T },
+    ]);
+    expect(s.focus).toBe("gate");
+    expect(s.gate).toBe("allowed");
+  });
+
   it("the gate memory is spent when the tool ends without a decision", () => {
     const s = play([
       runStart("anthropic"),

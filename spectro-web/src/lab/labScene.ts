@@ -165,6 +165,12 @@ function idleActivity(): Pick<
   };
 }
 
+/** The three places a gated tool actually runs — the only origins a decision
+ *  can hand the packet back to. */
+function isStation(f: Focus | null): f is "disk" | "cmd" | "mcp" {
+  return f === "disk" || f === "cmd" || f === "mcp";
+}
+
 /**
  * Fold one event onto ONE agent's loop — the shared transition logic used for the
  * main agent and each subagent alike. Events that don't move the loop (usage,
@@ -224,9 +230,16 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       // Allowed: the tool NOW runs, so the packet goes back to its station and
       // the station lights for the whole call. Denied: nothing ran, the packet
       // stays at the gate. Either way the memory is spent.
+      //
+      // Only a STATION is a place to return to. Not every gate stands behind a
+      // tool_call: Agent.java asks for the goal check under its own
+      // GOAL_CHECK_GATE with no call in front of it, so the remembered origin
+      // there is the LLM the turn just ended on. Returning the packet to it
+      // would light the model — and say "the model is thinking" — for the whole
+      // duration of the check command. The packet waits at the gate instead.
       return {
         ...loop,
-        focus: event.allowed ? (loop.gateFrom ?? loop.focus) : loop.focus,
+        focus: event.allowed && isStation(loop.gateFrom) ? loop.gateFrom : loop.focus,
         gateFrom: null,
         gate: event.allowed ? "allowed" : "denied",
         isError: !event.allowed,
