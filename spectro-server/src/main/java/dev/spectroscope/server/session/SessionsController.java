@@ -207,8 +207,11 @@ public class SessionsController {
         // fake model list, and the first-run dialog points people at a backend
         // that will actually answer. Local backends (ollama/lmstudio) report
         // "local"; the client reads their reachability from the model list.
+        // llamacpp is one of them (card 312): keyless, and its /v1/models answers
+        // with the single model the server was started with.
         Map<String, String> providerStatus = new LinkedHashMap<>();
-        for (String p : List.of("anthropic", "openai", "openrouter", "gemini", "ollama", "lmstudio")) {
+        for (String p : List.of("anthropic", "openai", "openrouter", "gemini",
+                "ollama", "lmstudio", "llamacpp")) {
             String keyEnv = SpectroConfig.keyEnvFor(p);
             providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
         }
@@ -225,6 +228,7 @@ public class SessionsController {
         Map<String, String> providerAddress = new LinkedHashMap<>();
         providerAddress.put("ollama", c.endpointFor("ollama"));
         providerAddress.put("lmstudio", c.endpointFor("lmstudio"));
+        providerAddress.put("llamacpp", c.endpointFor("llamacpp"));
         out.put("providerAddress", providerAddress);
         // Card 203: which web_search tier answers on this machine, straight
         // from the ONE resolver. The settings page renders this; it does not
@@ -486,7 +490,7 @@ public class SessionsController {
     public List<String> models(@RequestParam(name = "provider", defaultValue = "") String provider) {
         return switch (provider) {
             case "anthropic" -> anthropicModels();
-            case "openai", "lmstudio", "openrouter", "gemini" -> openaiModels(provider);
+            case "openai", "lmstudio", "llamacpp", "openrouter", "gemini" -> openaiModels(provider);
             case "ollama" -> ollamaModels();
             default -> List.of();
         };
