@@ -211,6 +211,20 @@ describe("workerGrid", () => {
       expect(rowsFor(1, 16 / 9)).toBe(1);
     });
 
+    // Card 296 re-measured this table against the honest seat. The owner asked
+    // for "stack at least 2, better 3" and a minimum rule turned out to be the
+    // wrong instrument: with the seat reserving 620 for a card that measures
+    // 304, three seats went WIDE (2x2) because at three rows the world became
+    // height-bound and lost. Correcting the reserve to the measured 480 flips
+    // it without a rule — three seats stack three deep, twelve go four deep —
+    // and these two counts are the ones that moved, so they are the ones
+    // pinned. Both revert with the reserve: put 560 back into cardGeometry and
+    // the first goes to 2 and the second to 3.
+    it("the corrected reserve stacks three deep at three seats, four at twelve", () => {
+      expect(rowsFor(3, 16 / 9)).toBe(3);
+      expect(rowsFor(12, 16 / 9)).toBe(4);
+    });
+
     it("a tall pane stacks deeper than a wide one", () => {
       expect(rowsFor(8, 0.6)).toBeGreaterThan(rowsFor(8, 16 / 9));
     });

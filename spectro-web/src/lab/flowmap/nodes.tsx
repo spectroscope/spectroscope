@@ -180,7 +180,16 @@ export type AgentData = {
  *  and the context panels — WITHOUT the outer card frame and WITHOUT handles.
  *  Extracted so the expanded worker card renders the same instrument with the
  *  child's own data (card 287); AgentNode below is the frame around it. */
-export function AgentCardBody({ data: d }: { data: AgentData }) {
+export function AgentCardBody({
+  data: d,
+  scrollShelf = false,
+}: {
+  data: AgentData;
+  /** The worker card caps its picture shelf (card 296), so the shelf is a
+   *  scroll region and needs the canvas to keep its hands off it. The agent
+   *  hub's shelf is uncapped and stays a plain block. */
+  scrollShelf?: boolean;
+}) {
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
@@ -374,7 +383,7 @@ export function AgentCardBody({ data: d }: { data: AgentData }) {
             </div>
           </div>
           {(genImagePanel || attachedPanel) && (
-            <div className="pf-agent__genfull">
+            <div className={`pf-agent__genfull${scrollShelf ? " nowheel nodrag" : ""}`}>
               {genImagePanel}
               {attachedPanel}
             </div>
@@ -770,9 +779,10 @@ export function SubagentNode({ data }: NodeProps) {
           </span>
         </div>
         <AgentCardBody
+          scrollShelf
           data={workerAgentData({ active: d.active, focus: d.focus, activity: d.activity, full: d.full })}
         />
-        <div className="pf-sub__meta">
+        <div className="pf-sub__meta nowheel nodrag">
           {d.full.brief !== null && (
             <Disclosure label={t(lang, "map.sub.brief")}>
               <div className="pf-prose nowheel" style={{ textAlign: "left" }}>

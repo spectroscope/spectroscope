@@ -21,6 +21,7 @@ import {
   type SeatPool,
 } from "./workerGrid";
 import { osBandWidth, stationSeats } from "./stationSeats";
+import { RAIL_GAP, SUB_CARD_H, SUB_CARD_W } from "./cardGeometry";
 
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
@@ -321,10 +322,11 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   agent: { w: 680, h: 780 },
   llm: { w: 440, h: 540 },
   // The full worker card (card 287): the 680-wide agent instrument under the
-  // fixed 0.6 zoom paints 408 wide; the height is the zoomed body plus the
-  // worker chrome (head + meta). Starting value — the card's browser pass
-  // re-measures it and replaces the number with the measured claim.
-  subagent: { w: 408, h: 560 },
+  // fixed 0.6 zoom paints 408 wide. Card 296 took the height out of this table
+  // and into cardGeometry.ts, MEASURED in a browser and shared with the row
+  // derivation in workerGrid — the two used to be the same number written
+  // twice with nothing holding them together.
+  subagent: { w: SUB_CARD_W, h: SUB_CARD_H },
   // The machine room feeds the SAME card a node's order and its status history,
   // so an open fleet card runs about twice as tall as a worker card here (293
   // measured on a four-phase fleet).
@@ -342,9 +344,9 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   "os-net": { w: 104, h: 100 },
 };
 
-/** Rail room between two expanded cards: enough that the packet on the rail
- *  reads as travelling, not as touching both cards at once. */
-export const EXP_GAP = 60;
+/** Rail room between two expanded cards — one source with the row derivation
+ *  (cardGeometry.RAIL_GAP), re-exported under the name the layout uses. */
+export const EXP_GAP = RAIL_GAP;
 
 /** Frame left below the lowest card it holds, so a zone's label and border never
  *  sit on a card. */

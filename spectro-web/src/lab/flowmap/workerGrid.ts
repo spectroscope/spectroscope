@@ -16,6 +16,7 @@
 
 import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
+import { SUB_COL_PITCH, SUB_ROW_PITCH } from "./cardGeometry";
 
 export const SEAT_ROWS_EXPANDED = 4;
 export const SEAT_ROWS_COMPACT = 3;
@@ -135,13 +136,21 @@ export function foldSeatPool(events: readonly RunEvent[]): SeatPool {
 //
 // The world model below is MEASURED off sceneToFlow's own expanded output
 // (vitest probe, 2026-08-28): with no worker column the world is 2110 wide
-// and floors at 1426 tall; each grid column adds 468 (subagent envelope 408 +
-// rail gap 60); r rows bottom out at 50 + 620·r. The numbers live here rather
-// than being imported because sceneToFlow imports this module — and the cliff
-// test in sceneToFlow.test.ts re-measures the real output, so drift between
-// model and layout surfaces as a failing threshold, not as a silent lie.
+// and floors at 1426 tall. What a column and a row COST is no longer written
+// out here — card 296 found the same two numbers in this file and in
+// sceneToFlow's envelope table with nothing linking them, so both now come
+// from cardGeometry, and cardGeometry.test.ts holds the model's row pitch
+// against the pitch the real layout emits. The cliff test in
+// sceneToFlow.test.ts re-measures the real output on top of that, so drift
+// between model and layout surfaces as a failing threshold, not a silent lie.
 // ---------------------------------------------------------------------------
-const WORLD = { fixedW: 2110, colW: 468, floorH: 1426, rowBase: 50, rowH: 620 };
+const WORLD = {
+  fixedW: 2110,
+  colW: SUB_COL_PITCH,
+  floorH: 1426,
+  rowBase: 50,
+  rowH: SUB_ROW_PITCH,
+};
 
 /**
  * The row count whose grid fits the pane biggest: for each candidate the model
