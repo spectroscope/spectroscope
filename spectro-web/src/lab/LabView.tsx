@@ -426,6 +426,10 @@ export function LabView(props: {
                 model={props.model}
                 systemPrompt={sysPrompt ?? undefined}
                 rowsPref={rowsPref}
+                // CARD 306: the declaration reaches the MAP now, not only the
+                // lens. Without it the map drew a run's agents as loose cards
+                // with nothing saying which phase any of them ran in.
+                declared={replay?.declared}
               />
             </ExpandAllContext.Provider>
           )}

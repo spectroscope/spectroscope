@@ -1755,3 +1755,162 @@
 .pf-os--wide.pf-os--net {
   width: 104px;
 }
+
+/* ---------------------------------------------------------------------------
+   CARD 306 — the workflow box.
+
+   A frame, not a card: it holds React Flow CHILD nodes, so it must never draw
+   over them. Every colour rides a border (the house rule); the bands are
+   background only.
+
+   THE FRAME IS THE ORIGIN. `.pf-wfbox` is the positioned ancestor and every
+   band is absolutely placed against it, which is the same top-left a member's
+   own React Flow position counts from. Nothing in between may take a
+   `position`, or the two geometries stop meaning the same thing. Held by
+   workflowBoxNode.test.tsx, which reads these three declarations back out of
+   this file.
+   --------------------------------------------------------------------------- */
+.pf-wfbox {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--surface) 34%, transparent);
+  position: relative;
+  overflow: hidden;
+  /* The member cards are children and must sit ON this frame, never under it. */
+  pointer-events: none;
+}
+.pf-wfbox__head {
+  /* BOX_HEADER_H. Static on purpose: the geometry already counts this height
+     into every band's y, so a header that displaced its siblings would apply
+     it twice. Its own value is held against the constant by
+     workflowBox.test.ts, which reads this rule back out of this file. */
+  height: 46px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 40%, transparent);
+  pointer-events: auto;
+}
+.pf-wfbox__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46%;
+}
+.pf-wfbox__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.pf-wfbox__facts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pf-wfbox__switch {
+  flex: none;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.pf-wfbox__switch:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+/* One phase's band. Absolutely placed from the SAME numbers the members were
+   seated from, so the frame and the cards cannot drift apart. */
+.pf-wfband {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--surface-2) 22%, transparent);
+  pointer-events: none;
+}
+.pf-wfband--empty {
+  border-style: dotted;
+  opacity: 0.62;
+}
+.pf-wfband--unplaced {
+  border-color: var(--text-faint);
+}
+.pf-wfband__label {
+  position: absolute;
+  top: 5px;
+  left: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  pointer-events: auto;
+}
+/* A MEMBER CARD STANDING IN A BOX.
+
+   Its band reserves BOX_MEMBER_H_COMPACT, and THIS FILE is what holds the card
+   to it. React Flow does not: measured in Chrome, `extent: "parent"` clamps a
+   child's POSITION and never its SIZE, and it clamps to the box rather than to
+   the band — so a member that grows inside the box stands on the row below it
+   untouched, and the one place the clamp does fire, the box's own floor, it
+   walks the card up onto the row above. The numbers are in workflowBox.ts.
+
+   So the card is capped outright, and every region inside it that grows with
+   content is capped and CLIPPED — a max-height alone stops the box growing and
+   lets the glyphs run on over whatever is under them. workflowBox.ts sums
+   exactly these three numbers plus the frame and the two 8px gaps, and
+   workflowBox.test.ts reads them all back out of this file, so the two cannot
+   drift.
+
+   The disclosure is not in that sum because a boxed member is not drawn with
+   one (nodes.tsx): the band has no room for an open body, and a control that
+   can only clip is worse than no control.
+
+   Compact only: an expanded box draws its members as `.pf-sub--full`, which
+   carries its own caps (card 296) and never this class. */
+.pf-sub--boxed {
+  max-height: 128px;
+  overflow: hidden;
+}
+.pf-sub--boxed .pf-sub__head {
+  max-height: 37px;
+  overflow: hidden;
+}
+.pf-sub--boxed .pf-sub__task {
+  max-height: 32px;
+  overflow: hidden;
+}
+.pf-sub--boxed .pf-sub__status {
+  max-height: 17px;
+  overflow: hidden;
+}
+.pf-wfband__note {
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}

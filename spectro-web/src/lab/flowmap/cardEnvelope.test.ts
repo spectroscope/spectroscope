@@ -22,6 +22,7 @@ import {
   UNDER_SETTLE_MS,
   UNDER_WATCHED_TYPES,
   measuredCards,
+  oversizeCards,
   reportOversizeCards,
   resetEnvelopeMemory,
   underfilledCards,
@@ -166,6 +167,56 @@ describe("the under-fill arm", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// CARD 306, prior finding 5. A boxed member does not have the seat its TYPE
+// says it has.
+//
+// `seatCollisions` was carefully given an `env` per node for exactly this: a
+// workflow box carries its own switch, so a member of a box thrown minimal is
+// a 216x128 card at the minimal pitch while every other subagent on the same
+// expanded map is 408x480. `oversizeCards` builds its SeatNode from the same
+// helper and never passed the field, so the OVER arm judged those members
+// against EXPANDED_CARD.subagent — a card could grow to 479px inside a 128px
+// band and the arm, whose whole job is to say a card is drawing on its
+// neighbour, would have nothing to say.
+//
+// The seat travels on the node, as `data.boxSeat`, put there by the same
+// expression that seats the card. Re-derived from the switch it would be a
+// second number that can disagree, and the direction it can disagree in is
+// the invisible one: an envelope smaller than the seat reports nothing.
+// ---------------------------------------------------------------------------
+describe("a boxed member is judged against its own band", () => {
+  const boxed = (h: number) => ({ id: "sub-a", type: "subagent", h, env: { w: 216, h: 128 } });
+
+  it("names a boxed member that outgrew the seat its BAND gave it", () => {
+    expect(oversizeCards([boxed(200)])).toEqual([{ id: "sub-a", h: 200, bound: 128 }]);
+  });
+
+  // The bite. Without the seat the very same card is judged against the
+  // expanded envelope, 200 < 480, and the arm says nothing at all — which is
+  // what it did.
+  it("and would say nothing about the same card judged by its type alone", () => {
+    expect(oversizeCards([{ id: "sub-a", type: "subagent", h: 200 }])).toEqual([]);
+  });
+
+  it("stays quiet for a boxed member that fits its band", () => {
+    expect(oversizeCards([boxed(112)])).toEqual([]);
+  });
+
+  // The other arm judges a seat SHAPE that many cards share, and a boxed
+  // member is not that shape: at 96px in a 128px band it fills three quarters
+  // of its seat, but measured against the 480 the type reserves it reads as a
+  // seat holding air and would report the subagent envelope on the strength of
+  // a card that never sat in one.
+  it("keeps a boxed member out of the under-fill arm, which judges a seat SHAPE", () => {
+    expect(settledVerdict([boxed(96)])).toEqual([]);
+  });
+
+  it("and still lets a loose card of the same height reach that arm", () => {
+    expect(settledVerdict([worker(96)])).toEqual([{ envelope: "subagent", peak: 96, bound: SEAT }]);
+  });
+});
+
 describe("the runtime half has a caller", () => {
   const src = readFileSync(new URL("../FlowMap.tsx", import.meta.url), "utf8");
   const rendered = [
@@ -177,6 +228,25 @@ describe("the runtime half has a caller", () => {
 
   it("turns rendered nodes into what the check reads, zones and unmeasured out", () => {
     expect(measuredCards(rendered, true)).toEqual([{ id: "sub-a", type: "subagent", h: 300 }]);
+  });
+
+  // The seat a workflow box gave a member rides along on the node, and this is
+  // the only place it can reach the check: FlowMap hands `measuredCards` the
+  // rendered nodes and nothing else.
+  it("carries the band's seat off a boxed member, so the check judges it by that", () => {
+    expect(
+      measuredCards(
+        [
+          {
+            id: "sub-a",
+            type: "subagent",
+            data: { boxSeat: { w: 216, h: 128 } },
+            measured: { height: 200 },
+          },
+        ],
+        true,
+      ),
+    ).toEqual([{ id: "sub-a", type: "subagent", h: 200, env: { w: 216, h: 128 } }]);
   });
 
   it("says nothing about the compact seating — no card there is derived from this table", () => {

@@ -175,6 +175,25 @@ Both are unit-tested (`labScene.test.ts` — 29 cases, `petriModel.test.ts` — 
 - `FlowMap` renders the scene as a React Flow canvas (`sceneToFlow.ts` maps
   scene → nodes/edges, pure; the render pieces live in `lab/flowmap/`). It
   reskins with every design because nodes and edges read the token variables.
+- **A run that declared its phases gets a box** (`flowmap/workflowBox.ts` for
+  the geometry, `WorkflowBoxNode.tsx` for the frame). The box is the only place
+  the map uses React Flow's parent/child containment: the agents inside it are
+  child nodes, so a member's position is measured from its box and anything
+  reading positions as world rectangles has to go through `flowmap/worldBox.ts`
+  first. The box stands where the run's own node stands — the `Workflow`
+  tool_use's card for an imported run, the session's agent card for a run
+  compiled from the scenario DSL — and it carries its own minimal/expanded
+  switch, which its member cards follow instead of the map-wide one. A minimal
+  member is drawn without the per-card disclosure a loose one has: its band
+  reserves a shut card, an open body wants about 95px more than the band has,
+  and React Flow's `extent: "parent"` does not put an oversized child back —
+  measured, it clamps POSITION and never SIZE, and it clamps to the box rather
+  than to the band. The box's own switch is the way to a member's detail.
+  Because a box GROWS as the run fills it, everything it pushes aside moves with it, and
+  `flowmap/positions.ts` is what lets that reach the screen: a card keeps the
+  seat it is on for as long as the layout keeps computing that same seat for
+  it, and follows the layout the moment the layout moves it. A dragged card
+  overrides that; a compact/expanded flip overrides the drags.
 - `LabTrace` shows applied lines, the just-fired line highlighted, a **dam
   divider**, then the dimmed queue; each row expands to the full event via the
   shared `JsonTree`.
@@ -215,5 +234,5 @@ spectro-web/
         ├── LabControls.tsx        # step/flow/grain controls
         ├── LabTrace.tsx           # the JSONL strip
         ├── LabView.tsx            # 3-column layout
-        └── flowmap/               # nodes, edges, glyphs, css
+        └── flowmap/               # nodes, edges, glyphs, css, the workflow box
 ```

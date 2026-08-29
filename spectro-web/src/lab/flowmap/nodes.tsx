@@ -4,8 +4,9 @@
 // beats a hand-rolled SVG for this view. All styling is design-token based, so
 // every node reskins with the 6 genomes; the disk animates via CSS.
 
-import { Fragment, useContext, useState, type CSSProperties, type ReactNode } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useContext, useState, type CSSProperties, type ReactNode } from "react";
+import { type NodeProps } from "@xyflow/react";
+import { Handles } from "./handles";
 import { ExpandAllContext } from "./expandContext";
 import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
@@ -13,29 +14,9 @@ import { AluChip, Keyboard, Router } from "./glyphs";
 import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
 import type { AgentStream, CtxPart } from "./sceneToFlow";
 import type { Focus, GateState, SubagentInfo } from "../labScene";
+import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
-
-const SIDES = [
-  ["l", Position.Left],
-  ["r", Position.Right],
-  ["t", Position.Top],
-  ["b", Position.Bottom],
-] as const;
-
-/** Eight invisible handles (source+target per side); edges pick by id. */
-function Handles() {
-  return (
-    <>
-      {SIDES.map(([k, pos]) => (
-        <Fragment key={k}>
-          <Handle id={`${k}s`} type="source" position={pos} isConnectable={false} />
-          <Handle id={`${k}t`} type="target" position={pos} isConnectable={false} />
-        </Fragment>
-      ))}
-    </>
-  );
-}
 
 function Disclosure({
   label,
@@ -791,6 +772,12 @@ export function SubagentNode({ data }: NodeProps) {
      *  own card with this data (card 287). Absent = compact, byte-identical
      *  to what shipped. */
     full?: SubFull;
+    /** CARD 306: true for a member card a workflow box seated, absent for a
+     *  loose one. It puts `.pf-sub--boxed` on the compact card, and that class
+     *  is what the caps in flowmap.css hang off — the caps that make the
+     *  band's reserve a bound rather than an observation about the thirteen
+     *  cards somebody happened to measure. */
+    boxed?: boolean;
   };
   if (d.full !== undefined) {
     // The opaque agent id lives ONLY in the title attribute — the visible
@@ -848,7 +835,11 @@ export function SubagentNode({ data }: NodeProps) {
     );
   }
   return (
-    <div className={`pf-card pf-sub${d.active ? " pf-card--active" : ""}`}>
+    <div
+      className={`pf-card pf-sub${d.boxed === true ? " pf-sub--boxed" : ""}${
+        d.active ? " pf-card--active" : ""
+      }`}
+    >
       <div className="pf-sub__head">
         <span className="pf-sub__id">
           <span className="pf-sub__dot" style={{ background: d.stateColor }} />
@@ -863,7 +854,21 @@ export function SubagentNode({ data }: NodeProps) {
         <span className={`pf-status__dot${d.focus === "llm" ? " pf-pulse" : ""}`} />
         {d.activity.text}
       </div>
-      {(d.lastStatus || d.think) && (
+      {d.boxed !== true && (d.lastStatus || d.think) && (
+        // CARD 306: a boxed member is drawn WITHOUT this control, and that is
+        // the only thing that holds its band.
+        //
+        // Its band reserves a shut card. An open body renders about 95px past
+        // that, and React Flow does not put it back: measured in Chrome, its
+        // `extent: "parent"` clamps a child's POSITION and never its SIZE, and
+        // it clamps to the BOX rather than to the band — so a member in the
+        // first band that grows simply stands on the row below it, and in the
+        // last band the clamp fires and walks the card up onto the row above.
+        // Capping the card instead (flowmap.css) leaves the button drawing a
+        // body nobody can see. A control whose every outcome is damage or a
+        // clipped nothing is worse than no control, so the detail lives one
+        // click away on the box's own switch, which redraws every member as
+        // the full instrument.
         <Disclosure label={t(lang, "map.sub.disc")}>
           <div className="pf-panelbox">
             <div className="pf-panelbox__label">{t(lang, "map.sub.order")}</div>
@@ -905,6 +910,11 @@ export function ZoneNode({ data }: NodeProps) {
 
 export const nodeTypes = {
   zone: ZoneNode,
+  // Card 306's box lives in its own module for the reason card 293's node
+  // does: React Flow takes it through this map and never through JSX, which
+  // the component-reach drift gate cannot tell from an orphan while the two
+  // share a file. Imported, the import IS the attachment.
+  wfbox: WorkflowBoxNode,
   user: UserNode,
   agent: AgentNode,
   os: OsNode,

@@ -64,7 +64,13 @@ export interface Scene extends Loop {
   gateOwners: Record<string, string>;
 }
 
-const MAIN = "main";
+/** The session's own agent — the id every top-level event carries and every
+ *  spawn hangs under. EXPORTED since card 306 because the map has to ask
+ *  whether a workflow's declaration hangs on THIS agent rather than on one of
+ *  its children, and a second literal spelling of the same id in a second file
+ *  is exactly how the two would come apart. */
+export const ROOT_AGENT = "main";
+const MAIN = ROOT_AGENT;
 /** The native disk verbs. EXPORTED (card 301) so the file footprint folds the
  *  same names this map lights a station for: the map and the tree must never
  *  disagree about what counts as a disk touch, and two copies of a set is

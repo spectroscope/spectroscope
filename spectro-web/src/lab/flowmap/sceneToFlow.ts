@@ -6,6 +6,7 @@
 // local/remote flip literally re-places the LLM inside vs. outside "Dein Mac".
 
 import type { Edge, Node } from "@xyflow/react";
+import { ROOT_AGENT } from "../labScene";
 import type { DiskState, Focus, GateState, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
 import type { AgentDirectory } from "../agentDirectory";
@@ -23,6 +24,9 @@ import {
   type SeatPool,
 } from "./workerGrid";
 import { osBandWidth, stationSeats } from "./stationSeats";
+import { workflowBoxLayout, type BoxLayout } from "./workflowBox";
+import { orderParentsFirst, worldBoxes } from "./worldBox";
+import type { WorkflowDeclaration } from "../workflowGraph";
 import { RAIL_GAP, SUB_CARD_H, SUB_CARD_W } from "./cardGeometry";
 import { stationLane } from "./railRoute";
 
@@ -378,8 +382,17 @@ interface SeatNode {
   id: string;
   type?: string;
   position: { x: number; y: number };
+  /** CARD 306: the seat this ONE node was actually given, where its type does
+   *  not say. A workflow box carries its own switch, so a member of a box
+   *  thrown minimal is a 216x132 card at the minimal pitch while every other
+   *  subagent on the same expanded map is 408x480 — and judged by the type
+   *  alone it reads as five cards lying on top of each other. Measured in the
+   *  running app: twenty such reports on the shipped scenario, none of them
+   *  true, which costs more than the check is worth because the next real one
+   *  is now one line among twenty. */
+  env?: { w: number; h: number };
 }
-const envelopeOf = (id: string, type?: string) => EXPANDED_CARD[id] ?? EXPANDED_CARD[type ?? ""];
+const envelopeOf = (n: SeatNode) => n.env ?? EXPANDED_CARD[n.id] ?? EXPANDED_CARD[n.type ?? ""];
 
 /**
  * Pairs of expanded cards whose reserved seats intersect, as `a/b WxH`.
@@ -391,7 +404,7 @@ const envelopeOf = (id: string, type?: string) => EXPANDED_CARD[id] ?? EXPANDED_
 export function seatCollisions(nodes: readonly SeatNode[]): string[] {
   const boxes = nodes
     .map((n) => {
-      const env = envelopeOf(n.id, n.type);
+      const env = envelopeOf(n);
       return env === undefined ? null : { id: n.id, x: n.position.x, y: n.position.y, ...env };
     })
     .filter((b): b is { id: string; x: number; y: number; w: number; h: number } => b !== null);
@@ -408,13 +421,22 @@ export function seatCollisions(nodes: readonly SeatNode[]): string[] {
   return hits;
 }
 
-/** Cards that rendered taller than their envelope, worst first. */
+/**
+ * Cards that rendered taller than their envelope, worst first.
+ *
+ * CARD 306: `env` is the seat this ONE card was given where its type does not
+ * say — a member of a workflow box thrown minimal. `seatCollisions` was given
+ * that field and this arm was not, so a boxed member was judged against
+ * EXPANDED_CARD.subagent: it could grow to 479px inside a 128px band and the
+ * arm whose whole job is to say a card is drawing on its neighbour would have
+ * had nothing to say.
+ */
 export function oversizeCards(
-  measured: Iterable<{ id: string; type?: string; h: number }>,
+  measured: Iterable<{ id: string; type?: string; h: number; env?: { w: number; h: number } }>,
 ): { id: string; h: number; bound: number }[] {
   const out: { id: string; h: number; bound: number }[] = [];
   for (const m of measured) {
-    const env = envelopeOf(m.id, m.type);
+    const env = envelopeOf({ id: m.id, type: m.type, position: { x: 0, y: 0 }, env: m.env });
     if (env !== undefined && m.h > env.h) out.push({ id: m.id, h: m.h, bound: env.h });
   }
   return out.sort((a, b) => b.h - b.bound - (a.h - a.bound));
@@ -496,13 +518,19 @@ const warnedUnder = new Set<string>();
  *            move it instead of sleeping
  */
 export function underfilledCards(
-  measured: Iterable<{ id: string; type?: string; h: number }>,
+  measured: Iterable<{ id: string; type?: string; h: number; env?: { w: number; h: number } }>,
   now: number = Date.now(),
 ): { envelope: string; peak: number; bound: number }[] {
   for (const m of measured) {
     const type = m.type ?? "";
     // h <= 0 is "not laid out yet", not "a card of no height".
     if (!UNDER_WATCHED_TYPES.has(type) || m.h <= 0 || EXPANDED_CARD[type] === undefined) continue;
+    // CARD 306: a card carrying its own seat is not in the shape this arm
+    // judges. A boxed member at 96px fills three quarters of the 128px band it
+    // stands in, and measured against the 480 its TYPE reserves it would read
+    // as a seat holding air — reporting the subagent envelope on the strength
+    // of a card that never sat in one.
+    if (m.env !== undefined) continue;
     // The key is the ENVELOPE, not the card. Keyed by id, the second worker's
     // four pictures could never clear the first worker's bare reading.
     const key = type;
@@ -574,15 +602,25 @@ export function resetEnvelopeMemory(): void {
  * @param expanded the seating these nodes came from
  */
 export function measuredCards(
-  nodes: readonly { id: string; type?: string; measured?: { height?: number } }[],
+  nodes: readonly {
+    id: string;
+    type?: string;
+    data?: { boxSeat?: { w: number; h: number } };
+    measured?: { height?: number };
+  }[],
   expanded: boolean,
-): { id: string; type?: string; h: number }[] {
+): { id: string; type?: string; h: number; env?: { w: number; h: number } }[] {
   if (!expanded) return [];
-  const out: { id: string; type?: string; h: number }[] = [];
+  const out: { id: string; type?: string; h: number; env?: { w: number; h: number } }[] = [];
   for (const n of nodes) {
     if (n.type === "zone") continue;
     const h = n.measured?.height ?? 0;
-    if (h > 0) out.push({ id: n.id, type: n.type, h });
+    if (h <= 0) continue;
+    // CARD 306: a boxed member's seat comes off the node, because its type
+    // does not say. This is the only road it has — FlowMap hands this function
+    // the rendered nodes and nothing else.
+    const seat = n.data?.boxSeat;
+    out.push(seat === undefined ? { id: n.id, type: n.type, h } : { id: n.id, type: n.type, h, env: seat });
   }
   return out;
 }
@@ -773,6 +811,21 @@ const SUB_MIN_GAP = 44; // hard minimum visual gap between subagent cards
 const SUB_BAND_BOTTOM = 630; // subagents stay above the OS band (OS_BAND_TOP)
 
 /**
+ * CARD 306: the node id of one workflow run's box.
+ *
+ * Namespaced away from `sub-<agentId>` on purpose — the run itself is a card
+ * in the scene (the importer spawns the `Workflow` tool_use as an agent), and
+ * the box takes that card's place. Two ids for one run would put it on the map
+ * twice.
+ */
+export function boxNodeId(parentId: string): string {
+  return `wfbox-${parentId}`;
+}
+
+/** Air between two workflow boxes stacked in the box column. */
+const BOX_STACK_GAP = 40;
+
+/**
  * Deterministic vertical layout for the subagent column. Rules:
  *  - the preferred top-to-top spacing (subGap) is used as-is — the caller
  *    always hands a band it fits (see below);
@@ -846,6 +899,28 @@ export function sceneToFlow(
      *  rows from the seats and the measured pane exactly as before; a number
      *  holds the grid at that depth. */
     rowsPref?: RowsPref;
+    /**
+     * CARD 306: what each workflow run declared about itself, keyed by the
+     * node that run hangs on — the same map card 302 built for the lens.
+     *
+     * It never reached this file before: the lens got it and the map did not,
+     * so the map drew a run's thirteen agents as thirteen loose cards in the
+     * concurrency pool with nothing saying which phase any of them ran in.
+     * Absent — the live run, the edu sim, an import that carried no state
+     * file — and the map is exactly what it always was.
+     */
+    declared?: WorkflowDeclaration;
+    /**
+     * CARD 306: the boxes whose switch the reader has thrown, by box node id.
+     *
+     * Per BOX, which the global ExpandAllContext cannot be: the owner asked
+     * for a switch on the box, and a session can hold five of them. A box not
+     * named here follows the global switch, so the global one keeps working
+     * unchanged.
+     */
+    boxExpanded?: ReadonlySet<string>;
+    /** What a box's own switch calls. Absent = the switch is not offered. */
+    onToggleBox?: (boxId: string) => void;
   },
 ): FlowResult {
   const L = LAYOUT;
@@ -873,14 +948,99 @@ export function sceneToFlow(
   // is sized by the peak concurrency, not the lifetime count. Without a pool
   // (the edu sim has no event prefix) the lifetime seating stands unchanged.
   const pool = opts.pool;
+  // CARD 306 — THE BOXES, laid out before anything is seated.
+  //
+  // Their interiors are pure geometry (workflowBox.ts) and depend on nothing
+  // the seating decides, so they can be known first — which is what lets the
+  // worker column, the frames and the OS band be sized around them instead of
+  // on top of them.
+  //
+  // A declaration about a run the scene has not drawn is skipped: the box
+  // stands where the run's own card stands, and a box for a card the reader
+  // has not reached would be a claim about a run that is not on screen.
+  //
+  // ON SCREEN IS TWO CARDS, NOT ONE, and asking only about the first is why no
+  // scenario ever drew a box. A declaration hangs on the node its agents were
+  // spawned under. For an imported run that node is the `Workflow` tool_use's
+  // own child card, so it is in `scene.subagents`. For everything compiled
+  // from the DSL it is the SESSION's agent — `expandSpawn` and `expandFanout`
+  // both write `parentId: "main"` — and a session's agent is never one of its
+  // own children, so `sceneIds` alone answered "not on screen" about the one
+  // card this map always draws. One rule, both readers: the run's node is on
+  // screen when it is a child card the scene folded, or the root agent card.
+  const sceneIds = new Set(scene.subagents.map((c) => c.id));
+  const onMap = (runId: string): boolean => runId === ROOT_AGENT || sceneIds.has(runId);
+  const unplacedTitle = t(lang, "map.wf.unplaced");
+  const boxes: { runId: string; boxId: string; layout: BoxLayout; expandedBox: boolean }[] = [];
+  if (opts.declared !== undefined && !declutter) {
+    for (const [runId, run] of opts.declared) {
+      if (!onMap(runId)) continue;
+      const boxId = boxNodeId(runId);
+      // The per-box switch. The set names the boxes the reader has thrown AWAY
+      // from the global one, so both stay true: a box nobody touched follows
+      // the map, and a thrown box is the map's opposite — minimal on an
+      // expanded map, expanded on a compact one.
+      //
+      // It used to read `opts.boxExpanded?.has(boxId) ?? isExpanded`, which
+      // looks like the same sentence and is not: `??` falls back on undefined,
+      // and FlowMap holds a Set and passes it on every render. An empty Set is
+      // not undefined and `.has` answers false, so the global switch stopped
+      // reaching any box the moment the option was wired up. Measured in the
+      // running app: an expanded map, every box drawing minimal cards, and the
+      // box's own switch offering to expand what the map had already expanded.
+      const expandedBox = opts.boxExpanded?.has(boxId) === true ? !isExpanded : isExpanded;
+      boxes.push({
+        runId,
+        boxId,
+        expandedBox,
+        layout: workflowBoxLayout(run, { expanded: expandedBox, present: sceneIds, unplacedTitle }),
+      });
+    }
+  }
+  /** Every agent a box seated — and the runs themselves, whose cards the boxes
+   *  ARE. Both come out of the concurrency pool: a member drawn twice would be
+   *  two agents, and a run drawn beside its own box would be one run twice.
+   *
+   *  A run hanging on the ROOT agent adds "main" to this set and nothing to
+   *  the map: "main" is never in `scene.subagents`, so the pool it filters had
+   *  no such card to lose. The session's agent card stays exactly where it is
+   *  — it is the hub every rail on the map runs through, and it is not the
+   *  run's card in the sense the sentence above means. */
+  const boxed = new Set<string>();
+  for (const b of boxes) {
+    boxed.add(b.runId);
+    for (const id of b.layout.placed) boxed.add(id);
+  }
+  const boxColW = boxes.reduce((w, b) => Math.max(w, b.layout.w), 0);
+  const boxColH =
+    boxes.length === 0 ? 0 : boxes.reduce((h, b) => h + b.layout.h, 0) + (boxes.length - 1) * BOX_STACK_GAP;
+  /** What the worker column has to step aside by to clear the box column. */
+  const boxColStep = boxes.length === 0 ? 0 : boxColW + EXP_GAP;
+  const inPool = (c: SubagentInfo): boolean => !boxed.has(c.id);
+  // CARD 306's SECOND SEATING RULE, and the only change to this expression:
+  // a worker that belongs to a workflow is seated by its BOX, so it is not in
+  // the pool the grid is built from. Everything else keeps the concurrency
+  // seating untouched, and with no boxes `inPool` is true for everyone — the
+  // expression is the one that shipped.
+  //
+  // The boxed ones come out FIRST, before the ceiling is applied. The other
+  // order looks equivalent and is not: `slice(0, ceiling)` would spend the
+  // ceiling on cards the boxes are already drawing, and a loose worker behind
+  // twelve boxed ones would silently never be drawn at all. Measured — the
+  // "keeps the workers clear of the box column" pin caught exactly that. With
+  // no boxes `inPool` is true for everyone and the expression is unchanged.
+  const pooled = scene.subagents.filter(inPool);
   const subsOnMap =
     pool !== undefined
-      ? scene.subagents.filter((c) => {
+      ? pooled.filter((c) => {
           const s = pool.seat[c.id];
           return s !== undefined && s < seatCeiling && pool.occupant[s] === c.id;
         })
-      : scene.subagents.slice(0, seatCeiling);
-  const seatsInUse = pool !== undefined ? Math.min(pool.occupant.length, seatCeiling) : subsOnMap.length;
+      : pooled.slice(0, seatCeiling);
+  const pooledSeats = pool !== undefined ? Math.min(pool.occupant.length, seatCeiling) : subsOnMap.length;
+  // The pool counts every concurrent child, boxed ones included; the grid only
+  // has to hold the ones still standing in it.
+  const seatsInUse = boxes.length === 0 ? pooledSeats : subsOnMap.length;
   const slotCount = Math.min(seatCeiling, Math.max(seatsInUse, opts.subSlots ?? seatsInUse));
   // Expanded rows follow the seats in use and the measured pane (card 292);
   // with no measurement the constant stands. Compact keeps its three rows.
@@ -899,6 +1059,10 @@ export function sceneToFlow(
   let subGapL = L.subGap;
   let subCardH = SUB_H;
   let subBandBottom = SUB_BAND_BOTTOM;
+  /** CARD 306: where the box column starts. The boxes take the head of the
+   *  worker area and the grid steps aside past them, so the workflow reads as
+   *  one block and the loose workers keep their own seating beside it. */
+  let boxBaseL: XY = L.subBase;
   if (isExpanded) {
     const agentX = L.pos.user.x + EXPANDED_CARD.user.w + EXP_GAP;
     // The widened stations re-seat left-to-right from their own envelopes, and
@@ -927,7 +1091,7 @@ export function sceneToFlow(
     subColPitch = EXPANDED_CARD.subagent.w + EXP_GAP;
     const macFrameW = L.zones.find((z) => z.variant === "mac")?.w ?? 0;
     const bandNeed = osZone.x + osBandW + FRAME_PAD - macFrameW;
-    spread = Math.max(0, subX + grid.cols * subColPitch - rightWorld, bandNeed);
+    spread = Math.max(0, subX + boxColStep + grid.cols * subColPitch - rightWorld, bandNeed);
     vSpread = Math.max(
       0,
       L.pos.agent.y + EXPANDED_CARD.agent.h + EXP_GAP - OS_BAND_TOP,
@@ -940,11 +1104,8 @@ export function sceneToFlow(
     );
     bandGrow = Math.max(0, OS_STATION_DY + tallestStation + 20 - OS_BAND_H);
     posL.agent = { x: agentX, y: L.pos.agent.y };
-    for (const id of ["llm", "netz", "mcpserver"]) posL[id] = { ...posL[id], x: posL[id].x + spread };
-    for (const id of ["netz", "mcpserver", "os-disk", "os-shell", "os-mcp", "os-net"]) {
-      posL[id] = { ...posL[id], y: posL[id].y + vSpread };
-    }
-    subBaseL = { x: subX, y: L.subBase.y };
+    boxBaseL = { x: subX, y: L.subBase.y };
+    subBaseL = { x: subX + boxColStep, y: L.subBase.y };
     // The worker column is the only place two cards of the SAME kind sit above
     // each other, so its pitch is the one seat that has to come from the card's
     // own envelope rather than from a neighbour's: envelope plus the same rail
@@ -960,13 +1121,53 @@ export function sceneToFlow(
     subBandBottom = subBaseL.y + Math.max(0, grid.rows - 1) * subGapL + subCardH;
     const macFrame = L.zones.find((z) => z.variant === "mac");
     colGrow = macFrame ? Math.max(0, subBandBottom + FRAME_PAD - (macFrame.y + macFrame.h)) : 0;
-  } else if (!declutter && grid.cols > 1) {
+  } else if (!declutter && (grid.cols > 1 || boxes.length > 0)) {
     // Compact grows sideways too: a second worker column would otherwise run
     // into the boundary wall. Same shift rule as expanded — the right-hand
-    // world clears the grid's right edge.
+    // world clears the grid's right edge. Since card 306 the box column is
+    // part of that edge: with no boxes `boxColStep` is 0 and the expression is
+    // the one that shipped.
     const rightWorld = Math.min(L.boundary.x, L.pos.llm.x, L.pos.netz.x, L.pos.mcpserver.x);
-    spread = Math.max(0, L.subBase.x + grid.cols * subColPitch - rightWorld);
+    spread = Math.max(0, L.subBase.x + boxColStep + grid.cols * subColPitch - rightWorld);
+    subBaseL = { x: L.subBase.x + boxColStep, y: L.subBase.y };
+  }
+
+  // CARD 306 — THE VERTICAL GROWTH, and the defect it repairs.
+  //
+  // `vSpread`, `bandGrow` and `colGrow` were assigned ONLY inside the expanded
+  // branch, so nothing on this map ever grew downward in compact. Compact had
+  // no way to need it: its worker column is capped at three rows and clears
+  // the OS band by arithmetic. A workflow box has no such cap — the owner's
+  // own ask is that it "may grow very large and that is allowed" — so a tall
+  // box in compact would have run straight through the band and the frame
+  // below it, silently, because a frame does not complain about what is drawn
+  // over it.
+  //
+  // So the box column's depth is a growth need like any other, in BOTH
+  // seatings: the band drops below it and the mac frame stretches to hold it.
+  //
+  // ONE growth need, not two. The obvious second line — stretch the mac frame
+  // to `boxColBottom + FRAME_PAD` the way the worker column does — was written
+  // and then MEASURED dead: the band ceiling sits at 668 and the mac frame
+  // ends at 924, so the box's claim on `vSpread` (bottom + 60 - 668) always
+  // exceeds its claim on `colGrow` (bottom + 24 - 924) by 292, and
+  // `frameGrow` takes the larger. Biting it out changed nothing, which is the
+  // definition of a guard that cannot fire. The frame still grows — through
+  // vSpread, which is the number that is actually doing it.
+  const boxColBottom = boxBaseL.y + boxColH;
+  if (boxes.length > 0) vSpread = Math.max(vSpread, boxColBottom + EXP_GAP - OS_BAND_TOP);
+
+  // The shifts run ONCE, here, now that both branches have had their say.
+  // They used to live inside the expanded branch, which is why compact could
+  // not move the band at all. With no boxes the numbers are unchanged: compact
+  // still has vSpread 0, so the y-loop is the no-op it always was.
+  if (spread !== 0) {
     for (const id of ["llm", "netz", "mcpserver"]) posL[id] = { ...posL[id], x: posL[id].x + spread };
+  }
+  if (vSpread !== 0) {
+    for (const id of ["netz", "mcpserver", "os-disk", "os-shell", "os-mcp", "os-net"]) {
+      posL[id] = { ...posL[id], y: posL[id].y + vSpread };
+    }
   }
   // Frames hold whichever runs deeper: the drop below the tall agent/llm cards,
   // or the worker column.
@@ -1143,6 +1344,60 @@ export function sceneToFlow(
   // a worker never slides as siblings spawn; it falls back to the live count for
   // the sim, and the frames above are already sized for it.
   const subs = subsOnMap;
+  /**
+   * One worker card's data, in ONE place.
+   *
+   * The flat seating and the workflow box draw the SAME card — that is the
+   * owner's ask in its own words, "the agents stay the cards they already
+   * are". Two copies of this object is exactly how the two would drift, and a
+   * boxed worker quietly losing its brief or its spend is the kind of gap
+   * nothing renders as an error.
+   *
+   * @param c the child as the scene folded it
+   * @param full whether this card is the full instrument (card 287) — for a
+   *             boxed member that is its OWN box's switch, not the map's
+   */
+  const subCardData = (c: SubagentInfo, full: boolean): Record<string, unknown> => ({
+    id: c.id,
+    label: c.label,
+    task: c.task,
+    state: c.state,
+    stateLabel: lifecycleLabel(c.state, lang),
+    stateColor: STATE_COLOR[c.state],
+    lastStatus: c.lastStatus,
+    activity: activity(
+      c.focus,
+      c.disk,
+      c.activeFile,
+      c.activeCommand,
+      c.activeMcp,
+      c.gate,
+      lang,
+      c.activeTool,
+    ),
+    focus: c.focus,
+    active: scene.activeChild === c.id,
+    think: detail.think[c.id] ?? "",
+    // Expanded, a worker is the agent's own card with the child's data
+    // (card 287). Compact data stays byte-identical to what shipped.
+    ...(full
+      ? {
+          full: {
+            error: c.isError,
+            gate: c.gate,
+            gateNote: gateNote(c.gate, lang),
+            gateColor: GATE_COLOR[c.gate],
+            activeTool: c.activeTool,
+            tool: detail.tool[c.id] ?? null,
+            genImage: detail.genImage[c.id] ?? null,
+            attached: detail.attached[c.id] ?? null,
+            brief: detail.briefs[c.id] ?? null,
+            model: detail.models[c.id] ?? null,
+            spend: detail.spend[c.id] ?? null,
+          },
+        }
+      : {}),
+  });
   // One shared row ladder for every column: the y of seat (row, col) is the y
   // of that row — a sibling in a second column never re-centres the first.
   const subYs = subagentYs(grid.rows, subBaseL.y, subBandBottom, subGapL, subCardH);
@@ -1155,49 +1410,120 @@ export function sceneToFlow(
       x: (declutter ? subBaseX : subBaseL.x) + seat.col * subColPitch,
       y: subYs[seat.row] ?? subBaseL.y,
     };
-    const act = activity(
-      c.focus,
-      c.disk,
-      c.activeFile,
-      c.activeCommand,
-      c.activeMcp,
-      c.gate,
-      lang,
-      c.activeTool,
-    );
-    N(id, "subagent", {
-      id: c.id,
-      label: c.label,
-      task: c.task,
-      state: c.state,
-      stateLabel: lifecycleLabel(c.state, lang),
-      stateColor: STATE_COLOR[c.state],
-      lastStatus: c.lastStatus,
-      activity: act,
-      focus: c.focus,
-      active: scene.activeChild === c.id,
-      think: detail.think[c.id] ?? "",
-      // Expanded, a worker is the agent's own card with the child's data
-      // (card 287). Compact data stays byte-identical to what shipped.
-      ...(isExpanded
-        ? {
-            full: {
-              error: c.isError,
-              gate: c.gate,
-              gateNote: gateNote(c.gate, lang),
-              gateColor: GATE_COLOR[c.gate],
-              activeTool: c.activeTool,
-              tool: detail.tool[c.id] ?? null,
-              genImage: detail.genImage[c.id] ?? null,
-              attached: detail.attached[c.id] ?? null,
-              brief: detail.briefs[c.id] ?? null,
-              model: detail.models[c.id] ?? null,
-              spend: detail.spend[c.id] ?? null,
-            },
-          }
-        : {}),
-    });
+    N(id, "subagent", subCardData(c, isExpanded));
   });
+
+  // ----- CARD 306: the workflow boxes, and the agents standing in them -----
+  //
+  // The box is a React Flow PARENT and its members are its children —
+  // `parentId` plus `extent: "parent"`, the mechanism the owner picked, used
+  // only where containment IS the meaning. The zones stay absolutely
+  // positioned exactly as they were: a zone contains nothing, it is a drawn
+  // frame, and converting it would make every card's position relative for no
+  // gain and every silent-failure risk.
+  //
+  // A member's position is therefore RELATIVE to its box, straight out of the
+  // pure geometry. Nothing downstream may read it as a world number without
+  // going through `worldBoxes`.
+  const childOf = new Map(scene.subagents.map((c) => [c.id, c]));
+  let boxY = boxBaseL.y;
+  for (const b of boxes) {
+    const run = opts.declared!.get(b.runId)!;
+    const runCard = childOf.get(b.runId);
+    nodes.push({
+      id: b.boxId,
+      type: "wfbox",
+      position: { x: boxBaseL.x, y: boxY },
+      data: {
+        boxId: b.boxId,
+        // What the box NAMES: the run, how far through its phases it is, how
+        // many agents stand in it, and how it is doing. The run's own card is
+        // gone from the pool, so everything that card said has to be here.
+        //
+        // No card at all is the root-hung run: the session IS the run, and its
+        // agent card is a hub rather than a name for one. It gets the
+        // translated word instead of the fold's internal id — "main" on a box
+        // in front of a reader is this file talking to itself.
+        title: runCard?.task ?? t(lang, "map.wf.run"),
+        phasesTotal: run.phases.length,
+        // Counted off the BANDS this box actually drew, not off the
+        // declaration's `startedAt`. A band holds exactly the agents the scene
+        // has reached, so this number and the picture around it cannot
+        // disagree — and disagreeing is what it did: measured on the shipped
+        // scenario, the header read "0/5 phases" with all five bands full and
+        // thirteen cards standing in them. `declarationOf` leaves `startedAt`
+        // null on purpose, because for a compiled run it is the stream and not
+        // the DSL that says when an agent began.
+        //
+        // The unplaced band is left out: it is where agents whose run named no
+        // phase are put, so counting it would make a phase out of the absence
+        // of one, and `phasesTotal` does not count it either.
+        phasesEntered: b.layout.bands.filter((band) => !band.unplaced && band.members.length > 0).length,
+        agents: b.layout.placed.length,
+        state: runCard?.state ?? null,
+        stateLabel: runCard === undefined ? null : lifecycleLabel(runCard.state, lang),
+        stateColor: runCard === undefined ? null : STATE_COLOR[runCard.state],
+        expanded: b.expandedBox,
+        bands: b.layout.bands.map((band) => ({
+          title: band.title,
+          detail: band.detail,
+          unplaced: band.unplaced,
+          y: band.y,
+          h: band.h,
+          count: band.members.length,
+        })),
+        onToggle: opts.onToggleBox,
+        w: b.layout.w,
+        h: b.layout.h,
+      },
+      draggable: false,
+      selectable: false,
+      zIndex: 5,
+      style: { width: b.layout.w, height: b.layout.h },
+    });
+    for (const band of b.layout.bands) {
+      for (const m of band.members) {
+        const c = childOf.get(m.agentId);
+        if (c === undefined) continue;
+        nodes.push({
+          id: `sub-${m.agentId}`,
+          type: "subagent",
+          parentId: b.boxId,
+          extent: "parent",
+          position: { x: m.x, y: m.y },
+          // `boxed` is what puts `.pf-sub--boxed` on the compact card, and
+          // that class is where the band's reserve becomes a BOUND: the card
+          // is capped at exactly what its band gave it, every growing region
+          // inside it is capped and clipped, and the one control that could
+          // still push past all of them — the card's own disclosure — is not
+          // drawn on a boxed member at all (nodes.tsx).
+          //
+          // React Flow is not that bound and never was. Measured in Chrome:
+          // `extent: "parent"` clamps a child's POSITION, never its SIZE, and
+          // it clamps to the BOX rather than to the band — so a member that
+          // grows inside the box stands on the row below it with nothing
+          // said, and the one place the clamp fires, the box's own floor, it
+          // walks the card up onto the row above. That is how a box thrown
+          // minimal on an expanded map came to draw 227-244px cards into the
+          // 132 its bands reserved, with the last row 88px above its band.
+          //
+          // It is set for a member in either view: the expanded card ignores
+          // it, so one flag says one thing.
+          // And the SEAT its band gave it, because its type does not say: on
+          // an expanded map `EXPANDED_CARD.subagent` is 408x480 while a box
+          // thrown minimal seats 216x128, and every check that reads a card's
+          // envelope off its type would be judging these thirteen against a
+          // seat they are not in. Taken off the seat itself, never re-derived
+          // from the switch — a second expression for one number can disagree,
+          // and the direction it disagrees in here is the invisible one: an
+          // envelope smaller than the seat reports nothing.
+          data: { ...subCardData(c, b.expandedBox), boxed: true, boxSeat: { w: m.w, h: m.h } },
+          zIndex: 10,
+        });
+      }
+    }
+    boxY += b.layout.h + BOX_STACK_GAP;
+  }
 
   // ----- edges (the rails) -----
   const E = (
@@ -1277,12 +1603,39 @@ export function sceneToFlow(
     });
   }
 
-  subs.forEach((c, i) => {
-    const id = `sub-${c.id}`;
+  // CARD 306: the boxed members ride the SAME rail rules as the flat ones, and
+  // that is not a nicety. Card 295 already fixed this once — a child whose
+  // rails only existed while it stood on a station had no line into the OS
+  // band between two tool calls, and the owner saw floating cards. Taking the
+  // workflow members out of `subs` would have brought that back for every
+  // workflow agent, permanently, with the rails simply absent instead of
+  // intermittent.
+  //
+  // One difference, and it is the truth rather than a shortcut: a member's leg
+  // home goes to its BOX, because the run is what launched it. The session's
+  // hub did not.
+  const railed: { c: SubagentInfo; seat: number; home: string }[] = subs.map((c, i) => ({
+    c,
     // The same seat the card is drawn on: it is what keeps this worker's rail
     // off its siblings' at the station handle they all arrive on.
-    const seat = pool?.seat[c.id] ?? i;
-    E(`e-${id}-agent`, id, "agent", "ls", "rt", false, { dim: true });
+    seat: pool?.seat[c.id] ?? i,
+    home: "agent",
+  }));
+  // The boxed ones continue the lane numbering past the seated ones, so two
+  // rails never land on one another at the station handle they share.
+  let lane = subs.length;
+  for (const b of boxes) {
+    for (const band of b.layout.bands) {
+      for (const m of band.members) {
+        const c = childOf.get(m.agentId);
+        if (c === undefined) continue;
+        railed.push({ c, seat: lane++, home: b.boxId });
+      }
+    }
+  }
+  railed.forEach(({ c, seat, home }) => {
+    const id = `sub-${c.id}`;
+    E(`e-${id}-agent`, id, home, "ls", "rt", false, { dim: true });
     E(`e-${id}-llm`, id, "llm", "rs", "lt", c.focus === "llm", { net: true });
     // A child's OWN rails to the three shared stations. They are STRUCTURAL
     // (card 295): drawn always, dimmed until used — mirroring what main has
@@ -1306,6 +1659,40 @@ export function sceneToFlow(
 
   // Only the expanded map has envelopes to check against; compact cards are the
   // small ones these numbers do not describe.
-  if (!declutter && opts.expanded === true) reportSeatCollisions(nodes as SeatNode[]);
-  return { nodes, edges };
+  //
+  // CARD 306: through `worldBoxes` now, and that is not cosmetic. This check
+  // compares RECTANGLES, and a boxed member's position is measured from its
+  // box. Fed raw, a member seated 14px into a box at x=1400 would be compared
+  // as a card at x=14 — sitting on the user card — and the report would name a
+  // collision that is not there while missing the ones that are. Nothing would
+  // have thrown: 14 is a perfectly good number.
+  if (!declutter && opts.expanded === true) {
+    const world = worldBoxes(nodes as { id: string; position: XY; parentId?: string }[]);
+    // A boxed member is judged against the seat its OWN box gave it, because
+    // its box carries its own switch: on an expanded map a box thrown minimal
+    // holds 216x128 cards at the minimal pitch, and the expanded envelope
+    // would read those five as five cards lying on top of each other.
+    //
+    // Read off the node, where the seating put it, rather than re-derived from
+    // the switch — and read there by BOTH arms of the check, so there is one
+    // expression for the number instead of two that can disagree. The
+    // direction they can disagree in is the invisible one: an envelope smaller
+    // than the seat reports nothing and hides the collisions that ARE there.
+    reportSeatCollisions(
+      nodes.map((n) => {
+        const seat = (n.data as { boxSeat?: { w: number; h: number } } | undefined)?.boxSeat;
+        return {
+          id: n.id,
+          type: n.type,
+          position: world.get(n.id) ?? n.position,
+          ...(seat === undefined ? {} : { env: seat }),
+        };
+      }),
+    );
+  }
+  // CARD 306: React Flow REQUIRES a parent to appear before its children, and
+  // until now the push order satisfied that by accident. An accident is not a
+  // guarantee — the next card that moves a push moves it silently — so the
+  // order is produced. Everything else keeps the order it was pushed in.
+  return { nodes: orderParentsFirst(nodes), edges };
 }
