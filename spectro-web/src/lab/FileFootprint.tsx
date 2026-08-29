@@ -60,6 +60,9 @@ function Row(props: {
         type="button"
         className="lab-files-open"
         title={touch.pattern ? t(lang, "lab.files.pattern") : touch.path}
+        /* No focus seam handed in, no navigation. Same rule as the handover
+           rows: a row that cannot open the trace does not pretend it can. */
+        disabled={onOpen === undefined}
         onClick={onOpen === undefined ? undefined : () => onOpen(touch)}
       >
         <span className={`lab-files-path mono${touch.pattern ? " lab-files-path--pattern" : ""}`}>

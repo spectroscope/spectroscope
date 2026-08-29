@@ -9,7 +9,23 @@
 // THE NUMBER YOU CAN CLICK. The governing rule the work fold states: the panel
 // renders no number it cannot take you to. Every row carries its own RunEvent
 // and hands it to App's existing focusInTrace seam, so a handover on screen is
-// one click from the line that recorded it.
+// one click from the line that recorded it. Where that seam was not handed in,
+// the rows are DISABLED rather than dressed up as clickable, and the "show in
+// the trace" promise is not made at all.
+//
+// THREE THINGS THIS FILE MUST NOT SAY. Being thin does not make it harmless,
+// and the review found one of each:
+//
+//   · A lane whose work item does not exist has NO counters. `counts === null`
+//     prints a sentence, never a row of zeros — zeros would state, as a
+//     measurement, that an agent which spent tokens did nothing.
+//   · The cross-reference is in LINE numbers. `answers` is a prefix index and
+//     LabTrace numbers from one, so the shift happens here, once, where a
+//     reader sees it. Off by one, and the panel names the wrong event — in the
+//     very strip standing beside it.
+//   · The lifecycle chip is a translated word, from the same `map.life.*`
+//     entries the work panel and the spectrum already use. A German dock that
+//     says "completed" in one chip is not bilingual.
 
 import { useMemo } from "react";
 import type { RunEvent } from "../events";
@@ -31,16 +47,25 @@ function Message(props: {
   const { msg, lang, onOpen } = props;
   const meta = [
     t(lang, "lab.msg.chars", { n: msg.chars }),
-    msg.answers === null ? null : t(lang, "lab.msg.answers", { n: msg.answers }),
+    // `answers` is a prefix INDEX and LabTrace numbers its lines from one, so
+    // the cross-reference is shifted here — in the reader's coordinates, once,
+    // at the only place a reader ever sees the number. Printing the raw index
+    // named the line above the one that holds the task.
+    msg.answers === null ? null : t(lang, "lab.msg.answers", { n: msg.answers + 1 }),
   ].filter((s): s is string => s !== null);
+
+  // No seam, no navigation: a row that promises to open the trace and then
+  // does nothing is worse than a row that is plainly inert.
+  const canOpen = onOpen !== undefined;
 
   return (
     <li className="lab-msg-row">
       <button
         type="button"
         className="lab-msg-open"
-        title={t(lang, "lab.msg.open")}
-        aria-label={t(lang, "lab.msg.open")}
+        title={canOpen ? t(lang, "lab.msg.open") : undefined}
+        aria-label={canOpen ? t(lang, "lab.msg.open") : undefined}
+        disabled={!canOpen}
         onClick={onOpen === undefined ? undefined : () => onOpen(msg)}
       >
         <span className="lab-msg-line">
@@ -82,16 +107,33 @@ function Lane(props: {
         <span className="lab-msg-lane-name" title={lane.intent === "" ? undefined : lane.intent}>
           {lane.name}
         </span>
-        <span className={`lab-msg-state lab-msg-state--${lane.state}`}>{lane.state}</span>
+        {/* No item in the work fold, no lifecycle to show. The chip used to
+            print a fabricated "submitted" here. */}
+        {lane.state !== null && (
+          <span className={`lab-msg-state lab-msg-state--${lane.state}`}>
+            {/* The same dictionary entry the work panel and the spectrum use —
+                a German dock that says "completed" in one chip is not bilingual. */}
+            {t(lang, `map.life.${lane.state}`)}
+          </span>
+        )}
       </div>
-      <p className="lab-msg-lane-counts tabular">
-        {t(lang, "lab.msg.laneCounts", {
-          in: formatTokens(lane.inTokens),
-          out: formatTokens(lane.outTokens),
-          tools: lane.toolCalls,
-        })}
-        {lane.gatesDenied > 0 ? ` · ${t(lang, "lab.msg.laneDenied", { n: lane.gatesDenied })}` : ""}
-      </p>
+      {lane.counts === null ? (
+        /* A row of zeros here would say this agent spent nothing and called
+           nothing, which is a MEASUREMENT. The truth is that the run never
+           opened work for the lane, and that is what gets printed. */
+        <p className="lab-msg-lane-counts lab-msg-lane-counts--none">{t(lang, "lab.msg.laneNoCounts")}</p>
+      ) : (
+        <p className="lab-msg-lane-counts tabular">
+          {t(lang, "lab.msg.laneCounts", {
+            in: formatTokens(lane.counts.inTokens),
+            out: formatTokens(lane.counts.outTokens),
+            tools: lane.counts.toolCalls,
+          })}
+          {lane.counts.gatesDenied > 0
+            ? ` · ${t(lang, "lab.msg.laneDenied", { n: lane.counts.gatesDenied })}`
+            : ""}
+        </p>
+      )}
       <ul className="lab-msg-list">
         {lane.messages.map((m) => (
           <Message key={m.index} msg={m} lang={lang} onOpen={onOpen} />

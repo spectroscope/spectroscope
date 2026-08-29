@@ -3972,6 +3972,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "{in} in / {out} out · {tools} tool calls",
   },
   "lab.msg.laneDenied": { de: "{n} abgelehnt", en: "{n} denied" },
+  // Printed INSTEAD of the counters when the work fold has no item for this
+  // lane. Zeros there would say the agent did nothing, which is a different
+  // claim from the run never having opened work for it.
+  "lab.msg.laneNoCounts": {
+    de: "keine Zähler — der Lauf hat für diese Spur nie Arbeit eröffnet",
+    en: "no counters — the run never opened work for this lane",
+  },
 
   // B. The file footprint. The empty state is the load-bearing string: a run
   // that worked through the shell must NOT read as a broken panel.

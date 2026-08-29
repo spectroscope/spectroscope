@@ -25,6 +25,7 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 import { LabDock, dockTitleKey } from "./LabDock";
+import { LabTrace } from "./LabTrace";
 import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
 import type { RunEvent } from "../events";
@@ -46,9 +47,20 @@ afterEach(() => vi.unstubAllGlobals());
  * rather than hand-escaping every expectation keeps the assertions readable
  * and keeps the i18n dictionary the single source of the words.
  */
-const dock = (tab: DockTab, applied: RunEvent[], workspaceRoot?: string | null): string =>
+const dock = (
+  tab: DockTab,
+  applied: RunEvent[],
+  workspaceRoot?: string | null,
+  onFocusEvent?: (agentId: string, event: RunEvent) => void,
+): string =>
   renderToStaticMarkup(
-    <LabDock tab={tab} onPickTab={() => {}} applied={applied} workspaceRoot={workspaceRoot} />,
+    <LabDock
+      tab={tab}
+      onPickTab={() => {}}
+      applied={applied}
+      workspaceRoot={workspaceRoot}
+      onFocusEvent={onFocusEvent}
+    />,
   )
     .replace(/&#x27;/g, "'")
     .replace(/&quot;/g, '"')
@@ -58,8 +70,8 @@ const start = (agentId: string, ts: number): RunEvent =>
   ({ type: "run_start", runId: `r-${agentId}`, agentId, prompt: "go", ts }) as RunEvent;
 const spawn = (agentId: string, task: string, ts: number): RunEvent =>
   ({ type: "agent_spawn", agentId, parentId: "main", task, ts }) as RunEvent;
-const msg = (from: string, to: string, role: string, text: string, ts: number): RunEvent =>
-  ({ type: "agent_message", from, to, role, state: "working", text, ts }) as RunEvent;
+const msg = (from: string, to: string, role: string, text: string, ts: number, state = "working"): RunEvent =>
+  ({ type: "agent_message", from, to, role, state, text, ts }) as RunEvent;
 const call = (agentId: string, name: string, input: unknown, ts: number): RunEvent =>
   ({ type: "tool_call", agentId, callId: `c-${ts}`, name, input, ts }) as RunEvent;
 
@@ -248,5 +260,131 @@ describe("the files panel", () => {
     const html = dock("files", [start("main", 0), call("main", "Glob", { pattern: "src/**/*.ts" }, 10)]);
     expect(html).toContain("src/**/*.ts");
     expect(html).toContain(t(lang, "lab.files.pattern"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The cross-references and the counters — the two ways this panel can state
+// something false in the reader's own coordinates.
+// ---------------------------------------------------------------------------
+
+describe("the handovers panel says the same line number the trace does", () => {
+  const conversation = [
+    start("main", 0),
+    spawn("kid", "scout the checkout", 10),
+    msg("main", "kid", "task", "scout the checkout", 11),
+    msg("kid", "main", "result", "found three problems", 30),
+  ];
+
+  it("names the line LabTrace labels, not the array index one short of it", () => {
+    // LabTrace is the ONLY line numbering the product renders, it sits in the
+    // same view as the dock, and it numbers from one. The reference is read out
+    // of the trace's own markup rather than written down here, so the two
+    // cannot drift apart without this going red.
+    const trace = renderToStaticMarkup(<LabTrace applied={conversation} queue={[]} fireSeq={0} />);
+    const seqs = [
+      ...trace.matchAll(/lab-line-seq tabular">(\d+)<\/span><span class="lab-line-type mono">([a-z_]+)</g),
+    ];
+    const taskLine = seqs.find(([, , type], i) => type === "agent_message" && i >= 0);
+    expect(taskLine, "the trace numbers the task message").toBeDefined();
+    const shown = Number((taskLine as RegExpMatchArray)[1]);
+    expect(shown).toBe(3);
+
+    const html = dock("msg", conversation);
+    expect(html).toContain(t(lang, "lab.msg.answers", { n: shown }));
+    // The off-by-one this replaced: it named line 2, which holds the spawn.
+    expect(html).not.toContain(t(lang, "lab.msg.answers", { n: shown - 1 }));
+  });
+});
+
+describe("the handovers panel prints no counter it did not measure", () => {
+  /** alpha spends tokens and calls tools, but nothing ever opens work for it. */
+  const unfolded = [
+    start("main", 0),
+    { type: "usage", agentId: "alpha", inputTokens: 900, outputTokens: 400, ts: 5 } as RunEvent,
+    call("alpha", "Read", { file_path: "a.ts" }, 6),
+    call("alpha", "Read", { file_path: "b.ts" }, 7),
+    msg("alpha", "beta", "status", "half way", 8),
+  ];
+
+  it("says the lane has no counters instead of drawing a row of zeros", () => {
+    const html = dock("msg", unfolded);
+    expect(html).toContain(t(lang, "lab.msg.laneNoCounts"));
+    expect(html).not.toContain(t(lang, "lab.msg.laneCounts", { in: "0", out: "0", tools: 0 }));
+  });
+
+  it("draws no lifecycle chip for a lane the fold never opened", () => {
+    const html = dock("msg", unfolded);
+    expect(html).not.toContain("lab-msg-state");
+    // …and specifically not the "handed over" it used to fabricate.
+    expect(html).not.toContain(t(lang, "map.life.submitted"));
+  });
+
+  it("still prints the counters, chip and all, for a lane the fold DID open", () => {
+    const html = dock("msg", [
+      start("main", 0),
+      spawn("kid", "scout", 10),
+      msg("main", "kid", "task", "scout", 11),
+      msg("kid", "main", "result", "done", 30, "completed"),
+    ]);
+    expect(html).toContain(t(lang, "lab.msg.laneCounts", { in: "0", out: "0", tools: 0 }));
+    expect(html).not.toContain(t(lang, "lab.msg.laneNoCounts"));
+  });
+});
+
+describe("the lane's lifecycle chip is a translated word, like every other one", () => {
+  it("uses the SAME dictionary entry the work panel and the spectrum use", () => {
+    // Anchored on the CHIP's own class, not on the bare word: a message body
+    // reading "done" would make a plain substring check green for the wrong
+    // reason, and this panel prints message bodies verbatim.
+    const html = dock("msg", [
+      start("main", 0),
+      spawn("kid", "scout", 10),
+      msg("main", "kid", "task", "scout", 11),
+      msg("kid", "main", "result", "three problems in the ledger", 30, "completed"),
+    ]);
+    expect(html).toContain(
+      `<span class="lab-msg-state lab-msg-state--completed">${t(lang, "map.life.completed")}</span>`,
+    );
+    // The raw enum was what shipped, and a German reader saw it untranslated.
+    expect(html).not.toContain('lab-msg-state--completed">completed<');
+  });
+});
+
+describe("a row that cannot navigate says so instead of looking clickable", () => {
+  const conversation = [start("main", 0), spawn("kid", "scout", 10), msg("main", "kid", "task", "scout", 11)];
+  const files = [start("main", 0), call("main", "Read", { file_path: "a.ts" }, 10)];
+
+  /** The opening tag of the one row button with `cls`, read by MEANING rather
+   *  than by attribute order (the documented attribute-order trap). */
+  const rowTag = (html: string, cls: string): string => {
+    const m = html.match(new RegExp(`<button[^>]*class="${cls}"[^>]*>`));
+    expect(m, `a row button with class "${cls}"`).not.toBeNull();
+    return (m as RegExpMatchArray)[0];
+  };
+
+  it("disables the handover rows when no focus seam was handed in", () => {
+    expect(rowTag(dock("msg", conversation), "lab-msg-open")).toContain('disabled=""');
+    expect(
+      rowTag(
+        dock("msg", conversation, null, () => {}),
+        "lab-msg-open",
+      ),
+    ).not.toContain("disabled");
+  });
+
+  it("does not promise 'show in the trace' on a row that cannot", () => {
+    expect(dock("msg", conversation)).not.toContain(t(lang, "lab.msg.open"));
+    expect(dock("msg", conversation, null, () => {})).toContain(t(lang, "lab.msg.open"));
+  });
+
+  it("disables the file rows the same way", () => {
+    expect(rowTag(dock("files", files), "lab-files-open")).toContain('disabled=""');
+    expect(
+      rowTag(
+        dock("files", files, null, () => {}),
+        "lab-files-open",
+      ),
+    ).not.toContain("disabled");
   });
 });

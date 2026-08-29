@@ -904,6 +904,11 @@
   font-size: var(--fs-11);
   color: var(--text-faint);
 }
+/* Not a number: the run never opened work for this lane, and the line says so
+   in prose. Italic so it cannot be misread as a counter that happens to be 0. */
+.lab-msg-lane-counts--none {
+  font-style: italic;
+}
 .lab-msg-list {
   display: flex;
   flex-direction: column;
@@ -925,8 +930,12 @@
   cursor: pointer;
   color: inherit;
 }
-.lab-msg-open:hover {
+.lab-msg-open:hover:not(:disabled) {
   background: var(--surface-2);
+}
+/* No focus seam, no navigation — and then the row does not offer one. */
+.lab-msg-open:disabled {
+  cursor: default;
 }
 .lab-msg-line {
   display: flex;
@@ -1002,8 +1011,11 @@
   cursor: pointer;
   color: inherit;
 }
-.lab-files-open:hover {
+.lab-files-open:hover:not(:disabled) {
   background: var(--surface-2);
+}
+.lab-files-open:disabled {
+  cursor: default;
 }
 .lab-files-path {
   font-size: var(--fs-11);
