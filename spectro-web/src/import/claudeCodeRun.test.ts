@@ -794,9 +794,7 @@ describe("importClaudeCodeRun — a workflow run brings its agents (card 297)", 
     expect(spawnOf(named.events, "toolu_workflow_1")[0].task).toBe("board-sweep-and-three");
     // No state file at all: the receipt still says what the run was for.
     const bare = importClaudeCodeRun({ ...WF_RUN, runStates: [] });
-    expect(spawnOf(bare.events, "toolu_workflow_1")[0].task).toBe(
-      "sweep the board and diagnose three cards",
-    );
+    expect(spawnOf(bare.events, "toolu_workflow_1")[0].task).toBe("sweep the board and diagnose three cards");
   });
 
   it("spawns each child under the run, labelled by the state file's own label", () => {
@@ -856,6 +854,24 @@ describe("importClaudeCodeRun — a workflow run brings its agents (card 297)", 
       ],
     });
     expect(spawnOf(run.events, "a11aaaa")[0].task).toBe("sweep the todo column");
+  });
+
+  it("does not open a card with the prompt's own blank lines", () => {
+    // Measured 2026-08-29 against a real session whose two newest runs had no
+    // state file yet: rule 3 produced labels beginning "\nCONTEXT — …", so the
+    // card opened on a blank line. Whitespace is not content.
+    const run = importClaudeCodeRun({
+      ...WF_RUN,
+      sidecars: [
+        {
+          jsonlText: sidecar("e55eeee", "\n\nCONTEXT — read this first.\n", "done", WF_T0 + 3_000),
+          metaJson: WF_META,
+          runId: "wf_run-one",
+        },
+      ],
+      runStates: [],
+    });
+    expect(spawnOf(run.events, "e55eeee")[0].task).toBe("CONTEXT — read this first.");
   });
 
   it("a run the session never named is skipped and counted, not guessed at", () => {

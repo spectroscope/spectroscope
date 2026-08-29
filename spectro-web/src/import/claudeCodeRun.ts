@@ -222,8 +222,7 @@ function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<stri
       if (!callTs.has(f.callId)) callTs.set(f.callId, f.ts ?? 0);
       continue;
     }
-    if (f.type !== "tool_result" || typeof f.output !== "string" || typeof f.callId !== "string")
-      continue;
+    if (f.type !== "tool_result" || typeof f.output !== "string" || typeof f.callId !== "string") continue;
     const named = RECEIPT_RUN_ID.exec(f.output);
     if (named === null || receipts.has(named[1])) continue;
     receipts.set(named[1], {
@@ -263,8 +262,11 @@ function resolveRuns(sessionStream: Sourced[], states: RunStateText[]): Map<stri
  *    characters: measured over the 565 agents rule 1 missed, a 400-character
  *    preview matched 36 uniquely and 134 ambiguously, and a short prefix would
  *    have handed those 134 somebody else's name.
- * 3. the child's own prompt, clipped — the fallback for a live run whose state
- *    file is not written yet. 395 of those 565.
+ * 3. the child's own prompt, trimmed and clipped — the fallback for a live run
+ *    whose state file is not written yet. 395 of those 565. Trimmed because a
+ *    real prompt opens on a blank line often enough that the card did:
+ *    measured against a session whose two newest runs had no state file, every
+ *    label there began "\nCONTEXT — …".
  */
 function labelForChild(state: WfState | null, agentId: string, prompt: string): string {
   const exact = state?.agents.find((a) => a.agentId === agentId)?.label;
@@ -277,7 +279,7 @@ function labelForChild(state: WfState | null, agentId: string, prompt: string): 
     }
     if (byPrompt.size === 1) return [...byPrompt][0];
   }
-  return clipMiddle(prompt, PROMPT_TASK_MAX);
+  return clipMiddle(prompt.trim(), PROMPT_TASK_MAX);
 }
 
 /** The file's own opening prompt, off the root run_start the importer built
@@ -383,9 +385,7 @@ export function importClaudeCodeRun(input: {
   }
 
   // Card 297: the workflow runs this session launched, by run id.
-  const runs = joinable
-    ? resolveRuns(sessionStream, input.runStates ?? [])
-    : new Map<string, ResolvedRun>();
+  const runs = joinable ? resolveRuns(sessionStream, input.runStates ?? []) : new Map<string, ResolvedRun>();
   /** Per run, the children that actually made it in — the other half of the
    *  unrecorded count, and what decides whether a run gets a node at all. */
   const mergedPerRun = new Map<string, Set<string>>();
@@ -430,10 +430,7 @@ export function importClaudeCodeRun(input: {
     }
     // Where the child hangs, and from when. A Task child ladders from its own
     // spawn; a workflow child from the tool_use its whole run rode in on.
-    const join =
-      toolUseId !== null
-        ? spawned.get(toolUseId)!
-        : { ts: run!.ts, parentId: run!.workflowId };
+    const join = toolUseId !== null ? spawned.get(toolUseId)! : { ts: run!.ts, parentId: run!.workflowId };
     const child = claudeCodeWithOrigin(records, join.ts);
     // THE RE-KEY (twin repair). The sidecar knows itself by its own hex
     // agentId; the session already spawned the same child under the Task

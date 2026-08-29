@@ -105,11 +105,18 @@ describe("what the bar says about a run import's children", () => {
   });
 
   it("says nothing when the run had no sidecars at all", () => {
-    expect(childrenNote("en", { workspace: null, childrenMerged: 0, childrenSkipped: 0, childrenUnrecorded: 0 })).toBeNull();
+    expect(
+      childrenNote("en", { workspace: null, childrenMerged: 0, childrenSkipped: 0, childrenUnrecorded: 0 }),
+    ).toBeNull();
   });
 
   it("counts the merged children, in both languages", () => {
-    const run = { workspace: "/workspaces/demo", childrenMerged: 2, childrenSkipped: 0, childrenUnrecorded: 0 };
+    const run = {
+      workspace: "/workspaces/demo",
+      childrenMerged: 2,
+      childrenSkipped: 0,
+      childrenUnrecorded: 0,
+    };
     expect(childrenNote("en", run)).toContain("2");
     expect(childrenNote("en", run)).toContain("merged");
     expect(childrenNote("de", run)).toContain("2");

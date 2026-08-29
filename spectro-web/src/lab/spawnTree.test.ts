@@ -208,9 +208,7 @@ describe("spawnTree — the reconstructed workflow topology", () => {
     expect(tree.topo.ranks!.get("chicken")).toBeTypeOf("number");
     expect(tree.topo.ranks!.get("egg")).toBeTypeOf("number");
     const laid = layoutStateGraph(tree.topo, "horizontal");
-    expect(laid.nodes.map((n) => n.id)).toEqual(
-      expect.arrayContaining(["main", "chicken", "egg"]),
-    );
+    expect(laid.nodes.map((n) => n.id)).toEqual(expect.arrayContaining(["main", "chicken", "egg"]));
   });
 
   it("reads model and agent type where the run said them", () => {
