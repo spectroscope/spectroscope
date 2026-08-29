@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { WorkflowBoxNode } from "./nodes";
+import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { BOX_HEADER_H, boxSwitchKey, toggleBox } from "./workflowBox";
 import { dict } from "../../i18n/i18n";
 

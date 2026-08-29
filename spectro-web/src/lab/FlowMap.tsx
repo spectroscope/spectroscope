@@ -33,7 +33,9 @@ import {
 } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
 import { foldSeatPool, workerChip, type RowsPref } from "./flowmap/workerGrid";
-import { RailBoxes } from "./flowmap/railBoxes";
+import { RailBoxes, railBoxesFrom, seatingKey } from "./flowmap/railBoxes";
+import { boxSwitchKey, toggleBox } from "./flowmap/workflowBox";
+import type { WorkflowDeclaration } from "./workflowGraph";
 import { panMove, panStart, type PanDrag } from "./flowmap/panDrag";
 import { ExpandAllContext } from "./flowmap/expandContext";
 import { t } from "../i18n/i18n";
@@ -70,6 +72,10 @@ export function FlowMap(props: {
   /** How deep the expanded worker grid stacks (card 296). Absent or "auto" is
    *  the derivation the map always did. */
   rowsPref?: RowsPref;
+  /** CARD 306: what each workflow run declared about itself — the same map
+   *  card 302 built for the lens, which never reached the map. Absent (the
+   *  live run, an import with no state file) and the map is what it was. */
+  declared?: WorkflowDeclaration;
 }) {
   const { scene, applied, provider, model, systemPrompt } = props;
   const rowsPref = props.rowsPref ?? "auto";
@@ -88,6 +94,21 @@ export function FlowMap(props: {
   // and no ResizeObserver, so headless (and in tests) this stays null and the
   // layout falls back to its constant rows instead of breaking.
   const [paneAspect, setPaneAspect] = useState<number | null>(null);
+  // CARD 306: the boxes whose own switch the reader has thrown. Per box, which
+  // ExpandAllContext cannot be — a session can hold five runs and the owner
+  // asked for a switch on the box. A box nobody has touched follows the global
+  // switch, so the global one keeps working exactly as it did.
+  const [boxExpanded, setBoxExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const onToggleBox = useCallback((boxId: string) => {
+    setBoxExpanded((prev) => toggleBox(prev, boxId));
+  }, []);
+  // Thrown switches are per MAP-WIDE view: flipping the global one re-seats
+  // every box from scratch, so a per-box choice made in the other view would
+  // otherwise come back on a box that has been re-laid-out around it.
+  useEffect(() => {
+    setBoxExpanded(new Set());
+  }, [expandAll]);
+  const boxSwitch = boxSwitchKey(boxExpanded);
   const flow = useMemo(
     () =>
       sceneToFlow(scene, detail, {
@@ -100,8 +121,26 @@ export function FlowMap(props: {
         paneAspect,
         dir,
         rowsPref,
+        declared: props.declared,
+        boxExpanded,
+        onToggleBox,
       }),
-    [scene, detail, provider, model, systemPrompt, lang, expandAll, pool, paneAspect, dir, rowsPref],
+    [
+      scene,
+      detail,
+      provider,
+      model,
+      systemPrompt,
+      lang,
+      expandAll,
+      pool,
+      paneAspect,
+      dir,
+      rowsPref,
+      props.declared,
+      boxExpanded,
+      onToggleBox,
+    ],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -114,7 +153,7 @@ export function FlowMap(props: {
   // re-places the map the same way. The provider is NOT part of it any more
   // (card 304): one geometry serves every backend, so a backend switch moves
   // nothing and must not throw the reader's pinned cards away.
-  const layoutRef = useRef(`${expandAll}:${paneAspect}:${rowsPref}`);
+  const layoutRef = useRef(seatingKey(expandAll, paneAspect, rowsPref, boxSwitch));
   const rfRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   // Nodes the user has dragged. Once pinned, a node keeps its position across
   // every step (even a subagent, which otherwise re-centres) — so dragging a card
@@ -151,13 +190,13 @@ export function FlowMap(props: {
   // pinned and stays. A compact/expanded flip re-lays-out everything and drops
   // pins.
   useEffect(() => {
-    const seating = `${expandAll}:${paneAspect}:${rowsPref}`;
+    const seating = seatingKey(expandAll, paneAspect, rowsPref, boxSwitch);
     const relayout = layoutRef.current !== seating;
     layoutRef.current = seating;
     if (relayout) pinned.current.clear();
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout));
     setEdges(flow.edges);
-  }, [flow, expandAll, paneAspect, rowsPref, setNodes, setEdges]);
+  }, [flow, expandAll, paneAspect, rowsPref, boxSwitch, setNodes, setEdges]);
 
   // The envelope check's runtime half (card 296). Every expanded seat is
   // derived from EXPANDED_CARD, and until now NOTHING in src/ ever held the
@@ -183,19 +222,11 @@ export function FlowMap(props: {
 
   // The rails' live obstacle set: every card's rendered box (zones excluded),
   // recomputed from the node state so a dragged card re-routes its rails.
-  const railBoxes = useMemo(
-    () =>
-      nodes
-        .filter((n) => n.type !== "zone")
-        .map((n) => ({
-          id: n.id,
-          x: n.position.x,
-          y: n.position.y,
-          w: (n.measured?.width ?? n.width ?? 200) as number,
-          h: (n.measured?.height ?? n.height ?? 100) as number,
-        })),
-    [nodes],
-  );
+  // CARD 306: through `railBoxesFrom`, which resolves a child's position to a
+  // WORLD one. The expression that stood here read `n.position` directly, and
+  // a boxed member's position is measured from its box — the rail would have
+  // been routed hundreds of px from the card it is drawn from, silently.
+  const railBoxes = useMemo(() => railBoxesFrom(nodes), [nodes]);
 
   // Right-drag pans EVEN WHEN IT STARTS ON A CARD (card 287): React Flow
   // writes `nopan` on draggable nodes and d3-zoom refuses the mousedown, so
