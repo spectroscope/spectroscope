@@ -15,10 +15,16 @@
 // speed pills with a real multiplier vocabulary instead of a bare "0.8×/s"
 // with nothing to compare it to. Every reading behind them is pure and lives
 // in state/stepper.ts; this file only draws them.
+//
+// The ticks sit in a row of their OWN, under the range input, and are thinned
+// to a floor. Drawn over the slider — the first build — the 61 ticks a plain
+// 60-turn run produces formed one unbroken row of 11px hit boxes and the scrub
+// bar could no longer be dragged at all.
 
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import {
+  MARK_MIN_GAP_PCT,
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
   SPEED_FACTORS,
@@ -36,6 +42,7 @@ import {
   step,
   stepBack,
   stepBoundaries,
+  thinMarks,
   useStepper,
 } from "../state/stepper";
 import { chapterLabel } from "./chapterLabel";
@@ -91,8 +98,10 @@ export function LabTransport(props: {
   };
 
   // The chapters, placed on the very boundaries the slider walks. A live run
-  // grows, so both are read from `all` on every render rather than cached.
-  const marks = markPositions(chapterMarks(all), boundaries);
+  // grows, so both are read from `all` on every render rather than cached. The
+  // thinning is not cosmetic: a 60-turn run draws 61 ticks 1.65% apart, and
+  // ticks that touch cannot be aimed at individually.
+  const marks = thinMarks(markPositions(chapterMarks(all), boundaries), MARK_MIN_GAP_PCT);
   // The wall clock, or null when this recording never carried one.
   const clock = runClock(all, cursor);
   const factor = speedFactorOf(st.intervalMs);
@@ -217,6 +226,12 @@ export function LabTransport(props: {
                       type="button"
                       title={line}
                       aria-label={line}
+                      // A pointer shortcut to a boundary the slider itself
+                      // reaches with an arrow key. Tabbable, a long run would
+                      // wedge dozens of stops between the slider and the speed
+                      // pills with no way past them; the tick stays in the
+                      // accessibility tree, out of the tab order.
+                      tabIndex={-1}
                       className={`lab-mark lab-mark--${m.mark.kind}`}
                       style={{ left: `${m.pct}%` }}
                       onClick={() => scrubTo(m.index)}

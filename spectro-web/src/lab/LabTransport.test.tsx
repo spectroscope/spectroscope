@@ -10,7 +10,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RunEvent } from "../events";
 import { LabTransport } from "./LabTransport";
-import { __resetForTests, chapterMarks, loadReplay, setSpeed, step } from "../state/stepper";
+import {
+  MARK_MIN_GAP_PCT,
+  __resetForTests,
+  chapterMarks,
+  loadReplay,
+  setSpeed,
+  step,
+} from "../state/stepper";
 
 const T = 1700000000000;
 const ev = (e: Record<string, unknown>): RunEvent => e as unknown as RunEvent;
@@ -91,6 +98,51 @@ describe("the chapter ticks", () => {
   it("draws nothing at all for a run with no chapters", () => {
     loadReplay("s2", [ev({ type: "text_delta", agentId: "main", text: "hi", ts: T })]);
     expect(render()).not.toContain("lab-mark lab-mark--");
+  });
+
+  // The fix round. Each tick's POSITION is the whole point of the card, and it
+  // was pinned nowhere: replacing left: ${m.pct}% with left: 0% stacked every
+  // chapter on the bar's left edge and the full suite stayed green.
+  it("puts each tick where its own reading says, not on the bar's edge", () => {
+    loadReplay("s1", timed);
+    const html = render();
+    // Measured off this very fixture: boundaries [0,1,2,3,4,5], so the turn
+    // sits at 2/5 of the bar and the end at the far end of it.
+    expect(html).toContain('lab-mark--turn" style="left:40%"');
+    expect(html).toContain('lab-mark--gate" style="left:60%"');
+    expect(html).toContain('lab-mark--end" style="left:100%"');
+    // …and no two chapters share a place, which is what a collapsed reading
+    // (left: 0%, or the same pct for all) would look like.
+    const lefts = [...html.matchAll(/lab-mark--\w+" style="left:([\d.]+)%"/g)].map((m) => m[1]);
+    expect(new Set(lefts).size).toBe(lefts.length);
+  });
+
+  it("thins a crowded run instead of walling the slider in", () => {
+    // 80 turns on a bar 81 boundaries long puts the ticks 1.2% apart. At the
+    // 11px hit box lab.css gives them that is a continuous row of buttons; the
+    // density floor is what keeps them apart.
+    const crowded = [
+      ...Array.from({ length: 80 }, (_, i) =>
+        ev({ type: "turn_start", agentId: "main", turn: i + 1, ts: T + i }),
+      ),
+      ev({ type: "run_end", runId: "r1", stopReason: "end_turn", ts: T + 80 }),
+    ];
+    loadReplay("s4", crowded);
+    const drawn = (render().match(/class="lab-mark lab-mark--/g) ?? []).length;
+    expect(chapterMarks(crowded).length).toBe(81);
+    expect(drawn).toBeLessThan(81);
+    expect(drawn).toBeLessThanOrEqual(Math.floor(100 / MARK_MIN_GAP_PCT) + 1);
+  });
+
+  it("keeps the ticks out of the tab order", () => {
+    // They are a pointer shortcut to a boundary the slider itself reaches with
+    // an arrow key. Left tabbable, a long run wedges dozens of stops between
+    // the slider and the speed pills with no way past them.
+    loadReplay("s1", timed);
+    const html = render();
+    const ticks = (html.match(/class="lab-mark lab-mark--/g) ?? []).length;
+    expect(ticks).toBe(4);
+    expect((html.match(/tabindex="-1"[^>]*class="lab-mark /g) ?? []).length).toBe(ticks);
   });
 });
 
