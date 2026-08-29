@@ -90,13 +90,20 @@ interface FleetBusProps {
   onFocusAgent?: (agentId: string) => void;
 }
 
-function osChipState(card: FleetLabNode): {
+/** What the four inline OS chips of a bus card show, folded out of one node.
+ *  Exported so the invariant below is pinned by a test rather than by a
+ *  comment: the cloud mark follows the FOCUS alone (card 304). */
+export interface BusOsChips {
   disk: string | null;
   shell: string | null;
   mcp: string | null;
   llm: string | null;
+  /** True whenever the packet sits at the model — every model call leaves the
+   *  machine now, whoever serves the tokens. */
   llmRemote: boolean;
-} {
+}
+
+export function osChipState(card: FleetLabNode): BusOsChips {
   return {
     disk: card.disk !== "idle" ? (card.activeFile ?? card.disk) : null,
     shell: card.activeCommand,
