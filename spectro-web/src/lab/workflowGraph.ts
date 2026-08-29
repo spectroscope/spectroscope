@@ -65,11 +65,12 @@ export interface WorkflowAgent {
 export interface WorkflowState {
   name: string | null;
   phases: DeclaredPhase[];
-  /** The declared number each phase carries, positionally — `phases[i]` is
-   *  the phase whose `workflow_phase` entry said `index: declaredIndex[i]`.
-   *  Absent entries fall back to the array position, which is the only
-   *  honest guess and is never mixed with a number the file did state. */
-  declaredIndex: number[];
+  /** The number the FILE STATED for `phases[i]`, or null where it never said.
+   *  Null is the honest answer for a file written mid-run: it has fewer phase
+   *  markers than phases, and a position standing in for one of the missing
+   *  numbers would be MIXED with the numbers it did state. What to do with a
+   *  null is `rankOfDeclared`'s decision, in one place. */
+  declaredIndex: (number | null)[];
   agents: WorkflowAgent[];
 }
 
@@ -122,20 +123,57 @@ export function readWorkflowState(json: string): WorkflowState | null {
     phases.push({ title: str(o.title) ?? "", detail: str(o.detail) });
   }
 
+  // WHICH NUMBER THE FILE STATED FOR WHICH PHASE — joined through the TITLE,
+  // because the title is what the file itself puts on both sides: a
+  // `workflow_phase` marker carries {index, title}, a `workflow_agent`
+  // carries {phaseIndex, phaseTitle}, and both titles name an entry in
+  // `phases`. Measured over a real recording: five markers and thirteen
+  // agents, every one of those titles matching its phase exactly.
+  //
+  // THE ARRAY POSITION NEVER PLACES A STATED NUMBER. A file written mid-run
+  // has fewer markers than phases — a run interrupted, still going, or failed
+  // on its way through — and seeding the positions and overwriting only the
+  // reached ones mixes stated numbers with positional ones. Measured on the
+  // old code: five phases with two markers became [1,2,2,3,4], which drew the
+  // phase-3 agent under phase 4's word and called phase 3 an empty column
+  // while that agent stood in it. Where a title cannot place a number, the
+  // number stays unknown and `rankOfDeclared` decides what unknown means.
+  const posOfTitle = new Map<string, number | "ambiguous">();
+  phases.forEach((p, i) => {
+    if (p.title === "") return;
+    posOfTitle.set(p.title, posOfTitle.has(p.title) ? "ambiguous" : i);
+  });
+  const declaredIndex: (number | null)[] = phases.map(() => null);
+  const refused = new Set<number>();
+  /** The file says "the phase called T is numbered N". */
+  const stated = (title: string | null, index: number | null): void => {
+    if (title === null || index === null) return;
+    const pos = posOfTitle.get(title);
+    if (pos === undefined || pos === "ambiguous" || refused.has(pos)) return;
+    const had = declaredIndex[pos];
+    if (had === null) {
+      declaredIndex[pos] = index;
+      return;
+    }
+    // Two different numbers for one phase: the file contradicts itself, and
+    // picking one of them would be this module's guess, not the file's word.
+    if (had !== index) {
+      declaredIndex[pos] = null;
+      refused.add(pos);
+    }
+  };
+
   const progress = Array.isArray(d.workflowProgress) ? d.workflowProgress : [];
-  const declaredIndex = phases.map((_, i) => i);
-  let seenPhaseEntries = 0;
   const agents: WorkflowAgent[] = [];
   for (const entry of progress) {
     if (entry === null || typeof entry !== "object") continue;
     const o = entry as Record<string, unknown>;
     if (o.type === "workflow_phase") {
-      const at = seenPhaseEntries++;
-      const idx = num(o.index);
-      if (at < declaredIndex.length && idx !== null) declaredIndex[at] = idx;
+      stated(str(o.title), num(o.index));
       continue;
     }
     if (o.type !== "workflow_agent") continue;
+    stated(str(o.phaseTitle), num(o.phaseIndex));
     agents.push({
       agentId: str(o.agentId) ?? "",
       label: str(o.label) ?? "",
@@ -150,6 +188,39 @@ export function readWorkflowState(json: string): WorkflowState | null {
     });
   }
   return { name: str(d.workflowName) ?? str(d.summary), phases, declaredIndex, agents };
+}
+
+/**
+ * The file's own phase numbering → the drawing's 0-based column.
+ *
+ * Built ONLY from numbers the file stated (see `readWorkflowState`). When it
+ * stated none at all, and only then, each phase's array position stands in for
+ * its number: a uniform fallback, never mixed with a number the file did
+ * state. A number two different phases both claim is refused rather than
+ * resolved — an agent standing under a borrowed word is worse than an agent in
+ * the uncaptioned column past the declared ones, where nothing is claimed
+ * about it at all.
+ */
+export function rankOfDeclared(state: WorkflowState): ReadonlyMap<number, number> {
+  const rank = new Map<number, number>();
+  const contested = new Set<number>();
+  let anyStated = false;
+  state.declaredIndex.forEach((stated, at) => {
+    if (stated === null) return;
+    anyStated = true;
+    if (contested.has(stated)) return;
+    const had = rank.get(stated);
+    if (had === undefined) {
+      rank.set(stated, at);
+      return;
+    }
+    if (had !== at) {
+      rank.delete(stated);
+      contested.add(stated);
+    }
+  });
+  if (!anyStated) state.phases.forEach((_, at) => rank.set(at, at));
+  return rank;
 }
 
 /** When an agent that started can honestly be said to have stopped: its own
@@ -171,11 +242,7 @@ function endStamp(a: WorkflowAgent, started: number): number {
  * through edges this module made up.
  */
 export function workflowGraph(state: WorkflowState): WorkflowGraph {
-  // The file's own phase numbering → the drawing's 0-based rank.
-  const rankOfDeclared = new Map<number, number>();
-  state.declaredIndex.forEach((declared, at) => {
-    if (!rankOfDeclared.has(declared)) rankOfDeclared.set(declared, at);
-  });
+  const columnOf = rankOfDeclared(state);
   const declaredRanks = state.phases.length;
   // One column past the declared ones for anything the file could not place.
   const strayRank = declaredRanks;
@@ -188,7 +255,7 @@ export function workflowGraph(state: WorkflowState): WorkflowGraph {
 
   state.agents.forEach((a, i) => {
     const id = a.agentId !== "" ? a.agentId : `wf-agent-${i}`;
-    const declared = a.phaseIndex === null ? undefined : rankOfDeclared.get(a.phaseIndex);
+    const declared = a.phaseIndex === null ? undefined : columnOf.get(a.phaseIndex);
     const rank = declared ?? strayRank;
     if (declared === undefined) undeclared += 1;
     else occupied.add(rank);
@@ -273,14 +340,11 @@ export type WorkflowDeclaration = ReadonlyMap<string, RunPhases>;
 
 /** One run's state file → what the lens needs to rank and caption its agents. */
 export function declarationFor(state: WorkflowState): RunPhases {
-  const rankOfDeclared = new Map<number, number>();
-  state.declaredIndex.forEach((declared, at) => {
-    if (!rankOfDeclared.has(declared)) rankOfDeclared.set(declared, at);
-  });
+  const columnOf = rankOfDeclared(state);
   const rankOf = new Map<string, number>();
   for (const a of state.agents) {
     if (a.agentId === "" || a.phaseIndex === null) continue;
-    const r = rankOfDeclared.get(a.phaseIndex);
+    const r = columnOf.get(a.phaseIndex);
     if (r !== undefined) rankOf.set(a.agentId, r);
   }
   return { phases: state.phases, rankOf };

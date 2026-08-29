@@ -291,3 +291,143 @@ describe("the layout carries the captions out to the renderer", () => {
     expect(laid.rankLabels[1].caption?.detail).toBeNull();
   });
 });
+
+/**
+ * A state file written BEFORE the run reached its last phase. The reader used
+ * to seed every phase's number with its array position and overwrite only the
+ * positions a `workflow_phase` marker had reached, which MIXES stated numbers
+ * with positional ones: five phases with two markers became [1,2,2,3,4], and
+ * every agent past the second marker was drawn under the NEXT phase's word
+ * while its own phase was drawn as an empty box. A run that was interrupted,
+ * is still going, or failed on its way through is not exotic, and the reader
+ * never looks at `status`.
+ *
+ * The file answers the join itself: a marker carries `title`, an agent carries
+ * `phaseTitle`, and both name a phase in `phases`. That is a fact the file
+ * states, not a position this module assumed.
+ */
+describe("a state file whose phase markers stop early", () => {
+  const TITLES = ["one", "two", "three", "four", "five"];
+  /** Five declared phases, one agent in each, but only the first TWO
+   *  `workflow_phase` markers ever emitted. */
+  const midRun = (agentTitles: boolean): string =>
+    JSON.stringify({
+      phases: TITLES.map((title) => ({ title, detail: null })),
+      workflowProgress: [
+        { type: "workflow_phase", index: 1, title: "one" },
+        { type: "workflow_phase", index: 2, title: "two" },
+        ...TITLES.map((title, p) => ({
+          type: "workflow_agent",
+          index: p + 1,
+          agentId: `a${p + 1}`,
+          label: `agent ${p + 1}`,
+          phaseIndex: p + 1,
+          ...(agentTitles ? { phaseTitle: title } : {}),
+          state: "done",
+          startedAt: 10 + p,
+          durationMs: 1,
+        })),
+      ],
+    });
+
+  it("draws every agent under its OWN phase's word, not the next one's", () => {
+    const g = workflowGraph(readWorkflowState(midRun(true))!);
+    const ranks = g.topo.ranks!;
+    for (let p = 0; p < TITLES.length; p++) {
+      const at = ranks.get(`a${p + 1}`);
+      expect(at, `agent ${p + 1}`).toBe(p);
+      expect(g.topo.rankCaptions!.get(at!)?.title).toBe(TITLES[p]);
+    }
+  });
+
+  it("declares no phase empty while an agent is standing in it", () => {
+    const g = workflowGraph(readWorkflowState(midRun(true))!);
+    expect(g.emptyPhases).toEqual(new Set());
+    expect(g.undeclared).toBe(0);
+    expect(g.topo.nodes).toHaveLength(5);
+  });
+
+  it("with nothing to join on, the unreached agents go to the uncaptioned column rather than under a borrowed word", () => {
+    const g = workflowGraph(readWorkflowState(midRun(false))!);
+    const ranks = g.topo.ranks!;
+    expect(ranks.get("a1")).toBe(0);
+    expect(ranks.get("a2")).toBe(1);
+    // Three agents the file could not place: one column past the declared
+    // ones, and that column carries no caption to lend them.
+    expect([ranks.get("a3"), ranks.get("a4"), ranks.get("a5")]).toEqual([5, 5, 5]);
+    expect(g.topo.rankCaptions!.has(5)).toBe(false);
+    expect(g.undeclared).toBe(3);
+  });
+
+  it("falls back to array positions only when the file stated NO number at all — never mixed", () => {
+    const noMarkers = JSON.stringify({
+      phases: TITLES.map((title) => ({ title, detail: null })),
+      workflowProgress: TITLES.map((_, p) => ({
+        type: "workflow_agent",
+        index: p + 1,
+        agentId: `a${p + 1}`,
+        label: `agent ${p + 1}`,
+        phaseIndex: p,
+        state: "done",
+        startedAt: 10 + p,
+        durationMs: 1,
+      })),
+    });
+    const g = workflowGraph(readWorkflowState(noMarkers)!);
+    for (let p = 0; p < TITLES.length; p++) expect(g.topo.ranks!.get(`a${p + 1}`)).toBe(p);
+    expect(g.undeclared).toBe(0);
+  });
+});
+
+/** A file that contradicts ITSELF about what number a phase carries. The
+ *  reader refuses that number rather than picking one of the two: an agent
+ *  that names it goes to the uncaptioned column past the declared ones, where
+ *  nothing is claimed about it, instead of under a word that may not be its
+ *  own. */
+describe("a state file that gives one phase two different numbers", () => {
+  const json = JSON.stringify({
+    phases: [
+      { title: "one", detail: null },
+      { title: "two", detail: null },
+      { title: "three", detail: null },
+    ],
+    workflowProgress: [
+      { type: "workflow_phase", index: 1, title: "one" },
+      { type: "workflow_phase", index: 2, title: "two" },
+      { type: "workflow_phase", index: 3, title: "three" },
+      // The markers say "one" is 1; this agent says "one" is 3.
+      {
+        type: "workflow_agent",
+        index: 1,
+        agentId: "a1",
+        label: "a",
+        phaseIndex: 3,
+        phaseTitle: "one",
+        state: "done",
+        startedAt: 1,
+        durationMs: 1,
+      },
+      {
+        type: "workflow_agent",
+        index: 2,
+        agentId: "a2",
+        label: "b",
+        phaseIndex: 1,
+        phaseTitle: "one",
+        state: "done",
+        startedAt: 2,
+        durationMs: 1,
+      },
+    ],
+  });
+
+  it("places nobody by the contradicted number", () => {
+    const g = workflowGraph(readWorkflowState(json)!);
+    // 3 and 2 were never contradicted, so they still place.
+    expect(g.topo.ranks!.get("a1")).toBe(2);
+    // 1 was, so the agent that names it lands in the stray column.
+    expect(g.topo.ranks!.get("a2")).toBe(3);
+    expect(g.topo.rankCaptions!.has(3)).toBe(false);
+    expect(g.undeclared).toBe(1);
+  });
+});
