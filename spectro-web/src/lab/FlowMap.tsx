@@ -102,20 +102,7 @@ export function FlowMap(props: {
         dir,
         rowsPref,
       }),
-    [
-      scene,
-      detail,
-      local,
-      provider,
-      model,
-      systemPrompt,
-      lang,
-      expandAll,
-      pool,
-      paneAspect,
-      dir,
-      rowsPref,
-    ],
+    [scene, detail, local, provider, model, systemPrompt, lang, expandAll, pool, paneAspect, dir, rowsPref],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);

@@ -1037,9 +1037,7 @@ describe("the OS stations take their occupant's tag from the directory", () => {
     // ONE occupancy derivation, and the rail keying addresses its occupant by
     // id. The tag/name — what card 298 is about — are unchanged by that.
     it(`${station.node}: hands the directory through to the station line`, () => {
-      expect(byOf(agentDirectory(events))).toEqual([
-        { tag: "main", name: "main", agentId: "sub-7" },
-      ]);
+      expect(byOf(agentDirectory(events))).toEqual([{ tag: "main", name: "main", agentId: "sub-7" }]);
     });
 
     it(`${station.node}: still draws the station with no directory at all`, () => {

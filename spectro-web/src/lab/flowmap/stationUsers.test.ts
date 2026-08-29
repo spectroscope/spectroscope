@@ -157,9 +157,7 @@ describe("stationUsers reads its tag from the agent directory", () => {
   it("falls back to the local derivation for a scene with no event prefix", () => {
     // The edu sim drives the scene directly and has no events to fold.
     const s = sceneWith({ subagents: [child("a", "first", { focus: "disk" })] });
-    expect(stationUsers(s, "disk", agentDirectory([]))).toEqual([
-      { tag: "w1", name: "first", agentId: "a" },
-    ]);
+    expect(stationUsers(s, "disk", agentDirectory([]))).toEqual([{ tag: "w1", name: "first", agentId: "a" }]);
   });
 });
 

@@ -70,11 +70,7 @@ export function stationOccupants(scene: Scene, dir?: AgentDirectory): StationOcc
   return out;
 }
 
-export function stationUsers(
-  scene: Scene,
-  station: Station,
-  dir?: AgentDirectory,
-): StationUser[] {
+export function stationUsers(scene: Scene, station: Station, dir?: AgentDirectory): StationUser[] {
   return stationOccupants(scene, dir)
     .filter((o) => o.station === station)
     .map(({ tag, name, agentId }) => ({ tag, name, agentId }));
