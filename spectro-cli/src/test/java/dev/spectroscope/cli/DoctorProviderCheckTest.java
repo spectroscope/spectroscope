@@ -290,6 +290,7 @@ class DoctorProviderCheckTest {
         // fields won their own.
         List<DoctorCommand.Line> lines = DoctorCommand.perProviderAddressLines(
                 "ollama", "http://env-box:11434",
+                "http://env-box:11434", "http://flag-box:11434",
                 new SpectroConfig.Origin("env", List.of()),
                 new SpectroConfig.Origin("flags", List.of()));
 
@@ -310,16 +311,52 @@ class DoctorProviderCheckTest {
     void nothingIsSaidWhenThereIsNoShadowingToReport() {
         // No per-provider address: the legacy chain decides, nothing is hidden.
         assertTrue(DoctorCommand.perProviderAddressLines("ollama", "http://localhost:11434",
+                null, "http://localhost:11434",
                 new SpectroConfig.Origin("defaults", List.of()),
                 new SpectroConfig.Origin("user", List.of())).isEmpty());
         // A per-provider address and NO baseUrl anywhere: nothing is being
         // overridden, so a line would be noise.
         assertTrue(DoctorCommand.perProviderAddressLines("lmstudio", "http://gpu-box:1234",
+                "http://gpu-box:1234", "http://localhost:11434",
                 new SpectroConfig.Origin("user", List.of()),
                 new SpectroConfig.Origin("defaults", List.of())).isEmpty());
         // A provider with no per-provider address field at all.
         assertTrue(DoctorCommand.perProviderAddressLines("openai", "https://api.openai.com",
+                null, "https://api.openai.com",
                 new SpectroConfig.Origin("defaults", List.of()),
+                new SpectroConfig.Origin("user", List.of())).isEmpty());
+    }
+
+    // ── card 311: a present key is not a value that wins ────────────────────
+
+    @Test
+    void aBlankPerProviderAddressIsNotAnOverrideAndIsNotReportedAsOne() throws IOException {
+        // A hand-edited settings.json with the key present but empty. The fold
+        // hands it a layer (Optional.ofNullable takes "" as a value), so the
+        // Origin says "user" — while effectiveLmstudioBaseUrl reads a blank as
+        // unset and dials baseUrl after all. A note here would name the wrong
+        // winner and tell the operator their general address does not apply,
+        // one line under a probe that just used it.
+        String out = doctorOutputForSettings("""
+                { "provider": "lmstudio", "model": "local-model",
+                  "baseUrl": "http://127.0.0.1:5111",
+                  "lmstudioBaseUrl": "" }
+                """);
+
+        assertTrue(out.contains("openai-compatible server at http://127.0.0.1:5111"),
+                "a blank per-provider address falls through to baseUrl, got:\n" + out);
+        assertFalse(out.contains("lmstudioBaseUrl"),
+                "nothing is being overridden, so nothing may be claimed, got:\n" + out);
+    }
+
+    @Test
+    void aBlankBaseUrlLeavesNoLoserToName() {
+        // The mirror case: the per-provider address wins, but the value it
+        // beats is empty — there is no address that "does not apply", and a
+        // line about one would be noise.
+        assertTrue(DoctorCommand.perProviderAddressLines("ollama", "http://gpu-box:11434",
+                "http://gpu-box:11434", "  ",
+                new SpectroConfig.Origin("user", List.of()),
                 new SpectroConfig.Origin("user", List.of())).isEmpty());
     }
 

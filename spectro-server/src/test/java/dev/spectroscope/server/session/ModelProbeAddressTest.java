@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -105,6 +106,29 @@ class ModelProbeAddressTest {
         assertNotNull(address, "/api/config carries the per-provider addresses");
         assertEquals("http://gpu-box:11434", address.get("ollama"));
         assertEquals("http://gpu-box:1234", address.get("lmstudio"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void apiConfigNamesTheWINNINGAddressWhenAGeneralOneIsSetToo() throws IOException {
+        // Card 311, the owner's own settings file, reduced: a per-provider
+        // address AND a general one typed into the other field. The general one
+        // loses (card 193, deliberately) — and the sentence the client builds
+        // from this map must therefore name the address the probe TRIED, not
+        // the one the operator last typed. Card 193 said "the failure sentence
+        // must name the address the probe actually tried"; this is that claim,
+        // pinned against the configuration that broke it in the field.
+        writeUserSettings("""
+                { "lmstudioBaseUrl": "http://127.0.0.1:1234",
+                  "baseUrl": "http://127.0.0.1:8600" }
+                """);
+        Map<String, Object> config = new SessionsController().config();
+        Map<String, String> address = (Map<String, String>) config.get("providerAddress");
+        assertNotNull(address);
+        assertEquals("http://127.0.0.1:1234", address.get("lmstudio"),
+                "the address the probe dials is the per-provider one");
+        assertFalse(address.get("lmstudio").contains("8600"),
+                "and never the general address it beat, got: " + address.get("lmstudio"));
     }
 
     @Test

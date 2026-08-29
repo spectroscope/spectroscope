@@ -94,7 +94,10 @@ export function addressOverrideNote(
 
   // "Set" is a layer other than the built-in defaults AND a value that is not
   // blank — endpointFor skips a blank per-provider field, and a blank general
-  // one loses nothing worth naming.
+  // one loses nothing worth naming. Both halves matter, but not both on both
+  // fields: the per-provider fields default to null, so the value check alone
+  // already answers them, while baseUrl's default is the non-blank literal
+  // http://localhost:11434 and ONLY its origin separates "unset" from "typed".
   const isSet = (value: unknown, origin: Origin): boolean =>
     origin.winner !== "defaults" && typeof value === "string" && value.trim() !== "";
   if (!isSet(own, ownOrigin) || !isSet(general, generalOrigin)) return null;
