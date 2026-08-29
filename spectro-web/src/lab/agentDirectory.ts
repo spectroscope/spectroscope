@@ -240,6 +240,14 @@ export const AGENT_RAMP_SLOTS = 5;
  * it is safe to interpolate into the exported HTML the way agentAccent is.
  * w1 is the same colour on every surface because the tag, not the position,
  * picks the slot.
+ *
+ * "Safe to interpolate" is a claim about TWO files, and both are held to it.
+ * The name is constant, so no session text can ride into the document — that is
+ * this file. And the token has to EXIST in the exported document, which has no
+ * stylesheet and carries `export/themes.ts` as literals instead — that is
+ * agentRamp.drift.test.ts, which walks each slot into every export theme. The
+ * export's own drift guard cannot ask this: it holds the table to the
+ * stylesheets, never the stylesheets to the table.
  */
 export function agentTagColor(tag: string): string {
   if (tag === ROOT_TAG) return "var(--agent-root)";

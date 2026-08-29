@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { AGENT_RAMP_SLOTS, agentTagColor } from "../lab/agentDirectory";
+import { EXPORT_THEMES } from "../export/themes";
 
 const read = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../${name}`, import.meta.url)), "utf8");
@@ -62,6 +63,27 @@ describe("the agent handle ramp exists wherever the accents do", () => {
       const declaresAccents = block.tokens.has("agent-root");
       for (const token of rampTokens) {
         expect(block.tokens.has(token), `--${token} in ${block.id}`).toBe(declaresAccents);
+      }
+    });
+  }
+});
+
+// The direction the export's own guard cannot walk. themes.drift.test.ts holds
+// every entry of the EXPORT TABLE to the stylesheets; it never walks the
+// stylesheets back into the table, so a token added to CSS and forgotten in
+// export/themes.ts fails nothing. An exported document has no stylesheet - it
+// carries these tokens as literals - so a ramp slot missing from the table
+// becomes `--agent-color: var(--agent-w2)` against a property that does not
+// exist there: an invalid declaration, thrown away, the element inheriting
+// whatever sits above it. Exactly the silence the block guard above was
+// written to break, one file over.
+describe("the exported document carries the ramp too", () => {
+  for (const theme of EXPORT_THEMES) {
+    it(`${theme.id}: carries every slot agentTagColor can name`, () => {
+      for (const token of rampTokens) {
+        expect(Object.keys(theme.tokens), `--${token} in the ${theme.id} export table`).toContain(
+          token,
+        );
       }
     });
   }
