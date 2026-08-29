@@ -635,12 +635,6 @@ describe("a file row says when the run first touched it", () => {
     expect(html).toContain("1:30");
   });
 
-  it("says out loud that the list is in first-touch order", () => {
-    // The order was always the record of the sequence the run worked in, and
-    // nothing on screen said so.
-    expect(dock("files", touched)).toContain(t(lang, "lab.files.order"));
-  });
-
   it("keeps the step and fabricates NO time when the recording carried none", () => {
     const stampless = touched.map((e) => {
       const { ts: _ts, ...rest } = e as unknown as Record<string, unknown>;

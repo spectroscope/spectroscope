@@ -4081,10 +4081,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the same unit, and two entries holding one sentence are two sentences
   // waiting to drift.
   "lab.stepN": { de: "Schritt {n}", en: "step {n}" },
-  "lab.files.order": {
-    de: "In der Reihenfolge der ersten Berührung.",
-    en: "In the order the run first touched them.",
-  },
 
   // Card 309A: the moments panel — the chapter marks of card 299 as rows,
   // because a tick you have to hover is not something you can read.

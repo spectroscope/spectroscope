@@ -9,14 +9,14 @@
 // beside a full list as "and this much you cannot see here", and instead of an
 // empty list as "this run worked through the shell".
 //
-// THE ROW SAYS WHEN (card 309B). The fold has always ordered the touches by
-// FIRST contact and its own doc calls that order "the only record of the
-// sequence the run worked in" — and nothing on the row said so, which left the
-// order legible only to somebody who had read the module. Each row now carries
-// the coarse STEP of its first touch: the transport's own unit, from the
-// transport's own rule, so the two surfaces cannot name different steps for one
-// moment. The elapsed time appears beside it only where the recording carried
-// timestamps, and is absent — never zeroed — everywhere else.
+// THE ROW SAYS WHEN (card 309B). The hint above the list has always said the
+// rows are in order of first access; no ROW said where in the run that was, so
+// the sequence could be read only as "before the one below". Each row now
+// carries the coarse STEP of its first touch: the transport's own unit, from
+// the transport's own rule, so a file row and the step counter cannot name
+// different steps for one moment. The elapsed time appears beside it only where
+// the recording carried timestamps, and is absent — never zeroed — everywhere
+// else.
 //
 // Everything else lives in fileTree.ts, which is pure and bitten branch by
 // branch. This file is words and pixels.
@@ -167,8 +167,6 @@ export function FileFootprint(props: {
       ) : (
         <>
           <p className="lab-files-count tabular">{countLine.join(" · ")}</p>
-          {/* The order was always the point and was never said out loud. */}
-          <p className="lab-files-note">{t(lang, "lab.files.order")}</p>
           <ul className="lab-files-list">
             {fp.touches.map((touch, i) => (
               <Row
