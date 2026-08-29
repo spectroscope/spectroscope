@@ -32,7 +32,18 @@ import { momentLabel } from "./chapterLabel";
 import { MOMENT_KIND_KEY, momentsOf } from "./moments";
 import type { Moment } from "./moments";
 
-function Row(props: {
+/**
+ * One moment, as the row a reader clicks.
+ *
+ * EXPORTED SO THE CLICK CAN BE BITTEN. This gate has no DOM, and
+ * `renderToStaticMarkup` throws every handler away — markup proves a button
+ * exists and nothing about what it does. Three separate mutations of the
+ * handler below (seek the run's start instead of the moment; do nothing at
+ * all; drop the `setMode`) once left the whole suite green. The row carries no
+ * hooks, so MomentList.test.tsx calls it the way React does and invokes the
+ * button's own `onClick`. Exported for the test and used by nothing else.
+ */
+export function MomentRow(props: {
   moment: Moment;
   dir: AgentDirectory;
   lang: ReturnType<typeof useLang>;
@@ -103,7 +114,7 @@ export function MomentList(props: {
           <p className="lab-moments-count tabular">{count}</p>
           <ul className="lab-moments-list">
             {moments.map((m, i) => (
-              <Row
+              <MomentRow
                 key={`${m.mark.at}-${i}`}
                 moment={m}
                 dir={dir}
