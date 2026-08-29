@@ -31,7 +31,8 @@ import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
 import type { RunEvent } from "../events";
 import { DOCK_TABS, type DockTab } from "./labDockTabs";
-import { momentsOf } from "./moments";
+import type { ChapterKind } from "../state/stepper";
+import { MOMENT_KIND_KEY, momentsOf } from "./moments";
 import { fileFootprint, touchMoments } from "./fileTree";
 
 const lang = currentLang();
@@ -552,19 +553,6 @@ describe("the moments panel", () => {
     { type: "error", agentId: "main", message: "the only failure", ts: 61000 } as RunEvent,
   ];
 
-  it("names each moment's KIND in words, never as the wire enum", () => {
-    const html = dock("moments", run);
-    expect(html).toContain(t(lang, "lab.moment.kind.turn"));
-    expect(html).toContain(t(lang, "lab.moment.kind.spawn"));
-    expect(html).toContain(t(lang, "lab.moment.kind.gate"));
-    // Told APART, not lumped together: the refusal is the row a reader is
-    // looking for and it must not read as the gate above it.
-    expect(html).toContain(t(lang, "lab.moment.kind.denied"));
-    expect(html).toContain(t(lang, "lab.moment.kind.error"));
-    // The one wire word that is not a word.
-    expect(html).not.toContain("no_progress<");
-  });
-
   it("carries the mark's own text, so a row says WHAT happened", () => {
     expect(dock("moments", run)).toContain("the only failure");
   });
@@ -613,6 +601,152 @@ describe("the moments panel", () => {
     // list that stopped at the cursor could not follow it.
     const html = dock("moments", [start("main", 1000)], null, undefined, run);
     expect(html).toContain("the only failure");
+  });
+});
+
+// Card 309A, fix round: the two COLUMNS a reader reads a row by.
+//
+// WHAT WAS HOLLOW. "names each moment's KIND in words" asserted
+// `toContain(word)` over the whole panel, and every kind word is a substring of
+// its own mark sentence — "turn 1 starts" contains "turn", "the gate stopped
+// rm" contains "gate", "refused at the gate" contains "refused", "child agent
+// w1 starts" contains "child agent", "error · …" contains "error". So the
+// sentence span alone satisfied every one of them: deleting the entire kind
+// chip left the suite green. The agent chip was the same shape — "w1" also sits
+// inside the spawn sentence, and on a turn, gate, refusal or error row that
+// chip is the ONLY place the agent appears, so contract A's "which agent it
+// belongs to" could vanish from every kind but spawn with nothing red.
+//
+// The idiom is the clock test's, eleven lines up: pin the CLASS, not the prose,
+// and tie the two together in one expression so neither half can carry the
+// other. Bitten kind by kind, because that is what the contract asked for and
+// what card 299's thinning shipped past.
+describe("each moment row wears its kind and its agent, in columns of their own", () => {
+  const ALL_KINDS: ChapterKind[] = [
+    "turn",
+    "spawn",
+    "compaction",
+    "gate",
+    "denied",
+    "no_progress",
+    "intervention",
+    "question",
+    "skill",
+    "error",
+    "end",
+  ];
+
+  /** One run carrying all eleven, so no kind is bitten against a fixture built
+   *  to suit it. */
+  const everyKind: RunEvent[] = [
+    start("main", 1000),
+    { type: "turn_start", agentId: "main", turn: 1, ts: 1100 } as RunEvent,
+    spawn("toolu_01OPAQUEHANDLE", "read the docs", 1200),
+    { type: "compaction", agentId: "main", removedTurns: 7, summaryChars: 90, ts: 1300 } as RunEvent,
+    {
+      type: "permission_request",
+      agentId: "main",
+      callId: "c1",
+      name: "rm",
+      input: {},
+      ts: 1400,
+    } as RunEvent,
+    { type: "permission_decision", callId: "c1", allowed: false, ts: 1500 } as RunEvent,
+    {
+      type: "no_progress",
+      agentId: "main",
+      detector: "stalled_plan",
+      count: 3,
+      evidence: "same plan",
+      ts: 1600,
+    } as RunEvent,
+    {
+      type: "progress_intervention",
+      agentId: "main",
+      callId: "c9",
+      detector: "stalled_plan",
+      intervention: "CHANGE_COURSE",
+      stoodDown: false,
+      ts: 1700,
+    } as RunEvent,
+    { type: "question_asked", agentId: "main", callId: "q1", questions: [{}], ts: 1800 } as RunEvent,
+    {
+      type: "tool_call",
+      agentId: "main",
+      callId: "c2",
+      name: "Skill",
+      input: { name: "research" },
+      ts: 1900,
+    } as RunEvent,
+    { type: "error", agentId: "main", message: "the only failure", ts: 61000 } as RunEvent,
+    { type: "run_end", runId: "r-main", stopReason: "max_turns", ts: 62000 } as RunEvent,
+  ];
+
+  const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  /** The chip itself, carrying that kind's word — not the word anywhere. */
+  const kindChip = (kind: ChapterKind, word: string): RegExp =>
+    new RegExp(`class="lab-moment-kind lab-moment-kind--${kind}"[^>]*>${esc(word)}</span>`);
+  const tagChip = (tag: string): RegExp => new RegExp(`class="lab-moment-tag mono"[^>]*>${esc(tag)}</span>`);
+
+  it("carries every kind this run has, so the bites below are not vacuous", () => {
+    // The premise: a kind absent from the fold would make its own assertion
+    // impossible to fail for the wrong reason, and this test says so out loud.
+    expect(new Set(momentsOf(everyKind).map((m) => m.mark.kind))).toEqual(new Set(ALL_KINDS));
+  });
+
+  it.each(ALL_KINDS)("gives the %s moment a chip of its own, in words", (kind) => {
+    expect(dock("moments", everyKind)).toMatch(kindChip(kind, t(lang, MOMENT_KIND_KEY[kind])));
+  });
+
+  it("never prints the wire enum as a reader's word", () => {
+    // `no_progress` spelled as itself is a field name. The class may carry it;
+    // the text between the tags may not.
+    expect(dock("moments", everyKind)).not.toMatch(/>[^<]*no_progress[^<]*</);
+  });
+
+  it("names the child on the spawn row by its handle, in the chip", () => {
+    expect(dock("moments", everyKind)).toMatch(tagChip("w1"));
+  });
+
+  it("names the root on the rows whose sentence names nobody", () => {
+    // A turn, a gate, a refusal and an error say nothing about who. The chip is
+    // the only place those four rows can answer contract A's "which agent it
+    // belongs to", and deleting it used to leave 5506 tests green.
+    expect(dock("moments", everyKind)).toMatch(tagChip("main"));
+  });
+
+  it("puts one chip on every row the fold could attribute, and none on the rest", () => {
+    // Counted against the fold, never against a number written here. `run_end`
+    // names no agent, so exactly one row must go without.
+    const html = dock("moments", everyKind);
+    const attributed = momentsOf(everyKind).filter((m) => m.agentId !== null).length;
+    expect(attributed).toBeLessThan(momentsOf(everyKind).length);
+    expect((html.match(/class="lab-moment-tag mono"/g) ?? []).length).toBe(attributed);
+  });
+
+  it("prints the opaque id nowhere at all", () => {
+    expect(dock("moments", everyKind)).not.toContain("toolu_");
+  });
+
+  it("builds one clickable row per moment, and no more", () => {
+    // The wire from the list to the row MomentList.test.tsx clicks.
+    const html = dock("moments", everyKind);
+    expect((html.match(/class="lab-moment-open"/g) ?? []).length).toBe(momentsOf(everyKind).length);
+  });
+
+  it("counts the moments it actually listed", () => {
+    // The count line said a number nothing compared against the list under it.
+    expect(dock("moments", everyKind)).toContain(
+      t(lang, "lab.moments.count", { n: momentsOf(everyKind).length }),
+    );
+  });
+
+  it("says it in the singular for a run carrying exactly one", () => {
+    const one: RunEvent[] = [start("main", 1), { type: "error", message: "boom", ts: 2 } as RunEvent];
+    expect(momentsOf(one)).toHaveLength(1);
+    const html = dock("moments", one);
+    expect(html).toContain(t(lang, "lab.moments.countOne"));
+    expect(html).not.toContain(t(lang, "lab.moments.count", { n: 1 }));
   });
 });
 
