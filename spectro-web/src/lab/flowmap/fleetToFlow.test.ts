@@ -71,37 +71,37 @@ describe("fleetToFlow — the machine-room layout", () => {
     expect((rail.data as { net: boolean }).net).toBe(true);
   });
 
-  it("hides the remote station for a purely local fleet and rails everyone locally", () => {
-    // An unused remote LLM box would claim traffic that never crosses the
-    // boundary — a pure-ollama fleet shows only the local station, and even a
-    // provider-less card rails to the station that exists.
-    const { flow } = flowOf(
-      [node("main", "root"), node("idle-1", "idler")],
-      [{ type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts }],
-    );
-    expect(byId(flow, "llm")).toBeUndefined();
-    expect(byId(flow, "llm-local")).toBeDefined();
-    expect(flow.edges.find((e) => e.id === "e-card-main-llm")!.target).toBe("llm-local");
-    expect(flow.edges.find((e) => e.id === "e-card-idle-1-llm")!.target).toBe("llm-local");
-  });
-
-  it("adds a local LLM station inside the machine when a node runs ollama", () => {
-    const { flow } = flowOf(
-      [node("main", "root"), node("worker-1", "worker")],
+  it("draws ONE LLM station, outside, for every mix of providers (card 304)", () => {
+    // The fleet used to split its cards into a local set and a remote set and
+    // draw a station for each — so a pure-ollama fleet had no boundary traffic
+    // at all and a mixed fleet had two model boxes. One station now, beyond the
+    // boundary, and every card rails across it.
+    const mixes: [string, RunEvent[]][] = [
       [
-        { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts },
-        { type: "run_start", runId: "r2", agentId: "worker-1", prompt: "sub", provider: "ollama", ts },
+        "pure ollama",
+        [{ type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts }],
       ],
-    );
-    const local = byId(flow, "llm-local")!;
-    const boundary = byId(flow, "z-boundary")!;
-    expect(local).toBeDefined();
-    expect(local.position.x + 440).toBeLessThanOrEqual(boundary.position.x); // inside the machine
-    const workerRail = flow.edges.find((e) => e.id === "e-card-worker-1-llm")!;
-    expect(workerRail.target).toBe("llm-local");
-    expect((workerRail.data as { net: boolean }).net).toBe(false);
-    const mainRail = flow.edges.find((e) => e.id === "e-card-main-llm")!;
-    expect(mainRail.target).toBe("llm");
+      [
+        "mixed",
+        [
+          { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts },
+          { type: "run_start", runId: "r2", agentId: "worker-1", prompt: "sub", provider: "ollama", ts },
+        ],
+      ],
+      ["no provider yet", []],
+    ];
+    for (const [name, events] of mixes) {
+      const { flow } = flowOf([node("main", "root"), node("worker-1", "worker")], events);
+      expect(byId(flow, "llm-local"), name).toBeUndefined();
+      const llm = byId(flow, "llm")!;
+      expect(llm, name).toBeDefined();
+      expect(llm.position.x, name).toBeGreaterThan(byId(flow, "z-boundary")!.position.x);
+      for (const id of ["main", "worker-1"]) {
+        const rail = flow.edges.find((e) => e.id === `e-card-${id}-llm`)!;
+        expect(rail.target, `${name}/${id}`).toBe("llm");
+        expect((rail.data as { net: boolean }).net, `${name}/${id}`).toBe(true);
+      }
+    }
   });
 
   it("lights the shared disk station for whichever node is on it", () => {
@@ -163,7 +163,7 @@ describe("fleetToFlow — the machine-room layout", () => {
     expect(byId(flow, "z-os")!.position.y).toBeLessThan(os.position.y);
   });
 
-  it("expanded: the machine frame contains the OPEN local LLM station", () => {
+  it("expanded: the outside frame contains the OPEN LLM station, on a local backend too", () => {
     const roster = [node("main", "root")];
     const events: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts },
@@ -176,11 +176,11 @@ describe("fleetToFlow — the machine-room layout", () => {
         expanded: true,
       },
     );
-    const local = byId(flow, "llm-local")!;
-    const mac = byId(flow, "z-mac")!;
-    const style = mac as unknown as { style: { width: number; height: number } };
-    expect(local.position.y + EXPANDED_CARD.llm.h).toBeLessThanOrEqual(mac.position.y + style.style.height);
-    expect(local.position.x + EXPANDED_CARD.llm.w).toBeLessThanOrEqual(mac.position.x + style.style.width);
+    const llm = byId(flow, "llm")!;
+    const outside = byId(flow, "z-outside")!;
+    const style = outside as unknown as { style: { width: number; height: number } };
+    expect(llm.position.y + EXPANDED_CARD.llm.h).toBeLessThanOrEqual(outside.position.y + style.style.height);
+    expect(llm.position.x + EXPANDED_CARD.llm.w).toBeLessThanOrEqual(outside.position.x + style.style.width);
   });
 
   it("compact: the computed frame is untouched", () => {

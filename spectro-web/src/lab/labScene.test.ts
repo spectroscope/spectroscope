@@ -39,15 +39,22 @@ describe("labScene", () => {
     expect(s.isError).toBe(false);
   });
 
-  it("run_start focuses the agent and reads provider locality", () => {
+  it("run_start focuses the agent, whoever serves the tokens", () => {
     expect(advanceScene(initialScene(), runStart("ollama")).focus).toBe("agent");
-    expect(advanceScene(initialScene(), runStart("ollama")).llmLocal).toBe(true);
-    expect(advanceScene(initialScene(), runStart("anthropic")).llmLocal).toBe(false);
+    expect(advanceScene(initialScene(), runStart("anthropic")).focus).toBe("agent");
   });
 
-  it("run_start without a provider keeps the previously known locality", () => {
-    const s = play([runStart("ollama"), runStart(undefined)]);
-    expect(s.llmLocal).toBe(true);
+  it("the provider is not part of the scene — two backends fold to one state", () => {
+    // The scene used to record whether the model ran on this machine, and the
+    // map drew a different machine for each answer. With ollama serving cloud
+    // models that bit stopped stating a fact worth folding (card 304), so the
+    // fold has no opinion about the provider left to disagree with.
+    expect(advanceScene(initialScene(), runStart("ollama"))).toEqual(
+      advanceScene(initialScene(), runStart("anthropic")),
+    );
+    expect(play([runStart("ollama"), runStart(undefined)])).toEqual(
+      play([runStart("anthropic"), runStart(undefined)]),
+    );
   });
 
   it("turn_start and deltas focus the llm", () => {

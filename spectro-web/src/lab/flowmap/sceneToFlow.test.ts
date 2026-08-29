@@ -1045,3 +1045,135 @@ describe("the OS stations take their occupant's tag from the directory", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Card 304 — ONE geometry. This block replaces a branch: the layout used to
+// come in two variants picked by the provider, so the map drew a different
+// machine depending on who served the tokens — the LLM inside "your mac" for
+// ollama, outside it for everyone else, and no network boundary at all in the
+// local one. The internal LLM now hangs behind the agents and ollama itself
+// serves cloud models, so "local" stopped stating a fact worth drawing. The
+// four pins below are what holds the single geometry that replaced it.
+// ---------------------------------------------------------------------------
+describe("sceneToFlow — one geometry, whoever serves the tokens", () => {
+  const T = 1;
+  /** The owner's number (card 304). It lives here as a literal ON PURPOSE: the
+   *  point of the pin is that a future edit which narrows the mac zone fails
+   *  loudly, and a test that reads the width out of the layout it checks would
+   *  simply follow it down. The workers live in this width — card 287 gave them
+   *  a grid up to twelve seats, card 296 tied the seating to the room. */
+  const MAC_ZONE_W = 1340;
+
+  const run = (provider: string, workers: number): RunEvent[] => [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider, ts: T } as RunEvent,
+    ...Array.from(
+      { length: workers },
+      (_, i) =>
+        ({ type: "agent_spawn", agentId: `w${i + 1}`, parentId: "main", task: `t${i}`, ts: T }) as RunEvent,
+    ),
+  ];
+  const flowFor = (provider: string, workers = 0, expanded = false) => {
+    const events = run(provider, workers);
+    const scene = events.reduce(advanceScene, initialScene());
+    // RED-FIRST SCAFFOLD: today the layout still branches on this flag, exactly
+    // the way FlowMap derives it. It comes out when the branch does.
+    return sceneToFlow(scene, deriveDetail(events), {
+      local: provider === "ollama",
+      provider,
+      model: "m",
+      expanded,
+    });
+  };
+  const box = (
+    flow: { nodes: { id: string; type?: string; position: { x: number; y: number }; style?: unknown }[] },
+    id: string,
+  ) => {
+    const n = flow.nodes.find((x) => x.id === id);
+    if (n === undefined) return null;
+    const s = n.style as { width?: number; height?: number } | undefined;
+    // A zone carries its size in `style`; a card carries it in the envelope its
+    // seat was derived from — by id where it has its own entry, by node type
+    // for the two external stations, which share one.
+    const env = EXPANDED_CARD[id] ?? EXPANDED_CARD[n.type ?? ""];
+    return { x: n.position.x, y: n.position.y, w: s?.width ?? env.w, h: s?.height ?? env.h };
+  };
+  /** Everything about the map that the provider used to be able to move. */
+  const geometry = (flow: {
+    nodes: { id: string; type?: string; position: { x: number; y: number }; style?: unknown }[];
+  }) => ({
+    zones: flow.nodes
+      .filter((n) => n.type === "zone")
+      .map((n) => ({ id: n.id, ...box(flow, n.id)! }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    llm: box(flow, "llm"),
+    netz: box(flow, "netz"),
+    mcpserver: box(flow, "mcpserver"),
+    subBase: flow.nodes.find((n) => n.id === "sub-w1")!.position,
+  });
+
+  it("an ollama run and an anthropic run draw the SAME map", () => {
+    for (const expanded of [false, true]) {
+      expect(geometry(flowFor("ollama", 3, expanded))).toEqual(geometry(flowFor("anthropic", 3, expanded)));
+    }
+  });
+
+  it("the mac zone keeps its full width — the workers live in it", () => {
+    for (const provider of ["ollama", "anthropic"]) {
+      expect(box(flowFor(provider), "z-mac")!.w).toBe(MAC_ZONE_W);
+    }
+  });
+
+  it("the LLM box lies inside the outside frame, clear of Netz and MCP-Server", () => {
+    // Widest and narrowest content the map can be handed: an empty run and a
+    // full worker grid, compact and expanded. The spread a deep grid pushes
+    // onto the right-hand world is exactly what could shove the LLM out of the
+    // frame it is meant to sit in, or down onto the two stations below it.
+    //
+    // The WIDTH is honest in both modes — flowmap.css sets `.pf-llm` to a flat
+    // 440px and content cannot move it — so containment is checked everywhere.
+    // The HEIGHT is only a reserve the layout seats against when the shells are
+    // expanded; compact draws a short card with no tabulated height, so there
+    // the pin is the weaker true thing (the card starts above the stations)
+    // rather than a strong false one derived from the wrong number.
+    const spans = (a: { x: number; w: number }, b: { x: number; w: number }) =>
+      Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0;
+    const escapes: string[] = [];
+    for (const provider of ["ollama", "anthropic"]) {
+      for (const expanded of [false, true]) {
+        for (const workers of [0, 12]) {
+          const flow = flowFor(provider, workers, expanded);
+          const at = `${provider}/${expanded ? "expanded" : "compact"}/${workers}`;
+          const llm = box(flow, "llm")!;
+          const outside = box(flow, "z-outside")!;
+          const held = (b: { x: number; w: number }) => b.x >= outside.x && b.x + b.w <= outside.x + outside.w;
+          const span = (b: { x: number; w: number }) => `${b.x}..${b.x + b.w}`;
+          if (!held(llm)) escapes.push(`${at}: llm ${span(llm)} vs frame ${span(outside)}`);
+          for (const id of ["netz", "mcpserver"]) {
+            const ext = box(flow, id)!;
+            if (!held(ext)) escapes.push(`${at}: ${id} ${span(ext)} vs frame ${span(outside)}`);
+            if (!spans(llm, ext)) continue;
+            const floor = expanded ? llm.y + llm.h : llm.y + 1;
+            if (ext.y < floor) escapes.push(`${at}: ${id} at y${ext.y}, above a floor of y${floor}`);
+          }
+          const netz = box(flow, "netz")!;
+          const mcp = box(flow, "mcpserver")!;
+          if (spans(netz, mcp)) escapes.push(`${at}: netz ${span(netz)} runs into mcpserver ${span(mcp)}`);
+        }
+      }
+    }
+    expect(escapes).toEqual([]);
+  });
+
+  it("the network boundary is drawn for every provider", () => {
+    // The local variant set it to null, so a local backend silently lost the
+    // one line on the map that says where your machine stops.
+    for (const provider of ["ollama", "anthropic"]) {
+      const boundary = box(flowFor(provider), "z-boundary");
+      expect(boundary, provider).not.toBeNull();
+      const mac = box(flowFor(provider), "z-mac")!;
+      const outside = box(flowFor(provider), "z-outside")!;
+      expect(boundary!.x).toBeGreaterThanOrEqual(mac.x + mac.w);
+      expect(boundary!.x + boundary!.w).toBeLessThanOrEqual(outside.x);
+    }
+  });
+});
