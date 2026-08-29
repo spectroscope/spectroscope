@@ -11,7 +11,7 @@ import { WORKFLOW_LIFECYCLE, phaseNodeId, readWorkflowState, workflowGraph } fro
  *  five declared phases, thirteen agents, occupancy 1/5/1/1/5. `phaseIndex`
  *  is ONE-based in the file — measured, not assumed. */
 function sample(): string {
-  const phases = ["plan", "survey", "consolidate", "deliver", "verify"].map((title, i) => ({
+  const phases = ["scope", "probe", "merge", "draft", "audit"].map((title, i) => ({
     title,
     detail: `what ${title} is for`,
     index: i + 1,
@@ -53,8 +53,8 @@ describe("readWorkflowState", () => {
   it("reads the declared phases and the run's agents", () => {
     const s = readWorkflowState(sample())!;
     expect(s.name).toBe("a run");
-    expect(s.phases.map((p) => p.title)).toEqual(["plan", "survey", "consolidate", "deliver", "verify"]);
-    expect(s.phases[0].detail).toBe("what plan is for");
+    expect(s.phases.map((p) => p.title)).toEqual(["scope", "probe", "merge", "draft", "audit"]);
+    expect(s.phases[0].detail).toBe("what scope is for");
     expect(s.agents).toHaveLength(13);
   });
 
@@ -84,8 +84,8 @@ describe("workflowGraph", () => {
 
   it("captions each rank with the phase's own title and detail", () => {
     const g = workflowGraph(readWorkflowState(sample())!);
-    expect(g.topo.rankCaptions!.get(0)).toEqual({ title: "plan", detail: "what plan is for" });
-    expect(g.topo.rankCaptions!.get(4)?.title).toBe("verify");
+    expect(g.topo.rankCaptions!.get(0)).toEqual({ title: "scope", detail: "what scope is for" });
+    expect(g.topo.rankCaptions!.get(4)?.title).toBe("audit");
   });
 
   it("wires phase N to phase N+1 and nowhere else, solid — the ORDER is declared", () => {

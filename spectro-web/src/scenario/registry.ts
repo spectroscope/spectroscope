@@ -1189,17 +1189,18 @@ const fleetswarm: Dsl = {
 
 /** Card 302: the DECLARED workflow — the demo the fan-out deserved.
  *
- * The shape is measured, not invented: one real 13-agent run declared five
- * phases and filled them 1 / 5 / 1 / 1 / 5, two fan-outs of five with three
- * single agents between them. That recording is not in this repo and will not
- * be — it is tens of megabytes and it is the owner's own material. It loads
+ * ONLY THE SHAPE IS TAKEN FROM THE MEASUREMENT, and the shape is numbers: one
+ * real 13-agent run declared five phases and filled them 1 / 5 / 1 / 1 / 5,
+ * two fan-outs of five with three single agents between them. The words here
+ * are this file's own — the recording's phase list, its subject and its name
+ * are not in this repo and are not going to be. The recording itself never
+ * was: it is tens of megabytes of the owner's own material, and it loads
  * through the folder dialog cards 291 and 297 already taught to take a
- * directory. This scenario carries the SHAPE so the picture has a demo that
- * ships, and nothing else of it.
+ * directory.
  *
  * `phases` is what makes this the declared picture rather than the recovered
  * one: the columns exist before a single event is compiled, so the lens draws
- * them solid and captions them with these words.
+ * the spawns into them solid and captions them with these words.
  */
 const workflowPhases: Dsl = {
   id: "workflow-phases",
@@ -1208,35 +1209,35 @@ const workflowPhases: Dsl = {
     de: "Deklarierter Workflow · 5 Phasen, 13 Agenten",
   },
   prompt: {
-    en: "Research the checkout flow in phases: plan it, survey it five ways, consolidate, deliver, then verify every finding.",
-    de: "Untersuche den Checkout-Flow in Phasen: planen, fünffach untersuchen, zusammenführen, ausliefern, jeden Fund prüfen.",
+    en: "Go over the settings screen in phases: scope it, probe it five ways, merge what comes back, draft the write-up, then audit every claim in it.",
+    de: "Geh den Einstellungs-Screen in Phasen durch: abstecken, fünffach abtasten, zusammenlegen, entwerfen, dann jede Aussage nachprüfen.",
   },
   provider: "ollama",
   phases: [
     {
-      title: { en: "plan", de: "planen" },
+      title: { en: "scope", de: "abstecken" },
       detail: { en: "decide what to look at", de: "festlegen, was betrachtet wird" },
-      agents: ["plan"],
+      agents: ["scope"],
     },
     {
-      title: { en: "survey", de: "untersuchen" },
+      title: { en: "probe", de: "abtasten" },
       detail: { en: "five angles at once", de: "fünf Blickwinkel gleichzeitig" },
-      agents: ["survey-1", "survey-2", "survey-3", "survey-4", "survey-5"],
+      agents: ["probe-1", "probe-2", "probe-3", "probe-4", "probe-5"],
     },
     {
-      title: { en: "consolidate", de: "zusammenführen" },
+      title: { en: "merge", de: "zusammenlegen" },
       detail: { en: "one picture out of five", de: "ein Bild aus fünfen" },
-      agents: ["consolidate"],
+      agents: ["merge"],
     },
     {
-      title: { en: "deliver", de: "ausliefern" },
+      title: { en: "draft", de: "entwerfen" },
       detail: { en: "write it up", de: "aufschreiben" },
-      agents: ["deliver"],
+      agents: ["draft"],
     },
     {
-      title: { en: "verify", de: "prüfen" },
-      detail: { en: "every finding, on its own", de: "jeden Fund einzeln" },
-      agents: ["verify-1", "verify-2", "verify-3", "verify-4", "verify-5"],
+      title: { en: "audit", de: "nachprüfen" },
+      detail: { en: "every claim, on its own", de: "jede Aussage einzeln" },
+      agents: ["audit-1", "audit-2", "audit-3", "audit-4", "audit-5"],
     },
   ],
   steps: [
@@ -1247,79 +1248,93 @@ const workflowPhases: Dsl = {
       },
     },
     {
-      spawn: "plan",
-      label: "plan",
-      task: { en: "plan the pass", de: "plane den Durchgang" },
+      spawn: "scope",
+      label: "scope",
+      task: { en: "scope the pass", de: "stecke den Durchgang ab" },
       steps: [
-        { status: { en: "planning", de: "plane" } },
-        { list: "src/checkout", result: "Form.tsx  Payment.tsx  Address.tsx  errors.ts  track.ts" },
+        { status: { en: "scoping", de: "stecke ab" } },
+        {
+          list: "src/settings",
+          result: "Panel.tsx  Profile.tsx  Notifications.tsx  errors.ts  track.ts",
+        },
         { usage: { in: 9_000, out: 600 } },
-        { say: { en: "five angles to survey", de: "fünf Blickwinkel zu untersuchen" } },
+        { say: { en: "five angles to probe", de: "fünf Blickwinkel zum Abtasten" } },
       ],
     },
     {
       fanout: {
-        label: "survey",
-        tool: "survey",
+        label: "probe",
+        tool: "probe",
         agents: [
           {
-            id: "survey-1",
-            task: { en: "survey the checkout form", de: "untersuche das Checkout-Formular" },
+            id: "probe-1",
+            task: { en: "probe the settings panel", de: "taste das Einstellungs-Panel ab" },
             steps: [
-              { status: { en: "reading the form", de: "lese das Formular" } },
-              { read: "src/checkout/Form.tsx", result: "export function Form() { … }" },
+              { status: { en: "reading the panel", de: "lese das Panel" } },
+              { read: "src/settings/Panel.tsx", result: "export function Panel() { … }" },
               { usage: { in: 21_000, out: 800 } },
               {
                 say: {
-                  en: "survey the checkout form — done",
-                  de: "untersuche das Checkout-Formular — fertig",
+                  en: "probe the settings panel — done",
+                  de: "taste das Einstellungs-Panel ab — fertig",
                 },
               },
             ],
           },
           {
-            id: "survey-2",
-            task: { en: "survey the payment step", de: "untersuche den Zahlungsschritt" },
+            id: "probe-2",
+            task: { en: "probe the profile section", de: "taste den Profil-Abschnitt ab" },
             steps: [
-              { status: { en: "reading the payment step", de: "lese den Zahlungsschritt" } },
-              { read: "src/checkout/Payment.tsx", result: "export function Payment() { … }" },
+              { status: { en: "reading the profile section", de: "lese den Profil-Abschnitt" } },
+              { read: "src/settings/Profile.tsx", result: "export function Profile() { … }" },
               { usage: { in: 21_000, out: 800 } },
               {
-                say: { en: "survey the payment step — done", de: "untersuche den Zahlungsschritt — fertig" },
+                say: {
+                  en: "probe the profile section — done",
+                  de: "taste den Profil-Abschnitt ab — fertig",
+                },
               },
             ],
           },
           {
-            id: "survey-3",
-            task: { en: "survey the address step", de: "untersuche den Adressschritt" },
+            id: "probe-3",
+            task: { en: "probe the notification toggles", de: "taste die Benachrichtigungs-Schalter ab" },
             steps: [
-              { status: { en: "reading the address step", de: "lese den Adressschritt" } },
-              { read: "src/checkout/Address.tsx", result: "export function Address() { … }" },
-              { usage: { in: 21_000, out: 800 } },
-              { say: { en: "survey the address step — done", de: "untersuche den Adressschritt — fertig" } },
-            ],
-          },
-          {
-            id: "survey-4",
-            task: { en: "survey the error states", de: "untersuche die Fehlerzustände" },
-            steps: [
-              { status: { en: "reading the error states", de: "lese die Fehlerzustände" } },
-              { read: "src/checkout/errors.ts", result: "export const ERRORS = { … }" },
-              { usage: { in: 21_000, out: 800 } },
-              { say: { en: "survey the error states — done", de: "untersuche die Fehlerzustände — fertig" } },
-            ],
-          },
-          {
-            id: "survey-5",
-            task: { en: "survey the analytics hooks", de: "untersuche die Analytics-Hooks" },
-            steps: [
-              { status: { en: "reading the hooks", de: "lese die Hooks" } },
-              { read: "src/checkout/track.ts", result: "export function track(step: string) { … }" },
+              { status: { en: "reading the toggles", de: "lese die Schalter" } },
+              {
+                read: "src/settings/Notifications.tsx",
+                result: "export function Notifications() { … }",
+              },
               { usage: { in: 21_000, out: 800 } },
               {
                 say: {
-                  en: "survey the analytics hooks — done",
-                  de: "untersuche die Analytics-Hooks — fertig",
+                  en: "probe the notification toggles — done",
+                  de: "taste die Benachrichtigungs-Schalter ab — fertig",
+                },
+              },
+            ],
+          },
+          {
+            id: "probe-4",
+            task: { en: "probe the error states", de: "taste die Fehlerzustände ab" },
+            steps: [
+              { status: { en: "reading the error states", de: "lese die Fehlerzustände" } },
+              { read: "src/settings/errors.ts", result: "export const ERRORS = { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              { say: { en: "probe the error states — done", de: "taste die Fehlerzustände ab — fertig" } },
+            ],
+          },
+          {
+            id: "probe-5",
+            task: { en: "probe the analytics hooks", de: "taste die Analytics-Hooks ab" },
+            steps: [
+              { status: { en: "reading the hooks", de: "lese die Hooks" } },
+              { read: "src/settings/track.ts", result: "export function track(step: string) { … }" },
+              { usage: { in: 21_000, out: 800 } },
+              {
+                say: {
+                  en: "probe the analytics hooks — done",
+                  de: "taste die Analytics-Hooks ab — fertig",
                 },
               },
             ],
@@ -1328,97 +1343,108 @@ const workflowPhases: Dsl = {
       },
     },
     {
-      spawn: "consolidate",
-      label: "consolidate",
-      task: { en: "consolidate the five surveys", de: "führe die fünf Untersuchungen zusammen" },
+      spawn: "merge",
+      label: "merge",
+      task: { en: "merge the five probes", de: "lege die fünf Abtastungen zusammen" },
       steps: [
-        { status: { en: "consolidating", de: "führe zusammen" } },
-        { write: "docs/checkout/findings.md", result: "Wrote: docs/checkout/findings.md (4102 bytes)" },
+        { status: { en: "merging", de: "lege zusammen" } },
+        { write: "docs/settings/findings.md", result: "Wrote: docs/settings/findings.md (4102 bytes)" },
         { usage: { in: 44_000, out: 2_100 } },
         { say: { en: "one picture, five sources", de: "ein Bild, fünf Quellen" } },
       ],
     },
     {
-      spawn: "deliver",
-      label: "deliver",
-      task: { en: "write the report", de: "schreibe den Bericht" },
+      spawn: "draft",
+      label: "draft",
+      task: { en: "draft the write-up", de: "entwirf die Ausarbeitung" },
       steps: [
-        { status: { en: "writing the report", de: "schreibe den Bericht" } },
-        { write: "docs/checkout/report.md", result: "Wrote: docs/checkout/report.md (6820 bytes)" },
+        { status: { en: "drafting", de: "entwerfe" } },
+        { write: "docs/settings/report.md", result: "Wrote: docs/settings/report.md (6820 bytes)" },
         { usage: { in: 31_000, out: 1_900 } },
-        { say: { en: "report is out", de: "Bericht ist raus" } },
+        { say: { en: "draft is out", de: "Entwurf ist raus" } },
       ],
     },
     {
       fanout: {
-        label: "verify",
-        tool: "verify",
+        label: "audit",
+        tool: "audit",
         agents: [
           {
-            id: "verify-1",
-            task: { en: "verify the form findings", de: "prüfe die Formular-Funde" },
+            id: "audit-1",
+            task: { en: "audit the panel claims", de: "prüfe die Panel-Aussagen nach" },
             steps: [
-              { status: { en: "re-running the form checks", de: "prüfe das Formular erneut" } },
-              { run: "npm test -- checkout/Form", result: "12 passed" },
-              { usage: { in: 12_000, out: 400 } },
-              {
-                say: { en: "verify the form findings — checks out", de: "prüfe die Formular-Funde — stimmt" },
-              },
-            ],
-          },
-          {
-            id: "verify-2",
-            task: { en: "verify the payment findings", de: "prüfe die Zahlungs-Funde" },
-            steps: [
-              { status: { en: "re-running the payment checks", de: "prüfe die Zahlung erneut" } },
-              { run: "npm test -- checkout/Payment", result: "9 passed" },
+              { status: { en: "re-running the panel checks", de: "prüfe das Panel erneut" } },
+              { run: "npm test -- settings/Panel", result: "12 passed" },
               { usage: { in: 12_000, out: 400 } },
               {
                 say: {
-                  en: "verify the payment findings — checks out",
-                  de: "prüfe die Zahlungs-Funde — stimmt",
+                  en: "audit the panel claims — checks out",
+                  de: "prüfe die Panel-Aussagen nach — stimmt",
                 },
               },
             ],
           },
           {
-            id: "verify-3",
-            task: { en: "verify the address findings", de: "prüfe die Adress-Funde" },
+            id: "audit-2",
+            task: { en: "audit the profile claims", de: "prüfe die Profil-Aussagen nach" },
             steps: [
-              { status: { en: "re-running the address checks", de: "prüfe die Adresse erneut" } },
-              { run: "npm test -- checkout/Address", result: "7 passed" },
+              { status: { en: "re-running the profile checks", de: "prüfe das Profil erneut" } },
+              { run: "npm test -- settings/Profile", result: "9 passed" },
               { usage: { in: 12_000, out: 400 } },
               {
                 say: {
-                  en: "verify the address findings — checks out",
-                  de: "prüfe die Adress-Funde — stimmt",
+                  en: "audit the profile claims — checks out",
+                  de: "prüfe die Profil-Aussagen nach — stimmt",
                 },
               },
             ],
           },
           {
-            id: "verify-4",
-            task: { en: "verify the error findings", de: "prüfe die Fehler-Funde" },
+            id: "audit-3",
+            task: { en: "audit the notification claims", de: "prüfe die Benachrichtigungs-Aussagen nach" },
+            steps: [
+              {
+                status: {
+                  en: "re-running the notification checks",
+                  de: "prüfe die Benachrichtigungen erneut",
+                },
+              },
+              { run: "npm test -- settings/Notifications", result: "7 passed" },
+              { usage: { in: 12_000, out: 400 } },
+              {
+                say: {
+                  en: "audit the notification claims — checks out",
+                  de: "prüfe die Benachrichtigungs-Aussagen nach — stimmt",
+                },
+              },
+            ],
+          },
+          {
+            id: "audit-4",
+            task: { en: "audit the error claims", de: "prüfe die Fehler-Aussagen nach" },
             steps: [
               { status: { en: "re-running the error checks", de: "prüfe die Fehler erneut" } },
-              { run: "npm test -- checkout/errors", result: "5 passed" },
+              { run: "npm test -- settings/errors", result: "5 passed" },
               { usage: { in: 12_000, out: 400 } },
               {
-                say: { en: "verify the error findings — checks out", de: "prüfe die Fehler-Funde — stimmt" },
+                say: {
+                  en: "audit the error claims — checks out",
+                  de: "prüfe die Fehler-Aussagen nach — stimmt",
+                },
               },
             ],
           },
           {
-            id: "verify-5",
-            task: { en: "verify the analytics findings", de: "prüfe die Analytics-Funde" },
+            id: "audit-5",
+            task: { en: "audit the analytics claims", de: "prüfe die Analytics-Aussagen nach" },
             steps: [
               { status: { en: "re-running the analytics checks", de: "prüfe Analytics erneut" } },
-              { run: "npm test -- checkout/track", result: "4 passed" },
+              { run: "npm test -- settings/track", result: "4 passed" },
               { usage: { in: 12_000, out: 400 } },
               {
                 say: {
-                  en: "verify the analytics findings — checks out",
-                  de: "prüfe die Analytics-Funde — stimmt",
+                  en: "audit the analytics claims — checks out",
+                  de: "prüfe die Analytics-Aussagen nach — stimmt",
                 },
               },
             ],
@@ -1428,8 +1454,8 @@ const workflowPhases: Dsl = {
     },
     {
       say: {
-        en: "Five phases done: 13 agents, every finding checked on its own.",
-        de: "Fünf Phasen fertig: 13 Agenten, jeder Fund einzeln geprüft.",
+        en: "Five phases done: 13 agents, every claim checked on its own.",
+        de: "Fünf Phasen fertig: 13 Agenten, jede Aussage einzeln geprüft.",
       },
     },
   ],

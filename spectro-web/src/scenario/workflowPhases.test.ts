@@ -1,9 +1,10 @@
-// Card 302: the shipped demo of a declared workflow — the measured shape of a
-// real 13-agent run (1 / 5 / 1 / 1 / 5, two fan-outs of five), rebuilt from
-// nothing but its numbers. The recording itself is not in this repo and never
-// will be: it is ~29 MB and carries the owner's own material, and it loads
-// through the folder dialog cards 291 and 297 already taught to take a
-// directory.
+// Card 302: the shipped demo of a declared workflow — the measured SHAPE of a
+// real 13-agent run (1 / 5 / 1 / 1 / 5, two fan-outs of five) and nothing else
+// of it. The shape is numbers; the scenario's phase words, its subject and its
+// name are the registry's own invention, not the recording's. The recording
+// itself is not in this repo and never will be: it is the owner's own
+// material, and it loads through the folder dialog cards 291 and 297 already
+// taught to take a directory.
 
 import { describe, expect, it } from "vitest";
 import { SCENARIOS } from "./registry";
