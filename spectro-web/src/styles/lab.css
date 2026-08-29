@@ -8,6 +8,7 @@
   min-height: 0;
   --lab-chat-w: 340px;
   --lab-trace-w: 300px;
+  --lab-ctx-w: 320px;
 }
 .lab-row .chat {
   min-width: 0;
@@ -743,4 +744,85 @@
   letter-spacing: var(--track-eyebrow);
   padding: 2px var(--sp-2);
   text-transform: uppercase;
+}
+
+/* ---- context dock (card 300) ---- */
+.lab-ctx {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--lab-ctx-w);
+  min-width: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+.lab-ctx-head {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.lab-ctx-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-4);
+}
+.lab-ctx-hint,
+.lab-ctx-empty,
+.lab-ctx-note {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lab-ctx-note {
+  margin: var(--sp-3) 0 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+.lab-ctx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.lab-ctx-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+}
+.lab-ctx-tag {
+  font-size: var(--fs-11);
+}
+.lab-ctx-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-ctx-turns {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+/* The bar is a LINE, per the house rule that colour rides on lines only. */
+.lab-ctx-bar {
+  margin-top: var(--sp-1);
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.lab-ctx-bar-fill {
+  display: block;
+  height: 100%;
+}
+/* A bar with no window behind it reads as a comparison, not as a gauge. */
+.lab-ctx-bar--rel .lab-ctx-bar-fill {
+  opacity: 0.55;
+}
+.lab-ctx-share {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
 }

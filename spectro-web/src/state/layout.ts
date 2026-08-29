@@ -48,10 +48,17 @@ export interface LayoutState {
   chatW: number;
   /** Lab JSONL pane width in px. */
   traceW: number;
+  /** Lab context dock width in px (card 300). */
+  ctxW: number;
   /** Lab chat pane visible (collapsed by default — the stepper gets the room). */
   chatOpen: boolean;
   /** Lab JSONL pane visible (collapsed by default). */
   traceOpen: boolean;
+  /** Lab context dock visible. Collapsed by default, and deliberately NOT a
+   *  member of the workspace dock (panels/columnModel): this is a fourth flex
+   *  child of the lab row with a resizer of its own, so a dock nobody opened
+   *  costs one boolean and no store. */
+  ctxOpen: boolean;
   /** Chat tab's right-docked panel visible. */
   rightPanelOpen: boolean;
   /** Chat tab's right panel width in px. */
@@ -94,8 +101,10 @@ export const DEFAULT_LAYOUT: LayoutState = {
   sidebarW: 240,
   chatW: 340,
   traceW: 300,
+  ctxW: 320,
   chatOpen: false,
   traceOpen: false,
+  ctxOpen: false,
   rightPanelOpen: false,
   // Card 228: the workspace is a grid of cards, and 620px is what opens it on
   // two columns (the grid's column minimum is 240px). The stylesheet caps the
@@ -223,9 +232,9 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
 /** The widths a blob must carry as FINITE NUMBERS to be trusted: a stored
  *  `rightPanelW: "abc"` would ride the merge into a CSS custom property and
  *  wedge the layout on every load, with nothing left for a reload to heal. */
-const WIDTH_FIELDS = ["sidebarW", "chatW", "traceW", "rightPanelW", "imagesW"] as const;
+const WIDTH_FIELDS = ["sidebarW", "chatW", "traceW", "ctxW", "rightPanelW", "imagesW"] as const;
 /** The flags a blob must carry as booleans, same argument. */
-const FLAG_FIELDS = ["chatOpen", "traceOpen", "rightPanelOpen"] as const;
+const FLAG_FIELDS = ["chatOpen", "traceOpen", "ctxOpen", "rightPanelOpen"] as const;
 
 /**
  * Reads one stored blob, healed or replaced (card 241 recovery).
@@ -336,8 +345,10 @@ function set(patch: Partial<LayoutState>): void {
     next.sidebarW === state.sidebarW &&
     next.chatW === state.chatW &&
     next.traceW === state.traceW &&
+    next.ctxW === state.ctxW &&
     next.chatOpen === state.chatOpen &&
     next.traceOpen === state.traceOpen &&
+    next.ctxOpen === state.ctxOpen &&
     next.rightPanelOpen === state.rightPanelOpen &&
     next.rightPanelW === state.rightPanelW &&
     next.imagesW === state.imagesW &&
@@ -376,6 +387,13 @@ export function toggleChat(): void {
 }
 export function toggleTrace(): void {
   set({ traceOpen: !state.traceOpen });
+}
+/** The lab's context dock: same bounds as the JSONL strip beside it. */
+export function setCtxW(w: number): void {
+  set({ ctxW: clampW(w, 200, 1200) });
+}
+export function toggleCtx(): void {
+  set({ ctxOpen: !state.ctxOpen });
 }
 export function setRightPanelW(w: number): void {
   // The ceiling went 720 → 1200 with the grid (card 228): three 240px columns

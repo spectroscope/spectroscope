@@ -43,7 +43,15 @@ export interface AgentStream {
 export interface Detail {
   prompt: string;
   ctxParts: CtxPart[] | null;
-  ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
+  ctxTotals: {
+    messages: number;
+    estimatedTokens: number;
+    threshold: number;
+    /** Which fact produced `threshold` (card 300). Absent when the frame said
+     *  nothing — which is not the same as "fallback", and the difference is
+     *  exactly what a percentage may honestly be built on. */
+    thresholdSource?: "override" | "window" | "fallback";
+  } | null;
   /** in-flight tool per agent (set on tool_call, cleared on tool_result). */
   tool: Record<string, { name: string; input: unknown } | undefined>;
   /** rolling last-N chars of the reasoning / answer streams, per agent. */
@@ -183,7 +191,12 @@ export function deriveDetail(applied: RunEvent[]): Detail {
       case "context_info":
         if (e.agentId === d.root) {
           d.ctxParts = e.parts;
-          d.ctxTotals = { messages: e.messages, estimatedTokens: e.estimatedTokens, threshold: e.threshold };
+          d.ctxTotals = {
+            messages: e.messages,
+            estimatedTokens: e.estimatedTokens,
+            threshold: e.threshold,
+            ...(e.thresholdSource === undefined ? {} : { thresholdSource: e.thresholdSource }),
+          };
         }
         break;
       case "thinking_delta":

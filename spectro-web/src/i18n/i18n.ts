@@ -3897,6 +3897,50 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "vergangen / gesamt, aus den Zeitstempeln des Laufs",
     en: "elapsed / total, from the run's own timestamps",
   },
+
+  // Card 300: the lab's context dock. Every line here is written so a reader
+  // can tell a MEASUREMENT from a published number — the panel's whole point.
+  "lab.ctx.title": { de: "Kontext-Spitze", en: "context peak" },
+  "lab.ctx.aria": { de: "Kontext-Spitze je Agent", en: "Context peak per agent" },
+  "lab.ctx.hint": {
+    de: "Der größte Kontext, den jeder Agent je gesendet hat — aus den usage-Ereignissen des Laufs, Cache-Spalten eingerechnet.",
+    en: "The largest context each agent ever sent — from the run's own usage events, cache columns included.",
+  },
+  "lab.ctx.empty": {
+    de: "Noch kein usage-Ereignis. Sobald ein Agent etwas an ein Modell schickt, steht seine Spitze hier.",
+    en: "No usage event yet. As soon as an agent sends something to a model, its peak appears here.",
+  },
+  "lab.ctx.turns": { de: "{n} Züge", en: "{n} turns" },
+  "lab.ctx.turnsOne": { de: "1 Zug", en: "1 turn" },
+  /* The share line of one row. The root gets the first form, a child the
+     second — and the second has no percent sign anywhere in it. */
+  "lab.ctx.share": { de: "{peak} von {limit} · {pct} %", en: "{peak} of {limit} · {pct}%" },
+  "lab.ctx.shareNoLimit": { de: "{peak} · ohne Bezugsgröße", en: "{peak} · against nothing" },
+  "lab.ctx.barRelTitle": {
+    de: "Balken relativ zur größten Spitze auf dieser Liste — kein Anteil an einem Fenster",
+    en: "bar relative to the largest peak on this list — not a share of any window",
+  },
+  /* The five notes contextPeaks can raise, one sentence each. */
+  "lab.ctx.note.measured": {
+    de: "Bezugsgröße: {limit} — die Schwelle, die dieser Lauf selbst gemeldet hat.",
+    en: "Divisor: {limit} — the threshold this run reported itself.",
+  },
+  "lab.ctx.note.fellBack": {
+    de: "Bezugsgröße: {limit} — hier kompaktiert dieser Lauf. Die Schwelle ist allerdings ein Rückfallwert: über das Fenster des Backends hat der Harness nichts erfahren.",
+    en: "Divisor: {limit} — this is where the run compacts. The threshold is a fall-back, though: the harness learned nothing about the window this backend serves.",
+  },
+  "lab.ctx.note.published": {
+    de: "Bezugsgröße: {limit} — ein veröffentlichtes Limit für {model}, keine Messung.",
+    en: "Divisor: {limit} — a published limit for {model}, not a measurement.",
+  },
+  "lab.ctx.note.unknown": {
+    de: "Bezugsgröße: {limit} — ein Platzhalter. Weder hat der Lauf eine Schwelle gemeldet, noch ist für dieses Modell ein Limit hinterlegt.",
+    en: "Divisor: {limit} — a stand-in. The run reported no threshold and no limit is on file for this model.",
+  },
+  "lab.ctx.note.childrenNoWindow": {
+    de: "Kind-Agenten zeigen keinen Prozentwert: sie laufen ohne Introspektion und melden keine Schwelle, also gibt es nichts, wodurch man ehrlich teilen könnte.",
+    en: "Children show no percentage: they run without introspection and report no threshold, so there is nothing to divide by honestly.",
+  },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.
