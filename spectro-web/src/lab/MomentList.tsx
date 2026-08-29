@@ -58,9 +58,7 @@ function Row(props: {
           seek(moment.cursor);
         }}
       >
-        <span className="lab-moment-step mono tabular">
-          {t(lang, "lab.moments.step", { n: moment.step })}
-        </span>
+        <span className="lab-moment-step mono tabular">{t(lang, "lab.stepN", { n: moment.step })}</span>
         <span className={`lab-moment-kind lab-moment-kind--${moment.mark.kind}`}>
           {t(lang, MOMENT_KIND_KEY[moment.mark.kind])}
         </span>

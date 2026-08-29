@@ -4076,10 +4076,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Paths are shortened against {root}.",
   },
 
-  // Card 309B: the moment a file was first touched. The step is the transport's
-  // own unit, so the two surfaces agree; the clock appears only where the
-  // recording carried timestamps.
-  "lab.files.step": { de: "Schritt {n}", en: "step {n}" },
+  // Card 309: the coarse step, named the same way wherever it is printed. ONE
+  // entry, because the file rows and the moments rows say the same thing about
+  // the same unit, and two entries holding one sentence are two sentences
+  // waiting to drift.
+  "lab.stepN": { de: "Schritt {n}", en: "step {n}" },
   "lab.files.order": {
     de: "In der Reihenfolge der ersten Berührung.",
     en: "In the order the run first touched them.",
@@ -4094,13 +4095,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "What happened in this run, in order. A click jumps there.",
   },
   "lab.moments.empty": {
-    de: "Dieser Lauf trägt keinen dieser Momente — kein Zug, kein Gate, kein Fehler, kein Ende. Das ist eine Messung, kein leeres Panel.",
-    en: "This run carries none of these moments — no turn, no gate, no error, no ending. That is a measurement, not an empty panel.",
+    de: "Dieser Lauf trägt keinen dieser Momente: keinen Zug, kein Gate, keinen Fehler, kein Ende.",
+    en: "This run carries none of these moments: no turn, no gate, no error, no ending.",
   },
   "lab.moments.count": { de: "{n} Momente", en: "{n} moments" },
   "lab.moments.countOne": { de: "1 Moment", en: "1 moment" },
   "lab.moments.open": { de: "Zu diesem Moment springen", en: "Jump to this moment" },
-  "lab.moments.step": { de: "Schritt {n}", en: "step {n}" },
 
   // The kind of a moment, in words. The wire name (`no_progress`) is a field
   // name, never a line a person reads.

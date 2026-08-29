@@ -584,7 +584,7 @@ describe("the moments panel", () => {
     // 1, and the step that SHOWS it is the boundary past it, not 1.
     const steps = momentsOf(run).map((m) => m.step);
     expect(steps).not.toContain(0);
-    for (const step of steps) expect(html).toContain(t(lang, "lab.moments.step", { n: step }));
+    for (const step of steps) expect(html).toContain(t(lang, "lab.stepN", { n: step }));
   });
 
   it("shows a time only where the recording carried one", () => {
@@ -630,7 +630,7 @@ describe("a file row says when the run first touched it", () => {
   it("prints the step of the first touch, and the elapsed time beside it", () => {
     const html = dock("files", touched);
     const moments = touchMoments(touched, fileFootprint(touched).touches);
-    for (const m of moments) expect(html).toContain(t(lang, "lab.files.step", { n: m.step }));
+    for (const m of moments) expect(html).toContain(t(lang, "lab.stepN", { n: m.step }));
     // 90 seconds after the run's first stamp.
     expect(html).toContain("1:30");
   });
@@ -647,7 +647,7 @@ describe("a file row says when the run first touched it", () => {
       return rest as unknown as RunEvent;
     });
     const html = dock("files", stampless);
-    expect(html).toContain(t(lang, "lab.files.step", { n: 2 }));
+    expect(html).toContain(t(lang, "lab.stepN", { n: 2 }));
     // Not "no 1:30" — no clock at all. A 0:00 is the fabrication this guards.
     expect(html).not.toContain("0:00");
     expect(html).not.toContain("1:30");

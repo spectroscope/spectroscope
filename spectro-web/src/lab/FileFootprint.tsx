@@ -89,7 +89,7 @@ function Row(props: {
         </span>
         <span className="lab-files-sides">
           <span className="lab-files-when mono tabular">
-            {t(lang, "lab.files.step", { n: moment.step })}
+            {t(lang, "lab.stepN", { n: moment.step })}
             {/* Nothing at all where the run kept no clock: a 0:00 here would
                 say when a file was touched, which no recording measured. */}
             {moment.elapsedMs === null ? "" : ` · ${clockLabel(moment.elapsedMs)}`}
