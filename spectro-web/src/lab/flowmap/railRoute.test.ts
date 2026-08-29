@@ -218,20 +218,20 @@ describe("the lanes of the rails that converge on ONE station", () => {
     });
   }
 
-  test("the seat beats the id hash, which is what put four of them on one line", () => {
+  test("the seat beats the id hash, which cannot see the rails arriving beside it", () => {
     // Measured on this fixture: with no lane at all the nine rails share five
     // trunks at every station, and the id hash leaves os-shell exactly as bad.
-    // The hash cannot do better by design — it knows nothing about the other
-    // eight rails arriving at the same handle.
+    // The hash cannot do better by design — the lane it picks for one rail is
+    // computed without the other eight in view.
     expect(worstStack("os-shell", () => 0)).toBe(2);
     expect(worstStack("os-shell", (r) => railLane(r.id))).toBe(2);
   });
 
-  test("main holds the middle, and a seat's lane does not move when later seats fill", () => {
+  test("main holds the middle; the seats step outward around it", () => {
     expect(stationLane(null)).toBe(0);
-    const before = [0, 1, 2].map(stationLane);
-    const after = [0, 1, 2, 3, 4, 5, 6, 7].map(stationLane).slice(0, 3);
-    expect(after).toEqual(before);
+    expect([0, 1, 2, 3].map((seat) => stationLane(seat))).toEqual([-5, 5, -10, 10]);
+    // A rail with no seat to speak of takes the middle rather than an edge.
+    expect(stationLane(-1)).toBe(0);
   });
 
   test("twelve seats plus main are thirteen distinct lanes, and none leaves the gutter", () => {
