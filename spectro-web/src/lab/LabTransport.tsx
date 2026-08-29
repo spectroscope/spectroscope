@@ -1,26 +1,57 @@
 // The Lab's replay transport (edu port): a floating "now" band that names the
 // current station, the map, then a scrub bar below it — reset / prev / play /
-// next plus a slider that walks the COARSE-step boundaries and a step counter.
-// It replaces the old Step toolbar; grain + tempo move behind a small "advanced"
-// disclosure, since a live run rarely needs them. Keyboard: space or → steps,
-// ← steps back, f toggles flow, r resets (documented in the ? keymap). The map
-// is passed as children so the band sits above it and the transport below.
+// next / end plus a slider that walks the COARSE-step boundaries and a step
+// counter. It replaces the old Step toolbar; grain and the free tempo slider
+// sit behind a small "advanced" disclosure, since a live run rarely needs them.
+// Keyboard: space or → steps, ← steps back, f toggles flow, r resets
+// (documented in the ? keymap). The map is passed as children so the band sits
+// above it and the transport below.
+//
+// Card 299: the bar answered "where am I" three ways and "where is the
+// interesting part" not at all. Over several hundred coarse steps that is the
+// only question a presenter has. So the bar now carries CHAPTER TICKS (one per
+// thing the run did that is worth stopping at, each one a control that seeks
+// there), a wall clock beside the step counter, a jump to the end, and five
+// speed pills with a real multiplier vocabulary instead of a bare "0.8×/s"
+// with nothing to compare it to. Every reading behind them is pure and lives
+// in state/stepper.ts; this file only draws them.
+//
+// The ticks sit in a row of their OWN, under the range input, and are thinned
+// to a floor. Drawn over the slider — the first build — the 61 ticks a plain
+// 60-turn run produces formed one unbroken row of 11px hit boxes and the scrub
+// bar could no longer be dragged at all.
+//
+// The thinning ranks by KIND before position (stepper.ts, MARK_RANK). Its
+// first build compared percentages only, and on a 60-turn run carrying one
+// error it kept thirty turn boundaries and dropped the error — the exact
+// opposite of what the ticks are for.
 
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import {
+  MARK_MIN_GAP_PCT,
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
+  SPEED_FACTORS,
+  chapterMarks,
+  clockLabel,
+  endSeekTarget,
+  intervalForFactor,
+  markPositions,
   reset,
+  runClock,
   seek,
   setGrain,
   setMode,
   setSpeed,
+  speedFactorOf,
   step,
   stepBack,
   stepBoundaries,
+  thinMarks,
   useStepper,
 } from "../state/stepper";
+import { chapterLabel } from "./chapterLabel";
 import { sceneNow } from "./sceneNow";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -67,6 +98,21 @@ export function LabTransport(props: {
     if (flowing) setMode("step"); // scrubbing pauses auto-play
     seek(boundaries[Math.max(0, Math.min(maxIndex, i))]);
   };
+  const jumpToEnd = (): void => {
+    if (flowing) setMode("step");
+    // The destination is a reading, not a literal — see endSeekTarget, which is
+    // pinned against the last boundary the slider itself walks to.
+    seek(endSeekTarget(all));
+  };
+
+  // The chapters, placed on the very boundaries the slider walks. A live run
+  // grows, so both are read from `all` on every render rather than cached. The
+  // thinning is not cosmetic: a 60-turn run draws 61 ticks 1.65% apart, and
+  // ticks that touch cannot be aimed at individually.
+  const marks = thinMarks(markPositions(chapterMarks(all), boundaries), MARK_MIN_GAP_PCT);
+  // The wall clock, or null when this recording never carried one.
+  const clock = runClock(all, cursor);
+  const factor = speedFactorOf(st.intervalMs);
 
   // Keyboard transport — the Lab reads like the step controls. Guarded while
   // typing; the full list lives in the ? keymap. Tab-gated by this mount.
@@ -156,21 +202,81 @@ export function LabTransport(props: {
           >
             ›
           </button>
+          <button
+            type="button"
+            onClick={jumpToEnd}
+            disabled={atEnd}
+            title={t(lang, "lab.jumpEnd")}
+            aria-label={t(lang, "lab.jumpEnd")}
+          >
+            ⇥
+          </button>
         </div>
         <div className="lab-scrub">
-          <input
-            type="range"
-            min={0}
-            max={maxIndex}
-            step={1}
-            value={stepIndex}
-            disabled={flowing}
-            aria-label={de ? "replay-position" : "replay position"}
-            onChange={(e) => scrubTo(Number(e.target.value))}
-          />
+          <div className="lab-scrub-track">
+            <input
+              type="range"
+              min={0}
+              max={maxIndex}
+              step={1}
+              value={stepIndex}
+              disabled={flowing}
+              aria-label={de ? "replay-position" : "replay position"}
+              onChange={(e) => scrubTo(Number(e.target.value))}
+            />
+            {marks.length > 0 && (
+              <div className="lab-marks" role="group" aria-label={t(lang, "lab.marksAria")}>
+                {marks.map((m, i) => {
+                  const line = chapterLabel(m.mark, lang);
+                  return (
+                    <button
+                      key={`${m.mark.at}-${i}`}
+                      type="button"
+                      title={line}
+                      aria-label={line}
+                      // A pointer shortcut to a boundary the slider itself
+                      // reaches with an arrow key. Tabbable, a long run would
+                      // wedge dozens of stops between the slider and the speed
+                      // pills with no way past them; the tick stays in the
+                      // accessibility tree, out of the tab order.
+                      tabIndex={-1}
+                      className={`lab-mark lab-mark--${m.mark.kind}`}
+                      style={{ left: `${m.pct}%` }}
+                      onClick={() => scrubTo(m.index)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <span className="lab-counter mono tabular">
             {(de ? "schritt " : "step ") + stepIndex + " / " + maxIndex}
           </span>
+          {/* Coarse steps are not time. The clock appears only where the
+              recording carries one — see runClock. */}
+          {clock !== null && (
+            <span className="lab-clock mono tabular" title={t(lang, "lab.clockTitle")}>
+              {clockLabel(clock.elapsedMs) + " / " + clockLabel(clock.totalMs)}
+            </span>
+          )}
+        </div>
+        <div className="lab-speed-pills" role="radiogroup" aria-label={t(lang, "lab.speedAria")}>
+          {SPEED_FACTORS.map((f) => {
+            const ms = intervalForFactor(f);
+            return (
+              <button
+                key={f}
+                type="button"
+                role="radio"
+                title={t(lang, "lab.speedPillTitle", { f: String(f), ms })}
+                aria-checked={factor === f}
+                className={`lab-speed-pill${factor === f ? " lab-speed-pill--on" : ""}`}
+                onClick={() => setSpeed(ms)}
+              >
+                {`${f}×`}
+              </button>
+            );
+          })}
         </div>
         <details className="lab-advanced">
           <summary title={de ? "grain + tempo" : "grain + tempo"}>{de ? "mehr" : "more"}</summary>

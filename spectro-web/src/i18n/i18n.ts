@@ -3831,6 +3831,72 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Immer drei Reihen, egal wie viele Kinder laufen",
     en: "Always three rows, however many children are running",
   },
+
+  // Card 299: the chapter marks on the replay scrub bar, and the transport
+  // controls beside them. One line per fact the wire already carries — the key
+  // is chosen in state/stepper.ts, the words live here, and lab/chapterLabel.ts
+  // is the only place the two meet.
+  "lab.mark.turn": { de: "Zug {n} beginnt", en: "turn {n} starts" },
+  "lab.mark.spawn": { de: "Kind-Agent {id} beginnt", en: "child agent {id} starts" },
+  "lab.mark.compaction": {
+    de: "Verlauf kompaktiert · {n} Züge zusammengefasst",
+    en: "history compacted · {n} turns folded away",
+  },
+  "lab.mark.gate": { de: "das Gate hat {name} angehalten", en: "the gate stopped {name}" },
+  "lab.mark.denied": { de: "am Gate abgelehnt", en: "refused at the gate" },
+  // One sentence per detector, for the reason info.noProgress has one: the three
+  // nets do not count the same thing, so a shared template would be wrong for at
+  // least one of them.
+  "lab.mark.noProgress.identical_writes": {
+    de: "kein Fortschritt · dieselben Bytes stehen schon unter {n} früheren Pfaden",
+    en: "no progress · the same bytes already sit under {n} earlier paths",
+  },
+  "lab.mark.noProgress.repeated_failure": {
+    de: "kein Fortschritt · derselbe Aufruf ist {n} Mal an unveränderter Eingabe gescheitert",
+    en: "no progress · the same call failed {n} times on unchanged input",
+  },
+  "lab.mark.noProgress.stalled_plan": {
+    de: "kein Fortschritt · der Plan hat sich seit {n} Zügen nicht bewegt",
+    en: "no progress · the plan has not moved for {n} turns",
+  },
+  "lab.mark.noProgress.other": {
+    de: "kein Fortschritt · {detector} ({n}×)",
+    en: "no progress · {detector} ({n}×)",
+  },
+  // Careful with the actor: CARRY_ON also arrives when NOBODY answered, so a
+  // line saying somebody told the run to go on would be false half the time.
+  "lab.mark.intervention.CARRY_ON": {
+    de: "der Wächter hat gefragt, der Lauf ging weiter",
+    en: "the guard asked, and the run carried on",
+  },
+  "lab.mark.intervention.CHANGE_COURSE": {
+    de: "am Wächter Kurs geändert",
+    en: "course changed at the guard",
+  },
+  "lab.mark.intervention.END": {
+    de: "der Lauf wurde hier beendet",
+    en: "the run was ended here",
+  },
+  "lab.mark.intervention.other": {
+    de: "am Wächter: {intervention}",
+    en: "at the guard: {intervention}",
+  },
+  "lab.mark.question": {
+    de: "der Lauf hat angehalten und gefragt ({n})",
+    en: "the run stopped and asked ({n})",
+  },
+  "lab.mark.skill": { de: "Skill geladen · {name}", en: "skill loaded · {name}" },
+  "lab.mark.skill.unnamed": { de: "ein Skill wurde geladen", en: "a skill was loaded" },
+  "lab.mark.error": { de: "Fehler · {message}", en: "error · {message}" },
+  "lab.mark.end": { de: "der Lauf ist zu Ende · {reason}", en: "the run ended · {reason}" },
+  "lab.marksAria": { de: "Kapitel des Laufs", en: "the run's chapters" },
+  "lab.jumpEnd": { de: "Ans Ende springen", en: "Jump to the end" },
+  "lab.speedAria": { de: "Abspiel-Tempo", en: "Playback speed" },
+  "lab.speedPillTitle": { de: "{f}× · {ms} ms pro Schritt", en: "{f}× · {ms} ms per step" },
+  "lab.clockTitle": {
+    de: "vergangen / gesamt, aus den Zeitstempeln des Laufs",
+    en: "elapsed / total, from the run's own timestamps",
+  },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

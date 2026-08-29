@@ -538,6 +538,140 @@
   color: var(--text-dim);
   white-space: nowrap;
 }
+
+/* Card 299: the chapter ticks, the clock and the speed pills.
+
+   The track is a COLUMN: the range input on top, the tick row under it. The
+   ticks used to be absolutely positioned across the input itself, each an 11px
+   hit box with pointer-events: auto — and a plain 60-turn run draws 61 of them
+   1.65% apart (9.9px on a 600px bar), so they touched and the slider beneath
+   them could not be dragged at all. A row of its own cannot take the pointer
+   from the slider however many ticks it ends up carrying; the density floor in
+   stepper.ts (MARK_MIN_GAP_PCT) keeps the ticks apart from each other.
+
+   The track carries NO position of its own, and that is load-bearing rather
+   than tidiness. A tick is `position: absolute; top: 0; bottom: 0`, so it
+   resolves against the nearest POSITIONED ancestor. While the track was still
+   `position: relative`, deleting the one `position: relative` from .lab-marks
+   put every tick back across the input: measured in a browser on this very
+   stylesheet, ticks 30px tall at y 42–72 over an input at y 44–60, 16px of
+   overlap, and elementFromPoint above the slider returning the tick instead of
+   the input. Now that the track is a flex column it needs no containing block,
+   so that shape cannot be built at all. Dropping the declaration moved nothing:
+   input y 44–60, tick row y 63–72, ticks at x 452/545/638/732 either way.
+   scrubStaysDraggable.drift.test.ts holds both halves.
+
+   Colour rides on 1px lines only, out of the event-type vocabulary in
+   tokens.css, so all three designs get it from their own ramps. */
+.lab-scrub-track {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.lab-scrub-track input[type="range"] {
+  flex: none;
+  width: 100%;
+}
+/* The row spans the track BOX, not the thumb's travel. A native range thumb is
+   inset by half its own width at each end, so a tick at 0% or 100% sits a few
+   pixels outside the thumb's reachable centre. The offset is largest at the two
+   ends and zero in the middle, and it is left uncorrected on purpose: the
+   correction would be half a thumb width, and nobody here has measured what
+   that is in each browser the app ships to. */
+.lab-marks {
+  /* The ticks' containing block. Nothing above this row is positioned any
+     more, so taking this away does not move a tick a little — it lets every
+     one of them span the page. */
+  position: relative;
+  height: 9px;
+  margin-top: 1px;
+}
+.lab-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  margin-left: -5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.lab-mark::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--tick, var(--text-faint));
+  opacity: 0.75;
+  transition: opacity var(--t-fast), transform var(--t-fast);
+}
+.lab-mark:hover::before,
+.lab-mark:focus-visible::before {
+  opacity: 1;
+  transform: scaleX(3);
+}
+.lab-mark--turn,
+.lab-mark--end {
+  --tick: var(--ev-lifecycle);
+}
+.lab-mark--spawn {
+  --tick: var(--ev-subagent);
+}
+.lab-mark--gate,
+.lab-mark--denied {
+  --tick: var(--ev-gate);
+}
+.lab-mark--error {
+  --tick: var(--error);
+}
+.lab-mark--no_progress,
+.lab-mark--intervention {
+  --tick: var(--warn);
+}
+.lab-mark--question {
+  --tick: var(--ev-pending);
+}
+.lab-mark--skill {
+  --tick: var(--ev-tool);
+}
+.lab-clock {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.lab-speed-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  flex: none;
+}
+.lab-speed-pill {
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.lab-speed-pill:hover {
+  color: var(--text-dim);
+}
+.lab-speed-pill--on {
+  background: var(--surface-3);
+  color: var(--text);
+}
 .lab-advanced { flex: none; }
 .lab-advanced > summary {
   list-style: none;

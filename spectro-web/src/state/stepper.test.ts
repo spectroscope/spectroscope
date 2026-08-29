@@ -125,8 +125,11 @@ describe("stepper", () => {
     expect(__getState().intervalMs).toBe(120);
     setSpeed(5); // too fast → clamped
     expect(__getState().intervalMs).toBe(60);
+    // Card 299 widened the slow bound from 2000 to 5000. The old number was not
+    // relaxed, it was REPLACED: 5000 is what 0.25x of the 1250 ms default costs,
+    // and chapterMarks.test.ts pins that derivation from the other side.
     setSpeed(99999); // too slow → clamped
-    expect(__getState().intervalMs).toBe(2000);
+    expect(__getState().intervalMs).toBe(5000);
   });
 
   it("folds the System-Map scene alongside the Petri marking", () => {
