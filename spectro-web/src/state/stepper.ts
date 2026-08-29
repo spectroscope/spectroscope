@@ -439,9 +439,35 @@ export interface RunClock {
 }
 
 /** The event's timestamp, or null when it carries none a clock can read. */
-function timestampOf(e: RunEvent): number | null {
-  const ts = (e as { ts?: unknown }).ts;
+function timestampOf(e: RunEvent | undefined): number | null {
+  const ts = (e as { ts?: unknown } | undefined)?.ts;
   return typeof ts === "number" && Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
+/**
+ * How far into the run ONE event stands, in wall clock, or null when the
+ * recording carries no clock to measure it against.
+ *
+ * Card 309, and the reason it is here rather than in either caller: the file
+ * rows and the moments rows both print this, and `runClock` above already owns
+ * the reading of the wire's optional `ts`. A third and fourth copy of "what
+ * counts as a readable timestamp" is how two panels end up disagreeing about
+ * whether a run had a clock at all.
+ *
+ * Null is the answer, never zero: a "0:00" on a stampless import is a claim
+ * about when something happened that nothing measured.
+ *
+ * @param events the stream `at` indexes into — its FIRST event is the anchor
+ * @param at the event to measure
+ * @return milliseconds since the run's first stamped event, clamped at zero
+ *         (a session file may carry stamps out of order, and a negative elapsed
+ *         reads as a broken clock rather than as the disordered recording it
+ *         is), or null when either end carries no readable stamp
+ */
+export function elapsedAt(events: readonly RunEvent[], at: number): number | null {
+  const start = timestampOf(events[0]);
+  const here = at >= 0 && at < events.length ? timestampOf(events[at]) : null;
+  return start === null || here === null ? null : Math.max(0, here - start);
 }
 
 /**

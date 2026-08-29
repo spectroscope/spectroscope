@@ -9,6 +9,15 @@
 // beside a full list as "and this much you cannot see here", and instead of an
 // empty list as "this run worked through the shell".
 //
+// THE ROW SAYS WHEN (card 309B). The fold has always ordered the touches by
+// FIRST contact and its own doc calls that order "the only record of the
+// sequence the run worked in" — and nothing on the row said so, which left the
+// order legible only to somebody who had read the module. Each row now carries
+// the coarse STEP of its first touch: the transport's own unit, from the
+// transport's own rule, so the two surfaces cannot name different steps for one
+// moment. The elapsed time appears beside it only where the recording carried
+// timestamps, and is absent — never zeroed — everywhere else.
+//
 // Everything else lives in fileTree.ts, which is pure and bitten branch by
 // branch. This file is words and pixels.
 
@@ -17,7 +26,8 @@ import type { RunEvent } from "../events";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { agentDirectory, agentTagColor, type AgentDirectory } from "./agentDirectory";
-import { fileFootprint, shortenPath, type FileTouch } from "./fileTree";
+import { fileFootprint, shortenPath, touchMoments, type FileTouch, type TouchMoment } from "./fileTree";
+import { clockLabel } from "../state/stepper";
 import { workspaceBasename } from "../workspace/paths";
 
 /**
@@ -52,12 +62,14 @@ function Badges(props: { ids: ReadonlySet<string>; dir: AgentDirectory; label: s
 
 function Row(props: {
   touch: FileTouch;
+  /** When this path was first touched. */
+  moment: TouchMoment;
   dir: AgentDirectory;
   root: string | null;
   lang: ReturnType<typeof useLang>;
   onOpen?: (touch: FileTouch) => void;
 }) {
-  const { touch, dir, root, lang, onOpen } = props;
+  const { touch, moment, dir, root, lang, onOpen } = props;
   // The full path stays in the title: shortening is for reading, never for
   // hiding where a file actually is.
   const shown = touch.pattern ? touch.path : shortenPath(touch.path, root);
@@ -76,6 +88,12 @@ function Row(props: {
           {shown}
         </span>
         <span className="lab-files-sides">
+          <span className="lab-files-when mono tabular">
+            {t(lang, "lab.files.step", { n: moment.step })}
+            {/* Nothing at all where the run kept no clock: a 0:00 here would
+                say when a file was touched, which no recording measured. */}
+            {moment.elapsedMs === null ? "" : ` · ${clockLabel(moment.elapsedMs)}`}
+          </span>
           <Badges ids={touch.writers} dir={dir} label={t(lang, "lab.files.writtenBy")} />
           <Badges ids={touch.readers} dir={dir} label={t(lang, "lab.files.readBy")} />
         </span>
@@ -94,6 +112,7 @@ export function FileFootprint(props: {
   const lang = useLang();
   const { applied, workspaceRoot } = props;
   const fp = useMemo(() => fileFootprint(applied), [applied]);
+  const moments = useMemo(() => touchMoments(applied, fp.touches), [applied, fp]);
   const dir = useMemo(() => agentDirectory(applied), [applied]);
   const root = workspaceRoot ?? null;
   const onFocusEvent = props.onFocusEvent;
@@ -148,9 +167,19 @@ export function FileFootprint(props: {
       ) : (
         <>
           <p className="lab-files-count tabular">{countLine.join(" · ")}</p>
+          {/* The order was always the point and was never said out loud. */}
+          <p className="lab-files-note">{t(lang, "lab.files.order")}</p>
           <ul className="lab-files-list">
-            {fp.touches.map((touch) => (
-              <Row key={touch.path} touch={touch} dir={dir} root={root} lang={lang} onOpen={open} />
+            {fp.touches.map((touch, i) => (
+              <Row
+                key={touch.path}
+                touch={touch}
+                moment={moments[i]}
+                dir={dir}
+                root={root}
+                lang={lang}
+                onOpen={open}
+              />
             ))}
           </ul>
         </>

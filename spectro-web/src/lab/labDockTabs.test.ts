@@ -19,8 +19,20 @@ describe("dockTabFrom — the stored choice", () => {
     expect(dockTabFrom("nonsense")).toBe("ctx");
   });
 
-  it("lists the three panels in reading order", () => {
-    expect([...DOCK_TABS]).toEqual(["ctx", "msg", "files"]);
+  it("lists the panels in reading order, the moments panel APPENDED", () => {
+    // Appended rather than inserted (card 309): the order is what the tab strip
+    // draws, and a preference stored before this panel existed still names the
+    // tab it named. Moving a tab in front of another silently re-orders the
+    // strip for every reader, so the order is pinned rather than assumed.
+    expect([...DOCK_TABS]).toEqual(["ctx", "msg", "files", "moments"]);
+  });
+
+  it("still falls back to the context peak for a preference it cannot read", () => {
+    // The fourth tab widened the accepted set. A stored "moments" must now read
+    // back as itself while everything else still lands on the panel the dock
+    // shipped with — an unreadable preference is never a blank dock.
+    expect(dockTabFrom("moments")).toBe("moments");
+    expect(dockTabFrom("Moments")).toBe("ctx");
   });
 });
 

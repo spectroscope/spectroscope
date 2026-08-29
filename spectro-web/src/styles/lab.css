@@ -1104,3 +1104,94 @@
 .lab-files-badge {
   font-size: var(--fs-11);
 }
+
+/* ---- D. the moments panel (card 309) ---- */
+/* The kind colours are NOT written again here: each row's chip inherits the
+   very custom properties the scrub ticks are painted with, so a moment reads
+   the same colour on the bar and in the list, and re-colouring one re-colours
+   both. */
+.lab-moments-hint,
+.lab-moments-empty {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lab-moments-count {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.lab-moments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lab-moment-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font-size: var(--fs-11);
+}
+.lab-moment-open:hover {
+  background: var(--surface-2);
+}
+.lab-moment-step {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+/* Colour on a line, never a fill: the kind is carried by the rule beside the
+   word, the same way the tick is a rule on the bar. */
+.lab-moment-kind {
+  padding-left: var(--sp-2);
+  border-left: 2px solid var(--tick, var(--text-faint));
+  white-space: nowrap;
+}
+.lab-moment-kind--turn,
+.lab-moment-kind--end {
+  --tick: var(--ev-lifecycle);
+}
+.lab-moment-kind--spawn {
+  --tick: var(--ev-subagent);
+}
+.lab-moment-kind--gate,
+.lab-moment-kind--denied {
+  --tick: var(--ev-gate);
+}
+.lab-moment-kind--error {
+  --tick: var(--error);
+}
+.lab-moment-kind--no_progress,
+.lab-moment-kind--intervention {
+  --tick: var(--warn);
+}
+.lab-moment-kind--question {
+  --tick: var(--ev-pending);
+}
+.lab-moment-kind--skill {
+  --tick: var(--ev-tool);
+}
+.lab-moment-text {
+  flex: 1 1 12ch;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.lab-moment-clock {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* The moment on a file row (card 309B). */
+.lab-files-when {
+  color: var(--text-faint);
+  white-space: nowrap;
+}

@@ -4080,10 +4080,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   // own unit, so the two surfaces agree; the clock appears only where the
   // recording carried timestamps.
   "lab.files.step": { de: "Schritt {n}", en: "step {n}" },
-  "lab.files.whenTitle": {
-    de: "Erste Berührung: Schritt {n} von {total}",
-    en: "First touched at step {n} of {total}",
-  },
   "lab.files.order": {
     de: "In der Reihenfolge der ersten Berührung.",
     en: "In the order the run first touched them.",

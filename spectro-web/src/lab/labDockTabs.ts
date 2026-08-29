@@ -14,8 +14,10 @@
 // ROWS_STORAGE_KEY): its own key, a pure read half so a gate can bite the
 // round-trip without a DOM, and a write half that shrugs off private mode.
 
-/** The dock's panels, in reading order. */
-export const DOCK_TABS = ["ctx", "msg", "files"] as const;
+/** The dock's panels, in reading order. `moments` joined them in card 309 —
+ *  appended, so a stored preference from before it still reads back as the tab
+ *  it named. */
+export const DOCK_TABS = ["ctx", "msg", "files", "moments"] as const;
 export type DockTab = (typeof DOCK_TABS)[number];
 
 export const DOCK_TAB_STORAGE_KEY = "spectroscope.lab.dock";

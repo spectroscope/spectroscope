@@ -31,6 +31,8 @@ import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
 import type { RunEvent } from "../events";
 import { DOCK_TABS, type DockTab } from "./labDockTabs";
+import { momentsOf } from "./moments";
+import { fileFootprint, touchMoments } from "./fileTree";
 
 const lang = currentLang();
 
@@ -53,12 +55,17 @@ const dock = (
   applied: RunEvent[],
   workspaceRoot?: string | null,
   onFocusEvent?: (agentId: string, event: RunEvent) => void,
+  /* The whole run. Defaults to `applied` — every panel but the moments list
+     reads only what has been stepped through, and a test that is not about the
+     queue should not have to say so twice. */
+  stream?: RunEvent[],
 ): string =>
   renderToStaticMarkup(
     <LabDock
       tab={tab}
       onPickTab={() => {}}
       applied={applied}
+      stream={stream ?? applied}
       workspaceRoot={workspaceRoot}
       onFocusEvent={onFocusEvent}
     />,
@@ -77,11 +84,11 @@ const call = (agentId: string, name: string, input: unknown, ts: number): RunEve
   ({ type: "tool_call", agentId, callId: `c-${ts}`, name, input, ts }) as RunEvent;
 
 describe("the dock shows exactly one panel", () => {
-  it("offers all three tabs whichever one is open", () => {
+  it("offers every tab whichever one is open", () => {
     const html = dock("ctx", []);
-    for (const key of ["lab.dock.tab.ctx", "lab.dock.tab.msg", "lab.dock.tab.files"]) {
-      expect(html).toContain(t(lang, key));
-    }
+    // Read off DOCK_TABS rather than listed here: a fifth panel that nothing
+    // offered would otherwise ship with a green suite.
+    for (const id of DOCK_TABS) expect(html).toContain(t(lang, `lab.dock.tab.${id}`));
   });
 
   it("marks the open tab and only that one", () => {
@@ -115,6 +122,15 @@ describe("the dock shows exactly one panel", () => {
   it("names the panel it is showing in its own aria-label", () => {
     expect(dock("msg", [])).toContain(`aria-label="${t(lang, "lab.msg.aria")}"`);
     expect(dock("files", [])).toContain(`aria-label="${t(lang, "lab.files.aria")}"`);
+    expect(dock("moments", [])).toContain(`aria-label="${t(lang, "lab.moments.aria")}"`);
+  });
+
+  it("builds the moments panel and NOT the other three", () => {
+    const html = dock("moments", []);
+    expect(html).toContain(t(lang, "lab.moments.hint"));
+    expect(html).not.toContain(t(lang, "lab.ctx.hint"));
+    expect(html).not.toContain(t(lang, "lab.msg.hint"));
+    expect(html).not.toContain(t(lang, "lab.files.hint"));
   });
 });
 
@@ -123,7 +139,8 @@ describe("dockTitleKey — the collapsed rail names the panel it would open", ()
     expect(dockTitleKey("ctx")).toBe("lab.ctx.title");
     expect(dockTitleKey("msg")).toBe("lab.msg.title");
     expect(dockTitleKey("files")).toBe("lab.files.title");
-    // Three tabs, three distinct labels.
+    expect(dockTitleKey("moments")).toBe("lab.moments.title");
+    // One distinct label per tab.
     expect(new Set(DOCK_TABS.map(dockTitleKey)).size).toBe(DOCK_TABS.length);
   });
 });
@@ -512,5 +529,136 @@ describe("a file badge is a HANDLE, never a raw agent id", () => {
 
   it("prints one badge for one toucher, not the handle AND the id", () => {
     expect(dock("files", touched).match(/class="lab-files-badge mono"/g) ?? []).toHaveLength(1);
+  });
+});
+
+// Card 309A: the moments panel. The fold is bitten kind by kind in
+// moments.test.ts; what is measured here is what a reader actually SEES —
+// which is where card 299's raw agent id would have surfaced.
+describe("the moments panel", () => {
+  const run: RunEvent[] = [
+    start("main", 1000),
+    { type: "turn_start", agentId: "main", turn: 1, ts: 1100 } as RunEvent,
+    spawn("toolu_01OPAQUEHANDLE", "read the docs", 1200),
+    {
+      type: "permission_request",
+      agentId: "main",
+      callId: "c1",
+      name: "rm",
+      input: {},
+      ts: 1300,
+    } as RunEvent,
+    { type: "permission_decision", callId: "c1", allowed: false, ts: 1400 } as RunEvent,
+    { type: "error", agentId: "main", message: "the only failure", ts: 61000 } as RunEvent,
+  ];
+
+  it("names each moment's KIND in words, never as the wire enum", () => {
+    const html = dock("moments", run);
+    expect(html).toContain(t(lang, "lab.moment.kind.turn"));
+    expect(html).toContain(t(lang, "lab.moment.kind.spawn"));
+    expect(html).toContain(t(lang, "lab.moment.kind.gate"));
+    // Told APART, not lumped together: the refusal is the row a reader is
+    // looking for and it must not read as the gate above it.
+    expect(html).toContain(t(lang, "lab.moment.kind.denied"));
+    expect(html).toContain(t(lang, "lab.moment.kind.error"));
+    // The one wire word that is not a word.
+    expect(html).not.toContain("no_progress<");
+  });
+
+  it("carries the mark's own text, so a row says WHAT happened", () => {
+    expect(dock("moments", run)).toContain("the only failure");
+  });
+
+  it("prints a HANDLE for the agent, never the raw id — on the row or in it", () => {
+    const html = dock("moments", run);
+    // Card 298's rule, and the exact place card 299's spawn line would have
+    // broken it: `lab.mark.spawn` puts the child's agent id in the sentence.
+    expect(html).not.toContain("toolu_01OPAQUEHANDLE");
+    expect(html).toContain("w1");
+  });
+
+  it("says which step each moment sits in — the transport's own number", () => {
+    const html = dock("moments", run);
+    // Compared against the fold, never against a number written here: a step
+    // typed into a test pins the test. The first mark is a turn_start at index
+    // 1, and the step that SHOWS it is the boundary past it, not 1.
+    const steps = momentsOf(run).map((m) => m.step);
+    expect(steps).not.toContain(0);
+    for (const step of steps) expect(html).toContain(t(lang, "lab.moments.step", { n: step }));
+  });
+
+  it("shows a time only where the recording carried one", () => {
+    // This run's stamps span a minute, so the error's row carries a clock.
+    expect(dock("moments", run)).toContain("1:00");
+    // The same run with the stamps stripped keeps its steps and loses its
+    // clock — the zero that would otherwise be fabricated never appears.
+    const stampless = run.map((e) => {
+      const { ts: _ts, ...rest } = e as unknown as Record<string, unknown>;
+      return rest as unknown as RunEvent;
+    });
+    const html = dock("moments", stampless);
+    expect(html).toContain(t(lang, "lab.moment.kind.error"));
+    expect(html).not.toContain("lab-moment-clock");
+  });
+
+  it("reads a run with no moments as a measurement, not as an empty box", () => {
+    const html = dock("moments", [{ type: "text_delta", agentId: "main", text: "hi", ts: 1 } as RunEvent]);
+    expect(html).toContain(t(lang, "lab.moments.empty"));
+    expect(html).not.toContain("lab-moments-list");
+  });
+
+  it("lists moments still QUEUED, because that is where a reader is going", () => {
+    // The panel reads the whole run, not the applied prefix: the tick for a
+    // moment ahead of the cursor has pointed forward since card 299, and a
+    // list that stopped at the cursor could not follow it.
+    const html = dock("moments", [start("main", 1000)], null, undefined, run);
+    expect(html).toContain("the only failure");
+  });
+});
+
+// Card 309B: the file rows say WHEN. The fold is bitten branch by branch in
+// fileTree.test.ts; what is measured here is that the row prints it, and that
+// a run without a clock loses the time and keeps the order.
+describe("a file row says when the run first touched it", () => {
+  const touched: RunEvent[] = [
+    start("main", 1000),
+    call("main", "read_file", { path: "first.ts" }, 2000),
+    { type: "text_delta", agentId: "main", text: "…", ts: 3000 } as RunEvent,
+    call("main", "write_file", { path: "second.ts" }, 91000),
+  ];
+
+  it("prints the step of the first touch, and the elapsed time beside it", () => {
+    const html = dock("files", touched);
+    const moments = touchMoments(touched, fileFootprint(touched).touches);
+    for (const m of moments) expect(html).toContain(t(lang, "lab.files.step", { n: m.step }));
+    // 90 seconds after the run's first stamp.
+    expect(html).toContain("1:30");
+  });
+
+  it("says out loud that the list is in first-touch order", () => {
+    // The order was always the record of the sequence the run worked in, and
+    // nothing on screen said so.
+    expect(dock("files", touched)).toContain(t(lang, "lab.files.order"));
+  });
+
+  it("keeps the step and fabricates NO time when the recording carried none", () => {
+    const stampless = touched.map((e) => {
+      const { ts: _ts, ...rest } = e as unknown as Record<string, unknown>;
+      return rest as unknown as RunEvent;
+    });
+    const html = dock("files", stampless);
+    expect(html).toContain(t(lang, "lab.files.step", { n: 2 }));
+    // Not "no 1:30" — no clock at all. A 0:00 is the fabrication this guards.
+    expect(html).not.toContain("0:00");
+    expect(html).not.toContain("1:30");
+  });
+
+  it("leaves the paths count where card 301B put it", () => {
+    // A pattern is still not a file, and a new column on the row must not move
+    // the number above it.
+    const globbed: RunEvent[] = [start("main", 1), call("main", "Glob", { pattern: "src/**" }, 2)];
+    const html = dock("files", globbed);
+    expect(html).toContain(t(lang, "lab.files.patternsOne"));
+    expect(html).not.toContain(t(lang, "lab.files.countOne"));
   });
 });

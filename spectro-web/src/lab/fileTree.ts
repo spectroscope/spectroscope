@@ -24,7 +24,7 @@
 // Without that number a quiet panel is a lie.
 
 import type { RunEvent } from "../events";
-import { stepBoundaries, stepOfEvent } from "../state/stepper";
+import { elapsedAt, stepBoundaries, stepOfEvent } from "../state/stepper";
 import { CC_DISK_READ, CC_DISK_WRITE, DISK_TOOLS, SHELL_TOOLS } from "./labScene";
 import { workspaceBasename } from "../workspace/paths";
 
@@ -154,7 +154,10 @@ export function fileFootprint(events: readonly RunEvent[], upto?: number): FileF
 // THE CLOCK IS OPTIONAL AND STAYS OPTIONAL. Coarse steps are counted; time is
 // only measured where the recording carried stamps. An import without them gets
 // the step and no time at all — a "0:00" would be a statement about when a run
-// touched a file that nothing measured.
+// touched a file that nothing measured. `elapsedAt` is imported for the same
+// reason `stepOfEvent` is: it is the reading `runClock` already does of the
+// wire's optional stamp, and a private copy here would let this panel and the
+// transport disagree about whether a run had a clock.
 // ---------------------------------------------------------------------------
 
 /** When one touch happened, in the coordinates the transport counts in. */
@@ -165,13 +168,6 @@ export interface TouchMoment {
    *  either end carries no readable stamp. Null is the honest answer, not a
    *  zero. */
   elapsedMs: number | null;
-}
-
-/** The event's timestamp, or null when it carries none a clock can read. The
- *  same reading `runClock` does, on the same optional wire field. */
-function stampOf(e: RunEvent | undefined): number | null {
-  const ts = (e as { ts?: unknown } | undefined)?.ts;
-  return typeof ts === "number" && Number.isFinite(ts) && ts > 0 ? ts : null;
 }
 
 /**
@@ -185,17 +181,10 @@ function stampOf(e: RunEvent | undefined): number | null {
  */
 export function touchMoments(events: readonly RunEvent[], touches: readonly FileTouch[]): TouchMoment[] {
   const boundaries = stepBoundaries(events);
-  const start = stampOf(events[0]);
-  return touches.map((touch) => {
-    const here = stampOf(events[touch.firstIndex]);
-    return {
-      step: stepOfEvent(boundaries, touch.firstIndex),
-      // Clamped, the way runClock clamps: a session file may carry stamps out
-      // of order, and a negative elapsed would read as a broken clock rather
-      // than as the disordered recording it is.
-      elapsedMs: start === null || here === null ? null : Math.max(0, here - start),
-    };
-  });
+  return touches.map((touch) => ({
+    step: stepOfEvent(boundaries, touch.firstIndex),
+    elapsedMs: elapsedAt(events, touch.firstIndex),
+  }));
 }
 
 /**
