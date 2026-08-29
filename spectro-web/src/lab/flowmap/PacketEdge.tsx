@@ -19,14 +19,16 @@ import { getSmoothStepPath, type EdgeProps } from "@xyflow/react";
 import { RailBoxes } from "./railBoxes";
 import { RAIL_STUB, splitAxis, trunkFor, type RailEnd, type Side } from "./railRoute";
 
-/** -20 | -10 | 0 | +10 | +20, stable per edge id. Five lanes, not three:
- *  since card 295 every worker keeps a rail to every station, so up to seven
- *  rails converge on one station handle and three lanes put most of them on
- *  top of each other. */
+/** -10 | 0 | +10, stable per edge id — the lane for a rail that arrives
+ *  somewhere alone. Two rails can only paint over each other when they share a
+ *  target handle, and the set that does is the one converging on a station:
+ *  those carry an explicit `lane` in their data, from the seat rather than from
+ *  a hash (`stationLane`). Widening this hash was tried and measured worse — it
+ *  cannot see the other rails arriving beside it. */
 export function railLane(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return ((Math.abs(h) % 5) - 2) * 10;
+  return ((Math.abs(h) % 3) - 1) * 10;
 }
 
 export function PacketEdge({
@@ -40,11 +42,25 @@ export function PacketEdge({
   data,
 }: EdgeProps) {
   const boxes = useContext(RailBoxes);
+  const d = (data ?? {}) as {
+    active?: boolean;
+    net?: boolean;
+    err?: boolean;
+    dim?: boolean;
+    flow?: boolean;
+    /** A subagent's own leg — painted in the worker accent, so a lit station
+     *  says WHO is on it before the chip is read (card 295). */
+    worker?: boolean;
+    /** The lane the emitter chose for this rail, when it knows more than the id
+     *  does — every rail into the OS band carries one (`stationLane`). */
+    lane?: number | null;
+  };
+  const lane = typeof d.lane === "number" ? d.lane : railLane(id);
   // The engine's handle sides are the first letter of the Position enum value
   // ("left" | "right" | "top" | "bottom") — the same letters railRoute names.
   const from: RailEnd = { x: sourceX, y: sourceY, side: sourcePosition[0] as Side };
   const to: RailEnd = { x: targetX, y: targetY, side: targetPosition[0] as Side };
-  const trunk = boxes.length > 0 ? trunkFor(from, to, [...boxes], railLane(id)) : null;
+  const trunk = boxes.length > 0 ? trunkFor(from, to, [...boxes], lane) : null;
   // Guard against handing the helper a centre it would not read (splitAxis
   // documents which one moves the trunk) — a wrong centre is silently ignored
   // and the rail routes on the default while we believe it is steered.
@@ -65,16 +81,6 @@ export function PacketEdge({
     offset: RAIL_STUB,
     ...steer,
   });
-  const d = (data ?? {}) as {
-    active?: boolean;
-    net?: boolean;
-    err?: boolean;
-    dim?: boolean;
-    flow?: boolean;
-    /** A subagent's own leg — painted in the worker accent, so a lit station
-     *  says WHO is on it before the chip is read (card 295). */
-    worker?: boolean;
-  };
 
   const cls = [
     "pf-rail",

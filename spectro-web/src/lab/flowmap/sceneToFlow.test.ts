@@ -212,6 +212,19 @@ describe("sceneToFlow", () => {
     expect(station.every((e) => !(e.data as { active: boolean }).active)).toBe(true);
   });
 
+  it("every rail arriving at one station carries a lane of its own", () => {
+    const events: RunEvent[] = [runStart("ollama"), ...[1, 2, 3, 4, 5, 6].map((i) => spawn(`worker-${i}`))];
+    const flow = build(events, true, "ollama");
+    for (const target of ["os-disk", "os-shell", "os-mcp"]) {
+      const arriving = flow.edges.filter((e) => e.target === target && e.source !== "os-mcp");
+      // main plus one per seated worker — the set that shares the handle
+      expect(arriving).toHaveLength(7);
+      const lanes = arriving.map((e) => (e.data as { lane: number | null }).lane);
+      expect(lanes.every((l) => typeof l === "number")).toBe(true);
+      expect(new Set(lanes).size).toBe(arriving.length);
+    }
+  });
+
   it("the OS node names the demoted occupant too, with its id available to address the rail", () => {
     const events: RunEvent[] = [
       runStart("ollama"),
@@ -687,6 +700,18 @@ describe("sceneToFlow — the seat pool on the map (card 292)", () => {
     expect(at(after, "sub-a")).toBeUndefined();
     // b never ended: its seat is untouched by the churn around it.
     expect(at(after, "sub-b")).toEqual(at(before, "sub-b"));
+  });
+
+  it("and its rails keep their lane through that churn, like its card keeps its seat", () => {
+    const before = flowOf([start, spawnE("a"), spawnE("b")], true);
+    const after = flowOf([start, spawnE("a"), spawnE("b"), resultE("a"), spawnE("c")], true);
+    const laneOf = (flow: { edges: { id: string; data?: unknown }[] }, id: string) =>
+      (flow.edges.find((e) => e.id === id)?.data as { lane: number | null } | undefined)?.lane;
+    // b's rail into the disk is drawn from b's SEAT, not from its place in the
+    // list of drawn children — a's departure shortens that list by one.
+    expect(laneOf(after, "e-sub-b-osdisk")).toBe(laneOf(before, "e-sub-b-osdisk"));
+    // and c, taking a's seat, takes the lane that went with it.
+    expect(laneOf(after, "e-sub-c-osdisk")).toBe(laneOf(before, "e-sub-a-osdisk"));
   });
 
   it("nine sequential children draw the peak, not the lifetime — the grid stays small", () => {

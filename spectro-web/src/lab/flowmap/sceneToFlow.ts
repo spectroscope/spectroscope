@@ -21,6 +21,7 @@ import {
   type SeatPool,
 } from "./workerGrid";
 import { osBandWidth, stationSeats } from "./stationSeats";
+import { stationLane } from "./railRoute";
 
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
@@ -934,7 +935,14 @@ export function sceneToFlow(
     sh: string,
     th: string,
     active: boolean,
-    opt: { net?: boolean; err?: boolean; dim?: boolean; flow?: boolean; worker?: boolean } = {},
+    opt: {
+      net?: boolean;
+      err?: boolean;
+      dim?: boolean;
+      flow?: boolean;
+      worker?: boolean;
+      lane?: number;
+    } = {},
   ) => {
     edges.push({
       id,
@@ -952,6 +960,11 @@ export function sceneToFlow(
         // A worker's leg is tinted with the worker accent, so a lit station
         // says at a glance WHO is on it even before the chip is read.
         worker: opt.worker ?? false,
+        // Where two rails would otherwise draw one line. Only the rails into
+        // the OS band converge, and they say so here rather than leaving the
+        // renderer to guess from a hash of the id — main and every seated
+        // worker arrive at the SAME handle.
+        lane: opt.lane ?? null,
       },
       zIndex: active ? 1001 : 1,
     });
@@ -963,8 +976,8 @@ export function sceneToFlow(
     err: scene.isError && scene.focus === "user",
   });
   E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net });
-  E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", isHot("main", "disk"));
-  E("e-agent-osshell", "agent", "os-shell", "bs", "tt", isHot("main", "cmd"));
+  E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", isHot("main", "disk"), { lane: stationLane(null) });
+  E("e-agent-osshell", "agent", "os-shell", "bs", "tt", isHot("main", "cmd"), { lane: stationLane(null) });
   // The MCP call rides the whole chain and lights it end to end while in use:
   //   <caller> → MCP-client → network stack →⟂ Netz → MCP-server
   // The first leg belongs to the CALLING agent (main's rail or the child's
@@ -973,6 +986,7 @@ export function sceneToFlow(
   const mcpByWorker = mcpUser !== undefined && mcpUser.agentId !== "main";
   E("e-agent-osmcp", "agent", "os-mcp", "bs", "tt", isHot("main", "mcp"), {
     err: mcpErr && mcpUser?.agentId === "main",
+    lane: stationLane(null),
   });
   E("e-osmcp-osnet", "os-mcp", "os-net", "rs", "lt", mcpInUse, { err: mcpErr, worker: mcpByWorker });
   if (!declutter) {
@@ -989,8 +1003,11 @@ export function sceneToFlow(
     });
   }
 
-  subs.forEach((c) => {
+  subs.forEach((c, i) => {
     const id = `sub-${c.id}`;
+    // The same seat the card is drawn on: it is what keeps this worker's rail
+    // off its siblings' at the station handle they all arrive on.
+    const seat = pool?.seat[c.id] ?? i;
     E(`e-${id}-agent`, id, "agent", "ls", "rt", false, { dim: true });
     E(`e-${id}-llm`, id, "llm", "rs", "lt", c.focus === "llm", { net });
     // A child's OWN rails to the three shared stations. They are STRUCTURAL
@@ -1006,6 +1023,7 @@ export function sceneToFlow(
         err: c.isError && isHot(c.id, st),
         dim: !isHot(c.id, st),
         worker: true,
+        lane: stationLane(seat),
       });
     stationRail("osdisk", "os-disk", "disk");
     stationRail("osshell", "os-shell", "cmd");

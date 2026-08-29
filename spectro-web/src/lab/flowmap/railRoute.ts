@@ -62,6 +62,37 @@ export const RAIL_CLEAR = 22;
  *  either handle is not reachable. */
 export const RAIL_STUB = 22;
 
+/** How far apart two rails that converge on ONE station handle are nudged.
+ *  Small on purpose: `trunkFor` spends a lane only when it costs nothing, so a
+ *  wide nudge is dropped and the rail falls back onto the trunk it shared to
+ *  begin with. Measured on this module's own eight-worker fixture, nine rails
+ *  converging on a station: no lane at all leaves five distinct trunks, a step
+ *  of 10 leaves eight, a step of 5 gives all nine a trunk of their own. */
+export const STATION_LANE_STEP = 5;
+
+/**
+ * The lane of a rail into the OS band, from the SEAT of the agent it leaves.
+ *
+ * Not a hash of the edge id. Rails only paint over each other when they share
+ * a target handle, and since card 295 the rails that do are exactly main's plus
+ * one per seated worker — up to thirteen arriving at one station. A hash knows
+ * nothing about the other twelve: measured over the shipped ids, it put four of
+ * seven converging rails on the same lane, and widening its modulus made
+ * os-shell worse rather than better. The seat index separates them by
+ * construction.
+ *
+ * Main takes the middle; seats step outward in alternating directions, so a
+ * seat keeps its lane when a later seat fills — the same promise the seating
+ * itself makes, that a line does not move because a sibling appeared.
+ *
+ * @param seat the worker's seat index, or null for the main agent
+ */
+export function stationLane(seat: number | null): number {
+  if (seat === null || seat < 0) return 0;
+  const out = Math.floor(seat / 2) + 1;
+  return (seat % 2 === 0 ? -1 : 1) * out * STATION_LANE_STEP;
+}
+
 /** Which way a handle points. */
 const DIR: Record<Side, { x: number; y: number }> = {
   l: { x: -1, y: 0 },
