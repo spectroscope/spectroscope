@@ -26,22 +26,30 @@ vi.mock("@xyflow/react", () => ({
 import { LabView } from "./LabView";
 import { ContextPeak } from "./ContextPeak";
 import { __resetForTests, toggleCtx } from "../state/layout";
+import { DOCK_TAB_STORAGE_KEY } from "./labDockTabs";
+import { __resetForTests as resetStepper, pushLive, seek } from "../state/stepper";
 import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
 import type { RunEvent } from "../events";
 
 const lang = currentLang();
 
+/** A Map-backed localStorage double — the gate has no browser storage. */
+let store: Map<string, string>;
 beforeEach(() => {
   __resetForTests();
+  resetStepper();
+  store = new Map<string, string>();
   vi.stubGlobal("localStorage", {
-    getItem: () => null,
-    setItem: () => {},
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
   });
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const render = (): string =>
+const render = (props: Partial<Parameters<typeof LabView>[0]> = {}): string =>
   renderToStaticMarkup(
     <LabView
       replay={null}
@@ -51,8 +59,24 @@ const render = (): string =>
       onDecide={() => {}}
       onReturnToLive={() => {}}
       sendClient={() => true}
+      {...props}
     />,
   );
+
+/** react-dom/server escapes an apostrophe to `&#x27;`, and the dock's own
+ *  sentences are full of them ("the run's own spawn tree"), so markup is
+ *  decoded before it is compared against the dictionary the words come from. */
+const plain = (html: string): string =>
+  html
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
+
+/** Put events into the stepper's APPLIED prefix — what the dock reads. */
+const applied = (events: RunEvent[]): void => {
+  pushLive(events);
+  seek(events.length);
+};
 
 describe("the dock is collapsed until it is asked for", () => {
   it("a fresh lab renders the rail and NOT the panel", () => {
@@ -174,5 +198,83 @@ describe("HONESTY — a child is printed without a percentage, and the panel say
   it("a run with no children never prints that line", () => {
     const html = panel([rootStart("gpt-4o"), usage("main", 1_000)]);
     expect(html).not.toContain(t(lang, "lab.ctx.note.childrenNoWindow"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Card 301: the DOCK'S WIRING inside LabView. Everything below was mutable
+// while the whole suite stayed green — three props could be replaced with a
+// constant or dropped entirely and nothing went red, including the very label
+// the previous round's note claimed to have pinned.
+// ---------------------------------------------------------------------------
+
+const dockStart = (agentId: string, ts: number): RunEvent =>
+  ({ type: "run_start", runId: `r-${agentId}`, agentId, prompt: "go", ts }) as RunEvent;
+const dockSpawn = (agentId: string, task: string, ts: number): RunEvent =>
+  ({ type: "agent_spawn", agentId, parentId: "main", task, ts }) as RunEvent;
+const dockTask = (to: string, text: string, ts: number): RunEvent =>
+  ({ type: "agent_message", from: "main", to, role: "task", state: "submitted", text, ts }) as RunEvent;
+
+const handover: RunEvent[] = [
+  dockStart("main", 0),
+  dockSpawn("kid", "scout the checkout", 10),
+  dockTask("kid", "scout the checkout", 11),
+];
+
+describe("the collapsed rail names the panel the dock would OPEN", () => {
+  it("says 'handovers' while the handovers tab is the stored choice", () => {
+    store.set(DOCK_TAB_STORAGE_KEY, "msg");
+    const html = render();
+    expect(html).toContain(t(lang, "rz.ariaExpand", { label: t(lang, "lab.msg.title") }));
+    expect(html).not.toContain(t(lang, "rz.ariaExpand", { label: t(lang, "lab.ctx.title") }));
+  });
+
+  it("says 'files' while the files tab is the stored choice", () => {
+    store.set(DOCK_TAB_STORAGE_KEY, "files");
+    expect(render()).toContain(t(lang, "rz.ariaExpand", { label: t(lang, "lab.files.title") }));
+  });
+});
+
+describe("the open dock shows the tab the lab is actually on", () => {
+  it("opens on the stored handovers tab, not on the panel it shipped with", () => {
+    store.set(DOCK_TAB_STORAGE_KEY, "msg");
+    toggleCtx();
+    const html = plain(render());
+    expect(html).toContain(t(lang, "lab.msg.hint"));
+    expect(html).not.toContain(t(lang, "lab.ctx.hint"));
+  });
+
+  it("opens on the stored files tab", () => {
+    store.set(DOCK_TAB_STORAGE_KEY, "files");
+    toggleCtx();
+    const html = plain(render());
+    expect(html).toContain(t(lang, "lab.files.hint"));
+    expect(html).not.toContain(t(lang, "lab.ctx.hint"));
+  });
+});
+
+describe("the trace seam reaches the dock's rows", () => {
+  // The card asked for exactly this and said where it lives: "WIRE THE
+  // EVIDENCE … The seam already exists — use it." Dropping the prop here was
+  // invisible to every other suite, because none of them hands one in.
+  it("leaves the handover rows live when App's focus seam was handed in", () => {
+    store.set(DOCK_TAB_STORAGE_KEY, "msg");
+    toggleCtx();
+    applied(handover);
+    const html = render({ onFocusEvent: () => {} });
+    const row = html.match(/<button[^>]*class="lab-msg-open"[^>]*>/);
+    expect(row, "a handover row").not.toBeNull();
+    expect((row as RegExpMatchArray)[0]).not.toContain("disabled");
+    expect(html).toContain(t(lang, "lab.msg.open"));
+  });
+
+  it("leaves them inert when there is no seam to reach", () => {
+    store.set(DOCK_TAB_STORAGE_KEY, "msg");
+    toggleCtx();
+    applied(handover);
+    const html = render();
+    const row = html.match(/<button[^>]*class="lab-msg-open"[^>]*>/);
+    expect(row, "a handover row").not.toBeNull();
+    expect((row as RegExpMatchArray)[0]).toContain('disabled=""');
   });
 });
