@@ -3,8 +3,8 @@
 // Measured in the running app, on the shipped scenario with the map expanded
 // and one box thrown minimal:
 //
-//   the reserve per member  216 x 132   (BOX_MEMBER_H_COMPACT)
-//   what the card rendered  216 x 227
+//   the reserve per member  216 x 132        (BOX_MEMBER_H_COMPACT)
+//   what the card rendered  216 x 227 .. 244  (it grows with its content)
 //
 // and the last band's row was 88px above where the box seated it, because
 // React Flow's `extent: "parent"` CLAMPS a child that would stick out of its

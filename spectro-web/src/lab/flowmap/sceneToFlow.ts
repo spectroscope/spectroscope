@@ -1468,11 +1468,11 @@ export function sceneToFlow(
           position: { x: m.x, y: m.y },
           // The box's own switch travels WITH the card. A minimal card opens
           // its disclosure off the MAP's switch, and a box thrown minimal on
-          // an expanded map then rendered 227px into the 132 its band reserved
-          // — measured, and `extent: "parent"` does not let that stick out, it
-          // clamps: the last band's row came to rest on top of the row above.
-          // Two switches disagreeing, the geometry following one and the
-          // markup the other.
+          // an expanded map then rendered 227-244px tall into the 132 its band
+          // reserved — measured — and `extent: "parent"` does not let a child
+          // stick out, it clamps: the last band's row came to rest 88px above
+          // its own band, on top of the row before it. Two switches
+          // disagreeing, the geometry following one and the markup the other.
           data: { ...subCardData(c, b.expandedBox), boxExpanded: b.expandedBox },
           zIndex: 10,
         });
