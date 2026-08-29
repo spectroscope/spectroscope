@@ -13,6 +13,7 @@ import { AluChip, Keyboard, Router } from "./glyphs";
 import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
 import type { AgentStream, CtxPart } from "./sceneToFlow";
 import type { Focus, GateState, SubagentInfo } from "../labScene";
+import { BOX_HEADER_H } from "./workflowBox";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 
@@ -903,8 +904,107 @@ export function ZoneNode({ data }: NodeProps) {
   );
 }
 
+/** One phase band, as the box draws it. Every number is the pure geometry's,
+ *  so the frame and the cards inside it can never drift apart. */
+interface WfBoxBand {
+  title: string;
+  detail: string | null;
+  unplaced: boolean;
+  y: number;
+  h: number;
+  count: number;
+}
+
+/**
+ * CARD 306: the frame a workflow run gets in the lab map.
+ *
+ * It draws NO agents. The agents are React Flow child nodes seated by
+ * `workflowBoxLayout` — they are the cards they already were — and this is the
+ * frame around them: the run's name and progress at the top, and one band per
+ * declared phase behind them, so the stages are visible and the reader can see
+ * which phase holds five.
+ *
+ * The bands are positioned from the SAME numbers the members were seated from,
+ * offset by the header the members' own coordinates already include. Reading a
+ * band's top out of CSS instead would be a second geometry, free to disagree
+ * with the first, and a band drawn half a card off is exactly the kind of
+ * wrongness that looks like a design choice.
+ */
+export function WorkflowBoxNode({ data }: NodeProps) {
+  const lang = useLang();
+  const d = data as {
+    boxId: string;
+    title: string;
+    phasesTotal: number;
+    phasesEntered: number;
+    agents: number;
+    state: string | null;
+    stateLabel: string | null;
+    stateColor: string | null;
+    expanded: boolean;
+    bands: WfBoxBand[];
+    onToggle?: (boxId: string) => void;
+  };
+  const toggle = d.onToggle;
+  return (
+    <div className={`pf-wfbox${d.expanded ? " pf-wfbox--expanded" : ""}`}>
+      <div className="pf-wfbox__head">
+        <span className="pf-wfbox__title" title={d.title}>
+          {d.stateColor !== null && <span className="pf-wfbox__dot" style={{ background: d.stateColor }} />}
+          {d.title}
+        </span>
+        <span className="pf-wfbox__facts">
+          <span className="pf-badge tabular">
+            {d.phasesEntered}/{d.phasesTotal} {t(lang, "map.wf.phases")}
+          </span>
+          <span className="pf-badge tabular">
+            {d.agents} {t(lang, "map.wf.agents")}
+          </span>
+          {d.stateLabel !== null && (
+            <span className="pf-badge" style={{ color: d.stateColor ?? undefined }}>
+              {d.stateLabel}
+            </span>
+          )}
+        </span>
+        {toggle !== undefined && (
+          <button
+            type="button"
+            className="pf-wfbox__switch nodrag"
+            data-box={d.boxId}
+            title={t(lang, d.expanded ? "map.wf.collapse" : "map.wf.expand")}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggle(d.boxId);
+            }}
+          >
+            {t(lang, d.expanded ? "map.wf.collapse" : "map.wf.expand")}
+          </button>
+        )}
+      </div>
+      {d.bands.map((b, i) => (
+        <div
+          key={`${b.title}-${i}`}
+          className={`pf-wfband${b.unplaced ? " pf-wfband--unplaced" : ""}${
+            b.count === 0 ? " pf-wfband--empty" : ""
+          }`}
+          // The band's own coordinates are the members' coordinates, which
+          // include the header — and this element is laid out INSIDE the
+          // header-offset body, so the header comes back off.
+          style={{ top: `${b.y - BOX_HEADER_H}px`, height: `${b.h}px` }}
+        >
+          <span className="pf-wfband__label" title={b.detail ?? undefined}>
+            {b.title}
+            {b.count === 0 && <em className="pf-wfband__note">{t(lang, "map.wf.empty")}</em>}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export const nodeTypes = {
   zone: ZoneNode,
+  wfbox: WorkflowBoxNode,
   user: UserNode,
   agent: AgentNode,
   os: OsNode,

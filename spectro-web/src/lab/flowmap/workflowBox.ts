@@ -175,3 +175,32 @@ export function workflowBoxLayout(run: RunPhases, opts: BoxOptions): BoxLayout {
     placed,
   };
 }
+
+/**
+ * The per-box switch, as a pure fold.
+ *
+ * A Set of the boxes whose switch the reader has thrown, and one function that
+ * flips one of them. It lives here rather than inside a component because the
+ * seating reads the same set: the layout key that names the map's seating has
+ * to include it, or the key would claim a seating the map is not in.
+ *
+ * @param thrown the boxes currently switched away from the global default
+ * @param boxId the box whose switch was clicked
+ */
+export function toggleBox(thrown: ReadonlySet<string>, boxId: string): ReadonlySet<string> {
+  const next = new Set(thrown);
+  if (!next.delete(boxId)) next.add(boxId);
+  return next;
+}
+
+/**
+ * A stable string for a set of thrown switches.
+ *
+ * The map's layout key is a string, and a Set has no stable spelling — two
+ * equal sets built in different orders would read as two different seatings
+ * and re-lay the whole map out for nothing. Sorted, so the key says what it
+ * means.
+ */
+export function boxSwitchKey(thrown: ReadonlySet<string>): string {
+  return [...thrown].sort().join(",");
+}
