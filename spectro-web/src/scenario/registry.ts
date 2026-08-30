@@ -1674,6 +1674,10 @@ const fanoutWorkflowWidth = Math.max(...fanoutWorkflowRanks.map((r) => r.length)
 export const releaseCheckSubjects = (lang: "en" | "de"): string[] =>
   releaseChecks.map((c) => c.subject[lang]);
 
+export const RELEASE_CHECK_SUBJECTS: Record<string, { en: string; de: string }> = Object.fromEntries(
+  releaseChecks.map((c) => [c.id, c.subject]),
+);
+
 /** `detail` is not a comment: `WorkflowLens` draws it as `.wf-rankdetail` in
  *  the caption band, under the box whose rows the number counts. */
 const fanoutWorkflowPhases: DslPhase[] = [

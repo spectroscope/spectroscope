@@ -5,11 +5,23 @@
 // of it and a sign-off behind it, which is the picture the owner asked to be
 // able to load by name.
 //
-// The name carries the count, so these cases exist to keep that number honest
-// in the only way that survives an edit: the name is compared against the
-// DECLARATION, the declaration against the STREAM, and the stream against the
-// BOX that draws it. Break any one link and exactly one case goes red.
+// THE TWO SIDES ARE WRITTEN AND DECLARED, and they are not the same source.
+// The first cut of this suite assembled the scenario's copy out of the very
+// array the cases then derived their expectation from, so "asks for exactly
+// the checks the fan-out runs" could only prove that a join of a list contains
+// that list. Measured, not argued: renaming one worker's subject to "the
+// release notes" — work no agent in this scenario does — left all seventeen
+// cases green.
+//
+// So the copy is now WRITTEN OUT, in both locales, and every case here holds
+// those written words against the phases as DECLARED. A literal that has to
+// match a derivation bites in both directions; a derivation compared against
+// itself bites in neither. `writes the words it shows instead of assembling
+// them` keeps the two sides apart, because the cheapest way to hollow all of
+// this out again is one `${…}` in the ask.
 
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
@@ -43,7 +55,7 @@ vi.mock("@xyflow/react", () => ({
   useReactFlow: () => ({ fitView: () => {} }),
 }));
 
-import { releaseCheckSubjects, SCENARIOS } from "./registry";
+import { RELEASE_CHECK_SUBJECTS, SCENARIOS } from "./registry";
 import { compile, declarationOf } from "./compile";
 import { loc } from "./dsl";
 import type { Step } from "./dsl";
@@ -54,6 +66,31 @@ import { advanceScene, initialScene } from "../lab/labScene";
 import { WorkflowLens } from "../lab/workflow/WorkflowLens";
 
 const dsl = SCENARIOS.find((s) => s.id === "fanout-workflow")!;
+
+const REPO = join(__dirname, "..", "..", "..");
+const registrySource = readFileSync(join(__dirname, "registry.ts"), "utf8");
+
+/** One top-level declaration of `registry.ts`, verbatim. Nested closers are
+ *  indented, so a closer at column 0 is this block's own. */
+const sourceBlock = (opener: string, closer: string): string => {
+  const at = registrySource.indexOf(opener);
+  expect(at, opener).toBeGreaterThan(-1);
+  const end = registrySource.indexOf(closer, at);
+  expect(end, closer).toBeGreaterThan(at);
+  return registrySource.slice(at, end + closer.length);
+};
+
+/** The verbs our own CLI declares, read out of the CLI's own source. A demo
+ *  that types `spectro <verb>` is telling the viewer this product has that
+ *  verb, so the claim is checked against the product. */
+const cliVerbs = (): string[] => {
+  const dir = join(REPO, "spectro-cli", "src", "main", "java", "dev", "spectroscope", "cli");
+  const src = readdirSync(dir)
+    .filter((f) => f.endsWith(".java"))
+    .map((f) => readFileSync(join(dir, f), "utf8"))
+    .join("\n");
+  return [...src.matchAll(/@Command\(\s*name\s*=\s*"([^"]+)"/g)].map((m) => m[1]);
+};
 
 /** The two numbers the name claims, read back off the declaration. */
 const declaredWidths = (): number[] => (dsl.phases ?? []).map((p) => p.agents.length);
@@ -88,6 +125,66 @@ const ownCopy = (lang: "en" | "de"): string[] => {
   walk(dsl.steps);
   return out;
 };
+
+/** EVERYTHING this scenario puts on screen: the copy above, plus each worker's
+ *  transcript, plus the commands, paths and results the run shows. */
+const everyShownString = (lang: "en" | "de"): string[] => {
+  const out: string[] = ownCopy(lang);
+  const walk = (steps: Step[]): void => {
+    for (const s of steps) {
+      if ("run" in s) out.push(s.run);
+      else if ("read" in s) out.push(s.read);
+      else if ("write" in s) out.push(s.write);
+      else if ("list" in s) out.push(s.list);
+      else if ("spawn" in s) walk(s.steps);
+      else if ("fanout" in s) {
+        for (const a of s.fanout.agents) {
+          out.push(loc(a.task, lang));
+          walk(a.steps);
+        }
+        continue;
+      } else continue;
+      if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
+    }
+  };
+  walk(dsl.steps);
+  return out;
+};
+
+/** Every shell command the run types. */
+const runCommands = (): string[] => {
+  const out: string[] = [];
+  const walk = (steps: Step[]): void => {
+    for (const s of steps) {
+      if ("run" in s) out.push(s.run);
+      else if ("spawn" in s) walk(s.steps);
+      else if ("fanout" in s) for (const a of s.fanout.agents) walk(a.steps);
+    }
+  };
+  walk(dsl.steps);
+  return out;
+};
+
+/** A release number: `0.11.0`, `v0.10.0`, `0.10`. A hyphen in front rules out
+ *  `Apache-2.0` and `-2.1%`, and a trailing `%` rules out the rest of a
+ *  percentage — neither of those names a release of ours. */
+const VERSION_LIKE = /(?<![\w.-])v?\d+\.\d+(?:\.\d+)?(?![\d%])/g;
+
+/** The checks the wide phase DECLARES, in the order it declares them, said in
+ *  the words the ask has to use. The ask does not read this — it is written
+ *  out — which is the whole point of the two cases below. */
+const declaredSubjects = (lang: "en" | "de"): string[] =>
+  ((dsl.phases ?? [])[1]?.agents ?? []).map((id) => {
+    const subject = RELEASE_CHECK_SUBJECTS[id];
+    expect(subject, `no subject declared for ${id}`).toBeDefined();
+    return subject[lang];
+  });
+
+/** "a, b and c" / "a, b und c" — the shape the ask is written in. */
+const joinList = (items: string[], conj: string): string =>
+  items.length < 2
+    ? items.join("")
+    : `${items.slice(0, -1).join(", ")} ${conj} ${items[items.length - 1]}`;
 
 /** The nouns this scenario counts. Hyphens are flattened first so a German
  *  compound ("Release-Prüfungen") is read as the two words it is. */
@@ -271,13 +368,69 @@ describe("the fan-out workflow scenario", () => {
     }
   });
 
-  it("asks for exactly the checks the fan-out runs", () => {
+  it("asks for exactly the checks the fan-out declares, in that order", () => {
+    // THE TWO SIDES: the ask is a written sentence; the expectation is derived
+    // from the wide phase's declared agent ids. Add a worker and the ask stops
+    // naming one; edit the ask and it stops matching the phase. Both bite.
     for (const lang of ["en", "de"] as const) {
       const prompt = loc(dsl.prompt, lang);
+      const subjects = declaredSubjects(lang);
+      expect(subjects, lang).toHaveLength(declaredWidest());
+      // Named individually first, so a failure says WHICH check went missing.
+      for (const c of subjects) expect(prompt, `${lang} ${c}`).toContain(c);
+      // Then as one run, which is also completeness and order: a ninth check
+      // wedged into the middle of the phase breaks the joined list.
+      expect(prompt, lang).toContain(joinList(subjects, lang === "en" ? "and" : "und"));
       expect(countsIn(prompt), lang).toEqual([declaredWidest()]);
-      // And it names them: the list in the ask is joined from the workers, so
-      // a worker added to the array is a check the ask asked for.
-      for (const c of releaseCheckSubjects(lang)) expect(prompt, `${lang} ${c}`).toContain(c);
+    }
+  });
+
+  it("writes the words it shows instead of assembling them", () => {
+    // A drift case, and the load-bearing one: every count and every list above
+    // is a written literal held against a derivation. Interpolate any of them
+    // from the same array the derivation reads and the pin turns into a
+    // tautology that cannot fail — which is what the first cut shipped.
+    const blocks: [string, string, string][] = [
+      ["const releaseChecks: FanoutAgent[] = [", "\n];", "check-changelog"],
+      ["const fanoutWorkflowPhases: DslPhase[] = [", "\n];", "sign off"],
+      ["const fanoutWorkflow: Dsl = {", "\n};", "fanout-workflow"],
+    ];
+    for (const [opener, closer, anchor] of blocks) {
+      const src = sourceBlock(opener, closer);
+      expect(src, opener).toContain(anchor);
+      expect(src.includes("${"), opener).toBe(false);
+    }
+  });
+
+  it("names no release version in anything it shows", () => {
+    // A demo scenario ships once and is read for years. The first cut cut
+    // "0.11.0" through the ask, a file it read, a path it wrote and four of
+    // its lines, and its own author flagged that it would read as stale the
+    // day that version shipped. The story is the WORK, so the run reaches for
+    // the last tag instead of naming one.
+    for (const lang of ["en", "de"] as const) {
+      const shown = everyShownString(lang);
+      expect(shown.length, lang).toBeGreaterThan(40);
+      for (const line of shown) {
+        expect([...line.matchAll(VERSION_LIKE)].map((m) => m[0]), `${lang}: ${line}`).toEqual([]);
+      }
+    }
+  });
+
+  it("types our own tooling only where the product really has that verb", () => {
+    // The build already pulled three commands that claimed our CLI had verbs
+    // it does not. The rule that keeps them out: a command is git, or a script
+    // of the release repo the story is set in — plainly not our tooling — or
+    // it is our CLI, and then the verb is checked against the CLI's source.
+    const verbs = cliVerbs();
+    expect(verbs, "the CLI source must yield its verbs").toContain("doctor");
+    const commands = runCommands();
+    expect(commands.length).toBeGreaterThan(8);
+    const ours = commands.filter((c) => c.startsWith("spectro "));
+    expect(ours.length, "the demo does show our CLI").toBeGreaterThan(0);
+    for (const c of ours) expect(verbs, c).toContain(c.split(/\s+/)[1]);
+    for (const c of commands.filter((x) => !ours.includes(x))) {
+      expect(c, c).toMatch(/^(?:git|scripts\/[a-z-]+\.sh)(?:\s|$)/);
     }
   });
 
