@@ -82,13 +82,25 @@ describe("the address field says when the general one is being overridden", () =
 
   it("renders the resolved sentence beside the address field", () => {
     expect(settingsTsx).toContain("overrideNote.key");
-    expect(settingsTsx).toContain("provider-field-note--override");
+    // Boundary, not prefix: a class name is a substring of its own typo, so a
+    // plain toContain here stays green through a rename to --overriden.
+    expect(settingsTsx).toMatch(/provider-field-note--override["\s]/);
   });
 
   it("carries a rule the stylesheet actually declares", () => {
-    // An unknown class is silent; an unknown token is silent too. The pin is
-    // the pair, so a renamed rule cannot leave the note unstyled.
-    expect(cssFile).toContain(".provider-field-note--override");
+    // An unknown class is silent — the note renders as a plain hint — and this
+    // is the half of that pair the stylesheet owns; the tsx half is the
+    // boundary match above. The rule's TOKENS are a second silence
+    // (var(--nope) resolves to nothing at all) and they are NOT checked here:
+    // phantomTokens.drift.test.ts asks that of every var() in the tree,
+    // --accent and --text-dim included. This comment used to claim the pair
+    // was in this one assertion, which was a claim about a check that did not
+    // exist.
+    //
+    // Measured: renaming the rule to .provider-field-note--overriden left this
+    // file green at 13/13 while the note lost its rule, because "--override"
+    // is a prefix of "--overriden". The selector must therefore END here.
+    expect(cssFile).toMatch(/\.provider-field-note--override\s*[,{]/);
   });
 
   it("hands it the same /api/config addresses the failure sentence names", () => {
