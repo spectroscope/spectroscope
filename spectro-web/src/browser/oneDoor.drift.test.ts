@@ -87,7 +87,9 @@ describe("the browser has one door", () => {
     // unconditionally, which is the shape that loses the replay again.
     const browserCase = dock.slice(dock.indexOf('case "browser":'), dock.indexOf('case "browser":') + 1400);
     expect(browserCase).toContain("liveView === true ?");
-    expect(browserCase.indexOf("<BrowserSegment")).toBeGreaterThan(browserCase.indexOf("liveView === true ?"));
+    expect(browserCase.indexOf("<BrowserSegment")).toBeGreaterThan(
+      browserCase.indexOf("liveView === true ?"),
+    );
     expect(browserCase.indexOf("<BrowserReplay")).toBeGreaterThan(browserCase.indexOf("<BrowserSegment"));
   });
 
