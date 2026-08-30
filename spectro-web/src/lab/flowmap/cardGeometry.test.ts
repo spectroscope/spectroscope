@@ -18,6 +18,7 @@ import {
 import { EXPANDED_CARD, EXP_GAP } from "./sceneToFlow";
 import { readFileSync } from "node:fs";
 import { agentBelt } from "./belt";
+import { gridsOf } from "./cssScope";
 
 describe("the worker card's geometry has ONE source", () => {
   it("the pitches derive from the card and the rail gap, never from a second literal", () => {
@@ -99,11 +100,21 @@ describe("the caps that make the reserve a bound", () => {
 // are read rather than typed — the columns out of flowmap.css, the chips out
 // of belt.ts.
 describe("the belt is not a growth region of the worker card (card 321)", () => {
+  // Read through `cssScope.ts`, which is the ONE reader — this file used to
+  // carry a second one and the two disagreed twice over. It anchored on the
+  // literal `".pf-tools {"`, which `.pf-agent--wide .pf-tools {` contains as a
+  // substring, so it could end up reading the EXPANDED hub's rule for a card
+  // that never wears that class; and it counted the value's WORDS, so
+  // `84px minmax(0, 1fr) auto` would have been four columns and not three.
+  // Neither shows on today's `1fr 1fr`, which is how two readers drift.
+  //
+  // "compact" is the worker card's scope and not a shorthand: it renders
+  // `AgentCardBody` (card 287) with no `.pf-agent--wide` anywhere above it, so
+  // the rule that reaches its belt is the one stated without an ancestor.
   const cols = (): number => {
-    const block = css.slice(css.indexOf(".pf-tools {"));
-    const m = /grid-template-columns:([^;]+);/.exec(block.slice(0, block.indexOf("}")));
-    expect(m, ".pf-tools declares no grid-template-columns").not.toBeNull();
-    return m![1].trim().split(/\s+/).length;
+    const n = gridsOf(css, "compact").get("pf-tools");
+    expect(n, ".pf-tools declares no grid-template-columns for a card without ancestors").toBeGreaterThan(0);
+    return n!;
   };
 
   /** A name no vocabulary spells, so nothing here is a second tool list: it is

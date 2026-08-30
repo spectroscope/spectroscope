@@ -25,9 +25,24 @@
 //   [...el.sheet.cssRules].map((r) => r.cssText);
 //   // -> [".hl-string { color: green; }"]     .hl-keyword is not there
 //
-// So this asks one question of every stylesheet in the tree: is every `*/`
-// the end of a comment that was open? It says nothing about anything else a
-// stylesheet can get wrong — a lost rule has one cause here and this is it.
+// So this asks two questions of every stylesheet in the tree: is every `*/` the
+// end of a comment that was open, and is every `/*` closed? It says nothing
+// about anything else a stylesheet can get wrong.
+//
+// THE TWO ARE NOT EQUALLY DANGEROUS and the first cut of this file claimed
+// otherwise ("a lost rule has one cause here and this is it"). Measured with
+// `npx esbuild --minify` on a two-line file of each shape:
+//
+//   stray `*/`     WARNING, exit 0 — the build goes on, the rule after it is
+//                  glued to the junk (`tail. */ .hl-keyword{color:red}`) and so
+//                  matches nothing. This is the one that ships.
+//   unclosed `/*`  ERROR, exit 1, "Expected \"*/\" to terminate multi-line
+//                  comment" — the build stops, and everything after the opener
+//                  is lost rather than one rule.
+//
+// The second is checked here anyway, because a check that says "every lost rule
+// has this one cause" while walking past the other cause is the kind of sentence
+// this whole file was written about.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -51,8 +66,12 @@ const sheets = walk(SRC)
   .filter((f) => f.endsWith(".css"))
   .map((f) => ({ rel: f.slice(SRC.length), text: readFileSync(f, "utf8") }));
 
-// Where a comment terminator stands outside a comment, as `line:column`,
-// one-based.
+// Every comment fault in a stylesheet, each as `line:column what` — the
+// position of the offending `*` or `/` itself, one-based, so it is the column
+// an editor puts the caret in. The first cut counted the column BEFORE looking
+// at the character and reported one past it, and its own pin baked the drift in
+// (`2:11` for a `*` standing in column 10), which is a number nobody could ever
+// catch by reading the test.
 //
 // Line comments and not a doc block, for the reason this file exists: a doc
 // block that quotes a terminator ENDS THERE, and the first draft of this one
@@ -63,11 +82,12 @@ const sheets = walk(SRC)
 // inside `content: "..."` is legal CSS and not stray. Nothing in this tree
 // writes one today, so that arm keeps the answer honest rather than carrying
 // anything.
-function orphanTerminators(css: string): string[] {
+function commentFaults(css: string): string[] {
   const out: string[] = [];
   let line = 1;
   let col = 1;
-  let inComment = false;
+  /** Where the open comment started, or null outside one. */
+  let openedAt: string | null = null;
   let quote: string | null = null;
   for (let i = 0; i < css.length; i++) {
     const ch = css[i];
@@ -77,10 +97,11 @@ function orphanTerminators(css: string): string[] {
       col = 1;
       continue;
     }
+    const at = `${line}:${col}`;
     col++;
-    if (inComment) {
+    if (openedAt !== null) {
       if (ch === "*" && next === "/") {
-        inComment = false;
+        openedAt = null;
         i++;
         col++;
       }
@@ -95,11 +116,12 @@ function orphanTerminators(css: string): string[] {
     }
     if (ch === '"' || ch === "'") quote = ch;
     else if (ch === "/" && next === "*") {
-      inComment = true;
+      openedAt = at;
       i++;
       col++;
-    } else if (ch === "*" && next === "/") out.push(`${line}:${col}`);
+    } else if (ch === "*" && next === "/") out.push(`${at} stray */`);
   }
+  if (openedAt !== null) out.push(`${openedAt} unclosed /*`);
   return out;
 }
 
@@ -110,8 +132,9 @@ describe("no stylesheet closes a comment it did not open", () => {
 
   it.each(sheets.map((s) => [s.rel, s.text] as const))("%s", (rel, text) => {
     expect(
-      orphanTerminators(text),
-      `${rel} has a */ outside a comment, and the CSS parser swallows the rule after it`,
+      commentFaults(text),
+      `${rel} closes a comment it did not open, or leaves one open — either way the CSS ` +
+        `parser loses what follows`,
     ).toEqual([]);
   });
 
@@ -119,9 +142,14 @@ describe("no stylesheet closes a comment it did not open", () => {
   // "none" for every file — including one that is broken — and the whole suite
   // above would be green about nothing.
   it("finds one when there is one, and only then", () => {
-    expect(orphanTerminators("/* a */\n   tail. */\n.hl-keyword { color: red; }")).toEqual(["2:11"]);
-    expect(orphanTerminators("/* a\n   tail. */\n.hl-keyword { color: red; }")).toEqual([]);
+    // Count it by hand once, because a column that drifts is unfalsifiable:
+    // `   tail. */` is three spaces, `tail.` (five), a space — so the `*` is the
+    // tenth character of the line and the answer is 10, not 11.
+    expect(commentFaults("/* a */\n   tail. */\n.hl-keyword { color: red; }")).toEqual(["2:10 stray */"]);
+    expect(commentFaults("/* a\n   tail. */\n.hl-keyword { color: red; }")).toEqual([]);
     // A terminator inside a string is text, not a terminator.
-    expect(orphanTerminators('.a::after { content: "*/"; }')).toEqual([]);
+    expect(commentFaults('.a::after { content: "*/"; }')).toEqual([]);
+    // And the other half of the sentence at the head of this file.
+    expect(commentFaults("/* never closed\n.hl-keyword { color: red; }")).toEqual(["1:1 unclosed /*"]);
   });
 });

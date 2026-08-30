@@ -190,9 +190,11 @@ export function AgentCardBody({
    * a card nobody complained about. Off for the worker, and it renders exactly
    * what it rendered before.
    *
-   * Applies to the expanded card only: compact keeps all of this inside a
-   * closed disclosure, and was measured at one height across the whole
-   * recording already.
+   * Applies to the expanded card only (`budgeted` is `budget && expandAll`).
+   * Compact holds all of this inside a disclosure that ARRIVES SHUT, and in
+   * that state was measured at one height across the whole recording. Opened it
+   * moves again — 420.06 / 547.86 / 664.92 / 703.02 over the same walk — which
+   * is a card card 319 did not budget, not a card that cannot move.
    */
   budget?: boolean;
 }) {

@@ -1,6 +1,21 @@
-// CARD 319, AC 7 — every part of the agent card that grows with its data has
-// a STATED BOUND, and the list of those parts is read out of the component
-// rather than typed here.
+// CARD 319, AC 7 — every part of the BUDGETED agent card that grows with its
+// data has a STATED BOUND, and the list of those parts is read out of the
+// component rather than typed here.
+//
+// "BUDGETED" IS LOAD-BEARING IN THAT SENTENCE and the first cut of this file
+// left it out, which the 0.11.0 merge review caught. `AgentCardBody` renders on
+// three cards — the expanded hub inside `.pf-agent--wide`, the compact hub, and
+// the worker (card 287) — and every bound below is stated in the wide scope
+// alone. Read unscoped, `.pf-agent--wide .pf-tools { max-height: 240px }`
+// answered for `.pf-tools` on all three, so the file reported the compact
+// belt bounded while it computes `max-height: none; overflow-y: visible` and
+// really does grow: measured 179.23 -> 216.28 -> 253.33 px of belt and
+// 394.02 -> 431.06 -> 468.11 px of card at 10, 11 and 13 chips. Card 321 is
+// what made that matter — before it, the belt was always exactly nine chips.
+//
+// So the readers below are scoped, and the claim is scoped with them. The
+// compact card's own growth is not budgeted by card 319 and is not claimed
+// here.
 //
 // Why derived, and why that is the whole point. The house record from card 312:
 // "a hand list, guarded by a test that types the same hand list, is not a
@@ -43,6 +58,7 @@
 //      is a clip with a scrollbar drawn on it.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { rulesOf } from "./cssScope";
 
 const read = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
 const NODES = read("nodes.tsx");
@@ -111,13 +127,22 @@ function growthRegions(): string[] {
  *  because an exclusion nobody checks is how a derivation goes quietly blind. */
 const CANVAS_MARKERS = ["nowheel", "nodrag"];
 
-/** The px bound flowmap.css puts on a class, wherever it puts it. */
+/** The stylesheet as the BUDGETED card wears it: rules with no ancestor, plus
+ *  rules under `.pf-agent--wide`, and nothing else. `cssScope.ts` carries the
+ *  reasoning; the short version is that a selector is a claim about an ancestor
+ *  and this card has exactly one. */
+const BUDGETED = rulesOf(read("flowmap.css"), "wide");
+
+/** Every rule the budgeted card wears that names `.<token>` — BEM modifiers of
+ *  it included, the way `.pf-chip--on` is still the chip. */
+const rulesOn = (token: string) =>
+  BUDGETED.filter((r) => r.tokens.some((t) => t === token || t.startsWith(`${token}--`)));
+
+/** The px bound the budgeted card states for a class, wherever it states it. */
 function cssBoundOf(token: string): number | null {
-  const re = new RegExp(`(^|[\\s,>+~])\\.${token}\\b[^{}]*\\{([^}]*)\\}`, "gm");
   let best: number | null = null;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(CSS)) !== null) {
-    const cap = /(?:^|\s)(?:max-)?height:\s*(\d+(?:\.\d+)?)px/.exec(m[2]);
+  for (const { body } of rulesOn(token)) {
+    const cap = /(?:^|\s)(?:max-)?height:\s*(\d+(?:\.\d+)?)px/.exec(body);
     if (cap !== null) best = best === null ? Number(cap[1]) : Math.min(best, Number(cap[1]));
   }
   return best;
@@ -125,12 +150,7 @@ function cssBoundOf(token: string): number | null {
 
 /** Whether what is past that bound can still be reached. */
 function scrollsPastItsBound(token: string): boolean {
-  const re = new RegExp(`(^|[\\s,>+~])\\.${token}\\b[^{}]*\\{([^}]*)\\}`, "gm");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(CSS)) !== null) {
-    if (/overflow(-y)?:\s*(auto|scroll)/.test(m[2])) return true;
-  }
-  return false;
+  return rulesOn(token).some(({ body }) => /overflow(-y)?:\s*(auto|scroll)/.test(body));
 }
 
 describe("the derivation, before it is believed", () => {
@@ -156,6 +176,23 @@ describe("the derivation, before it is believed", () => {
 
   it("reads the agent card and not the worker card that shares its markup", () => {
     expect(agentCardSource()).not.toContain("export function SubagentNode");
+  });
+
+  // The scope, checked rather than trusted. Every bound this file credits is
+  // stated under `.pf-agent--wide`; read without that ancestor there is no
+  // bound at all, which is the compact card's actual situation and the reason
+  // the sentence at the head of this file now says BUDGETED. Both halves come
+  // out of the live stylesheet, so neither can go vacuous.
+  it("credits a bound only where the card can wear it", () => {
+    const compact = rulesOf(read("flowmap.css"), "compact");
+    for (const token of growthRegions()) {
+      expect(cssBoundOf(token), `.${token} on the budgeted card`).not.toBeNull();
+      expect(
+        compact.filter((r) => r.tokens.includes(token)).some((r) => /(?:max-)?height:\s*\d/.test(r.body)),
+        `.${token} is bounded for a card with no .pf-agent--wide above it — if that is now ` +
+          `true, this file's claim can be widened back past the budgeted card`,
+      ).toBe(false);
+    }
   });
 
   // The exclusion, checked rather than trusted: the moment one of these markers

@@ -1751,9 +1751,13 @@
  * Scoped to `.pf-agent--wide` on purpose. The worker card renders the SAME body
  * (card 287) and its height is a measured bound the whole worker grid is seated
  * from (cardGeometry.ts, card 296), so a reserve leaking into it would move
- * every seat on the map. Compact is out of reach for the same reason: it keeps
- * all of this inside a closed disclosure and was measured at one height across
- * the whole recording already.
+ * every seat on the map. Compact is left out for a different and weaker reason,
+ * stated plainly because the first cut of this block overstated it: AS IT
+ * ARRIVES it holds all of this inside a SHUT disclosure and was measured at one
+ * height across the whole recording. Opened — one click, on the card's own
+ * `pf-disc__btn` — the panels come and go again and it moves, measured over the
+ * same walk: 420.06 / 547.86 / 664.92 / 703.02, eleven moves. That is a card of
+ * its own and card 319 did not budget it.
  *
  * Every number here was measured in Chrome with both variable fonts loaded
  * before the read, through getBoundingClientRect inside

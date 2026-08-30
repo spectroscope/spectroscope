@@ -75,6 +75,7 @@ import { agentBelt } from "./belt";
 import { foldSeatPool } from "./workerGrid";
 import { MAX_CARD_SHOTS, deriveDetail, sceneToFlow } from "./sceneToFlow";
 import { ExpandAllContext } from "./expandContext";
+import { type Scope, type ScopedRule, gridsOf, keptToOneLine, reservesOf, rulesOf } from "./cssScope";
 
 // The canvas package needs its store; these pins are about OUR markup, so the
 // handles are stubbed exactly as nodeCards.test.tsx stubs them.
@@ -113,8 +114,8 @@ const NO_BOX_TOKENS = ["pf-pulse"];
 
 /**
  * The boxes the card RESERVES — a class flowmap.css gives a fixed height AND a
- * scroll, inside the expanded hub's own scope. The census counts such a box and
- * does not look inside it, because nothing inside it can move the card.
+ * scroll. The census counts such a box and does not look inside it, because
+ * nothing inside it can move the card.
  *
  * DERIVED, and it has to be. A list typed here would be the card-312 defect
  * word for word — "a hand list, guarded by a test that types the same hand
@@ -122,38 +123,27 @@ const NO_BOX_TOKENS = ["pf-pulse"];
  * reserves a fifth region the census would go on reporting its contents as a
  * change of shape, red about something that cannot happen.
  *
- * A `height`, never a `max-height`: a max-height still collapses when its
- * region is empty, and a region that collapses is a region that moves the card.
- * That is exactly the difference between the shelf before this card and after.
+ * PER SCOPE, and that is the correction the 0.11.0 merge review forced. The
+ * first cut of this derivation demanded `.pf-agent--wide` in the selector and
+ * then applied the answer by class token — so a box the stylesheet reserves for
+ * the EXPANDED card was folded away on the compact one too, which wears no such
+ * ancestor. It was inert only because the compact card keeps those regions
+ * inside a closed disclosure and never rendered one. `cssScope.ts` reads the
+ * ancestor instead of dropping it; the whole story is there.
  */
-const RESERVED_BOXES: ReadonlySet<string> = (() => {
-  const out = new Set<string>();
-  // Comments off FIRST — the scrubKeepsItsWidth lesson: a `}` inside a comment
-  // ends an extracted rule early, and everything judged after it is judged on a
-  // rule that is not there.
-  const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-  const rule = /(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = rule.exec(bare)) !== null) {
-    const selector = m[2].trim();
-    const body = m[3];
-    if (!selector.includes(".pf-agent--wide")) continue;
-    if (!/(^|[\s;])height:\s*\d/.test(body)) continue;
-    if (!/overflow(-y)?:\s*(auto|scroll)/.test(body)) continue;
-    for (const token of (selector.split(/\s+/).pop() ?? "").split(".")) {
-      if (token !== "") out.add(token);
-    }
-  }
-  return out;
-})();
+const RESERVED_BOXES: ReadonlySet<string> = reservesOf(CSS, "wide");
 
-/** Does flowmap.css give `.<token>` this declaration, anywhere it names it?
+/** Does flowmap.css give `.<token>` this declaration ANYWHERE it names it?
  *
- *  One reader for the stylesheet rather than two that can drift apart:
- *  `scrolls()` at the bottom of this file is this call with the overflow
- *  property, and the census below asks the same question about `nowrap`. The
- *  `\b` after the token is what makes a BEM modifier count as the same box —
- *  `.pf-chip--foreign` answers for `pf-chip`, `.pf-ctx__row` does not answer
+ *  An "anywhere" question, and only questions that stay true under "anywhere"
+ *  may be asked through it: `scrolls()` at the bottom of this file asks whether
+ *  a region scrolls at all, and the chip case below asks whether ANY rule lets
+ *  a chip span. A question of the form "and no rule takes it back" cannot be
+ *  asked here — that one is `keptToOneLine` in `cssScope.ts`, which reads every
+ *  rule instead of returning on the first that agrees.
+ *
+ *  The `\b` after the token is what makes a BEM modifier count as the same box
+ *  — `.pf-chip--foreign` answers for `pf-chip`, `.pf-ctx__row` does not answer
  *  for `pf-ctx` — which is the rule `boxOf` already reads the markup by. */
 function declares(token: string, prop: RegExp): boolean {
   const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -163,26 +153,8 @@ function declares(token: string, prop: RegExp): boolean {
   return false;
 }
 
-/** How many columns a `grid-template-columns` value declares — tracks at the
- *  top level, so `84px minmax(0, 1fr) auto` is three and not four. */
-function trackCount(value: string): number {
-  let nesting = 0;
-  let tracks = 0;
-  let inTrack = false;
-  for (const ch of value.trim()) {
-    if (ch === "(") nesting++;
-    else if (ch === ")") nesting--;
-    if (nesting === 0 && /\s/.test(ch)) {
-      inTrack = false;
-      continue;
-    }
-    if (!inTrack) {
-      tracks++;
-      inTrack = true;
-    }
-  }
-  return tracks;
-}
+/** The stylesheet as each card wears it, read once. */
+const RULES: Record<Scope, ScopedRule[]> = { wide: rulesOf(CSS, "wide"), compact: rulesOf(CSS, "compact") };
 
 /**
  * The grids whose HEIGHT IS THEIR ROW COUNT, by class -> columns. The census
@@ -220,40 +192,39 @@ function trackCount(value: string): number {
  * gives above. `repeat()` is refused because a repeat count is not a track
  * count, and a wrong column count would price the rows wrong.
  *
- * TWO CONDITIONS, both read and not assumed, because rows only price a grid
- * whose rows are ONE height: every cell is the same box, and the stylesheet
- * gives that box `white-space: nowrap`, so each cell is one line. A context
- * row is a label, a bar and a number, so it fails the first and is read
- * element by element as before. A cell that could SPAN is a row the count does
- * not price, and the case below holds that door for the belt's own chips —
- * which is `cardGeometry.test.ts`'s pin on `.pf-chip--foreign`, widened to
- * every chip because the census prices the whole belt and not one cell.
+ * THREE CONDITIONS, all read and not assumed, because rows only price a grid
+ * whose rows are ONE height:
+ *
+ *   - every cell is the same box. A context row is a label, a bar and a
+ *     number, so it fails this one and is read element by element as before.
+ *   - the stylesheet keeps that box to one line, in EVERY rule that touches it
+ *     (`keptToOneLine`, not "some rule says nowrap" — a modifier can take it
+ *     back, and `.pf-chip--foreign` is exactly the chip that would want to).
+ *   - no cell can SPAN a second column, which the count never priced. The case
+ *     below holds that door for the belt's own chips — `cardGeometry.test.ts`'s
+ *     pin on `.pf-chip--foreign`, widened to every chip because the census
+ *     prices the whole belt and not one cell of it.
+ *
+ * And the cells are DEDUPLICATED rather than dropped: a chip landing in a row
+ * that is already there is a cell shape the census has already seen, while
+ * anything appearing INSIDE a cell is a shape it has not — and a block child in
+ * a one-line cell is a second line box. The first cut of this fold threw the
+ * cells' contents away and was measured green while a region came and went
+ * inside every chip.
  *
  * AND IT IS DELIBERATELY NOT THE RESERVE RULE ABOVE. `.pf-agent--wide
  * .pf-tools` states a `max-height`, which that rule refuses on purpose, and
- * promoting it to a `height` would have been the wrong repair twice over. The
- * census reads `AgentCardBody`'s markup, which carries no `pf-agent--wide` at
- * all — the class is on `AgentNode`'s root — so a reserve derived from the
- * wide scope is applied to the compact card as well, and in compact this grid
- * computes `max-height: none; overflow-y: visible` and really does move the
- * card, 394.02 -> 431.06 on a sixth row. A green there would be green about
- * something that can happen. Rows are true in both scopes because the columns
- * are declared in both.
+ * promoting it to a `height` would have been the wrong repair twice over: in
+ * compact this grid computes `max-height: none; overflow-y: visible` and really
+ * does move the card, 394.02 -> 431.06 on a sixth row. A green there would be
+ * green about something that can happen.
+ *
+ * Rows are true on the compact card as well — but because `cssScope.ts` asks
+ * the stylesheet per scope and gets an answer, NOT because someone checked once
+ * that the columns are declared without one. Move that declaration under
+ * `.pf-agent--wide` and the compact walk below goes red, which is the bite.
  */
-const CELL_GRIDS: ReadonlyMap<string, number> = (() => {
-  const out = new Map<string, number>();
-  const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-  const rule = /(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = rule.exec(bare)) !== null) {
-    const tracks = /(^|[\s;])grid-template-columns:([^;]+)/.exec(m[3]);
-    if (tracks === null || /repeat\(/.test(tracks[2])) continue;
-    for (const token of (m[2].trim().split(/\s+/).pop() ?? "").split(".")) {
-      if (token !== "") out.set(token, trackCount(tracks[2]));
-    }
-  }
-  return out;
-})();
+const CELL_GRIDS: ReadonlyMap<string, number> = gridsOf(CSS, "wide");
 
 /** React renders these without a closing tag, so they never open a level. */
 const VOID_TAGS = new Set(["img", "br", "hr", "input", "meta", "link", "source"]);
@@ -261,8 +232,12 @@ const VOID_TAGS = new Set(["img", "br", "hr", "input", "meta", "link", "source"]
 /** One element, by tag and by the classes that carry its box.
  *
  *  BEM modifiers (`--`) are dropped on purpose and the rule is structural, not
- *  a convenience: `pf-chip--on` and `pf-row--lit` recolour an element that is
- *  already there, while `pf-panelbox` and `pf-ctx__row` ARE the element. */
+ *  a convenience: a modifier says the element is ALREADY THERE and dressed
+ *  differently, while `pf-panelbox` and `pf-ctx__row` ARE the element. That is
+ *  a statement about presence and no more than that — a modifier can change
+ *  layout, and one here does (`.pf-chip--launch` sets `display: flex`), which
+ *  is why the fold's "one line" condition is read out of the stylesheet across
+ *  every modifier rather than inferred from this line. */
 function boxOf(tag: string, attrs: string): string {
   const cls = /class="([^"]*)"/.exec(attrs);
   const tokens = (cls?.[1] ?? "")
@@ -285,7 +260,9 @@ function boxOf(tag: string, attrs: string): string {
  * chip that lands in a row already there reads the same, while a chip that
  * opens a sixth row does not.
  */
-function composition(markup: string): string[] {
+function composition(markup: string, scope: Scope = "wide"): string[] {
+  const reserved = reservesOf(CSS, scope);
+  const grids = gridsOf(CSS, scope);
   const out: string[] = [];
   const token = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^<>]*?)?)(\/?)>/g;
   let depth = 0;
@@ -293,10 +270,10 @@ function composition(markup: string): string[] {
   let reservedAt: number | null = null;
   /**
    * The cell grid being read: the depth it opened at (-1 outside one), its
-   * columns, the entry that names it, what the census would have said inside
-   * it, and each direct cell's box. Only the outermost is priced — a grid
-   * inside a grid is read as ordinary content, because its own rows are not
-   * this one's rows.
+   * columns, the entry that names it, and one entry per direct cell holding
+   * that cell's whole subtree. Only the outermost is priced — a grid inside a
+   * grid is read as ordinary content, because its own rows are not this one's
+   * rows.
    *
    * Plain fields and not one object, which is a type story and not a style
    * one: an object held in a `let` that this loop reads at the top and writes
@@ -307,22 +284,28 @@ function composition(markup: string): string[] {
   let gridAt = -1;
   let gridCols = 0;
   let gridHead = "";
-  let gridInside: string[] = [];
-  let gridCells: string[] = [];
+  let gridCells: string[][] = [];
   const closeGrid = () => {
-    const cell = gridCells[0];
+    const heads = gridCells.map((c) => c[0]);
+    const cell = heads[0];
     const classes = cell === undefined ? [] : cell.split(".").slice(1);
     // Rows price a grid only when its rows are one height: one kind of cell,
-    // and that kind kept to a single line by the stylesheet.
+    // and that kind kept to a single line by every rule that touches it.
     const priced =
-      gridCells.length > 0 &&
-      gridCells.every((c) => c === cell) &&
+      heads.length > 0 &&
+      heads.every((c) => c === cell) &&
       classes.length === 1 &&
-      declares(classes[0], /white-space:\s*nowrap/);
-    if (priced) out.push(`${gridHead}:${Math.ceil(gridCells.length / gridCols)}rows`);
-    else out.push(gridHead, ...gridInside);
+      keptToOneLine(classes[0], RULES[scope]);
+    if (priced) {
+      out.push(`${gridHead}:${Math.ceil(heads.length / gridCols)}rows`);
+      // The cells are deduplicated, not dropped. A chip landing in a row that
+      // is already there repeats a shape the census has seen; a box appearing
+      // inside a cell is a shape it has not, and a block child in a one-line
+      // cell is a second line box. Sorted, because a set has no order of its
+      // own and the entry is about WHICH shapes, not in which order.
+      out.push(...[...new Set(gridCells.map((c) => c.join(">")))].sort());
+    } else out.push(gridHead, ...gridCells.flat());
     gridAt = -1;
-    gridInside = [];
     gridCells = [];
   };
   let m: RegExpExecArray | null;
@@ -337,16 +320,18 @@ function composition(markup: string): string[] {
     const box = reservedAt === null ? boxOf(tag, attrs) : null;
     const classes = box === null ? [] : (/class="([^"]*)"/.exec(attrs)?.[1] ?? "").split(/\s+/);
     const empty = selfClose === "/" || VOID_TAGS.has(tag);
-    const reserves = classes.some((c) => RESERVED_BOXES.has(c));
+    const reserves = classes.some((c) => reserved.has(c));
     const cols =
       box === null || empty || reserves || gridAt >= 0
         ? undefined
-        : classes.map((c) => CELL_GRIDS.get(c)).find((n) => n !== undefined);
+        : classes.map((c) => grids.get(c)).find((n) => n !== undefined);
     if (box !== null) {
-      if (gridAt >= 0 && depth === gridAt + 1) gridCells.push(box);
       // A grid's own head waits for its rows; everything else goes out now, or
-      // into the grid it is inside, in case that grid turns out not to price.
-      if (cols === undefined) (gridAt < 0 ? out : gridInside).push(box);
+      // into the cell it is inside, in case that grid turns out not to price.
+      if (gridAt < 0) {
+        if (cols === undefined) out.push(box);
+      } else if (depth === gridAt + 1) gridCells.push([box]);
+      else gridCells[gridCells.length - 1]?.push(box);
     }
     if (empty) continue;
     if (reserves) reservedAt = depth;
@@ -522,10 +507,29 @@ describe("the instrument, before it is believed", () => {
 
     expect(composition(beltMarkup(foreign))).toEqual(composition(beltMarkup(fixed)));
     expect(composition(beltMarkup(sixth))).not.toEqual(composition(beltMarkup(fixed)));
-    // And it is a fold, not a blindfold: the belt is still one entry, so a belt
-    // that vanished would still be a change of shape.
-    expect(composition(beltMarkup(fixed))).toHaveLength(1);
-    expect(composition(beltMarkup(fixed))[0]).toMatch(/^div\.nowheel\.pf-tools:\d+rows$/);
+    // And it is a fold, not a blindfold: the belt is its head wearing its rows
+    // plus the shapes its cells take, so a belt that vanished, a belt that grew
+    // a row and a chip that grew a box inside it are all still changes of shape.
+    expect(composition(beltMarkup(fixed))).toEqual([
+      `div.nowheel.pf-tools:${Math.ceil(fixed / cols!)}rows`,
+      "span.pf-chip",
+    ]);
+  });
+
+  // The half of that fold the first cut got wrong, and it was measured wrong
+  // rather than argued wrong: the cells' contents were thrown away with the
+  // cells, so a region appearing INSIDE every chip was invisible. The chips are
+  // grid items and blockify, so a block child really is a second line box.
+  it("still sees a box that appears inside the cells", () => {
+    const chip = '<span class="pf-chip pf-chip--tool">x</span>';
+    const hot = '<span class="pf-chip pf-chip--tool"><div class="pf-chip__hot">!</div>x</span>';
+    const belt = (cells: string) => `<div class="pf-tools nowheel">${cells}</div>`;
+    expect(composition(belt(chip.repeat(4)))).not.toEqual(composition(belt(hot + chip.repeat(3))));
+    expect(composition(belt(chip.repeat(4)))).not.toEqual(composition(belt(hot.repeat(4))));
+    // And the fold still holds where it must: the count of cells wearing a
+    // shape is not the shape, so a fifth chip of a shape already there is not a
+    // change — that is the whole point of pricing rows.
+    expect(composition(belt(chip.repeat(4)))).toEqual(composition(belt(chip.repeat(3))));
   });
 
   // The refusal, on the other fixed-column grid this card renders. A context
@@ -569,12 +573,59 @@ describe("the instrument, before it is believed", () => {
     ).toBe(false);
   });
 
-  // On the real card, not a probe: the chips are gone from the census and the
-  // belt is still in it, wearing its rows.
+  // The other condition, and the way it was asked wrong first. "Does some rule
+  // say nowrap" is answered by `.pf-chip` and never reaches the modifier that
+  // takes it back — and `.pf-chip--foreign` is precisely the chip that could
+  // want to wrap, since its text is an arbitrary wire name. Both directions, on
+  // a stylesheet written here so the second one is reachable at all, and then
+  // the live one so the case is about the belt and not about a fixture.
+  it("reads every white-space the cell wears, not the first one", () => {
+    const said = ".pf-chip { white-space: nowrap; }\n";
+    const takenBack = `${said}.pf-chip--foreign { white-space: normal; }\n`;
+    expect(keptToOneLine("pf-chip", rulesOf(said, "wide"))).toBe(true);
+    expect(keptToOneLine("pf-chip", rulesOf(takenBack, "wide"))).toBe(false);
+    expect(keptToOneLine("pf-chip", rulesOf(".pf-chip { padding: 6px; }\n", "wide"))).toBe(false);
+    expect(keptToOneLine("pf-chip", RULES.wide), "the belt's chips today").toBe(true);
+  });
+
+  // THE SCOPE, which is the merge review's finding and the reason `cssScope.ts`
+  // exists. A selector is a claim about an ancestor, and `AgentCardBody`'s
+  // markup has none: `pf-agent--wide` lives on `AgentNode`'s root, one level up.
+  // A derivation that keeps only the last component of the selector credits a
+  // rule written for the expanded card to the compact one — which is where the
+  // belt has no cap and really does grow a row at a time.
+  it("credits a rule only to the card whose ancestors can satisfy it", () => {
+    // Both halves read out of the live stylesheet, so neither can go vacuous.
+    expect(CSS, "the rule this case rests on").toMatch(/\.pf-agent--wide \.pf-toolbody \{/);
+    expect(CSS, "the belt's columns are stated for every card").toMatch(
+      /\n\.pf-tools \{[^}]*grid-template-columns/,
+    );
+    expect(reservesOf(CSS, "wide"), "a wide reserve").toContain("pf-toolbody");
+    expect(
+      reservesOf(CSS, "compact"),
+      "and it is not a reserve on a card without that ancestor",
+    ).not.toContain("pf-toolbody");
+    expect(gridsOf(CSS, "compact").get("pf-tools"), "the belt prices on both cards").toBe(
+      gridsOf(CSS, "wide").get("pf-tools"),
+    );
+    // And an ancestor no card here can have reaches neither.
+    expect(rulesOf(".a .b .c { height: 1px; overflow-y: auto; }\n", "wide")).toEqual([]);
+    expect(rulesOf(".pf-agent--wide .x { height: 1px; }\n", "compact")).toEqual([]);
+  });
+
+  // On the real card, not a probe: ten chips come out as the two shapes a chip
+  // takes, and the belt is still one entry wearing its rows.
   it("folds the belt on the card the recording renders", () => {
+    const markup = agentCardMarkup(readSample().slice(0, 5));
     const card = agentCardAfter(readSample().slice(0, 5));
-    expect(agentCardMarkup(readSample().slice(0, 5)), "no belt at this step").toContain("pf-chip");
-    expect(card.filter((e) => e.startsWith("span.pf-chip"))).toEqual([]);
+    expect((markup.match(/class="pf-chip/g) ?? []).length, "no belt at this step").toBeGreaterThan(5);
+    // A chip, and the launch chip with the fan-out mark inside it. Two shapes
+    // for however many chips the belt is carrying — which is the fold — and no
+    // third shape, which is what says the fold is reading and not guessing.
+    expect(card.filter((e) => e.startsWith("span.pf-chip"))).toEqual([
+      "span.pf-chip",
+      "span.pf-chip>span.pf-chip__fan",
+    ]);
     expect(card.filter((e) => e.includes("pf-tools"))).toHaveLength(1);
     expect(card.find((e) => e.includes("pf-tools"))).toMatch(/:\d+rows$/);
   });
@@ -836,12 +887,26 @@ describe("every panel the budget forces on states a fixed box", () => {
   );
 });
 
-describe("compact is already still, and stays that way", () => {
+describe("compact, with its disclosure shut, is already still and stays that way", () => {
   // Measured over the shipped recording in the browser: 394.02 px, one value,
-  // zero changes — the context (and with it the tool panel) sits inside a
-  // closed Disclosure, so none of this reaches the reader. The flicker is an
-  // expanded-view defect, and a fix that budgets the expanded card must not
-  // start moving the compact one.
+  // zero changes. That is the card AS IT ARRIVES — the context, and with it the
+  // tool panel, sits inside a Disclosure whose `open` is false — and this walk
+  // renders it the same way, without ExpandAllContext, so the panels are not in
+  // the markup at all.
+  //
+  // WHAT THIS SAYS AND WHAT IT DOES NOT, because the first cut of this comment
+  // claimed the second and the merge review caught it. It said the panels sit
+  // in a closed disclosure "so none of this reaches the reader". They reach him
+  // the moment he clicks the `pf-disc__btn` this card renders on every step:
+  // `budgeted` is `budget && expandAll` (nodes.tsx), so nothing is budgeted in
+  // compact, and the panels come and go inside the open disclosure exactly as
+  // they did on the expanded card before card 319. Measured with it open, same
+  // 189-step walk: four heights, 420.06 / 547.86 / 664.92 / 703.02, eleven
+  // moves, `.pf-toolbody` the region that moves.
+  //
+  // So this case is about the compact card's DEFAULT state, and card 319
+  // budgets the expanded hub. Compact-with-the-disclosure-open is a card of its
+  // own and is not claimed here.
   it("renders one compact card across the whole recording", () => {
     const events = readSample();
     const series = events.map((_, i) => {
@@ -855,7 +920,12 @@ describe("compact is already still, and stays that way", () => {
         systemPrompt: "you are a careful agent",
       });
       const agent = flow.nodes.find((n) => n.id === "agent")!;
-      return composition(renderToStaticMarkup(<AgentCardBody data={agent.data as unknown as AgentData} />));
+      // Read in the COMPACT scope: this card wears no `.pf-agent--wide`, so a
+      // box the stylesheet fixes only for the expanded one is not fixed here.
+      return composition(
+        renderToStaticMarkup(<AgentCardBody data={agent.data as unknown as AgentData} />),
+        "compact",
+      );
     });
     expect(moves(series)).toEqual([]);
   });
