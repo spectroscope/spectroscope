@@ -166,13 +166,20 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
       <div className="lab-now" aria-live="polite">
         <span className="lab-now-tag">{de ? "gerade" : "now"}</span>
         <span className="lab-now-dot" aria-hidden="true" />
-        <span className="lab-now-label mono">{nowText}</span>
-        {following && running && <span className="lab-now-queue mono">{t(lang, "fleetlab.live")}</span>}
-        {!following && (
-          <span className="lab-now-queue mono tabular">
-            {t(lang, "fleetlab.behind", { n: total - clamped })}
+        {/* CARD 319, the same group as the lab's own band: the two chips come
+            and go while the reader scrubs, and as direct children of `.lab-now`
+            their arrival re-decided how many lines it takes. */}
+        <div className="lab-now-say">
+          <span className="lab-now-label mono" title={nowText}>
+            {nowText}
           </span>
-        )}
+          {following && running && <span className="lab-now-queue mono">{t(lang, "fleetlab.live")}</span>}
+          {!following && (
+            <span className="lab-now-queue mono tabular">
+              {t(lang, "fleetlab.behind", { n: total - clamped })}
+            </span>
+          )}
+        </div>
         <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
           <button
             type="button"

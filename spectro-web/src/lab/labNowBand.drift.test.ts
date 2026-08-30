@@ -117,6 +117,184 @@ describe("the band cannot be pushed onto a second line", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// THE HALF THE FIRST PASS MISSED: the label is not the only thing in this band
+// whose width the run decides.
+//
+// `min-width: 0` and `flex: 1 1 0` take the LABEL out of the line-breaking
+// decision. They do nothing about the queue chip beside it, which appears while
+// events are still waiting and vanishes on the last step — and a chip that
+// comes and goes IS the band changing line count, exactly the way a panel that
+// comes and goes was the card changing height.
+//
+// MEASURED, in the running app, same instrument as the rest of this card
+// (playwright + Chrome, frames counted first, the chip removed and put back on
+// one settled page):
+//
+//                        with the chip   without it
+//   1600x900                   47.05        47.05
+//   1280x800                   47.05        47.05
+//   1100x700                   84.09        47.05   <- 37.04 px, on one click
+//
+// And it is this card's own doing: with the two declarations above undone on
+// the same page, 1100x700 reads 84.09 BOTH ways. The label could not shrink, so
+// the band was already on two lines and the chip changed nothing. Making the
+// label shrink handed the chip the casting vote.
+//
+// THE FIX, and why it is a wrapper rather than a third declaration. The chip
+// cannot be given a flex base of 0 — it has no room to shrink into and would
+// simply disappear. So the label and the chip go into ONE group that has the
+// base of 0, and the chip takes its width out of the label's share instead of
+// out of the band's line. The line-breaking sees one item whose base never
+// changes, so the run cannot move it. Re-measured the same way: 47.05 / 47.05 /
+// 84.09 / 84.09 — one value at every width, chip or no chip.
+//
+//   node /tmp/c319fix/group.mjs   # W/H per run, MIN=24ch
+// ---------------------------------------------------------------------------
+
+/** The two files that render this band. */
+const BANDS = ["LabTransport.tsx", "FleetLab.tsx"] as const;
+const bandSource = (file: string) => readFileSync(join(__dirname, file), "utf8");
+
+/** The `.lab-now` element's markup in one of those files, from its opening tag
+ *  to the matching close — depth-counted, because the band holds nested
+ *  elements and the first `</div>` is not its end. */
+function bandMarkup(file: string): string {
+  const src = bandSource(file);
+  const from = src.indexOf('<div className="lab-now"');
+  expect(from, `${file} must render the band`).toBeGreaterThan(-1);
+  let depth = 0;
+  const tag = /<(\/?)div\b|\/>/g;
+  tag.lastIndex = from;
+  let m: RegExpExecArray | null;
+  while ((m = tag.exec(src)) !== null) {
+    if (m[0] === "/>") continue;
+    if (m[1] === "/") {
+      depth--;
+      if (depth === 0) return src.slice(from, tag.lastIndex);
+    } else depth++;
+  }
+  throw new Error(`${file}: the band's markup never closes`);
+}
+
+/**
+ * Every band element the run can take away, by class.
+ *
+ * DERIVED: an element written behind a `&&` or a `?` is one the markup renders
+ * on some steps and not on others. Listing "the queue chip" here would be the
+ * card-312 defect — the next conditional chip somebody adds would sail past a
+ * hand list, and it is a conditional chip that broke this band in the first
+ * place.
+ */
+function conditionalBandClasses(file: string): string[] {
+  const markup = bandMarkup(file);
+  const out = new Set<string>();
+  for (const m of markup.matchAll(/className="(lab-now-[^"]*)"/g)) {
+    const before = markup.slice(Math.max(0, m.index - 120), m.index);
+    if (!/(&&|\?)\s*(\(\s*)?<[^<>]*$/.test(before)) continue;
+    // Only the band's own classes: `mono` and `tabular` ride along on the same
+    // element and are typography, not a box in this layout.
+    for (const c of m[1].split(/\s+/)) if (c.startsWith("lab-now-")) out.add(c);
+  }
+  return [...out].sort();
+}
+
+/** Whether an element carrying `token` sits inside the shrinkable group. */
+function insideTheGroup(file: string, token: string): boolean {
+  const markup = bandMarkup(file);
+  const open = markup.indexOf('className="lab-now-say"');
+  if (open === -1) return false;
+  // The group holds spans and nothing else, so its own first `</div>` ends it.
+  const close = markup.indexOf("</div>", open);
+  const at = markup.search(new RegExp(`className="[^"]*\\b${token}\\b`));
+  return at > open && at < close;
+}
+
+describe("nothing the run can take away decides how many lines the band has", () => {
+  // The derivation, before it is believed — from both sides. A rule that found
+  // nothing would make the containment case below vacuously green, and a rule
+  // that found everything would demand the tag and the dot move too.
+  it.each(BANDS)("%s: finds the chip the run takes away, and not the fixtures", (file) => {
+    const found = conditionalBandClasses(file);
+    expect(found, `${file} has no conditional band element at all`).not.toEqual([]);
+    expect(found).toContain("lab-now-queue");
+    expect(found).not.toContain("lab-now-tag");
+    expect(found).not.toContain("lab-now-dot");
+    expect(found).not.toContain("lab-now-label");
+  });
+
+  it.each(BANDS)("%s: every one of them shares the label's group", (file) => {
+    for (const token of conditionalBandClasses(file)) {
+      expect(
+        insideTheGroup(file, token),
+        `.${token} comes and goes as a direct child of .lab-now, so its arrival ` +
+          `re-decides how many lines the band takes and the map moves under it`,
+      ).toBe(true);
+    }
+  });
+
+  it.each(BANDS)("%s: and the label is in there with them", (file) => {
+    expect(insideTheGroup(file, "lab-now-label"), `${file}`).toBe(true);
+  });
+
+  // `insideTheGroup` ends the group at its first `</div>`, which is only right
+  // while the group holds spans and nothing else. Said out loud and checked,
+  // because a silent premise is how a containment check starts answering about
+  // the wrong span.
+  it.each(BANDS)("%s: the group holds spans, which is what lets this be read", (file) => {
+    const markup = bandMarkup(file);
+    const open = markup.indexOf('className="lab-now-say"');
+    expect(open, `${file} must render the group`).toBeGreaterThan(-1);
+    expect(markup.slice(open, markup.indexOf("</div>", open))).not.toContain("<div");
+  });
+
+  // The group is only worth anything if line-breaking cannot see what is inside
+  // it — the same `flex: … 0` lesson the label learned above, one level up.
+  it("the group starts from no width at all", () => {
+    const group = rules().find((r) => r.selector === ".lab-now-say");
+    expect(group, ".lab-now-say must exist").toBeDefined();
+    expect(group!.body, "the group claims a line off its content").toMatch(/flex:\s*\d+\s+\d+\s+0(?![.\d])/);
+  });
+
+  // And a floor, or the fix trades a still band for a band with no command in
+  // it: at 1100x700 an unfloored group renders the label 0 px wide. Measured
+  // with the floor: 81 px, which is what the band gave it before this card.
+  it("the group keeps room for the command it exists to show", () => {
+    const group = rules().find((r) => r.selector === ".lab-now-say")!;
+    expect(group.body, "the group may shrink to nothing").toMatch(/min-width:\s*\d/);
+  });
+});
+
+describe("a truncated command is still reachable", () => {
+  // The rule this file already states — "losing it is worse than the flicker:
+  // the owner steps through this run to read what is running" — and the
+  // ellipsis IS losing it. Measured on the owner's own command string at three
+  // windows, before this case existed:
+  //
+  //   1600x900   61 of 119 characters      1440x900   39      1280x800   17
+  //
+  // ToolCallPanel.tsx recovers its own clipped label into a `title` for exactly
+  // this reason; the band, which carries the string he is actually reading, did
+  // not. DERIVED from the stylesheet: whatever truncates has to hand the whole
+  // string back.
+  const truncating = () => bandRules().filter((r) => /text-overflow:\s*ellipsis/.test(r.body));
+
+  it("finds the segment that truncates", () => {
+    expect(truncating().map((r) => r.selector)).toContain(".lab-now-label");
+  });
+
+  it.each(BANDS)("%s: every truncating segment hands the whole string back", (file) => {
+    const markup = bandMarkup(file);
+    for (const rule of truncating()) {
+      const token = rule.selector.replace(/^\./, "");
+      const at = markup.search(new RegExp(`className="[^"]*\\b${token}\\b`));
+      if (at === -1) continue;
+      const tag = markup.slice(markup.lastIndexOf("<", at), markup.indexOf(">", at));
+      expect(tag, `.${token} clips the text and offers no way to read the rest`).toMatch(/\btitle=/);
+    }
+  });
+});
+
 describe("what the band still has to be able to do", () => {
   // Card 296 put `flex-wrap: wrap` here for a real reason — "a control the
   // pane cannot show is a control that is not there" — and this card must not

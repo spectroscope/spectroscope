@@ -158,12 +158,24 @@ export function LabTransport(props: {
       <div className="lab-now" aria-live="polite">
         <span className="lab-now-tag">{de ? "gerade" : "now"}</span>
         <span className="lab-now-dot" aria-hidden="true" />
-        <span className="lab-now-label mono">{de ? now.de : now.en}</span>
-        {st.queue.length > 0 ? (
-          <span className="lab-now-queue mono tabular">{t(lang, "lab.waiting", { n: st.queue.length })}</span>
-        ) : props.running && viewingLive ? (
-          <span className="lab-now-queue mono">{t(lang, "lab.waitingServer")}</span>
-        ) : null}
+        {/* CARD 319: what the run says and what is still waiting share ONE
+            shrinkable item, so neither can re-decide how many lines the band
+            takes while the owner steps. The `title` is the recovery the
+            ellipsis owes him — the label clips his command to 17 characters at
+            a 1280 window, and the tool-call panel's own clipped label has been
+            recovered the same way since this card. */}
+        <div className="lab-now-say">
+          <span className="lab-now-label mono" title={de ? now.de : now.en}>
+            {de ? now.de : now.en}
+          </span>
+          {st.queue.length > 0 ? (
+            <span className="lab-now-queue mono tabular">
+              {t(lang, "lab.waiting", { n: st.queue.length })}
+            </span>
+          ) : props.running && viewingLive ? (
+            <span className="lab-now-queue mono">{t(lang, "lab.waitingServer")}</span>
+          ) : null}
+        </div>
         {props.trailing}
       </div>
 

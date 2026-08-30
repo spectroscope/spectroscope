@@ -12,25 +12,35 @@
 // to plant a fifth region in nodes.tsx and demand red — if it stays green, the
 // derivation is a hand list with a loop around it and has to be rewritten.
 //
-// WHAT IS UNBOUNDED TODAY, measured in the browser:
+// WHAT WAS UNBOUNDED WHEN THIS FILE WAS WRITTEN, measured in the browser. Both
+// are bounded now — this is the disease, kept because it is what the rules
+// below were derived from, not a report of what the card does today:
 //
-//   .pf-shots      the hub's picture shelf. Uncapped in CSS by design and
-//                  nodes.tsx:170 states the exemption in words ("The agent hub's
-//                  shelf is uncapped and stays a plain block"); only
-//                  `.pf-sub--full .pf-agent__genfull` carries card 296's 172 cap.
-//                  Its only bound is the TypeScript MAX_CARD_SHOTS = 6, which
+//   .pf-shots      the hub's picture shelf, uncapped in CSS by design, with the
+//                  exemption stated in words in nodes.tsx; only
+//                  `.pf-sub--full .pf-agent__genfull` carried card 296's 172.
+//                  Its only bound was the TypeScript MAX_CARD_SHOTS = 6, which
 //                  bounds the COUNT and not the pixels: measured 0 -> 187.7
-//                  (one row) -> 330.9 (two rows).
+//                  (one row) -> 330.9 (two rows). It now sits inside a shelf
+//                  whose height is fixed, and states 331 of its own.
 //   .pf-ctx        the context bars. No bound of any kind, 22.27 px per row,
 //                  forever. Seven more rows took a measured card from 1188.29
 //                  to 1344.20 — which is why the seat in agentCardSeat.test.ts
-//                  stops at the bounded regions and says so.
+//                  stops at the bounded regions and says so. It states 134 now.
 //
-// A BOUND MUST NOT BECOME A CLIP. flowmap.css says it itself, at the workflow
-// box: "content is capped and CLIPPED — a max-height alone stops the box
-// growing". A budgeted card that hides the command the owner is looking at is
-// a worse defect than the flicker it fixed, so every bound here has to come
-// with a way to reach what is past it.
+// A BOUND MUST NOT BECOME A CLIP, and that is two separate obligations, both
+// checked below because the first pass of this file only checked one.
+//
+//   1. What is past the bound has to be REACHABLE. flowmap.css says it itself,
+//      at the workflow box: "content is capped and CLIPPED — a max-height alone
+//      stops the box growing".
+//   2. And the reader's wheel has to get there. A scroll region inside the
+//      canvas needs `nowheel`, or React Flow zooms the map instead: measured on
+//      the running card with `.pf-tools` forced to overflow, one wheel over its
+//      centre took the map 0.2683 -> 0.1541 and left `scrollTop` at 0, while
+//      the same wheel over `.pf-toolbody` (which carries `nowheel`) moved
+//      nothing. `overflow-y: auto` on a region the canvas eats the wheel over
+//      is a clip with a scrollbar drawn on it.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
@@ -88,10 +98,18 @@ function growthRegions(): string[] {
     // element came before, which is a wrong answer wearing a right one's face.
     const cls = [...before.matchAll(CLASS_NAME)].pop();
     expect(cls, `the map at index ${m.index} must sit inside a classed container`).toBeDefined();
-    for (const token of (cls![1] ?? cls![2]).split(/\s+/)) if (token !== "") out.add(token);
+    for (const token of (cls![1] ?? cls![2]).split(/\s+/)) {
+      if (token !== "" && !CANVAS_MARKERS.includes(token)) out.add(token);
+    }
   }
   return [...out].sort();
 }
+
+/** React Flow's own markers. They ride on the same `className` as the region
+ *  they govern and they are not regions: they tell the canvas to keep its hands
+ *  off a wheel or a drag, and this stylesheet never styles them. Pinned below,
+ *  because an exclusion nobody checks is how a derivation goes quietly blind. */
+const CANVAS_MARKERS = ["nowheel", "nodrag"];
 
 /** The px bound flowmap.css puts on a class, wherever it puts it. */
 function cssBoundOf(token: string): number | null {
@@ -139,6 +157,14 @@ describe("the derivation, before it is believed", () => {
   it("reads the agent card and not the worker card that shares its markup", () => {
     expect(agentCardSource()).not.toContain("export function SubagentNode");
   });
+
+  // The exclusion, checked rather than trusted: the moment one of these markers
+  // is given a box, dropping it from the derivation is hiding a real region.
+  it.each(CANVAS_MARKERS)("only ever drops .%s, which this stylesheet never styles", (marker) => {
+    expect(CSS, `.${marker} has grown a rule and can no longer be treated as a marker`).not.toMatch(
+      new RegExp(`(^|[\\s,>+~])\\.${marker}\\b[^{}]*\\{`, "m"),
+    );
+  });
 });
 
 describe("every growth region states a bound", () => {
@@ -155,6 +181,101 @@ describe("a bound is not allowed to be a clip", () => {
   // card that lies.
   it.each(growthRegions())("%s hands back what is past its bound", (token) => {
     expect(scrollsPastItsBound(token), `.${token} caps its content without a way to reach it`).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The second obligation: the reader's wheel has to reach what the bound put
+// past the edge. Derived from the stylesheet, so a region bounded next year is
+// judged the same way — and it has to be derived, because the sentence at the
+// head of flowmap.css's own budget block already claimed this ("the ones the
+// reader's pointer can land in carry `nowheel`") while two of the regions it
+// was written about did not carry it.
+// ---------------------------------------------------------------------------
+
+/** Every class the budgeted card gives a scroll to, out of the stylesheet. */
+function budgetedScrollRegions(): string[] {
+  const out = new Set<string>();
+  const rule = /(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = rule.exec(CSS)) !== null) {
+    if (!m[2].includes(".pf-agent--wide")) continue;
+    if (!/overflow(-y)?:\s*(auto|scroll)/.test(m[3])) continue;
+    for (const token of (m[2].trim().split(/\s+/).pop() ?? "").split(".")) if (token !== "") out.add(token);
+  }
+  out.delete("pf-agent--wide");
+  return [...out].sort();
+}
+
+/** The markup of the card and of the panels it renders — one file is not
+ *  enough: `.pf-toolbody`, the region that caused 99.8 % of the movement, lives
+ *  in ToolCallPanel.tsx. */
+const CARD_MARKUP = () => agentCardSource() + read("ToolCallPanel.tsx");
+
+/** Every class list the markup gives an element carrying `token`. */
+function classListsFor(token: string): string[] {
+  const out: string[] = [];
+  for (const m of CARD_MARKUP().matchAll(CLASS_NAME)) {
+    const list = m[1] ?? m[2];
+    if (list.split(/\s+/).includes(token)) out.push(list);
+  }
+  return out;
+}
+
+describe("a bound the wheel cannot reach past is a clip with a scrollbar on it", () => {
+  it("finds the regions the stylesheet gives a scroll to", () => {
+    const found = budgetedScrollRegions();
+    expect(found.length, "no scroll region derived — everything below is vacuous").toBeGreaterThan(3);
+    expect(found).toEqual(expect.arrayContaining(["pf-ctx", "pf-toolbody", "pf-tools"]));
+  });
+
+  it.each(budgetedScrollRegions())("%s keeps the canvas off the reader's wheel", (token) => {
+    const lists = classListsFor(token);
+    expect(lists, `.${token} scrolls but nothing in the card renders it`).not.toEqual([]);
+    for (const list of lists) {
+      expect(
+        list.split(/\s+/),
+        `.${token} scrolls, and a wheel over it zooms the map instead of scrolling it`,
+      ).toContain("nowheel");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The panel labels. `.pf-agent--wide .pf-panelbox__label` holds each of them to
+// ONE line, and that declaration is load-bearing: its own comment records the
+// two steps out of 300 where a long MCP tool name wrapped `Tool call · <name>`
+// and took the budgeted card 1178.59 -> 1194.09. Nothing held it — deleting the
+// rule outright left all 80 cases of this card green — and nothing held the
+// other half either: clipping a label to one line loses the end of it, and only
+// the tool panel's label handed the whole string back in a `title`. Measured on
+// the shipped Image-generation scenario, the context panel's own label rendered
+// "CONTEXT SENT TO THE LLM · 1,091 / 100,000 T…" — the panel whose entire job is
+// that number, cut off inside the number.
+// ---------------------------------------------------------------------------
+describe("a label held to one line still reads whole", () => {
+  const labelRule = () => {
+    const at = CSS.indexOf(".pf-agent--wide .pf-panelbox__label");
+    expect(at, "the budgeted card must hold its panel labels to one line").toBeGreaterThan(-1);
+    return CSS.slice(at, CSS.indexOf("}", at));
+  };
+
+  it("holds every panel label to one line", () => {
+    expect(labelRule()).toMatch(/white-space:\s*nowrap/);
+    expect(labelRule()).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it("and hands back what the ellipsis took", () => {
+    const markup = CARD_MARKUP();
+    const opens = [
+      ...markup.matchAll(/<(\w+)([^<>]*\bclassName="[^"]*\bpf-panelbox__label\b[^"]*"[^<>]*)>/g),
+    ];
+    expect(opens.length, "no panel label found — this case would pin nothing").toBeGreaterThan(2);
+    for (const open of opens) {
+      expect(open[2], `a panel label is clipped to one line with no way to read the rest`).toMatch(
+        /\btitle=/,
+      );
+    }
   });
 });
 
@@ -185,10 +306,17 @@ describe("nothing that is legible today gets smaller", () => {
 
   it("still shows every picture the card is allowed to hold", () => {
     // MAX_CARD_SHOTS bounds the COUNT, and the measurement says six of them
-    // stack 330.9 px in two rows. A shelf bound under that turns the sixth
-    // picture into a scroll nobody knows is there.
-    const shelf = cssBoundOf("pf-shots");
-    expect(shelf, ".pf-shots must state a bound before this can be judged").not.toBeNull();
-    expect(shelf).toBeGreaterThanOrEqual(330.9);
+    // stack 330.9 px in two rows. A bound on the STRIP under that would cut the
+    // sixth picture off inside its own row.
+    //
+    // The strip is not the only box between the reader and that picture, and
+    // this case does not claim it is: `.pf-shots` sits inside
+    // `.pf-agent__shelf`, which reserves 380 and also holds the generated-
+    // picture panel, so a run carrying both reaches the last of the six by
+    // scrolling the shelf. That is a declared scroll with `nowheel` on it,
+    // judged by the wheel cases above — not a picture nobody can get to.
+    const strip = cssBoundOf("pf-shots");
+    expect(strip, ".pf-shots must state a bound before this can be judged").not.toBeNull();
+    expect(strip).toBeGreaterThanOrEqual(330.9);
   });
 });

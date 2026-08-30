@@ -351,10 +351,17 @@ const OS_STATION_DY = 80;
  * So that sentence now holds for the LLM alone, on the two caps flowmap.css
  * really sets (.pf-llm__streams 260, .pf-prose 120). The AGENT's entry is no
  * longer an observation: every region inside that card states a fixed box
- * (`.pf-toolbody` at the 240 above, `.pf-ctx`, `.pf-shelf`) and the card renders
- * every one of them on every step, so the card has ONE height and this entry is
- * that height, measured in a browser, plus rounding. The LLM is now the only
- * entry the runtime check below exists for — see reportOversizeCards.
+ * (`.pf-toolbody` at the 240 above, `.pf-ctx`, `.pf-agent__shelf`, `.pf-prose`)
+ * and the card renders every one of them on every step, so the card has ONE
+ * height and this entry is that height, measured in a browser, plus rounding.
+ * The LLM is now the only entry the runtime check below exists for — see
+ * reportOversizeCards.
+ *
+ * `.pf-prose` is in that list because of a second pass and not a first: it
+ * stated only a `max-height`, so the card measured 1075.09 until `/api/context`
+ * answered and 1178.59 after — 103.50px, on a step, with the runtime arm saying
+ * so. A cap is not a reserve, and the sentence above was true of every region
+ * but the one nobody had looked at.
  */
 export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   user: { w: 400, h: 180 },
@@ -415,10 +422,20 @@ const MAC_FRAME_Y = 24;
  * left above its first one, so the hub sits exactly one pad inside the machine
  * it belongs to. Measured at a 1600x900 window it puts the card's top 45.8px
  * below the top of `.lab-flowmap`, against 84.27 before and a proposed ceiling
- * of 64 (cardStillness.AGENT_TOP_CEILING_PX, still an owner call).
+ * of 64 (cardStillness.AGENT_TOP_CEILING_PX, still an owner call) — see below
+ * for what that reading is and is not.
  *
  * Expanded only. COMMON's 150 still seats the compact world, which was measured
  * still and is not this card's business.
+ *
+ * AND THE 45.8 IS A READING OF THAT PANE, not a property of the seat. `fitView`
+ * scales the world into whatever pane it is given, and most of that 45.8 is the
+ * fit's own padding rather than the card's 24 world px of air — at a much
+ * larger window the same seat reads considerably more. So 64 is a threshold a
+ * bigger screen can cross with nothing here having changed, and the gate holds
+ * the SHAPE instead: the hub is nearer the frame above it than the band below
+ * it, and the air above it is under a third of the air below
+ * (agentCardSeat.test.ts). Both are ratios and survive the zoom.
  */
 const EXPANDED_AGENT_Y = MAC_FRAME_Y + FRAME_PAD;
 

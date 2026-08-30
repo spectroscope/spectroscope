@@ -475,6 +475,45 @@
   flex: none;
   animation: lab-nowpulse 1.6s ease-in-out infinite;
 }
+/* CARD 319, the second mover in this band. What the run says and how many
+   events are still waiting travel TOGETHER, in one item, because both of them
+   change while the owner steps and neither may re-decide how many lines the
+   band takes.
+
+   The label alone was not enough. `min-width: 0` and `flex: 1 1 0` below take
+   the LABEL out of the line-breaking decision; the queue chip beside it was
+   still a full-width item that appears while events wait and vanishes on the
+   last step. Measured at 1100x700: 84.09px with the chip, 47.05 without —
+   37.04px of map, on one click, and introduced by the fix, because before it
+   the label could not shrink and the band was already on two lines either way.
+
+   The chip cannot take a flex base of 0 itself: with nothing to grow into it
+   would simply disappear. So both sit in this group, the group carries the base
+   of 0, and the chip takes its width out of the label's share instead of out of
+   the band's line. Re-measured with the group in: 47.05 / 47.05 / 84.09 /
+   84.09 at 1600, 1280, 1100 and 900 — one value at each, chip or no chip.
+
+   `min-width` and not `0`: an unfloored group renders the label 0px wide at
+   1100x700, which trades the flicker for a band with no command in it. 16ch of
+   the band's own mono face is 134.4px, measured — a shade more than the
+   SMALLEST control beside it (the compact/expanded seg, 132.52), so the thing
+   the owner is reading is never given less of the band than the least of the
+   buttons. It is stated in `ch` and not px because it is a text floor, and the
+   group carries the mono face so the unit means what it says.
+
+   The floor is what decides where the band gives up and wraps, and it must not
+   be tuned to a knife edge: 24ch (201.6) sat 0.5px inside the 201.1 a 1280
+   window leaves, so it cost that window a second line — 37px of map — for
+   nothing. Measured with 16ch: one line and one value at 1600 and 1280, two
+   lines and one value at 1100 and 900, chip or no chip at every one. */
+.lab-now-say {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 0;
+  min-width: 16ch;
+  font-family: var(--font-mono);
+}
 .lab-now-label {
   font-size: var(--fs-12);
   color: var(--text);

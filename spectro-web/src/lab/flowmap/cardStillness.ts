@@ -28,20 +28,85 @@
 // labNowBand.drift.test.ts), and the height travelled because the tool-call
 // panel was created on `tool_call` and destroyed on `tool_result`.
 
-/** One reading of the card: where its top sits inside the map pane, and how
- *  tall it is. Both in the units the browser reports them in — the top in
- *  screen px measured from the top of `.lab-flowmap`, the height in world px
- *  off React Flow's own measurement of the node. */
+/**
+ * One reading of the card.
+ *
+ * TWO TOPS, because the card has two and the first pass of this file used one
+ * field for both. `top` is where the card sits on the SCREEN — the distance the
+ * owner watches, and the one the band mover changes, because that mover slides
+ * the whole pane down with the card inside it. `intoPane` is how far below the
+ * map's own top edge it sits, which is the placement question (AC 2) and is
+ * exactly the reading the band mover leaves untouched. Measured on the pre-fix
+ * build at a 1600x900 window: `intoPane` one value, worst step 0.00, while
+ * `top` took three and travelled 53.31.
+ */
 export interface CardFrame {
+  /** The card's top edge, in px from the top of the page the owner is looking
+   *  at — the viewport reading with the containers' own scrolling added back
+   *  in, so scrolling the column is not mistaken for the card moving. */
   top: number;
+  /** The card's top edge, in screen px below the top of `.lab-flowmap`. */
+  intoPane: number;
+  /** The node's height in world px, off React Flow's own measurement — the
+   *  unit the envelope table is in, and not the zoomed one the DOM reports. */
   height: number;
+  /**
+   * What the map was doing when this was read: where the layout seated the card
+   * in the world, and how the pane was looking at that world.
+   *
+   * Two readings taken under different views are not a step. The map re-fits
+   * when the world grows — stepping the shipped recording past the point where
+   * workers arrive, the zoom runs 0.27 -> 0.19 -> 0.10 and the card's top with
+   * it — and the reader can drag the card himself. Neither is the budget's
+   * doing, and the arm below is only allowed to speak about the budget.
+   */
+  view: string;
+}
+
+/**
+ * One reading, assembled where the two tops cannot be mixed up.
+ *
+ * This exists because they WERE mixed up: FlowMap subtracted the pane's top at
+ * the call site and handed the difference to a field the fixtures had filled
+ * with window readings, so the arm answered "0.0px of screen top" to the 53.3
+ * it was built to catch. One place, one answer, and it is tested.
+ */
+export function cardFrame(reading: {
+  /** The card's rectangle on screen. Only its top is read — its height there is
+   *  the zoomed one, which is the wrong unit for a box. */
+  card: { top: number };
+  /** `.lab-flowmap`'s own top on screen. */
+  paneTop: number;
+  /**
+   * How far the containers around the map have been scrolled, added up.
+   *
+   * Taken back out of `top`, because a column that scrolls carries the card
+   * with it and that is not the card moving. Measured at a 1100x700 window:
+   * one step off `run_start` scrolls `.lab-center` by 252px and the arm, given
+   * raw viewport coordinates, blamed the budget for all 252 of them.
+   */
+  scrolled: number;
+  /** The node's height in world px. */
+  height: number;
+  view: string;
+}): CardFrame {
+  return {
+    top: reading.card.top + reading.scrolled,
+    intoPane: reading.card.top - reading.paneTop,
+    height: reading.height,
+    view: reading.view,
+  };
 }
 
 export interface StillnessVerdict {
   /** No step moved the card by more than STILL_TOLERANCE_PX. */
   still: boolean;
-  /** Every distinct top the card took, in the order they first appeared. */
+  /** Every distinct top the card took on screen, in the order they first
+   *  appeared. */
   tops: number[];
+  /** Every distinct distance into the pane, likewise — the placement reading,
+   *  which the band mover leaves alone while `tops` travels. */
+  intoPane: number[];
   /** Every distinct height, likewise. */
   heights: number[];
   /** The biggest single-step move of each, counting only moves a screen could
@@ -50,7 +115,8 @@ export interface StillnessVerdict {
   worstHeightMove: number;
   /** How many steps moved the card at all. */
   movedOn: number;
-  /** Whether every reading sat at or above AGENT_TOP_CEILING_PX. */
+  /** Whether every reading sat that high in the pane or higher — a distance
+   *  into the pane no greater than AGENT_TOP_CEILING_PX. */
   seatedHighEnough: boolean;
 }
 
@@ -111,6 +177,9 @@ export function stillnessVerdict(frames: readonly CardFrame[]): StillnessVerdict
   let worstHeightMove = 0;
   let movedOn = 0;
   for (let i = 1; i < seen.length; i++) {
+    // A step the MAP took is not a step the card took. Skipped rather than
+    // counted still: the two readings are not comparable at all.
+    if (seen[i].view !== seen[i - 1].view) continue;
     const topMove = Math.abs(seen[i].top - seen[i - 1].top);
     const heightMove = Math.abs(seen[i].height - seen[i - 1].height);
     const topMoved = topMove > STILL_TOLERANCE_PX;
@@ -122,11 +191,12 @@ export function stillnessVerdict(frames: readonly CardFrame[]): StillnessVerdict
   return {
     still: movedOn === 0,
     tops: distinct(seen.map((f) => f.top)),
+    intoPane: distinct(seen.map((f) => f.intoPane)),
     heights: distinct(seen.map((f) => f.height)),
     worstTopMove,
     worstHeightMove,
     movedOn,
-    seatedHighEnough: seen.every((f) => f.top <= AGENT_TOP_CEILING_PX),
+    seatedHighEnough: seen.every((f) => f.intoPane <= AGENT_TOP_CEILING_PX),
   };
 }
 
@@ -164,6 +234,10 @@ export function reportRestlessCard(
   const before = previous;
   previous = frame;
   if (before === null || spoken) return;
+  // The map moved, not the card: a re-fit, a re-seat or the reader's own drag.
+  // The message below is a sentence about the budget, and printing it here
+  // would name the wrong cause AND burn the one report the arm is allowed.
+  if (before.view !== frame.view) return;
   const topMove = Math.abs(frame.top - before.top);
   const heightMove = Math.abs(frame.height - before.height);
   if (!moved(frame.top, before.top) && !moved(frame.height, before.height)) return;

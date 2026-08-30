@@ -54,11 +54,12 @@
 // owner's own run: his is 11.8 MB with pictures attached, and the measurement
 // pass found this sample reproduces only part of his complaint (its tool names
 // are short, so the status band never wraps). It does carry the mechanism —
-// 31 tool_call/tool_result pairs — and it lands on his worst step by itself:
-// the measurement named step 18 -> 19 as the click where his card's box moved
-// 180.6 px, and 18 -> 19 is one of the steps this file reports below. The
-// picture shelf gets its own stepping case, built on the real attachment_image
-// shape, because the shipped sample has none.
+// 31 tool_call/tool_result pairs — and stepping it moves the card on eleven of
+// its 195 clicks, which is what the cases below are about. (An earlier draft
+// read more into that than was there: his run and this sample both have a step
+// 18 -> 19 that moves the card, and it called that one finding confirmed twice.
+// Two files, one index.) The picture shelf gets its own stepping case, built on
+// the real attachment_image shape, because the shipped sample has none.
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
@@ -79,7 +80,15 @@ vi.mock("@xyflow/react", () => ({
 import { AgentCardBody, type AgentData } from "./nodes";
 
 const SAMPLE = new URL("../../../../docs/sample-runs/workflow-phases.en.jsonl", import.meta.url);
-const CSS = readFileSync(new URL("./flowmap.css", import.meta.url), "utf8");
+const read = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+const CSS = read("flowmap.css");
+
+/** Both spellings a container's class can take in these files: a plain string,
+ *  and a template literal whose literal head runs until its first `$`. Built
+ *  from a string rather than written as a literal so the backtick reads without
+ *  escaping — the same matcher agentCardRegions.test.ts derives its regions
+ *  with, and blind to neither spelling for the same reason. */
+const CLASS_NAME = new RegExp('className=(?:"([^"{}]*)"|\\{`([^`$]*))', "g");
 
 /** The pane the measurement pass ran on: 1600x900 window, .pf-flow 1272x581. */
 const PANE_ASPECT = 1272 / 581;
@@ -350,9 +359,12 @@ describe("stepping the shipped recording, the agent card is one card", () => {
   });
 
   // The same fact told the way the owner meets it: how many clicks change the
-  // card under his cursor. Today 11 of 195, and step 18 -> 19 is among them —
-  // the click the measurement pass clocked at 180.6 px of movement, found
-  // independently there and here.
+  // card under his cursor. Today 11 of 195, and step 18 -> 19 is among them.
+  // The measurement pass also named a step 18 -> 19, at 180.6 px — but that was
+  // his own 3328-step recording and this is the 196-frame sample, so the two
+  // are the same index in two different files and not one finding confirmed
+  // twice. What this list is worth is what it says: eleven clicks out of 195
+  // change the card, on a recording anyone can step.
   it("never changes shape from one step to the next", () => {
     expect(moves(series)).toEqual([]);
   });
@@ -428,7 +440,7 @@ describe("the panel a run can produce late", () => {
   const withPrompt = BARE;
   const without: AgentData = { ...BARE, systemPrompt: null };
 
-  it("holds the same card whether the system prompt has arrived or not", () => {
+  it("holds the same panels whether the system prompt has arrived or not", () => {
     expect(render(without)).toEqual(render(withPrompt));
   });
 
@@ -438,6 +450,131 @@ describe("the panel a run can produce late", () => {
   it("and is a different card without the budget", () => {
     expect(render(without, false)).not.toEqual(render(withPrompt, false));
   });
+});
+
+// ---------------------------------------------------------------------------
+// A PANEL THAT IS ALWAYS THERE IS NOT YET A PANEL THAT HOLDS ITS ROOM.
+//
+// The case above was the whole answer for the system prompt, and it was the
+// wrong half of the answer. It compares COMPOSITIONS, and a composition drops
+// text on purpose — so it is green whether the prose renders 16.50 px or
+// 120.00. Measured in the running app at a 1600x900 window, with /api/context
+// held back nine seconds so the fetch really landed mid-run, the same card
+// that this file called still went
+//
+//   before the answer arrives   1075.09 world px   .pf-prose  16.50
+//   after it arrives            1178.59 world px   .pf-prose 120.00
+//
+// and the product's own runtime arm said so, unprompted, on the shipped
+// recording: "the agent card changed its box between two steps — 104.0px of
+// height and 0.0px of screen top in one click."
+//
+//   node /tmp/c319fix/prose.mjs   # playwright + Chrome, frames counted first
+//                                 # (61 per 500 ms), CTX_DELAY=9000 on the mock
+//
+// The cause is a CAP where the card needs a RESERVE. `.pf-prose` stated
+// `max-height: 120px` and nothing else, and a max-height collapses when its
+// region is short — which is the very rule RESERVED_BOXES above is written on:
+// "a max-height still collapses when its region is empty, and a region that
+// collapses is a region that moves the card".
+//
+// So the pin is not "the panel is rendered". It is: every panel the BUDGET
+// forces onto the card has a body whose box is FIXED. Derived from the source,
+// because a typed list of three panels would be green the day a fourth arrives
+// — the exact way this one shipped.
+// ---------------------------------------------------------------------------
+
+/** The scroll regions flowmap.css declares, by class — a class it gives
+ *  `overflow-y: auto|scroll` anywhere. A region that scrolls is a region whose
+ *  content is bigger than its box, which is only a fact about the card's height
+ *  if the box is fixed. */
+/** The agent card's own markup, and nothing else's. */
+function agentCardSource(): string {
+  const nodes = read("nodes.tsx");
+  const from = nodes.indexOf("export function AgentCardBody(");
+  const to = nodes.indexOf("export function AgentNode(");
+  expect(from, "AgentCardBody must exist").toBeGreaterThan(-1);
+  expect(to, "AgentNode must follow it").toBeGreaterThan(from);
+  return nodes.slice(from, to);
+}
+
+function scrolls(token: string): boolean {
+  const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+  const re = new RegExp(`(^|[\\s,>+~])\\.${token}\\b[^{}]*\\{([^}]*)\\}`, "gm");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(bare)) !== null) if (/overflow(-y)?:\s*(auto|scroll)/.test(m[2])) return true;
+  return false;
+}
+
+/**
+ * Every panel the budget forces onto the card, with the scrolling bodies inside
+ * it — read out of `AgentCardBody`, never listed here.
+ *
+ * A panel written `<condition> || budgeted ?` (or `budgeted || <condition> ?`)
+ * is one the budgeted card renders on EVERY step, so whatever scrolls inside it
+ * is carrying the card's height. A panel that renders another component hands
+ * the question on, so the derivation follows that one hop and reads its file —
+ * without it the tool-call panel, the region that caused 929 of the owner's 931
+ * height changes, would not be judged here at all.
+ */
+function budgetedPanelBodies(): { panel: string; bodies: string[] }[] {
+  const src = agentCardSource();
+  const out: { panel: string; bodies: string[] }[] = [];
+  const decl = /const (\w+) =\s*\n?\s*([^;]*?)\?\s*(\(?)/g;
+  let m: RegExpExecArray | null;
+  while ((m = decl.exec(src)) !== null) {
+    if (!/\bbudgeted\b/.test(m[2])) continue;
+    // `noToolPanel` is the mirror image — budgeted, its branch is `null`, so it
+    // is a panel the budget takes AWAY and has no body to hold a box.
+    if (m[3] === "" && /^\s*null\b/.test(src.slice(decl.lastIndex))) continue;
+    const end = src.indexOf(": null;", decl.lastIndex);
+    expect(end, `${m[1]} must end in a : null branch`).toBeGreaterThan(-1);
+    let jsx = src.slice(decl.lastIndex, end);
+    // One hop into a component the panel renders, so its body is judged too.
+    for (const ref of new Set([...jsx.matchAll(/<([A-Z]\w+)\b/g)].map((c) => c[1]))) {
+      try {
+        jsx += read(`${ref}.tsx`);
+      } catch {
+        /* not a file of ours; its classes cannot be in flowmap.css either */
+      }
+    }
+    const tokens = new Set<string>();
+    for (const cls of jsx.matchAll(CLASS_NAME)) {
+      for (const token of (cls[1] ?? cls[2]).split(/\s+/)) if (token !== "") tokens.add(token);
+    }
+    out.push({ panel: m[1], bodies: [...tokens].filter(scrolls).sort() });
+  }
+  return out;
+}
+
+describe("the panel derivation, before it is believed", () => {
+  it("finds the three panels the budget forces on, and a body in each", () => {
+    const found = budgetedPanelBodies();
+    expect(found.map((p) => p.panel).sort()).toEqual(["ctxBarsPanel", "sysPanel", "toolPanel"]);
+    for (const p of found) expect(p.bodies, `${p.panel} has no scrolling body`).not.toEqual([]);
+  });
+
+  // The other direction: a derivation that called every classed element a body
+  // would demand a fixed height for the panel frame itself and for the label
+  // inside it, and this file would be red about boxes that cannot move.
+  it("does not mistake the panel frame for the body that carries its height", () => {
+    const all = budgetedPanelBodies().flatMap((p) => p.bodies);
+    expect(all).not.toContain("pf-panelbox");
+    expect(all).not.toContain("pf-panelbox__label");
+  });
+});
+
+describe("every panel the budget forces on states a fixed box", () => {
+  it.each(budgetedPanelBodies().flatMap((p) => p.bodies.map((b) => [p.panel, b] as const)))(
+    "%s's .%s is a reserve and not a cap",
+    (panel, body) => {
+      expect(
+        RESERVED_BOXES.has(body),
+        `.${body} scrolls inside ${panel} but flowmap.css never fixes its height, so it ` +
+          `collapses when it is short and the card moves when it fills`,
+      ).toBe(true);
+    },
+  );
 });
 
 describe("compact is already still, and stays that way", () => {

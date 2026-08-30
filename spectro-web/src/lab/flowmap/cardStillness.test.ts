@@ -35,6 +35,7 @@ import { readFileSync } from "node:fs";
 import {
   AGENT_TOP_CEILING_PX,
   STILL_TOLERANCE_PX,
+  cardFrame,
   reportRestlessCard,
   resetStillnessMemory,
   stillnessVerdict,
@@ -65,20 +66,30 @@ const OWNER_TOPS = [256.5, 285.1, 293.5, 309.8] as const;
  * ends of the same mechanism.
  */
 const WORST_CLICK = [
-  { top: 256.5, height: 706.85 },
-  { top: 309.8, height: 932.98 },
+  cardFrame({ card: { top: 256.5 }, paneTop: 172.2, scrolled: 0, height: 706.85, view: "one seating" }),
+  cardFrame({ card: { top: 309.8 }, paneTop: 225.5, scrolled: 0, height: 932.98, view: "one seating" }),
 ] as const;
 
-/** The card's top measured from the top of .lab-flowmap, where the run states
- *  both numbers: 256.5 - 172.2 at the idle band. */
-const OWNER_TOP_IN_PANE = 84.3;
+/** `.lab-flowmap`'s own top with the band idle, where the run states both
+ *  numbers: the card at 256.5 sits 84.3 into the pane. */
+const OWNER_PANE_TOP = 172.2;
 
 /** The smallest gap between two heights the browser really told apart:
  *  563.66 -> 574.60. Anything at or above this is movement by any reading. */
 const SMALLEST_REAL_GAP = 10.94;
 
+/** A walk under ONE view, which is what every case below is about: the map
+ *  standing still while the card does or does not. */
 const frames = (tops: readonly number[], heights: readonly number[]) =>
-  tops.map((top, i) => ({ top, height: heights[i % heights.length] }));
+  tops.map((top, i) =>
+    cardFrame({
+      card: { top },
+      paneTop: 0,
+      scrolled: 0,
+      height: heights[i % heights.length],
+      view: "one seating",
+    }),
+  );
 
 beforeEach(() => {
   resetStillnessMemory();
@@ -99,7 +110,15 @@ describe("the verdict, bitten in both directions", () => {
   // decoration, and this is the reading it has to fail on: the owner's own.
   it("calls the owner's own run restless, and counts every box it took", () => {
     const v = stillnessVerdict(
-      OWNER_HEIGHTS.map((height, i) => ({ top: OWNER_TOPS[i % OWNER_TOPS.length], height })),
+      OWNER_HEIGHTS.map((height, i) =>
+        cardFrame({
+          card: { top: OWNER_TOPS[i % OWNER_TOPS.length] },
+          paneTop: OWNER_PANE_TOP,
+          scrolled: 0,
+          height,
+          view: "one seating",
+        }),
+      ),
     );
     expect(v.still).toBe(false);
     expect(v.heights).toEqual([...OWNER_HEIGHTS]);
@@ -137,7 +156,7 @@ describe("the verdict, bitten in both directions", () => {
 
   it("says nothing at all about a series too short to have a step in it", () => {
     expect(stillnessVerdict([]).still).toBe(true);
-    expect(stillnessVerdict([{ top: 1, height: 2 }]).still).toBe(true);
+    expect(stillnessVerdict(frames([1], [2])).still).toBe(true);
   });
 });
 
@@ -151,12 +170,26 @@ describe("where the card sits in the frame", () => {
   });
 
   it("faults the placement the owner has today", () => {
-    const v = stillnessVerdict([{ top: OWNER_TOP_IN_PANE, height: 706.85 }]);
+    // 256.5 on his screen against a map starting at 172.2 — 84.3 into the pane.
+    const v = stillnessVerdict([
+      cardFrame({ card: { top: 256.5 }, paneTop: OWNER_PANE_TOP, scrolled: 0, height: 706.85, view: "v" }),
+    ]);
+    expect(v.intoPane).toHaveLength(1);
+    expect(v.intoPane[0]).toBeCloseTo(84.3, 2);
     expect(v.seatedHighEnough).toBe(false);
   });
 
   it("and passes a card seated inside it", () => {
-    expect(stillnessVerdict([{ top: AGENT_TOP_CEILING_PX, height: 706.85 }]).seatedHighEnough).toBe(true);
+    const v = stillnessVerdict([
+      cardFrame({
+        card: { top: OWNER_PANE_TOP + AGENT_TOP_CEILING_PX },
+        paneTop: OWNER_PANE_TOP,
+        scrolled: 0,
+        height: 706.85,
+        view: "v",
+      }),
+    ]);
+    expect(v.seatedHighEnough).toBe(true);
   });
 });
 
@@ -184,10 +217,154 @@ describe("the arm speaks once, and only when there is something to say", () => {
   it("treats an unmeasured frame as no reading rather than as a card of no size", () => {
     const said: string[] = [];
     const sink = (m: string) => said.push(m);
-    reportRestlessCard({ top: 150, height: 900 }, sink);
-    reportRestlessCard({ top: 0, height: 0 }, sink);
-    reportRestlessCard({ top: 150, height: 900 }, sink);
+    const [seen, unmeasured] = frames([150, 0], [900, 0]);
+    reportRestlessCard(seen, sink);
+    reportRestlessCard(unmeasured, sink);
+    reportRestlessCard(seen, sink);
     expect(said).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WHICH TOP, AND WHOSE MOVE. Two seams the first pass of this file left open,
+// both found by driving the built branch rather than by reading it.
+//
+// 1. THE ARM WAS BLIND TO ITS OWN DEFECT. `WORST_CLICK` above is a WINDOW
+//    reading — 256.5 -> 309.8 is where the card sat on the owner's screen. What
+//    FlowMap actually handed the arm was the card's top measured from the top of
+//    `.lab-flowmap`, and the band mover moves the PANE with the card inside it:
+//    measured on the pre-fix build at 1600x900, the card's top in the pane was
+//    one value with a worst step of 0.00 while its top in the window took three
+//    and travelled 53.31. The instrument answered "0.0px of screen top" to the
+//    very travel it was built to catch.
+//
+//    So the two tops are two fields now, and the reading is computed in one
+//    place instead of at the call site, where nothing could tell them apart.
+//
+// 2. AND IT BLAMED THE BUDGET FOR MOVES THE MAP MADE. Stepping the shipped
+//    recording at 1600x900 past step 104, workers arrive, the world grows and
+//    `fitView` re-fits: zoom 0.27 -> 0.19 -> 0.10 and the card's top runs from
+//    45.44 to -5071.92 without the card changing by a pixel. A dragged card is
+//    the same story. The message the arm is allowed to print says the card "is
+//    supposed to be budgeted, so every region inside it should hold its room" —
+//    a sentence about the card, printed about the map.
+//
+//    A reading now carries WHAT THE MAP WAS DOING when it was taken. Two
+//    readings under different views are not a step, and the band mover — which
+//    changes neither the viewport nor the card's seat — is still caught.
+// ---------------------------------------------------------------------------
+describe("the reading knows which top is which", () => {
+  // Rects the way the browser gave them at 1600x900, from the pre-fix build:
+  // the band idle, and the same card with a long `git add …` command wrapping
+  // the band onto three lines.
+  const IDLE = cardFrame({ card: { top: 256.5 }, paneTop: 172.2, scrolled: 0, height: 706.85, view: "v" });
+  const WRAPPED = cardFrame({ card: { top: 309.8 }, paneTop: 225.5, scrolled: 0, height: 706.85, view: "v" });
+
+  it("reports where the card sits on the screen, not where it sits in the pane", () => {
+    expect(IDLE.top).toBeCloseTo(256.5, 2);
+    expect(WRAPPED.top).toBeCloseTo(309.8, 2);
+  });
+
+  it("and keeps the distance into the pane as its own reading", () => {
+    expect(IDLE.intoPane).toBeCloseTo(84.3, 2);
+    expect(WRAPPED.intoPane).toBeCloseTo(84.3, 2);
+  });
+
+  // THE ONE. The band mover leaves the card exactly where it was inside the
+  // map and moves the map — so the pane reading is the same on both frames and
+  // an arm that judged it would have nothing to say.
+  it("catches the band mover, which a pane reading cannot see", () => {
+    const said: string[] = [];
+    const sink = (m: string) => said.push(m);
+    reportRestlessCard(IDLE, sink);
+    reportRestlessCard(WRAPPED, sink);
+    expect(IDLE.intoPane).toBeCloseTo(WRAPPED.intoPane, 2);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain("53.3");
+  });
+
+  it("judges the seat against the pane and not against the window", () => {
+    expect(stillnessVerdict([IDLE]).seatedHighEnough).toBe(false);
+    expect(
+      stillnessVerdict([cardFrame({ card: { top: 900 }, paneTop: 880, scrolled: 0, height: 700, view: "v" })])
+        .seatedHighEnough,
+    ).toBe(true);
+  });
+});
+
+describe("a move the map made is not the budget's fault", () => {
+  const at = (top: number, view: string) =>
+    cardFrame({ card: { top }, paneTop: 100, scrolled: 0, height: 900, view });
+
+  it("says nothing when the map re-fitted under the card", () => {
+    const said: string[] = [];
+    const sink = (m: string) => said.push(m);
+    reportRestlessCard(at(200, "zoom 0.27"), sink);
+    reportRestlessCard(at(-5071.92, "zoom 0.19"), sink);
+    expect(said).toEqual([]);
+  });
+
+  // The bite that keeps the case above from being a way to switch the arm off:
+  // the same two tops under the SAME view are the defect, and are still named.
+  it("and says so when nothing but the card moved", () => {
+    const said: string[] = [];
+    const sink = (m: string) => said.push(m);
+    reportRestlessCard(at(200, "zoom 0.27"), sink);
+    reportRestlessCard(at(253.31, "zoom 0.27"), sink);
+    expect(said).toHaveLength(1);
+  });
+
+  it("takes the next reading under the new view as the baseline", () => {
+    const said: string[] = [];
+    const sink = (m: string) => said.push(m);
+    reportRestlessCard(at(200, "a"), sink);
+    reportRestlessCard(at(900, "b"), sink);
+    reportRestlessCard(at(953.31, "b"), sink);
+    expect(said).toHaveLength(1);
+  });
+
+  // And the verdict answers the same way, or the gate and the app would judge
+  // one series differently.
+  it("does not count a step across two views as a step", () => {
+    const v = stillnessVerdict([at(200, "a"), at(900, "b")]);
+    expect(v.still).toBe(true);
+    expect(v.movedOn).toBe(0);
+  });
+});
+
+describe("a scroll is not the card moving either", () => {
+  // Found live, and it is the same family as the re-fit above. At a 1100x700
+  // window the lab's centre column is a scroll container, and stepping once off
+  // `run_start` scrolls it 252px: `.lab-flowmap` goes 246.39 -> -5.61 and the
+  // card's viewport top goes with it, while nothing about the card changed. An
+  // arm reading raw viewport coordinates says "252.0px of screen top" and
+  // blames the budget for it — measured, with exactly that message.
+  //
+  // So the reading takes the scroll back out. What is left is where the card
+  // sits in the page the owner is looking at, which is the reading the band
+  // mover really does change: the band grows, everything below it moves down,
+  // and no scrolling happened at all.
+  const scrolledTo = (viewportTop: number, scrolled: number) =>
+    cardFrame({ card: { top: viewportTop }, paneTop: 100, scrolled, height: 900, view: "v" });
+
+  it("says nothing when the reader's column scrolled under the card", () => {
+    const said: string[] = [];
+    const sink = (m: string) => said.push(m);
+    reportRestlessCard(scrolledTo(299.67, 0), sink);
+    reportRestlessCard(scrolledTo(47.67, 252), sink);
+    expect(said).toEqual([]);
+  });
+
+  // The bite: the same 252px WITHOUT a scroll under it is the card moving, and
+  // is still named. Without this the case above is just a way to switch the arm
+  // off for anything that moves far enough.
+  it("and says so when the card moved that far with nothing scrolling", () => {
+    const said: string[] = [];
+    const sink = (m: string) => said.push(m);
+    reportRestlessCard(scrolledTo(299.67, 0), sink);
+    reportRestlessCard(scrolledTo(47.67, 0), sink);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain("252.0");
   });
 });
 
@@ -205,5 +382,16 @@ describe("the arm has a caller, so the measurement happens where the pixels are"
 
   it("and calls it with what the browser measured", () => {
     expect(src).toContain("reportRestlessCard(");
+  });
+
+  // Through `cardFrame`, and this one is the seam that was actually open: the
+  // call site used to subtract the pane's own top and hand the difference to a
+  // field the fixtures had filled with window readings. A reading assembled at
+  // the call site is a reading nothing tested.
+  it("builds the reading where the two tops cannot be mixed up", () => {
+    expect(src).toContain("cardFrame({");
+    expect(src, "the call site is measuring a top of its own again").not.toMatch(
+      /top:\s*[\w.()]*getBoundingClientRect\(\)\.top\s*-/,
+    );
   });
 });

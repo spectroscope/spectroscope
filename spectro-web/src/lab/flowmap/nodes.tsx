@@ -241,7 +241,7 @@ export function AgentCardBody({
       <div className="pf-eyebrow" style={{ marginTop: 10 }}>
         Tools
       </div>
-      <div className="pf-tools">
+      <div className="pf-tools nowheel">
         {belt.map((c) => (
           <span
             key={c.name}
@@ -261,7 +261,7 @@ export function AgentCardBody({
         <div className="pf-phases">
           <div className="pf-eyebrow">phases · declared, not observed</div>
           {script.state === "declared" ? (
-            <ol className="pf-phases__list">
+            <ol className="pf-phases__list nowheel">
               {script.phases.map((p, i) => (
                 <li className="pf-phases__item" key={`${p}-${i}`}>
                   {p}
@@ -284,26 +284,26 @@ export function AgentCardBody({
   const sysPanel =
     d.systemPrompt || budgeted ? (
       <div className="pf-panelbox">
-        <div className="pf-panelbox__label">{t(lang, "map.ctx.systemPrompt")}</div>
+        <div className="pf-panelbox__label" title={t(lang, "map.ctx.systemPrompt")}>
+          {t(lang, "map.ctx.systemPrompt")}
+        </div>
         <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
           {d.systemPrompt ? d.systemPrompt : t(lang, "map.ctx.noSystemPrompt")}
         </div>
       </div>
     ) : null;
+  const ctxLabel =
+    d.ctxTotals === null
+      ? t(lang, "map.ctx.toLlm")
+      : `${t(lang, "map.ctx.toLlm")} · ${d.ctxTotals.estimatedTokens.toLocaleString()} / ` +
+        `${d.ctxTotals.threshold.toLocaleString()} tok`;
   const ctxBarsPanel =
     (d.ctxParts && d.ctxTotals) || budgeted ? (
       <div className="pf-panelbox nowheel">
-        <div className="pf-panelbox__label">
-          {d.ctxTotals === null ? (
-            t(lang, "map.ctx.toLlm")
-          ) : (
-            <>
-              {t(lang, "map.ctx.toLlm")} · {d.ctxTotals.estimatedTokens.toLocaleString()} /{" "}
-              {d.ctxTotals.threshold.toLocaleString()} tok
-            </>
-          )}
+        <div className="pf-panelbox__label" title={ctxLabel}>
+          {ctxLabel}
         </div>
-        <div className="pf-ctx">
+        <div className="pf-ctx nowheel">
           {/* The empty line sits AFTER the bars, not before them: the growth-
               region derivation credits a `.map(` to the nearest classed element
               above it, and a placeholder above the bars would have this region
@@ -325,7 +325,7 @@ export function AgentCardBody({
     d.tool && isGenImage ? (
       // in flight: the placeholder + the requested prompt
       <div className="pf-panelbox pf-genimg-panel">
-        <div className="pf-panelbox__label">
+        <div className="pf-panelbox__label" title={`${t(lang, "map.ctx.toolCall")} · ${d.tool.name}`}>
           {t(lang, "map.ctx.toolCall")} · {d.tool.name}
         </div>
         <div className="pf-genimg-wrap">
@@ -339,7 +339,9 @@ export function AgentCardBody({
       // done: the REAL image off the store (falls back to the placeholder
       // when the blob is gone — scripted sessions, cleaned stores)
       <div className="pf-panelbox pf-genimg-panel">
-        <div className="pf-panelbox__label">{t(lang, "map.ctx.genImage")}</div>
+        <div className="pf-panelbox__label" title={t(lang, "map.ctx.genImage")}>
+          {t(lang, "map.ctx.genImage")}
+        </div>
         <div className="pf-genimg-wrap">
           <GenImage src={d.genImage.src} alt={d.genImage.prompt} />
           <span className="pf-genimg-cap">{d.genImage.prompt}</span>
@@ -351,10 +353,10 @@ export function AgentCardBody({
   const attachedPanel =
     d.attached && d.attached.length > 0 ? (
       <div className="pf-panelbox pf-genimg-panel">
-        <div className="pf-panelbox__label">
+        <div className="pf-panelbox__label" title={`${t(lang, "map.ctx.attached")} · ${d.attached.length}`}>
           {t(lang, "map.ctx.attached")} · {d.attached.length}
         </div>
-        <div className="pf-shots">
+        <div className="pf-shots nowheel">
           {d.attached.map((shot, i) => (
             <figure className="pf-shot" key={`${shot.note}-${i}`}>
               <img className="pf-genimg" src={shot.src} alt={shot.note} />

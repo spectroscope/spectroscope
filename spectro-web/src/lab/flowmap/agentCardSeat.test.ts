@@ -195,6 +195,22 @@ describe("the doc block stops citing a cap that does not exist", () => {
     expect(docBlock).toContain(String(cap));
   });
 
+  // AND THE SELECTORS, not only the numbers. The rewrite of this block named
+  // `.pf-shelf` as one of the classes stating a fixed box; there is no such
+  // class — it is `.pf-agent__shelf` — and the number check above sailed past
+  // it, because the numbers were all real. A cap that does not exist and a
+  // selector that does not exist are the same defect one paragraph apart.
+  it("names classes that exist in the stylesheet it is talking about", () => {
+    const css = read("flowmap.css");
+    const named = [...docBlock.matchAll(/`(\.[\w-]+)`/g)].map((m) => m[1]);
+    expect(named.length, "the block cites no class at all — this case pins nothing").toBeGreaterThan(2);
+    for (const selector of named) {
+      expect(css, `${selector} is cited here and is in no rule of flowmap.css`).toMatch(
+        new RegExp(`(^|[\\s,>+~])\\${selector}\\b[^{}]*\\{`, "m"),
+      );
+    }
+  });
+
   it("cites the streams cap and the prose cap out of the stylesheet that sets them", () => {
     const css = read("flowmap.css");
     const capOf = (selector: string) => {
@@ -245,6 +261,86 @@ function seatsOver(events: RunEvent[], ids: readonly string[]): Map<string, Set<
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// AC 2's FIRST HALF, which nothing in this repo held. The owner asked for the
+// card "a bit higher so it does not keep popping around at the bottom", the
+// seat moved from world y 150 to 48, and then: dropping the hub 60 world px
+// back down left the WHOLE gate green, and the only thing that ever went red
+// further down was a COLLISION check — "the OS band sits below the tall agent
+// card", which is about the card landing ON its neighbour, not about it
+// sitting high.
+//
+// WHAT THE GATE CAN HOLD, and what it cannot. The ceiling the card proposes is
+// 64 SCREEN px (cardStillness.AGENT_TOP_CEILING_PX), and screen px are not a
+// property of the seat: `fitView` scales the world into whatever pane it is
+// given, and most of the measured 45.44 at a 1600x900 window is that fit's own
+// padding rather than the card's air. Turning 64 into a world number here would
+// mean re-implementing React Flow's fit, and a pin built on a model of someone
+// else's code lies the first time the model drifts.
+//
+// So the gate holds the SHAPE of the placement, in world units, where the
+// answer does not depend on the pane at all — and the screen half stays where
+// it belongs, measured in a browser with the window it was measured at named
+// beside it.
+// ---------------------------------------------------------------------------
+describe("the hub sits at the top of the machine it belongs to", () => {
+  const world = () => {
+    const flow = flowAfter(readSample());
+    const at = (id: string) => {
+      const node = flow.nodes.find((n) => n.id === id);
+      expect(node, `${id} must be on the map`).toBeDefined();
+      return node!;
+    };
+    const frame = at("z-mac");
+    const frameH = (frame.style as { height?: number } | undefined)?.height;
+    expect(frameH, "the machine frame must state a height").toBeGreaterThan(0);
+    const agent = at("agent");
+    return {
+      nodes: flow.nodes,
+      airAbove: agent.position.y - frame.position.y,
+      airBelow: frame.position.y + frameH! - (agent.position.y + EXPANDED_CARD.agent.h),
+      railBelow: at("z-os").position.y - (agent.position.y + EXPANDED_CARD.agent.h),
+    };
+  };
+
+  // THE ONE. "High in the frame" said as something the fold produces: the hub
+  // is nearer the top of the machine than it is to the band underneath it.
+  // Measured today: 24 world px above, 60 below — and 60 is EXP_GAP, the rail
+  // room the layout leaves between any two cards, so the card is as close to
+  // the frame's edge as anything on this map gets to anything.
+  //
+  // It is what the collision checks could not say. Dropping the seat 40 px
+  // leaves every one of them green and puts 64 above the card against 20 below
+  // it, which is the card floating in the middle again.
+  it("is closer to the frame above it than to the band below it", () => {
+    const w = world();
+    expect(w.railBelow, "the band has moved up against the card").toBeGreaterThan(0);
+    expect(
+      w.airAbove,
+      `the hub sits ${w.airAbove} world px below the top of the machine and only ` +
+        `${w.railBelow} above the band — that is the middle, not the top`,
+    ).toBeLessThan(w.railBelow);
+  });
+
+  // AC 2's own second half, in the units that survive a zoom: "the air above
+  // the card is no more than one third of the air below it". Today 24 against
+  // 520. A ratio is pane-independent, so this one holds at every window.
+  it("keeps the air above it under a third of the air below it", () => {
+    const w = world();
+    expect(w.airBelow).toBeGreaterThan(0);
+    expect(w.airAbove * 3).toBeLessThanOrEqual(w.airBelow);
+  });
+
+  // And nothing is seated above it — a hub at the top of a frame with a card
+  // over its head is not at the top of anything.
+  it("has nothing over its head", () => {
+    const w = world();
+    const agentY = w.nodes.find((n) => n.id === "agent")!.position.y;
+    const over = w.nodes.filter((n) => n.type !== "zone" && n.position.y < agentY).map((n) => n.id);
+    expect(over).toEqual([]);
+  });
+});
 
 const BELOW = ["z-os", "os-disk", "os-shell", "os-mcp", "os-net", "z-mac"] as const;
 const BESIDE = ["z-boundary", "z-outside", "llm", "netz", "mcpserver"] as const;
