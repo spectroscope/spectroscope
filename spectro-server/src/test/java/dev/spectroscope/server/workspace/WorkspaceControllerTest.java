@@ -82,6 +82,70 @@ class WorkspaceControllerTest {
         assertThat(countNodes(res.entries())).isLessThanOrEqualTo(2000);
     }
 
+    @Test
+    void aHugeCacheDirectoryCannotStarveTheOperatorsOwnFiles() throws Exception {
+        // Card 351 criterion 4, measured rather than assumed. Dot names sort
+        // FIRST ('.' is 0x2E, ahead of every letter), so the moment dot-entries
+        // became visible a dependency cache beside the operator's source moved
+        // to the head of the walk. Under a depth-first walk on ONE shared
+        // budget it then drank the whole 2000 before src was ever reached and
+        // the top level came back as a single truncated entry.
+        //
+        // The name here is deliberately NOT on PRUNED_NAMES: adding names is a
+        // hand-list and this has to hold for the cache nobody listed yet.
+        Files.createDirectories(root.resolve(".aaa-cache/pkg"));
+        for (int i = 0; i < 2500; i++) {
+            Files.writeString(root.resolve(".aaa-cache/pkg/m" + i + ".py"), "x");
+        }
+        Files.createDirectories(root.resolve("src"));
+        for (String f : new String[] {"Main.java", "Other.java", "Third.java", "Fourth.java"}) {
+            Files.writeString(root.resolve("src").resolve(f), "class X {}");
+        }
+        Files.writeString(root.resolve("README.md"), "# hello");
+
+        WorkspaceController.FilesResponse res =
+                (WorkspaceController.FilesResponse) controller().files(session, null, local()).getBody();
+
+        assertThat(res.entries()).extracting(WorkspaceController.FileNode::name)
+                .containsExactly(".aaa-cache", "src", "README.md");
+        WorkspaceController.FileNode src = res.entries().stream()
+                .filter(n -> n.name().equals("src")).findFirst().orElseThrow();
+        assertThat(src.children()).extracting(WorkspaceController.FileNode::name)
+                .containsExactly("Fourth.java", "Main.java", "Other.java", "Third.java");
+        assertThat(res.truncated()).isTrue();
+        assertThat(countNodes(res.entries())).isLessThanOrEqualTo(2000);
+    }
+
+    @Test
+    void theBoundOnWhatOneDirectoryHoldsCostsTheListingNothing() throws Exception {
+        // The fair walk keeps a whole LEVEL of directories open at once, so a
+        // cursor keeps only the head of its directory (CURSOR_KEEP). The bound
+        // has to be invisible: a full 2000 real entries, the pruned names gone,
+        // and truncated still seeing that something was left standing.
+        //
+        // The "z" is the whole test. Every pruned name must sort AHEAD of every
+        // real one, or the head has slack the bound was never given: with "f"
+        // names three of the thirteen ("node_modules", "out", "target") fall
+        // behind them, and dropping the "+ 1" then stays GREEN. That was the
+        // first version of this test, and the bite came back green — measured,
+        // not reasoned about.
+        for (String pruned : WorkspaceController.PRUNED_NAMES) {
+            Files.writeString(root.resolve(pruned), "noise");
+        }
+        for (int i = 0; i < 2005; i++) {
+            Files.writeString(root.resolve(String.format("z%04d.txt", i)), "x");
+        }
+
+        WorkspaceController.FilesResponse res =
+                (WorkspaceController.FilesResponse) controller().files(session, null, local()).getBody();
+
+        assertThat(res.entries()).hasSize(2000);
+        assertThat(res.entries()).extracting(WorkspaceController.FileNode::name)
+                .doesNotContainAnyElementsOf(WorkspaceController.PRUNED_NAMES)
+                .startsWith("z0000.txt");
+        assertThat(res.truncated()).isTrue();
+    }
+
     private static int countNodes(List<WorkspaceController.FileNode> nodes) {
         int n = 0;
         for (WorkspaceController.FileNode node : nodes) {
