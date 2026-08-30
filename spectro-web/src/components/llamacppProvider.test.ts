@@ -8,8 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { addressSpecFor } from "./providerAddress";
 import { PROVIDERS } from "./providerPickerMode";
-import { read } from "../testkit/source";
-import { t } from "../i18n/i18n";
+import { SETTING_REACH } from "./settingsReach";
 
 describe("the picker offers llamacpp", () => {
   it("lists it as a selectable backend", () => {
@@ -48,41 +47,14 @@ describe("llamacpp carries its own address", () => {
 });
 
 describe("the settings page can explain the new field", () => {
-  const reachTsx = read("./settingsReach.tsx", import.meta.url);
-  const settingsTsx = read("./SettingsPanel.tsx", import.meta.url);
-
   it("declares llamacppBaseUrl in the reach table", () => {
-    // Every field the provider block lists must have a row, or the block's
-    // own sentence is assembled from an incomplete table.
-    expect(reachTsx).toContain("llamacppBaseUrl");
-  });
-
-  it("names the field in the provider block's reach list", () => {
-    expect(settingsTsx).toContain('"llamacppBaseUrl"');
-  });
-});
-
-describe("the copy exists in both locales", () => {
-  it("has an onboarding body for llama.cpp in EN and DE", () => {
-    for (const lang of ["en", "de"] as const) {
-      const copy = t(lang, "onb.llamacppBody");
-      expect(copy).not.toBe("onb.llamacppBody");
-      expect(copy.length).toBeGreaterThan(20);
-    }
-  });
-
-  it("says in both locales that the model id is not a chooser", () => {
-    for (const lang of ["en", "de"] as const) {
-      const copy = t(lang, "onb.llamacppModelIsALabel");
-      expect(copy).not.toBe("onb.llamacppModelIsALabel");
-      expect(copy.length).toBeGreaterThan(20);
-    }
-  });
-
-  it("does not ship the same string for both locales", () => {
-    // A DE key filled with the EN sentence passes a "key exists" test and is
-    // still an untranslated string on the page.
-    expect(t("de", "onb.llamacppBody")).not.toBe(t("en", "onb.llamacppBody"));
-    expect(t("de", "onb.llamacppModelIsALabel")).not.toBe(t("en", "onb.llamacppModelIsALabel"));
+    // The TABLE, not the file's text. Every field the provider block lists
+    // must have a row here, or the block's own sentence is assembled from an
+    // incomplete table — and reading the source for the name would go green on
+    // a mention in a comment, which is the defect this card's server-side pin
+    // was rewritten for. That the panel actually draws the field INSIDE the
+    // provider block is walked by settingsReach.test.tsx, which derives the
+    // address fields from the picker instead of typing them out.
+    expect(SETTING_REACH.llamacppBaseUrl).toBe("next-session");
   });
 });

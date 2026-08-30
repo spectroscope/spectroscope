@@ -404,7 +404,7 @@ describe("the workspace gear describes baseUrl as what it now is", () => {
   // providers and the address spec each one owns, so a fourth field cannot be
   // added without this sentence being asked about it.
   it("names every per-provider address field that outranks it, in both languages", () => {
-    const owned = PROVIDERS.map((p) => addressSpecFor(p)?.field).filter((f): f is string => f !== undefined);
+    const owned = PROVIDERS.map((p) => addressSpecFor(p)?.field).filter((f) => f !== undefined);
     expect(owned.length, "no provider owns an address field any more").toBeGreaterThan(0);
     for (const lang of ["de", "en"] as const) {
       const desc = dict["wsg.local.desc.baseUrl"][lang];

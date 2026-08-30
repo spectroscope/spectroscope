@@ -99,9 +99,7 @@ function blocksIn(file: string): Block[] {
  */
 /** Every settings field a provider owns as its address — derived from the
  *  picker's provider list, so a new one cannot be missed by a guard. */
-const ADDRESS_FIELDS: string[] = PROVIDERS.map((p) => addressSpecFor(p)?.field).filter(
-  (f): f is string => f !== undefined,
-);
+const ADDRESS_FIELDS = PROVIDERS.map((p) => addressSpecFor(p)?.field).filter((f) => f !== undefined);
 
 function fieldsIn(jsx: string): string[] {
   const found = [...jsx.matchAll(/field="([^"]+)"/g)].map((m) => m[1] as string);

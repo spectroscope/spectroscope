@@ -1,13 +1,12 @@
 // First-run onboarding — a one-time info sheet shown when a fresh install has no
 // backend ready yet. It does not configure anything (settings stay a config/env
-// decision); it just tells a newcomer the two zero-cost local paths (ollama, LM
-// Studio) and how to add a cloud key to .env, so the very first screen is not
+// decision); it just tells a newcomer the zero-cost local paths (ollama, LM
+// Studio, llama.cpp) and how to add a cloud key to .env, so the very first screen is not
 // "Opus is selected and nothing works". Modelled on the keymap overlay: same
 // km-backdrop / km-panel, Esc / × / backdrop to close. Bilingual, tokens only.
 
 import type { ReactNode } from "react";
 import { useLang } from "../state/lang";
-import { t } from "../i18n/i18n";
 
 /** One backend option row. */
 function Option(props: { badge: string; free: boolean; title: string; body: ReactNode }) {
@@ -156,13 +155,27 @@ export function Onboarding(props: {
             free
             title="llama.cpp"
             body={
-              <>
-                {t(de ? "de" : "en", "onb.llamacppBody")}{" "}
-                <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noreferrer">
-                  llama.cpp
-                </a>
-                . {t(de ? "de" : "en", "onb.llamacppModelIsALabel")}
-              </>
+              de ? (
+                <>
+                  hol dir{" "}
+                  <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noreferrer">
+                    llama.cpp
+                  </a>
+                  , starte <code>llama-server -m dein-modell.gguf</code> (Port <code>:8080</code>) und wähl
+                  oben den Anbieter <code>llamacpp</code>. Er bedient genau das Modell, mit dem er gestartet
+                  wurde — der Name oben ist eine Beschriftung, keine Auswahl.
+                </>
+              ) : (
+                <>
+                  get{" "}
+                  <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noreferrer">
+                    llama.cpp
+                  </a>
+                  , run <code>llama-server -m your-model.gguf</code> (it listens on <code>:8080</code>), then
+                  pick provider <code>llamacpp</code> in the header. It serves the one model it was started
+                  with — the name above is a label, not a chooser.
+                </>
+              )
             }
           />
           <Option
@@ -187,13 +200,15 @@ export function Onboarding(props: {
         </ul>
 
         {/* Card 193: the first-run reader with the GPU box across the room is
-            exactly the person the two local options just spoke to — say where
-            the address goes before they conclude "local machine only". */}
+            exactly the person the local options just spoke to — say where the
+            address goes before they conclude "local machine only". Card 312
+            added a third backend with an address of its own; a sentence that
+            names two of three sends the third reader away. */}
         {props.onOpenSettings && (
           <p className="ob-remote">
             {de ? (
               <>
-                ollama oder LM Studio laufen auf einer anderen Maschine? trag die Adresse in den{" "}
+                ollama, LM Studio oder llama.cpp laufen auf einer anderen Maschine? trag die Adresse in den{" "}
                 <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
                   Einstellungen
                 </button>{" "}
@@ -201,7 +216,7 @@ export function Onboarding(props: {
               </>
             ) : (
               <>
-                ollama or LM Studio running on another machine? put its address in{" "}
+                ollama, LM Studio or llama.cpp running on another machine? put its address in{" "}
                 <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
                   settings
                 </button>{" "}
