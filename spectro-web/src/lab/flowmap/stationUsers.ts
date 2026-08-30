@@ -30,8 +30,8 @@
 import type { AgentDirectory } from "../agentDirectory";
 import { clipMiddle, type Loop, type Scene } from "../labScene";
 
-/** The three shared stations an agent can occupy. */
-export type Station = "disk" | "cmd" | "mcp";
+/** The shared stations an agent can occupy. */
+export type Station = "disk" | "cmd" | "mcp" | "browser";
 
 export type StationUser = { tag: string; name: string; agentId: string };
 
@@ -39,12 +39,26 @@ export type StationUser = { tag: string; name: string; agentId: string };
 export type StationOccupant = StationUser & { station: Station; loop: Loop };
 
 const NAME_MAX = 24;
-const STATIONS: Station[] = ["disk", "cmd", "mcp"];
+const STATIONS: Station[] = ["disk", "cmd", "mcp", "browser"];
 
-/** MCP occupancy is the HELD call, not the focus: an agent stopped at the
- *  permission gate still holds its MCP call, and the whole chain stays lit. */
+/**
+ * Whether this loop is on that station.
+ *
+ * MCP occupancy is the HELD call, not the focus: an agent stopped at the
+ * permission gate still holds its MCP call, and the whole chain stays lit.
+ *
+ * BROWSER occupancy is the tool in flight, because a browser verb has no
+ * station in `advanceLoop` — it lands on "agent" like any unknown tool, so
+ * there is no focus to read. Card 330 read the same fact directly in
+ * sceneToFlow and got a station that could not say WHO was on it: a worker
+ * driving the browser lit the MAIN agent's rail and had none of its own, which
+ * is the defect card 287 fixed for the other three. Answering it here answers
+ * it once, for the chip, the node's `byTag` and the hot-rail set alike.
+ */
 function occupies(loop: Loop, station: Station): boolean {
-  return station === "mcp" ? loop.activeMcp !== null : loop.focus === station;
+  if (station === "mcp") return loop.activeMcp !== null;
+  if (station === "browser") return loop.activeTool !== null && loop.activeTool.startsWith("browser_");
+  return loop.focus === station;
 }
 
 export function stationOccupants(scene: Scene, dir?: AgentDirectory): StationOccupant[] {

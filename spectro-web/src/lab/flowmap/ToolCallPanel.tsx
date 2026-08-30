@@ -1,5 +1,7 @@
 // The map's tool-call panel (card 120), on the agent card and the MCP
-// station: one call in flight, readable in two faces. Insight is the JSON
+// station: one call, readable in two faces. On the agent card it is a call in
+// flight; on the MCP station it is the call that card is asking, which since
+// card 328 outlives its answer. Insight is the JSON
 // tree the panel always showed (the JSONL-first default); structured renders
 // the call as the thing it is — a command in a terminal, an edit as its
 // before/after — through ToolViewBody, the chat card's renderer. The strip
@@ -74,12 +76,25 @@ export function ToolCallPanel({
           </button>
         ))}
       </div>
+      {/* The 240 lives in TOOL_BODY as a maxHeight and in `.pf-agent--wide
+          .pf-toolbody` as a height. That is not a duplicate: the compact card
+          is capped and the wide one RESERVES, because a capped box still
+          collapses when it is empty and everything under it moves. Promoting
+          the inline cap to a height is the change that makes a red merge green
+          and is wrong — cardStillness pins it. */}
       <div className="nowheel pf-toolbody" style={TOOL_BODY}>
         {tool === null ? (
           <div className="pf-kv">{t(lang, "map.ctx.noTool")}</div>
         ) : face === "structured" ? (
-          /* No output on purpose: sceneToFlow clears the tool on tool_result,
-             so the panel only ever holds a pending call. */
+          /* No output on purpose, and card 328 changed WHY. The old reason
+             was that sceneToFlow cleared the tool on tool_result, so the panel
+             could only ever hold a pending call — that stopped being true the
+             moment the MCP client card started holding its call past the
+             answer, and it is now fed calls that have already been answered.
+             The reason it still renders no output is the design: this panel is
+             the ASKING half of an exchange. What came back is the MCP-Server
+             card's half, across the boundary the map draws, and printing it
+             here as well would make two cards say one thing. */
           <ToolViewBody
             mode="structured"
             name={tool.name}

@@ -1511,8 +1511,65 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.node.netStack2": { de: "stack", en: "stack" },
   "map.node.network": { de: "Netzwerk", en: "Network" },
   "map.node.netz": { de: "Netz", en: "Net" },
-  "map.node.mcpServer": { de: "MCP-SERVER", en: "MCP SERVER" },
+  // The MCP-Server card's own name. It was a dead key from the retired SVG map
+  // while nodes.tsx spelled the name itself; card 328 made the card say
+  // something, so the name goes through the dict like the rest of it.
+  "map.node.mcpServer": { de: "MCP-Server", en: "MCP-Server" },
   "map.extServer": { de: "externer Server", en: "external server" },
+  // CARD 329 — the Net card says what LEFT this machine, and nothing else.
+  // "Routing · Internet" is gone: it was printed over every run, including the
+  // 4.6 % that reached anything and the 58 of 137 exchanges that went to a
+  // tailnet address, which is neither loopback nor the public internet.
+  "map.net.nothing": { de: "nichts hat diesen Rechner verlassen", en: "nothing left this machine" },
+  "map.net.redacted": { de: "Adresse geschwärzt", en: "address redacted" },
+  // CARD 330 — the browser station. It replays what was RECORDED and never
+  // reaches a page, so every sentence here is about the record, not the web.
+  "map.node.browser": { de: "Browser", en: "Browser" },
+  "map.browser.none": { de: "kein Browser gefahren", en: "no browser was driven" },
+  "map.browser.noPage": { de: "keine Adresse aufgezeichnet", en: "no address recorded" },
+  "map.browser.shotAlt": { de: "aufgezeichneter Screenshot", en: "the recorded screenshot" },
+  "map.browser.failed": { de: "fehlgeschlagen", en: "failed" },
+  "map.browser.at.shot": { de: "Screenshot aufgezeichnet", en: "a screenshot was recorded" },
+  "map.browser.at.shot-missing": { de: "Bild fehlt im Speicher", en: "the picture is not in the store" },
+  "map.browser.at.reading": { de: "Seiteninhalt aufgezeichnet", en: "a page reading was recorded" },
+  "map.browser.at.nothing": { de: "nichts aufgezeichnet", en: "nothing was recorded" },
+  "map.browser.cut": {
+    de: "die ersten {shown} von {all} Zeichen — die ganze Aufzeichnung steht auf der JSONL-Zeile",
+    en: "the first {shown} of {all} characters — the whole recording is on the JSONL row",
+  },
+  "map.browser.shotGone": {
+    de: "Screenshot aufgezeichnet, die Datei liegt nicht mehr im Speicher",
+    en: "a screenshot was recorded; its file is no longer in the store",
+  },
+  "map.browser.nothing": {
+    de: "weder Bild noch Mitschrift aufgezeichnet",
+    en: "neither a picture nor a reading was recorded",
+  },
+  // CARD 328 — the four readings of the MCP-Server card. "waiting" and
+  // "answered with nothing" are two different facts and never share a word:
+  // one call in 783 sessions was still open after an hour, and not one of
+  // 3 503 measured answers was empty.
+  "map.mcp.waiting": { de: "wartet auf die Antwort …", en: "waiting for the answer …" },
+  "map.mcp.gated": {
+    de: "wartet auf die Freigabe — noch nichts gesendet",
+    en: "waiting for permission — nothing sent yet",
+  },
+  "map.mcp.denied": {
+    de: "Freigabe verweigert — der Aufruf hat diesen Rechner nie verlassen",
+    en: "permission refused — the call never left this machine",
+  },
+  "map.mcp.empty": { de: "geantwortet, ohne Inhalt", en: "answered with nothing" },
+  "map.mcp.answered": { de: "geantwortet", en: "answered" },
+  // Not "error": an error IS an answer here, and a word that reads as a crash
+  // would say the opposite of what the card is for.
+  "map.mcp.errored": { de: "Fehler-Antwort", en: "error answer" },
+  // The card is 150px wide, so the remainder is a chip and the sentence that
+  // explains it — and says where the whole answer is — rides its title.
+  "map.mcp.more": { de: "+{n} Zeichen", en: "+{n} chars" },
+  "map.mcp.cut": {
+    de: "die ersten {shown} von {all} Zeichen — die ganze Antwort steht in der JSONL-Zeile",
+    en: "the first {shown} of {all} characters — the whole answer is on the JSONL row",
+  },
   "map.remote": { de: "remote", en: "remote" },
   "map.more": { de: "+{n} weitere", en: "+{n} more" },
   "map.aria": {

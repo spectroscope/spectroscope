@@ -6,12 +6,13 @@
 // local/remote flip literally re-places the LLM inside vs. outside "Dein Mac".
 
 import type { Edge, Node } from "@xyflow/react";
-import { ROOT_AGENT } from "../labScene";
+import { isMcpTool, prettyMcp, ROOT_AGENT } from "../labScene";
 import type { DiskState, Focus, GateState, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
 import type { AgentDirectory } from "../agentDirectory";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
+import { outboundHop } from "./addresses";
 import { stationOccupants, type Station, type StationOccupant } from "./stationUsers";
 import {
   SEAT_ROWS_COMPACT,
@@ -44,6 +45,281 @@ export interface AgentStream {
   agent: string;
   text: string;
 }
+/**
+ * The most of ONE MCP answer this fold keeps.
+ *
+ * A bound, not a taste. Measured over 3 000 `mcp__` results sampled out of
+ * ~/.claude/projects (random.seed(328)): p50 209 bytes, p75 934, p90 27 832,
+ * p99 78 277, max 246 112 — a 130x spread between the median and the p90, and
+ * 14.6 % of the answers are an image block rather than text. Keeping them all
+ * whole would put a quarter of a megabyte per call into a structure the map
+ * re-derives on every frame; rendering them whole would put it into the DOM.
+ * At 2 000 characters roughly four answers in five arrive intact, and the card
+ * says how many characters it is not showing rather than pretending it has
+ * them all.
+ */
+export const MCP_ANSWER_CAP = 2000;
+
+/**
+ * One MCP call and the answer that came back for it (card 328).
+ *
+ * The answer was always on the wire — `tool_result` carries `output`,
+ * `isError` and `durationMs`, joined to the call by `callId` — and the fold
+ * threw it away at the `tool_result` case. This record is what survives it.
+ *
+ * The JOIN IS SCOPED TO ONE RUN and that is not defensive: measured over 783
+ * session files, `callId` is not globally unique — "c1" appears in 31 distinct
+ * files, 472 distinct ids over 506 calls. A record kept across a `run_start`
+ * would let a later run's call inherit an earlier run's answer with nothing
+ * red anywhere, so {@link deriveDetail} empties the table on a new run of the
+ * ROOT agent — see the `run_start` case, which says why the root and not the
+ * runId alone.
+ */
+export interface McpExchange {
+  callId: string;
+  agentId: string;
+  /** The wire's tool name. Only the CALL ever said it — `tool_result` has no
+   *  name field, which is what makes this a join and not a lookup. */
+  name: string;
+  /** What the call asked, as the model wrote it. */
+  input: unknown;
+  /**
+   * The answer, cut to {@link MCP_ANSWER_CAP}.
+   *
+   * `null` while the call is still open, `""` for an answer that was empty.
+   * Two different facts: over 3 503 measured results not one was empty, so the
+   * empty case is a contract the corpus has never exercised — and collapsing
+   * it into "waiting" would tell a reader a finished call is still running.
+   */
+  output: string | null;
+  /** How long the answer was BEFORE the cap; 0 while the call is open. */
+  outputChars: number;
+  isError: boolean;
+  durationMs: number;
+  /**
+   * What THIS MACHINE's permission gate did with the call, which is not what
+   * the server did.
+   *
+   * A gated call is asked before it is allowed to run, and a refused one never
+   * leaves: `labScene.ts`'s `permission_decision` case says it in its own words
+   * — "Denied: nothing ran, the packet stays at the gate." The fold had no
+   * `permission_decision` case at all, so the refusal that follows arrived as
+   * an ordinary `tool_result` and the MCP-Server card printed it as the
+   * server's answer. It is not synthetic: the shipped `build_plan` scenario
+   * carries `{ mcp: "notes__search_notes", gate: "deny" }` and
+   * `scenario/compile.ts` writes "ERROR: the user denied the execution." for
+   * it, at 200 ms, with `isError`.
+   *
+   * `"none"` covers both an ungated call and one the gate let through — once
+   * the packet is past the gate the gate has nothing more to say about it.
+   */
+  gate: "none" | "pending" | "denied";
+}
+
+/** Which of the six things the MCP-Server card can be saying. Two of them are
+ *  about the LOCAL gate and say so; the card may never draw either as the
+ *  external server's doing. */
+export type McpAnswerState = "none" | "gated" | "denied" | "waiting" | "answered" | "empty";
+
+/**
+ * What one exchange reads as.
+ *
+ * The gate is read FIRST and that is the whole point: a call standing at the
+ * permission gate has `output === null` exactly like a call the server has not
+ * answered yet, and "waiting for the answer …" names the wrong wait — nothing
+ * has been sent. A refused call has an `output`, and it is this machine's
+ * refusal rather than the server's words.
+ *
+ * @param x the exchange
+ * @return the reading the server card renders. Never `"none"` — that is the
+ *         card's own reading for a run that has asked nothing, and it has no
+ *         exchange to hand this function.
+ */
+export function mcpAnswerState(x: McpExchange): Exclude<McpAnswerState, "none"> {
+  if (x.gate === "denied") return "denied";
+  if (x.gate === "pending") return "gated";
+  if (x.output === null) return "waiting";
+  return x.output === "" ? "empty" : "answered";
+}
+
+/** The answering half of one exchange, as the MCP-Server card is handed it. */
+export interface McpAnswerView {
+  callId: string;
+  name: string;
+  /** Never `"none"`: this view only exists when there IS an exchange, and
+   *  `"none"` is the card's own reading for a run that has asked nothing. */
+  state: Exclude<McpAnswerState, "none">;
+  /** The answer, already cut at {@link MCP_ANSWER_CAP} by the fold. */
+  text: string;
+  /** How long the answer really was, so the card can say what it is not showing. */
+  chars: number;
+  isError: boolean;
+  durationMs: number;
+}
+
+/** Both halves of the one exchange the MCP chain is showing. */
+export interface McpChainView {
+  /** The MCP line BOTH cards carry. */
+  line: string | null;
+  /** The asking half, for the MCP-Client station. */
+  call: { callId: string; name: string; input: unknown } | null;
+  /** The answering half, for the MCP-Server card. */
+  answer: McpAnswerView | null;
+  /** Whether the exchange the two cards show came back an error. */
+  isError: boolean;
+  /**
+   * WHICH agent asked the exchange the two cards are showing.
+   *
+   * The rails need it and the live occupant cannot supply it: `tool_result`
+   * spreads `idleActivity()`, so the agent standing on the MCP station is gone
+   * at the exact moment the answer — including an error answer — lands. The
+   * leg from the agent into the MCP client was therefore clean for every
+   * answered error while the chain outward from the client went red.
+   */
+  askedBy: string | null;
+}
+
+/**
+ * How many hosts the Net card draws before it starts counting.
+ *
+ * Measured over 783 session files: 36 reached anything at all, and of those 34
+ * reached exactly ONE host and 2 reached two — never three. Four rows is twice
+ * the worst case the corpus has ever produced; a design for twelve rows would
+ * be a design for data that does not exist. Nothing is dropped silently: what
+ * does not fit is counted.
+ */
+export const NET_HOST_ROWS = 4;
+
+/** What the Net card was handed about this run's outbound traffic. */
+export interface NetCardView {
+  /** The hosts it draws, first seen first. */
+  hosts: string[];
+  /** How many more there are below the row cap. */
+  more: number;
+  /** Whether any recorded address was a redaction marker. */
+  redacted: boolean;
+  /** Whether anything crossed the boundary at all. */
+  crossed: boolean;
+}
+
+/**
+ * CARD 329 — the Net card's whole content, derived from the run.
+ *
+ * A shared derivation for the same reason as {@link mcpChainView}: both the
+ * single-run map and the fleet machine room draw this node.
+ *
+ * @param detail the fold
+ * @return what the card renders
+ */
+export function netCardView(detail: Detail): NetCardView {
+  return {
+    hosts: detail.reached.slice(0, NET_HOST_ROWS),
+    more: Math.max(0, detail.reached.length - NET_HOST_ROWS),
+    redacted: detail.redactedHops > 0,
+    crossed: detail.reached.length > 0 || detail.redactedHops > 0,
+  };
+}
+
+/**
+ * CARD 328 — the ONE call both halves of the MCP chain show.
+ *
+ * One derivation, and that is the card's whole claim: the client card and the
+ * server card have to be visibly the same call, and two expressions is exactly
+ * how they would come to disagree. It is also why this is a function and not
+ * three lines in sceneToFlow — BOTH the single-run map and the fleet machine
+ * room draw these two cards, and a fix applied to one of them is half a
+ * feature on a live surface.
+ *
+ * The live occupant's own call wins where there is one, so a station saying
+ * "main is on it" cannot be showing a worker's call. With nobody on the
+ * station the run's last MCP call stands, which is what lets the answer stay
+ * on the card after `tool_result` cleared the station out from under it.
+ *
+ * @param detail the fold
+ * @param occupantId the agent standing on the MCP station, or null
+ * @param liveLine the occupant's own `activeMcp` line, or null
+ * @return what the two cards render
+ */
+export function mcpChainView(
+  detail: Detail,
+  occupantId: string | null,
+  liveLine: string | null,
+): McpChainView {
+  const askedId = (occupantId === null ? undefined : detail.lastAsk[occupantId]) ?? detail.lastMcp;
+  const asked = askedId === null || askedId === undefined ? null : (detail.answers[askedId] ?? null);
+  return {
+    line: liveLine ?? (asked === null ? null : prettyMcp(asked.name)),
+    call: asked === null ? null : { callId: asked.callId, name: asked.name, input: asked.input },
+    answer:
+      asked === null
+        ? null
+        : {
+            callId: asked.callId,
+            name: asked.name,
+            state: mcpAnswerState(asked),
+            text: asked.output ?? "",
+            chars: asked.outputChars,
+            isError: asked.isError,
+            durationMs: asked.durationMs,
+          },
+    isError: asked?.isError ?? false,
+    askedBy: asked?.agentId ?? null,
+  };
+}
+
+/**
+ * The most of ONE recorded browser reading this fold keeps (card 330).
+ *
+ * Same bound as the MCP answer and for the same reason. What a browser tool
+ * answers is a `tool_result` like any other: the four real ones on this machine
+ * run 123-264 bytes, but `browser_read_page` hands back a whole accessibility
+ * tree and `get_page_text` a whole page, and the card is 190px wide.
+ */
+export const BROWSER_READING_CAP = 2000;
+
+/**
+ * The last browser call this run recorded, and what it left behind (card 330).
+ *
+ * THERE IS NO HTML ON THE WIRE and that is deliberate — `browser_action` is
+ * metadata only, "no bytes ride here, ever: a screenshot is a blob in the store
+ * and a hash on this line". Two better sources exist and both are on the
+ * SESSION wire, so this card fetches nothing:
+ *
+ *  · the SCREENSHOT. `browser_action.sha256` is the blob's hash, and when the
+ *    same call took the picture through `browser_computer` the run also emitted
+ *    an `image_generated` carrying the store PATH for that exact hash. Joining
+ *    the two gives a real recorded path instead of a guess about the extension.
+ *  · the READING. Measured on all four real browser calls in this machine's
+ *    store: the `tool_result` for the same callId carries the tool's whole
+ *    answer — the page's title line, the accessibility tree, or the refusal.
+ *    The sidecar has it too, behind an endpoint; the session file has it here.
+ */
+export interface BrowserPageRecord {
+  /** The sidecar's own id, so a reader can find the two lines over there. */
+  cid: string;
+  callId: string;
+  /** The wire name: browser_navigate, browser_read_page, browser_computer, … */
+  tool: string;
+  /** The address the call ENDED on. Absent on 3 of the 4 real events — a failed
+   *  navigate records no page — and it can be a redaction marker rather than an
+   *  address. Absent, redacted and an address are three states of one field. */
+  url?: string;
+  ok: boolean;
+  /** The screenshot blob's hash; absent for a call that took no picture. */
+  sha256?: string;
+  /** The blob the card can actually load, when an `image_generated` on the same
+   *  wire named the path for that hash. A hash with no path is not a picture
+   *  this card can show, and it says so rather than guessing a file name. */
+  shot: { blobPath: string; sha256: string } | null;
+  /** What the tool answered, cut at {@link BROWSER_READING_CAP}. */
+  reading: string | null;
+  /** How long the answer really was, so the card can say what it is not
+   *  showing. `browser_read_page` hands back a whole accessibility tree and
+   *  `get_page_text` a whole page; without this the card had no way to say the
+   *  text it prints stops mid-token, and it read as the whole recording. */
+  readingChars: number;
+}
+
 export interface Detail {
   prompt: string;
   ctxParts: CtxPart[] | null;
@@ -56,7 +332,16 @@ export interface Detail {
      *  exactly what a percentage may honestly be built on. */
     thresholdSource?: "override" | "window" | "fallback";
   } | null;
-  /** in-flight tool per agent (set on tool_call, cleared on tool_result). */
+  /**
+   * in-flight tool per agent (set on tool_call, cleared on tool_result).
+   *
+   * Still exactly that, and card 328 deliberately left it alone: the agent hub,
+   * the worker cards and the fleet room all read this field to say what is
+   * running RIGHT NOW, and a slot that outlived its result would have every one
+   * of them claiming a finished call is still in flight. What the MCP answer
+   * needed is a record of its own — {@link Detail.answers} — which keeps the
+   * whole exchange past the result instead of widening this one.
+   */
   tool: Record<string, { name: string; input: unknown } | undefined>;
   /** rolling last-N chars of the reasoning / answer streams, per agent. */
   think: Record<string, string>;
@@ -103,6 +388,67 @@ export interface Detail {
    * shown how big it got. `turns` counts the usage events.
    */
   spend: Record<string, { peak: number; turns: number }>;
+  /**
+   * CARD 328 — the MCP conversation of THIS run, keyed by callId.
+   *
+   * Only `mcp__` calls enter. Two reasons, and both are the card's: the two
+   * cards this feeds are the MCP client and the MCP server, and a session that
+   * ran 506 tool calls with answers out to 33 KB would otherwise be carrying
+   * every one of them on a structure the map re-derives per frame.
+   *
+   * Emptied on a new run of the ROOT agent — see the `run_start` case in
+   * {@link deriveDetail}, and {@link McpExchange} for why the scope exists at
+   * all. Not on any new runId: a CHILD's `run_start` carries its own, so that
+   * scope would throw the parent's record away the moment it spawned.
+   */
+  answers: Record<string, McpExchange | undefined>;
+  /** The callId of the last MCP call each agent made in this run (card 328). */
+  lastAsk: Record<string, string | undefined>;
+  /** The callId of the last MCP call ANY agent made in this run (card 328).
+   *  What the two cards fall back to once nobody is standing on the station. */
+  lastMcp: string | null;
+  /**
+   * CARD 329 — every host this run REACHED, first seen first.
+   *
+   * Derived from the two events that carry an outbound address and nothing
+   * else: `llm_exchange.url` and `browser_action.url`. A loopback address never
+   * enters — 45 of the 137 exchanges in this machine's whole history are
+   * loopback, and drawing a backend that never left the machine as outbound is
+   * the exact lie the network node exists to prevent.
+   *
+   * NOT classified. 58 of those 137 went to 100.90.57.62:1234, a Tailscale
+   * address in 100.64.0.0/10 — the largest single group, and neither loopback
+   * nor the public internet. Which shape ships (a third category, or none) is
+   * an owner call, so the fold carries the host and the card prints it.
+   *
+   * A HOST, and deliberately no number beside it. This carried a per-host hit
+   * count and the count was not a count of hops: `BrowserTools.java` records
+   * `browser.pageUrl()` — the page the browser ENDED on — for EVERY browser
+   * tool call, so five read-only verbs on one open page counted five; and 40 of
+   * the 137 exchanges carry no `status` at all with 7 more `aborted`, both
+   * dropped, so a host that answered nothing counted like one that answered
+   * 200. A figure the reader cannot take back to a fact does not get printed.
+   */
+  reached: string[];
+  /** CARD 330: the last browser call this run recorded, or null. */
+  page: BrowserPageRecord | null;
+  /** How many recorded addresses were a redaction marker (card 329). The run
+   *  reached SOMETHING and the record deliberately does not say where; that is
+   *  a fact of its own and never a host. */
+  redactedHops: number;
+  /**
+   * CARD 329 — whether the frame the scrubber is SITTING on is a crossing.
+   *
+   * The boundary nodes' light means "in use right now" on every other station
+   * of this map, and `reached.length > 0` never goes back down: after the first
+   * remote exchange — the first turn of essentially every real run — `netz` and
+   * `os-net` wore the breathing active animation for the rest of the session
+   * and past `run_end`. What this run reached stays on the CARD; that is the
+   * memory. This is the pulse, and it is the last applied event being one that
+   * recorded an address, which is the same "where the packet is now" the focus
+   * model is built on.
+   */
+  crossingNow: boolean;
 }
 
 /** How many pictures one card shows. The rest are in the chat and the trace. */
@@ -139,6 +485,29 @@ function asAttachment(
   };
 }
 
+/**
+ * Fold one recorded address onto the run's outbound list.
+ *
+ * The list is DERIVED, never typed: whatever host the events carry appears,
+ * and a host nothing recorded cannot. First-seen order, so the reading matches
+ * the run rather than an alphabet.
+ *
+ * @param d the detail being folded
+ * @param url the recorded address, in whatever shape it arrived
+ * @return whether this event recorded an address at all — what makes the
+ *         boundary node's light mean NOW rather than "at some point"
+ */
+function reach(d: Detail, url: unknown): boolean {
+  const hop = outboundHop(url);
+  if (hop.kind === "redacted") {
+    d.redactedHops += 1;
+    return true;
+  }
+  if (hop.kind !== "host") return false;
+  if (!d.reached.includes(hop.host)) d.reached.push(hop.host);
+  return true;
+}
+
 export function deriveDetail(applied: RunEvent[]): Detail {
   const d: Detail = {
     prompt: "",
@@ -153,9 +522,26 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     briefs: {},
     models: {},
     spend: {},
+    answers: {},
+    lastAsk: {},
+    lastMcp: null,
+    reached: [],
+    redactedHops: 0,
+    crossingNow: false,
+    page: null,
   };
+  /** CARD 330: store paths by content hash, so a browser_action's hash can find
+   *  the path the `image_generated` for the same shot already announced. */
+  const blobs = new Map<string, string>();
   let rootSeen = false;
+  /** The run the MCP table belongs to (card 328). A `callId` is unique inside
+   *  ONE run and nowhere else, so the table cannot outlive its run. */
+  let runId: string | null = null;
   for (const e of applied) {
+    // CARD 329: the pulse is about THIS frame, so it is cleared before the
+    // frame is read and set only by an event that recorded an address. Left to
+    // accumulate it would be the same monotone latch it replaces.
+    d.crossingNow = false;
     // Import-only frames are not in the RunEvent union — they never travel the
     // wire, so they are read off the shape rather than switched on. Kept ahead
     // of the switch for exactly that reason: the union below stays the wire's.
@@ -173,12 +559,38 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     switch (e.type) {
       case "image_generated":
         d.genImage[e.agentId] = { src: imageUrl(e.blobPath), prompt: e.prompt };
+        // CARD 330: the store is content-addressed, so this line is the only
+        // place the run says which PATH a given hash lives at. A browser
+        // screenshot announces itself here and references itself by hash on the
+        // browser_action beside it.
+        blobs.set(e.sha256, e.blobPath);
         break;
       case "run_start":
         // The FIRST run_start names the root. Later ones are children.
         if (!rootSeen) {
           d.root = e.agentId;
           rootSeen = true;
+        }
+        // CARD 328/329/330: a new run of the ROOT empties what the last run
+        // recorded — its MCP conversation, the hosts it reached and the page it
+        // opened. Measured: "c1" is the callId of a first call in 31 different
+        // session files, so a table that survived a run boundary would hand run
+        // two the answer run one got, silently and with the right id on it.
+        //
+        // ONLY the root's, and that is measured too. A CHILD's run_start
+        // carries its OWN runId, never its parent's — 25 of 25 child run_starts
+        // across this machine's 783 session files, not one of them shared. So a
+        // scope keyed on the runId alone would have thrown the parent's whole
+        // record away the moment it spawned a subagent, which is the ordinary
+        // case on this map and not a corner of it.
+        if (e.agentId === d.root && e.runId !== runId) {
+          runId = e.runId;
+          d.answers = {};
+          d.lastAsk = {};
+          d.lastMcp = null;
+          d.reached = [];
+          d.redactedHops = 0;
+          d.page = null;
         }
         d.think[e.agentId] = "";
         d.answer[e.agentId] = "";
@@ -209,13 +621,115 @@ export function deriveDetail(applied: RunEvent[]): Detail {
       case "text_delta":
         d.answer[e.agentId] = tail(d.answer[e.agentId] ?? "", e.text);
         break;
+      // CARD 329 — the two events that name an address, folded the same way.
+      // The map read NEITHER of them before this: `grep -rn
+      // "llm_exchange\|browser_action" src/lab/` returned zero matches, tests
+      // included, so the Net node drew a router glyph and measured nothing.
+      case "llm_exchange":
+        d.crossingNow = reach(d, e.url);
+        break;
+      case "browser_action": {
+        // `url` is ABSENT on 3 of the 4 real browser_action events on this
+        // machine — a failed navigate records no page — and `outboundHop`
+        // reads that as `none`, which is what it is.
+        d.crossingNow = reach(d, (e as { url?: unknown }).url);
+        // CARD 330: the run's latest browser call. Its reading arrives later,
+        // on the tool_result for the same callId.
+        const path = e.sha256 === undefined ? undefined : blobs.get(e.sha256);
+        d.page = {
+          cid: e.cid,
+          callId: e.callId ?? "",
+          tool: e.tool,
+          ...(e.url === undefined ? {} : { url: e.url }),
+          ok: e.ok,
+          ...(e.sha256 === undefined ? {} : { sha256: e.sha256 }),
+          shot: e.sha256 !== undefined && path !== undefined ? { blobPath: path, sha256: e.sha256 } : null,
+          reading: null,
+          readingChars: 0,
+        };
+        break;
+      }
       case "tool_call":
       case "permission_request":
         d.tool[e.agentId] = { name: e.name, input: e.input };
+        // CARD 328: an MCP call opens its own exchange, which outlives the
+        // in-flight slot above. `permission_request` opens it too — a gated
+        // call is asked before it is allowed to run, and the client card has to
+        // be able to say WHICH call is standing at the gate. It also RECORDS
+        // that it is standing there: until the decision lands nothing has been
+        // sent, and a server card reading "waiting for the answer …" would be
+        // naming the wrong wait.
+        if (isMcpTool(e.name)) {
+          d.answers[e.callId] = {
+            callId: e.callId,
+            agentId: e.agentId,
+            name: e.name,
+            input: e.input,
+            output: null,
+            outputChars: 0,
+            isError: false,
+            durationMs: 0,
+            gate: e.type === "permission_request" ? "pending" : "none",
+          };
+          d.lastAsk[e.agentId] = e.callId;
+          d.lastMcp = e.callId;
+        }
         break;
-      case "tool_result":
+      case "permission_decision": {
+        // CARD 328, round 2. `permission_decision` carries no agentId — the
+        // callId is the whole join, and it is the same one the request opened.
+        // An ALLOWED call goes back to being an ordinary call: the gate is done
+        // with it and the answer that follows is the server's. A DENIED one
+        // never leaves this machine, so nothing that follows it is.
+        const gated = d.answers[e.callId];
+        if (gated !== undefined) {
+          d.answers[e.callId] = { ...gated, gate: e.allowed ? "none" : "denied" };
+        }
+        break;
+      }
+      case "tool_result": {
         d.tool[e.agentId] = undefined;
+        // CARD 328: and the answer lands on the exchange the call opened. Only
+        // on one this run opened — a result whose call belongs to an earlier
+        // run finds nothing, which is the run scope doing its job rather than a
+        // guard bolted on top of it.
+        // CARD 330: a browser tool's answer is a tool_result like any other,
+        // and it is where the recorded READING actually lives — the
+        // accessibility tree, the page text, or the refusal and its rule.
+        // An EMPTY id joins nothing. `browser_action.callId` is documented
+        // optional ("absent where no turn produced one"), and a page folded
+        // without one would otherwise adopt the next result that also had
+        // none — an unrelated tool's output printed as the page's recording.
+        if (
+          d.page !== null &&
+          d.page.callId !== "" &&
+          d.page.callId === e.callId &&
+          d.page.reading === null
+        ) {
+          d.page = {
+            ...d.page,
+            reading: e.output.slice(0, BROWSER_READING_CAP),
+            readingChars: e.output.length,
+          };
+        }
+        const open = d.answers[e.callId];
+        // A REFUSED call still gets a tool_result — the harness writes one so
+        // the model's turn can continue — and it carries this machine's own
+        // words, not the server's. Measured on the shipped `build_plan`
+        // scenario: "ERROR: the user denied the execution." at 200 ms with
+        // isError. Taking it would put a local refusal on the card that says
+        // what the external server answered.
+        if (open !== undefined && open.gate !== "denied") {
+          d.answers[e.callId] = {
+            ...open,
+            output: e.output.slice(0, MCP_ANSWER_CAP),
+            outputChars: e.output.length,
+            isError: e.isError,
+            durationMs: e.durationMs,
+          };
+        }
         break;
+      }
     }
   }
   return d;
@@ -307,12 +821,60 @@ interface Layout {
   subGap: number;
 }
 
+/**
+ * CARD 330: the browser station's COMPACT width — `.pf-os--browser` in
+ * flowmap.css, and the number the compact band's own width grows by.
+ *
+ * Two copies of one number, and `stationSeats.test.ts` holds them together by
+ * reading the declaration out of the stylesheet: the band derives from this
+ * one and the card paints from that one, so nothing would go red if they came
+ * apart.
+ */
+export const COMPACT_BROWSER_W = 190;
+
+/**
+ * CARD 330: the browser station's COMPACT height, MEASURED.
+ *
+ * The `z-os` frame is {@link OS_BAND_H} tall and seats its stations
+ * {@link OS_STATION_DY} below its top edge, so a compact station has 156px
+ * before it draws through the floor. This card did not fit: rendering the page
+ * itself measured 202.44 there, and 165 before the verb row and the cut chip
+ * were added — a card hanging out of the OPERATING SYSTEM box it is supposed
+ * to be inside. Compact now names the state instead of drawing the artefact
+ * (see BrowserBody), which puts it in line with its neighbours.
+ *
+ * 2026-08-30, Chrome, devicePixelRatio 2, both variable fonts
+ * `document.fonts.load`ed before the read (fonts.ready alone came out short on
+ * card 296's pass), real markup inside `.pf-root > .pf-flow`, read through
+ * getBoundingClientRect. Worst compact case: one occupant, a failed verb, a
+ * 71-character address and a reading recorded:
+ *
+ *   os-browser  127.22      os-mcp    125.09      os-shell  125.09
+ *
+ * INHERITED, recorded and not fixed here: a SECOND occupant adds ~40px to any
+ * of these — os-mcp measures 166.09 and os-disk 159.27 with a single occupant
+ * and an ordinary path — so the band is short for its existing stations too.
+ * `OS_BAND_H` is card 319's geometry and this card does not move it.
+ */
+export const COMPACT_BROWSER_H = 128;
+
 /** The OS band's top edge — the seat of the `z-os` zone in BOTH layouts, and the
  *  ceiling every card above it has to stay clear of. */
+/**
+ * The compact widths of the OS band's five stations, left to right — the
+ * `.pf-os--*` declarations in flowmap.css, in the band's own order.
+ *
+ * The band's width and the fifth station's seat both derive from this, so the
+ * frame cannot come apart from the row it holds: `osBandWidth` over these five
+ * is 1008, and `792 + STATION_GAP + COMPACT_BROWSER_W` was the same number
+ * written a second way.
+ */
+const COMPACT_STATION_W = [152, 200, 190, 104, COMPACT_BROWSER_W];
+
 const OS_BAND_TOP = 668;
 /** Height of the `z-os` frame, and how far below its top edge the stations sit. */
-const OS_BAND_H = 236;
-const OS_STATION_DY = 80;
+export const OS_BAND_H = 236;
+export const OS_STATION_DY = 80;
 
 /**
  * The envelope every expanded card has to fit inside, and the only thing the
@@ -388,7 +950,78 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   // so an open fleet card runs about twice as tall as a worker card here (293
   // measured on a four-phase fleet).
   "fleet-card": { w: 216, h: 300 },
+  /*
+   * The type fallback for anything drawn as an "ext" card.
+   *
+   * Its HEIGHT no longer sizes anything: `envelopeOf` is
+   * `n.env ?? EXPANDED_CARD[n.id] ?? EXPANDED_CARD[n.type]`, and both cards
+   * emitted as type "ext" — `netz` and `mcpserver` — now carry a key of their
+   * own id, which wins. It is kept as the fallback for an ext card that has
+   * not been measured yet, and it is NOT dead: `EXT_W` reads its width, and
+   * `EXT_ROW_W` and `MCPSERVER_X` derive from that.
+   */
   ext: { w: 150, h: 110 },
+  /*
+   * CARD 328 — the MCP-Server card's OWN seat.
+   *
+   * A key of the card's own id wins over the type lookup and moves nothing
+   * else — which is what makes cards 328, 329 and 330 a resolvable merge in
+   * one table. The WIDTH stays at ext's 150 on purpose: `EXT_W` ->
+   * `EXT_ROW_W` -> `MCPSERVER_X` and the outside frame all derive from it,
+   * and that arithmetic belongs to card 319.
+   *
+   * MEASURED, not summed, and at the card's WORST case rather than its
+   * typical one. 2026-08-30, Chrome, devicePixelRatio 2, both variable fonts
+   * `document.fonts.load`ed before the read (fonts.ready alone came out short
+   * on card 296's pass); the real markup rendered inside
+   * `.pf-root > .pf-flow > .react-flow__node-ext` and read through
+   * getBoundingClientRect. These cards carry no zoom, so the numbers are world
+   * px as they stand:
+   *
+   *   nothing asked yet                                      102.87
+   *   waiting for the answer (en and de alike)               152.41
+   *   answered with nothing                                  152.41
+   *   the gate is still deciding, en 168.69 · de             168.69
+   *   the gate refused it, en 169.69 · de                    185.96
+   *   answered, 2 000 chars shown of 246 112, en and de      222.09
+   *   an error answer at 3 598 164 ms with its cut chip,
+   *     en and de alike                                      230.59  <- the bound
+   *
+   * The last one is the WORST case this card can reach, not its typical one:
+   * the answer region is capped at 64px by flowmap.css and scrolls, so no
+   * answer can grow it, and the two lines that CAN wrap are the meta and the
+   * cut chip. It was 238.59 in round one, when the German meta wrapped to two
+   * lines around a raw `3598164 ms`; the duration reads as `59 m 58 s` now
+   * (`formatDuration`, the app's own), which is both readable and shorter.
+   * The two gate readings — round two, and about the LOCAL permission gate
+   * rather than the server — sit well under it. 250 leaves 19px over the bound
+   * and seats the card 14px clear of the outside frame's floor.
+   */
+  mcpserver: { w: 150, h: 250 },
+  /*
+   * CARD 329 — the Net card's own seat, for the same reason as the one above:
+   * `ext` sizes BOTH, so growing it would silently resize the MCP-Server card.
+   * The width stays ext's 150; NETZ_X and EXT_ROW_W derive from `ext.w` and
+   * that arithmetic is card 319's.
+   *
+   * MEASURED at the card's WORST case in the same browser pass as the entry
+   * above (Chrome, devicePixelRatio 2, both variable fonts document.fonts.
+   * load-ed before the read, real markup inside `.pf-root > .pf-flow`, no zoom
+   * on this card):
+   *
+   *   nothing left this machine (en and de alike)          114.59
+   *   one host, the ordinary case                          102.09
+   *   four hosts + a redaction row + a "+8 more" remainder  193.81  <- the bound
+   *
+   * The last one is the WORST case, not the typical one, and it is well past
+   * what the corpus can produce: 34 of the 36 sessions that reached anything
+   * reached exactly ONE host, 2 reached two, never three, and zero redaction
+   * markers exist anywhere in the store. It is also the reason a host row is
+   * one line with the address on its title — a 47-character host wrapped over
+   * four rows measured 271.31 and put the card through the floor of the frame
+   * it stands in. 210 leaves 16px over the bound.
+   */
+  netz: { w: 150, h: 210 },
   // The stations grew (card 287): sized so an ACTIVE station's content is
   // legible without opening a disclosure — the command line whole, the MCP
   // call readable. Starting values from a downstream measurement (shell fully
@@ -399,7 +1032,50 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   "os-shell": { w: 460, h: 340 },
   "os-mcp": { w: 500, h: 340 },
   "os-net": { w: 104, h: 100 },
+  /*
+   * CARD 330 — the browser station, a NEW node and therefore a NEW key: it
+   * collides with nothing this table already holds. Wider than the other
+   * stations because what it shows is a picture of a page.
+   *
+   * MEASURED in the same pass as the two external cards above (2026-08-30,
+   * Chrome, devicePixelRatio 2, both variable fonts document.fonts.load-ed
+   * before the read, the real markup inside `.pf-root > .pf-flow >
+   * .react-flow__node-os`, no zoom on this card). This entry bounds the WIDE
+   * shell, which is the only one the seats and the runtime check ever judge:
+   *
+   *   no browser was driven                                    64.55
+   *   an address, and neither a picture nor a reading          101.72
+   *   a screenshot recorded whose blob is gone                 115.72
+   *   a 2 000-character reading with its cut chip              266.44
+   *   a screenshot at its 180px cap, with a long address       267.72  <- bound
+   *
+   * The last is the WORST case and it is a cap, not an observation: a page
+   * screenshot is 1200x800 (the pass above used a real 1200x6000 PNG through
+   * the image endpoint) and would otherwise set this card's height out of the
+   * image store. Both growth regions are capped in flowmap.css — the shot 180,
+   * the reading 160 — which is what makes 280 a bound. The shot's cap came
+   * down from 200 in round two: the verb row that tells a refusal from a
+   * success costs 20px, and at 200 the card measured 287.72 against this same
+   * 280. The seat did not move; the picture gave up the row's height. 280
+   * leaves 12px over the bound and does not move `tallestStation`, which the
+   * two 340px stations already own.
+   *
+   * The COMPACT shell is a different card and a different bound — see
+   * {@link COMPACT_BROWSER_H}, which is what the `z-os` frame has to hold.
+   */
+  "os-browser": { w: 300, h: 280 },
 };
+
+/**
+ * The OS band's stations, left to right — ONE list.
+ *
+ * It used to be typed out three times inside sceneToFlow (the expanded seating,
+ * the tallest-station sum, and the vertical-shift loop), and card 330 adding a
+ * fifth station is exactly the change where two of three copies get updated and
+ * the third quietly seats the new card on top of its neighbour. The order is
+ * the drawing order and the seats derive from it.
+ */
+export const OS_STATION_IDS = ["os-disk", "os-shell", "os-mcp", "os-net", "os-browser"] as const;
 
 /** Rail room between two expanded cards — one source with the row derivation
  *  (cardGeometry.RAIL_GAP), re-exported under the name the layout uses. */
@@ -788,6 +1464,13 @@ const COMMON: Record<string, XY> = {
   "os-shell": { x: 236, y: 748 },
   "os-mcp": { x: 462, y: 748 },
   "os-net": { x: 678, y: 748 }, // the network stack sits right of the MCP client — the exit to the outside
+  // CARD 330: the browser station, the FIFTH seat, and the one seat here that
+  // is derived rather than transcribed. It is the LAST on purpose: the four
+  // before it keep the exact x they have always had, so this card moves no
+  // station card 319 is standing on. `stationSeats` over the compact widths
+  // reproduces all five, which stationSeats.test.ts proves — this takes the
+  // fifth from that derivation instead of writing 808 down beside it.
+  "os-browser": { x: stationSeats(COMPACT_STATION_W)[4], y: 748 },
 };
 
 // ---------------------------------------------------------------------------
@@ -870,7 +1553,19 @@ const LAYOUT: Layout = {
       variant: "mac",
       label: "AGENTENSYSTEM · DEIN MAC",
     },
-    { id: "z-os", x: 24, y: OS_BAND_TOP, w: 792, h: OS_BAND_H, variant: "os", label: "BETRIEBSSYSTEM" },
+    // CARD 330: 792 held the four-station row. The frame that has to HOLD five
+    // is derived from the five widths rather than added to by hand — a frame
+    // that does not grow with its row is a frame with a card sticking through
+    // its side, and a frame never complains about what is drawn over it.
+    {
+      id: "z-os",
+      x: 24,
+      y: OS_BAND_TOP,
+      w: osBandWidth(COMPACT_STATION_W),
+      h: OS_BAND_H,
+      variant: "os",
+      label: "BETRIEBSSYSTEM",
+    },
     { id: "z-outside", x: OUTSIDE_X, y: 24, w: OUTSIDE_W, h: 900, variant: "outside", label: "AUSSERHALB" },
   ],
   boundary: { x: BOUNDARY_X, y: 24, h: 900 },
@@ -1156,7 +1851,7 @@ export function sceneToFlow(
     // The widened stations re-seat left-to-right from their own envelopes, and
     // the band width follows them (stationSeats — the derivation that replaced
     // the hand-written seats).
-    const stationIds = ["os-disk", "os-shell", "os-mcp", "os-net"] as const;
+    const stationIds = OS_STATION_IDS;
     const stationWs = stationIds.map((sid) => EXPANDED_CARD[sid].w);
     const stationXs = stationSeats(stationWs);
     stationIds.forEach((sid, i) => {
@@ -1187,9 +1882,7 @@ export function sceneToFlow(
     );
     // An open station (the shell with a running command, the MCP client with its
     // call) is taller than the band was drawn for, so the band grows to hold it.
-    const tallestStation = Math.max(
-      ...["os-disk", "os-shell", "os-mcp", "os-net"].map((id) => EXPANDED_CARD[id].h),
-    );
+    const tallestStation = Math.max(...OS_STATION_IDS.map((id) => EXPANDED_CARD[id].h));
     bandGrow = Math.max(0, OS_STATION_DY + tallestStation + 20 - OS_BAND_H);
     posL.agent = { x: agentX, y: EXPANDED_AGENT_Y };
     boxBaseL = { x: subX, y: L.subBase.y };
@@ -1253,7 +1946,7 @@ export function sceneToFlow(
     for (const id of ["llm", "netz", "mcpserver"]) posL[id] = { ...posL[id], x: posL[id].x + spread };
   }
   if (vSpread !== 0) {
-    for (const id of ["netz", "mcpserver", "os-disk", "os-shell", "os-mcp", "os-net"]) {
+    for (const id of ["netz", "mcpserver", ...OS_STATION_IDS]) {
       posL[id] = { ...posL[id], y: posL[id].y + vSpread };
     }
   }
@@ -1377,7 +2070,21 @@ export function sceneToFlow(
   const atCmd = on("cmd")[0];
   const mcpUser = on("mcp")[0];
   const mcpInUse = mcpUser !== undefined;
-  const mcpTool = mcpUser ? detail.tool[mcpUser.agentId] : undefined;
+  // CARD 328: both halves of the one exchange the chain is showing.
+  const chain = mcpChainView(detail, mcpUser?.agentId ?? null, mcpUser?.loop.activeMcp ?? null);
+  // CARD 329: what this run actually put across the network boundary. The two
+  // boundary nodes used to light for `mcpInUse` and nothing else, so every one
+  // of the 137 llm_exchanges in this machine's history left them dark — the
+  // node whose job is to say what left the machine was dark for almost
+  // everything that left it.
+  const netView = netCardView(detail);
+  // CARD 330: the browser station reads its occupant off the SAME derivation
+  // as the other three (stationOccupants, card 295). It used to be a local
+  // `activeTool.startsWith("browser_")` over the scene and its children at
+  // once, which is a boolean and not an occupancy: it could not say who, so
+  // the station never named its occupant and a worker on the browser lit
+  // MAIN's rail while having none of its own.
+  const atBrowser = on("browser")[0];
   /** The rails that are hot right now, keyed agent+station. */
   const hot = new Set(occupants.map((o) => `${o.agentId}\u0000${o.station}`));
   const isHot = (agentId: string, st: Station) => hot.has(`${agentId}\u0000${st}`);
@@ -1409,12 +2116,41 @@ export function sceneToFlow(
   N("os-mcp", "os", {
     kind: "mcp",
     active: mcpInUse,
-    mcp: mcpUser?.loop.activeMcp ?? null,
-    tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
+    mcp: chain.line,
+    // CARD 328: the client card holds what was ASKED, and holds it past the
+    // answer. It used to read `detail.tool[occupant]`, which is the in-flight
+    // slot and is empty the instant `tool_result` lands — so the half of the
+    // map that shows the question went blank at the exact moment the other
+    // half could finally show the reply.
+    call: chain.call,
     by: usersOf("mcp"),
     byTag: mcpUser?.tag ?? null,
   });
-  N("os-net", "os", { kind: "net", active: mcpInUse, byTag: mcpUser?.tag ?? null });
+  N("os-net", "os", {
+    kind: "net",
+    // NOW, like every other station on this map: an MCP call in flight, or the
+    // frame the scrubber sits on being one that recorded an address. `crossed`
+    // is the run's MEMORY and never goes back down — it stays on the Netz card
+    // as rows, which is where a fact that outlives its moment belongs.
+    active: mcpInUse || detail.crossingNow,
+    byTag: mcpUser?.tag ?? null,
+  });
+  // CARD 330 — the browser station, the owner's "counterpart in the OS, namely
+  // the headless browser / demo browser". It is drawn on EVERY map, empty when
+  // the run drove no browser: a station that appears and disappears is a card
+  // whose absence a reader has to interpret.
+  //
+  // Busy is the ONE thing the scene can honestly say about it. A browser tool
+  // has no station in `advanceLoop` — it lands on "agent" like any unknown tool
+  // — so occupancy is read off the tool NAME in flight, which is the same fact
+  // the agent card is showing.
+  N("os-browser", "os", {
+    kind: "browser",
+    active: atBrowser !== undefined,
+    page: detail.page,
+    by: usersOf("browser"),
+    byTag: atBrowser?.tag ?? null,
+  });
 
   // ----- LLM ----- (the SHARED model — it works for main and every subagent,
   // so it animates and streams for whichever agent is at it right now)
@@ -1433,8 +2169,8 @@ export function sceneToFlow(
 
   // ----- external services ----- (edu declutter drops the whole "outside")
   if (!declutter) {
-    N("netz", "ext", { kind: "netz", active: mcpInUse });
-    N("mcpserver", "ext", { kind: "mcpserver", active: mcpInUse, mcp: mcpUser?.loop.activeMcp ?? null });
+    N("netz", "ext", { kind: "netz", active: mcpInUse || detail.crossingNow, net: netView });
+    N("mcpserver", "ext", { kind: "mcpserver", active: mcpInUse, mcp: chain.line, answer: chain.answer });
   }
 
   // ----- subagents (each its own loop) -----
@@ -1676,14 +2412,37 @@ export function sceneToFlow(
   E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net: true });
   E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", isHot("main", "disk"), { lane: stationLane(null) });
   E("e-agent-osshell", "agent", "os-shell", "bs", "tt", isHot("main", "cmd"), { lane: stationLane(null) });
+  // CARD 330: the browser station's rail home. STRUCTURAL, like the disk and
+  // shell rails — drawn always, lit while a browser tool is in flight. Card 295
+  // is why: a station with no rail reads as a card floating beside the map.
+  E("e-agent-osbrowser", "agent", "os-browser", "bs", "tt", isHot("main", "browser"), {
+    lane: stationLane(null),
+  });
   // The MCP call rides the whole chain and lights it end to end while in use:
   //   <caller> → MCP-client → network stack →⟂ Netz → MCP-server
   // The first leg belongs to the CALLING agent (main's rail or the child's
   // own rail below); the chain from the client outward is shared.
-  const mcpErr = !!mcpUser?.loop.isError;
+  // CARD 328 — and the error mark is REACHABLE now, which it was not.
+  //
+  // `mcpUser?.loop.isError` alone could never be true for an ANSWERED error, by
+  // construction: `advanceLoop`'s tool_result case spreads `idleActivity()`,
+  // which sets `activeMcp: null`; MCP occupancy IS `activeMcp !== null`
+  // (stationUsers.ts); so the very event that sets `isError` also empties
+  // `on("mcp")` and left `mcpUser` undefined. The only chain that could ever go
+  // red was a DENIED permission_decision — and all three MCP calls in the whole
+  // store were allowed, so it had never once fired. The answer the card now
+  // keeps is what makes the mark reachable.
+  const mcpErr = (mcpUser?.loop.isError ?? false) || chain.isError;
   const mcpByWorker = mcpUser !== undefined && mcpUser.agentId !== "main";
+  // WHO the red belongs to. `mcpUser` is undefined exactly when an ANSWERED
+  // error landed — `tool_result` spreads `idleActivity()` and empties the
+  // station — so keying the mark on the live occupant left the leg INTO the
+  // client clean while the chain outward from it went red: half a red chain,
+  // which reads as a failure that started at the network. The exchange knows
+  // who asked it and outlives the station.
+  const mcpErrAgent = mcpUser?.agentId ?? chain.askedBy;
   E("e-agent-osmcp", "agent", "os-mcp", "bs", "tt", isHot("main", "mcp"), {
-    err: mcpErr && mcpUser?.agentId === "main",
+    err: mcpErr && mcpErrAgent === "main",
     lane: stationLane(null),
   });
   E("e-osmcp-osnet", "os-mcp", "os-net", "rs", "lt", mcpInUse, { err: mcpErr, worker: mcpByWorker });
@@ -1745,7 +2504,7 @@ export function sceneToFlow(
     // never reports would float again — the very defect.
     const stationRail = (suffix: string, target: string, st: Station) =>
       E(`e-${id}-${suffix}`, id, target, "bs", "tt", isHot(c.id, st), {
-        err: c.isError && isHot(c.id, st),
+        err: (c.isError && isHot(c.id, st)) || (st === "mcp" && mcpErr && mcpErrAgent === c.id),
         dim: !isHot(c.id, st),
         worker: true,
         lane: stationLane(seat),
@@ -1753,6 +2512,10 @@ export function sceneToFlow(
     stationRail("osdisk", "os-disk", "disk");
     stationRail("osshell", "os-shell", "cmd");
     stationRail("osmcp", "os-mcp", "mcp");
+    // CARD 330, round 2: the browser gets a child rail like the other three.
+    // Without it a worker driving the browser had its work drawn on the main
+    // agent's leg — the misattribution card 287 removed everywhere else.
+    stationRail("osbrowser", "os-browser", "browser");
   });
 
   // Only the expanded map has envelopes to check against; compact cards are the

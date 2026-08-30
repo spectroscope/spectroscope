@@ -12,12 +12,15 @@ import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
 import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
-import type { AgentStream, CtxPart } from "./sceneToFlow";
+import type { AgentStream, CtxPart, McpAnswerView, NetCardView } from "./sceneToFlow";
 import { SHELL_COMMAND_KEY, type Focus, type GateState, type SubagentInfo } from "../labScene";
 import { blockLang } from "../../components/toolViews";
 import { breakShellChain } from "../../components/shellChain";
 import { highlight } from "../../components/Highlighted";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
+import { recordedUrlState, redactionRule } from "./addresses";
+import { screenshotUrl } from "../../wire/browserWire";
+import { formatDuration } from "../../format";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 
@@ -620,16 +623,24 @@ function ShellBody({ command, active, tool }: ShellBodyProps) {
   );
 }
 
-/** The active MCP call line plus its call disclosure — the same two-faced
- *  panel as the agent card's, so the master face governs it too. */
+/**
+ * The MCP call line plus its call disclosure — the same two-faced panel as the
+ * agent card's, so the master face governs it too.
+ *
+ * CARD 328: this is the ASKING half of one exchange, and the `data-call` mark
+ * is what lets a reader see that the MCP-Server card across the boundary is
+ * answering THIS call and not some other. It used to be fed the in-flight tool
+ * slot, which `tool_result` empties — so the question vanished from the map at
+ * the exact moment the answer arrived.
+ */
 function McpBody({
   active,
   mcp,
-  tool,
+  call,
 }: {
   active: boolean;
   mcp?: string | null;
-  tool?: { name: string; input: unknown } | null;
+  call?: { callId: string; name: string; input: unknown } | null;
 }) {
   const lang = useLang();
   return (
@@ -637,24 +648,190 @@ function McpBody({
       <div className={`pf-os__line${active ? " pf-os__line--on" : ""}`}>
         {mcp ?? t(lang, "map.gate.none")}
       </div>
-      {tool && (
-        <Disclosure label={t(lang, "map.mcp.call")}>
-          <ToolCallPanel tool={tool} />
-        </Disclosure>
+      {call && (
+        <div className="pf-mcp" data-call={call.callId}>
+          <Disclosure label={t(lang, "map.mcp.call")}>
+            <ToolCallPanel tool={{ name: call.name, input: call.input }} />
+          </Disclosure>
+        </div>
       )}
     </>
   );
 }
 
+/** What the browser station was handed about the last call it recorded. */
+export interface BrowserPageView {
+  /** The recorded address: a string, a redaction marker, or absent. */
+  url?: unknown;
+  tool?: string;
+  ok?: boolean;
+  /** The screenshot blob's HASH, present whenever a picture was taken. */
+  sha256?: string;
+  /** The blob the card can load, when the run recorded a path for it. */
+  shot?: { blobPath: string; sha256: string } | null;
+  /** The component's own latch: the blob was named and the store no longer has
+   *  it. The map cannot know — only the failed load can. */
+  shotBroken?: boolean;
+  /** What the tool answered: the accessibility tree, the page text, or the
+   *  refusal and the rule that fired. */
+  reading?: string | null;
+  /** How long that answer really was, so a cut one can say so. */
+  readingChars?: number;
+}
+
+/** Which of the four things the browser card is showing. */
+export type BrowserCardState = "shot" | "shot-missing" | "reading" | "nothing";
+
+/**
+ * What the browser card is showing, given what failed to load.
+ *
+ * Pure, and exported, for two reasons the component cannot serve on its own.
+ *
+ * A HASH WITH NO PATH is its own state. `browser_action.sha256` says a picture
+ * was taken; only an `image_generated` on the same wire says WHERE it lives.
+ * Branching on the path alone let a call that took a picture fall through to
+ * its reading — or to "neither a picture nor a reading was recorded" — while
+ * the record's own doc claimed it said so. It invents no file name either way;
+ * that half was always true.
+ *
+ * A DEAD BLOB IS ONE BLOB. The failed load used to latch a bare boolean that
+ * nothing ever reset, and the node id is stable, so React keeps the instance
+ * for the session: after one miss every later page with a perfectly good blob
+ * rendered "its file is no longer in the store" — a false statement about a
+ * picture the card could load. The latch holds the PATH that failed instead,
+ * so it can only speak about that one.
+ *
+ * @param page what the map handed the card
+ * @param brokenShot the blob path whose load failed in this browser, or null
+ * @return the state the card renders, and marks with `data-page-state`
+ */
+export function browserPageState(page: BrowserPageView, brokenShot: string | null): BrowserCardState {
+  const shot = page.shot ?? null;
+  if (shot !== null)
+    return shot.blobPath === brokenShot || page.shotBroken === true ? "shot-missing" : "shot";
+  if (page.sha256 !== undefined && page.sha256 !== "") return "shot-missing";
+  const reading = page.reading ?? null;
+  return reading !== null && reading !== "" ? "reading" : "nothing";
+}
+
+/**
+ * The browser station's body — the page this run RECORDED (card 330).
+ *
+ * It is a replay, never a browser: nothing here reaches the recorded address,
+ * and the only request the card can make is to the image endpoint for a blob
+ * the run itself stored. There is no HTML on the wire and there never was —
+ * `browser_action` is metadata only, by design — so what the card can show is
+ * the picture that was taken, or the reading that was recorded, or the honest
+ * sentence that neither happened. Those are four different facts and none of
+ * them is drawn as another.
+ */
+function BrowserBody({ page }: { page?: BrowserPageView | null }) {
+  const lang = useLang();
+  // COMPACT is a glance, and the band it stands in is what says so: the `z-os`
+  // frame leaves 156px between a station's seat and its floor, and this card
+  // rendering a page at all measured 202.44 there (Chrome, dPR 2, both fonts
+  // loaded, real markup — see COMPACT_BROWSER_H in sceneToFlow). A card that
+  // does not fit its frame draws THROUGH it, and the only ways to fit a page
+  // into 156px are to cut the reading silently or to shrink the picture to a
+  // strip. So compact names the state and expanded shows the artefact — which
+  // is what the two neighbouring stations already do: the MCP client keeps its
+  // call behind a closed disclosure and the shell clips its command.
+  const expandAll = useContext(ExpandAllContext);
+  // The PATH that failed to load, not a bare "something failed": of six
+  // image_generated events on this machine five blobs exist and one does not,
+  // so a run that mixes the two is the expected case and a boolean latch would
+  // have called every later picture missing.
+  const [brokenShot, setBrokenShot] = useState<string | null>(null);
+  if (page === undefined || page === null) {
+    return <div className="pf-os__line">{t(lang, "map.browser.none")}</div>;
+  }
+  const urlState = recordedUrlState(page.url);
+  const pageState = browserPageState(page, brokenShot);
+  const shotSrc = pageState === "shot" && page.shot != null ? screenshotUrl(page.shot) : null;
+  const reading = page.reading ?? null;
+  const cut = (page.readingChars ?? 0) - (reading?.length ?? 0);
+  const rule = urlState === "redacted" ? redactionRule(page.url) : "";
+  const failed = page.ok === false;
+  return (
+    <div className="pf-browser" data-url-state={urlState} data-page-state={pageState}>
+      {page.tool !== undefined && (
+        // WHICH verb, and whether it worked. 3 of the 4 real browser_action
+        // events on this machine are `ok: false`, and with this row absent a
+        // refusal and a success rendered alike — the only thing that gave a
+        // refusal away was whatever prose the tool happened to answer.
+        <div
+          className={`pf-browser__verb${failed ? " pf-browser__verb--failed" : ""}`}
+          data-ok={String(!failed)}
+        >
+          <span className="pf-browser__tool">{page.tool}</span>
+          {failed && <span className="pf-browser__failed">{t(lang, "map.browser.failed")}</span>}
+        </div>
+      )}
+      <div className="pf-browser__url" title={urlState === "address" ? String(page.url) : undefined}>
+        {urlState === "address"
+          ? String(page.url)
+          : urlState === "redacted"
+            ? `${t(lang, "map.net.redacted")}${rule === "" ? "" : ` · ${rule}`}`
+            : t(lang, "map.browser.noPage")}
+      </div>
+      {!expandAll && (
+        // One line, and it is a STATE and not a summary of the artefact: the
+        // glance says which of the four things happened, the expanded card
+        // shows it.
+        <div className="pf-browser__glance">{t(lang, `map.browser.at.${pageState}`)}</div>
+      )}
+      {expandAll && pageState === "shot" && shotSrc !== null && (
+        <img
+          className="pf-browser__shot"
+          src={shotSrc}
+          alt={t(lang, "map.browser.shotAlt")}
+          onError={() => setBrokenShot(page.shot?.blobPath ?? null)}
+        />
+      )}
+      {expandAll && pageState === "shot-missing" && (
+        <div className="pf-browser__gone">{t(lang, "map.browser.shotGone")}</div>
+      )}
+      {expandAll && pageState === "reading" && (
+        <>
+          <div className="pf-browser__read pf-mono nowheel">{reading}</div>
+          {cut > 0 && (
+            // The cut is said, never hidden — the same device the MCP answer
+            // beside it uses. Without it a page cut mid-token read as the whole
+            // recording, and the record carried no length to say otherwise.
+            <div
+              className="pf-browser__cut"
+              title={t(lang, "map.browser.cut", { shown: reading?.length ?? 0, all: page.readingChars ?? 0 })}
+            >
+              {t(lang, "map.mcp.more", { n: cut })}
+            </div>
+          )}
+        </>
+      )}
+      {expandAll && pageState === "nothing" && (
+        <div className="pf-browser__gone">{t(lang, "map.browser.nothing")}</div>
+      )}
+    </div>
+  );
+}
+
 export function OsNode({ data }: NodeProps) {
   const d = data as {
-    kind: "disk" | "shell" | "net" | "mcp";
+    kind: "disk" | "shell" | "net" | "mcp" | "browser";
     active: boolean;
     disk?: "idle" | "read" | "write";
     file?: string | null;
     command?: string | null;
     mcp?: string | null;
+    /** CARD 320: the call standing on the shell station right now, or null
+     *  between calls — the classifier is asked about IT, because a station has
+     *  no language of its own. Card 328 rewrote this whole declaration to add
+     *  `call` and `page` and dropped this line on the way; the merge took that
+     *  side, sceneToFlow.ts kept feeding the field, and only tsc noticed. */
     tool?: { name: string; input: unknown } | null;
+    /** CARD 328: the MCP exchange this card is the asking half of. */
+    call?: { callId: string; name: string; input: unknown } | null;
+    /** CARD 330: the last browser call this run recorded. */
+    page?: BrowserPageView | null;
     /** Who is on the station right now — first entry is the occupant whose
      *  content shows, the rest are "also" (stationUsers, owner call 2026-08-26).
      *  Each carries its agentId since card 295, so a caller can address the
@@ -682,7 +859,10 @@ export function OsNode({ data }: NodeProps) {
       station = { title: t(lang, "map.node.network"), body: <NetGlobe active={d.active} /> };
       break;
     case "mcp":
-      station = { title: "MCP-Client", body: <McpBody active={d.active} mcp={d.mcp} tool={d.tool} /> };
+      station = { title: "MCP-Client", body: <McpBody active={d.active} mcp={d.mcp} call={d.call} /> };
+      break;
+    case "browser":
+      station = { title: t(lang, "map.node.browser"), body: <BrowserBody page={d.page} /> };
       break;
   }
 
@@ -796,26 +976,145 @@ export function LlmNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 // External services (Netz / MCP-Server)
 // ---------------------------------------------------------------------------
+/**
+ * The answer half of one MCP exchange (card 328).
+ *
+ * An error is an answer and is drawn as one — a mark and the server's own
+ * words, never a crash — because that is what the reader has to be able to
+ * read: a `mcp__` result that failed carries at most 911 bytes (measured over
+ * 191 of them) and saying WHAT the server refused is the whole value.
+ */
+/**
+ * How long the server took, as a reading.
+ *
+ * `formatDuration` is the app's own and is used in ten places, but its
+ * contract stops at a tenth of a second — "412 -> 0.4 s" — and this card's
+ * MEASURED median is 23 ms, which it renders as "0.0 s": a zero printed for
+ * something that took time. So milliseconds stand where milliseconds are the
+ * truth, and the shared formatter takes over the moment there is a second to
+ * round. It replaces a raw `3598164 ms` at the top end, which is the measured
+ * max and was unreadable.
+ *
+ * @param ms the answer's own durationMs, off the wire
+ * @return the reading
+ */
+function answerTook(ms: number): string {
+  return ms < 1000 ? `${ms} ms` : formatDuration(ms);
+}
+
+function McpAnswerBody({ a }: { a: McpAnswerView }) {
+  const lang = useLang();
+  // The two GATE readings come first, and they are about this machine rather
+  // than the server. Both used to render as something the server was doing: a
+  // pending gate as "waiting for the answer …", and a refusal as an error
+  // answer carrying "ERROR: the user denied the execution." — which is the
+  // harness's own sentence, at 200 ms, for a packet that never left.
+  if (a.state === "gated") {
+    return <div className="pf-mcpa pf-mcpa--gate">{t(lang, "map.mcp.gated")}</div>;
+  }
+  if (a.state === "denied") {
+    return <div className="pf-mcpa pf-mcpa--gate pf-mcpa--refused">{t(lang, "map.mcp.denied")}</div>;
+  }
+  if (a.state === "waiting") {
+    // A call can stay here for an hour — measured max 3 598 164 ms over 503
+    // pairs, and 3 of 783 sessions never answer at all. Nothing decays it.
+    return <div className="pf-mcpa pf-mcpa--waiting">{t(lang, "map.mcp.waiting")}</div>;
+  }
+  if (a.state === "empty") return <div className="pf-mcpa pf-mcpa--empty">{t(lang, "map.mcp.empty")}</div>;
+  const cut = a.chars - a.text.length;
+  return (
+    <div className={`pf-mcpa${a.isError ? " pf-mcpa--err" : ""}`}>
+      <div className="pf-mcpa__meta">
+        {t(lang, a.isError ? "map.mcp.errored" : "map.mcp.answered")} · {answerTook(a.durationMs)}
+      </div>
+      <div className="pf-mcpa__body pf-mono nowheel">{a.text}</div>
+      {cut > 0 && (
+        // The cut is said, never hidden. The chip is what fits on a 150px card;
+        // its title carries the sentence, including where the whole answer is —
+        // the tool_result row in the JSONL trace, which holds it uncut.
+        <div className="pf-mcpa__cut" title={t(lang, "map.mcp.cut", { shown: a.text.length, all: a.chars })}>
+          {t(lang, "map.mcp.more", { n: cut })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExtNode({ data }: NodeProps) {
-  const d = data as { kind: "netz" | "mcpserver"; active: boolean; mcp?: string | null };
+  const d = data as {
+    kind: "netz" | "mcpserver";
+    active: boolean;
+    mcp?: string | null;
+    /** CARD 328: the answering half of the exchange the MCP client is asking. */
+    answer?: McpAnswerView | null;
+    /** CARD 329: what this run put across the network boundary. */
+    net?: NetCardView | null;
+  };
   const lang = useLang();
   if (d.kind === "netz") {
+    const net = d.net ?? { hosts: [], more: 0, redacted: false, crossed: false };
     return (
-      <div className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}>
+      <div
+        className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}
+        // The mark that makes the empty state checkable — and the empty state
+        // is the COMMON one: 36 of 783 sessions reached anything at all.
+        data-reached={net.crossed ? "reached" : "none"}
+      >
         <div className="pf-ext__head">{t(lang, "map.node.netz")}</div>
         <Router active={d.active} />
-        <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>Routing · Internet</div>
+        {net.crossed ? (
+          <div className="pf-net">
+            {net.redacted && (
+              // Never a host. The record says an address was there and
+              // deliberately does not say which — a different fact from both
+              // "reached this host" and "reached nothing".
+              <div className="pf-net__row pf-net__row--redacted" data-host-state="redacted">
+                {t(lang, "map.net.redacted")}
+              </div>
+            )}
+            {net.hosts.map((h) => (
+              // The host as recorded, NOT filed under a category. 58 of the 137
+              // exchanges on this machine went to a tailnet address that is
+              // neither loopback nor the public internet, and which shape ships
+              // is an owner call — so the card prints what it has.
+              //
+              // And nothing beside it. This row carried a per-host `{n}x`, and
+              // the number was not a count of hops: every browser tool call
+              // records the page the browser ENDED on, so five read-only verbs
+              // on one open page counted five.
+              <div key={h} className="pf-net__row" data-host={h} title={h}>
+                <span className="pf-net__host">{h}</span>
+              </div>
+            ))}
+            {net.more > 0 && (
+              <div className="pf-net__more" data-hosts-more={String(net.more)}>
+                {t(lang, "map.more", { n: net.more })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="pf-net__none">{t(lang, "map.net.nothing")}</div>
+        )}
         <Handles />
       </div>
     );
   }
+  const a = d.answer ?? null;
   return (
-    <div className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}>
-      <div className="pf-ext__head">MCP-Server</div>
+    <div
+      className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}
+      // The two marks that make this card checkable rather than decorative:
+      // WHICH call it is answering, and WHICH of the four things it is saying.
+      data-answer={a === null ? "none" : a.state}
+      {...(a === null ? {} : { "data-call": a.callId })}
+      {...(a !== null && a.isError ? { "data-answer-error": "true" } : {})}
+    >
+      <div className="pf-ext__head">{t(lang, "map.node.mcpServer")}</div>
       <AluChip active={d.active} />
       <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>
         {d.mcp ?? t(lang, "map.extServer")}
       </div>
+      {a !== null && <McpAnswerBody a={a} />}
       <Handles />
     </div>
   );

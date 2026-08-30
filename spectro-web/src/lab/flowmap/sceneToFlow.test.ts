@@ -558,8 +558,15 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
       expect(at("os-shell"), provider).toEqual({ x: 236, y: 748 });
       expect(at("os-mcp"), provider).toEqual({ x: 462, y: 748 });
       expect(at("os-net"), provider).toEqual({ x: 678, y: 748 });
+      // CARD 330: the fifth station, seated 26px past the fourth. The four
+      // above keep the exact seats they have always had — this card added a
+      // seat, it did not re-derive the row.
+      expect(at("os-browser"), provider).toEqual({ x: 808, y: 748 });
       expect(zone(flow, "z-mac"), provider).toEqual({ x: 0, y: 24, w: 1340, h: 900 });
-      expect(zone(flow, "z-os"), provider).toEqual({ x: 24, y: 668, w: 792, h: 236 });
+      // CARD 330 moved this one number and nothing else in this block: 792 was
+      // the width of the FOUR-station row, and the band has to hold five.
+      // 792 + 26 (the same gap) + 190 (the browser station compact) = 1008.
+      expect(zone(flow, "z-os"), provider).toEqual({ x: 24, y: 668, w: 1008, h: 236 });
       expect(zone(flow, "z-outside"), provider).toEqual({ x: 1392, y: 24, w: 520, h: 900 });
       expect(at("z-boundary"), provider).toEqual({ x: 1356, y: 24 });
       expect(at("sub-worker-1").x, provider).toBe(610);
@@ -614,7 +621,13 @@ describe("sceneToFlow — the expanded seats (owner report: expanded is broken)"
     const flow = flowOfEight("anthropic");
     const band = zone(flow, "z-os");
     const mac = zone(flow, "z-mac");
-    for (const id of ["os-disk", "os-shell", "os-mcp", "os-net"]) {
+    // CARD 330: DERIVED from the flow, not typed. This list used to name the
+    // four stations by hand, so the fifth would have been seated, drawn and
+    // never checked — the arm whose whole job is to say a station left its band
+    // would have had nothing to say about the only new station in two cards.
+    const stations = flow.nodes.filter((n) => n.id.startsWith("os-")).map((n) => n.id);
+    expect(stations.length).toBeGreaterThanOrEqual(5);
+    for (const id of stations) {
       const n = flow.nodes.find((x) => x.id === id)!;
       const env = EXPANDED_CARD[id];
       expect(n.position.x).toBeGreaterThanOrEqual(band.x);

@@ -24,6 +24,8 @@ import {
   activity,
   EXPANDED_CARD,
   lifecycleLabel,
+  mcpChainView,
+  netCardView,
   STATE_COLOR,
   type AgentStream,
   type Detail,
@@ -39,7 +41,9 @@ const GRID_X = 250; // first column (right of the user station)
 const GRID_Y = 110; // first row
 const OS_GAP = 56; // space between the deepest card and the OS band
 const OS_H = 236; // the OS band's height (matches the single-run map)
-const OS_W = 792; // the OS band's width (disk/shell/mcp/net row)
+// CARD 330: the band holds five stations now (disk/shell/mcp/net/browser) —
+// 792 was the four-station row, plus the same 26px gap and the browser's 190.
+const OS_W = 1008;
 const MAC_PAD = 24;
 const USER_X = 40; // the user station's own column, left of the card grid
 
@@ -193,7 +197,16 @@ export function fleetToFlow(
   const atCmd = cards.find((c) => c.focus === "cmd");
   const mcpUser = cards.find((c) => c.activeMcp !== null);
   const mcpInUse = mcpUser !== undefined;
-  const mcpTool = mcpUser ? detail.tool[mcpUser.id] : undefined;
+  /** CARD 330: the card inside a browser verb, if any. Named rather than
+   *  counted, so the rail below can be drawn for it like the other three. */
+  const onBrowser = cards.find((c) => c.activeTool !== null && c.activeTool.startsWith("browser_"));
+  // CARD 328: the fleet room draws the SAME two cards as the single-run map, so
+  // it takes the same derivation rather than a second one beside it. Without
+  // this line the answer would be visible on one surface and missing on the
+  // other, which is half a feature shipped.
+  const chain = mcpChainView(detail, mcpUser?.id ?? null, mcpUser?.activeMcp ?? null);
+  // CARD 329, same reason: the fleet room draws the same boundary nodes.
+  const netView = netCardView(detail);
   const osY = osTop + 80;
   const OS_STATIONS: { id: string; x: number; data: Record<string, unknown> }[] = [
     {
@@ -225,14 +238,28 @@ export function fleetToFlow(
     {
       id: "os-mcp",
       x: MAC_PAD + 438,
+      data: { kind: "mcp", active: mcpInUse, mcp: chain.line, call: chain.call },
+    },
+    {
+      id: "os-net",
+      x: MAC_PAD + 654,
+      // NOW, not ever — same repair as the single-run map. `crossed` is the
+      // run's memory and never goes back down; it stays on the Netz card.
+      data: { kind: "net", active: mcpInUse || detail.crossingNow },
+    },
+    // CARD 330: the fleet room's OS band draws the same stations as the
+    // single-run map's, so the browser station is here too — one producer left
+    // behind is half a feature on a live surface. `browserBusy` is read off the
+    // tool in flight, the same fact the single-run map reads.
+    {
+      id: "os-browser",
+      x: MAC_PAD + 784,
       data: {
-        kind: "mcp",
-        active: mcpInUse,
-        mcp: mcpUser?.activeMcp ?? null,
-        tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
+        kind: "browser",
+        active: onBrowser !== undefined,
+        page: detail.page,
       },
     },
-    { id: "os-net", x: MAC_PAD + 654, data: { kind: "net", active: mcpInUse } },
   ];
   for (const station of OS_STATIONS) {
     nodes.push({
@@ -268,14 +295,14 @@ export function fleetToFlow(
     id: "netz",
     type: "ext",
     position: { x: outsideX + 40, y: macH - 240 },
-    data: { kind: "netz", active: mcpInUse },
+    data: { kind: "netz", active: mcpInUse || detail.crossingNow, net: netView },
     zIndex: 10,
   });
   nodes.push({
     id: "mcpserver",
     type: "ext",
     position: { x: outsideX + 240, y: macH - 240 },
-    data: { kind: "mcpserver", active: mcpInUse, mcp: mcpUser?.activeMcp ?? null },
+    data: { kind: "mcpserver", active: mcpInUse, mcp: chain.line, answer: chain.answer },
     zIndex: 10,
   });
 
@@ -310,7 +337,10 @@ export function fleetToFlow(
   if (main !== undefined) {
     E("e-user-main", "user", "card-main", "rs", "lt", main.focus === "agent" || main.focus === "gate");
   }
-  const mcpErr = mcpUser?.isError === true;
+  // CARD 328, same repair as the single-run map: the live occupant is gone the
+  // instant `tool_result` clears `activeMcp`, so this alone could never be true
+  // for an ANSWERED error. The exchange the two cards are showing can.
+  const mcpErr = mcpUser?.isError === true || chain.isError;
   for (const card of cards) {
     const id = `card-${card.id}`;
     // Every card rails to the one station, and every one of those legs crosses
@@ -319,6 +349,12 @@ export function fleetToFlow(
     if (card.focus === "disk") E(`e-${id}-osdisk`, id, "os-disk", "bs", "tt", true, { err: card.isError });
     if (card.focus === "cmd") E(`e-${id}-osshell`, id, "os-shell", "bs", "tt", true, { err: card.isError });
     if (card.focus === "mcp") E(`e-${id}-osmcp`, id, "os-mcp", "bs", "tt", true, { err: card.isError });
+    // CARD 330, round 2: the browser station had a card and no rail on this
+    // surface, so its work was drawn beside the map instead of on it. Same
+    // condition as the station's own occupancy — the tool in flight, because a
+    // browser verb has no focus of its own.
+    if (card.activeTool !== null && card.activeTool.startsWith("browser_"))
+      E(`e-${id}-osbrowser`, id, "os-browser", "bs", "tt", true, { err: card.isError });
   }
   E("e-osmcp-osnet", "os-mcp", "os-net", "rs", "lt", mcpInUse, { err: mcpErr });
   E("e-osnet-netz", "os-net", "netz", "rs", "lt", mcpInUse, { net: true, err: mcpErr });
