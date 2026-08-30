@@ -49,6 +49,11 @@
 // own scope), never listed here, and two cases below prove the rule is doing
 // something: the JSON tree is in the markup and is not in the census.
 //
+// It stops at a SECOND kind of box since the 0.11.0 merge, and for the same
+// reason: a fixed-column grid whose height is its row count. That one is card
+// 321's tenth chip against this card's proxy, and the whole story is at
+// CELL_GRIDS below.
+//
 // THE RECORDING. docs/sample-runs/workflow-phases.en.jsonl — 196 frames, the
 // one transcript that ships with the repo, so CI can step it. It is NOT the
 // owner's own run: his is 11.8 MB with pictures attached, and the measurement
@@ -66,6 +71,7 @@ import { readFileSync } from "node:fs";
 import type { RunEvent } from "../../events";
 import { advanceScene, initialScene } from "../labScene";
 import { agentDirectory } from "../agentDirectory";
+import { agentBelt } from "./belt";
 import { foldSeatPool } from "./workerGrid";
 import { MAX_CARD_SHOTS, deriveDetail, sceneToFlow } from "./sceneToFlow";
 import { ExpandAllContext } from "./expandContext";
@@ -141,6 +147,114 @@ const RESERVED_BOXES: ReadonlySet<string> = (() => {
   return out;
 })();
 
+/** Does flowmap.css give `.<token>` this declaration, anywhere it names it?
+ *
+ *  One reader for the stylesheet rather than two that can drift apart:
+ *  `scrolls()` at the bottom of this file is this call with the overflow
+ *  property, and the census below asks the same question about `nowrap`. The
+ *  `\b` after the token is what makes a BEM modifier count as the same box —
+ *  `.pf-chip--foreign` answers for `pf-chip`, `.pf-ctx__row` does not answer
+ *  for `pf-ctx` — which is the rule `boxOf` already reads the markup by. */
+function declares(token: string, prop: RegExp): boolean {
+  const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+  const re = new RegExp(`(^|[\\s,>+~])\\.${token}\\b[^{}]*\\{([^}]*)\\}`, "gm");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(bare)) !== null) if (prop.test(m[2])) return true;
+  return false;
+}
+
+/** How many columns a `grid-template-columns` value declares — tracks at the
+ *  top level, so `84px minmax(0, 1fr) auto` is three and not four. */
+function trackCount(value: string): number {
+  let nesting = 0;
+  let tracks = 0;
+  let inTrack = false;
+  for (const ch of value.trim()) {
+    if (ch === "(") nesting++;
+    else if (ch === ")") nesting--;
+    if (nesting === 0 && /\s/.test(ch)) {
+      inTrack = false;
+      continue;
+    }
+    if (!inTrack) {
+      tracks++;
+      inTrack = true;
+    }
+  }
+  return tracks;
+}
+
+/**
+ * The grids whose HEIGHT IS THEIR ROW COUNT, by class -> columns. The census
+ * prices such a grid by its rows and does not descend into it.
+ *
+ * THIS IS THE SEAM BETWEEN CARD 321 AND CARD 319, and the second way a change
+ * of composition can fail to be a change of shape.
+ *
+ * Card 321 gives a running tool that matches no chip a chip of its own, so the
+ * belt is nine chips between calls and ten while such a call is in flight —
+ * 184 of this recording's 196 steps, because no chip on the belt answers for
+ * any of the five tools it runs. Card 319 reads composition as its proxy for
+ * height, and read those crossings as the card changing shape ten times. Both
+ * halves are right about their own half. The belt is a two-column grid, nine
+ * chips leave half of the last row empty, and the tenth sits in a row that is
+ * already there — so nothing moved, measured in both scopes:
+ *
+ *    expanded    9 chips   belt 179.23   card 1178.59
+ *               10         belt 179.23   card 1178.59    +0.00
+ *               11         belt 216.28   card 1178.59    +0.00
+ *    compact     9 chips   belt 179.23   card  394.02
+ *               10         belt 179.23   card  394.02    +0.00
+ *               11         belt 216.28   card  431.06   +37.04
+ *
+ *   npx vite --port 5233, the lab's own "Declared workflow · 5 phases, 13
+ *   agents" (which IS this recording), 1600x900, both fonts loaded, frames
+ *   counted before anything was believed — 1 per 600 ms, so a screenshot was
+ *   taken to force the render and the second read came back byte-identical.
+ *   getBoundingClientRect on `.pf-flow > .react-flow__node-agent > .pf-card`
+ *   and its `.pf-tools`, divided by the viewport transform's scale; the
+ *   eleventh chip cloned into the live belt and removed again.
+ *
+ * WHICH grid is read out of flowmap.css — a class it gives a literal
+ * `grid-template-columns` — never listed here, for the reason RESERVED_BOXES
+ * gives above. `repeat()` is refused because a repeat count is not a track
+ * count, and a wrong column count would price the rows wrong.
+ *
+ * TWO CONDITIONS, both read and not assumed, because rows only price a grid
+ * whose rows are ONE height: every cell is the same box, and the stylesheet
+ * gives that box `white-space: nowrap`, so each cell is one line. A context
+ * row is a label, a bar and a number, so it fails the first and is read
+ * element by element as before. A cell that could SPAN is a row the count does
+ * not price, and the case below holds that door for the belt's own chips —
+ * which is `cardGeometry.test.ts`'s pin on `.pf-chip--foreign`, widened to
+ * every chip because the census prices the whole belt and not one cell.
+ *
+ * AND IT IS DELIBERATELY NOT THE RESERVE RULE ABOVE. `.pf-agent--wide
+ * .pf-tools` states a `max-height`, which that rule refuses on purpose, and
+ * promoting it to a `height` would have been the wrong repair twice over. The
+ * census reads `AgentCardBody`'s markup, which carries no `pf-agent--wide` at
+ * all — the class is on `AgentNode`'s root — so a reserve derived from the
+ * wide scope is applied to the compact card as well, and in compact this grid
+ * computes `max-height: none; overflow-y: visible` and really does move the
+ * card, 394.02 -> 431.06 on a sixth row. A green there would be green about
+ * something that can happen. Rows are true in both scopes because the columns
+ * are declared in both.
+ */
+const CELL_GRIDS: ReadonlyMap<string, number> = (() => {
+  const out = new Map<string, number>();
+  const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = /(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = rule.exec(bare)) !== null) {
+    const tracks = /(^|[\s;])grid-template-columns:([^;]+)/.exec(m[3]);
+    if (tracks === null || /repeat\(/.test(tracks[2])) continue;
+    for (const token of (m[2].trim().split(/\s+/).pop() ?? "").split(".")) {
+      if (token !== "") out.set(token, trackCount(tracks[2]));
+    }
+  }
+  return out;
+})();
+
 /** React renders these without a closing tag, so they never open a level. */
 const VOID_TAGS = new Set(["img", "br", "hr", "input", "meta", "link", "source"]);
 
@@ -160,10 +274,16 @@ function boxOf(tag: string, attrs: string): string {
 
 /**
  * What the card RENDERS, as a string: every element in order, down to the
- * reserved boxes and no further.
+ * boxes whose height this file can state and no further.
  *
  * Text and every attribute except class are dropped — a longer command inside
  * the same box is the browser's business, not the composition's.
+ *
+ * Two boxes it stops at, and each states its height a different way. A RESERVE
+ * states it outright, so its entry is the box itself. A CELL GRID states it as
+ * a row count, so its entry carries that count — `…pf-tools:5rows` — and a
+ * chip that lands in a row already there reads the same, while a chip that
+ * opens a sixth row does not.
  */
 function composition(markup: string): string[] {
   const out: string[] = [];
@@ -171,22 +291,73 @@ function composition(markup: string): string[] {
   let depth = 0;
   /** The depth the current reserve was opened at, or null outside one. */
   let reservedAt: number | null = null;
+  /**
+   * The cell grid being read: the depth it opened at (-1 outside one), its
+   * columns, the entry that names it, what the census would have said inside
+   * it, and each direct cell's box. Only the outermost is priced — a grid
+   * inside a grid is read as ordinary content, because its own rows are not
+   * this one's rows.
+   *
+   * Plain fields and not one object, which is a type story and not a style
+   * one: an object held in a `let` that this loop reads at the top and writes
+   * at the bottom is a cycle tsc resolves by narrowing it to `never` where it
+   * is read (TS2339 on every field), and vitest, which erases types, was green
+   * through every round of it. Numbers and strings have no such cycle.
+   */
+  let gridAt = -1;
+  let gridCols = 0;
+  let gridHead = "";
+  let gridInside: string[] = [];
+  let gridCells: string[] = [];
+  const closeGrid = () => {
+    const cell = gridCells[0];
+    const classes = cell === undefined ? [] : cell.split(".").slice(1);
+    // Rows price a grid only when its rows are one height: one kind of cell,
+    // and that kind kept to a single line by the stylesheet.
+    const priced =
+      gridCells.length > 0 &&
+      gridCells.every((c) => c === cell) &&
+      classes.length === 1 &&
+      declares(classes[0], /white-space:\s*nowrap/);
+    if (priced) out.push(`${gridHead}:${Math.ceil(gridCells.length / gridCols)}rows`);
+    else out.push(gridHead, ...gridInside);
+    gridAt = -1;
+    gridInside = [];
+    gridCells = [];
+  };
   let m: RegExpExecArray | null;
   while ((m = token.exec(markup)) !== null) {
     const [, closing, tag, attrs, selfClose] = m;
     if (closing === "/") {
       depth--;
       if (reservedAt !== null && depth <= reservedAt) reservedAt = null;
+      if (gridAt >= 0 && depth <= gridAt) closeGrid();
       continue;
     }
-    if (reservedAt === null) out.push(boxOf(tag, attrs));
-    if (selfClose === "/" || VOID_TAGS.has(tag)) continue;
-    if (reservedAt === null) {
-      const classes = (/class="([^"]*)"/.exec(attrs)?.[1] ?? "").split(/\s+/);
-      if (classes.some((c) => RESERVED_BOXES.has(c))) reservedAt = depth;
+    const box = reservedAt === null ? boxOf(tag, attrs) : null;
+    const classes = box === null ? [] : (/class="([^"]*)"/.exec(attrs)?.[1] ?? "").split(/\s+/);
+    const empty = selfClose === "/" || VOID_TAGS.has(tag);
+    const reserves = classes.some((c) => RESERVED_BOXES.has(c));
+    const cols =
+      box === null || empty || reserves || gridAt >= 0
+        ? undefined
+        : classes.map((c) => CELL_GRIDS.get(c)).find((n) => n !== undefined);
+    if (box !== null) {
+      if (gridAt >= 0 && depth === gridAt + 1) gridCells.push(box);
+      // A grid's own head waits for its rows; everything else goes out now, or
+      // into the grid it is inside, in case that grid turns out not to price.
+      if (cols === undefined) (gridAt < 0 ? out : gridInside).push(box);
+    }
+    if (empty) continue;
+    if (reserves) reservedAt = depth;
+    else if (cols !== undefined) {
+      gridAt = depth;
+      gridCols = cols;
+      gridHead = box!;
     }
     depth++;
   }
+  if (gridAt >= 0) closeGrid();
   return out;
 }
 
@@ -314,6 +485,98 @@ describe("the instrument, before it is believed", () => {
     expect(agentCardMarkup(inFlight), "no call in flight at this step").toContain("json-tree");
     expect(agentCardAfter(inFlight).filter((e) => e.includes(".json-"))).toEqual([]);
     expect([...RESERVED_BOXES]).toContain("pf-toolbody");
+  });
+
+  // The distinction the doc block above rests on, bitten against a live
+  // example rather than a hypothetical one. `.pf-agent--wide .pf-tools` states
+  // `max-height` and a scroll — the shape of a reserve minus the one property
+  // that matters — and the merge repair that promoted it to a `height` was the
+  // first thing tried and the wrong answer. If the derivation ever admits a
+  // cap, every "region that collapses" it was written to catch walks in.
+  it("does not mistake a cap for a reserve", () => {
+    const belt = /\.pf-agent--wide \.pf-tools \{([^}]*)\}/.exec(CSS);
+    expect(belt, "the belt's wide rule is not where this case looks for it").not.toBeNull();
+    expect(belt![1], "a cap and a scroll, which is what makes this a bite").toMatch(
+      /max-height:\s*\d[^;]*;[\s\S]*overflow-y:\s*auto/,
+    );
+    expect([...RESERVED_BOXES], "a max-height was admitted as a reserve").not.toContain("pf-tools");
+  });
+
+  // THE OTHER FOLD, bitten the same way: it has to hide the chip that lands in
+  // a row already there, and it has to show the one that opens a new row. The
+  // counts are the belt's own — `agentBelt(null)` is the belt between calls,
+  // and the chip card 321 adds is the one this merge went red over — so this
+  // case cannot go on agreeing with itself after the belt changes size.
+  const NOT_A_TOOL = "zzz-no-such-tool";
+  const beltMarkup = (chips: number) =>
+    `<div class="pf-tools nowheel">${'<span class="pf-chip pf-chip--tool">x</span>'.repeat(chips)}</div>`;
+
+  it("prices the belt by its rows, and still sees a row arrive", () => {
+    const cols = CELL_GRIDS.get("pf-tools");
+    expect(cols, "no column count derived — the belt's grid was not read").toBeGreaterThan(0);
+    const fixed = agentBelt(null).length;
+    const foreign = agentBelt(NOT_A_TOOL).length;
+    expect(foreign, "nothing was added, so this case measures nothing").toBe(fixed + 1);
+    let sixth = foreign;
+    while (Math.ceil(sixth / cols!) === Math.ceil(fixed / cols!)) sixth++;
+
+    expect(composition(beltMarkup(foreign))).toEqual(composition(beltMarkup(fixed)));
+    expect(composition(beltMarkup(sixth))).not.toEqual(composition(beltMarkup(fixed)));
+    // And it is a fold, not a blindfold: the belt is still one entry, so a belt
+    // that vanished would still be a change of shape.
+    expect(composition(beltMarkup(fixed))).toHaveLength(1);
+    expect(composition(beltMarkup(fixed))[0]).toMatch(/^div\.nowheel\.pf-tools:\d+rows$/);
+  });
+
+  // The refusal, on the other fixed-column grid this card renders. A context
+  // row is a label, a bar and a number — three boxes of three heights — so
+  // rows cannot price it, and folding it would take all three out of the
+  // census. It is only ever reached inside `.pf-ctx`, which is a reserve, but
+  // a rule that would be wrong there is a rule to hold off here.
+  it("prices only a grid whose cells are one kind of one-line box", () => {
+    expect(CELL_GRIDS.has("pf-ctx__row"), "not read as a fixed-column grid at all").toBe(true);
+    const row =
+      '<div class="pf-ctx__row"><span>k</span>' +
+      '<span class="pf-ctx__bar"><span class="pf-ctx__fill"></span></span>' +
+      '<span class="pf-ctx__tok">1</span></div>';
+    expect(composition(row)).toEqual([
+      "div.pf-ctx__row",
+      "span",
+      "span.pf-ctx__bar",
+      "span.pf-ctx__fill",
+      "span.pf-ctx__tok",
+    ]);
+  });
+
+  // Columns are a TRACK LIST and not a word count. The belt's `1fr 1fr` reads
+  // the same either way, so nothing above would notice a splitter that counted
+  // words — and it would price every grid whose tracks carry a function. The
+  // two in this stylesheet that do are read here, against what they declare.
+  it("counts a grid's columns as tracks", () => {
+    expect(CELL_GRIDS.get("pf-ctx__row"), "84px minmax(0, 1fr) auto").toBe(3);
+    expect(CELL_GRIDS.get("pf-disc__body"), "minmax(0, 1fr)").toBe(1);
+  });
+
+  // The condition rows rest on that the code above cannot check per element: a
+  // cell that spans two columns is a row the count never priced. This holds the
+  // door for the belt's own cells and says no more than that — the same door
+  // `cardGeometry.test.ts` holds for `.pf-chip--foreign`, widened to every
+  // chip, because the census prices the whole belt and not one cell of it.
+  it("and only while no chip can span a second column", () => {
+    expect(
+      declares("pf-chip", /grid-(column|area)/),
+      "a chip that spans is a belt row ceil(chips / columns) does not price",
+    ).toBe(false);
+  });
+
+  // On the real card, not a probe: the chips are gone from the census and the
+  // belt is still in it, wearing its rows.
+  it("folds the belt on the card the recording renders", () => {
+    const card = agentCardAfter(readSample().slice(0, 5));
+    expect(agentCardMarkup(readSample().slice(0, 5)), "no belt at this step").toContain("pf-chip");
+    expect(card.filter((e) => e.startsWith("span.pf-chip"))).toEqual([]);
+    expect(card.filter((e) => e.includes("pf-tools"))).toHaveLength(1);
+    expect(card.find((e) => e.includes("pf-tools"))).toMatch(/:\d+rows$/);
   });
 
   // The one class this census throws away, and the reason it is allowed to:
@@ -499,11 +762,7 @@ function agentCardSource(): string {
 }
 
 function scrolls(token: string): boolean {
-  const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-  const re = new RegExp(`(^|[\\s,>+~])\\.${token}\\b[^{}]*\\{([^}]*)\\}`, "gm");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(bare)) !== null) if (/overflow(-y)?:\s*(auto|scroll)/.test(m[2])) return true;
-  return false;
+  return declares(token, /overflow(-y)?:\s*(auto|scroll)/);
 }
 
 /**
