@@ -12,7 +12,7 @@ import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
 import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
-import type { AgentStream, CtxPart, McpAnswerView, NetCardView } from "./sceneToFlow";
+import type { AgentLane, CtxPart, McpAnswerView, NetCardView } from "./sceneToFlow";
 import { SHELL_COMMAND_KEY, type Focus, type GateState, type SubagentInfo } from "../labScene";
 import { blockLang } from "../../components/toolViews";
 import { breakShellChain } from "../../components/shellChain";
@@ -931,26 +931,12 @@ export function LlmNode({ data }: NodeProps) {
     active: boolean;
     provider: string;
     model: string;
-    think: AgentStream[];
-    answer: AgentStream[];
+    /** CARD 327: one entry per agent on screen, both halves together. */
+    lanes: AgentLane[];
+    /** Agents past the cap, reported rather than drawn. */
+    more: number;
   };
   const lang = useLang();
-  // One shared model, many callers: every agent's stream renders as its own
-  // marked entry — subagents indented and tinted so the interleaving reads.
-  const section = (label: string, streams: AgentStream[]) =>
-    streams.length > 0 ? (
-      <div className="pf-panelbox" style={{ textAlign: "left" }}>
-        <div className="pf-panelbox__label">{label}</div>
-        <div className="pf-llm__streams nowheel">
-          {streams.map((s) => (
-            <div key={s.agent} className={`pf-llm__stream${s.agent === "main" ? "" : " is-sub"}`}>
-              <span className="pf-llm__agent">{s.agent}</span>
-              <div className="pf-prose">{s.text}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    ) : null;
   return (
     <div className={`pf-card pf-llm${d.active ? " pf-card--active pf-llm--active" : ""}`}>
       <div className="pf-llm__halo" />
@@ -962,10 +948,51 @@ export function LlmNode({ data }: NodeProps) {
       <div className="pf-llm__loc">
         <b>{t(lang, "map.remote")}</b> · {d.provider}
       </div>
-      {(d.think.length > 0 || d.answer.length > 0) && (
+      {d.lanes.length > 0 && (
         <Disclosure label={t(lang, "map.llm.reasoning")}>
-          {section("Thinking", d.think)}
-          {section(t(lang, "map.llm.answer"), d.answer)}
+          {/* ONE LANE PER AGENT (card 327). The shape this replaced was two
+              sections over the same roster, which asked the reader to pair a
+              Thinking entry with an Answer entry by POSITION — and in the
+              owner's own screenshot the two lines under each other were MAIN
+              and SCOPE. Nothing was wrong in the data; the layout was what
+              lied.
+
+              The lane stays when its agent has said nothing, which is the ask
+              itself ("für alle agenten die geladen sind immer das feld
+              behalten"). The old fold dropped an agent the moment its text was
+              empty — measured, that suppressed 73.8% of think slots. */}
+          <div className="pf-llm__lanes nowheel">
+            <div className="pf-llm__head" aria-hidden="true">
+              <span>{t(lang, "map.llm.thinking")}</span>
+              <span>{t(lang, "map.llm.answer")}</span>
+            </div>
+            {d.lanes.map((lane) => (
+              <div key={lane.agent} className={`pf-llm__lane${lane.isRoot ? "" : " is-sub"}`}>
+                <span className="pf-llm__agent">{lane.agent}</span>
+                <div className="pf-llm__halves">
+                  <div className="pf-llm__half pf-prose">
+                    {lane.think === "" ? (
+                      <span className="pf-llm__empty">{t(lang, "map.llm.lane.empty")}</span>
+                    ) : (
+                      lane.think
+                    )}
+                  </div>
+                  <div className="pf-llm__half pf-prose">
+                    {lane.answer === "" ? (
+                      <span className="pf-llm__empty">{t(lang, "map.llm.lane.empty")}</span>
+                    ) : (
+                      lane.answer
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {d.more > 0 && (
+            /* Not a footnote: on an import the roster is above the cap on 99.8%
+               of steps, so this line is what the reader sees most of the time. */
+            <div className="pf-llm__more">{t(lang, "map.llm.more", { n: String(d.more) })}</div>
+          )}
         </Disclosure>
       )}
       <Handles />

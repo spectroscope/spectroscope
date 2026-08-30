@@ -21,13 +21,14 @@ import type { Lang } from "../../i18n/i18n";
 import { t } from "../../i18n/i18n";
 import type { FleetLabNode, FleetLabScene } from "../fleetLabScene";
 import {
-  activity,
   EXPANDED_CARD,
+  LANE_CAP,
+  STATE_COLOR,
+  activity,
   lifecycleLabel,
   mcpChainView,
   netCardView,
-  STATE_COLOR,
-  type AgentStream,
+  type AgentLane,
   type Detail,
   type FlowResult,
 } from "./sceneToFlow";
@@ -274,8 +275,21 @@ export function fleetToFlow(
   // ---- the LLM station -----------------------------------------------------
   // One station for the whole fleet, and every card's provider on its label.
   const withProvider = cards.filter((c) => c.provider !== null);
-  const streamsOf = (rec: Record<string, string>, of: FleetLabNode[]): AgentStream[] =>
-    of.map((c) => ({ agent: c.id, text: rec[c.id] ?? "" })).filter((s) => s.text.length > 0);
+  // CARD 327, criterion 10: BOTH producers write the lane shape. The defect
+  // card 320 found at the shell station was exactly one producer left behind,
+  // and this one has no AgentDirectory to reach for — so it builds the same
+  // lanes from its own roster rather than calling llmLanes, which takes a Scene
+  // this side does not have. The SHAPE is what a test holds them to, not the
+  // call.
+  const lanesOf = (of: FleetLabNode[]): { lanes: AgentLane[]; more: number } => ({
+    lanes: of.slice(0, LANE_CAP).map((c, i) => ({
+      agent: c.id,
+      think: detail.think[c.id] ?? "",
+      answer: detail.answer[c.id] ?? "",
+      isRoot: i === 0,
+    })),
+    more: Math.max(0, of.length - LANE_CAP),
+  });
   nodes.push({
     id: "llm",
     type: "llm",
@@ -284,8 +298,7 @@ export function fleetToFlow(
       active: cards.some((c) => c.focus === "llm"),
       provider: providerLabel(withProvider),
       model: "",
-      think: streamsOf(detail.think, cards),
-      answer: streamsOf(detail.answer, cards),
+      ...lanesOf(cards),
     },
     zIndex: 10,
   });

@@ -268,8 +268,17 @@ describe("sceneToFlow", () => {
     const flow = build(events, "ollama");
     const llm = flow.nodes.find((n) => n.id === "llm")!;
     expect(llm.data.active).toBe(true); // busy through the CHILD
-    const think = llm.data.think as { agent: string; text: string }[];
-    expect(think.some((s) => s.agent === "worker-1" && s.text.includes("child reasoning"))).toBe(true);
+    // CARD 327 replaced two lists over one roster with one LANE per agent. The
+    // assertion moves with the shape rather than being loosened: what mattered
+    // here was that a CHILD's reasoning reaches the shared model's card, and it
+    // still does — in the child's own lane, beside its own answer, which is the
+    // whole point. The old shape could only say "worker-1 is somewhere in the
+    // think list", and a reader had to pair it with an answer by position.
+    const lanes = llm.data.lanes as { agent: string; think: string; answer: string }[];
+    const child = lanes.find((l) => l.agent === "worker-1");
+    expect(child?.think).toContain("child reasoning");
+    // And main keeps its lane although it has said nothing — criterion 2.
+    expect(lanes.find((l) => l.agent === "main")).toBeDefined();
   });
 });
 

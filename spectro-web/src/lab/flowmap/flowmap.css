@@ -1170,6 +1170,73 @@
 }
 /* Per-agent stream slices of the SHARED model: main flush, subagents indented
    and tinted so the interleaving reads at a glance. */
+/* CARD 327 — one lane per agent, both halves side by side.
+ *
+ * WHY A GRID AND NOT TWO COLUMNS OF DIVS: the two halves of ONE agent have to
+ * sit on ONE row, and the row's height is the taller of them. A flex pair would
+ * let a long answer push its own half down past its neighbour's, which is the
+ * stacking this card exists to end.
+ *
+ * The lane RESERVES rather than caps. A capped box still collapses when it is
+ * empty, and a box that collapses moves everything under it — card 319 measured
+ * exactly that on the agent card (103.50px of movement on a box with an intact
+ * max-height). An agent that has said nothing renders its empty word at the
+ * same height as one that has spoken.
+ *
+ * The text is a 420-character window (CAP in sceneToFlow.ts) and real data sits
+ * ON it — 91.1% of native thinking_delta events leave the string at exactly 420
+ * — so `overflow-y: auto` here is the normal case, not an overflow guard. */
+.pf-llm__lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  text-align: left;
+}
+.pf-llm__head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-left: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.pf-llm__lane {
+  min-width: 0;
+}
+.pf-llm__lane.is-sub {
+  margin-left: 12px;
+  padding-left: 9px;
+  border-left: 2px solid var(--agent-worker, var(--sand));
+}
+.pf-llm__halves {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.pf-llm__half {
+  min-width: 0;
+  min-height: 34px;
+  overflow-y: auto;
+  max-height: 90px;
+}
+.pf-llm__empty {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.pf-llm__more {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-align: left;
+}
+
 .pf-llm__streams {
   max-height: 260px;
   overflow-y: auto;

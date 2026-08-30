@@ -1639,6 +1639,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.mcp.call": { de: "MCP-Aufruf", en: "MCP call" },
   "map.llm.reasoning": { de: "Reasoning & Antwort", en: "Reasoning & answer" },
   "map.llm.answer": { de: "Antwort", en: "Answer" },
+  // CARD 327. `thinking` closes a hole rather than opening a surface: the column
+  // label shipped as the bare English literal `section("Thinking", …)`, so a
+  // German reader saw "Thinking" next to "Antwort". Nothing in the gate catches
+  // an untranslated literal in a component.
+  "map.llm.thinking": { de: "Reasoning", en: "Thinking" },
+  "map.llm.lane.empty": { de: "noch nichts", en: "nothing yet" },
+  "map.llm.more": { de: "{n} weitere Agenten", en: "{n} more agents" },
   "map.sub.disc": { de: "Task & Verlauf", en: "Task & history" },
   "map.sub.order": { de: "Auftrag", en: "Task" },
   "map.sub.lastStatus": { de: "Letzter Status:", en: "Last status:" },

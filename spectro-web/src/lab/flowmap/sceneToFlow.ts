@@ -203,6 +203,108 @@ export interface NetCardView {
 }
 
 /**
+ * How many lanes the LLM card draws before it scrolls.
+ *
+ * Owner's choice, 2026-08-30, asked whether the card should hold a fixed three,
+ * grow to five, or grow without limit: <em>grow to five, then scroll</em>. The
+ * cost he accepted out loud is that the card then has five heights rather than
+ * one, and {@code EXPANDED_CARD.llm} is the answer to that cost — the SEAT is
+ * fixed at five even when the card is not, so the variation never reaches the
+ * neighbours.
+ *
+ * <p>MEASURED, because "five is plenty" was the card's first assumption and it
+ * is wrong: {@code scene.subagents} accumulates every child that emits anything
+ * and is emptied only by the ROOT's run_end (labScene.ts:391-403), so the roster
+ * on the owner's own 295-agent import reaches 295 and stands above five on
+ * 51 732 of 51 858 steps (99.8 %). The overflow line is the NORMAL case on an
+ * import, not an edge.
+ */
+export const LANE_CAP = 5;
+
+/** One agent's two halves, side by side, in the order the card draws them. */
+export interface AgentLane {
+  /** The engine's own agent id. NOT a handle — see the note on {@link llmLanes}. */
+  agent: string;
+  /** Its reasoning, as far as the 420-character window keeps it. */
+  think: string;
+  /** Its answer, same window. */
+  answer: string;
+  /** Whether this lane is the run's root rather than a child. */
+  isRoot: boolean;
+}
+
+/** What the LLM card draws, and how much it could not. */
+export interface LlmLanesView {
+  lanes: AgentLane[];
+  /** Agents past {@link LANE_CAP}, which the card reports rather than draws. */
+  more: number;
+}
+
+/**
+ * One lane per agent on screen, thinking and answer together (card 327).
+ *
+ * <p>THE PIVOT IS A VIEW CHANGE, NOT A FOLD CHANGE. {@code detail.think} and
+ * {@code detail.answer} are already {@code Record<agentId, string>}, so the data
+ * was always per agent; the old shape asked for two lists over the same roster
+ * and let the reader pair them by position. In the owner's own screenshot the
+ * Thinking entry was tagged MAIN and the Answer entry directly under it SCOPE —
+ * two agents, stacked, reading as one that thought and then spoke.
+ *
+ * <p>THE ROSTER IS DE-DUPLICATED, and that fixes a shipped defect rather than
+ * tidying one. It is built as root-then-scene, and its two halves come from
+ * sources that do not agree: {@code deriveDetail} takes the root from the first
+ * run_start's agentId (:571) while {@code advanceScene} hardcodes
+ * {@code MAIN = "main"} (labScene.ts:72-73). On a transcript whose root is not
+ * called "main" the root ALSO sits in {@code scene.subagents}, so the old
+ * expression listed it twice — measured on cc-standalone-subagent.jsonl: two
+ * think lanes sharing one React key on 10 of 14 steps, and the root wearing the
+ * subagent treatment on 11 of 14. 87.5 % of the Claude Code transcripts on this
+ * machine have that shape.
+ *
+ * <p>NO FILTER. The old fold dropped an agent the moment its text was empty,
+ * and the card's first draft blamed that for a lane vanishing mid-step. Measured
+ * over all 975 steps of all 17 shipped scenarios, the lane count never shrinks
+ * mid-run — the only 12 shrink events in the corpus are run_end. What the filter
+ * really did was stop a lane ever APPEARING: 4 099 of 5 551 roster slots (73.8 %)
+ * suppressed for thinking, 3 443 (62.0 %) for answer. Keeping the lane is the
+ * owner's ask, verbatim: "für alle agenten die geladen sind immer das feld
+ * behalten dann sieht man immer den letzten stand".
+ *
+ * <p>THE TEXT IS A 420-CHARACTER WINDOW and real data sits on it — {@code CAP}
+ * at :457, and 91.1 % of native thinking_delta events leave the string at
+ * exactly 420. "The last state" is satisfied to that depth and no further.
+ *
+ * <p>THE AGENT ID IS RAW, deliberately. Card 327 criterion 3 asked for card
+ * 298's handle colour, and there is no handle at this node: no AgentDirectory
+ * reaches it, and {@code agentTagColor} has zero consumers anywhere under
+ * lab/flowmap/. Threading the directory here is real work in BOTH producers —
+ * fleetToFlow's options are {@code lang, expanded} with no directory at all —
+ * so it is a card of its own rather than an unnamed rider on this one.
+ *
+ * @param scene the agents on screen
+ * @param detail the fold
+ * @return the lanes to draw, and the count of those below the cap
+ */
+export function llmLanes(scene: Scene, detail: Detail): LlmLanesView {
+  const roster: string[] = [];
+  const seen = new Set<string>();
+  for (const id of [detail.root, ...scene.subagents.map((c) => c.id)]) {
+    if (id === "" || seen.has(id)) continue;
+    seen.add(id);
+    roster.push(id);
+  }
+  return {
+    lanes: roster.slice(0, LANE_CAP).map((id) => ({
+      agent: id,
+      think: detail.think[id] ?? "",
+      answer: detail.answer[id] ?? "",
+      isRoot: id === detail.root,
+    })),
+    more: Math.max(0, roster.length - LANE_CAP),
+  };
+}
+
+/**
  * CARD 329 — the Net card's whole content, derived from the run.
  *
  * A shared derivation for the same reason as {@link mcpChainView}: both the
@@ -2155,16 +2257,13 @@ export function sceneToFlow(
   // ----- LLM ----- (the SHARED model — it works for main and every subagent,
   // so it animates and streams for whichever agent is at it right now)
   const llmBusy = scene.focus === "llm" || scene.subagents.some((c) => c.focus === "llm");
-  const streamsOf = (rec: Record<string, string>): AgentStream[] =>
-    [detail.root, ...scene.subagents.map((c) => c.id)]
-      .map((id) => ({ agent: id, text: rec[id] ?? "" }))
-      .filter((s) => s.text.length > 0);
+  const llmView = llmLanes(scene, detail);
   N("llm", "llm", {
     active: llmBusy,
     provider: opts.provider,
     model: opts.model,
-    think: streamsOf(detail.think),
-    answer: streamsOf(detail.answer),
+    lanes: llmView.lanes,
+    more: llmView.more,
   });
 
   // ----- external services ----- (edu declutter drops the whole "outside")

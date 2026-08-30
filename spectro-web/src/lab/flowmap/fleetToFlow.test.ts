@@ -216,11 +216,29 @@ describe("fleetToFlow — the machine-room layout", () => {
       ],
     );
     const llm = byId(flow, "llm")!;
-    expect(llm.data.think).toEqual([
-      { agent: "main", text: "a remote thought" },
-      { agent: "worker-1", text: "a local thought" },
+    // CARD 327, criterion 10: BOTH producers write the lane shape, and this is
+    // the fleet half of that. The assertion is REPLACED rather than loosened —
+    // the fact it held (each node's reasoning arrives at the one station, marked
+    // by agent) is still held, in the shape the card 327 reader sees.
+    expect(llm.data.lanes).toEqual([
+      { agent: "main", think: "a remote thought", answer: "", isRoot: true },
+      { agent: "worker-1", think: "a local thought", answer: "", isRoot: false },
     ]);
+    expect(llm.data.more).toBe(0);
     // and the label names both backends rather than one box's half
     expect(llm.data.provider).toBe("anthropic · ollama");
+  });
+
+  it("caps the fleet station at the same five lanes and counts the rest", () => {
+    // The two producers must not disagree about the cap either — a fleet room
+    // that drew eight lanes while the single-run map drew five would be the
+    // card-320 defect in the other direction.
+    const many = Array.from({ length: 8 }, (_, i) => node(`n${i}`, i === 0 ? "root" : "worker"));
+    const { flow } = flowOf(many, [
+      { type: "run_start", runId: "r1", agentId: "n0", prompt: "go", provider: "anthropic", ts },
+    ]);
+    const llm = byId(flow, "llm")!;
+    expect((llm.data.lanes as unknown[]).length).toBe(5);
+    expect(llm.data.more).toBe(3);
   });
 });
