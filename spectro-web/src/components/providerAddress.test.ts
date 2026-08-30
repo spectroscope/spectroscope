@@ -82,24 +82,39 @@ describe("addressOverrideNote", () => {
   });
 
   it("names the winning address, both layers and the provider, in both languages", () => {
-    for (const lang of ["de", "en"] as const) {
-      const note = addressOverrideNote(
-        "ollama",
-        viewWith(
-          { ollamaBaseUrl: "http://gpu-box:11434", baseUrl: "http://elsewhere:8600" },
-          { ollamaBaseUrl: set("env"), baseUrl: set("flags") },
-        ),
-        lang,
-        { ollama: "http://gpu-box:11434" },
-      );
-      const sentence = t(lang, note!.key, note!.vars);
-      expect(sentence, lang).not.toBe(note!.key); // the key resolves
-      expect(sentence, lang).not.toMatch(/\{[a-z]+\}/i); // every hole filled
-      expect(sentence, lang).toContain("http://gpu-box:11434"); // the winner
-      expect(sentence, lang).toContain("ollamaBaseUrl"); // the field that wins
-      expect(sentence, lang).toContain("ollama"); // the provider it applies to
-      expect(sentence, lang).toContain(t(lang, "set.layer.env")); // the winner's layer
-      expect(sentence, lang).toContain(t(lang, "set.layer.flags")); // the loser's layer
+    // Both providers, because both dict entries carry the same five holes and
+    // one sentence proves nothing about the other.
+    const cases = [
+      { provider: "ollama", field: "ollamaBaseUrl", addr: "http://gpu-box:11434" },
+      { provider: "lmstudio", field: "lmstudioBaseUrl", addr: "http://gpu-box:1234" },
+    ] as const;
+    for (const { provider, field, addr } of cases) {
+      for (const lang of ["de", "en"] as const) {
+        const note = addressOverrideNote(
+          provider,
+          viewWith(
+            { [field]: addr, baseUrl: "http://elsewhere:8600" },
+            { [field]: set("env"), baseUrl: set("flags") },
+          ),
+          lang,
+          { [provider]: addr },
+        );
+        const where = `${provider}/${lang}`;
+        const sentence = t(lang, note!.key, note!.vars);
+        expect(sentence, where).not.toBe(note!.key); // the key resolves
+        expect(sentence, where).not.toMatch(/\{[a-z]+\}/i); // every hole filled
+        expect(sentence, where).toContain(addr); // the winner
+        expect(sentence, where).toContain(field); // the field that wins
+        // {provider} cannot be pinned by looking for the provider name in the
+        // whole sentence: {field} already renders as "ollamaBaseUrl", which
+        // CONTAINS "ollama", so the sought word is a substring of its own
+        // neighbour and the check is green in both directions — measured, with
+        // {provider} struck out of the en entry the old assertion still passed.
+        // Strike the field token out and ask what is left.
+        expect(sentence.split(field).join(""), where).toContain(provider);
+        expect(sentence, where).toContain(t(lang, "set.layer.env")); // the winner's layer
+        expect(sentence, where).toContain(t(lang, "set.layer.flags")); // the loser's layer
+      }
     }
   });
 
