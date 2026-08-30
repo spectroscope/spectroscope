@@ -75,14 +75,52 @@ export const READINGS: readonly Reading[] = ["verbatim", "readable", "tree"];
  * `compact`. Insight gets no strip at all — what it renders is the payload,
  * and there is no second version of it to be confused with.
  *
+ * IT TAKES THE PANE and not only the face (re-review of card 326). A `built`
+ * or `missing` source pane names no line, so all three readings drew the same
+ * one sentence: three buttons that changed nothing, over a pane with no copy
+ * button under it. state/traceFace.ts argues "a face with nothing behind it is
+ * not offered at all" and this card's own depth strip obeys that; the readings
+ * could not, because this function was never told which pane it was answering
+ * for.
+ *
  * @param mode the face the pane is showing
+ * @param pane what the source pane found, or null for a face that is not source
  * @return the readings that face can be painted in; empty for a face with one
- *         rendering, where the strip is not drawn
+ *         rendering and for a pane with no line, where the strip is not drawn
  */
-export function readingsFor(mode: DetailMode): Reading[] {
-  if (mode === "source") return [...READINGS];
+export function readingsFor(mode: DetailMode, pane: SourcePane | null): Reading[] {
+  if (mode === "source") return pane?.kind === "line" ? [...READINGS] : [];
   if (mode === "wire") return READINGS.filter((r) => r !== "tree");
   return [];
+}
+
+/**
+ * The reading a pane shows when the one it was asked for is not on offer.
+ *
+ * The reader's pick survives a walk from row to row and from session to
+ * session, so it will meet panes that cannot answer it — pick Tree on a foreign
+ * import, open a spectroscope session, and the pane in front of them offers
+ * two. This used to jump to `verbatim`, which is the one reading this module
+ * argues the pane must not OPEN on ("unreadable at a glance … makes the pane
+ * look broken rather than faithful"). It now lands the way a FACE lands
+ * (state/traceFace.ts, availableFace): the nearest neighbour to the left, and
+ * forward only when there is nothing to the left at all.
+ *
+ * @param chosen    the reading the reader picked
+ * @param available what this pane offers, from {@link readingsFor}
+ * @return a reading that is certainly on offer; `chosen` when the pane offers
+ *         nothing at all and no strip is drawn
+ */
+export function availableReading(chosen: Reading, available: readonly Reading[]): Reading {
+  if (available.includes(chosen)) return chosen;
+  const at = READINGS.indexOf(chosen);
+  for (let i = at - 1; i >= 0; i--) {
+    if (available.includes(READINGS[i])) return READINGS[i];
+  }
+  for (let i = at + 1; i < READINGS.length; i++) {
+    if (available.includes(READINGS[i])) return READINGS[i];
+  }
+  return chosen;
 }
 
 export function detailLines(type: string, payload: unknown): string[] {
@@ -218,27 +256,54 @@ export function withinBudget(text: string, budget: number = SOURCE_DISPLAY_CHARS
   return { text: text.slice(0, cut), shown: cut, total: text.length, capped: true };
 }
 
-/** Whether a source line is a document, and the document if it is.
+/** Why a line has no tree. TWO reasons and not one, because they are two
+ *  different statements about the file and a shared sentence would make one of
+ *  them false: `noDocument` says the line is not an object or an array,
+ *  `tooLong` says it is one and is bigger than this pane draws. Saying "not a
+ *  JSON object" about a 2.7 MB document that is one would be the pane lying
+ *  about the file, which is the defect the source face exists to remove.
  *
- *  The judgement itself belongs to readable.ts and is borrowed, never copied:
- *  the readable reading already says "This line is not JSON. It stands here
- *  unchanged." for exactly this set of lines, and two readings of one pane
- *  disagreeing about the same line would be worse than either verdict.
+ *  Walked by i18n.test.ts, which holds a sentence open for each. */
+export const NO_TREE_REASONS = ["noDocument", "tooLong"] as const;
+
+export type NoTreeReason = (typeof NO_TREE_REASONS)[number];
+
+/** Whether a source line is a document this pane will draw, and the document
+ *  if it is.
+ *
+ *  THE SHAPE JUDGEMENT belongs to readable.ts and is borrowed, never copied:
+ *  the readable reading says the same sentence for exactly this set of lines,
+ *  and two readings of one pane disagreeing about the same line would be worse
+ *  than either verdict.
  *
  *  A bare value is deliberately not a document. `null`, `12` and `"a"` are all
  *  valid JSON and would each draw a tree of one leaf, which is an empty tree
  *  wearing a caret — the pane looking broken rather than faithful. `{}` and
- *  `[]` DO draw, because an empty document is what the line actually says. */
-export type SourceTree = { parsed: true; value: unknown } | { parsed: false };
+ *  `[]` DO draw, because an empty document is what the line actually says.
+ *
+ *  THE SIZE JUDGEMENT is this pane's own {@link SOURCE_DISPLAY_CHARS}, and it
+ *  was missing until the re-review of card 326. Verbatim and readable both obey
+ *  that ceiling and say they capped; the tree handed its whole value to
+ *  JsonTree, which caps neither string leaves nor node counts. Measured over
+ *  the owner's real corpus on 2026-08-30 —
+ *
+ *    node -e '<walk ~/.claude/projects/**.jsonl; count lines over 65536 chars>'
+ *    files 7656  lines 963028  over 65536: 10617 (1.102%)  longest 2706596
+ *
+ *  — so one click in one percent of those rows builds a tree over a 2.7 MB
+ *  document. Nothing is lost by refusing: verbatim shows the line, says how
+ *  much of it is on screen, and carries the button that lifts the ceiling on
+ *  request. */
+export type SourceTree = { parsed: true; value: unknown } | { parsed: false; why: NoTreeReason };
 
 /**
  * @param line the source line, verbatim
- * @return the parsed document to draw, or `parsed: false` for a line that has
- *         no tree in it
+ * @return the parsed document to draw, or the reason there is no tree in it
  */
 export function sourceTree(line: string): SourceTree {
+  if (line.length > SOURCE_DISPLAY_CHARS) return { parsed: false, why: "tooLong" };
   const doc = parseDocument(line);
-  return doc.ok ? { parsed: true, value: doc.value } : { parsed: false };
+  return doc.ok ? { parsed: true, value: doc.value } : { parsed: false, why: "noDocument" };
 }
 
 /**

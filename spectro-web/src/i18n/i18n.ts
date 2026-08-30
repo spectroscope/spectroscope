@@ -2417,10 +2417,6 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Frames als JSON-Baum aufklappen.",
     en: "Open frames as an expanded tree.",
   },
-  "trace.faceTitle.compact": {
-    de: "Frames hervorgehoben und umgebrochen aufklappen: der ganze Inhalt im Bild, ohne seitliches Scrollen.",
-    en: "Open frames highlighted and wrapped: the whole content on screen, no sideways scrolling.",
-  },
   "trace.faceTitle.wire": {
     de: "Frames als reinen Text aufklappen: genau die Zeilen, die über den Draht gingen, je eine Zeile.",
     en: "Open frames as plain text: exactly the lines that crossed the wire, one row each.",
@@ -2454,9 +2450,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Zeile {n} von {total}. Sie hat {k} Frames erzeugt; dies ist Frame {i}.",
     en: "Line {n} of {total}. It produced {k} frames; this is frame {i}.",
   },
-  "trace.source.notJson": {
-    de: "Diese Zeile ist kein JSON. Sie steht unverändert da.",
-    en: "This line is not JSON. It stands here unchanged.",
+  "trace.source.noDocument": {
+    de: "Diese Zeile ist kein JSON-Objekt und kein Array. Sie steht unverändert da.",
+    en: "This line is not a JSON object or array. It stands here unchanged.",
+  },
+  "trace.source.tooLong": {
+    de: "Diese Zeile ist zu lang für einen Baum.",
+    en: "This line is too long to draw as a tree.",
   },
   "trace.source.capped": {
     de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.",

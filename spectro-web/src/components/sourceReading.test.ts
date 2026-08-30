@@ -28,6 +28,7 @@ import {
   readingsFor,
   resolvedReading,
   sourceTree,
+  type SourcePane,
 } from "./traceDetail";
 import { readable, readableText } from "./readable";
 import type { RunEvent } from "../events";
@@ -44,9 +45,21 @@ const LINE = JSON.stringify({
  *  produce them, and the import dialog accepts whatever it is given. */
 const PROSE = "2026-08-30 12:04:11  INFO  the run finished with 3 warnings";
 
+/** A source pane with a line behind it — since the re-review of card 326
+ *  {@link readingsFor} answers for the PANE, because `built` and `missing` name
+ *  no line and had three buttons over them that changed nothing. */
+const LINE_PANE: SourcePane = {
+  kind: "line",
+  text: LINE,
+  lineNumber: 1,
+  total: 1,
+  siblings: 1,
+  ordinal: 1,
+};
+
 describe("which readings each pane offers", () => {
   it("offers all three on the source pane", () => {
-    expect(readingsFor("source")).toEqual([...READINGS]);
+    expect(readingsFor("source", LINE_PANE)).toEqual([...READINGS]);
   });
 
   // A tree of our own wire line would BE the Insight face, one click to the
@@ -54,16 +67,16 @@ describe("which readings each pane offers", () => {
   // that retired `compact` (traceDetail.ts:26), and this card must not put it
   // back on the next pane over.
   it("does not offer the tree on the wire pane, where the insight face already is", () => {
-    expect(readingsFor("wire")).toEqual(["verbatim", "readable"]);
+    expect(readingsFor("wire", null)).toEqual(["verbatim", "readable"]);
   });
 
   it("offers no reading strip on the insight pane, which has one rendering", () => {
-    expect(readingsFor("insight")).toEqual([]);
+    expect(readingsFor("insight", null)).toEqual([]);
   });
 
   it("keeps every offered list in the strip's own order", () => {
     for (const mode of ["insight", "wire", "source"] as const) {
-      const offered = readingsFor(mode);
+      const offered = readingsFor(mode, LINE_PANE);
       expect(offered, mode).toEqual(READINGS.filter((r) => offered.includes(r)));
     }
   });
@@ -71,7 +84,7 @@ describe("which readings each pane offers", () => {
   it("leaves no reading nobody can reach", () => {
     for (const reading of READINGS) {
       expect(
-        (["insight", "wire", "source"] as const).some((m) => readingsFor(m).includes(reading)),
+        (["insight", "wire", "source"] as const).some((m) => readingsFor(m, LINE_PANE).includes(reading)),
         `${reading} is offered by no pane at all`,
       ).toBe(true);
     }

@@ -42,6 +42,7 @@ import {
 import type { LlmDir } from "./eventSummary";
 import {
   SOURCE_DISPLAY_CHARS,
+  availableReading,
   copyLabel,
   detailLines,
   detailText,
@@ -1219,7 +1220,7 @@ function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
   const { parsed, blocks } = useMemo(() => readable(line), [line]);
   return (
     <div className="trace-source-blocks">
-      {!parsed && <p className="trace-source-note">{t(lang, "trace.source.notJson")}</p>}
+      {!parsed && <p className="trace-source-note">{t(lang, "trace.source.noDocument")}</p>}
       {blocks.map((b, i) => (
         <ReadableBlockView key={`${b.path}#${i}`} block={b} lang={lang} />
       ))}
@@ -1229,19 +1230,24 @@ function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
 
 /** One line, parsed and drawn as the tree the insight face draws — the same
  *  component, the same value-kind colours, no second renderer and no second
- *  highlighter.
+ *  highlighter. Named exactly: JsonTree paints with its own
+ *  `json-key`/`json-string`/`json-punct` classes, and workspace/highlight.ts is
+ *  NOT involved — the card's own write-up said it was, and it never was. What
+ *  the owner asked for ("wie insight auch das higlighting macht") is these
+ *  classes, because the insight face is this component.
  *
- *  A line with no tree in it says so and then shows itself. The verdict is
- *  traceDetail's {@link sourceTree}, which borrows readable.ts's, so the two
- *  readings of this pane cannot disagree about the same line; saying "this is
- *  not JSON" and then showing nothing would be the silence this pane was built
- *  to end. */
+ *  A line with no tree in it says WHICH of the two reasons it is and then shows
+ *  itself. The verdict is traceDetail's {@link sourceTree}: its shape half
+ *  borrows readable.ts's, so the two readings of this pane cannot disagree
+ *  about the same line, and its size half is the pane's own display ceiling.
+ *  Saying "there is no tree here" and then showing nothing would be the silence
+ *  this pane was built to end. */
 function SourceTreeLine({ line, lang, depth }: { line: string; lang: Lang; depth: SourceDepth }) {
   const tree = useMemo(() => sourceTree(line), [line]);
   if (!tree.parsed) {
     return (
       <div className="trace-source-blocks">
-        <p className="trace-source-note">{t(lang, "trace.source.notJson")}</p>
+        <p className="trace-source-note">{t(lang, `trace.source.${tree.why}`)}</p>
         <Budgeted text={line} lang={lang} wrap />
       </div>
     );
@@ -1394,19 +1400,11 @@ function TraceDetail({
   // over what the pane claims to show. Session state, never persisted, so the
   // choice cannot follow a reader into a file they have not looked at yet.
   const [chosen, setChosen] = useState<Reading>("readable");
-  // Which readings THIS pane offers, from the pane's own rule: three on source,
-  // two on wire, none on structured or insight, where what is rendered IS the
-  // parsed payload and there is no second version of it to name.
-  // The exchange's wire face is OUR rendering of recorded bytes, not a line of
-  // somebody's file, so it has no readings to choose between either.
-  const readings: readonly Reading[] = isExchange || mode === "structured" ? [] : readingsFor(mode);
-  // A reading this pane does not offer falls back the way a face does.
-  const picked: Reading = readings.includes(chosen) ? chosen : "verbatim";
   const lines = detailLines(entry.type, entry.payload);
   // The line this frame was read from, or nothing. Only the source pane's copy
   // button hands it over, and only when there is one to hand over.
-  // Walked once: the sibling count reads every row, and the pane is needed both
-  // for the body and for whether there is anything to copy.
+  // Walked once: the sibling count reads every row, the pane decides which
+  // readings are on offer, and it says whether there is anything to copy.
   // The face rule only offers `source` where the session read a foreign record,
   // and a foreign record is a file — origin and sourceLines are set from the one
   // fact, one component up. The fallback is what makes that a type rather than a
@@ -1415,6 +1413,19 @@ function TraceDetail({
   // the source face and call it the record.
   const pane = mode === "source" ? sourcePane(entry, rows, sourceLines ?? []) : null;
   const sourceText = pane?.kind === "line" ? pane.text : undefined;
+  // Which readings THIS pane offers, from the pane's own rule: three over a
+  // source line, two on wire, none on structured or insight, where what is
+  // rendered IS the parsed payload and there is no second version of it to
+  // name — and none over a source pane that shows no line at all, which used to
+  // draw three buttons that changed nothing above one sentence.
+  // The exchange's wire face is OUR rendering of recorded bytes, not a line of
+  // somebody's file, so it has no readings to choose between either.
+  const readings: readonly Reading[] =
+    isExchange || mode === "structured" ? [] : readingsFor(mode, pane);
+  // A reading this pane does not offer lands on its nearest neighbour, the way
+  // a face does — not on verbatim, which this module argues the pane must not
+  // open on.
+  const picked: Reading = availableReading(chosen, readings);
   // What the pane can ACTUALLY paint: a tree asked for over a line that is not a
   // document falls to the bytes, and everything downstream — the copy verb, the
   // depth control — names the resolved one, never the asked-for one.

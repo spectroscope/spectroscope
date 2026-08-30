@@ -5,7 +5,13 @@ import { dict, t } from "./i18n";
 import { DENSITIES } from "../state/density";
 import { LAB_FACES } from "../state/labFace";
 import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
-import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS, sourceSentence } from "../components/traceDetail";
+import {
+  COPY_LABELS,
+  NO_TREE_REASONS,
+  READINGS,
+  SOURCE_PANE_KINDS,
+  sourceSentence,
+} from "../components/traceDetail";
 import type { SourcePane } from "../components/traceDetail";
 import { HIDDEN_KINDS } from "../components/readable";
 import { PROVIDERS } from "../components/providerPickerMode";
@@ -17,6 +23,7 @@ import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 import { searxngOffer } from "../components/webSearchSetup";
 import { hookReadingKey, timeoutNoteKey } from "../components/hooksSetup";
 import { SETTINGS_TABS, settingsTabLabelKey } from "../components/settingsTabs";
+import { SOURCE_DEPTHS } from "../state/sourceDepth";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -134,7 +141,6 @@ describe("i18n dict", () => {
     }
     for (const k of [
       "trace.source.shared",
-      "trace.source.notJson",
       "trace.source.capped",
       "trace.source.showAll",
       // One ceiling, two escapes: the structured face's copy button hands over
@@ -156,6 +162,20 @@ describe("i18n dict", () => {
       expect(dict[`trace.readingTitle.${r}`], `trace.readingTitle.${r}`).toBeDefined();
     }
     expect(dict["trace.readingAria"], "trace.readingAria").toBeDefined();
+    // How far the tree reading opens (card 326). The strip interpolates a word
+    // and a tooltip per level, so a third level added to the store without its
+    // two strings would print the bare key over the pane.
+    for (const d of SOURCE_DEPTHS) {
+      expect(dict[`trace.depth.${d}`], `trace.depth.${d}`).toBeDefined();
+      expect(dict[`trace.depthTitle.${d}`], `trace.depthTitle.${d}`).toBeDefined();
+    }
+    expect(dict["trace.depthAria"], "trace.depthAria").toBeDefined();
+    // Why a line has no tree. Two reasons, two sentences: they are different
+    // statements about the file, and one word for both would say "not a JSON
+    // object" about a 2.7 MB document that is one.
+    for (const r of NO_TREE_REASONS) {
+      expect(dict[`trace.source.${r}`], `trace.source.${r}`).toBeDefined();
+    }
     // The copy button names which of the two it took, reached as
     // `common.${copyLabel(...)}`.
     for (const k of COPY_LABELS) {

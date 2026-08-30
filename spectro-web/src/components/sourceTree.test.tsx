@@ -115,7 +115,7 @@ describe("a line that is not JSON", () => {
   // and hide two.
   it("says so for prose, and draws no tree", () => {
     const html = render(lineOf(PROSE), "tree");
-    expect(html).toContain(t("en", "trace.source.notJson"));
+    expect(html).toContain(t("en", "trace.source.noDocument"));
     expect(html).not.toContain('class="json-tree"');
   });
 
@@ -127,7 +127,7 @@ describe("a line that is not JSON", () => {
 
   it("says so for a line that parses to a bare value, which would be one leaf", () => {
     const html = render(lineOf("null"), "tree");
-    expect(html).toContain(t("en", "trace.source.notJson"));
+    expect(html).toContain(t("en", "trace.source.noDocument"));
     expect(html).not.toContain('class="json-tree"');
   });
 
@@ -136,12 +136,12 @@ describe("a line that is not JSON", () => {
     // above, so the two are pinned apart.
     const html = render(lineOf("{}"), "tree");
     expect(html).toContain('class="json-tree"');
-    expect(html).not.toContain(t("en", "trace.source.notJson"));
+    expect(html).not.toContain(t("en", "trace.source.noDocument"));
   });
 
   it("says it in both languages", () => {
     for (const lang of ["de", "en"] as const) {
-      expect(render(lineOf(PROSE), "tree", "default", lang), lang).toContain(t(lang, "trace.source.notJson"));
+      expect(render(lineOf(PROSE), "tree", "default", lang), lang).toContain(t(lang, "trace.source.noDocument"));
     }
   });
 });
