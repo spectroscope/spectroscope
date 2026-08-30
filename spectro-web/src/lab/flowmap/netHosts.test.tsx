@@ -25,7 +25,7 @@
 //     six distinct hosts in the entire history; 36 of 783 sessions reached
 //     anything at all, 34 of those 36 reached exactly ONE host and 2 reached
 //     two — never three. 45 of 137 exchanges are loopback. 58 of 137 went to
-//     100.90.57.62:1234, a Tailscale/CGNAT address — the largest single group,
+//     a single tailnet host — the largest single group,
 //     and neither loopback nor the public internet. ZERO redaction markers
 //     exist anywhere in the store, so those fixtures take their shape from the
 //     writer (BrowserWireRecorder.java:427 and :376), not from a guess.
@@ -219,7 +219,7 @@ describe("the locality test is runDigest's (card 329, criterion 5)", () => {
 // ---------------------------------------------------------------------------
 // 6. The machine next door — the largest single group in the whole history.
 //
-// 58 of 137 exchanges went to 100.90.57.62:1234, a Tailscale/CGNAT address in
+// 58 of 137 exchanges went to ONE tailnet host, a Tailscale/CGNAT address in
 // 100.64.0.0/10: LM Studio on the owner's OTHER machine. It DID leave this
 // machine, so calling it local is a lie; it is not the public internet, so
 // filing it under "Routing · Internet" is also a lie. Which of the two allowed
@@ -227,11 +227,11 @@ describe("the locality test is runDigest's (card 329, criterion 5)", () => {
 // owner call, so nothing below names a category.
 // ---------------------------------------------------------------------------
 describe("the tailnet address is neither local nor the internet (card 329, criterion 6)", () => {
-  const m = () => netCard([runStart(), exchange("http://100.90.57.62:1234/v1/chat/completions", "lmstudio")]);
+  const m = () => netCard([runStart(), exchange("http://100.64.0.1:1234/v1/chat/completions", "lmstudio")]);
 
   it("is not filtered away as local", () => {
-    expect(isLoopbackAddress("100.90.57.62:1234")).toBe(false);
-    expect(hostsIn(m())).toContain("100.90.57.62:1234");
+    expect(isLoopbackAddress("100.64.0.1:1234")).toBe(false);
+    expect(hostsIn(m())).toContain("100.64.0.1:1234");
   });
 
   it("is not filed under the public internet", () => {
@@ -362,7 +362,7 @@ describe("the card is bounded and drops nothing silently (card 329, criterion 11
     const m = netCard([
       runStart(),
       exchange("https://api.anthropic.com/v1/messages"),
-      exchange("http://100.90.57.62:1234/v1/chat/completions", "lmstudio", T + 1),
+      exchange("http://100.64.0.1:1234/v1/chat/completions", "lmstudio", T + 1),
     ]);
     expect(hostsIn(m)).toHaveLength(2);
     expect(moreIn(m)).toBe(0);

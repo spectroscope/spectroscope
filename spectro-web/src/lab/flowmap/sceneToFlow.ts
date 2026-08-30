@@ -518,9 +518,11 @@ export interface Detail {
    * loopback, and drawing a backend that never left the machine as outbound is
    * the exact lie the network node exists to prevent.
    *
-   * NOT classified. 58 of those 137 went to 100.90.57.62:1234, a Tailscale
-   * address in 100.64.0.0/10 — the largest single group, and neither loopback
-   * nor the public internet. Which shape ships (a third category, or none) is
+   * NOT classified. 58 of those 137 went to ONE host in 100.64.0.0/10 — a
+   * tailnet address, the largest single group, and neither loopback nor the
+   * public internet. The host itself is deliberately not written here: this
+   * repository is public and NoOperatorAddressesInTheRepoTest refuses an
+   * operator's own node by name. Which shape ships (a third category, or none) is
    * an owner call, so the fold carries the host and the card prints it.
    *
    * A HOST, and deliberately no number beside it. This carried a per-host hit
