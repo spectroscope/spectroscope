@@ -83,11 +83,14 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
  * TWO SHAPES, one reader (card 330). The index endpoint FLATTENS the picture to
  * the top level — `openEntry` in BrowserWireController writes blobPath, sha256,
  * mediaType, width and height as siblings of `cid` — while the raw sidecar
- * nests them under `browser_result.image`. Fed the nested shape this used to
- * hand back a perfectly valid step that said no screenshot was taken, silently:
- * a row that HAD a picture read as a row that never took one, which is exactly
- * the difference the card is built to show. The flat keys still win, so nothing
- * about the endpoint's answer changes.
+ * nests them under `browser_result.image`. Only the FLAT shape has a shipped
+ * producer: every caller in this app reads the endpoint, so nothing today can
+ * hand this function the nested one. The nested keys are read anyway because
+ * this is the single place a raw-sidecar reader would land, and the failure
+ * mode there is silent rather than loud — a row that HAD a picture would come
+ * back as a perfectly valid step claiming none was taken, which is exactly the
+ * difference the card is built to show. The flat keys win, so nothing about
+ * the endpoint's answer changes.
  *
  * @param value one row of the ledger
  * @return the record, or null for a row without a cid (nothing to drill into)

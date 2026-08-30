@@ -377,14 +377,141 @@ describe("the Net seat is its own (card 329, criterion 9/10)", () => {
     expect(EXPANDED_CARD_OF("netz")).toBeDefined();
   });
 
-  // GREEN TODAY: a regression guard, not coverage. It goes red the moment this
-  // card or card 328 grows `ext` instead of adding its own key — which would
-  // silently resize the OTHER external card and make the merge a collision.
+  // GREEN TODAY: a regression guard, not coverage — and its reason has moved.
+  // `ext` no longer sizes either external card's HEIGHT: both carry a key of
+  // their own id now, which wins over the type lookup. Its WIDTH is still live
+  // — `EXT_W` reads it and card 319's layout derives from that — so touching
+  // this entry still moves the map.
   it("the shared ext envelope is left exactly as it was", () => {
     expect(EXPANDED_CARD_OF("ext")).toEqual({ w: 150, h: 110 });
   });
 
   it("the Net width stays 150 — widths feed card 319's layout", () => {
     expect(EXPANDED_CARD_OF("netz")?.w).toBe(150);
+  });
+});
+
+// ===========================================================================
+// ROUND 2 — what came back from the review.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// R2.1  The card prints no figure it cannot take the reader to.
+//
+// `{n}x` per host was a count of RECORDED ADDRESSES, and an address is
+// recorded by things that are not hops. `BrowserTools.java` records
+// `browser.pageUrl()` — the page the browser ENDED on — for EVERY browser tool
+// call, so five read-only verbs on one open page counted five. And on the LLM
+// side 40 of this machine's 137 exchanges carry no `status` at all and 7 are
+// `aborted`, both dropped, so a host that answered nothing counted the same as
+// one that answered 200. Deleting the increment (`seen.hits += 1` ->
+// `seen.hits = 1`) left all 5 784 tests green: the number had no frame behind
+// it in either sense.
+// ---------------------------------------------------------------------------
+describe("the card counts nothing it cannot back (card 329, round 2)", () => {
+  const readOnly = (url: string, tool: string, ts: number): RunEvent =>
+    ({
+      type: "browser_action",
+      agentId: "main",
+      callId: `c-${ts}`,
+      cid: `cid-${ts}`,
+      epoch: 1,
+      tool,
+      url,
+      ok: true,
+      resultBytes: 128,
+      durationMs: 11,
+      ts,
+    }) as RunEvent;
+
+  it("five read-only calls on ONE open page do not print as five of anything", () => {
+    const page = "https://example.com/a";
+    const events = [
+      runStart(),
+      readOnly(page, "browser_navigate", T),
+      readOnly(page, "browser_read_page", T + 1),
+      readOnly(page, "browser_find", T + 2),
+      readOnly(page, "browser_read_console", T + 3),
+      readOnly(page, "browser_get_page_text", T + 4),
+    ];
+    const m = netCard(events);
+    expect(m).toContain('data-host="example.com"');
+    expect(m).not.toContain("5x");
+  });
+
+  it("the host itself is still shown once, not five times", () => {
+    // The other direction: dropping the count may not drop the row, and may
+    // not turn one host into five rows either.
+    const page = "https://example.com/a";
+    const events = [runStart(), readOnly(page, "browser_navigate", T), readOnly(page, "browser_find", T + 1)];
+    expect([...netCard(events).matchAll(/data-host="example\.com"/g)]).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.2  First-seen order is claimed in the fold's own doc, so it is pinned.
+// ---------------------------------------------------------------------------
+describe("the rows read in the order the run reached them (card 329, round 2)", () => {
+  it("a later alphabet does not climb above an earlier host", () => {
+    const events = [
+      runStart(),
+      exchange("https://zulu.example.invalid/v1", "custom", T),
+      exchange("https://alpha.example.invalid/v1", "custom", T + 1),
+    ];
+    const hosts = [...netCard(events).matchAll(/data-host="([^"]*)"/g)].map((x) => x[1]);
+    expect(hosts).toEqual(["zulu.example.invalid", "alpha.example.invalid"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.3  The boundary node's light means NOW, like every other station's.
+//
+// `active: mcpInUse || netView.crossed` and `crossed` never goes back down, so
+// after the first remote exchange — the first turn of essentially every real
+// run — `netz` and `os-net` wore `.pf-card--active` (the breathing animation
+// the map uses for "a station in use") for the rest of the session and past
+// `run_end`. The reached hosts stay on the card either way; that is the memory.
+// This is the pulse.
+// ---------------------------------------------------------------------------
+describe("the boundary node goes dark again (card 329, round 2)", () => {
+  const active = (id: string, events: RunEvent[]) =>
+    (flowOf(events).nodes.find((n) => n.id === id)?.data as { active?: boolean } | undefined)?.active;
+
+  const runEnd = (ts: number): RunEvent =>
+    ({ type: "run_end", runId: "r1", stopReason: "end_turn", ts }) as RunEvent;
+
+  it("the run moving on puts the boundary nodes out", () => {
+    const events = [runStart(), exchange("https://api.anthropic.com/v1/messages"), runEnd(T + 9)];
+    expect(active("netz", events)).toBe(false);
+    expect(active("os-net", events)).toBe(false);
+  });
+
+  it("and the hosts it reached are still on the card", () => {
+    // The other direction: going dark may not empty the card.
+    const events = [runStart(), exchange("https://api.anthropic.com/v1/messages"), runEnd(T + 9)];
+    expect(netCard(events)).toContain('data-host="api.anthropic.com"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.4  The run scope clears the redaction count too.
+//
+// The comment above the clear claims a new root run empties "its MCP
+// conversation, the hosts it reached and the page it opened". Removing
+// `d.redactedHops = 0` from it left all 5 784 tests green.
+// ---------------------------------------------------------------------------
+describe("a new root run starts with no redactions either (card 329, round 2)", () => {
+  it("run two does not inherit run one's redacted hop", () => {
+    const secondRun = (): RunEvent =>
+      ({
+        type: "run_start",
+        runId: "r2",
+        agentId: "main",
+        prompt: "again",
+        provider: "anthropic",
+        ts: T + 50,
+      }) as RunEvent;
+    const events = [runStart(), browserAction("[redacted: bearer-token]", T + 1), secondRun()];
+    expect(netCard(events)).toContain('data-reached="none"');
   });
 });

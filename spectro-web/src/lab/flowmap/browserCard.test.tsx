@@ -7,8 +7,10 @@
 // Two better sources exist and both are already reachable:
 //   the SCREENSHOT — browser_action.sha256, the same key image_generated
 //     carries, fetched by BASENAME through /api/images/<file>
-//   the READING   — the sidecar's `result`, served by
-//     GET /api/sessions/{id}/browser-wire/action/{cid}
+//   the READING   — the `tool_result` for the same callId, which is on the
+//     SESSION wire and carries the tool's whole answer. (The sidecar has it
+//     too, behind GET /api/sessions/{id}/browser-wire/action/{cid}; the card
+//     does not go there, and criterion 3 is why.)
 //
 // What is pinned here, and the contract the markup hooks make explicit:
 //   the node id            "os-browser", an OS-band station, type "os",
@@ -31,9 +33,10 @@
 // from the store (20260819-160135-b651423f.browser.jsonl) because it is the
 // product's own message and the only localhost evidence that exists.
 //
-// Today OsNode's kinds are disk | shell | net | mcp (nodes.tsx:547) and no
-// browser node is emitted anywhere, so the render cases share one failure until
-// the branch exists. They diverge the moment it does; each still asks its own
+// When these were written OsNode's kinds were disk | shell | net | mcp and no
+// browser node was emitted anywhere, so the render cases shared one failure
+// until the branch existed.
+//   grep -n 'kind: "disk"' nodes.tsx They diverge the moment it does; each still asks its own
 // question and each has to be re-bitten on its own after the build.
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -48,7 +51,8 @@ vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
 }));
 
-import { OsNode } from "./nodes";
+import { browserPageState, OsNode } from "./nodes";
+import { ExpandAllContext } from "./expandContext";
 
 const Os = OsNode as unknown as (p: { data: unknown }) => ReactElement;
 
@@ -103,10 +107,27 @@ function flowOf(events: RunEvent[]) {
 const nodeData = (events: RunEvent[]): Record<string, unknown> | undefined =>
   flowOf(events).nodes.find((n) => n.id === NODE_ID)?.data as Record<string, unknown> | undefined;
 
-/** Renders the browser station from hand-built data — the states below are the
- *  component's contract, and several of them (a broken blob, a fetched reading)
- *  are inputs the map cannot know and the component latches. */
+/**
+ * Renders the browser station from hand-built data, in the shell where the
+ * page itself is drawn.
+ *
+ * EXPANDED, and that is a fact about the card rather than a convenience. The
+ * `z-os` frame leaves a compact station 156px between its seat and the frame's
+ * floor, and this card drawing a page measured 202.44 there — so compact names
+ * the state and expanded shows the artefact (COMPACT_BROWSER_H says it with
+ * the numbers). Every criterion about WHAT the card shows is therefore a
+ * statement about this shell; `glance` below is the other one, and criterion 3
+ * is asserted in both.
+ */
 const card = (page: unknown): string =>
+  renderToStaticMarkup(
+    <ExpandAllContext.Provider value={true}>
+      <Os data={{ kind: "browser", active: true, page }} />
+    </ExpandAllContext.Provider>,
+  );
+
+/** The same station in the COMPACT band, where it names its state instead. */
+const glance = (page: unknown): string =>
   renderToStaticMarkup(<Os data={{ kind: "browser", active: true, page }} />);
 
 const urlState = (m: string): string | null => /data-url-state="([^"]*)"/.exec(m)?.[1] ?? null;
@@ -280,9 +301,18 @@ describe("the fold fills the page from the session wire (card 330)", () => {
 // ---------------------------------------------------------------------------
 // 3. The card never fetches anything the recording did not record.
 //    This is the criterion that keeps a replay from becoming a browser.
+//
+//    WHAT THIS HOLDS, exactly: every URL the RENDERED MARKUP asks the browser
+//    to load. `renderToStaticMarkup` runs no effects, so a `fetch` inside one
+//    would pass here — this gate has no DOM to catch it in. What the markup
+//    cannot do is put the recorded address into an `src` or an `href`, which
+//    is the only way a static card starts a request, and that is the shape the
+//    card is built in: `BrowserBody` has no effect and no fetch of its own,
+//    and the one URL it does build goes through `screenshotUrl` (criterion 10
+//    below drives that rule itself).
 // ---------------------------------------------------------------------------
-describe("nothing is fetched from the page itself (card 330, criterion 3)", () => {
-  it("every URL the rendered card loads is the image endpoint", () => {
+describe("no element on the card loads from the page itself (card 330, criterion 3)", () => {
+  it("every URL the rendered markup loads is the image endpoint", () => {
     const m = card({
       url: "https://www.test.de/",
       urlState: "address",
@@ -293,9 +323,80 @@ describe("nothing is fetched from the page itself (card 330, criterion 3)", () =
   });
 
   it("the recorded address never becomes a request", () => {
-    const m = card({ url: "https://www.test.de/", urlState: "address", shot: null, reading: null });
-    expect(m).not.toContain('src="https://www.test.de/');
-    expect(m).not.toContain('href="https://www.test.de/');
+    for (const m of [
+      card({ url: "https://www.test.de/", urlState: "address", shot: null, reading: null }),
+      glance({ url: "https://www.test.de/", urlState: "address", shot: null, reading: null }),
+    ]) {
+      expect(m).not.toContain('src="https://www.test.de/');
+      expect(m).not.toContain('href="https://www.test.de/');
+    }
+  });
+
+  // The COMPACT band draws no picture at all, so it cannot load one either.
+  it("the compact station loads nothing", () => {
+    expect(
+      loadedUrls(
+        glance({ url: "https://www.test.de/", shot: { blobPath: "images/9f2c1a.png", sha256: "9f2c1a" } }),
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3b. What the COMPACT station says instead (round 2).
+//
+// It draws no page, and the frame it stands in is why: 156px between the seat
+// and the floor of `z-os`, against 202.44 for this card rendering a page.
+// What it may not do is go silent — a station that shows nothing reads as a
+// station nothing happened at.
+// ---------------------------------------------------------------------------
+describe("the compact station names its state (card 330, round 2)", () => {
+  it("a recorded screenshot is said, not drawn", () => {
+    const m = glance({
+      url: "https://www.test.de/",
+      shot: { blobPath: "images/9f2c1a.png", sha256: "9f2c1a" },
+    });
+    expect(pageState(m)).toBe("shot");
+    expect(m).not.toContain("<img");
+    expect(m).toContain("a screenshot was recorded");
+  });
+
+  it("a recorded reading is said, not printed", () => {
+    const m = glance({
+      url: "https://www.test.de/",
+      shot: null,
+      reading: READING,
+      readingChars: READING.length,
+    });
+    expect(pageState(m)).toBe("reading");
+    expect(m).not.toContain("Prototype");
+    expect(m).toContain("a page reading was recorded");
+  });
+
+  it("every one of the four states has a sentence of its own", () => {
+    // No two of them may read alike, and none of them may come back as its own
+    // i18n key — which is what a missing entry renders as.
+    const said = [
+      glance({ url: "u", shot: { blobPath: "images/a.png", sha256: "a" } }),
+      glance({ url: "u", sha256: "deadbeef", shot: null }),
+      glance({ url: "u", shot: null, reading: READING }),
+      glance({ url: "u", shot: null, reading: null }),
+    ].map((m) => /class="pf-browser__glance">([^<]*)</.exec(m)?.[1] ?? "");
+    expect(new Set(said).size).toBe(4);
+    for (const line of said) expect(line.startsWith("map.browser")).toBe(false);
+  });
+
+  it("and the address and the verb are on it either way", () => {
+    const m = glance({
+      url: "https://www.test.de/",
+      tool: "browser_navigate",
+      ok: false,
+      shot: null,
+      reading: null,
+    });
+    expect(m).toContain("https://www.test.de/");
+    expect(m).toContain("browser_navigate");
+    expect(m).toContain('data-ok="false"');
   });
 });
 
@@ -421,10 +522,11 @@ describe("a refused local prototype (card 330, criterion 7)", () => {
 // 8. The sidecar is read through the ENDPOINT, and the shape trap is closed.
 //
 // The raw file nests the picture as browser_result.image.{...}; the index
-// endpoint FLATTENS it to top level (openEntry, BrowserWireController.java:232,
-// keys :244-251), which is what readBrowserAction expects. Fed the nested
-// shape, today's reader returns a perfectly valid step that claims no
-// screenshot — silently.
+// endpoint FLATTENS it to top level (BrowserWireController's `openEntry`),
+// which is what readBrowserAction expects. Only the flat shape has a shipped
+// producer — every caller in this app reads the endpoint — so the nested case
+// below guards the road a raw-sidecar reader would take, not one anything
+// travels today.
 // ---------------------------------------------------------------------------
 describe("the reader does not silently lose a screenshot (card 330, criterion 8)", () => {
   it("the nested sidecar shape does not produce a screenshot-less step", () => {
@@ -446,9 +548,12 @@ describe("the reader does not silently lose a screenshot (card 330, criterion 8)
       },
     };
     const step = readBrowserAction(nested);
-    // Either it reads the nested shape, or it refuses the row. What it may not
-    // do is hand back a step that says "no picture was taken".
-    expect(step === null || hasScreenshot(step)).toBe(true);
+    // It may not hand back a step that says "no picture was taken". Refusing
+    // the row would be honest too, but it does not refuse it — so this asks
+    // for what actually happens rather than leaving an `|| null` arm that a
+    // reader returning null for everything would also satisfy.
+    expect(step).not.toBeNull();
+    expect(hasScreenshot(step!)).toBe(true);
   });
 
   // GREEN TODAY, and genuinely so: this is the shipped reader's real behaviour.
@@ -495,5 +600,282 @@ describe("the screenshot URL is the basename rule (card 330, criterion 10)", () 
       shot: { blobPath: "../../etc/passwd.png", sha256: "deadbeef" },
     });
     expect(loadedUrls(m)).toContain("/api/images/passwd.png");
+  });
+});
+
+// ===========================================================================
+// ROUND 2 — what came back from the review.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// R2.1  The reading is joined on a REAL call id.
+//
+// `browser_action.callId` is documented optional ("absent where no turn
+// produced one"), and the fold stored `e.callId ?? ""`. The next `tool_result`
+// carrying an empty id was then adopted as that page's recorded reading — an
+// unrelated tool's output printed as the page's recording.
+// ---------------------------------------------------------------------------
+describe("the reading belongs to the call that recorded the page (card 330, round 2)", () => {
+  const noCallId = (ts = T): RunEvent =>
+    ({
+      type: "browser_action",
+      agentId: "main",
+      cid: "cc2f8e8e-92a1-4595-a39f-670f2e0a71b3",
+      epoch: 1,
+      tool: "browser_navigate",
+      ok: false,
+      resultBytes: 0,
+      durationMs: 28,
+      ts,
+    }) as RunEvent;
+  const emptyIdResult = (output: string, ts = T + 1): RunEvent =>
+    ({
+      type: "tool_result",
+      agentId: "main",
+      callId: "",
+      output,
+      isError: false,
+      durationMs: 3,
+      ts,
+    }) as RunEvent;
+
+  it("a browser call with no id does not adopt an unrelated tool's output", () => {
+    const page = nodeData([runStart(), noCallId(), emptyIdResult("I AM NOT A BROWSER ANSWER")])?.page;
+    expect((page as { reading?: unknown } | undefined)?.reading ?? null).toBeNull();
+  });
+
+  it("a browser call WITH an id still gets its own reading", () => {
+    // The other direction: the guard may not cut the join it exists to protect.
+    const page = nodeData([
+      runStart(),
+      browserAction({ url: "https://www.test.de/", ok: true, tool: "browser_read_page" }),
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "toolu_013Sdr8vpiqu5sWsu1SwwucK",
+        output: READING,
+        isError: false,
+        durationMs: 3,
+        ts: T + 1,
+      } as RunEvent,
+    ])?.page;
+    expect((page as { reading?: string } | undefined)?.reading).toBe(READING);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.2  A hash with no announced path IS the shot-missing state.
+//
+// The record's own doc says "A hash with no path is not a picture this card
+// can show, and it says so rather than guessing a file name". Half of that was
+// true — it guesses no name — but `pageState` branched on `page.shot` alone,
+// so `sha256` was folded and never read and the card fell through to the
+// reading, or to "neither a picture nor a reading was recorded".
+// ---------------------------------------------------------------------------
+describe("a recorded picture the card cannot load says so (card 330, round 2)", () => {
+  it("a hash with no announced path reads as a missing screenshot", () => {
+    const m = card({ url: "https://www.test.de/", sha256: "deadbeef", shot: null, reading: READING });
+    expect(pageState(m)).toBe("shot-missing");
+  });
+
+  it("it still invents no file name for it", () => {
+    const m = card({ url: "https://www.test.de/", sha256: "deadbeef", shot: null, reading: READING });
+    expect(loadedUrls(m).filter((u) => u.includes("deadbeef"))).toHaveLength(0);
+  });
+
+  it("a call that took no picture at all is still the reading, not a missing one", () => {
+    // The other direction, and it is the common case: no sha256 means no
+    // picture was ever taken, which is not the same fact.
+    expect(pageState(card({ url: "https://www.test.de/", shot: null, reading: READING }))).toBe("reading");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.3  A dead blob does not poison the next live one.
+//
+// The component latched `broken` in `useState` and never reset it. The node id
+// is stable, so React keeps the instance for the whole session: after ONE
+// failed load every later page with a perfectly good blob rendered
+// `shot-missing` and the sentence "its file is no longer in the store" — a
+// false statement about a picture the card could load. The card's own fixture
+// note says a mixed run is the expected case (5 of 6 blobs exist, 1 does not).
+// ---------------------------------------------------------------------------
+describe("one dead blob is not every blob (card 330, round 2)", () => {
+  const good = { blobPath: "images/aaaa.png", sha256: "aaaa" };
+  const dead = { blobPath: "images/bbbb.png", sha256: "bbbb" };
+
+  it("the blob that failed reads as missing", () => {
+    expect(browserPageState({ shot: dead }, dead.blobPath)).toBe("shot-missing");
+  });
+
+  it("a DIFFERENT blob after it still reads as a picture", () => {
+    expect(browserPageState({ shot: good }, dead.blobPath)).toBe("shot");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.4  The reading is cut at 2 000 characters and the card says so.
+//
+// `browser_read_page` hands back a whole accessibility tree and
+// `get_page_text` a whole page — the fold's own doc says so. The text stopped
+// mid-token and read as the whole recording, with no remainder chip, no title
+// and no ellipsis; the record carried no character count, so the card could
+// not have said it. Its sibling on the same commit does this correctly.
+// ---------------------------------------------------------------------------
+describe("a cut reading says it was cut (card 330, round 2)", () => {
+  it("an 81 000-character page names the remainder it is not showing", () => {
+    const page = nodeData([
+      runStart(),
+      browserAction({ url: "https://www.test.de/", ok: true, tool: "browser_read_page" }),
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "toolu_013Sdr8vpiqu5sWsu1SwwucK",
+        output: "x".repeat(81000),
+        isError: false,
+        durationMs: 3,
+        ts: T + 1,
+      } as RunEvent,
+    ])?.page;
+    const m = card(page);
+    expect(pageState(m)).toBe("reading");
+    expect(m).toContain("79000");
+    expect(m.length).toBeLessThan(32768);
+  });
+
+  it("a reading that fits carries no remainder at all", () => {
+    // The other direction: without this, "always claim a remainder" passes.
+    expect(
+      card({ url: "https://www.test.de/", shot: null, reading: READING, readingChars: READING.length }),
+    ).not.toContain("chars");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.5  A refused call does not render as a successful one.
+//
+// 3 of the 4 real `browser_action` events on this machine are `ok: false`.
+// `ok` was folded and never read, so a refusal read as a success and the only
+// thing that gave it away was whatever prose the tool happened to answer.
+// ---------------------------------------------------------------------------
+describe("a failed browser call is marked as one (card 330, round 2)", () => {
+  it("a refused call carries the failure on the card", () => {
+    const m = card({
+      url: "http://localhost:8080/",
+      ok: false,
+      tool: "browser_navigate",
+      shot: null,
+      reading: REFUSAL,
+    });
+    expect(m).toContain('data-ok="false"');
+  });
+
+  it("a call that worked does not", () => {
+    const m = card({
+      url: "https://www.test.de/",
+      ok: true,
+      tool: "browser_read_page",
+      shot: null,
+      reading: READING,
+    });
+    expect(m).toContain('data-ok="true"');
+    expect(m).not.toContain('data-ok="false"');
+  });
+
+  it("and the card names which browser verb it recorded", () => {
+    expect(
+      card({
+        url: "https://www.test.de/",
+        ok: true,
+        tool: "browser_read_page",
+        shot: null,
+        reading: READING,
+      }),
+    ).toContain("browser_read_page");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.6  The run scope clears the recorded page too.
+//
+// Removing `d.page = null` from the run-scope clear left all 5 784 tests
+// green, while the comment above it claims a new root run empties "the page it
+// opened".
+// ---------------------------------------------------------------------------
+describe("a new root run starts with no page (card 330, round 2)", () => {
+  it("run two does not inherit run one's recorded page", () => {
+    const events = [
+      runStart(),
+      browserAction({ url: "https://www.test.de/", ok: true }),
+      {
+        type: "run_start",
+        runId: "r2",
+        agentId: "main",
+        prompt: "again",
+        provider: "anthropic",
+        ts: T + 50,
+      } as RunEvent,
+    ];
+    expect(nodeData(events)?.page ?? null).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.7  The station says WHO is on it, and a worker rails to it itself.
+//
+// `browserBusy` was the whole condition on `e-agent-osbrowser` — the MAIN
+// agent's rail — and it includes every subagent, so a worker driving the
+// browser lit main's leg and got none of its own. Card 287 fixed exactly this
+// for the other stations; card 295 is why every child has structural rails.
+// The browser was also the only OS station that never named its occupant.
+// ---------------------------------------------------------------------------
+describe("the browser station names its occupant and rails like the others (card 330, round 2)", () => {
+  const spawn = (id: string, ts: number): RunEvent[] => [
+    { type: "agent_spawn", agentId: id, parentId: "main", task: "drive the page", ts } as RunEvent,
+    { type: "run_start", runId: `${id}-run`, agentId: id, prompt: "drive", ts: ts + 1 } as RunEvent,
+  ];
+  const workerDrives = [
+    runStart(),
+    ...spawn("worker-1", T + 10),
+    {
+      type: "tool_call",
+      agentId: "worker-1",
+      callId: "c-w",
+      name: "browser_navigate",
+      input: { url: "https://www.test.de/" },
+      ts: T + 20,
+    } as RunEvent,
+  ];
+  const edge = (events: RunEvent[], id: string) =>
+    flowOf(events).edges.find((e) => e.id === id)?.data as { active?: boolean } | undefined;
+
+  it("a worker on the browser does not light MAIN's leg to it", () => {
+    expect(edge(workerDrives, "e-agent-osbrowser")?.active).toBe(false);
+  });
+
+  it("the worker has a browser rail of its own", () => {
+    expect(edge(workerDrives, "e-sub-worker-1-osbrowser")?.active).toBe(true);
+  });
+
+  it("the station names the worker that is on it", () => {
+    // Without a directory the roster's own fallback tag is w1 (stationUsers).
+    expect(nodeData(workerDrives)?.byTag).toBe("w1");
+    expect(nodeData(workerDrives)?.by).toEqual([{ tag: "w1", name: "drive the page", agentId: "worker-1" }]);
+  });
+
+  it("MAIN on the browser still lights main's leg", () => {
+    // The other direction: the fix may not cut the rail it is narrowing.
+    const mainDrives = [
+      runStart(),
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "c-m",
+        name: "browser_navigate",
+        input: { url: "https://www.test.de/" },
+        ts: T + 20,
+      } as RunEvent,
+    ];
+    expect(edge(mainDrives, "e-agent-osbrowser")?.active).toBe(true);
   });
 });

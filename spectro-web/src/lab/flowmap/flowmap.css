@@ -1197,22 +1197,48 @@
   border-top: 1px solid var(--border);
   text-align: left;
 }
+/* EVERY state on this card rides the LINE and keeps its words on the most
+ * legible token this map ships. The brand's own non-negotiable is colour on
+ * lines only, and the measurement says the same thing twice over. Contrast
+ * against the card surface, computed in a browser across all four designs —
+ * `getComputedStyle` on the rendered element, WCAG 2.x ratio, 2026-08-30:
+ *
+ *   --error  10px    2.77 graphite · 3.66 spectroscope · 3.81 paper · 4.82 still
+ *   --warn   10.5px  3.14 paper · 3.22 still · 4.58 graphite · 6.03 spectroscope
+ *   --text-faint 9.5px  2.06 spectroscope · 2.12 paper · 2.31 still · 3.73 graphite
+ *   --text-dim  10px    3.52 still · 4.54 paper · 5.62 spectroscope · 6.78 graphite
+ *
+ * `--text-dim` is the BEST of them and is still under 4.5:1 in `still` — that
+ * floor is card 325's, and it is recorded here rather than repainted. What is
+ * fixed here is what this branch itself authored: a `--warn` state label at
+ * 3.14 and two 9.5px chips at 2.06, both of them worse than the token the
+ * comment below already argued for. */
 .pf-mcpa--waiting {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  color: var(--warn);
+  color: var(--text-dim);
+  border-top-color: var(--warn);
 }
 .pf-mcpa--empty {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  color: var(--text-faint);
+  color: var(--text-dim);
 }
-/* The error mark rides the LINE, never the words. Two reasons and both are
- * rules: the brand's own non-negotiable is colour on lines only, and measured
- * on this card `--error` as 10px text lands at 2.77:1 (graphite), 3.66
- * (spectroscope), 3.81 (paper) and 4.82 (still) against the card surface —
- * three of the four under the 4.5:1 floor for small text. The words stay on
- * `--text-dim`, which is the token that is legible in all four. */
+/* CARD 328, round 2: the LOCAL gate's two readings. They are not the server's
+ * doing and are never drawn as an answer — a refused call carried this
+ * machine's own "ERROR: the user denied the execution." onto the card as the
+ * server's words, at 200 ms, with the error mark. The line says a gate is
+ * involved; the words say which way it went. */
+.pf-mcpa--gate {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  border-top-color: var(--warn);
+}
+.pf-mcpa--refused {
+  border-top-width: 2px;
+}
+/* The error mark rides the LINE, never the words — see the ratios above. */
 .pf-mcpa--err {
   border-top-color: var(--error);
   border-top-width: 2px;
@@ -1239,7 +1265,7 @@
 .pf-mcpa__cut {
   margin-top: 4px;
   font-size: 9.5px;
-  color: var(--text-faint);
+  color: var(--text-dim);
 }
 
 /* ---- CARD 329: the Net card says what LEFT this machine ------------------
@@ -1281,20 +1307,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pf-net__hits {
-  margin-left: auto;
-  color: var(--text-faint);
-  font-size: 9.5px;
-}
 .pf-net__more {
   font-size: 9.5px;
-  color: var(--text-faint);
+  color: var(--text-dim);
   padding-left: 8px;
 }
 /* The empty state is the COMMON one — 36 of 783 sessions reached anything at
- * all — so it is the card's load-bearing sentence and does not sit on
- * --text-faint, which measures 2.06:1 (spectroscope), 2.12 (paper) and 3.73
- * (graphite) against the card. --text-dim is the token that reads in all four. */
+ * all — so it is the card's load-bearing sentence. It sits on --text-dim, the
+ * most legible token this map ships; the measured ratios for all four designs
+ * are in the card-328 block above, including the one that is still short. */
+.pf-net__none {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  line-height: 1.4;
+}
 /* ---- CARD 330: the browser station, which REPLAYS and never browses --------
  * The card can show three things and says which: the picture the run stored,
  * the reading it recorded, or the honest sentence that neither happened. Every
@@ -1303,6 +1331,37 @@
 .pf-browser {
   margin-top: 8px;
   text-align: left;
+}
+/* WHICH verb was recorded, and whether it worked. 3 of the 4 real
+ * browser_action events on this machine are `ok: false`; without this row a
+ * refusal and a success rendered identically and the only thing that gave a
+ * refusal away was whatever prose the tool happened to answer. ONE line, so
+ * the seat under the card does not move with it. */
+.pf-browser__verb {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.pf-browser__tool {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The failure rides the LINE and is also said in a word — a mark nobody can
+ * name is a colour, not a fact. */
+.pf-browser__verb--failed {
+  border-left: 2px solid var(--error);
+  padding-left: 6px;
+}
+.pf-browser__failed {
+  margin-left: auto;
+  white-space: nowrap;
 }
 .pf-browser__url {
   font-family: var(--font-mono);
@@ -1328,10 +1387,22 @@
   border: 1px solid var(--border-strong);
   border-radius: 4px;
 }
+/* The COMPACT glance: which of the four states, in a word. The station's own
+ * frame is why — see BrowserBody. */
+.pf-browser__glance {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
 /* Expanded, the station is 300 wide and is meant to be read rather than
- * glanced at, so the page gets twice the room. */
+ * glanced at, so the page gets the room. 180 and not 200, and the 20 are the
+ * verb row above it: at 200 the shot case measured 287.72 against a seat of
+ * 280 (Chrome, dPR 2, both fonts loaded, a real 1200x6000 PNG through the
+ * image endpoint), and a card that outgrows its seat draws over its
+ * neighbours. The seat did not move; the picture gave up the row's height. */
 .pf-os--wide .pf-browser__shot {
-  max-height: 200px;
+  max-height: 180px;
 }
 .pf-os--wide .pf-browser__read {
   max-height: 160px;
@@ -1352,12 +1423,13 @@
   max-height: 96px;
   overflow: auto;
 }
-.pf-net__none {
-  font-family: var(--font-mono);
-  font-size: 10px;
+/* Same device as the MCP answer beside it, and for the same reason: a reading
+ * cut at 2 000 characters used to stop mid-token and read as the whole
+ * recording. The title names where the uncut text lives. */
+.pf-browser__cut {
+  margin-top: 4px;
+  font-size: 9.5px;
   color: var(--text-dim);
-  margin-top: 8px;
-  line-height: 1.4;
 }
 
 /* ---- Subagent node ------------------------------------------------------ */

@@ -17,6 +17,7 @@ import type { Focus, GateState, SubagentInfo } from "../labScene";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { recordedUrlState, redactionRule } from "./addresses";
 import { screenshotUrl } from "../../wire/browserWire";
+import { formatDuration } from "../../format";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 
@@ -560,6 +561,8 @@ export interface BrowserPageView {
   url?: unknown;
   tool?: string;
   ok?: boolean;
+  /** The screenshot blob's HASH, present whenever a picture was taken. */
+  sha256?: string;
   /** The blob the card can load, when the run recorded a path for it. */
   shot?: { blobPath: string; sha256: string } | null;
   /** The component's own latch: the blob was named and the store no longer has
@@ -568,6 +571,43 @@ export interface BrowserPageView {
   /** What the tool answered: the accessibility tree, the page text, or the
    *  refusal and the rule that fired. */
   reading?: string | null;
+  /** How long that answer really was, so a cut one can say so. */
+  readingChars?: number;
+}
+
+/** Which of the four things the browser card is showing. */
+export type BrowserCardState = "shot" | "shot-missing" | "reading" | "nothing";
+
+/**
+ * What the browser card is showing, given what failed to load.
+ *
+ * Pure, and exported, for two reasons the component cannot serve on its own.
+ *
+ * A HASH WITH NO PATH is its own state. `browser_action.sha256` says a picture
+ * was taken; only an `image_generated` on the same wire says WHERE it lives.
+ * Branching on the path alone let a call that took a picture fall through to
+ * its reading — or to "neither a picture nor a reading was recorded" — while
+ * the record's own doc claimed it said so. It invents no file name either way;
+ * that half was always true.
+ *
+ * A DEAD BLOB IS ONE BLOB. The failed load used to latch a bare boolean that
+ * nothing ever reset, and the node id is stable, so React keeps the instance
+ * for the session: after one miss every later page with a perfectly good blob
+ * rendered "its file is no longer in the store" — a false statement about a
+ * picture the card could load. The latch holds the PATH that failed instead,
+ * so it can only speak about that one.
+ *
+ * @param page what the map handed the card
+ * @param brokenShot the blob path whose load failed in this browser, or null
+ * @return the state the card renders, and marks with `data-page-state`
+ */
+export function browserPageState(page: BrowserPageView, brokenShot: string | null): BrowserCardState {
+  const shot = page.shot ?? null;
+  if (shot !== null)
+    return shot.blobPath === brokenShot || page.shotBroken === true ? "shot-missing" : "shot";
+  if (page.sha256 !== undefined && page.sha256 !== "") return "shot-missing";
+  const reading = page.reading ?? null;
+  return reading !== null && reading !== "" ? "reading" : "nothing";
 }
 
 /**
@@ -583,28 +623,46 @@ export interface BrowserPageView {
  */
 function BrowserBody({ page }: { page?: BrowserPageView | null }) {
   const lang = useLang();
-  // Seeded from the data so the state is drivable, latched by the failed load
-  // in a browser: of six image_generated events on this machine five blobs
-  // exist and one does not, so a named blob that is gone is a live case on a
-  // shipped surface and not a corner.
-  const [broken, setBroken] = useState(page?.shotBroken === true);
+  // COMPACT is a glance, and the band it stands in is what says so: the `z-os`
+  // frame leaves 156px between a station's seat and its floor, and this card
+  // rendering a page at all measured 202.44 there (Chrome, dPR 2, both fonts
+  // loaded, real markup — see COMPACT_BROWSER_H in sceneToFlow). A card that
+  // does not fit its frame draws THROUGH it, and the only ways to fit a page
+  // into 156px are to cut the reading silently or to shrink the picture to a
+  // strip. So compact names the state and expanded shows the artefact — which
+  // is what the two neighbouring stations already do: the MCP client keeps its
+  // call behind a closed disclosure and the shell clips its command.
+  const expandAll = useContext(ExpandAllContext);
+  // The PATH that failed to load, not a bare "something failed": of six
+  // image_generated events on this machine five blobs exist and one does not,
+  // so a run that mixes the two is the expected case and a boolean latch would
+  // have called every later picture missing.
+  const [brokenShot, setBrokenShot] = useState<string | null>(null);
   if (page === undefined || page === null) {
     return <div className="pf-os__line">{t(lang, "map.browser.none")}</div>;
   }
   const urlState = recordedUrlState(page.url);
-  const shotSrc = page.shot == null || broken ? null : screenshotUrl(page.shot);
+  const pageState = browserPageState(page, brokenShot);
+  const shotSrc = pageState === "shot" && page.shot != null ? screenshotUrl(page.shot) : null;
   const reading = page.reading ?? null;
-  const pageState =
-    shotSrc !== null
-      ? "shot"
-      : page.shot != null
-        ? "shot-missing"
-        : reading !== null && reading !== ""
-          ? "reading"
-          : "nothing";
+  const cut = (page.readingChars ?? 0) - (reading?.length ?? 0);
   const rule = urlState === "redacted" ? redactionRule(page.url) : "";
+  const failed = page.ok === false;
   return (
     <div className="pf-browser" data-url-state={urlState} data-page-state={pageState}>
+      {page.tool !== undefined && (
+        // WHICH verb, and whether it worked. 3 of the 4 real browser_action
+        // events on this machine are `ok: false`, and with this row absent a
+        // refusal and a success rendered alike — the only thing that gave a
+        // refusal away was whatever prose the tool happened to answer.
+        <div
+          className={`pf-browser__verb${failed ? " pf-browser__verb--failed" : ""}`}
+          data-ok={String(!failed)}
+        >
+          <span className="pf-browser__tool">{page.tool}</span>
+          {failed && <span className="pf-browser__failed">{t(lang, "map.browser.failed")}</span>}
+        </div>
+      )}
       <div className="pf-browser__url" title={urlState === "address" ? String(page.url) : undefined}>
         {urlState === "address"
           ? String(page.url)
@@ -612,19 +670,42 @@ function BrowserBody({ page }: { page?: BrowserPageView | null }) {
             ? `${t(lang, "map.net.redacted")}${rule === "" ? "" : ` · ${rule}`}`
             : t(lang, "map.browser.noPage")}
       </div>
-      {pageState === "shot" && shotSrc !== null && (
+      {!expandAll && (
+        // One line, and it is a STATE and not a summary of the artefact: the
+        // glance says which of the four things happened, the expanded card
+        // shows it.
+        <div className="pf-browser__glance">{t(lang, `map.browser.at.${pageState}`)}</div>
+      )}
+      {expandAll && pageState === "shot" && shotSrc !== null && (
         <img
           className="pf-browser__shot"
           src={shotSrc}
           alt={t(lang, "map.browser.shotAlt")}
-          onError={() => setBroken(true)}
+          onError={() => setBrokenShot(page.shot?.blobPath ?? null)}
         />
       )}
-      {pageState === "shot-missing" && (
+      {expandAll && pageState === "shot-missing" && (
         <div className="pf-browser__gone">{t(lang, "map.browser.shotGone")}</div>
       )}
-      {pageState === "reading" && <div className="pf-browser__read pf-mono nowheel">{reading}</div>}
-      {pageState === "nothing" && <div className="pf-browser__gone">{t(lang, "map.browser.nothing")}</div>}
+      {expandAll && pageState === "reading" && (
+        <>
+          <div className="pf-browser__read pf-mono nowheel">{reading}</div>
+          {cut > 0 && (
+            // The cut is said, never hidden — the same device the MCP answer
+            // beside it uses. Without it a page cut mid-token read as the whole
+            // recording, and the record carried no length to say otherwise.
+            <div
+              className="pf-browser__cut"
+              title={t(lang, "map.browser.cut", { shown: reading?.length ?? 0, all: page.readingChars ?? 0 })}
+            >
+              {t(lang, "map.mcp.more", { n: cut })}
+            </div>
+          )}
+        </>
+      )}
+      {expandAll && pageState === "nothing" && (
+        <div className="pf-browser__gone">{t(lang, "map.browser.nothing")}</div>
+      )}
     </div>
   );
 }
@@ -790,8 +871,37 @@ export function LlmNode({ data }: NodeProps) {
  * read: a `mcp__` result that failed carries at most 911 bytes (measured over
  * 191 of them) and saying WHAT the server refused is the whole value.
  */
+/**
+ * How long the server took, as a reading.
+ *
+ * `formatDuration` is the app's own and is used in ten places, but its
+ * contract stops at a tenth of a second — "412 -> 0.4 s" — and this card's
+ * MEASURED median is 23 ms, which it renders as "0.0 s": a zero printed for
+ * something that took time. So milliseconds stand where milliseconds are the
+ * truth, and the shared formatter takes over the moment there is a second to
+ * round. It replaces a raw `3598164 ms` at the top end, which is the measured
+ * max and was unreadable.
+ *
+ * @param ms the answer's own durationMs, off the wire
+ * @return the reading
+ */
+function answerTook(ms: number): string {
+  return ms < 1000 ? `${ms} ms` : formatDuration(ms);
+}
+
 function McpAnswerBody({ a }: { a: McpAnswerView }) {
   const lang = useLang();
+  // The two GATE readings come first, and they are about this machine rather
+  // than the server. Both used to render as something the server was doing: a
+  // pending gate as "waiting for the answer …", and a refusal as an error
+  // answer carrying "ERROR: the user denied the execution." — which is the
+  // harness's own sentence, at 200 ms, for a packet that never left.
+  if (a.state === "gated") {
+    return <div className="pf-mcpa pf-mcpa--gate">{t(lang, "map.mcp.gated")}</div>;
+  }
+  if (a.state === "denied") {
+    return <div className="pf-mcpa pf-mcpa--gate pf-mcpa--refused">{t(lang, "map.mcp.denied")}</div>;
+  }
   if (a.state === "waiting") {
     // A call can stay here for an hour — measured max 3 598 164 ms over 503
     // pairs, and 3 of 783 sessions never answer at all. Nothing decays it.
@@ -802,7 +912,7 @@ function McpAnswerBody({ a }: { a: McpAnswerView }) {
   return (
     <div className={`pf-mcpa${a.isError ? " pf-mcpa--err" : ""}`}>
       <div className="pf-mcpa__meta">
-        {t(lang, a.isError ? "map.mcp.errored" : "map.mcp.answered")} · {a.durationMs} ms
+        {t(lang, a.isError ? "map.mcp.errored" : "map.mcp.answered")} · {answerTook(a.durationMs)}
       </div>
       <div className="pf-mcpa__body pf-mono nowheel">{a.text}</div>
       {cut > 0 && (
@@ -854,9 +964,13 @@ export function ExtNode({ data }: NodeProps) {
               // exchanges on this machine went to a tailnet address that is
               // neither loopback nor the public internet, and which shape ships
               // is an owner call — so the card prints what it has.
-              <div key={h.host} className="pf-net__row" data-host={h.host} title={h.host}>
-                <span className="pf-net__host">{h.host}</span>
-                {h.hits > 1 && <span className="pf-net__hits">{t(lang, "map.net.hits", { n: h.hits })}</span>}
+              //
+              // And nothing beside it. This row carried a per-host `{n}x`, and
+              // the number was not a count of hops: every browser tool call
+              // records the page the browser ENDED on, so five read-only verbs
+              // on one open page counted five.
+              <div key={h} className="pf-net__row" data-host={h} title={h}>
+                <span className="pf-net__host">{h}</span>
               </div>
             ))}
             {net.more > 0 && (

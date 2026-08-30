@@ -197,6 +197,9 @@ export function fleetToFlow(
   const atCmd = cards.find((c) => c.focus === "cmd");
   const mcpUser = cards.find((c) => c.activeMcp !== null);
   const mcpInUse = mcpUser !== undefined;
+  /** CARD 330: the card inside a browser verb, if any. Named rather than
+   *  counted, so the rail below can be drawn for it like the other three. */
+  const onBrowser = cards.find((c) => c.activeTool !== null && c.activeTool.startsWith("browser_"));
   // CARD 328: the fleet room draws the SAME two cards as the single-run map, so
   // it takes the same derivation rather than a second one beside it. Without
   // this line the answer would be visible on one surface and missing on the
@@ -229,7 +232,9 @@ export function fleetToFlow(
     {
       id: "os-net",
       x: MAC_PAD + 654,
-      data: { kind: "net", active: mcpInUse || netView.crossed },
+      // NOW, not ever — same repair as the single-run map. `crossed` is the
+      // run's memory and never goes back down; it stays on the Netz card.
+      data: { kind: "net", active: mcpInUse || detail.crossingNow },
     },
     // CARD 330: the fleet room's OS band draws the same stations as the
     // single-run map's, so the browser station is here too — one producer left
@@ -240,7 +245,7 @@ export function fleetToFlow(
       x: MAC_PAD + 784,
       data: {
         kind: "browser",
-        active: cards.some((c) => c.activeTool !== null && c.activeTool.startsWith("browser_")),
+        active: onBrowser !== undefined,
         page: detail.page,
       },
     },
@@ -279,7 +284,7 @@ export function fleetToFlow(
     id: "netz",
     type: "ext",
     position: { x: outsideX + 40, y: macH - 240 },
-    data: { kind: "netz", active: mcpInUse || netView.crossed, net: netView },
+    data: { kind: "netz", active: mcpInUse || detail.crossingNow, net: netView },
     zIndex: 10,
   });
   nodes.push({
@@ -333,6 +338,12 @@ export function fleetToFlow(
     if (card.focus === "disk") E(`e-${id}-osdisk`, id, "os-disk", "bs", "tt", true, { err: card.isError });
     if (card.focus === "cmd") E(`e-${id}-osshell`, id, "os-shell", "bs", "tt", true, { err: card.isError });
     if (card.focus === "mcp") E(`e-${id}-osmcp`, id, "os-mcp", "bs", "tt", true, { err: card.isError });
+    // CARD 330, round 2: the browser station had a card and no rail on this
+    // surface, so its work was drawn beside the map instead of on it. Same
+    // condition as the station's own occupancy — the tool in flight, because a
+    // browser verb has no focus of its own.
+    if (card.activeTool !== null && card.activeTool.startsWith("browser_"))
+      E(`e-${id}-osbrowser`, id, "os-browser", "bs", "tt", true, { err: card.isError });
   }
   E("e-osmcp-osnet", "os-mcp", "os-net", "rs", "lt", mcpInUse, { err: mcpErr });
   E("e-osnet-netz", "os-net", "netz", "rs", "lt", mcpInUse, { net: true, err: mcpErr });

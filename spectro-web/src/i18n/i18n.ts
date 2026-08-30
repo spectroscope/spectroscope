@@ -1477,13 +1477,21 @@ export const dict: Record<string, { de: string; en: string }> = {
   // tailnet address, which is neither loopback nor the public internet.
   "map.net.nothing": { de: "nichts hat diesen Rechner verlassen", en: "nothing left this machine" },
   "map.net.redacted": { de: "Adresse geschwärzt", en: "address redacted" },
-  "map.net.hits": { de: "{n}x", en: "{n}x" },
   // CARD 330 — the browser station. It replays what was RECORDED and never
   // reaches a page, so every sentence here is about the record, not the web.
   "map.node.browser": { de: "Browser", en: "Browser" },
   "map.browser.none": { de: "kein Browser gefahren", en: "no browser was driven" },
   "map.browser.noPage": { de: "keine Adresse aufgezeichnet", en: "no address recorded" },
   "map.browser.shotAlt": { de: "aufgezeichneter Screenshot", en: "the recorded screenshot" },
+  "map.browser.failed": { de: "fehlgeschlagen", en: "failed" },
+  "map.browser.at.shot": { de: "Screenshot aufgezeichnet", en: "a screenshot was recorded" },
+  "map.browser.at.shot-missing": { de: "Bild fehlt im Speicher", en: "the picture is not in the store" },
+  "map.browser.at.reading": { de: "Seiteninhalt aufgezeichnet", en: "a page reading was recorded" },
+  "map.browser.at.nothing": { de: "nichts aufgezeichnet", en: "nothing was recorded" },
+  "map.browser.cut": {
+    de: "die ersten {shown} von {all} Zeichen — die ganze Aufzeichnung steht auf der JSONL-Zeile",
+    en: "the first {shown} of {all} characters — the whole recording is on the JSONL row",
+  },
   "map.browser.shotGone": {
     de: "Screenshot aufgezeichnet, die Datei liegt nicht mehr im Speicher",
     en: "a screenshot was recorded; its file is no longer in the store",
@@ -1497,6 +1505,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   // one call in 783 sessions was still open after an hour, and not one of
   // 3 503 measured answers was empty.
   "map.mcp.waiting": { de: "wartet auf die Antwort …", en: "waiting for the answer …" },
+  "map.mcp.gated": {
+    de: "wartet auf die Freigabe — noch nichts gesendet",
+    en: "waiting for permission — nothing sent yet",
+  },
+  "map.mcp.denied": {
+    de: "Freigabe verweigert — der Aufruf hat diesen Rechner nie verlassen",
+    en: "permission refused — the call never left this machine",
+  },
   "map.mcp.empty": { de: "geantwortet, ohne Inhalt", en: "answered with nothing" },
   "map.mcp.answered": { de: "geantwortet", en: "answered" },
   // Not "error": an error IS an answer here, and a word that reads as a crash

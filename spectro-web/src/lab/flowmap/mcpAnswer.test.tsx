@@ -4,9 +4,10 @@
 //
 //   · The answer is ALREADY on the wire and is deliberately thrown away.
 //     `tool_result { agentId, callId, output, isError, durationMs, ts }`
-//     (events.ts:36-47) reaches `deriveDetail`, whose `tool_result` case sets
-//     `d.tool[agentId] = undefined` (sceneToFlow.ts:216-217). So no recording
-//     has to be added — a fold change makes it visible.
+//     reaches `deriveDetail`, whose `tool_result` case set
+//     `d.tool[agentId] = undefined` and dropped the rest. So no recording had
+//     to be added — a fold change made it visible.
+//       grep -n 'case "tool_result"' sceneToFlow.ts
 //
 //   · Every case here drives BEHAVIOUR: events in, `deriveDetail`/`sceneToFlow`
 //     in the middle, rendered markup out. Nothing greps a source file.
@@ -17,7 +18,9 @@
 //     the card shortened it:
 //       data-call="<callId>"   on the MCP-Client card and on the MCP-Server card
 //       data-answer="waiting" | "answered" | "empty" | "none"   on the server card
-//     `waiting` and `empty` are two different facts and must never render alike.
+//     `waiting` and `empty` are two different facts and must never render
+//     alike. Round two added two more for the same reason: `gated` and
+//     `denied` are about the LOCAL permission gate, not about the server.
 //
 //   · Fixtures are built from the SHAPES the survey measured, never copied from
 //     the store. The one real MCP pair on this machine is
@@ -35,6 +38,7 @@ import type { ReactElement } from "react";
 import type { RunEvent } from "../../events";
 import { advanceScene, initialScene } from "../labScene";
 import { deriveDetail, EXPANDED_CARD, sceneToFlow, type Detail } from "./sceneToFlow";
+import { formatDuration } from "../../format";
 
 vi.mock("@xyflow/react", () => ({
   Handle: () => null,
@@ -300,15 +304,19 @@ describe("waiting does not decay (card 328, criterion 5)", () => {
 // ---------------------------------------------------------------------------
 // 6. An error is its own mark, AND the mark is reachable.
 //
-// The second case carries the inherited defect in full. Today the red MCP chain
-// cannot fire for an ANSWERED error at all, by construction:
-//   advanceLoop's tool_result case spreads idleActivity()  (labScene.ts:256)
-//   idleActivity() sets activeMcp: null                    (labScene.ts:172)
-//   MCP occupancy IS activeMcp !== null                    (stationUsers.ts:47)
-//   so mcpUser is undefined and mcpErr = !!mcpUser?.loop.isError is false
-//                                                          (sceneToFlow.ts:1585)
-// The only reachable red chain is a DENIED permission_decision, and all three
-// MCP calls in the store were allowed — so it has never once fired.
+// The second case carries the inherited defect in full. The red MCP chain
+// could not fire for an ANSWERED error at all, by construction — every step
+// still greps out of the file it names:
+//   advanceLoop's tool_result case spreads idleActivity()
+//     grep -n 'case "tool_result"' -A1 ../labScene.ts
+//   idleActivity() sets activeMcp: null
+//     grep -n "function idleActivity" -A8 ../labScene.ts
+//   MCP occupancy IS activeMcp !== null
+//     grep -n 'station === "mcp"' stationUsers.ts
+//   so mcpUser was undefined and mcpErr = !!mcpUser?.loop.isError was false
+//     grep -n "const mcpErr" sceneToFlow.ts
+// The only reachable red chain was a DENIED permission_decision, and all three
+// MCP calls in the store were allowed — so it had never once fired.
 // ---------------------------------------------------------------------------
 describe("an error answer is marked, and the mark can be seen (card 328, criterion 6)", () => {
   const errored = [runStart("r1"), mcpCall(CALL_A, "gate"), mcpResult(CALL_A, ERROR_ANSWER, true)];
@@ -371,11 +379,13 @@ describe("a huge answer does not become a huge card (card 328, criterion 7)", ()
 // ---------------------------------------------------------------------------
 // 8. The seat is measured under a NEW key, and `ext` is not touched.
 //
-// `envelopeOf` is `n.env ?? EXPANDED_CARD[n.id] ?? EXPANDED_CARD[n.type]`
-// (sceneToFlow.ts:395) and BOTH `netz` and `mcpserver` are emitted as type
-// "ext" (sceneToFlow.ts:1338-1339), so growing `ext` grows the Net card by the
-// same amount. Card 328 takes the `mcpserver` key, card 329 takes `netz`, and
-// `ext` itself stays as it is — which is what makes the two a resolvable merge.
+// `envelopeOf` is `n.env ?? EXPANDED_CARD[n.id] ?? EXPANDED_CARD[n.type]` and
+// BOTH `netz` and `mcpserver` are emitted as type "ext", so growing `ext`
+// would have grown the Net card by the same amount. Card 328 takes the
+// `mcpserver` key, card 329 takes `netz`, and `ext` itself stays as it is —
+// which is what makes the two a resolvable merge.
+//   grep -n "function envelopeOf" -A4 sceneToFlow.ts
+//   grep -n 'N("netz"' sceneToFlow.ts
 // ---------------------------------------------------------------------------
 describe("the MCP-Server seat is its own (card 328, criterion 8/9)", () => {
   // The table is typed Record<string, {w,h}>, so a lookup is total and a
@@ -387,16 +397,194 @@ describe("the MCP-Server seat is its own (card 328, criterion 8/9)", () => {
     expect(seat("mcpserver")).toBeDefined();
   });
 
-  // GREEN TODAY: a regression guard, not coverage. `ext` sizes BOTH external
-  // cards, so growing it instead of adding a key would silently resize the Net
-  // card and turn a resolvable merge with card 329 into a collision.
+  // GREEN TODAY: a regression guard, not coverage — and its reason has moved.
+  // `ext` no longer sizes either external card's HEIGHT: both carry a key of
+  // their own id now, which wins over the type lookup. Its WIDTH is still live
+  // and load-bearing — `EXT_W` reads it, `EXT_ROW_W` and `MCPSERVER_X` derive
+  // from that — so touching this entry still moves card 319's layout.
   it("the shared ext envelope is left exactly as it was", () => {
     expect(seat("ext")).toEqual({ w: 150, h: 110 });
   });
 
   it("the MCP-Server width stays 150 — widths feed card 319's layout", () => {
-    // EXT_W = EXPANDED_CARD.ext.w (:754) -> EXT_ROW_W (:756) -> MCPSERVER_X
-    // (:769). Height-only growth under a new key touches none of them.
+    // EXT_W = EXPANDED_CARD.ext.w -> EXT_ROW_W -> MCPSERVER_X, which is card
+    // 319's arithmetic. Height-only growth under a new key touches none of it.
+    //   grep -n "EXT_W =\|EXT_ROW_W =\|MCPSERVER_X =" sceneToFlow.ts
     expect(seat("mcpserver")?.w).toBe(150);
+  });
+});
+
+// ===========================================================================
+// ROUND 2 — what came back from the review.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// R2.1  The LOCAL permission gate is not the EXTERNAL server.
+//
+// `deriveDetail` has no `permission_decision` case, so a gated call's fate is
+// invisible to the fold and the tool_result that follows a refusal lands in
+// `answers` like any other. This is not hypothetical: the SHIPPED `build_plan`
+// scenario carries `{ mcp: "notes__search_notes", gate: "deny" }` and
+// `scenario/compile.ts` synthesises `ERROR: the user denied the execution.`
+// for it — so the MCP-Server card prints this machine's own refusal as the
+// notes server's words, at 200 ms, with an error mark. Nothing left the
+// machine. `labScene.ts` says so itself in the `permission_decision` case:
+// "Denied: nothing ran, the packet stays at the gate."
+//
+// Four facts, four cases, bitten one at a time: refused, still-at-the-gate,
+// allowed-and-answered, and "a refusal is not the server erroring".
+// ---------------------------------------------------------------------------
+describe("a call the gate stopped never reached the server (card 328, round 2)", () => {
+  /** compile.ts:117 — the string the harness itself writes for a refusal. */
+  const DENIAL = "ERROR: the user denied the execution.";
+
+  const gateAsk = (callId: string, ts = T + 1): RunEvent =>
+    ({
+      type: "permission_request",
+      agentId: "main",
+      callId,
+      name: MCP_TOOL,
+      input: { query: "gate" },
+      ts,
+    }) as RunEvent;
+  const gateSays = (callId: string, allowed: boolean, ts = T + 2): RunEvent =>
+    ({ type: "permission_decision", callId, allowed, ts }) as RunEvent;
+
+  const refused = [
+    runStart("r1"),
+    mcpCall(CALL_A, "gate"),
+    gateAsk(CALL_A),
+    gateSays(CALL_A, false),
+    mcpResult(CALL_A, DENIAL, true, 200),
+  ];
+
+  it("a refused call does not read as an answer", () => {
+    expect(answerMark(serverMarkup(refused))).not.toBe("answered");
+  });
+
+  it("the card does not print this machine's refusal as the server's words", () => {
+    expect(serverMarkup(refused)).not.toContain("denied the execution");
+  });
+
+  it("a refused call does not read as waiting either — the wait is over", () => {
+    expect(answerMark(serverMarkup(refused))).not.toBe("waiting");
+  });
+
+  it("a refusal is not the server erroring", () => {
+    expect(serverMarkup(refused)).not.toContain('data-answer-error="true"');
+  });
+
+  it("a gate still PENDING does not say the server is thinking about it", () => {
+    // Nothing has been sent. "waiting for the answer …" names the wrong wait.
+    const pending = [runStart("r1"), mcpCall(CALL_A, "gate"), gateAsk(CALL_A)];
+    expect(answerMark(serverMarkup(pending))).not.toBe("waiting");
+  });
+
+  it("a gate that ALLOWED the call lets the answer through unchanged", () => {
+    // The other direction: without this, "never answer a gated call" passes
+    // every case above.
+    const allowed = [
+      runStart("r1"),
+      mcpCall(CALL_A, "gate"),
+      gateAsk(CALL_A),
+      gateSays(CALL_A, true),
+      mcpResult(CALL_A, MEDIAN_ANSWER),
+    ];
+    expect(answerMark(serverMarkup(allowed))).toBe("answered");
+    expect(serverMarkup(allowed)).toContain("note note");
+  });
+
+  it("an ungated MCP call still answers — the gate states may not swallow the common case", () => {
+    const plain = [runStart("r1"), mcpCall(CALL_A, "gate"), mcpResult(CALL_A, MEDIAN_ANSWER)];
+    expect(answerMark(serverMarkup(plain))).toBe("answered");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.2  The per-agent join is what the card CLAIMS, so it is pinned.
+//
+// `mcpChainView`'s doc says "The live occupant's own call wins where there is
+// one, so a station saying 'main is on it' cannot be showing a worker's call."
+// Deleting `lastAsk` entirely left all 5 784 tests green: the branch that does
+// the work had no case behind it.
+// ---------------------------------------------------------------------------
+describe("the station shows ITS occupant's call, not the run's last one (card 328, round 2)", () => {
+  const spawn = (id: string, ts: number): RunEvent[] => [
+    { type: "agent_spawn", agentId: id, parentId: "main", task: "look", ts } as RunEvent,
+    { type: "run_start", runId: `${id}-run`, agentId: id, prompt: "look", ts: ts + 1 } as RunEvent,
+  ];
+  // Both agents hold an open MCP call; the worker asked LAST, so `lastMcp`
+  // points at the worker's. Main is the station's first occupant.
+  const both = [
+    runStart("r1"),
+    ...spawn("worker-1", T + 10),
+    mcpCall(CALL_A, "main asks", T + 20),
+    {
+      type: "tool_call",
+      agentId: "worker-1",
+      callId: CALL_B,
+      name: MCP_TOOL,
+      input: { query: "worker asks" },
+      ts: T + 30,
+    } as RunEvent,
+  ];
+
+  it("with main and a worker both holding a call, the client card shows main's", () => {
+    expect(callMark(clientMarkup(both))).toBe(CALL_A);
+  });
+
+  it("and the server card answers the same one", () => {
+    expect(callMark(serverMarkup(both))).toBe(CALL_A);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.3  The leg INTO the MCP client carries the error too.
+//
+// `err: mcpErr && mcpUser?.agentId === "main"` — and `mcpUser` is undefined
+// exactly when the answer landed, because `tool_result` clears `activeMcp`.
+// So the chain went red from the client OUTWARD and stayed clean on the leg
+// into it: half a red chain, which reads as "the failure started at the net".
+// ---------------------------------------------------------------------------
+describe("the whole chain is red, including the leg into the client (card 328, round 2)", () => {
+  const legs = (events: RunEvent[]) => {
+    const { flow } = fold(events);
+    return (id: string) => (flow.edges.find((e) => e.id === id)?.data ?? {}) as { err?: boolean };
+  };
+
+  it("an answered error marks the agent's own leg to the MCP client", () => {
+    const errored = [runStart("r1"), mcpCall(CALL_A, "gate"), mcpResult(CALL_A, ERROR_ANSWER, true)];
+    expect(legs(errored)("e-agent-osmcp").err).toBe(true);
+  });
+
+  it("a clean answer leaves that leg clean", () => {
+    const ok = [runStart("r1"), mcpCall(CALL_A, "gate"), mcpResult(CALL_A, MEDIAN_ANSWER)];
+    expect(legs(ok)("e-agent-osmcp").err).toBeFalsy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2.4  The duration is a reading at BOTH ends of its measured range.
+//
+// 3 598 164 ms is the measured max and was printed raw. `formatDuration` ships
+// at src/format.ts and ten other places use it — but its contract stops at a
+// tenth of a second ("412 -> 0.4 s"), and the measured p50 of an MCP answer is
+// 23 ms, which it renders as "0.0 s". Both ends are bitten, because a fix for
+// one of them is exactly how the other breaks.
+// ---------------------------------------------------------------------------
+describe("the answer's duration reads as a duration (card 328, round 2)", () => {
+  const took = (ms: number) =>
+    serverMarkup([runStart("r1"), mcpCall(CALL_A, "gate"), mcpResult(CALL_A, MEDIAN_ANSWER, false, ms)]);
+
+  it("an hour-long call is not printed as a seven-digit millisecond count", () => {
+    expect(took(3598164)).not.toContain("3598164");
+    expect(took(3598164)).toContain(formatDuration(3598164));
+  });
+
+  it("and the median 23 ms call is not rounded away to zero", () => {
+    // Measured p50 over 503 pairs. "0.0 s" is a zero printed for something
+    // that took time — the exact figure-without-a-frame this view forbids.
+    expect(took(23)).not.toContain("0.0 s");
+    expect(took(23)).toContain("23 ms");
   });
 });

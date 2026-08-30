@@ -72,3 +72,93 @@ describe("both producers draw the same MCP exchange (card 328)", () => {
     expect(dataOf(single, "os-mcp")?.mcp).toBe("notes · search_notes");
   });
 });
+
+// ---------------------------------------------------------------------------
+// ROUND 2 — the same guard for the other two cards.
+//
+// This file's own stated reason is that a card wired into ONE producer ships
+// half a feature. Cards 329 and 330 changed `fleetToFlow` for exactly the same
+// reason and neither left a guard behind: `grep -n fleetToFlow
+// src/lab/flowmap/*.test.ts*` found this file and `fleetToFlow.test.ts`, and
+// the latter mentions neither `netz` nor `os-browser`.
+// ---------------------------------------------------------------------------
+describe("both producers draw the same boundary and browser cards (cards 329/330)", () => {
+  const reached: RunEvent[] = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: T } as RunEvent,
+    {
+      type: "llm_exchange",
+      xid: "x-1",
+      agentId: "main",
+      turn: 1,
+      kind: "chat",
+      provider: "anthropic",
+      model: "claude-opus-5",
+      transport: "sdk",
+      url: "https://api.anthropic.com/v1/messages",
+      requestBytes: 9089,
+      responseBytes: 2292,
+      responseLines: 24,
+      aborted: false,
+      fidelity: "sdk-json",
+      durationMs: 5030,
+      ts: T + 1,
+    } as RunEvent,
+    {
+      type: "browser_action",
+      agentId: "main",
+      callId: "toolu_013Sdr8vpiqu5sWsu1SwwucK",
+      cid: "cc2f8e8e",
+      epoch: 1,
+      tool: "browser_navigate",
+      url: "https://www.test.de/",
+      ok: true,
+      resultBytes: 237,
+      durationMs: 28,
+      ts: T + 2,
+    } as RunEvent,
+  ];
+  const detail = deriveDetail(reached);
+  const single = sceneToFlow(reached.reduce(advanceScene, initialScene()), detail, {
+    provider: "anthropic",
+    model: "claude-opus-5",
+  });
+  const fleet = fleetToFlow(
+    buildFleetLabScene({ roster, events: reached, frames: [], epochBySender: {} }),
+    detail,
+    {
+      lang: "en",
+    },
+  );
+
+  it("the Net card carries the same hosts on both surfaces", () => {
+    expect(dataOf(fleet, "netz")?.net).toEqual(dataOf(single, "netz")?.net);
+    expect((dataOf(single, "netz")?.net as { hosts: unknown[] }).hosts).toHaveLength(2);
+  });
+
+  it("the browser station carries the same recorded page on both surfaces", () => {
+    expect(dataOf(fleet, "os-browser")?.page).toEqual(dataOf(single, "os-browser")?.page);
+    expect((dataOf(single, "os-browser")?.page as { url: string }).url).toBe("https://www.test.de/");
+  });
+
+  it("and a worker on the browser rails to it in the machine room too", () => {
+    const busy: RunEvent[] = [
+      ...reached,
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "c-m",
+        name: "browser_navigate",
+        input: { url: "https://www.test.de/" },
+        ts: T + 3,
+      } as RunEvent,
+    ];
+    const room = fleetToFlow(
+      buildFleetLabScene({ roster, events: busy, frames: [], epochBySender: {} }),
+      deriveDetail(busy),
+      {
+        lang: "en",
+      },
+    );
+    expect(room.edges.map((e) => e.id)).toContain("e-card-main-osbrowser");
+  });
+});
