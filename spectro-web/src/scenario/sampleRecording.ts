@@ -22,6 +22,7 @@
 
 import type { Lang } from "../i18n/i18n";
 import { compile } from "./compile";
+import type { Dsl } from "./dsl";
 import { SCENARIOS } from "./registry";
 import { toJsonl } from "../export/jsonl";
 
@@ -48,18 +49,33 @@ export const SAMPLE_PATH = "docs/sample-runs/workflow-phases.en.jsonl";
 export const SAMPLE_REGEN_COMMAND = "npm run generate:sample-run";
 
 /**
- * The exact bytes the shipped recording must have.
+ * The scenario the file is made of, straight out of the registry.
  *
- * @return the JSONL text, one wire event per line, newline-terminated
+ * Exported because the file has TWO halves to check and both start here: the
+ * bytes come from `compile()`, and the workflow the README describes — five
+ * named phases, thirteen agents placed in them — comes from `dsl.phases` and
+ * never touches the wire. A pin that looked the second half up on its own
+ * would be pinning a scenario the generator does not necessarily use.
+ *
+ * @return the DSL registered under {@link SAMPLE_SCENARIO_ID}
  * @throws Error when the scenario is no longer in the registry — a missing
  *         scenario must say so, not silently render an empty file
  */
-export function renderSampleRecording(): string {
+export function sampleScenario(): Dsl {
   const dsl = SCENARIOS.find((s) => s.id === SAMPLE_SCENARIO_ID);
   if (dsl === undefined) {
     throw new Error(
       `scenario "${SAMPLE_SCENARIO_ID}" is not in SCENARIOS — ${SAMPLE_PATH} has no source any more`,
     );
   }
-  return toJsonl(compile(dsl, SAMPLE_LANG));
+  return dsl;
+}
+
+/**
+ * The exact bytes the shipped recording must have.
+ *
+ * @return the JSONL text, one wire event per line, newline-terminated
+ */
+export function renderSampleRecording(): string {
+  return toJsonl(compile(sampleScenario(), SAMPLE_LANG));
 }
