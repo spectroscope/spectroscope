@@ -50,7 +50,7 @@ import { FleetSettings } from "./FleetSettings";
 import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
 import { PROVIDERS } from "./providerPickerMode";
-import { addressSpecFor } from "./providerAddress";
+import { addressOverrideNote, addressSpecFor } from "./providerAddress";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { settingsMayAutoPick } from "./settingsModelPolicy";
 import { ReasoningControl } from "./ReasoningControl";
@@ -492,6 +492,18 @@ export function SettingsPanel({
    *  lmstudio each own a field; every other provider hides it. */
   const addressSpec = view ? addressSpecFor(String(view.effective.provider ?? "")) : null;
 
+  /** Card 311: the general address field loses to the one above it, and used
+   *  to lose in silence — the owner typed an address there, every request went
+   *  to the per-provider one, and the only thing said out loud was that "the
+   *  backend" was unreachable at an address he had not chosen. Null whenever
+   *  nothing is being overridden, so the row is absent rather than reassuring. */
+  const overrideNote = addressOverrideNote(
+    String(view?.effective.provider ?? ""),
+    view,
+    lang,
+    providerAddress,
+  );
+
   /** Adopts the browser's legacy localStorage state into the user settings —
    *  one patch with every remembered field at once. Only clears the legacy
    *  keys once the write actually lands; a rejected patch leaves the banner
@@ -848,6 +860,11 @@ export function SettingsPanel({
                           }}
                         />
                         <span className="provider-field-note">{t(lang, "set.addressHint")}</span>
+                        {overrideNote && (
+                          <span className="provider-field-note provider-field-note--override" role="note">
+                            {t(lang, overrideNote.key, overrideNote.vars)}
+                          </span>
+                        )}
                         <OriginRow
                           view={view}
                           field={addressSpec.field}

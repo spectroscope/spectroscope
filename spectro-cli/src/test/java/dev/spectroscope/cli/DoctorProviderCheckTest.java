@@ -290,6 +290,7 @@ class DoctorProviderCheckTest {
         // fields won their own.
         List<DoctorCommand.Line> lines = DoctorCommand.perProviderAddressLines(
                 "ollama", "http://env-box:11434",
+                "http://env-box:11434", "http://flag-box:11434",
                 new SpectroConfig.Origin("env", List.of()),
                 new SpectroConfig.Origin("flags", List.of()));
 
@@ -310,17 +311,94 @@ class DoctorProviderCheckTest {
     void nothingIsSaidWhenThereIsNoShadowingToReport() {
         // No per-provider address: the legacy chain decides, nothing is hidden.
         assertTrue(DoctorCommand.perProviderAddressLines("ollama", "http://localhost:11434",
+                null, "http://localhost:11434",
                 new SpectroConfig.Origin("defaults", List.of()),
                 new SpectroConfig.Origin("user", List.of())).isEmpty());
         // A per-provider address and NO baseUrl anywhere: nothing is being
         // overridden, so a line would be noise.
         assertTrue(DoctorCommand.perProviderAddressLines("lmstudio", "http://gpu-box:1234",
+                "http://gpu-box:1234", "http://localhost:11434",
                 new SpectroConfig.Origin("user", List.of()),
                 new SpectroConfig.Origin("defaults", List.of())).isEmpty());
         // A provider with no per-provider address field at all.
         assertTrue(DoctorCommand.perProviderAddressLines("openai", "https://api.openai.com",
+                null, "https://api.openai.com",
                 new SpectroConfig.Origin("defaults", List.of()),
                 new SpectroConfig.Origin("user", List.of())).isEmpty());
+    }
+
+    // ── card 311: a present key is not a value that wins ────────────────────
+
+    @Test
+    void aBlankPerProviderAddressIsNotAnOverrideAndIsNotReportedAsOne() throws IOException {
+        // A hand-edited settings.json with the key present but empty. The fold
+        // hands it a layer (Optional.ofNullable takes "" as a value), so the
+        // Origin says "user" — while effectiveLmstudioBaseUrl reads a blank as
+        // unset and dials baseUrl after all. A note here would name the wrong
+        // winner and tell the operator their general address does not apply,
+        // one line under a probe that just used it.
+        String out = doctorOutputForSettings("""
+                { "provider": "lmstudio", "model": "local-model",
+                  "baseUrl": "http://127.0.0.1:5111",
+                  "lmstudioBaseUrl": "" }
+                """);
+
+        assertTrue(out.contains("openai-compatible server at http://127.0.0.1:5111"),
+                "a blank per-provider address falls through to baseUrl, got:\n" + out);
+        assertFalse(out.contains("lmstudioBaseUrl"),
+                "nothing is being overridden, so nothing may be claimed, got:\n" + out);
+    }
+
+    @Test
+    void aBlankBaseUrlLeavesNoLoserToName() {
+        // The mirror case: the per-provider address wins, but the value it
+        // beats is empty — there is no address that "does not apply", and a
+        // line about one would be noise.
+        assertTrue(DoctorCommand.perProviderAddressLines("ollama", "http://gpu-box:11434",
+                "http://gpu-box:11434", "  ",
+                new SpectroConfig.Origin("user", List.of()),
+                new SpectroConfig.Origin("user", List.of())).isEmpty());
+    }
+
+    @Test
+    void aGeneralAddressThatWouldNotHaveAppliedAnywayIsNotBlamedOnTheOverride() {
+        // The one corner where the note's REASON was wrong while its claim was
+        // right. effectiveOpenAiBaseUrl reads the literal http://localhost:11434
+        // as "unset" for the openai-compat providers — a compatibility rule for
+        // configs written before each backend had its own field — so an
+        // lmstudio operator who typed exactly that value into the general field
+        // is not losing it to lmstudioBaseUrl. He never had it. Clearing the
+        // per-provider field to "get his general address back" lands him on LM
+        // Studio's preset instead, which is what the old sentence promised him
+        // out of.
+        String note = DoctorCommand.perProviderAddressLines("lmstudio", "http://gpu-box:1234",
+                "http://gpu-box:1234", "http://localhost:11434",
+                new SpectroConfig.Origin("user", List.of()),
+                new SpectroConfig.Origin("flags", List.of())).get(0).message();
+
+        assertFalse(note.contains("a provider's own address wins"),
+                "that is not why this general address does not apply — it would not have"
+                        + " applied with the per-provider field empty either: " + note);
+        assertTrue(note.contains("http://localhost:1234"),
+                "so say where clearing the field WOULD land, which is the provider's own"
+                        + " preset, not the typed address: " + note);
+        assertTrue(note.contains("lmstudioBaseUrl") && note.contains("http://gpu-box:1234"),
+                "the claim itself is unchanged — the per-provider address is what is"
+                        + " dialled: " + note);
+    }
+
+    @Test
+    void ollamaHasNoSuchCornerAndKeepsTheCausalSentence() {
+        // effectiveOllamaBaseUrl carries no sentinel: any non-blank general
+        // value is taken verbatim, the literal default included. So for ollama
+        // the general address really would apply once ollamaBaseUrl is cleared,
+        // and the note that says so is the true one.
+        String note = DoctorCommand.perProviderAddressLines("ollama", "http://gpu-box:11434",
+                "http://gpu-box:11434", "http://localhost:11434",
+                new SpectroConfig.Origin("user", List.of()),
+                new SpectroConfig.Origin("flags", List.of())).get(0).message();
+
+        assertTrue(note.contains("a provider's own address wins"), note);
     }
 
     @Test
@@ -334,6 +412,28 @@ class DoctorProviderCheckTest {
         assertTrue(out.contains("lmstudioBaseUrl"),
                 "a doctor that probes 5222 while a baseUrl of 5111 sits in the same file"
                         + " must say which one it obeyed and why, got:\n" + out);
+    }
+
+    @Test
+    void theDoctorRunItselfCarriesTheShadowNoteForOllamaToo() throws IOException {
+        // The twin of the test above, and it was missing: perProviderAddressOf
+        // is a two-arm switch and only lmstudio's arm was held. Changing
+        // ollama's arm to config.lmstudioBaseUrl() — the exact copy-paste slip
+        // a two-arm switch invites — left the whole :spectro-cli:test module
+        // green, while an ollama operator with both fields set silently lost
+        // the note: perProviderAddressOf reads null, addressSet goes false.
+        String out = doctorOutputForSettings("""
+                { "provider": "ollama", "model": "qwen3",
+                  "baseUrl": "http://127.0.0.1:5111",
+                  "ollamaBaseUrl": "http://127.0.0.1:5222" }
+                """);
+
+        assertTrue(out.contains("ollamaBaseUrl"),
+                "a doctor that probes 5222 while a baseUrl of 5111 sits in the same file"
+                        + " must say which one it obeyed and why, got:\n" + out);
+        assertTrue(out.contains("does NOT apply to ollama"),
+                "and the note must be about ollama, not about whichever arm of the"
+                        + " switch was read, got:\n" + out);
     }
 
     // ── the built-in provider's model swap ───────────────────────────────────

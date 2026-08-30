@@ -2130,6 +2130,27 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "wo dieses Backend läuft — auch auf einer anderen Maschine",
     en: "where this backend runs — another machine works too",
   },
+  // Card 311: the general address field loses to a provider's own, and used to
+  // lose in silence. Same voice as the doctor's line (DoctorCommand
+  // #perProviderAddressLines) and the same two facts — the address that will
+  // actually be dialled, and the layer each of the two values came from.
+  // Every placeholder appears exactly ONCE: t() substitutes with
+  // String#replace over a string pattern, so a second {provider} would stay a
+  // literal hole in the rendered sentence.
+  "set.addressOverride": {
+    de: "{field} (aus {winner}) ist die Adresse, die {provider} wählt — {addr}. Die allgemeine Adresse (aus {loser}) ist ebenfalls gesetzt und gilt hier nicht: die eigene Adresse eines Providers gewinnt, aus welcher Ebene die beiden auch stammen.",
+    en: "{field} (from {winner}) is what {provider} dials — {addr}. The general address (from {loser}) is set too and does not apply here: a provider's own address wins, whichever layer either one came from.",
+  },
+  // The same claim in the one corner where the sentence above gives the wrong
+  // REASON for it. The openai-compat rule reads the legacy shared default as
+  // "unset", so this general address would not have applied with the
+  // per-provider field empty either — and "a provider's own address wins"
+  // sends the reader to empty a field that will not give him back what he
+  // typed. Same placeholder-once rule as above.
+  "set.addressOverrideLegacyDefault": {
+    de: "{field} (aus {winner}) ist die Adresse, die {provider} wählt — {addr}. Die allgemeine Adresse (aus {loser}) steht auf {general}, dem alten gemeinsamen Standardwert, den dieser Provider als „nicht gesetzt“ liest: Wird das providereigene Feld geleert, fällt die Adresse auf {fallback} zurück, nicht auf diesen Wert.",
+    en: "{field} (from {winner}) is what {provider} dials — {addr}. The general address (from {loser}) is set to {general}, the legacy shared default, which this provider reads as unset: clearing the per-provider field would fall back to {fallback}, not to that address.",
+  },
   "set.thinking": { de: "Thinking", en: "Thinking" },
   "set.imageBackend": { de: "Bild-Backend", en: "Image backend" },
   "set.on": { de: "An", en: "On" },
@@ -3263,6 +3284,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   "wsg.local.beats": {
     de: "Ein lokaler Override sticht diesen Wert — nur auf diesem Rechner.",
     en: "A local override beats that value — on this machine only.",
+  },
+  // Card 311, review: the gear is where the general address is TYPED, and it
+  // was the one surface that said nothing while the value went nowhere.
+  // Deliberately promises nothing about clearing the per-provider field — what
+  // that yields depends on the value typed (generalFallbackFor) — and points
+  // at the place the winning address is edited instead. Placeholders appear
+  // exactly once each; t() replaces only the first occurrence.
+  "wsg.local.addressIgnored": {
+    de: "{provider} liest dieses Feld nicht. Die eigene Adresse {field} (aus {winner}) steht auf {addr}, und genau die wird gewählt — geändert wird sie in den Einstellungen, neben dem Provider.",
+    en: "{provider} does not read this field. Its own address {field} (from {winner}) is set to {addr}, and that is what gets dialled — change it in Settings, beside the provider.",
   },
   "wsg.local.setHere": {
     de: "Dieser Wert kommt bereits aus deinen lokalen Overrides.",
