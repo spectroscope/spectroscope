@@ -170,8 +170,13 @@ second checks only what the server needs in order to boot at all.</p>
   <tr><th>provider</th><th>transport</th><th>needs</th><th>default model</th></tr>
   <tr><td><code>anthropic</code></td><td>official SDK, SSE streaming</td><td><code>ANTHROPIC_API_KEY</code></td><td><code>claude-opus-4-8</code></td></tr>
   <tr><td><code>ollama</code></td><td>Spring RestClient, NDJSON</td><td>local Ollama on :11434</td><td><code>qwen3</code></td></tr>
-  <tr><td><code>openai</code></td><td>Spring RestClient, SSE</td><td>any OpenAI-compatible server (LM Studio, llama.cpp, vLLM); key optional</td><td><code>local-model</code></td></tr>
+  <tr><td><code>openai</code></td><td>Spring RestClient, SSE</td><td>OpenAI itself, or any compatible server you point <code>baseUrl</code> at; key optional</td><td><code>local-model</code></td></tr>
+  <tr><td><code>lmstudio</code></td><td>Spring RestClient, SSE</td><td>LM Studio's server on :1234, or another compatible one</td><td><code>local-model</code></td></tr>
+  <tr><td><code>llamacpp</code></td><td>Spring RestClient, SSE</td><td>your own <code>llama-server</code> on :8080</td><td><code>local-model</code></td></tr>
 </table>
+<p>More ids exist than these five. Chapter 12 compares every backend and chapter 18
+lists them exhaustively; this table is the quickstart set, and it is deliberately not a
+second copy of that list.</p>
 
 <p>Selection rides the settings hierarchy (chapter 30 has every key): defaults
 &lt; environment (<code>SPECTRO_PROVIDER</code> / <code>SPECTRO_MODEL</code> /

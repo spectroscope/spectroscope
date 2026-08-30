@@ -1,7 +1,7 @@
 // First-run onboarding — a one-time info sheet shown when a fresh install has no
 // backend ready yet. It does not configure anything (settings stay a config/env
-// decision); it just tells a newcomer the two zero-cost local paths (ollama, LM
-// Studio) and how to add a cloud key to .env, so the very first screen is not
+// decision); it just tells a newcomer the zero-cost local paths (ollama, LM
+// Studio, llama.cpp) and how to add a cloud key to .env, so the very first screen is not
 // "Opus is selected and nothing works". Modelled on the keymap overlay: same
 // km-backdrop / km-panel, Esc / × / backdrop to close. Bilingual, tokens only.
 
@@ -31,7 +31,7 @@ export function Onboarding(props: {
   /** "start with the built-in model": closes the sheet and opens the local
    *  chooser — the zero-install path a newcomer should meet first. */
   onStartLocal?: () => void;
-  /** Card 193: the reader whose ollama / LM Studio runs on another machine —
+  /** Card 193: the reader whose local backend runs on another machine —
    *  closes the sheet and opens Settings at the session defaults, where the
    *  address field sits beside the provider. */
   onOpenSettings?: () => void;
@@ -151,20 +151,49 @@ export function Onboarding(props: {
             }
           />
           <Option
+            badge="llamacpp"
+            free
+            title="llama.cpp"
+            body={
+              de ? (
+                <>
+                  hol dir{" "}
+                  <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noreferrer">
+                    llama.cpp
+                  </a>
+                  , starte <code>llama-server -m dein-modell.gguf</code> (Port <code>:8080</code>) und wähl
+                  oben den Anbieter <code>llamacpp</code>. Er bedient genau das Modell, mit dem er gestartet
+                  wurde — der Name oben ist eine Beschriftung, keine Auswahl.
+                </>
+              ) : (
+                <>
+                  get{" "}
+                  <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noreferrer">
+                    llama.cpp
+                  </a>
+                  , run <code>llama-server -m your-model.gguf</code> (it listens on <code>:8080</code>), then
+                  pick provider <code>llamacpp</code> in the header. It serves the one model it was started
+                  with — the name above is a label, not a chooser.
+                </>
+              )
+            }
+          />
+          <Option
             badge="cloud"
             free={false}
-            title={de ? "anthropic · openai · openrouter" : "anthropic · openai · openrouter"}
+            title="anthropic · openai · openrouter · gemini"
             body={
               de ? (
                 <>
                   trag deinen Key in eine <code>.env</code> neben spectroscope:{" "}
                   <code>ANTHROPIC_API_KEY=…</code> (oder <code>OPENAI_API_KEY</code> /{" "}
-                  <code>OPENROUTER_API_KEY</code>) und starte neu.
+                  <code>OPENROUTER_API_KEY</code> / <code>GEMINI_API_KEY</code>) und starte neu.
                 </>
               ) : (
                 <>
                   add your key to a <code>.env</code> next to spectroscope: <code>ANTHROPIC_API_KEY=…</code>{" "}
-                  (or <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code>), then restart.
+                  (or <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code> /{" "}
+                  <code>GEMINI_API_KEY</code>), then restart.
                 </>
               )
             }
@@ -172,13 +201,20 @@ export function Onboarding(props: {
         </ul>
 
         {/* Card 193: the first-run reader with the GPU box across the room is
-            exactly the person the two local options just spoke to — say where
-            the address goes before they conclude "local machine only". */}
+            exactly the person the local options just spoke to — say where the
+            address goes before they conclude "local machine only". Card 312
+            added a third backend with an address of its own; a sentence that
+            names two of three sends the third reader away — which is what this
+            comment said while the sentence under it still named two, in a
+            fourth spelling of the same set. The names here are the picker's
+            ids, and ProviderListDriftTest holds them to
+            SpectroConfig.keylessLocalServers() in both locales. */}
         {props.onOpenSettings && (
           <p className="ob-remote">
             {de ? (
               <>
-                ollama oder LM Studio laufen auf einer anderen Maschine? trag die Adresse in den{" "}
+                <code>ollama</code>, <code>lmstudio</code> oder <code>llamacpp</code> laufen auf einer anderen
+                Maschine? trag die Adresse in den{" "}
                 <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
                   Einstellungen
                 </button>{" "}
@@ -186,7 +222,8 @@ export function Onboarding(props: {
               </>
             ) : (
               <>
-                ollama or LM Studio running on another machine? put its address in{" "}
+                <code>ollama</code>, <code>lmstudio</code> or <code>llamacpp</code> running on another
+                machine? put its address in{" "}
                 <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
                   settings
                 </button>{" "}

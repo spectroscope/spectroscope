@@ -21,6 +21,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -48,6 +49,10 @@ class ConfigDocDriftTest {
 
     private static final Path REFERENCE =
             Path.of("docs/guide-assets/parts/18-ref-config-build.html");
+
+    /** The backends chapter — the other page that lists the providers by name. */
+    private static final Path BACKENDS =
+            Path.of("docs/guide-assets/parts/12-providers-senses.html");
 
     /** What each tracked PDF was printed from, written by the rebuild ritual. */
     private static final Path PDF_STAMP = Path.of("docs/guide-assets/pdf-stamp.txt");
@@ -105,6 +110,210 @@ class ConfigDocDriftTest {
                             + " for the providers that own \"" + field + "\" it does not:"
                             + " endpointFor takes the per-provider field first, whatever"
                             + " layer either value came from. Row: " + row);
+        }
+    }
+
+    /**
+     * Card 312, round 3. Two chapters print the provider names, and a printed
+     * list is the one kind that cannot point at a constant — so the guard walks
+     * {@link SpectroConfig#knownProviders()} instead, and the pages are held to
+     * it. Measured before the fix: the config reference named six of eight
+     * (gemini and spectro-local had never been added) and the backends chapter
+     * named five, opening with "Five provider ids" over a set of eight.
+     */
+    @Test
+    void bothChaptersThatPrintTheProviderNamesPrintAllOfThem() throws IOException {
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        Path root = repoRoot();
+
+        String providerRow = rowStartingWith(Files.readString(source), "<code>provider</code>");
+        String backends = Files.readString(root.resolve(BACKENDS));
+        int idRow = backends.indexOf("<tr><td>provider id</td>");
+        assertTrue(idRow > 0, "the backends chapter has lost its \"provider id\" row");
+        String backendsRow = backends.substring(idRow, backends.indexOf("</tr>", idRow));
+
+        for (String provider : SpectroConfig.knownProviders()) {
+            assertTrue(providerRow.contains("<code>" + provider + "</code>"),
+                    "the config reference's provider row does not list \"" + provider
+                            + "\", so the one chapter a reader consults before setting"
+                            + " the key says it is not a valid value. Row: " + providerRow);
+            assertTrue(backendsRow.contains("<code>" + provider + "</code>"),
+                    "the backends chapter's \"provider id\" row does not name \""
+                            + provider + "\" — the table that claims to be the map of"
+                            + " what spectroscope talks to. Row: " + backendsRow);
+        }
+    }
+
+    /**
+     * Card 312, round 4. The guard above holds the TABLE, and a table row is
+     * the one kind of list a doc can keep. The PROSE went stale underneath it
+     * and shipped, twice: two paragraphs above the closing sentence round 3
+     * corrected, the chapter still told a reader that the header picker
+     * "switches the headline backends (anthropic, ollama, openai)" and that
+     * "the two extra OpenAI-compatible ids (lmstudio, openrouter) are chosen in
+     * settings". Wrong on every count by then — five extra ids, three of them
+     * unnamed, and {@code ProviderPicker.tsx} maps over all eight (pinned by
+     * {@code SpectroServerIntegrationTest.theHeaderPickerAcceptsTheWiderProviderSet}).
+     * So the person who had just started a llama-server was sent to edit
+     * settings for a thing the picker in front of them already offered — the
+     * same wrong door, still open two paragraphs up, through a green gate and
+     * into both reprinted PDFs.
+     *
+     * <p>The rule this holds is ALL OR NONE: the section about what the picker
+     * reaches may name every provider id or none of them, never a hand-picked
+     * few. None is what it says now — the table two sections up is the list,
+     * and it is the one under guard. A subset is how the sentence was wrong
+     * both times, and it is the only shape that cannot be maintained.</p>
+     *
+     * <p>It walks the PART and both assembled editions, because the part is not
+     * what anybody reads. Measured while writing this: the part was fixed, this
+     * test went green, and the two shipped editions still carried the old
+     * sentence — the exact gap that let round 2's wrong door survive into two
+     * reprinted PDFs under a green gate. The editions are the artefact; the
+     * part is a source file.</p>
+     *
+     * <p><b>Round 5</b> widened it from one section to two, because the same
+     * defect had been sitting one {@code <h2>} ABOVE the one round 4 fixed the
+     * whole time: "First run — choosing a backend", the section a keyless
+     * newcomer lands on, offered "three of the backends are keyless and local"
+     * over four and "the two cloud OpenAI-compatible backends" over three —
+     * fourteen lines above an {@code .env} block the same commit had taught
+     * {@code GEMINI_API_KEY}, and with no llamacpp anywhere, in the card that
+     * adds llamacpp. A guard drawn tightly around the sentence that was wrong
+     * last time guards that sentence.</p>
+     */
+    @Test
+    void neitherProviderSectionNamesJustSomeOfTheBackendsTheAppOffers()
+            throws IOException {
+        assumeTrue(source() != null, "not running from a source checkout");
+        Path root = repoRoot();
+        List<Path> carriers = new ArrayList<>(List.of(root.resolve(BACKENDS)));
+        for (String edition : List.of("docs/USER-GUIDE.html", "docs/USER-GUIDE-LIGHT.html")) {
+            carriers.add(root.resolve(edition));
+        }
+
+        // Round 5: two sections, because the defect came back one <h2> ABOVE
+        // the one round 4 fixed. "First run — choosing a backend" is the
+        // chapter a keyless newcomer lands on, and it offered three keyless
+        // backends out of four (no llamacpp — the connector this very card
+        // adds) and two keyed cloud ids out of three, fourteen lines above an
+        // .env block the same commit had taught GEMINI_API_KEY. A guard that
+        // spans one section is a guard for one section.
+        List<String[]> sections = List.of(
+                new String[] {"ch-providers-start", "ch-providers-env-key"},
+                new String[] {"ch-providers-switch", "ch-providers-retry"});
+
+        for (Path carrier : carriers) {
+            for (String[] bounds : sections) {
+                String section = section(Files.readString(carrier), bounds[0], bounds[1]);
+                List<String> named = new ArrayList<>();
+                for (String provider : new java.util.TreeSet<>(SpectroConfig.knownProviders())) {
+                    // The id as an id: case-sensitive and not inside a longer word,
+                    // so "OpenAI-compatible" is prose about a protocol and not a
+                    // mention of the openai backend.
+                    if (Pattern.compile(
+                                    "(?<![A-Za-z0-9-])" + Pattern.quote(provider) + "(?![A-Za-z0-9-])")
+                            .matcher(section).find()) {
+                        named.add(provider);
+                    }
+                }
+
+                assertTrue(named.isEmpty() || named.size() == SpectroConfig.knownProviders().size(),
+                        "\"" + bounds[0] + "\" in " + root.relativize(carrier) + " names "
+                                + named + " — " + named.size() + " of "
+                                + SpectroConfig.knownProviders().size() + " providers. Those"
+                                + " sections tell the reader which backends are there to"
+                                + " choose from and which the header picker reaches, and both"
+                                + " answers are all of them. A hand-picked few is how these"
+                                + " sentences have been wrong three times; name them all, or"
+                                + " name none and let the \"provider id\" row of \"The"
+                                + " backends\" be the list. If the part is already right,"
+                                + " the editions lag it: rebuild them"
+                                + " (docs/guide-assets/build_user_guide.py, both themes, then"
+                                + " the PDFs).\n" + section);
+            }
+        }
+    }
+
+    /**
+     * The PROSE of one chapter section — its {@code <p>} paragraphs and
+     * {@code <li>} bullets between this {@code <h2 id=…>} and the next, and
+     * nothing else.
+     *
+     * <p>Prose only, because the assembled edition is not the part: the figure
+     * caption arrives as a {@code <figcaption>} and the mermaid diagram as an
+     * inlined {@code <svg>} whose labels are text too. Measured — a first cut
+     * that stripped every tag read {@code [anthropic without
+     * ANTHROPIC_API_KEY]} out of a diagram arrow and reported the section as
+     * naming one provider. A diagram may illustrate one backend; a sentence
+     * about which backends the picker reaches may not.</p>
+     *
+     * <p>Bullets count as prose (round 5): the first-run section makes its
+     * offer as a {@code <ul>}, so a {@code <p>}-only reader saw a section
+     * naming three cloud ids and missed that the keyless list under them was
+     * the thing that had gone stale.</p>
+     */
+    private static String section(String chapter, String from, String to) {
+        int start = chapter.indexOf("<h2 id=\"" + from + "\">");
+        int end = chapter.indexOf("<h2 id=\"" + to + "\">");
+        assertTrue(start >= 0 && end > start,
+                "the backends chapter no longer runs from \"" + from + "\" to \"" + to
+                        + "\" — a drift test that cannot find its own subject must go"
+                        + " red, not quiet");
+        // Comments first, before tags: a <!--SHOT:…--> placeholder can carry a
+        // ">" of its own and would otherwise be cut in half.
+        String body = chapter.substring(start, end).replaceAll("(?s)<!--.*?-->", "");
+        StringBuilder prose = new StringBuilder();
+        Matcher paragraph = Pattern.compile("(?s)<(p|li)[ >].*?</\\1>").matcher(body);
+        while (paragraph.find()) {
+            prose.append(paragraph.group().replaceAll("<[^>]+>", "")).append('\n');
+        }
+        assertTrue(prose.length() > 0,
+                "the \"" + from + "\" section has no <p> prose at all — a drift test that"
+                        + " cannot find its own subject must go red, not quiet");
+        return prose.toString();
+    }
+
+    /**
+     * The {@code model} row promises which default a provider falls back to, and
+     * it said "if provider is ollama/openai … qwen3 / local-model" while
+     * {@link SpectroConfig#defaultModelFor} mapped lmstudio and llamacpp to
+     * local-model too and gave two providers no default at all. Both halves are
+     * derived: every provider whose default is not the record's own has to be
+     * named, and every model id the row quotes has to be one the method really
+     * returns — so a row cannot be completed with an invented name either.
+     */
+    @Test
+    void theModelRowNamesEveryProviderWhoseDefaultIsNotTheRecordDefault() throws IOException {
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String row = rowStartingWith(Files.readString(source), "<code>model</code>");
+        String description = row.substring(row.lastIndexOf("<td>"));
+
+        String recordDefault = SpectroConfig.defaultModelFor("anthropic");
+        assertNotNull(recordDefault, "anthropic lost its default — this test's baseline is gone");
+        List<String> quotable = new ArrayList<>(SpectroConfig.knownProviders());
+        for (String provider : SpectroConfig.knownProviders()) {
+            String fallback = SpectroConfig.defaultModelFor(provider);
+            if (fallback != null) {
+                quotable.add(fallback);
+            }
+            if (fallback != null && fallback.equals(recordDefault)) {
+                continue; // it IS the column's own default; nothing to say
+            }
+            assertTrue(description.contains("<code>" + provider + "</code>"),
+                    "the model row never names \"" + provider + "\", whose default is "
+                            + (fallback == null ? "nothing at all" : fallback)
+                            + " and not the " + recordDefault + " in the column beside it."
+                            + " Description: " + description);
+        }
+        for (Matcher quoted = Pattern.compile("<code>([^<]+)</code>").matcher(description);
+                quoted.find(); ) {
+            assertTrue(quotable.contains(quoted.group(1)),
+                    "the model row quotes \"" + quoted.group(1) + "\", which is neither a"
+                            + " provider nor anything defaultModelFor returns — a row"
+                            + " completed from memory is the defect this test exists for");
         }
     }
 

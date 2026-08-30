@@ -50,6 +50,28 @@ class DoctorProviderCheckTest {
         }
     }
 
+    /**
+     * Card 312, round 3. {@code addressFieldFor} is a switch of three literal
+     * cases and its javadoc said "the two local-model backends" while there
+     * were three — the same class of defect as the CLI's first-run hint. The
+     * switch stays a switch (it maps a name to a settings key), but the set it
+     * has to cover is read off {@link SpectroConfig#keylessLocalServers()}, so
+     * a fourth free local backend cannot arrive without a doctor line that can
+     * name where it was dialled. Bitten by deleting the llamacpp case.
+     */
+    @Test
+    void everyKeylessLocalServerHasAnAddressFieldTheDoctorCanName() {
+        for (String provider : SpectroConfig.keylessLocalServers()) {
+            String field = DoctorCommand.addressFieldFor(provider);
+            assertNotNull(field,
+                    "\"" + provider + "\" is dialled at an address of its own and the doctor"
+                            + " knows no settings key for it, so its note cannot say where to"
+                            + " change it — add a case to DoctorCommand.addressFieldFor");
+            assertEquals(provider + "BaseUrl", field,
+                    "the doctor names a settings key that is not this provider's own");
+        }
+    }
+
     @Test
     void aProviderNobodyKnowsStillFallsThrough() {
         assertNull(DoctorCommand.providerCheckFor("hal9000"),
@@ -434,6 +456,88 @@ class DoctorProviderCheckTest {
         assertTrue(out.contains("does NOT apply to ollama"),
                 "and the note must be about ollama, not about whichever arm of the"
                         + " switch was read, got:\n" + out);
+    }
+
+    /**
+     * The card 311 × 312 merge seam, held by the set instead of by a pair.
+     *
+     * <p>Card 311 built this note and pinned it with a literal twin per
+     * backend — one test for lmstudio, one for ollama. Card 312 added a third
+     * keyless local server on a branch that had never seen the note. The merge
+     * was textually clean and every one of those twins stayed green, because a
+     * pair of tests cannot notice a third member: {@code addressFieldFor} knew
+     * llamacpp (card 312 added that arm), {@code perProviderAddressOf} did not,
+     * so it read null, {@code addressSet} went false, and a llamacpp operator
+     * with both fields set got exactly the silence card 311 exists to end.</p>
+     *
+     * <p>Derived, so a fourth backend cannot repeat it: the subjects are
+     * {@link SpectroConfig#keylessLocalServers()}, and the whole doctor runs
+     * rather than {@code perProviderAddressLines} being called by hand — the
+     * defect lived between the two switches, not inside either.</p>
+     *
+     * @throws IOException when the settings document cannot be written
+     */
+    @Test
+    void everyKeylessLocalServerGetsTheOverrideNoteFromAWholeDoctorRun() throws IOException {
+        for (String provider : SpectroConfig.keylessLocalServers()) {
+            String field = provider + "BaseUrl";
+            String out = doctorOutputForSettings("{ \"provider\": \"" + provider + "\","
+                    + " \"model\": \"some-model\","
+                    + " \"baseUrl\": \"http://127.0.0.1:5111\","
+                    + " \"" + field + "\": \"http://127.0.0.1:5222\" }");
+
+            assertTrue(out.contains(field),
+                    "a doctor that probes 5222 while a baseUrl of 5111 sits in the same file"
+                            + " must name " + field + " and say why it won — \"" + provider
+                            + "\" got no address line at all, so its own arm of"
+                            + " DoctorCommand.perProviderAddressOf is missing, got:\n" + out);
+            assertTrue(out.contains("does NOT apply to " + provider),
+                    "and the note must be about \"" + provider + "\", not about whichever"
+                            + " arm of the switch was read, got:\n" + out);
+        }
+    }
+
+    /**
+     * The other half of the same seam: the note's REASON, which card 311 split
+     * in two because clearing the per-provider field does not always hand the
+     * general address back.
+     *
+     * <p>{@code generalFallbackFor} answered {@code baseUrl} for anything its
+     * switch did not name, and for llamacpp that is wrong: its rule skips the
+     * legacy shared literal exactly as LM Studio's does, so an operator told
+     * "clearing llamacppBaseUrl gives you this back" would have been sent after
+     * a value he would never get. Measured against the config itself rather
+     * than re-stated — the method's contract IS {@code endpointFor} with the
+     * per-provider value unset, so the config resolves it and the doctor must
+     * agree.</p>
+     *
+     * @throws IOException when the settings document cannot be written
+     */
+    @Test
+    void theFallbackTheDoctorNamesIsTheOneAnEmptyFieldWouldResolve() throws IOException {
+        // The legacy shared default first: it is the one value the openai-compat
+        // rule reads as "unset", so it is where a missing arm changes the answer.
+        for (String general : List.of("http://localhost:11434", "http://127.0.0.1:5111")) {
+            for (String provider : SpectroConfig.keylessLocalServers()) {
+                Files.createDirectories(SpectroConfig.USER_SETTINGS_PATH.getParent());
+                Files.writeString(SpectroConfig.USER_SETTINGS_PATH,
+                        "{ \"provider\": \"" + provider + "\", \"baseUrl\": \"" + general + "\" }");
+                SpectroConfig.Resolved resolved = SpectroConfig.loadResolved(
+                        SpectroConfig.Overrides.none(), Path.of("."), null);
+
+                // The premise: this run really does have the per-provider field
+                // unset, so endpointFor below IS "the field cleared". An env var
+                // on the machine would quietly measure something else.
+                assertEquals("defaults", resolved.origins().get(provider + "BaseUrl").winner(),
+                        provider + "BaseUrl came from the environment, so this run cannot"
+                                + " say what an empty field would resolve to");
+                assertEquals(resolved.config().endpointFor(provider),
+                        DoctorCommand.generalFallbackFor(provider, general),
+                        "with baseUrl=" + general + " the config would dial \""
+                                + provider + "\" at one address and the doctor promises"
+                                + " another — add its arm to DoctorCommand.generalFallbackFor");
+            }
+        }
     }
 
     // ── the built-in provider's model swap ───────────────────────────────────

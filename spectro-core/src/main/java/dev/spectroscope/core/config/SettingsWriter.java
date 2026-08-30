@@ -63,6 +63,8 @@ public final class SettingsWriter {
             "promptCaching", "hooks", "workspace", "logLevel",
             "imageModel", "sttModel", "sttProvider", "sttLanguage", "chromeBinary",
             "otlpEndpoint", "otlpBasicAuth", "ollamaBaseUrl", "lmstudioBaseUrl",
+            // Card 312: llama.cpp's own address, same shape as its neighbours.
+            "llamacppBaseUrl",
             "searxngUrl", "allowLocalhost", "headlessMcp",
             // Card 262: the progress guard's three counts, zero meaning off.
             "progressGuardWrites", "progressGuardFailures", "progressGuardPlanTurns",

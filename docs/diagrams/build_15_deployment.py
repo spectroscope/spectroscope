@@ -121,7 +121,9 @@ def build():
     llm = [
         ("Anthropic", "api.anthropic.com", "HTTPS · SDK · SSE"),
         ("Ollama", "localhost:11434", "HTTP · NDJSON · key-free"),
-        ("OpenAI-compat", "openai · lmstudio · openrouter · gemini", "SSE · POST /chat/completions"),
+        # SpectroConfig.openAiCompatProviders(), all five of them.
+        ("OpenAI-compat", "openai · lmstudio · llamacpp · openrouter · gemini",
+         "SSE · POST /chat/completions"),
     ]
     ly = xy + 58
     for name, host, proto in llm:
@@ -130,8 +132,9 @@ def build():
         b.append(C.text(ext_x + 28, ly + 38, host, 11, C.CORAL, mono=True))
         b.append(C.text(ext_x + ext_w - 28, ly + 21, proto, 10.5, C.GREY_MID, mono=True, anchor="end"))
         ly += 64
-    # the four openai-compat hosts, small print
-    b.append(C.text(ext_x + 16, ly + 6, "api.openai.com · :1234 · openrouter.ai/api · …/v1beta/openai", 10, C.GREY_DIM, mono=True))
+    # the openai-compat hosts, small print — one per id in the row above, in
+    # the same order, and no count in this comment: it said four over five.
+    b.append(C.text(ext_x + 16, ly + 6, "api.openai.com · :1234 · :8080 · openrouter.ai/api · …/v1beta/openai", 10, C.GREY_DIM, mono=True))
 
     # image + mcp
     iy2 = xy + 258 + 20

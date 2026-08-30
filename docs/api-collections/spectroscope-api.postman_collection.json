@@ -311,7 +311,7 @@
                 {
                   "key": "provider",
                   "value": "ollama",
-                  "description": "optional. anthropic | openai | lmstudio | openrouter | gemini | ollama",
+                  "description": "optional. any provider id SpectroConfig accepts: anthropic | ollama | openai | lmstudio | llamacpp | openrouter | gemini | spectro-local",
                   "disabled": true
                 }
               ]

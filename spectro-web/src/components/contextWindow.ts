@@ -7,8 +7,10 @@
 //            (openai.com/index/gpt-4-1, openai.com/index/introducing-gpt-5-5)
 //   Gemini:  1.5 Pro up to 2M, 2.5 Pro/Flash = 1M
 //            (ai.google.dev/gemini-api/docs/long-context)
-// Local backends (ollama, lmstudio) and anything unrecognised vary widely, so
-// we return null rather than fabricate a number.
+// The local backends serve whatever model was loaded, so their windows and
+// anything unrecognised vary widely: we return null rather than fabricate a
+// number. Deliberately not a list of names — the pair that stood here missed
+// llamacpp the day it arrived (card 312).
 //
 // THIS TABLE IS A GUESS BY PREFIX AND WILL BE WRONG AGAIN. claude-fable-5 was
 // the last name it did not know: it starts with "claude" but with neither
@@ -20,9 +22,14 @@
 // node of the same body and drops the rest). Serving that number would cost a
 // field on the capability record (or a sibling endpoint), an async fetch keyed
 // on (provider, model) in ContextRing, and a null-until-known state the ring
-// already handles. It would NOT delete this file: only anthropic and
-// openrouter publish real discovery, so openai/gemini/lmstudio/local keep the
-// table as their fallback. Left as a note on purpose, not built here.
+// already handles. It would NOT delete this file, but the set it would leave
+// behind has grown since this note was written: anthropic and openrouter
+// publish a real window through their model APIs, and the two backends that
+// ARE a llama.cpp server answer GET /props with the n_ctx the loaded model is
+// really running at (OpenAiCompatProvider.readsWindowFromProps /
+// loadedWindowFromProps, card 312 — the same fact the guide's wire chapter
+// now sends a llamacpp reader to). Whatever publishes nothing keeps this
+// table as its fallback. Left as a note on purpose, not built here.
 
 /** Claude families whose current generation ships the 1M window. */
 const CLAUDE_1M = ["claude-opus", "claude-sonnet", "claude-fable", "claude-mythos"];

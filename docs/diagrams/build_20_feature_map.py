@@ -64,8 +64,13 @@ GROUPS = [
 ]
 
 FOOT = [
-    "Six backends: anthropic · openai · openrouter · gemini · ollama · LM Studio, plus a built-in "
-    "catalogue of local models that needs no key at all.",
+    # The ids, not the marketing names: they are what goes in settings.json and
+    # what the picker shows, and PrintedProviderListsDriftTest can then walk
+    # SpectroConfig.knownProviders() instead of a table of spellings. The count
+    # is held to that set too — this line said "Seven" while listing seven and
+    # meaning eight.
+    "Eight backends: anthropic · openai · openrouter · gemini · ollama · lmstudio · llamacpp · "
+    "spectro-local, the last of them a built-in catalogue of local models that needs no key at all.",
     "Everything above writes one thing to disk: append-only JSONL, one line per event, readable with "
     "jq. That file is the API, the storage format and the audit log.",
 ]

@@ -20,14 +20,21 @@ import java.util.Map;
  * {@link ReasoningCapability} record — the same record the providers gate
  * their wire fields on, so the picker and the request path share ONE truth.
  *
- * <p>Static dialects (openai, gemini, lmstudio, spectro-local, custom bases)
- * answer straight from the bundled table. Three providers have real API
- * discovery and get a live overlay: anthropic's Models API (thinking/effort
+ * <p>Three providers have real API discovery and get a live overlay: anthropic's
+ * Models API (thinking/effort
  * flags per model — the cross-field rules the API does not encode stay from
  * the table), ollama's {@code /api/show} (a binary "thinking" capability; the
  * bool-vs-levels shape still comes from the family table) and openrouter's
  * public model list ({@code reasoning} object + {@code supported_parameters}).
  * Any dark API falls back to the static row — the picker keeps rendering.</p>
+ *
+ * <p>EVERY OTHER dialect answers straight from the bundled table, llamacpp
+ * included: an operator's own llama-server has no capability API, so it takes
+ * the default arm and {@link ReasoningCapabilities#resolve} reads its row out
+ * of {@code capabilities.json} like any other static dialect. Said as the
+ * complement rather than as a list of names, because the list that stood here
+ * was written before llamacpp existed and read as though llamacpp were not one
+ * of them (card 312).</p>
  *
  * <p>No {@code @CrossOrigin}, same as the sibling endpoints: served same-origin
  * from this jar, proxied by the dev vite server.</p>

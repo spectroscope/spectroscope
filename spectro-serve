@@ -179,21 +179,28 @@ cmd_logs() { [ -f "$LOG_FILE" ] || die "no log ($LOG_FILE)"; [ "${1:-}" = "-f" ]
 open_url() { local u="http://localhost:$PORT/"; (command -v open >/dev/null && open "$u") || (command -v xdg-open >/dev/null && xdg-open "$u") || say "open: $u"; }
 cmd_open() { resolve_port; open_url; }
 
-# provider -> its key env var (mirror of SpectroConfig.keyEnvFor; local backends
-# have none).
-key_env_for() { case "$1" in
-  anthropic) echo ANTHROPIC_API_KEY;; openai) echo OPENAI_API_KEY;;
-  openrouter) echo OPENROUTER_API_KEY;; gemini) echo GEMINI_API_KEY;; *) echo "";;
-esac; }
+# provider -> its key env var (mirror of SpectroConfig.keyEnvFor; every other
+# backend is local and authenticates with nothing). ONE list: the prompt and the
+# refusal below both read it, so neither can name a different set than this
+# does. The refusal used to say "(ollama/lmstudio are local, no key needed)" —
+# two of the three keyless local servers, which is exactly the wrong sentence to
+# hand the person asking about the third (card 312).
+KEYED_PROVIDERS="anthropic:ANTHROPIC_API_KEY openai:OPENAI_API_KEY openrouter:OPENROUTER_API_KEY gemini:GEMINI_API_KEY"
+key_env_for() { for pair in $KEYED_PROVIDERS; do
+  [ "${pair%%:*}" = "$1" ] && { echo "${pair#*:}"; return; }
+done; echo ""; }
+keyed_names() { local out=""; for pair in $KEYED_PROVIDERS; do
+  out="${out:+$out / }${pair%%:*}"
+done; echo "$out"; }
 
 # set-key: read an API key WITHOUT echoing it and upsert it into ./.env (chmod
 # 600) — the safe, local, one-time "type it once and it's saved" the onboarding
 # points at. The value is never printed back; a restart picks it up.
 cmd_set_key() {
   local provider="$1"
-  if [ -z "$provider" ]; then printf 'provider (anthropic / openai / openrouter / gemini): '; read -r provider; fi
+  if [ -z "$provider" ]; then printf 'provider (%s): ' "$(keyed_names)"; read -r provider; fi
   local env; env="$(key_env_for "$provider")"
-  [ -z "$env" ] && die "no key for '$provider' (ollama/lmstudio are local, no key needed)"
+  [ -z "$env" ] && die "no key for '$provider' — only $(keyed_names) take one; every other backend runs locally and needs none"
   local key; printf 'paste %s (hidden, then Enter): ' "$env"; read -rs key; echo
   [ -z "$key" ] && die "empty — nothing written"
   local f=".env"; touch "$f"; chmod 600 "$f" 2>/dev/null || true

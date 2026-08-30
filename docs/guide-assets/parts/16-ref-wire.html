@@ -74,9 +74,11 @@ fields ride separately for the compaction trigger only; a cancel mid-stream surf
   <li>Bearer auth only when a key is present — LM Studio and friends run keyless.</li>
   <li>Endpoint by provider name, no key-based swap: <code>openai</code> &rarr;
       <code>https://api.openai.com</code>, <code>lmstudio</code> &rarr;
-      <code>http://localhost:1234</code>, <code>openrouter</code> &rarr;
-      <code>https://openrouter.ai/api</code>; an explicit <code>baseUrl</code> always
-      wins. One wire protocol, three hosts.</li>
+      <code>http://localhost:1234</code>, <code>llamacpp</code> &rarr;
+      <code>http://localhost:8080</code>, <code>openrouter</code> &rarr;
+      <code>https://openrouter.ai/api</code>, <code>gemini</code> &rarr; the Google
+      gateway; an explicit <code>baseUrl</code> always wins, and the local ids read
+      their own key first (chapter 18). One wire protocol, one host per id.</li>
 </ul>
 
 <!-- ============================== CH 25 ============================== -->

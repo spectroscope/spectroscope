@@ -201,6 +201,50 @@ class ReasoningWireTest {
         }
 
         @Test
+        void llamacppSwitchesOffThroughTheChatTemplate() throws IOException {
+            // Card 312's whole reason to exist as a name of its own. Before it,
+            // an operator's llama-server was reached under the lmstudio label,
+            // whose honest answer to "off" is NOTHING — so the toggle was a
+            // silent no-op and the model kept thinking. The measured off switch
+            // of a llama.cpp chat template is the kwarg (card 88, build b10107:
+            // 300 reasoning tokens with reasoning_effort:"none", 0 with the
+            // kwarg), and llamacpp is the label that must send it.
+            JsonNode sent = posted("llamacpp", "qwen3-4b-instruct", Reasoning.OFF, null);
+            JsonNode kwargs = sent.get("chat_template_kwargs");
+            assertNotNull(kwargs, "off must reach the template gate: " + sent);
+            assertFalse(kwargs.get("enable_thinking").asBoolean());
+            assertEquals("none", sent.get("reasoning_effort").asText(),
+                    "the second accepted off form rides along; a server whose template "
+                            + "reads neither ignores unknown fields: " + sent);
+        }
+
+        @Test
+        void llamacppPassesARequestedEffortThroughAsTheFlatField() throws IOException {
+            JsonNode sent = posted("llamacpp", "qwen3-4b-instruct", Reasoning.DEFAULT, "high");
+            assertEquals("high", sent.get("reasoning_effort").asText(),
+                    "an effort the operator asked for must leave the machine: " + sent);
+            assertNull(sent.get("chat_template_kwargs"),
+                    "nothing switches thinking off here: " + sent);
+        }
+
+        @Test
+        void anUnlabelledLocalServerRidesTheSameWireAsTheLlamacppLabel() throws IOException {
+            // The dialect is INFERRED when none is stamped: a base that is not
+            // the OpenAI cloud is a llama.cpp-shaped local server. That
+            // inference is only worth anything if it lands on the same arm the
+            // explicit label lands on — otherwise naming the provider changes
+            // what leaves the machine, which is the defect this card removed.
+            JsonNode labelled = posted("llamacpp", "some-gguf", Reasoning.OFF, null);
+            JsonNode inferred = posted(null, "some-gguf", Reasoning.OFF, null);
+            assertNotNull(labelled.get("chat_template_kwargs"),
+                    "the labelled wire carries the off switch: " + labelled);
+            assertEquals(labelled.get("chat_template_kwargs"), inferred.get("chat_template_kwargs"),
+                    "labelled " + labelled + " vs inferred " + inferred);
+            assertEquals(labelled.get("reasoning_effort"), inferred.get("reasoning_effort"),
+                    "labelled " + labelled + " vs inferred " + inferred);
+        }
+
+        @Test
         void openrouterSpeaksTheNestedReasoningObject() throws IOException {
             JsonNode off = posted("openrouter", "anthropic/claude-sonnet-5", Reasoning.OFF, null);
             assertNull(off.get("reasoning_effort"), "openrouter does not read the flat field");

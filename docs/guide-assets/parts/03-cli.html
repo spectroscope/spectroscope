@@ -136,7 +136,7 @@ post-mortem inspection.</p>
   <tr><th>#</th><th>check</th><th>what it verifies</th></tr>
   <tr><td>1</td><td>Java runtime</td><td>runtime major version ≥ 21</td></tr>
   <tr><td>2</td><td>Config hierarchy</td><td>the layered config loads; shows provider/model/permissionMode/allowlist count and which layers exist. A broken config stops doctor immediately — nothing below would make sense</td></tr>
-  <tr><td>3</td><td>Provider reachability</td><td>anthropic: key present · ollama: live version probe · openai: GET <code>/v1/models</code> (2 s/3 s timeouts)</td></tr>
+  <tr><td>3</td><td>Provider reachability</td><td>anthropic: key present · ollama: live version probe · llamacpp: <code>GET /props</code>, which answers only once a model is loaded · every other OpenAI-compatible id: GET <code>/v1/models</code> (2 s/3 s timeouts)</td></tr>
   <tr><td>4</td><td>Image provider</td><td>key for gemini/openai; a missing key is informational, not unhealthy</td></tr>
   <tr><td>5</td><td>Skills</td><td>count + names of installed skills</td></tr>
   <tr><td>6</td><td>Hooks</td><td>count + <code>event:matcher</code> pairs</td></tr>

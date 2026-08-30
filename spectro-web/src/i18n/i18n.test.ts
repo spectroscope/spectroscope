@@ -8,6 +8,8 @@ import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
 import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS, sourceSentence } from "../components/traceDetail";
 import type { SourcePane } from "../components/traceDetail";
 import { HIDDEN_KINDS } from "../components/readable";
+import { PROVIDERS } from "../components/providerPickerMode";
+import { addressSpecFor } from "../components/providerAddress";
 import { CATEGORIES } from "../components/TraceView";
 import { TODO_STATUSES } from "../components/todoList";
 import { TRACE_FACES } from "../state/traceFace";
@@ -395,11 +397,43 @@ describe("the workspace gear describes baseUrl as what it now is", () => {
     expect(dict["wsg.local.desc.baseUrl"].de).not.toMatch(/^Die Adresse für ollama/);
   });
 
-  it("names the two fields that outrank it, in both languages", () => {
+  // Card 312 added a THIRD provider with its own address and the same
+  // precedence, and this guard was left naming two of them — so the sentence
+  // could keep saying "only applies to those two" with a green suite behind
+  // it. The list is no longer typed out here: it is DERIVED from the picker's
+  // providers and the address spec each one owns, so a fourth field cannot be
+  // added without this sentence being asked about it.
+  it("names every per-provider address field that outranks it, in both languages", () => {
+    const owned = PROVIDERS.map((p) => addressSpecFor(p)?.field).filter((f) => f !== undefined);
+    expect(owned.length, "no provider owns an address field any more").toBeGreaterThan(0);
     for (const lang of ["de", "en"] as const) {
       const desc = dict["wsg.local.desc.baseUrl"][lang];
-      expect(desc, `${lang} names ollamaBaseUrl`).toContain("ollamaBaseUrl");
-      expect(desc, `${lang} names lmstudioBaseUrl`).toContain("lmstudioBaseUrl");
+      for (const field of owned) {
+        expect(desc, `${lang} names ${field}`).toContain(field);
+      }
+    }
+  });
+});
+
+// Card 312, round 3. The addressless "backend not reachable" sentence is the
+// fallback an OLD server triggers, for WHICHEVER local provider is selected —
+// and it named two products by hand, so it went stale the day a third local
+// backend arrived and would have told a llama.cpp operator to start LM Studio.
+// The specific sentence beside it (pp.localDownAt) names the ADDRESS, which is
+// a fact the server reports; the generic one may name no product at all.
+describe("the addressless unreachable sentence names no backend", () => {
+  it("mentions no provider that owns an address, in either language", () => {
+    const owners = PROVIDERS.filter((p) => addressSpecFor(p) !== null);
+    expect(owners.length, "no provider owns an address any more").toBeGreaterThan(0);
+    for (const lang of ["de", "en"] as const) {
+      // "LM Studio" and "llama.cpp" are the same names with punctuation in
+      // them, so the comparison is made on letters only.
+      const letters = dict["pp.localDown"][lang].toLowerCase().replace(/[^a-z]/g, "");
+      for (const owner of owners) {
+        expect(letters, `${lang} names "${owner}", and the reader may be running another`).not.toContain(
+          owner.replace(/[^a-z]/g, ""),
+        );
+      }
     }
   });
 });

@@ -489,7 +489,7 @@ export function SettingsPanel({
   };
 
   /** The address block of the SELECTED provider (card 193): ollama and
-   *  lmstudio each own a field; every other provider hides it. */
+   *  lmstudio and llamacpp each own a field; every other provider hides it. */
   const addressSpec = view ? addressSpecFor(String(view.effective.provider ?? "")) : null;
 
   /** Card 311: the general address field loses to the one above it, and used
@@ -784,7 +784,14 @@ export function SettingsPanel({
                   whoever last edited this file. */}
                 <ReachBlock
                   lang={lang}
-                  fields={["provider", "model", "ollamaBaseUrl", "lmstudioBaseUrl", "thinking"]}
+                  fields={[
+                    "provider",
+                    "model",
+                    "ollamaBaseUrl",
+                    "lmstudioBaseUrl",
+                    "llamacppBaseUrl",
+                    "thinking",
+                  ]}
                   note="set.provApplies"
                 >
                   <div className="settings-grid">
@@ -837,9 +844,10 @@ export function SettingsPanel({
                         />
                       )}
                     </label>
-                    {/* Card 193: the address beside the provider that needs it —
-                    ollama and lmstudio each carry their OWN field with their
-                    OWN preset as placeholder; other providers hide it. The
+                    {/* Card 193: the address beside the provider that needs it.
+                    Which providers those are is addressSpecFor's answer, not a
+                    list repeated here — each owns a field and a preset of its
+                    own, and every other provider hides the row. The
                     key includes the effective value so a reset or an external
                     change refreshes the uncontrolled input's default. */}
                     {addressSpec && (

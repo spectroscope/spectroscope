@@ -972,7 +972,7 @@ class SpectroConfigTest {
 
     @Test
     void withProviderCopiesEveryRecordComponentWithoutBeingToldTheirNames() throws Exception {
-        // The named-field test above asserts six of twenty-three components, so
+        // The named-field test above asserts six of the record's components, so
         // it is blind to exactly the failure a positional copy produces: growing
         // the record forces a COMPILE error when a component is forgotten, but a
         // component handed the wrong VALUE — ollamaBaseUrl copied into
@@ -993,7 +993,14 @@ class SpectroConfigTest {
                 "ollamaBaseUrl-component", "lmstudioBaseUrl-component",
                 "searxngUrl-component",
                 true,    // allowLocalhost: distinct from the false default, card 199
-                true);   // headlessMcp: distinct from the false default, card 220
+                true,    // headlessMcp: distinct from the false default, card 220
+                // Card 262/266's counts, each distinct from its shipped default
+                // so a swapped int is visible too.
+                11, 12, 13, 14, 15,
+                // Card 312: llama.cpp's own address. It sits LAST in the record
+                // and next to nothing, but it is still a String the switch could
+                // drop — and a null here would let the loop pass vacuously.
+                "llamacppBaseUrl-component");
 
         SpectroConfig switched = base.withProvider("ollama", "qwen3");
 

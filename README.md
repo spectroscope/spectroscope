@@ -305,18 +305,25 @@ diagrams live in [docs/diagrams/](docs/diagrams/), each in both themes;
 
 ## providers
 
-Seven chat providers, switchable mid-session from the header picker with
+Eight chat providers, switchable mid-session from the header picker with
 history intact:
 
 | provider | runs | needs |
 |---|---|---|
-| `built-in` | local, via llama-server | nothing with the desktop kits, which bundle one; with the server jar, `brew install llama.cpp` |
+| `spectro-local` | local, via llama-server — the picker calls it **built-in** | nothing with the desktop kits, which bundle one; with the server jar, `brew install llama.cpp` |
 | `anthropic` | cloud | `ANTHROPIC_API_KEY` |
 | `ollama` | local | a running Ollama |
 | `openai` | api.openai.com or any compatible server | `OPENAI_API_KEY` (optional for local servers) |
-| `lmstudio` | local | LM Studio's server |
+| `lmstudio` | local | LM Studio's server on :1234 |
+| `llamacpp` | local | your own `llama-server` on :8080 |
 | `openrouter` | cloud | `OPENROUTER_API_KEY` |
 | `gemini` | cloud | `GEMINI_API_KEY` |
+
+`lmstudio` and `llamacpp` speak the same wire and are still two ids on purpose: a
+llama-server serves the one model it was started with and answers `GET /props`
+with the window that model is really loaded at, so `llamacpp` reads the context
+window instead of guessing it. Pointing `lmstudio` at a llama-server works and
+loses that.
 
 The built-in provider is the no-setup path: the app offers a small catalogue
 of open models (Qwen3 1.7B/4B/8B, Qwen2.5 Coder 7B, VibeThinker 3B), says

@@ -1,13 +1,21 @@
 // Pure logic for the provider picker, split out so it is testable without a DOM.
 
-/** Every selectable LLM backend. The two OpenAI-compatible presets (lmstudio,
- *  openrouter) sit next to the cloud ones; spectro-local is the bundled model,
- *  its own first-class entry; the picker treats them uniformly. */
+/** Every selectable LLM backend, and the app's only copy of that set — it is
+ *  held to SpectroConfig.KNOWN_PROVIDERS from the Java side by
+ *  ProviderListDriftTest, which reads this array out of this file. Before that
+ *  guard existed, a backend declared in Java left the picker silent about it
+ *  with every test in both languages green (card 312, round 4).
+ *
+ *  The OpenAI-compatible ids sit next to the cloud ones and the picker treats
+ *  them all uniformly; llamacpp is an operator's own llama-server, kept apart
+ *  from lmstudio because it answers with what it has loaded (card 312), and
+ *  spectro-local is the bundled model, its own first-class entry. */
 export const PROVIDERS = [
   "anthropic",
   "ollama",
   "openai",
   "lmstudio",
+  "llamacpp",
   "openrouter",
   "gemini",
   "spectro-local",
@@ -50,8 +58,9 @@ export function modelFieldMode(
 
 /**
  * Which model to select once a provider's list has loaded, given whether that
- * list is AUTHORITATIVE. A local backend (ollama, lmstudio) and a keyed cloud
- * provider whose key is present ("ready") both return their real models, so a
+ * list is AUTHORITATIVE. A local backend (every provider addressSpecFor gives a
+ * field to) and a keyed cloud provider whose key is present ("ready") both
+ * return their real models, so a
  * selection that isn't in the list — e.g. claude-opus carried over from
  * anthropic, or "local-model" left seeded on a keyed openai — is replaced with
  * the first real one. A needs-key / curated-fallback list is NOT authoritative,

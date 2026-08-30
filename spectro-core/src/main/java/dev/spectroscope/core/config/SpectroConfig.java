@@ -46,7 +46,7 @@ import java.util.function.Function;
  * (gitignored by convention) machine-specific. All fields are optional at
  * every layer; missing fields fall through to the layer below.
  *
- * @param provider            "anthropic", "ollama" or "openai" (LM Studio &amp; friends)
+ * @param provider            the LLM backend — any member of {@link #KNOWN_PROVIDERS}
  * @param model               model id for the chosen provider
  * @param baseUrl             base URL for ollama/openai (ignored for anthropic)
  * @param compactionThreshold input-token threshold that triggers compaction, or
@@ -191,6 +191,16 @@ import java.util.function.Function;
  *                            leash off</b>. It sits beside the guard's counts on
  *                            purpose: an operator tuning one will want the other,
  *                            and the two mechanics share a progress signal
+ * @param llamacppBaseUrl     the llama.cpp server's OWN address (card 312);
+ *                            {@code null}/blank falls back to the legacy shared
+ *                            {@code baseUrl}, then llama-server's documented
+ *                            default port 8080. Same no-sentinel rule as
+ *                            {@link #effectiveOllamaBaseUrl}. Appended LAST
+ *                            rather than placed beside its siblings: both
+ *                            neighbours are {@code String}, so a component
+ *                            inserted mid-record would let a stale positional
+ *                            call compile with the arguments shifted. Env
+ *                            {@code SPECTRO_LLAMACPP_BASE_URL}
  */
 public record SpectroConfig(
         String provider,
@@ -223,14 +233,73 @@ public record SpectroConfig(
         int progressGuardFailures,
         int progressGuardPlanTurns,
         int continuationBudget,
-        int maxTurns) {
+        int maxTurns,
+        String llamacppBaseUrl) {
+
+    /**
+     * Compat: the pre-card-312 arity, which knew no llama.cpp address. Every
+     * caller that built a config positionally keeps compiling and gets an unset
+     * llama.cpp field, which the address chain reads as "fall back to the
+     * legacy baseUrl, then the preset" — the same thing an old config file says.
+     *
+     * @param provider            the backend name
+     * @param model               the model id
+     * @param baseUrl             the legacy per-provider endpoint override
+     * @param compactionThreshold input tokens that trigger compaction
+     * @param permissionMode      how tool permissions are answered
+     * @param autoApprove         tool names answered without asking
+     * @param imageProvider       which backend renders images
+     * @param thinking            whether reasoning is requested
+     * @param mcpServers          the configured MCP servers
+     * @param maxRetries          provider retry budget
+     * @param promptCaching       whether prompt caching is requested
+     * @param hooks               the configured shell hooks
+     * @param workspace           the working directory
+     * @param logLevel            the log level
+     * @param imageModel          the image model id
+     * @param sttModel            the speech model id
+     * @param sttProvider         which backend transcribes
+     * @param sttLanguage         the dictation language
+     * @param chromeBinary        an explicit Chrome path
+     * @param otlpEndpoint        the OTLP collector
+     * @param otlpBasicAuth       its credentials
+     * @param ollamaBaseUrl       the ollama endpoint
+     * @param lmstudioBaseUrl     the LM Studio endpoint
+     * @param searxngUrl          the SearXNG instance
+     * @param allowLocalhost      whether the net fence allows loopback
+     * @param headlessMcp         whether an unattended run mounts MCP servers
+     * @param progressGuardWrites detector 1's count
+     * @param progressGuardFailures detector 2's count
+     * @param progressGuardPlanTurns detector 3's count
+     * @param continuationBudget  how often one run may be restarted
+     * @param maxTurns            the per-run turn ceiling
+     */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
+                continuationBudget, maxTurns, null);
+    }
 
     /**
      * Compat: the pre-card-262 arity, which knew no progress guard. Every caller
      * that built a config positionally keeps compiling and gets the shipped
      * defaults — both cheap detectors armed, the plan net off.
      *
-     * @param provider            "anthropic", "ollama" or "openai"
+     * @param provider            the LLM backend, a member of {@link #KNOWN_PROVIDERS}
      * @param model               model id for the chosen provider
      * @param baseUrl             base URL for ollama/openai
      * @param compactionThreshold input-token threshold, or null to derive it
@@ -272,7 +341,7 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
                 searxngUrl, allowLocalhost, headlessMcp,
                 DEFAULT_PROGRESS_WRITES, DEFAULT_PROGRESS_FAILURES, DEFAULT_PROGRESS_PLAN_TURNS,
-                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS);
+                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null);
     }
 
     /**
@@ -280,7 +349,7 @@ public record SpectroConfig(
      * caller that built a config positionally keeps compiling and gets the
      * shipped budget.
      *
-     * @param provider            "anthropic", "ollama" or "openai"
+     * @param provider            the LLM backend, a member of {@link #KNOWN_PROVIDERS}
      * @param model               the model id
      * @param baseUrl             the legacy per-provider endpoint override
      * @param compactionThreshold input tokens that trigger compaction
@@ -327,7 +396,7 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
                 searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
-                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS);
+                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null);
     }
 
     /** The shipped {@code progressGuardWrites}: the same bytes under a third new
@@ -391,13 +460,14 @@ public record SpectroConfig(
     // Package-private (not private): SettingsWriter's patch validation references
     // these as the single source instead of re-declaring the same literals.
     static final Set<String> KNOWN_PROVIDERS =
-            Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini", "spectro-local");
+            Set.of("anthropic", "ollama", "openai", "lmstudio", "llamacpp",
+                    "openrouter", "gemini", "spectro-local");
     /** A stable, human-readable listing of {@link #KNOWN_PROVIDERS} for error
      *  messages — {@link Set#of} has no guaranteed iteration order, so it is
      *  spelled out once and shared by config validation and the live picker
      *  switch instead of being rebuilt (in a different order) in each place. */
     public static final String KNOWN_PROVIDERS_DISPLAY =
-            "anthropic, ollama, openai, lmstudio, openrouter, gemini, spectro-local";
+            "anthropic, ollama, openai, lmstudio, llamacpp, openrouter, gemini, spectro-local";
     /** {@code imageProvider}'s known values — the factory's own list rather than
      *  a second spelling of it, so a backend added there is accepted here. */
     static final Set<String> KNOWN_IMAGE_PROVIDERS =
@@ -760,7 +830,7 @@ public record SpectroConfig(
                         base.allowLocalhost(), base.headlessMcp(),
                         base.progressGuardWrites(), base.progressGuardFailures(),
                         base.progressGuardPlanTurns(), base.continuationBudget(),
-                        base.maxTurns());
+                        base.maxTurns(), base.llamacppBaseUrl());
             }
         }
         return base;
@@ -815,7 +885,11 @@ public record SpectroConfig(
             new FieldProbe("progressGuardFailures", p -> p.progressGuardFailures),
             new FieldProbe("progressGuardPlanTurns", p -> p.progressGuardPlanTurns),
             new FieldProbe("continuationBudget", p -> p.continuationBudget),
-            new FieldProbe("maxTurns", p -> p.maxTurns));
+            new FieldProbe("maxTurns", p -> p.maxTurns),
+            // Card 312 — LAST, because the probe list is pinned to the record's
+            // component ORDER and llamacppBaseUrl was appended rather than
+            // slotted beside its siblings.
+            new FieldProbe("llamacppBaseUrl", p -> p.llamacppBaseUrl));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -1009,7 +1083,7 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
                 ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
-                continuationBudget, maxTurns);
+                continuationBudget, maxTurns, llamacppBaseUrl);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1029,6 +1103,65 @@ public record SpectroConfig(
         return KNOWN_PROVIDERS;
     }
 
+    /** Every backend a newcomer can run for free on a machine they control —
+     *  DERIVED from two facts each provider already declares, never typed out
+     *  again: it needs no key ({@link #keyEnvFor} returns null) and it owns an
+     *  address somebody dials ({@link #endpointFor} answers instead of
+     *  refusing). The second half is what separates these from the bundled
+     *  runtime, which is keyless too but is a subprocess, not a server.
+     *
+     *  <p>Exists so an onboarding screen can be HELD to this list instead of
+     *  repeating it. Card 312 added a third member, and the CLI's first-run
+     *  hint, the comment above its call site and the test under it all still
+     *  said two — the test spelled the same pair out, so nothing could go
+     *  red.</p>
+     *
+     *  @return the keyless local server providers; iteration order is not
+     *          defined */
+    public static Set<String> keylessLocalServers() {
+        return Set.copyOf(KNOWN_PROVIDERS.stream()
+                .filter(provider -> keyEnvFor(provider) == null)
+                .filter(provider -> presetEndpointFor(provider) != null)
+                .toList());
+    }
+
+    /** Every backend that speaks the OpenAI chat/completions wire — the same
+     *  {@link #isOpenAiCompat} rule, handed out as a SET so a caller in another
+     *  package can be held to it.
+     *
+     *  <p>Exists because {@code isOpenAiCompat} is package-private and the
+     *  server's {@code /api/models} route is not in this package: its arm for
+     *  these providers was therefore a hand-typed copy of the switch below,
+     *  with a javadoc pointing at a symbol no test could reach. Measured on
+     *  card 312, round 5 — a ninth provider added to {@link #KNOWN_PROVIDERS},
+     *  {@link #endpointFor} and {@code isOpenAiCompat} and nowhere else left
+     *  the whole spectro-server suite green while the picker showed an empty
+     *  model list for a backend the config accepts and that speaks the wire.</p>
+     *
+     *  @return the OpenAI-compatible providers; iteration order is not
+     *          defined */
+    public static Set<String> openAiCompatProviders() {
+        return Set.copyOf(KNOWN_PROVIDERS.stream()
+                .filter(SpectroConfig::isOpenAiCompat)
+                .toList());
+    }
+
+    /** The address {@code provider} is dialled at when nothing is configured —
+     *  its own preset, taken from {@link #endpointFor} on the default config
+     *  rather than by repeating that method's case list, so a preset that moves
+     *  moves everywhere it is quoted. {@code null} for a provider that owns no
+     *  address at all (anthropic's is fixed in the SDK; the bundled runtime is
+     *  a subprocess).
+     *  @param provider the provider name
+     *  @return the preset endpoint, or null when the provider has none */
+    public static String presetEndpointFor(String provider) {
+        try {
+            return DEFAULTS.endpointFor(provider);
+        } catch (IllegalArgumentException noAddressToDial) {
+            return null;
+        }
+    }
+
     /**
      * The default model for a provider when none is set explicitly, or {@code null}
      * when the provider has no honest default. A local backend serves whatever model
@@ -1043,7 +1176,12 @@ public record SpectroConfig(
     public static String defaultModelFor(String provider) {
         return switch (provider) {
             case "ollama" -> "qwen3";
-            case "lmstudio", "openai" -> "local-model";
+            // llamacpp: the id is DECORATIVE. One llama-server serves the one
+            // model it was started with and ignores the model field — measured
+            // 2026-08-30 against b10107, where a request naming
+            // "totally-made-up-name" completed normally and the response
+            // echoed the actually loaded model.
+            case "lmstudio", "llamacpp", "openai" -> "local-model";
             // Ask the catalogue rather than repeat it. This used to be a constant,
             // and it drifted: the catalogue moved its default to a model that
             // shows its thinking AND drives tools, while a live picker switch
@@ -1056,7 +1194,7 @@ public record SpectroConfig(
 
     /** Whether a LIVE provider switch to {@code provider} requires an API key to be
      *  present. True for the cloud services that cannot work without one (anthropic,
-     *  gemini, openrouter). False for the local backends (ollama, lmstudio) AND for
+     *  gemini, openrouter). False for every provider with no key variable AND for
      *  openai — openai is the generic OpenAI-compatible escape hatch, routinely
      *  pointed at a keyless local server via a custom base url, so a switch to it
      *  stays tolerant (its default-endpoint keyless gap is pre-existing and out of
@@ -1135,7 +1273,12 @@ public record SpectroConfig(
     public LlmProvider providerFromConfig() {
         LlmProvider real = switch (provider) {
             case "ollama" -> new OllamaProvider(new OllamaOptions(endpointFor("ollama"), model));
-            case "openai", "lmstudio", "openrouter", "gemini" -> new OpenAiCompatProvider(
+            // "llamacpp" is NOT a new dialect stamp: the label already existed
+            // inside OpenAiCompatProvider as the INFERRED name for a non-cloud
+            // OpenAI-compatible base, and it already has its own row in
+            // capabilities.json. Card 312 gives that existing dialect a front
+            // door rather than spelling the same measured fact a second way.
+            case "openai", "lmstudio", "llamacpp", "openrouter", "gemini" -> new OpenAiCompatProvider(
                     // The label rides along as the wire dialect — the reasoning
                     // fields differ per provider (card 88), nothing else does.
                     new OpenAiCompatProvider.Options(endpointFor(provider), model, openAiCompatKey(), provider));
@@ -1160,7 +1303,11 @@ public record SpectroConfig(
      * only authenticates. The provider, {@link #providerHost()} and the server's
      * live model list all derive from this one rule.
      *
-     * @param provider "openai" | "lmstudio" | "openrouter"
+     * @param provider an OpenAI-compatible provider — a member of
+     *                 {@link #openAiCompatProviders()}, named by the rule rather
+     *                 than retyped here: the three that stood in this line
+     *                 shipped while {@link #endpointFor} was already passing
+     *                 gemini in (card 312)
      * @param baseUrl  the configured base url
      * @return the endpoint the openai-compatible provider talks to
      */
@@ -1224,7 +1371,7 @@ public record SpectroConfig(
      * their own per-provider field first; the OpenAI-compatible cloud
      * providers keep the legacy shared rule.
      *
-     * @param provider one of ollama, lmstudio, openai, openrouter, gemini
+     * @param provider a provider with a configurable endpoint — the arms below
      * @return the effective endpoint for {@code provider} under this config
      * @throws IllegalArgumentException for providers without a configurable
      *         endpoint (anthropic's is fixed in the SDK; spectro-local is a
@@ -1234,38 +1381,72 @@ public record SpectroConfig(
         return switch (provider) {
             case "ollama" -> effectiveOllamaBaseUrl(ollamaBaseUrl, baseUrl);
             case "lmstudio" -> effectiveLmstudioBaseUrl(lmstudioBaseUrl, baseUrl);
+            case "llamacpp" -> effectiveLlamacppBaseUrl(llamacppBaseUrl, baseUrl);
             case "openai", "openrouter", "gemini" -> effectiveOpenAiBaseUrl(provider, baseUrl);
             default -> throw new IllegalArgumentException(
                     "no configurable endpoint for provider: " + provider);
         };
     }
 
-    /** The preset endpoint root for each OpenAI-compatible provider (before an
-     *  explicit override): openai = the cloud, lmstudio = a local LM Studio
-     *  server, openrouter = the OpenRouter gateway.
+    /**
+     * The effective llama.cpp endpoint (card 312): the per-provider address when
+     * set — verbatim, no sentinel, see {@link #effectiveOllamaBaseUrl} — then the
+     * legacy shared {@code baseUrl}, then llama-server's own documented default
+     * port. The legacy field's literal {@code http://localhost:11434} is ollama's
+     * port doubling as "unset", so it is skipped here exactly as the other
+     * per-provider rules skip it.
+     *
+     * @param llamacppBaseUrl the per-provider address ({@code null}/blank = unset)
+     * @param baseUrl         the legacy shared base url, kept working for old configs
+     * @return the endpoint the llama.cpp server is dialled at
+     */
+    public static String effectiveLlamacppBaseUrl(String llamacppBaseUrl, String baseUrl) {
+        if (llamacppBaseUrl != null && !llamacppBaseUrl.isBlank()) {
+            return llamacppBaseUrl;
+        }
+        if (baseUrl != null && !baseUrl.isBlank()
+                && !"http://localhost:11434".equals(baseUrl)) {
+            return baseUrl;
+        }
+        return openAiCompatPreset("llamacpp");
+    }
+
+    /** The preset endpoint root for each OpenAI-compatible provider, before any
+     *  explicit override — the arms below ARE the list, so reading them is
+     *  cheaper than a second copy up here that can lose one (this one had lost
+     *  gemini). Two of them address a server on the reader's own machine; the
+     *  rest are somebody's cloud.
      *  @param provider the provider name
      *  @return the preset base URL */
     static String openAiCompatPreset(String provider) {
         return switch (provider) {
             case "lmstudio" -> "http://localhost:1234";
+            // llama-server's own default, from the bundled binary's help text:
+            // `--port PORT  port to listen (default: 8080)` (build b10107).
+            case "llamacpp" -> "http://localhost:8080";
             case "openrouter" -> "https://openrouter.ai/api";
             case "gemini" -> "https://generativelanguage.googleapis.com/v1beta/openai";
             default -> "https://api.openai.com";
         };
     }
 
-    /** True for the OpenAI-compatible providers (one wire protocol, three hosts).
+    /** True for the OpenAI-compatible providers — one wire protocol, as many
+     *  hosts as the arms below. It said "three hosts" over five of them, and
+     *  the sentence had already been copied into the guide's wire chapter,
+     *  where card 312 corrected the copy and left this original standing.
      *  @param provider the provider name
      *  @return whether it speaks the OpenAI chat/completions API */
     static boolean isOpenAiCompat(String provider) {
         return "openai".equals(provider)
                 || "lmstudio".equals(provider)
+                || "llamacpp".equals(provider)
                 || "openrouter".equals(provider)
                 || "gemini".equals(provider);
     }
 
     /** The environment variable carrying a provider's API key, or {@code null}
-     *  for the local backends (ollama, lmstudio) that authenticate with nothing.
+     *  for the local backends that authenticate with nothing (the {@code default}
+     *  arm below, which is what {@link #keylessLocalServers} is filtered on).
      *  The single source for both the provider construction and the onboarding
      *  status the faces show.
      *  @param provider the provider name
@@ -1276,7 +1457,7 @@ public record SpectroConfig(
             case "openai" -> "OPENAI_API_KEY";
             case "openrouter" -> "OPENROUTER_API_KEY";
             case "gemini" -> "GEMINI_API_KEY"; // same key as the gemini image backend
-            default -> null; // ollama, lmstudio: local, no key
+            default -> null; // the local backends: no key to carry
         };
     }
 
@@ -1301,7 +1482,7 @@ public record SpectroConfig(
 
     /** A provider's onboarding status for the first-run dialog and the picker:
      *  an API provider is {@code "ready"} once its key is present and
-     *  {@code "needs-key"} otherwise; a local provider (ollama, lmstudio) is
+     *  {@code "needs-key"} otherwise; a provider with no key variable is
      *  {@code "local"} — its readiness is a reachability question the live model
      *  list answers, not a key check.
      *  @param provider   the provider name
@@ -1525,7 +1706,7 @@ public record SpectroConfig(
      *  for openrouter, {@code OPENAI_API_KEY} otherwise (LM Studio ignores it).
      *  @return the key, or null when unset */
     private String openAiCompatKey() {
-        return resolveApiKey(keyEnvFor(provider)); // null keyEnv (lmstudio) -> no key
+        return resolveApiKey(keyEnvFor(provider)); // null keyEnv (a local backend) -> no key
     }
 
     /**
@@ -1716,6 +1897,8 @@ public record SpectroConfig(
         public String otlpBasicAuth;
         public String ollamaBaseUrl;
         public String lmstudioBaseUrl;
+        /** llama.cpp's own address, card 312. */
+        public String llamacppBaseUrl;
         public String searxngUrl;
         public Boolean allowLocalhost;
         public Boolean headlessMcp;
@@ -1764,6 +1947,7 @@ public record SpectroConfig(
             out.otlpBasicAuth = Optional.ofNullable(higher.otlpBasicAuth).orElse(otlpBasicAuth);
             out.ollamaBaseUrl = Optional.ofNullable(higher.ollamaBaseUrl).orElse(ollamaBaseUrl);
             out.lmstudioBaseUrl = Optional.ofNullable(higher.lmstudioBaseUrl).orElse(lmstudioBaseUrl);
+            out.llamacppBaseUrl = Optional.ofNullable(higher.llamacppBaseUrl).orElse(llamacppBaseUrl);
             out.searxngUrl = Optional.ofNullable(higher.searxngUrl).orElse(searxngUrl);
             out.allowLocalhost = Optional.ofNullable(higher.allowLocalhost).orElse(allowLocalhost);
             out.headlessMcp = Optional.ofNullable(higher.headlessMcp).orElse(headlessMcp);
@@ -1823,7 +2007,8 @@ public record SpectroConfig(
                     Optional.ofNullable(progressGuardFailures).orElse(DEFAULTS.progressGuardFailures()),
                     Optional.ofNullable(progressGuardPlanTurns).orElse(DEFAULTS.progressGuardPlanTurns()),
                     Optional.ofNullable(continuationBudget).orElse(DEFAULTS.continuationBudget()),
-                    Optional.ofNullable(maxTurns).orElse(DEFAULTS.maxTurns()));
+                    Optional.ofNullable(maxTurns).orElse(DEFAULTS.maxTurns()),
+                    Optional.ofNullable(llamacppBaseUrl).orElse(DEFAULTS.llamacppBaseUrl()));
         }
 
         /**
@@ -1848,6 +2033,7 @@ public record SpectroConfig(
             // from the shared legacy baseUrl above.
             out.ollamaBaseUrl = env.get("SPECTRO_OLLAMA_BASE_URL");
             out.lmstudioBaseUrl = env.get("SPECTRO_LMSTUDIO_BASE_URL");
+            out.llamacppBaseUrl = env.get("SPECTRO_LLAMACPP_BASE_URL");
             // Card 203: the SearXNG instance web_search dials. This is the
             // PROCESS variable only; the file half that lets
             // samples/09-searxng/install.sh hand the address over through

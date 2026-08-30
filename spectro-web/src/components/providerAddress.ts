@@ -15,7 +15,7 @@ import { layerLabel, type Origin, type SettingsView } from "../state/serverSetti
 /** The address field of one local-model provider. */
 export interface AddressSpec {
   /** The SpectroConfig field the Settings page reads and writes. */
-  field: "ollamaBaseUrl" | "lmstudioBaseUrl";
+  field: "ollamaBaseUrl" | "lmstudioBaseUrl" | "llamacppBaseUrl";
   /** The provider's OWN preset, shown as the placeholder — what an empty
    *  field falls back to (through the legacy baseUrl chain, server-side). */
   preset: string;
@@ -30,6 +30,10 @@ export function addressSpecFor(provider: string): AddressSpec | null {
       return { field: "ollamaBaseUrl", preset: "http://localhost:11434" };
     case "lmstudio":
       return { field: "lmstudioBaseUrl", preset: "http://localhost:1234" };
+    // Card 312. llama-server's own documented default: `--port PORT  port to
+    // listen (default: 8080)`.
+    case "llamacpp":
+      return { field: "llamacppBaseUrl", preset: "http://localhost:8080" };
     default:
       return null;
   }

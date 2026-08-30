@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { read } from "../testkit/source";
 import { t } from "../i18n/i18n";
 import { addressSpecFor, LEGACY_SHARED_DEFAULT } from "./providerAddress";
+import { PROVIDERS } from "./providerPickerMode";
 
 const settingsTsx = read("./SettingsPanel.tsx", import.meta.url);
 const pickerTsx = read("./ProviderPicker.tsx", import.meta.url);
@@ -19,10 +20,18 @@ const fieldTsx = read("./providerModelField.tsx", import.meta.url);
 const onboardingTsx = read("./Onboarding.tsx", import.meta.url);
 const appTsx = read("../App.tsx", import.meta.url);
 
+/** The onboarding source with its whitespace collapsed. A sentence in JSX is
+ *  laid out by prettier, so a phrase lands wherever the print width puts it:
+ *  card 312 round 5 named the three keyless backends by id in that paragraph
+ *  and the reflow split "anderen Maschine" across two lines, which reads as
+ *  "the German half is gone". The claim below is that the sentence is there,
+ *  never that it fits on one source line. */
+const onboardingProse = onboardingTsx.replace(/\s+/g, " ");
+
 describe("the settings page carries the address beside the provider that needs it", () => {
   it("renders the field from the one provider→field mapping", () => {
-    // addressSpecFor is the single source: ollama/lmstudio get their field
-    // (preset as placeholder), every other provider hides it.
+    // addressSpecFor is the single source: the providers it names get their
+    // field (preset as placeholder), every other provider hides it.
     expect(settingsTsx).toContain("addressSpecFor(");
     expect(settingsTsx).toContain("placeholder={addressSpec.preset}");
   });
@@ -62,8 +71,8 @@ describe("the failure sentence names the address the probe tried", () => {
 
 describe("the startup tutorial points the remote-machine reader at the field", () => {
   it("carries the sentence in both languages, with a way into settings", () => {
-    expect(onboardingTsx).toContain("anderen Maschine");
-    expect(onboardingTsx).toContain("another machine");
+    expect(onboardingProse).toContain("anderen Maschine");
+    expect(onboardingProse).toContain("another machine");
     expect(onboardingTsx).toContain("onOpenSettings");
   });
 
@@ -151,10 +160,46 @@ describe("the fallback rule mirrors the server's, by value", () => {
     expect(LEGACY_SHARED_DEFAULT).toBe(m?.[1]);
   });
 
-  it("names the preset that rule falls back to for lmstudio", () => {
-    const m = /case "lmstudio" -> "([^"]+)";/.exec(spectroConfigJava);
-    expect(m, "openAiCompatPreset no longer carries an lmstudio row").not.toBeNull();
-    expect(addressSpecFor("lmstudio")?.preset).toBe(m?.[1]);
+  // Every address owner, not lmstudio alone: this was a single literal when
+  // card 312 added a third owner with a preset of its own (8080), and a guard
+  // naming one provider cannot notice a second mirror going stale. The preset
+  // is what the settings field shows as its PLACEHOLDER, so a drifted one is a
+  // wrong address printed to the operator in the calmest possible voice.
+  //
+  // Scoped to the method body on purpose. A file-wide /case "ollama" -> "…"/
+  // matches `case "ollama" -> "qwen3";` in defaultModelFor twenty lines up and
+  // compares a preset against a MODEL ID — measured while writing this, and it
+  // would have been green in exactly one direction.
+  const presetBody = /static String openAiCompatPreset\([^)]*\)\s*\{([\s\S]*?)\n    \}/.exec(
+    spectroConfigJava,
+  )?.[1];
+  const ollamaFallback = /effectiveOllamaBaseUrl\([\s\S]*?return "([^"]+)";\s*\}/.exec(
+    spectroConfigJava,
+  )?.[1];
+
+  it("finds both server rules it is about to read", () => {
+    expect(presetBody, "openAiCompatPreset is no longer a switch this guard can read").toBeTruthy();
+    expect(ollamaFallback, "effectiveOllamaBaseUrl no longer ends in a literal").toBeTruthy();
+  });
+
+  it.each(PROVIDERS.filter((p) => addressSpecFor(p) !== null))(
+    "mirrors the server's preset for %s",
+    (provider) => {
+      // Which rule supplies this owner's preset is asked of the server, not
+      // assumed: the openai-compat road for the ones its switch names, and
+      // effectiveOllamaBaseUrl's own trailing literal for ollama, which has no
+      // row there at all.
+      const row = new RegExp(`case "${provider}" -> "([^"]+)";`).exec(String(presetBody));
+      expect(addressSpecFor(provider)?.preset).toBe(row ? row[1] : ollamaFallback);
+    },
+  );
+
+  it("reads more than one preset out of the openai-compat switch", () => {
+    const owners = PROVIDERS.filter((p) => addressSpecFor(p) !== null);
+    const fromSwitch = owners.filter((p) => new RegExp(`case "${p}" -> "`).test(String(presetBody)));
+    // Two, so the walk above cannot quietly shrink to ollama's single arm and
+    // stop reading openAiCompatPreset at all.
+    expect(fromSwitch.length, `only ${fromSwitch} take the openai-compat road`).toBeGreaterThan(1);
   });
 });
 

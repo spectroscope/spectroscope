@@ -174,7 +174,8 @@ class ContextWindowProbeTest {
         void anEndpointThatDeniesTheRouteIsNeverAskedAgain() {
             // Review finding: only positive answers were remembered, so every
             // endpoint that structurally CANNOT answer — api.openai.com,
-            // openrouter, llama.cpp's server, vLLM, the gemini gateway — was
+            // openrouter, vLLM, the gemini gateway (llama.cpp's server has been
+            // asked at its own /props since card 312, see below) — was
             // re-probed on every run for the life of the session, and on every
             // child run too. A 404 is not a just-in-time state: it is the server
             // saying it has no such route, and that answer does not expire.
@@ -222,6 +223,75 @@ class ContextWindowProbeTest {
             provider(null).contextWindow();
 
             assertEquals(List.of("<none>"), server.authorizations);
+        }
+    }
+
+    // ---- llama.cpp's /props, at the server ROOT ---------------------------
+
+    @Nested
+    class LlamaCpp {
+
+        /** Verbatim from the bundled binary (b10107, Qwen3-1.7B, {@code -c
+         *  4096}), trimmed to the fields that are read. */
+        private static final String PROPS = """
+                {"default_generation_settings":{"n_ctx":4096},"total_slots":4,
+                 "endpoint_props":false,"build_info":"b10107-c0bc8591e"}""";
+
+        private ScriptedServer server;
+
+        @BeforeEach
+        void start() throws IOException {
+            server = new ScriptedServer();
+        }
+
+        @AfterEach
+        void stop() {
+            server.stop();
+        }
+
+        private OpenAiCompatProvider provider(String dialect) {
+            // The OpenAI-style base an operator pastes: /props hangs off the
+            // ROOT, so the version suffix has to come back off.
+            return new OpenAiCompatProvider(new OpenAiCompatProvider.Options(
+                    server.baseUrl() + "/v1", "local-model", null, dialect));
+        }
+
+        @Test
+        void theWindowComesFromPropsRatherThanAListingThatCannotAnswer() {
+            // The three pieces of this route each have a unit test —
+            // readsWindowFromProps, propsUrl, loadedWindowFromProps — and NONE
+            // of them is the wiring that composes them. The path the server
+            // actually saw is the only observation that says the probe changed
+            // doors: llama.cpp has no /api/v1/models to fall back to, so a
+            // regression here is a run back to guessing the window from a
+            // published-limits table.
+            server.answers(200, PROPS);
+
+            assertEquals(4096, provider("llamacpp").contextWindow(),
+                    "the window ONE request gets, which is what the server was started with");
+            assertEquals(List.of("/props"), server.paths,
+                    "the model listing is the wrong door for a server holding one model");
+        }
+
+        @Test
+        void theBundledRuntimeGoesThroughTheSameDoor() {
+            // spectro-local IS a llama-server, the same binary. One engine
+            // must not answer the same question through two routes, one of
+            // them a guess.
+            server.answers(200, PROPS);
+
+            assertEquals(4096, provider("spectro-local").contextWindow());
+            assertEquals(List.of("/props"), server.paths);
+        }
+
+        @Test
+        void aPositiveAnswerIsRememberedHereToo() {
+            server.answers(200, PROPS);
+            OpenAiCompatProvider provider = provider("llamacpp");
+
+            assertEquals(4096, provider.contextWindow());
+            assertEquals(4096, provider.contextWindow());
+            assertEquals(1, server.hits.get(), "one lookup, memoized");
         }
     }
 

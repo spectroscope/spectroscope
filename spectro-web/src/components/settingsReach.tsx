@@ -58,6 +58,7 @@ export const SETTING_REACH = {
   model: "next-session",
   ollamaBaseUrl: "next-session",
   lmstudioBaseUrl: "next-session",
+  llamacppBaseUrl: "next-session",
   // `.thinking(thinking.get())` is read once, at the build. The header toggle
   // forwards to the live agent (Agent#setThinking); a settings write does not.
   thinking: "next-session",

@@ -15,20 +15,37 @@ import { PROVIDERS } from "./providerPickerMode";
 import type { Origin, SettingsView } from "../state/serverSettings";
 
 describe("addressSpecFor", () => {
-  it("gives each local-model provider its own field and its own preset", () => {
-    expect(addressSpecFor("ollama")).toEqual({
-      field: "ollamaBaseUrl",
-      preset: "http://localhost:11434",
-    });
-    expect(addressSpecFor("lmstudio")).toEqual({
-      field: "lmstudioBaseUrl",
-      preset: "http://localhost:1234",
-    });
+  // The test that stood here was called "gives each local-model provider its
+  // own field and its own preset" and then named two of the three by hand, so
+  // llamacpp joined without it noticing and the name went on claiming the
+  // coverage (card 312, round 3). Every provider is walked now, and what is
+  // asserted is the SHAPE the card-193 rule requires of an owner — a field of
+  // its own name, a loopback preset, and a port nobody else has. The defect
+  // that rule exists for was one provider borrowing another's port.
+  it("gives every address owner its own field, on its own port", () => {
+    const owners = PROVIDERS.filter((p) => addressSpecFor(p) !== null);
+    expect(owners.length, "no provider owns an address any more").toBeGreaterThanOrEqual(2);
+    const ports = new Set<string>();
+    for (const p of owners) {
+      const spec = addressSpecFor(p)!;
+      expect(spec.field, `${p}'s field is not its own name`).toBe(`${p}BaseUrl`);
+      const port = spec.preset.match(/^http:\/\/localhost:(\d+)$/)?.[1];
+      expect(port, `${p}'s preset is not a loopback address with a port: ${spec.preset}`).toBeDefined();
+      expect(ports.has(port!), `${p} shares port ${port} with another provider`).toBe(false);
+      ports.add(port!);
+    }
   });
 
-  it("answers null for every provider without an address — the field stays hidden", () => {
-    for (const p of PROVIDERS) {
-      if (p === "ollama" || p === "lmstudio") continue;
+  it("answers null for every provider that is not an owner — the field stays hidden", () => {
+    // No skip list: the owners are read off addressSpecFor itself, and WHICH
+    // providers those are is pinned against the server's own answer in
+    // settingsReach.test.tsx and llamacppProvider.test.ts. Left that way with a
+    // reason: on the web side addressSpecFor IS the source, so a second copy
+    // here would be the hand-typed list this round is removing, not a check.
+    const owners = new Set(PROVIDERS.filter((p) => addressSpecFor(p) !== null));
+    const hidden = PROVIDERS.filter((p) => !owners.has(p));
+    expect(hidden.length, "every provider owns an address — the row can never hide").toBeGreaterThan(0);
+    for (const p of hidden) {
       expect(addressSpecFor(p), p).toBeNull();
     }
   });
@@ -88,12 +105,17 @@ describe("addressOverrideNote", () => {
   });
 
   it("names the winning address, both layers and the provider, in both languages", () => {
-    // Both providers, because both dict entries carry the same five holes and
-    // one sentence proves nothing about the other.
-    const cases = [
-      { provider: "ollama", field: "ollamaBaseUrl", addr: "http://gpu-box:11434" },
-      { provider: "lmstudio", field: "lmstudioBaseUrl", addr: "http://gpu-box:1234" },
-    ] as const;
+    // Every provider that owns an address, because the dict entries carry the
+    // same five holes and one sentence proves nothing about the other. Derived
+    // rather than listed: this was a literal pair when card 312 added a third
+    // owner on a branch that had never seen this note, and a pair cannot fail
+    // over a member it does not name. The address is derived from the preset
+    // too, so each subject gets its own and a swapped arm cannot pass.
+    const cases = PROVIDERS.filter((p) => addressSpecFor(p) !== null).map((provider) => {
+      const spec = addressSpecFor(provider)!;
+      return { provider, field: spec.field, addr: spec.preset.replace("localhost", "gpu-box") };
+    });
+    expect(cases.length, "no provider owns an address — the walk is vacuous").toBeGreaterThan(2);
     for (const { provider, field, addr } of cases) {
       for (const lang of ["de", "en"] as const) {
         const note = addressOverrideNote(
@@ -182,7 +204,7 @@ describe("addressOverrideNote", () => {
 
   it("says nothing for a provider without an address field of its own", () => {
     for (const p of PROVIDERS) {
-      if (p === "ollama" || p === "lmstudio") continue;
+      if (addressSpecFor(p) !== null) continue; // derived: a pair went stale once already
       expect(
         addressOverrideNote(
           p,
@@ -278,7 +300,7 @@ describe("generalAddressIgnoredNote", () => {
     provider: string,
     own: unknown,
     ownOrigin: Origin,
-    field = provider === "ollama" ? "ollamaBaseUrl" : "lmstudioBaseUrl",
+    field = addressSpecFor(provider)?.field ?? "ollamaBaseUrl",
   ): SettingsView => viewWith({ provider, [field]: own }, { provider: set("user"), [field]: ownOrigin });
 
   it("warns beside the general field when the provider reads its own instead", () => {
@@ -311,7 +333,7 @@ describe("generalAddressIgnoredNote", () => {
 
   it("says nothing when the provider has no address of its own", () => {
     for (const p of PROVIDERS) {
-      if (p === "ollama" || p === "lmstudio") continue;
+      if (addressSpecFor(p) !== null) continue; // derived: a pair went stale once already
       expect(
         generalAddressIgnoredNote("baseUrl", withProvider(p, "http://x:1", set("user")), "en"),
         p,
@@ -331,21 +353,27 @@ describe("generalAddressIgnoredNote", () => {
   });
 
   it("names the provider, its field, the layer and the address, in both languages", () => {
-    for (const lang of ["de", "en"] as const) {
-      const note = generalAddressIgnoredNote(
-        "baseUrl",
-        withProvider("lmstudio", "http://gpu-box:1234", set("env")),
-        lang,
-      );
-      const sentence = t(lang, note!.key, note!.vars);
-      expect(sentence, lang).not.toBe(note!.key); // the key resolves
-      expect(sentence, lang).not.toMatch(/\{[a-z]+\}/i); // every hole filled
-      expect(sentence, lang).toContain("http://gpu-box:1234");
-      expect(sentence, lang).toContain("lmstudioBaseUrl");
-      expect(sentence, lang).toContain(t(lang, "set.layer.env"));
-      // Same substring trap as the override sentence: "lmstudioBaseUrl"
-      // contains "lmstudio", so the field token has to go before asking.
-      expect(sentence.split("lmstudioBaseUrl").join(""), lang).toContain("lmstudio");
+    // Derived over every address owner, for the same reason the override
+    // sentence is: this walked lmstudio alone while a third owner arrived.
+    const owners = PROVIDERS.filter((p) => addressSpecFor(p) !== null);
+    expect(owners.length, "no provider owns an address — the walk is vacuous").toBeGreaterThan(2);
+    for (const provider of owners) {
+      const spec = addressSpecFor(provider)!;
+      const addr = spec.preset.replace("localhost", "gpu-box");
+      for (const lang of ["de", "en"] as const) {
+        const where = `${provider}/${lang}`;
+        const note = generalAddressIgnoredNote("baseUrl", withProvider(provider, addr, set("env")), lang);
+        expect(note, where).not.toBeNull();
+        const sentence = t(lang, note!.key, note!.vars);
+        expect(sentence, where).not.toBe(note!.key); // the key resolves
+        expect(sentence, where).not.toMatch(/\{[a-z]+\}/i); // every hole filled
+        expect(sentence, where).toContain(addr);
+        expect(sentence, where).toContain(spec.field);
+        expect(sentence, where).toContain(t(lang, "set.layer.env"));
+        // Same substring trap as the override sentence: "lmstudioBaseUrl"
+        // contains "lmstudio", so the field token has to go before asking.
+        expect(sentence.split(spec.field).join(""), where).toContain(provider);
+      }
     }
   });
 });
