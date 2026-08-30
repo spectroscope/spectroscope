@@ -51,8 +51,17 @@
 // derivation compared against itself bites in neither. `writes the words it
 // shows instead of assembling them` keeps the two sides apart. It used to scan
 // for `${` alone, which `+` and `.join()` walk past, so it now demands that
-// every string the six cases compare against stand in the source inside ONE
-// PAIR OF QUOTES.
+// the strings those six read stand in the source inside ONE PAIR OF QUOTES.
+//
+// WHICH strings those are is DERIVED where the reading case derives them. A
+// hand-typed list of five sources stood here for a round and named three of the
+// eight lines the counts case reaches; the five it missed each shipped green
+// assembled with `+`. The counts case walks `ownCopy` and holds every line that
+// counts out loud, so this one takes the same predicate instead of a list.
+//
+// One source it reads NARROWER than the case does: of everything the noun case
+// scans off a worker, it demands the worker's status band and its answer, and
+// not the ids, labels and bands the stream wraps them in.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -163,10 +172,15 @@ const phaseCaptions = (lang: "en" | "de"): string[] =>
 //   provider: "ollama-0.11.0"
 //
 // The DSL is therefore not the source of truth about what is shown; the
-// compiler is. Nothing below walks a `Step`. The scan compiles the scenario and
-// reads the RunEvents, and the only list left is `PRINTED_BY` — which renderer
-// prints which field of an event — held in one direction by `tsc` and in the
-// other by the run.
+// compiler is. Nothing below walks a `Step` TO DECIDE WHAT IS SHOWN — three
+// functions do still walk one for something else (`fanoutWorkers`,
+// `workerTranscriptLines`, `runCommands`), two of them destructuring by arm
+// exactly as the deleted `stepShown` did, and one of them feeding an assertion
+// about shown-ness. The four missed fields were missed by a walk that ANSWERED
+// the question, so that is the walk that is gone. The scan compiles the
+// scenario and reads the RunEvents, and the only list left is `PRINTED_BY` —
+// which renderer prints which field of an event — held in one direction by
+// `tsc` and in the other by the run.
 // ---------------------------------------------------------------------------
 
 /** Where one field of a compiled event reaches the screen, as `file:line`, or
@@ -174,7 +188,7 @@ const phaseCaptions = (lang: "en" | "de"): string[] =>
  *
  *  `null` is the narrow claim on purpose. It does not say the field is
  *  invisible — an opened JSONL row draws the whole event as a tree
- *  (`LabTrace.tsx:103`) — it says this scan does not follow that field, and
+ *  (`LabTrace.tsx:106`) — it says this scan does not follow that field, and
  *  every sentence built on the scan carries exactly that bound. */
 type PrintedBy = string | null;
 
@@ -208,14 +222,14 @@ type FieldsOf<T extends RunEvent["type"]> = {
  *    - `agent_message.label` LabTrace.tsx:55, drawn as " (check)"
  *    - `tool_result.output`  LabTrace.tsx:38-39
  *    - the provider          flowmap/nodes.tsx:674,676, the map's LLM card
- *    - context part labels   ContextRing.tsx:103
+ *    - context part labels   components/ContextRing.tsx:103
  *  Those six are the ones a reviewer measured; the rest of each entry was read
  *  off the same two renderers while writing it down. */
 const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
   // Every row of the JSONL strip prints its own kind, whatever the kind is,
   // which is why `type` is answered for identically on all thirteen.
   run_start: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     prompt: "LabTrace.tsx:26-27",
     // The map's LLM card: the model line falls back to the provider when no
     // model is named, and the location line under it names the provider.
@@ -228,11 +242,11 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     attachments: null,
     ts: null,
   },
-  turn_start: { type: "LabTrace.tsx:87", turn: "LabTrace.tsx:28-29", agentId: null, ts: null },
-  text_delta: { type: "LabTrace.tsx:87", text: "LabTrace.tsx:30-32", agentId: null, ts: null },
-  thinking_delta: { type: "LabTrace.tsx:87", text: "LabTrace.tsx:30-32", agentId: null, ts: null },
+  turn_start: { type: "LabTrace.tsx:88", turn: "LabTrace.tsx:28-29", agentId: null, ts: null },
+  text_delta: { type: "LabTrace.tsx:88", text: "LabTrace.tsx:30-32", agentId: null, ts: null },
+  thinking_delta: { type: "LabTrace.tsx:88", text: "LabTrace.tsx:30-32", agentId: null, ts: null },
   tool_call: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     name: "LabTrace.tsx:33-35",
     // The map's tool panel draws the whole argument object, in both faces.
     // This is the gap an earlier round NAMED and left open ("no localized line
@@ -244,7 +258,7 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     ts: null,
   },
   permission_request: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     name: "LabTrace.tsx:33-35",
     // Not followed here, and it costs the scan nothing: compile.ts:108 and
     // :113 push the SAME object onto the tool_call that opens every gate pair,
@@ -255,13 +269,13 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     ts: null,
   },
   permission_decision: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     allowed: "LabTrace.tsx:36-37",
     callId: null,
     ts: null,
   },
   tool_result: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     output: "LabTrace.tsx:38-39",
     isError: "LabTrace.tsx:38-39",
     durationMs: "LabTrace.tsx:38-39",
@@ -271,14 +285,14 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     ts: null,
   },
   agent_spawn: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     agentId: "LabTrace.tsx:46-47",
     task: "LabTrace.tsx:46-47",
     parentId: null,
     ts: null,
   },
   usage: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     inputTokens: "LabTrace.tsx:40-41",
     outputTokens: "LabTrace.tsx:40-41",
     agentId: null,
@@ -286,20 +300,20 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     cacheCreationTokens: null,
     ts: null,
   },
-  run_end: { type: "LabTrace.tsx:87", stopReason: "LabTrace.tsx:42-43", runId: null, ts: null },
+  run_end: { type: "LabTrace.tsx:88", stopReason: "LabTrace.tsx:42-43", runId: null, ts: null },
   context_info: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     estimatedTokens: "LabTrace.tsx:52-53",
-    parts: "ContextRing.tsx:101-107",
-    messages: "ContextRing.tsx:109-111",
-    turn: "ContextRing.tsx:109-111",
+    parts: "components/ContextRing.tsx:101-107",
+    messages: "components/ContextRing.tsx:109-111",
+    turn: "components/ContextRing.tsx:109-111",
     agentId: null,
     threshold: null,
     thresholdSource: null,
     ts: null,
   },
   agent_message: {
-    type: "LabTrace.tsx:87",
+    type: "LabTrace.tsx:88",
     from: "LabTrace.tsx:54-55",
     to: "LabTrace.tsx:54-55",
     state: "LabTrace.tsx:54-55",
@@ -481,6 +495,21 @@ const countsIn = (s: string): number[] =>
   [...flat(s).matchAll(new RegExp(String.raw`(\d+)\s+(?:\S+\s+)?` + CHECK_NOUN, "gi"))].map((m) =>
     Number(m[1]),
   );
+
+/** Every line of the scenario's own copy that COUNTS OUT LOUD — the set the
+ *  counts case holds against `declaredWidest()`, and therefore the set that has
+ *  to be written rather than assembled. Derived, so a ninth counting line is
+ *  covered the day somebody writes it and nobody has to notice.
+ *
+ *  DISTINCT, because the copy is not the stream: `ownCopy` yields twelve
+ *  occurrences of eight lines, the sign-off's task four times and its status
+ *  twice, each because more than one field of more than one event carries it.
+ *  The eight, measured: the caption of the wide phase and the caption of the
+ *  sign-off, the ask, the think, the scope agent's answer, the sign-off's task
+ *  and status, and the closing line. */
+const countingLines = (lang: "en" | "de"): string[] => [
+  ...new Set(ownCopy(lang).filter((l) => countsIn(l).length > 0)),
+];
 
 /** The same shape with the number written out — the form that cannot follow
  *  the declaration, and the one this scenario shipped in seven places. */
@@ -732,7 +761,7 @@ describe("the fan-out workflow scenario", () => {
     // ITS OWN NAME IS NOT ONE OF ITS WORDS. The lines come out of the compiled
     // stream now, and the stream carries the worker's id into rendered text
     // three ways: `agent_message.from`, `agent_message.to` and the `[id] done`
-    // envelope compile.ts:288 writes. The ids are named after the checks, so
+    // envelope compile.ts:289 writes. The ids are named after the checks, so
     // letting them count hands the noun a free pass. Measured over the eight
     // workers against those three strings alone: SIX pass on the id in EN
     // (changelog, pins, licences, api, migrations, install) and FOUR in DE,
@@ -783,10 +812,24 @@ describe("the fan-out workflow scenario", () => {
     // tautology this case exists to prevent, and the exact failure the first
     // cut shipped.
     //
-    // What closes it is a demand no concatenation can meet: every string the
+    // What closes it is a demand no concatenation can meet: the strings the
     // cases above hold against a derivation must stand in the source INSIDE
     // ONE PAIR OF QUOTES. An assembled sentence is a real sentence at runtime
     // and never a literal in the file, so (a) and (c) both go red.
+    //
+    // AND THE SAME DEFECT SAT HERE, one level over. This case used to decide
+    // its own coverage from a hand-typed list of five sources, and the counts
+    // case does not read five sources — it walks `ownCopy` and holds every
+    // line that counts out loud against `declaredWidest()`. That is eight
+    // lines; the list reached three. Measured on the tree as it stood, the
+    // five it missed applied together and again with the closing say alone,
+    // each in the `+`-concatenation shape the round above was written to
+    // close: EXIT=0, 21 passed, every one of them a `declaredWidest()`
+    // compared against `releaseChecks.length`.
+    //   { think: { en: "…does the work: " + releaseChecks.length + " checks…" } }
+    //   the scope agent's say, the sign-off's task, the sign-off's status,
+    //   and the closing say, all written the same way.
+    // So the counting lines are taken from the counts case's own predicate.
     const blocks: [string, string, string][] = [
       ["const releaseChecks: FanoutAgent[] = [", "\n];", "check-changelog"],
       ["const fanoutWorkflowPhases: DslPhase[] = [", "\n];", "sign off"],
@@ -801,15 +844,28 @@ describe("the fan-out workflow scenario", () => {
       })
       .join("\n");
     for (const lang of ["en", "de"] as const) {
-      // The name, the ask, the captions, the noun each check is given, and
-      // every line a worker says — which is every string the six cases in the
-      // first bucket compare against something derived.
+      // WHAT IS COVERED IS DERIVED, NOT LISTED. Five of the six cases read a
+      // named source — the name, the ask, the captions, the noun each check is
+      // given, every line a worker says — and those five sources are named
+      // here. The counts case does not: it walks `ownCopy(lang)` and holds
+      // EVERY line that counts out loud against `declaredWidest()`. A list of
+      // sources cannot follow that, and did not — it named three of the eight
+      // lines the counts case reaches, and the five it missed each went green
+      // assembled with `+`. So the counting lines come out of the same
+      // predicate the counts case uses, and nobody writes them down.
+      const counting = countingLines(lang);
+      // Not a coverage list — a floor, so a `countsIn` that stops matching
+      // cannot turn the clause above into a green scan over nothing. The eight
+      // it floors at are named on `countingLines`, and the counts case holds
+      // the same floor from the other side.
+      expect(counting.length, lang).toBeGreaterThanOrEqual(8);
       const written = [
         loc(dsl.name, lang),
         loc(dsl.prompt, lang),
         ...phaseCaptions(lang),
         ...declaredSubjects(lang),
         ...workerTranscriptLines(lang),
+        ...counting,
       ];
       expect(written.length, lang).toBeGreaterThan(3 * declaredWidest());
       for (const line of written) {
