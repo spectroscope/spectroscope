@@ -60,15 +60,13 @@ class LlamaCppPropsTest {
 
     @Test
     void thePropsBodyYieldsTheWindowTheModelIsActuallyLoadedAt() throws Exception {
-        assertEquals(4096, OpenAiCompatProvider.loadedWindowFromProps(JSON.readTree(PROPS)));
-    }
-
-    @Test
-    void noModelIdIsNeededBecauseOneServerHoldsOneModel() throws Exception {
-        // The whole reason /props beats the model listing here: there is nothing
-        // to match on. The model field in a request is decorative — measured
+        // No model id is passed, and none could be: the body names no model to
+        // match on, and the model field in a request is decorative — measured
         // 2026-08-30, a completion naming "totally-made-up-name" came back from
-        // the loaded model — so a window keyed by model id could never match.
+        // the loaded model. That is the whole reason /props beats the listing
+        // route here. Which door the probe walks through is pinned where the
+        // pieces are composed (ContextWindowProbeTest.LlamaCpp); this file is
+        // about the pieces.
         JsonNode props = JSON.readTree(PROPS);
         assertEquals(4096, OpenAiCompatProvider.loadedWindowFromProps(props));
     }

@@ -919,12 +919,6 @@ public final class DoctorCommand implements Callable<Integer> {
     }
 
     /**
-     * A cheap GET reachability probe (any HTTP answer counts as reachable).
-     *
-     * @param url the endpoint to hit with short connect/request timeouts
-     * @return true for any status below 500; false for 5xx, timeouts, or refusal
-     */
-    /**
      * llama.cpp's own answers, assembled pure.
      *
      * <p>{@code GET /health} is a readiness route, not a reachability one, and
@@ -1009,6 +1003,12 @@ public final class DoctorCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * A cheap GET reachability probe (any HTTP answer counts as reachable).
+     *
+     * @param url the endpoint to hit with short connect/request timeouts
+     * @return true for any status below 500; false for 5xx, timeouts, or refusal
+     */
     private static boolean probe(String url) {
         try (HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(2)).build()) {
