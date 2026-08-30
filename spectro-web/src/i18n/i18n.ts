@@ -1505,6 +1505,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kein Tool aktiv — der Agent plant.",
     en: "No tool active, the agent is planning.",
   },
+  // The chip a running tool gets when the belt has no station for it (card
+  // 321). It appears out of nowhere printing a name the map has no rail to, so
+  // the sentence has to say that is the point and not a fault.
+  "map.tools.foreign": {
+    de: "läuft gerade — für dieses Werkzeug hat die Karte keine Station",
+    en: "running now — the map has no station for this tool",
+  },
   "map.shell.cmd": { de: "Befehl", en: "Command" },
   "map.mcp.call": { de: "MCP-Aufruf", en: "MCP call" },
   "map.llm.reasoning": { de: "Reasoning & Antwort", en: "Reasoning & answer" },

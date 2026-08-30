@@ -223,7 +223,13 @@ export function AgentCardBody({
           <span
             key={c.name}
             className={`pf-chip pf-chip--${c.kind}${c.on ? " pf-chip--on" : ""}`}
-            title={c.kind === "launch" ? LAUNCH_TITLE : undefined}
+            title={
+              c.kind === "launch"
+                ? LAUNCH_TITLE
+                : c.kind === "foreign"
+                  ? t(lang, "map.tools.foreign")
+                  : undefined
+            }
           >
             {c.kind === "launch" && (
               <span className="pf-chip__fan" aria-hidden="true">

@@ -410,6 +410,25 @@
   color: var(--text);
 }
 
+/* ---- a tool this belt has no station for (card 321) ----------------------
+   Measured over ~/.claude/projects on 2026-08-30: 18,300 of 292,465 tool_use
+   blocks — 6.3% — answer to none of the chips above. They used to leave the
+   belt dark, which reads as "nothing is running". This chip prints the wire
+   name instead. It spans the belt because a name like mcp__server__tool does
+   not fit a half-width column, it is DOTTED so the three kinds are told apart
+   without colour, and lit it wears the event palette's own tool colour: it is
+   a tool call like any other, it just has no rail on this map. */
+.pf-chip--foreign {
+  grid-column: 1 / -1;
+  border-style: dotted;
+  text-align: center;
+}
+.pf-chip--foreign.pf-chip--on {
+  background: transparent;
+  border-color: var(--ev-tool);
+  color: var(--text);
+}
+
 /* ---- what the launched script SAYS it is made of ------------------------- */
 .pf-phases {
   margin-top: 9px;

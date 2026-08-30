@@ -296,6 +296,31 @@ describe("the kind→chip table is exhaustive over the view kinds", () => {
     expect(Object.keys(table!).sort()).toEqual([...VIEW_KINDS].sort());
   });
 
+  // ADDED while making the file green (card 321). The belt asks the classifier
+  // with a synthetic payload, because `describeTool` answers about a CALL — it
+  // guards every shaped arm on the fields that arm needs and falls back to
+  // `generic` without them — while the belt is asking about a NAME. That probe
+  // is a silent single point of failure: an arm whose guard it stops satisfying
+  // answers `generic`, `generic` has no chip, and the chip goes dark with
+  // nothing red. So the invariant belt.ts claims in its own doc block is bitten
+  // here instead of asserted there.
+  it("every shape the table gives a chip to is still reachable by name alone", () => {
+    const table = (beltModule as unknown as { CHIP_FOR_KIND?: Record<string, string | null> }).CHIP_FOR_KIND;
+    const kindOf = (beltModule as unknown as { viewKindOf?: (n: string) => string }).viewKindOf;
+    expect(table, "belt.ts exports no CHIP_FOR_KIND").toBeDefined();
+    expect(kindOf, "belt.ts exports no viewKindOf — the question it asks by name").toBeTypeOf("function");
+    // The MCP shape has no `case` of its own: it is the default arm, reached by
+    // the namespace prefix rather than by any name in any vocabulary. That
+    // prefix is a wire format, not a tool this file has decided to know about.
+    const reachable = new Set([...CASE_NAMES, "mcp__server__tool"].map((n) => kindOf!(n)));
+    for (const [kind, chip] of Object.entries(table!)) {
+      if (chip === null) continue;
+      expect([...reachable], `nothing reaches the "${kind}" shape, so ${chip} can never light`).toContain(
+        kind,
+      );
+    }
+  });
+
   it("and every chip it names is a chip this belt actually draws", () => {
     const table = (beltModule as unknown as { CHIP_FOR_KIND?: Record<string, string | null> }).CHIP_FOR_KIND;
     expect(table, "belt.ts exports no CHIP_FOR_KIND").toBeDefined();
