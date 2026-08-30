@@ -900,9 +900,20 @@ describe("compact, with its disclosure shut, is already still and stays that way
   // the moment he clicks the `pf-disc__btn` this card renders on every step:
   // `budgeted` is `budget && expandAll` (nodes.tsx), so nothing is budgeted in
   // compact, and the panels come and go inside the open disclosure exactly as
-  // they did on the expanded card before card 319. Measured with it open, same
-  // 189-step walk: four heights, 420.06 / 547.86 / 664.92 / 703.02, eleven
-  // moves, `.pf-toolbody` the region that moves.
+  // they did on the expanded card before card 319.
+  //
+  // MEASURED, both ways, driving the lab's own "Step forward" through all 196
+  // frames of this recording at a 1600x900 viewport with both fonts loaded and
+  // 74 frames counted per 600 ms before anything was believed (a screenshot
+  // forced the render mid-walk and the reading came back byte-identical). World
+  // px: `.pf-flow .react-flow__node-agent .pf-card` over the viewport
+  // transform's scale, and compact is the segment the lab OPENS on.
+  //
+  //   disclosure shut   394.02                                one value,  0 moves
+  //   disclosure open   420.06 / 547.88 / 664.97 / 703.02     four,      11 moves
+  //
+  // The moving region is `.pf-toolbody`, arriving and leaving under the heights
+  // (null -> 57.59 at step 4 -> 5, back to null at 18 -> 19, 172.76 at 19 -> 20).
   //
   // So this case is about the compact card's DEFAULT state, and card 319
   // budgets the expanded hub. Compact-with-the-disclosure-open is a card of its

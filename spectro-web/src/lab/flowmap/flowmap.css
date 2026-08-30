@@ -1756,8 +1756,9 @@
  * ARRIVES it holds all of this inside a SHUT disclosure and was measured at one
  * height across the whole recording. Opened — one click, on the card's own
  * `pf-disc__btn` — the panels come and go again and it moves, measured over the
- * same walk: 420.06 / 547.86 / 664.92 / 703.02, eleven moves. That is a card of
- * its own and card 319 did not budget it.
+ * same walk: 420.06 / 547.88 / 664.97 / 703.02, eleven moves, `.pf-toolbody`
+ * coming and going under them. That is a card of its own and card 319 did not
+ * budget it.
  *
  * Every number here was measured in Chrome with both variable fonts loaded
  * before the read, through getBoundingClientRect inside

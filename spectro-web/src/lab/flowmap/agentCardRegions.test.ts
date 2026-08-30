@@ -7,11 +7,19 @@
 // three cards — the expanded hub inside `.pf-agent--wide`, the compact hub, and
 // the worker (card 287) — and every bound below is stated in the wide scope
 // alone. Read unscoped, `.pf-agent--wide .pf-tools { max-height: 240px }`
-// answered for `.pf-tools` on all three, so the file reported the compact
-// belt bounded while it computes `max-height: none; overflow-y: visible` and
-// really does grow: measured 179.23 -> 216.28 -> 253.33 px of belt and
-// 394.02 -> 431.06 -> 468.11 px of card at 10, 11 and 13 chips. Card 321 is
-// what made that matter — before it, the belt was always exactly nine chips.
+// answered for `.pf-tools` on all three, so this file reported the belt bounded
+// on cards where it is not.
+//
+// Asked of the parser that paints, `getComputedStyle` on the real `.pf-tools`
+// of the live card, both segments of the lab's own view switch:
+//
+//   expanded   max-height 240px   overflow-y auto      cols 148px 148px
+//   compact    max-height none    overflow-y visible   cols 148px 148px
+//
+// So the compact belt has no bound at all, and it is the columns — not the cap
+// — that are shared. Card 321 is what made that matter: before it the belt was
+// always exactly nine chips, and a region that cannot change size cannot grow
+// past a bound it does not have.
 //
 // So the readers below are scoped, and the claim is scoped with them. The
 // compact card's own growth is not budgeted by card 319 and is not claimed
