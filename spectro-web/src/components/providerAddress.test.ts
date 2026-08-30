@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { t } from "../i18n/i18n";
-import { addressOverrideNote, addressSpecFor, localDownNote } from "./providerAddress";
+import { addressOverrideNote, addressSpecFor, LEGACY_SHARED_DEFAULT, localDownNote } from "./providerAddress";
 import { PROVIDERS } from "./providerPickerMode";
 import type { Origin, SettingsView } from "../state/serverSettings";
 
@@ -205,5 +205,57 @@ describe("addressOverrideNote", () => {
       addressOverrideNote("lmstudio", view, "en", { lmstudio: "http://probe-said:1234" })?.vars.addr,
     ).toBe("http://probe-said:1234");
     expect(addressOverrideNote("lmstudio", view, "en")?.vars.addr).toBe("http://gpu-box:1234");
+  });
+
+  it("does not blame the override for a general address that would not have applied", () => {
+    // The corner the doctor's twin covers. lmstudio's general fallback runs
+    // through the openai-compat rule, which reads the legacy shared default as
+    // "unset" — so this operator is not losing his typed address TO
+    // lmstudioBaseUrl; he never had it. Clearing the per-provider field to get
+    // it back would land him on LM Studio's preset instead, which is exactly
+    // what the causal sentence talks him into doing.
+    const note = addressOverrideNote(
+      "lmstudio",
+      viewWith(
+        { lmstudioBaseUrl: "http://gpu-box:1234", baseUrl: LEGACY_SHARED_DEFAULT },
+        { lmstudioBaseUrl: set("user"), baseUrl: set("flags") },
+      ),
+      "en",
+      { lmstudio: "http://gpu-box:1234" },
+    );
+    expect(note?.key).toBe("set.addressOverrideLegacyDefault");
+    expect(note?.vars.fallback).toBe("http://localhost:1234");
+    for (const lang of ["de", "en"] as const) {
+      const sentence = t(lang, note!.key, note!.vars);
+      expect(sentence, lang).not.toBe(note!.key); // the key resolves
+      expect(sentence, lang).not.toMatch(/\{[a-z]+\}/i); // every hole filled
+      expect(sentence, lang).toContain("http://localhost:1234"); // where clearing lands
+      expect(sentence, lang).toContain("http://gpu-box:1234"); // still the winner
+      expect(sentence, lang).toContain(LEGACY_SHARED_DEFAULT); // the value read as unset
+    }
+  });
+
+  it("keeps the causal sentence for ollama, which has no such corner", () => {
+    // effectiveOllamaBaseUrl carries no sentinel: any non-blank general value
+    // is taken verbatim, the legacy default included. So for ollama the
+    // general address really would apply once the per-provider field is empty.
+    //
+    // What this pins is the SENTENCE, not the arm that produced it: ollama's
+    // own preset IS the legacy shared default, so generalFallbackFor's two
+    // arms return the same string here and dropping its ollama short-circuit
+    // leaves this green (measured). The arms are held apart on the doctor's
+    // side, where the twin calls the two effective* methods instead of
+    // comparing literals — biting either one there is red.
+    expect(
+      addressOverrideNote(
+        "ollama",
+        viewWith(
+          { ollamaBaseUrl: "http://gpu-box:11434", baseUrl: LEGACY_SHARED_DEFAULT },
+          { ollamaBaseUrl: set("user"), baseUrl: set("flags") },
+        ),
+        "en",
+        { ollama: "http://gpu-box:11434" },
+      )?.key,
+    ).toBe("set.addressOverride");
   });
 });

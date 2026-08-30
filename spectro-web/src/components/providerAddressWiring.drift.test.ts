@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { read } from "../testkit/source";
 import { t } from "../i18n/i18n";
+import { addressSpecFor, LEGACY_SHARED_DEFAULT } from "./providerAddress";
 
 const settingsTsx = read("./SettingsPanel.tsx", import.meta.url);
 const pickerTsx = read("./ProviderPicker.tsx", import.meta.url);
@@ -125,5 +126,34 @@ describe("the address field says when the general one is being overridden", () =
       expect(sentence, lang).toContain("http://gpu-box:1234");
       expect(sentence, lang).toContain("lmstudioBaseUrl");
     }
+  });
+});
+
+// ── Card 311, review: the two server literals this module mirrors ────────────
+// The note answers "and where would clearing the field land me?", which the
+// client cannot ask the server — the address a HYPOTHETICAL config resolves to
+// is not on /api/config. So two of SpectroConfig's own strings are mirrored in
+// providerAddress.ts, and a mirror nobody holds against the original is the
+// defect that pays for itself later. Both are read out of the server's source
+// here rather than re-typed.
+
+describe("the fallback rule mirrors the server's, by value", () => {
+  const spectroConfigJava = read(
+    "../../../spectro-core/src/main/java/dev/spectroscope/core/config/SpectroConfig.java",
+    import.meta.url,
+  );
+
+  it("uses the literal effectiveOpenAiBaseUrl actually reads as unset", () => {
+    const m = /effectiveOpenAiBaseUrl\([^)]*\)\s*\{\s*if \(!"([^"]+)"\.equals\(baseUrl\)\)/.exec(
+      spectroConfigJava,
+    );
+    expect(m, "effectiveOpenAiBaseUrl no longer compares baseUrl against one literal").not.toBeNull();
+    expect(LEGACY_SHARED_DEFAULT).toBe(m?.[1]);
+  });
+
+  it("names the preset that rule falls back to for lmstudio", () => {
+    const m = /case "lmstudio" -> "([^"]+)";/.exec(spectroConfigJava);
+    expect(m, "openAiCompatPreset no longer carries an lmstudio row").not.toBeNull();
+    expect(addressSpecFor("lmstudio")?.preset).toBe(m?.[1]);
   });
 });

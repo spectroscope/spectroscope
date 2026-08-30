@@ -2117,6 +2117,16 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "{field} (aus {winner}) ist die Adresse, die {provider} wählt — {addr}. Die allgemeine Adresse (aus {loser}) ist ebenfalls gesetzt und gilt hier nicht: die eigene Adresse eines Providers gewinnt, aus welcher Ebene die beiden auch stammen.",
     en: "{field} (from {winner}) is what {provider} dials — {addr}. The general address (from {loser}) is set too and does not apply here: a provider's own address wins, whichever layer either one came from.",
   },
+  // The same claim in the one corner where the sentence above gives the wrong
+  // REASON for it. The openai-compat rule reads the legacy shared default as
+  // "unset", so this general address would not have applied with the
+  // per-provider field empty either — and "a provider's own address wins"
+  // sends the reader to empty a field that will not give him back what he
+  // typed. Same placeholder-once rule as above.
+  "set.addressOverrideLegacyDefault": {
+    de: "{field} (aus {winner}) ist die Adresse, die {provider} wählt — {addr}. Die allgemeine Adresse (aus {loser}) steht auf {general}, dem alten gemeinsamen Standardwert, den dieser Provider als „nicht gesetzt“ liest: Wird das providereigene Feld geleert, fällt die Adresse auf {fallback} zurück, nicht auf diesen Wert.",
+    en: "{field} (from {winner}) is what {provider} dials — {addr}. The general address (from {loser}) is set to {general}, the legacy shared default, which this provider reads as unset: clearing the per-provider field would fall back to {fallback}, not to that address.",
+  },
   "set.thinking": { de: "Thinking", en: "Thinking" },
   "set.imageBackend": { de: "Bild-Backend", en: "Image backend" },
   "set.on": { de: "An", en: "On" },

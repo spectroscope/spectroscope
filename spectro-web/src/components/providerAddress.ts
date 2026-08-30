@@ -51,6 +51,42 @@ export function localDownNote(
   return { key: "pp.localDown" };
 }
 
+/** The literal the server's `effectiveOpenAiBaseUrl` compares the general
+ *  `baseUrl` against and treats as "unset" — ollama's default, doubling as the
+ *  sentinel for configs written before each backend had its own field.
+ *
+ *  Mirrored here rather than fetched because the note is derived client-side.
+ *  `providerAddressWiring.drift.test.ts` reads the comparison out of
+ *  SpectroConfig.java and fails if this string stops matching it. */
+export const LEGACY_SHARED_DEFAULT = "http://localhost:11434";
+
+/** The address `provider` would fall back to if its OWN field were cleared —
+ *  the settings page's mirror of `SpectroConfig#endpointFor` with the
+ *  per-provider value unset, which is what an operator does when he empties
+ *  the field to get his general address back.
+ *
+ *  It is NOT always `general`. The openai-compat rule reads
+ *  {@link LEGACY_SHARED_DEFAULT} as unset, so an lmstudio operator who typed
+ *  exactly that value into the general field would land on LM Studio's preset.
+ *  ollama's rule carries no sentinel and takes any non-blank value verbatim.
+ *
+ *  @param provider the configured provider
+ *  @param general  the folded general `baseUrl`
+ *  @returns the endpoint an empty per-provider field would resolve to */
+export function generalFallbackFor(provider: string, general: string): string {
+  const spec = addressSpecFor(provider);
+  // The ollama arm cannot be bitten from here and is belt beside braces:
+  // removing it leaves every test green, because ollama's OWN preset IS the
+  // legacy shared default, so both arms return the same string for it. The
+  // two literals coinciding is what makes the branch a no-op today, not the
+  // rule being the same — and if either literal moves, ollama must not start
+  // following the openai-compat road. The doctor's twin
+  // (DoctorCommand#generalFallbackFor) calls the two effective* methods
+  // instead of comparing literals, and both of ITS arms bite.
+  if (spec === null || provider === "ollama") return general;
+  return general === LEGACY_SHARED_DEFAULT ? spec.preset : general;
+}
+
 /** Card 311: the note that makes card 193's fixed field priority visible on
  *  the settings page, in the same voice the doctor already uses.
  *
@@ -104,14 +140,22 @@ export function addressOverrideNote(
 
   const fromConfig = providerAddress?.[provider];
   const addr = typeof fromConfig === "string" && fromConfig.trim() !== "" ? fromConfig : String(own);
+  // The claim ("your general address does not apply here") holds in every
+  // case; its REASON does not. When clearing the per-provider field would not
+  // hand the general address over either, "a provider's own address wins"
+  // names a cause that is not the one operating — and talks the operator into
+  // emptying a field that will not give him back what he typed.
+  const fallback = generalFallbackFor(provider, String(general));
   return {
-    key: "set.addressOverride",
+    key: fallback === general ? "set.addressOverride" : "set.addressOverrideLegacyDefault",
     vars: {
       field: spec.field,
       provider,
       addr,
       winner: layerLabel(ownOrigin.winner, lang),
       loser: layerLabel(generalOrigin.winner, lang),
+      general: String(general),
+      fallback,
     },
   };
 }
