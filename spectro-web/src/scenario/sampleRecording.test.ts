@@ -12,10 +12,12 @@
 // stale file passes — would leave the repo shipping a recording nobody can
 // trace to a scenario, which is the exact failure the pin exists to stop.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
+import { groupPickedFiles } from "../import/claudeCodeRun";
 import { detectAndLoad } from "../import/detect";
 import { deriveDetail, sceneToFlow } from "../lab/flowmap/sceneToFlow";
 import { advanceScene, initialScene } from "../lab/labScene";
@@ -285,6 +287,25 @@ describe("what the shipped file draws in the lab, and what it does not", () => {
       cards.filter((n) => n.parentId !== undefined),
       "loose means loose",
     ).toEqual([]);
+  });
+
+  it("brings no declaration in through the FOLDER picker either", () => {
+    // The README offers two ways in, so both have to be answered. A folder
+    // pick is grouped before anything is read, and the group is where a
+    // declaration would have to come from: `App` fills the lab from
+    // `run.declared`, which is built from the `runStates` of the pick. This
+    // directory has none — it holds one recording and this signpost — so the
+    // folder path lands on the same picture as the single file, and the
+    // README's "a folder works too" does not quietly mean "and shows more".
+    const picked = readdirSync(dirname(onDisk))
+      .sort()
+      .map((name) => ({ name, relativePath: `sample-runs/${name}` }));
+    expect(picked.length, "the sample directory grew a file — decide what it is").toBeGreaterThan(1);
+    const group = groupPickedFiles(picked);
+    expect(group.kind).toBe("run"); // one session plus company
+    if (group.kind !== "run") return;
+    expect(picked[group.session].name).toBe(SAMPLE_PATH.replace(/^.*\//, ""));
+    expect(group.runStates, "a run state file would carry phases — this one must not").toEqual([]);
   });
 
   it("draws exactly one box, from the same bytes, once the declaration is supplied", () => {
