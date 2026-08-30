@@ -13,12 +13,23 @@
 // release notes" — work no agent in this scenario does — left all seventeen
 // cases green.
 //
-// So the copy is now WRITTEN OUT, in both locales, and every case here holds
-// those written words against the phases as DECLARED. A literal that has to
-// match a derivation bites in both directions; a derivation compared against
-// itself bites in neither. `writes the words it shows instead of assembling
-// them` keeps the two sides apart, because the cheapest way to hollow all of
-// this out again is one `${…}` in the ask.
+// So the copy is now WRITTEN OUT, in both locales. SEVEN of the twenty-one
+// cases below hold those written words against the phases as DECLARED, and
+// the seven are named so the number and the list have to agree: the two
+// numbers in the name, the guard against a third number in it, the counts the
+// copy says out loud, the ask, the noun each check is given, and the caption
+// under the wide box.
+//
+// The other fourteen hold something else — the declaration against the
+// compiled stream, the stream against the rendered markup, the copy against
+// our CLI's own source, the copy against a rule (no release version, no
+// spelled-out count), or the registry's source text against itself. Saying
+// "every case" was the same overreach this file keeps finding one level down.
+//
+// A literal that has to match a derivation bites in both directions; a
+// derivation compared against itself bites in neither. `writes the words it
+// shows instead of assembling them` keeps the two sides apart, because the
+// cheapest way to hollow all of this out again is one `${…}` in the ask.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -59,10 +70,10 @@ import { RELEASE_CHECK_SUBJECTS, SCENARIOS } from "./registry";
 import { compile, declarationOf } from "./compile";
 import { loc } from "./dsl";
 import type { Localized, Step } from "./dsl";
-import { lensPhaseNodeId, spawnTree } from "../lab/spawnTree";
+import { LABEL_MAX, lensPhaseNodeId, spawnTree } from "../lab/spawnTree";
 import { layoutStateGraph } from "../stategraph/layout";
 import { SEATS_MAX_EXPANDED } from "../lab/flowmap/workerGrid";
-import { advanceScene, initialScene } from "../lab/labScene";
+import { advanceScene, clipMiddle, initialScene } from "../lab/labScene";
 import { WorkflowLens } from "../lab/workflow/WorkflowLens";
 
 const dsl = SCENARIOS.find((s) => s.id === "fanout-workflow")!;
@@ -126,30 +137,59 @@ const ownCopy = (lang: "en" | "de"): string[] => {
   return out;
 };
 
-/** Every string ONE step of the DSL puts on screen, for EVERY arm the union
- *  has. The `never` on the last line is what makes the word EVERYTHING below
- *  derived instead of promised: add an arm to `Step`, or drop a case from
- *  here, and `npx tsc -b` stops — the scan cannot quietly fall behind the
- *  union the way it did twice already. The first cut never read a worker's
- *  `status` or `say` (SIXTEEN rendered lines per locale, and with "Six files
- *  carry the version; all six say 0.11.0." in one worker's answer all twenty
- *  cases stayed green). The second cut was written to make EVERYTHING true,
- *  enumerated the union BY HAND, and skipped `context` — whose
- *  `parts[].label` compile.ts maps through `loc()` into the context_info
- *  event and `ContextRing` draws as `.context-part-label`; with "the 0.11.0
- *  baseline" planted as one, twenty-one cases stayed green.
+/** Every LOCALIZED string one step of the DSL puts on screen, plus the two
+ *  unlocalized ones a step shows verbatim: the command, path or tool name the
+ *  step is keyed by, and the `label` a spawn or a fan-out is drawn under.
+ *
+ *  WHAT THE `never` ON THE LAST LINE HOLDS — and it is less than three rounds
+ *  of this file read into it. It holds the ARMS of the union: add a member to
+ *  `Step`, or drop a case from here, and `npx tsc -b` stops. It holds NOTHING
+ *  about the FIELDS inside an arm. A new field on an existing arm compiles
+ *  silently and this walk never sees it, so "the coverage is the one the
+ *  compiler holds" was true of arms and false of shown text, which is the
+ *  same overclaim this suite keeps finding elsewhere.
+ *
+ *  So the gaps are NAMED instead of implied. Not scanned, on purpose:
+ *    - `mcp.input` and `tool.input` — the argument objects. They are
+ *      `Record<string, unknown>`, so there is no localized line to read and no
+ *      cheap way to walk them; the tool row still draws them.
+ *    - `image.provider`, `image.model`, `image.asset` — the caption is
+ *      scanned, the three fields under it are not.
+ *  Both gaps are EMPTY in this scenario today (no `input:`, no `image:` step
+ *  anywhere in its block), which is why the narrow branch was taken.
+ *
+ *  The step `label`s ARE scanned, because unlike the two above this scenario
+ *  ships three of them — "scope", "check" and "sign off" — and compile.ts
+ *  turns each into the `name` of a `tool_call` the transcript prints.
+ *  Measured before they were walked: `label: "scope 0.11.0"` gave EXIT=0 with
+ *  21 passed, and so did the other two, one at a time.
  *
  *  `usage` and `compact` are named and return nothing: they carry numbers,
- *  not text. That is a statement about those two arms, not a gap. */
+ *  not text. That is a statement about those two arms, not a gap.
+ *
+ *  The localized side went blind twice, so both are written down. The first
+ *  cut never read a worker's `status` or `say` (SIXTEEN rendered lines per
+ *  locale, and with "Six files carry the version; all six say 0.11.0." in one
+ *  worker's answer all twenty cases stayed green). The second cut enumerated
+ *  the union BY HAND and skipped `context` — whose `parts[].label` compile.ts
+ *  maps through `loc()` into the context_info event and `ContextRing` draws as
+ *  `.context-part-label`; with "the 0.11.0 baseline" planted as one,
+ *  twenty-one cases stayed green. */
 const stepShown = (s: Step, lang: "en" | "de"): string[] => {
   const withResult = (head: string, result?: Localized): string[] =>
     result === undefined ? [head] : [head, loc(result, lang)];
   const nested = (steps: Step[]): string[] => steps.flatMap((x) => stepShown(x, lang));
+  const withLabel = (label: string | undefined, rest: string[]): string[] =>
+    label === undefined ? rest : [label, ...rest];
   if ("think" in s) return [loc(s.think, lang)];
   if ("say" in s) return [loc(s.say, lang)];
   if ("status" in s) return [loc(s.status, lang)];
-  if ("spawn" in s) return [loc(s.task, lang), ...nested(s.steps)];
-  if ("fanout" in s) return s.fanout.agents.flatMap((a) => [loc(a.task, lang), ...nested(a.steps)]);
+  if ("spawn" in s) return withLabel(s.label, [loc(s.task, lang), ...nested(s.steps)]);
+  if ("fanout" in s)
+    return withLabel(
+      s.fanout.label,
+      s.fanout.agents.flatMap((a) => [loc(a.task, lang), ...nested(a.steps)]),
+    );
   if ("run" in s) return withResult(s.run, s.result);
   if ("read" in s) return withResult(s.read, s.result);
   if ("write" in s) return withResult(s.write, s.result);
@@ -170,11 +210,15 @@ const phaseCaptions = (lang: "en" | "de"): string[] =>
     p.detail === undefined ? [loc(p.title, lang)] : [loc(p.title, lang), loc(p.detail, lang)],
   );
 
-/** EVERYTHING this scenario puts on screen: the name, the ask, the captions,
- *  every worker's transcript, and the commands, paths and results the run
- *  shows. Every step goes through `stepShown`, so the coverage is the one the
- *  compiler holds — this function adds only the strings that live OUTSIDE the
- *  steps. */
+/** Every line of this scenario that `stepShown` reaches, plus the strings that
+ *  live OUTSIDE the steps: the name, the ask and the phase captions. Which is
+ *  the name, the ask, the captions, every worker's transcript, and each step's
+ *  command, path, tool name, label and result.
+ *
+ *  NOT "everything it shows". `stepShown` names the two kinds of shown text it
+ *  leaves out — the `input` object of an mcp or tool step, and an image step's
+ *  provider, model and asset — and both are empty in this scenario today. Any
+ *  case built on this list inherits exactly that bound, and says so. */
 const everyShownString = (lang: "en" | "de"): string[] => [
   loc(dsl.name, lang),
   loc(dsl.prompt, lang),
@@ -397,16 +441,32 @@ describe("the fan-out workflow scenario", () => {
   });
 
   it("names every row of the wide phase from the task the run gave it", () => {
-    const tree = spawnTree(compile(dsl, "en"), declarationOf(dsl, "en"));
-    const rows = tree.meta[lensPhaseNodeId("main", 1)].members.map((m) => m.label);
-    expect(rows).toHaveLength(declaredWidest());
-    for (const r of rows) expect(r).not.toBe("");
-    // Eight rows saying the same thing would render as one job done eight
-    // times, which is not what a fan-out is.
-    expect(new Set(rows).size).toBe(rows.length);
-    // A row that fell back to its raw id is a row the stream never named.
-    const ids = new Set((dsl.phases ?? [])[1].agents);
-    for (const r of rows) expect(ids.has(r), r).toBe(false);
+    // The name claims PROVENANCE, so the body has to check provenance. Until
+    // round four it asserted non-empty, unique, and not-the-raw-id, and a
+    // wrong label passes all three: with `clipMiddle(seen.task, 12)` planted
+    // in spawnTree the rows read "reconcile…gelog" and the suite gave EXIT=0
+    // with 21 passed, while not one row carried the task the run gave it.
+    //
+    // So each row is rebuilt from ITS OWN worker's task, through the same clip
+    // the reader applies, with LABEL_MAX read out of the reader rather than
+    // repeated here. That subsumes the old non-empty and raw-id assertions:
+    // no task is empty and none equals an id. Uniqueness stays, because it is
+    // a statement about the SCENARIO's eight tasks, not about the derivation.
+    for (const lang of ["en", "de"] as const) {
+      const tree = spawnTree(compile(dsl, lang), declarationOf(dsl, lang));
+      const rows = tree.meta[lensPhaseNodeId("main", 1)].members;
+      expect(rows, lang).toHaveLength(declaredWidest());
+      const byId = new Map(fanoutWorkers().map((a) => [a.id, a]));
+      for (const r of rows) {
+        const worker = byId.get(r.agentId);
+        expect(worker, `${lang}: no fan-out worker declared for ${r.agentId}`).toBeDefined();
+        expect(r.label, `${lang} ${r.agentId}`).toBe(clipMiddle(loc(worker!.task, lang), LABEL_MAX));
+      }
+      // Eight rows saying the same thing would render as one job done eight
+      // times, which is not what a fan-out is.
+      const labels = rows.map((m) => m.label);
+      expect(new Set(labels).size, lang).toBe(labels.length);
+    }
   });
 
   it("renders the wide box with one row per agent the phase declared", () => {
@@ -489,11 +549,18 @@ describe("the fan-out workflow scenario", () => {
     // So the whole ask is bounded now: three sentences, the middle one ENDING
     // at the run, and a fourth sentence is red.
     //
-    // Still not held, said plainly rather than left for the next reader to
-    // find: a demand smuggled INTO the closing sentence, with no full stop of
-    // its own, is three sentences and passes. That is why the name reads
-    // "three sentences whose list is exactly the declared checks" and not
-    // "asks for exactly the checks".
+    // Still not held, and it is THREE open positions rather than the one an
+    // earlier round wrote down. What the bound covers is the sentence COUNT
+    // and the list's RIGHT EDGE. It covers no prose at all, and this ask has
+    // three places prose sits: the opening sentence, the head of the middle
+    // sentence in front of its colon, and the closing sentence. A demand for
+    // work no worker here does can ride in ANY of the three and still be three
+    // sentences whose list ends at the run. Naming only the closing one read
+    // as if the other two were held — which is this file's own recurring
+    // defect, a sentence reaching further than the code under it.
+    //
+    // That is why the name reads "three sentences whose list is exactly the
+    // declared checks" and not "asks for exactly the checks".
     for (const lang of ["en", "de"] as const) {
       const prompt = loc(dsl.prompt, lang);
       const subjects = declaredSubjects(lang);
@@ -557,12 +624,20 @@ describe("the fan-out workflow scenario", () => {
     }
   });
 
-  it("names no release version in anything it shows", () => {
+  it("names no release version in any line the scan reaches", () => {
     // A demo scenario ships once and is read for years. The first cut cut
     // "0.11.0" through the ask, a file it read, a path it wrote and lines the
     // run says out loud, and its own author flagged that it would read as
     // stale the day that version shipped. The story is the WORK, so the run
     // reaches for the last tag instead of naming one.
+    //
+    // The name says "the scan reaches" and not "anything it shows", because
+    // those are different and only the first is held. `everyShownString` walks
+    // every localized line, every command, path and tool name, and every step
+    // label; it does not walk an mcp or tool step's `input` object or an image
+    // step's provider, model and asset. Both are empty here, so the narrow
+    // scan is the whole picture TODAY — and if a later edit adds one, this
+    // case will keep passing and the name will still be true.
     for (const lang of ["en", "de"] as const) {
       const shown = everyShownString(lang);
       expect(shown.length, lang).toBeGreaterThan(40);

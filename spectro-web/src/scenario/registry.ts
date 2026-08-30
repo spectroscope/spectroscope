@@ -1505,10 +1505,17 @@ const workflowPhases: Dsl = {
  * the release notes." as its OWN sentence walked past it, and past the count
  * check, which finds no "<number> checks" in it (EXIT=0, 21 passed). The ask
  * is now cut at its full stops and pinned at THREE sentences, with the middle
- * one ENDING at the run. What that still does not hold is written into the
- * case rather than promised here: a demand smuggled into the closing sentence
- * with no full stop of its own is three sentences and passes, which is why
- * that case is named for its three sentences and not for "exactly".
+ * one ENDING at the run.
+ *
+ * What that still does not hold, and it is THREE open positions rather than
+ * the one this note used to name: the bound covers the sentence COUNT and the
+ * list's RIGHT EDGE, and no prose at all. Prose sits in three places here —
+ * the opening sentence, the head of the middle sentence in front of its colon,
+ * and the closing sentence — and a demand for work no worker here does can
+ * ride in any of them and still be three sentences whose list ends at the run.
+ * Naming only the closing one read as if the other two were held, which is the
+ * very defect this block keeps recording one level down. That is why that case
+ * is named for its three sentences and not for "exactly".
  *
  * NO VERSION IS NAMED ANYWHERE. The first cut cut "0.11.0" through the ask, a
  * file the run read, a path it wrote and lines the run says out loud, and
@@ -1536,6 +1543,19 @@ const workflowPhases: Dsl = {
  *      the middle of a longer number"; the licence id is excluded by name,
  *      and dropping either exclusion turns a real line red, so neither is
  *      dead code.
+ *   4. The `never` from round two holds the ARMS of `Step` and nothing about
+ *      the FIELDS inside one, and three rounds of prose read it as if it held
+ *      both. A field added to an existing arm compiles silently. Four kinds of
+ *      shown text were never walked: an mcp or tool step's `input`, an image
+ *      step's provider, model and asset, and the `label` of a spawn or a
+ *      fan-out — which compile.ts turns into a `tool_call` name on screen and
+ *      which this scenario ships THREE of. Measured one at a time before the
+ *      fix: `label: "scope 0.11.0"`, `label: "check v0.10"` and
+ *      `label: "sign off 0.11.0"` each gave EXIT=0 with 21 passed. Round four
+ *      took the narrow branch on purpose: the labels are walked, because they
+ *      are cheap and shipped; the `input` objects and the image fields are
+ *      not, because they are empty here and carry no localized line — and the
+ *      walker's own comment names them instead of implying coverage.
  *
  * NO INVENTED VERBS OF OURS EITHER. The checks run as plain scripts of the
  * release repo the story is set in, which nobody reads as our tooling; the one
