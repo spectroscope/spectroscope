@@ -1,5 +1,6 @@
 package dev.spectroscope.core.web;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -25,6 +26,16 @@ import java.util.regex.Pattern;
  * {@code result__snippet} element. Ad rows (y.js links) are dropped. When
  * DuckDuckGo answers with its bot-check page instead of results, the searcher
  * throws a READABLE error — a silent "no results" would be a lie.
+ *
+ * <p><b>What this tier is NOT, and card 318 is the reason it says so here.</b>
+ * The status guard below makes the failure READABLE. It does not make the tier
+ * reliable, and no reader should leave this file believing web_search works
+ * without a configured tier above it. Measured 2026-08-30: twenty requests in
+ * nine seconds fall to three answers in ten and then to 403, and on that day no
+ * client tried — the shipped User-Agent, a desktop-browser User-Agent, a POST
+ * form submit, the {@code /lite/} endpoint, a real browser — was served a
+ * results page at all. The tier's honest state is "usually refused", and this
+ * class's job is to say which refusal it was.</p>
  */
 public final class DuckDuckGoSearcher implements WebSearcher {
 
@@ -47,6 +58,20 @@ public final class DuckDuckGoSearcher implements WebSearcher {
 
     /** Ad rows resolve through DuckDuckGo's y.js redirect — never a real hit. */
     private static final String AD_REDIRECT_MARKER = "duckduckgo.com/y.js";
+
+    /**
+     * Card 223's remedy, written once. This tier has two exits — a recognised
+     * challenge and any other failure status — and both must hand the reader
+     * the same next step in the same words, because those are the words the
+     * doctor line, the result header and the calibration panel also use. Round
+     * one of card 318 hand-copied this clause into the second exit instead of
+     * sharing it; deleting the copy left all 80 tests in this package green.
+     * Shared here, and compared end-to-end by
+     * aGenuineServerErrorFailsHonestlyAndIsNotParsedIntoZeroResults.
+     */
+    private static final String REMEDY = "this is the " + WebSearchTiers.SCRAPE + " tier, and "
+            + "it is the one nobody should be relying on. Configure a SearXNG instance, "
+            + "or a Tavily or Brave key, under Settings.";
 
     private final RestClient http;
 
@@ -77,14 +102,48 @@ public final class DuckDuckGoSearcher implements WebSearcher {
         return "duckduckgo";
     }
 
-    /** One GET on the results page, parsed into hits — HTTP errors propagate for the tool to map. */
+    /**
+     * One GET on the results page, parsed into hits. The status is read here
+     * rather than left to Spring, because this endpoint serves the SAME
+     * challenge page under several of them.
+     *
+     * @param query      the search query
+     * @param maxResults hard cut on the number of returned hits
+     * @return the organic hits in page order
+     * @throws IllegalStateException when the answer is a challenge, or a status
+     *                               that is not results
+     */
     @Override
     public List<Hit> search(String query, int maxResults) {
-        String page = http.get()
+        ResponseEntity<String> response = http.get()
                 .uri(builder -> builder.path("/html/").queryParam("q", query).build())
+                // Status handling belongs below, on the body. Spring's default
+                // handler throws before the body is ever looked at, and this
+                // endpoint answers a challenge under 403 exactly as it does
+                // under 202 — so the default handler turns the one message that
+                // carries a remedy into a bare status plus a slice of raw HTML.
+                // SearxngSearcher took this same seam for the same reason.
                 .retrieve()
-                .body(String.class);
-        return parse(page == null ? "" : page, maxResults);
+                .onStatus(status -> true, (request, ignored) -> { })
+                .toEntity(String.class);
+
+        String page = response.getBody() == null ? "" : response.getBody();
+        int status = response.getStatusCode().value();
+        if (status < 200 || status >= 300) {
+            if (isBotCheck(page)) {
+                // Measured 2026-08-30: under pressure this endpoint escalates
+                // 200 -> 202 -> 403 and serves the same challenge at each. The
+                // status changed; what happened did not, so neither does what
+                // the reader is told.
+                throw botCheckFailure();
+            }
+            // NOT every status is swallowed. A server that is merely broken has
+            // no results in it either, and handing that body to parse() would
+            // answer "No results" to a 500 — the same lie in a new costume.
+            throw new IllegalStateException("duckduckgo answered HTTP " + status
+                    + " instead of results — " + REMEDY);
+        }
+        return parse(page, maxResults);
     }
 
     /**
@@ -123,15 +182,22 @@ public final class DuckDuckGoSearcher implements WebSearcher {
         }
 
         if (hits.isEmpty() && isBotCheck(page)) {
-            // The phrase is shared, not repeated: a reader who lands here goes
-            // looking for the same words in the doctor line, the result header
-            // and the calibration panel (card 223).
-            throw new IllegalStateException("duckduckgo answered with a bot check page "
-                    + "instead of results — this is the " + WebSearchTiers.SCRAPE + " tier, and "
-                    + "it is the one nobody should be relying on. Configure a SearXNG instance, "
-                    + "or a Tavily or Brave key, under Settings.");
+            throw botCheckFailure();
         }
         return hits;
+    }
+
+    /**
+     * The challenge sentence, built in one place so the 2xx path and the
+     * failure-status path cannot drift apart. Only the diagnosis is written
+     * here; the next step comes from {@link #REMEDY}, which the other exit
+     * uses too.
+     *
+     * @return the failure to throw
+     */
+    private static IllegalStateException botCheckFailure() {
+        return new IllegalStateException("duckduckgo answered with a bot check page "
+                + "instead of results — " + REMEDY);
     }
 
     /**

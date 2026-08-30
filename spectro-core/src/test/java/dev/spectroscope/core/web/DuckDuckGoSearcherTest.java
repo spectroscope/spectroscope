@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -82,6 +84,32 @@ class DuckDuckGoSearcherTest {
         return "http://127.0.0.1:" + server.getAddress().getPort();
     }
 
+    /** One-route mock that answers with a CHOSEN status — the 4xx/5xx half of
+     *  this endpoint's behaviour, which the 200-only rig above cannot reach. */
+    private String startWithStatus(int status, String page) throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            byte[] answer = page.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(status, answer.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(answer);
+            }
+        });
+        server.start();
+        return "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    /** The one real response this tier has ever been pinned against.
+     *  @return the captured page, verbatim */
+    private static String realCapture() throws IOException {
+        try (var in = DuckDuckGoSearcherTest.class.getResourceAsStream(
+                "/web/duckduckgo-anomaly-page-2026-08-30.html")) {
+            assertNotNull(in, "the captured fixture is missing from the test resources");
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
     @Test
     void parsesTitlesDecodedUrlsAndFlattenedSnippets() throws IOException {
         AtomicReference<String> query = new AtomicReference<>();
@@ -148,6 +176,127 @@ class DuckDuckGoSearcherTest {
         assertTrue(failure.getMessage().contains("Configure a SearXNG instance"),
                 "got: " + failure.getMessage());
         assertTrue(sentence.contains("Configure a SearXNG instance"), "got: " + sentence);
+    }
+
+    @Test
+    void aChallengeUnderAFailureStatusStillReachesTheReaderWithTheRemedy() throws IOException {
+        // Card 318. Measured live 2026-08-30: under pressure this endpoint
+        // escalates 200 -> 202 -> 403, and it serves the SAME challenge page at
+        // every one of them. At 202 the body reaches parse() and the reader gets
+        // the remedy; at 403 Spring's default status handler threw before the
+        // body was ever looked at, and what the model was handed instead was the
+        // raw status plus a fragment of DuckDuckGo's support mailto. The status
+        // changed; the thing that happened did not.
+        String baseUrl = startWithStatus(403, realCapture());
+
+        RuntimeException failure = assertThrows(RuntimeException.class,
+                () -> new DuckDuckGoSearcher(baseUrl).search("gradle kotlin dsl", 5));
+
+        assertTrue(failure.getMessage().contains("bot check"),
+                "names the bot check, got: " + failure.getMessage());
+        assertTrue(failure.getMessage().contains(WebSearchTiers.SCRAPE),
+                "the phrase the other surfaces quote, got: " + failure.getMessage());
+        assertTrue(failure.getMessage().contains("Configure a SearXNG instance"),
+                "the remedy card 223 pinned across four surfaces, got: " + failure.getMessage());
+    }
+
+    @Test
+    void a202StillCarriesResultsThroughToTheReader() throws IOException {
+        // 202 is where this endpoint actually sits under load, and it is a
+        // SUCCESS status: a guard that let only 200 through would turn today's
+        // working path into a failure sentence. Results at 202 stay results.
+        String baseUrl = startWithStatus(202, RESULTS_PAGE);
+
+        List<WebSearcher.Hit> hits = new DuckDuckGoSearcher(baseUrl).search("gradle dsl", 5);
+
+        assertEquals(2, hits.size(), "the 202 path is unmoved, got: " + hits);
+        assertEquals("Gradle Kotlin DSL", hits.get(0).title());
+    }
+
+    @Test
+    void aGenuineServerErrorFailsHonestlyAndIsNotParsedIntoZeroResults() throws IOException {
+        // The other direction, and the reason the guard cannot simply swallow
+        // every status: a 500 whose body is NOT a challenge has no results in it
+        // either, so a guard that hands the body to parse() and returns what it
+        // finds would answer "No results" to a broken server. That is a new way
+        // to lie, in place of the old one. SearxngSearcher ends the same way —
+        // "answered HTTP <status> instead of results" — and so does this.
+        String baseUrl = startWithStatus(500,
+                "<html><body><h1>500 Internal Server Error</h1></body></html>");
+
+        RuntimeException failure = assertThrows(RuntimeException.class,
+                () -> new DuckDuckGoSearcher(baseUrl).search("gradle kotlin dsl", 5));
+
+        assertTrue(failure.getMessage().contains("500"),
+                "names the status it actually got, got: " + failure.getMessage());
+        assertFalse(failure.getMessage().contains("bot check"),
+                "a broken server is not a challenge, got: " + failure.getMessage());
+
+        // Card 223's remedy reaches this doorway too. A person meeting a broken
+        // DuckDuckGo needs the same next step as a person meeting its challenge,
+        // and this tier has two exits.
+        assertTrue(failure.getMessage().contains(WebSearchTiers.SCRAPE),
+                "the phrase the other surfaces quote, got: " + failure.getMessage());
+        assertTrue(failure.getMessage().contains("Configure a SearXNG instance"),
+                "the remedy card 223 pinned across four surfaces, got: " + failure.getMessage());
+
+        // And the two exits say it with the SAME words. This is the assertion
+        // that was missing: the remedy used to be hand-copied into this branch,
+        // and deleting the whole copy left all 80 tests in this package green
+        // (measured 2026-08-30, exit 0). A shared phrase that nothing compares
+        // is a phrase waiting to drift, in the very file card 223 exists for.
+        String challenge = assertThrows(IllegalStateException.class,
+                () -> DuckDuckGoSearcher.parse(realCapture(), 5)).getMessage();
+        String remedy = challenge.substring(challenge.indexOf(" — ") + 3);
+        assertTrue(failure.getMessage().endsWith(remedy),
+                "the status exit and the challenge exit must end in one shared remedy.\n"
+                        + "challenge: " + challenge + "\nstatus:    " + failure.getMessage());
+    }
+
+    @Test
+    void aRealCapturedResponsePinsTheChallengeDetectorAndNotTheRowParser() throws IOException {
+        // WHAT THIS PROVES — the name is the whole of it, and that is narrower
+        // than "a canary for the scrape", which is what this test was called
+        // until it was measured: changing RESULT_LINK and SNIPPET to patterns
+        // DuckDuckGo does not send reddens three tests in this file and leaves
+        // this one green.
+        //
+        // Every other fixture in this file is hand-written HTML whose own
+        // comment calls it "realistic". Nothing anywhere pinned the scrape
+        // against a body html.duckduckgo.com actually sent. This one is real:
+        // captured 2026-08-30 for the query "gradle kotlin dsl", status 202,
+        // 14157 bytes, saved byte-for-byte.
+        //
+        // It proves that the challenge detector fires on a REAL challenge page —
+        // the "anomaly" match is not a guess about DuckDuckGo's markup, it is
+        // measured against DuckDuckGo's markup — and that a real challenge yields
+        // zero organic hits rather than garbage rows.
+        //
+        // It is not an independent branch pin either: break the challenge
+        // detector and the hand-written test above goes red with it. What this
+        // one adds is the direction of proof — that test shows the code finds a
+        // word its own author put in the fixture, this one shows DuckDuckGo
+        // really puts that word in the page.
+        //
+        // It does NOT prove the result-row patterns (result__a, the uddg=
+        // redirect, result__snippet). Those are still pinned only against
+        // hand-written HTML, and i18n's own copy already says out loud that they
+        // "break silently the day the page is redesigned". On 2026-08-30 no
+        // client tried could obtain a results page to pin them with: the shipped
+        // User-Agent, a desktop-browser User-Agent, a POST form submit, the
+        // /lite/ endpoint and a real headless browser were each answered with
+        // this same challenge. When the endpoint serves results again, the
+        // missing half is a second fixture beside this one.
+        String captured = realCapture();
+
+        assertFalse(captured.contains("result__a"),
+                "a real RESULTS page would carry result anchors — this capture is the "
+                        + "challenge, and the row patterns stay unpinned by it");
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> DuckDuckGoSearcher.parse(captured, 5));
+        assertTrue(failure.getMessage().contains("Configure a SearXNG instance"),
+                "the remedy, produced from a real body, got: " + failure.getMessage());
     }
 
     @Test
