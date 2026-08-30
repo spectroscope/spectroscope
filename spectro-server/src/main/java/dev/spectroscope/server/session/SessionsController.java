@@ -487,15 +487,34 @@ public class SessionsController {
     private static final String ANTHROPIC_VERSION = "2023-06-01";
 
     /**
-     * Model names for the header picker's per-provider dropdown — all three
-     * backends are LIVE now: Ollama from its /api/tags (the actually-installed
-     * models), Anthropic from its Models API (what the key can use), and
-     * openai from the EFFECTIVE endpoint's /v1/models — api.openai.com when a
-     * key rides the untouched default, the local OpenAI-compatible server
-     * (LM Studio answers /v1/models keyless) otherwise. Curated lists remain
-     * the fallback; empty only for unknown providers.
+     * Model names for the header picker's per-provider dropdown. The switch
+     * below has three arms because there are three WIRE PROTOCOLS, not because
+     * there are three backends — every provider {@code SpectroConfig.isOpenAiCompat}
+     * answers for shares the third one, and this comment named three while the
+     * arm already carried five (card 312):
      *
-     * @param provider "anthropic" | "openai" | "ollama" — anything else answers empty
+     * <ul>
+     *   <li>ollama, from its /api/tags — the models actually installed;</li>
+     *   <li>anthropic, from its Models API — what the key can use;</li>
+     *   <li>the OpenAI-compatible ones, from the EFFECTIVE base URL's
+     *       /v1/models: api.openai.com when a key rides the untouched default,
+     *       otherwise whatever endpoint that provider is configured with. Both
+     *       local servers answer it keyless, and a llama-server answers with
+     *       the single model it was started on.</li>
+     * </ul>
+     *
+     * <p>Curated lists remain the fallback. The empty answer is not reserved
+     * for unknown names: spectro-local is a known provider and answers empty
+     * on purpose — the bundled runtime's model is the download chooser's
+     * question, not a dropdown's.</p>
+     *
+     * @param provider a provider name; ollama, anthropic and every provider
+     *        {@code isOpenAiCompat} answers for have an arm, and everything
+     *        else answers empty — spectro-local included, which speaks the same
+     *        wire but is a subprocess with no endpoint to ask
+     *        ({@code endpointFor} refuses it). The names the config accepts at
+     *        all are {@link SpectroConfig#KNOWN_PROVIDERS_DISPLAY}
+     * @return the model ids, or an empty list
      */
     @GetMapping("/api/models")
     public List<String> models(@RequestParam(name = "provider", defaultValue = "") String provider) {
@@ -545,26 +564,28 @@ public class SessionsController {
     }
 
     /**
-     * Asks the EFFECTIVE openai endpoint for its models — live like the other
-     * two backends: api.openai.com when a key rides the untouched default
-     * (Bearer attached), the configured OpenAI-compatible server otherwise
-     * (LM Studio answers /v1/models without a key). Non-chat families are
-     * filtered, newest first; any failure falls back to the curated list.
+     * Asks the EFFECTIVE endpoint of ONE OpenAI-compatible provider for its
+     * models — live like the other two routes: api.openai.com when a key rides
+     * the untouched default (Bearer attached), otherwise whatever host that
+     * provider is configured with, which the keyless local servers answer
+     * without a Bearer at all. Non-chat families are filtered, newest first;
+     * a failure falls back to the curated list, and only openai has one.
      *
+     * @param provider the OpenAI-compatible provider whose endpoint to ask
      * @return chat-capable model ids, newest first, or the curated fallback
      */
     private List<String> openaiModels(String provider) {
-        // Curated fallback ONLY for real OpenAI — gpt-4o etc. are its models. A
-        // local (lmstudio) or gateway (openrouter) backend that isn't answering
-        // returns EMPTY, so the picker says 'not reachable' instead of showing a
-        // misleading OpenAI list for a server that serves whatever you loaded.
+        // Curated fallback ONLY for real OpenAI — gpt-4o etc. are its models.
+        // Every OTHER provider on this route that isn't answering returns EMPTY,
+        // so the picker says 'not reachable' instead of showing a misleading
+        // OpenAI list for a server that serves whatever you loaded into it.
         List<String> fallback = "openai".equals(provider) ? OPENAI_MODELS : List.of();
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
             String key = SpectroConfig.resolveApiKey(SpectroConfig.keyEnvFor(provider));
             boolean hasKey = key != null && !key.isBlank();
-            // endpointFor resolves lmstudio's own per-provider address (card 193)
-            // and keeps the legacy shared rule for the cloud providers.
+            // endpointFor resolves a per-provider address where one is declared
+            // (card 193) and keeps the legacy shared rule for the cloud providers.
             String base = c.endpointFor(provider);
 
             RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get()

@@ -1386,9 +1386,11 @@ public record SpectroConfig(
         return openAiCompatPreset("llamacpp");
     }
 
-    /** The preset endpoint root for each OpenAI-compatible provider (before an
-     *  explicit override): openai = the cloud, lmstudio = a local LM Studio
-     *  server, llamacpp = a local llama-server, openrouter = the OpenRouter gateway.
+    /** The preset endpoint root for each OpenAI-compatible provider, before any
+     *  explicit override — the arms below ARE the list, so reading them is
+     *  cheaper than a second copy up here that can lose one (this one had lost
+     *  gemini). Two of them address a server on the reader's own machine; the
+     *  rest are somebody's cloud.
      *  @param provider the provider name
      *  @return the preset base URL */
     static String openAiCompatPreset(String provider) {
@@ -1403,7 +1405,10 @@ public record SpectroConfig(
         };
     }
 
-    /** True for the OpenAI-compatible providers (one wire protocol, three hosts).
+    /** True for the OpenAI-compatible providers — one wire protocol, as many
+     *  hosts as the arms below. It said "three hosts" over five of them, and
+     *  the sentence had already been copied into the guide's wire chapter,
+     *  where card 312 corrected the copy and left this original standing.
      *  @param provider the provider name
      *  @return whether it speaks the OpenAI chat/completions API */
     static boolean isOpenAiCompat(String provider) {
