@@ -252,6 +252,20 @@
   min-width: 0;
 }
 
+/* The port, and everything after it. Never shrinks: this row's address is the
+   only flex-shrinkable item in it, so it absorbs the whole shortfall, and an
+   ellipsis clips the tail — which is precisely where the port lives. Splitting
+   the address means a narrow panel eats `http://localho…` and keeps `:8080/`,
+   the other way round from what it used to do. `margin-left: -0.6rem` cancels
+   the row's gap so the two halves read as one address rather than two words. */
+.browser-start-port {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin-left: -0.6rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-faint);
+}
+
 /* State as a word on a hairline, not a badge fill. The running chip is the
    one place the ok token appears — same as the attached dot above it. */
 .browser-start-chip {

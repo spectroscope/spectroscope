@@ -697,6 +697,37 @@ function NavControls(props: {
  * authored by hand (card 202 keeps generation out of scope), so the line
  * names the file rather than a settings page that does not exist.
  */
+/**
+ * An address split so a narrow row cannot clip the part that matters.
+ *
+ * The row's address is the only flex-shrinkable item in it, and
+ * `text-overflow: ellipsis` clips the TAIL — so `http://localhost:8080/` loses
+ * the port first and keeps the seven characters that carry no information. Card
+ * 227 asked for the configurations "listed with their ports"; this is what makes
+ * that true on screen and not only in the DOM.
+ *
+ * PARSED, never pattern-matched. A regex for `:\d+` would call the `:8080` in
+ * `http://user:8080@example.com/` a port, and would miss that an IPv6 host is
+ * all colons. `URL` already knows which colon is the port, so it is asked.
+ *
+ * @param address the launch entry's address
+ * @return the head that may shrink, and the tail that may not — tail is null
+ *         when the address declares no port, because a row must not grow a
+ *         colon the address never had
+ */
+function splitAddress(address: string): { head: string; tail: string | null } {
+  let port: string;
+  try {
+    port = new URL(address).port;
+  } catch {
+    return { head: address, tail: null };
+  }
+  if (port === "") return { head: address, tail: null };
+  const at = address.lastIndexOf(":" + port);
+  if (at < 0) return { head: address, tail: null };
+  return { head: address.slice(0, at), tail: address.slice(at) };
+}
+
 export function StartPage(props: {
   launch: LaunchList | null;
   playing: string | null;
@@ -727,7 +758,23 @@ export function StartPage(props: {
                 ▶
               </button>
               <span className="browser-start-name">{config.name}</span>
-              <span className="browser-start-address">{config.address ?? "—"}</span>
+              {(() => {
+                // The tooltip is the same idiom the address bar above uses
+                // (title on an ellipsised span); the split is what makes the
+                // port survive without one.
+                if (config.address === null) {
+                  return <span className="browser-start-address">—</span>;
+                }
+                const { head, tail } = splitAddress(config.address);
+                return (
+                  <>
+                    <span className="browser-start-address" title={config.address}>
+                      {head}
+                    </span>
+                    {tail !== null && <span className="browser-start-port">{tail}</span>}
+                  </>
+                );
+              })()}
               {config.attaches && (
                 <span className="browser-start-chip">{t(lang, "browser.start.attach")}</span>
               )}
