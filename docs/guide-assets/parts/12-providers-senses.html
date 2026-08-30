@@ -48,18 +48,24 @@ your settings file mirrors exactly what you already had and nothing changes behi
 back. With nothing set at all you land on the Anthropic default, and a run without a key
 stops with a readable “no key” message instead of a mystery failure.</p>
 
-<p>No Anthropic key on hand? Three of the backends are keyless and local — and the
-first one needs no install either:</p>
+<p>No Anthropic key on hand? Every local backend is keyless — and the first one
+needs no install either:</p>
 <ul>
-  <li><strong>built-in</strong> — pick a model in the app, it downloads once, done.
-      The first-run sheet leads here, and chapter 16b is all about it.</li>
+  <li><strong>built-in</strong> (<code>spectro-local</code>) — pick a model in the app, it
+      downloads once, done. The first-run sheet leads here, and chapter 16b is all
+      about it.</li>
   <li><strong>ollama</strong> — install it, pull a model, and it serves
       <code>localhost:11434</code>. Set <code>provider=ollama</code>; no key.</li>
   <li><strong>lmstudio</strong> — run LM Studio in server mode with a model loaded, and it
       serves <code>localhost:1234</code>. Set <code>provider=lmstudio</code>; no key.</li>
+  <li><strong>llamacpp</strong> — start your own <code>llama-server</code> and it serves
+      <code>localhost:8080</code>. Set <code>provider=llamacpp</code>; no key. It carries the
+      one model it was started with, and it gets asked what window that model is
+      really loaded at.</li>
 </ul>
-<p>The two cloud OpenAI-compatible backends do need a key: <code>openai</code>
-(<code>OPENAI_API_KEY</code>) and <code>openrouter</code> (<code>OPENROUTER_API_KEY</code>).
+<p>The cloud backends that speak the OpenAI wire do need a key: <code>openai</code>
+(<code>OPENAI_API_KEY</code>), <code>openrouter</code> (<code>OPENROUTER_API_KEY</code>) and
+<code>gemini</code> (<code>GEMINI_API_KEY</code>).
 Set the provider in <code>~/.spectro/settings.json</code>, through
 <code>SPECTRO_PROVIDER</code>, with a <code>--provider</code> flag, or from the header
 picker. The CLI tour is the guided path: <code>spectro tour</code> → Settings

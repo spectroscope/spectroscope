@@ -172,9 +172,19 @@ class ConfigDocDriftTest {
      * sentence — the exact gap that let round 2's wrong door survive into two
      * reprinted PDFs under a green gate. The editions are the artefact; the
      * part is a source file.</p>
+     *
+     * <p><b>Round 5</b> widened it from one section to two, because the same
+     * defect had been sitting one {@code <h2>} ABOVE the one round 4 fixed the
+     * whole time: "First run — choosing a backend", the section a keyless
+     * newcomer lands on, offered "three of the backends are keyless and local"
+     * over four and "the two cloud OpenAI-compatible backends" over three —
+     * fourteen lines above an {@code .env} block the same commit had taught
+     * {@code GEMINI_API_KEY}, and with no llamacpp anywhere, in the card that
+     * adds llamacpp. A guard drawn tightly around the sentence that was wrong
+     * last time guards that sentence.</p>
      */
     @Test
-    void theSwitchingSectionNeverNamesJustSomeOfTheProvidersThePickerOffers()
+    void neitherProviderSectionNamesJustSomeOfTheBackendsTheAppOffers()
             throws IOException {
         assumeTrue(source() != null, "not running from a source checkout");
         Path root = repoRoot();
@@ -183,47 +193,66 @@ class ConfigDocDriftTest {
             carriers.add(root.resolve(edition));
         }
 
-        for (Path carrier : carriers) {
-            String section = section(Files.readString(carrier),
-                    "ch-providers-switch", "ch-providers-retry");
-            List<String> named = new ArrayList<>();
-            for (String provider : new java.util.TreeSet<>(SpectroConfig.knownProviders())) {
-                // The id as an id: case-sensitive and not inside a longer word,
-                // so "OpenAI-compatible" is prose about a protocol and not a
-                // mention of the openai backend.
-                if (Pattern.compile(
-                                "(?<![A-Za-z0-9-])" + Pattern.quote(provider) + "(?![A-Za-z0-9-])")
-                        .matcher(section).find()) {
-                    named.add(provider);
-                }
-            }
+        // Round 5: two sections, because the defect came back one <h2> ABOVE
+        // the one round 4 fixed. "First run — choosing a backend" is the
+        // chapter a keyless newcomer lands on, and it offered three keyless
+        // backends out of four (no llamacpp — the connector this very card
+        // adds) and two keyed cloud ids out of three, fourteen lines above an
+        // .env block the same commit had taught GEMINI_API_KEY. A guard that
+        // spans one section is a guard for one section.
+        List<String[]> sections = List.of(
+                new String[] {"ch-providers-start", "ch-providers-env-key"},
+                new String[] {"ch-providers-switch", "ch-providers-retry"});
 
-            assertTrue(named.isEmpty() || named.size() == SpectroConfig.knownProviders().size(),
-                    "\"Switching mid-session\" in " + root.relativize(carrier) + " names "
-                            + named + " — " + named.size() + " of "
-                            + SpectroConfig.knownProviders().size() + " providers. That"
-                            + " section tells the reader which backends the header picker"
-                            + " reaches, and the picker reaches all of them. A hand-picked"
-                            + " few is how that sentence has been wrong twice; name them"
-                            + " all, or name none and let the \"provider id\" row two"
-                            + " sections up be the list. If the part is already right,"
-                            + " the editions lag it: rebuild them"
-                            + " (docs/guide-assets/build_user_guide.py, both themes, then"
-                            + " the PDFs).\n" + section);
+        for (Path carrier : carriers) {
+            for (String[] bounds : sections) {
+                String section = section(Files.readString(carrier), bounds[0], bounds[1]);
+                List<String> named = new ArrayList<>();
+                for (String provider : new java.util.TreeSet<>(SpectroConfig.knownProviders())) {
+                    // The id as an id: case-sensitive and not inside a longer word,
+                    // so "OpenAI-compatible" is prose about a protocol and not a
+                    // mention of the openai backend.
+                    if (Pattern.compile(
+                                    "(?<![A-Za-z0-9-])" + Pattern.quote(provider) + "(?![A-Za-z0-9-])")
+                            .matcher(section).find()) {
+                        named.add(provider);
+                    }
+                }
+
+                assertTrue(named.isEmpty() || named.size() == SpectroConfig.knownProviders().size(),
+                        "\"" + bounds[0] + "\" in " + root.relativize(carrier) + " names "
+                                + named + " — " + named.size() + " of "
+                                + SpectroConfig.knownProviders().size() + " providers. Those"
+                                + " sections tell the reader which backends are there to"
+                                + " choose from and which the header picker reaches, and both"
+                                + " answers are all of them. A hand-picked few is how these"
+                                + " sentences have been wrong three times; name them all, or"
+                                + " name none and let the \"provider id\" row of \"The"
+                                + " backends\" be the list. If the part is already right,"
+                                + " the editions lag it: rebuild them"
+                                + " (docs/guide-assets/build_user_guide.py, both themes, then"
+                                + " the PDFs).\n" + section);
+            }
         }
     }
 
     /**
-     * The PROSE of one chapter section — its {@code <p>} paragraphs between
-     * this {@code <h2 id=…>} and the next, and nothing else.
+     * The PROSE of one chapter section — its {@code <p>} paragraphs and
+     * {@code <li>} bullets between this {@code <h2 id=…>} and the next, and
+     * nothing else.
      *
-     * <p>Paragraphs only, because the assembled edition is not the part: the
-     * figure caption arrives as a {@code <figcaption>} and the mermaid diagram
-     * as an inlined {@code <svg>} whose labels are text too. Measured — a first
-     * cut that stripped every tag read {@code [anthropic without
+     * <p>Prose only, because the assembled edition is not the part: the figure
+     * caption arrives as a {@code <figcaption>} and the mermaid diagram as an
+     * inlined {@code <svg>} whose labels are text too. Measured — a first cut
+     * that stripped every tag read {@code [anthropic without
      * ANTHROPIC_API_KEY]} out of a diagram arrow and reported the section as
      * naming one provider. A diagram may illustrate one backend; a sentence
      * about which backends the picker reaches may not.</p>
+     *
+     * <p>Bullets count as prose (round 5): the first-run section makes its
+     * offer as a {@code <ul>}, so a {@code <p>}-only reader saw a section
+     * naming three cloud ids and missed that the keyless list under them was
+     * the thing that had gone stale.</p>
      */
     private static String section(String chapter, String from, String to) {
         int start = chapter.indexOf("<h2 id=\"" + from + "\">");
@@ -236,7 +265,7 @@ class ConfigDocDriftTest {
         // ">" of its own and would otherwise be cut in half.
         String body = chapter.substring(start, end).replaceAll("(?s)<!--.*?-->", "");
         StringBuilder prose = new StringBuilder();
-        Matcher paragraph = Pattern.compile("(?s)<p[ >].*?</p>").matcher(body);
+        Matcher paragraph = Pattern.compile("(?s)<(p|li)[ >].*?</\\1>").matcher(body);
         while (paragraph.find()) {
             prose.append(paragraph.group().replaceAll("<[^>]+>", "")).append('\n');
         }
