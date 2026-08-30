@@ -266,10 +266,18 @@ page moves by itself, and the two booleans are exactly as fresh as the address
 beside them. The desktop shell pushes no navigation, so its answer is `null`
 rather than a cache that goes stale the moment the operator clicks a link on
 the real pane — a stale `false` is a dead button over a working page, which is
-worse than the error sentence it would replace. For the same reason a verb's
-answer now carries `url` from the reply's own `pageUrl` where its value has
-none: the `input` verb's value has exactly one key, `detail`, so a click that
-followed a link used to leave the address bar showing the page before it.
+worse than the error sentence it would replace.
+
+**Which frame carries the address.** The state frame, and only it. A verb's
+answer names an address exactly when the verb itself knows where it landed —
+`navigate`, `back`, `forward` and `reload` each put it in their value. A
+back-fill from the reply's own `pageUrl` stood here for the `input` verb, whose
+value has one key, `detail`, and it was measured not to close the case:
+`Input.dispatchMouseEvent` returns as soon as the event is dispatched and the
+navigation follows, so that address is the page the click LEFT, not the page it
+reached. Worse, the client applies any verb url it receives, so a stale one
+could undo the sixth state frame that does follow the page. A click that moves
+the page is answered by that state frame, not by the click.
 
 **Closing a page keeps the login (card 346).** `close_page` drops the view and
 leaves the Chromium partition, its storage and its cache alone — the owner's

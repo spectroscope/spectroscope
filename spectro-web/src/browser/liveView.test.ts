@@ -28,9 +28,11 @@ import {
   unwatchFrame,
   viewSocketUrl,
   watchFrame,
+  heldPictureSurvives,
   webFaceMode,
   faceLabelKey,
   wheelStep,
+  type ViewState,
 } from "./liveView";
 
 describe("the socket address", () => {
@@ -449,5 +451,36 @@ describe("the screenshot control", () => {
     expect(screenshotFilename(Date.UTC(2026, 7, 14, 12, 34, 56), "image/jpeg")).toBe(
       "spectro-browser-20260814-123456.jpeg",
     );
+  });
+});
+
+describe("a held picture and what a state frame does to it — card 346, criterion 5", () => {
+  // THE DEFECT. The component dropped the held frame only on a face flip
+  // (`state.live !== "web"`), and a close_page leaves the web face live: the
+  // last frame of the CLOSED page stayed on screen, and it stayed clickable,
+  // so a click on a page that is gone still went out as an `input` verb.
+  //
+  // The rule the picture obeys is one sentence: a frame is of a page, and
+  // where the state frame says there is no page there is nothing the frame
+  // could be of.
+  const web = (url: string | null): ViewState => ({
+    live: "web",
+    url,
+    attached: true,
+    canGoBack: null,
+    canGoForward: null,
+  });
+
+  it("keeps the picture while the web face is live and a page is open", () => {
+    expect(heldPictureSurvives(web("https://example.test/"))).toBe(true);
+  });
+
+  it("drops it when the page was closed — the web face is still live", () => {
+    expect(heldPictureSurvives(web(null))).toBe(false);
+  });
+
+  it("drops it on a face flip, which is what it did before", () => {
+    expect(heldPictureSurvives({ ...web("https://example.test/"), live: "desktop" })).toBe(false);
+    expect(heldPictureSurvives({ ...web("https://example.test/"), live: "none" })).toBe(false);
   });
 });

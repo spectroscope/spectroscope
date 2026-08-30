@@ -607,10 +607,23 @@ class BrowserViewSocketTest {
     }
 
     @Test
-    void aClickThatMovesThePageAnswersWithWhereItLanded(@TempDir Path base) throws Exception {
-        // The other half of (d), and the one the card names: answerVerb copied
-        // only reply.value()'s fields, and the input verb's value has exactly
-        // one key — `detail`. reply.pageUrl() was computed and thrown away.
+    void aClickThatMovesThePageIsFollowedByAStateFrameAndTheAnswerNamesNoAddress(
+            @TempDir Path base) throws Exception {
+        // THE OTHER HALF OF (d), AND THE NAME IS THE POINT. This test used to be
+        // called aClickThatMovesThePageAnswersWithWhereItLanded and it fired
+        // Page.frameNavigated BEFORE the click — so the page had already moved
+        // and the click moved nothing. It could not go red for the thing it was
+        // named after.
+        //
+        // Fired in the order a real engine produces, the fact it pins is the
+        // opposite one. Input.dispatchMouseEvent returns as soon as the event is
+        // dispatched; the navigation happens after. So reply.pageUrl() at the
+        // moment the answer is built is by CONSTRUCTION the address before the
+        // click — exactly the staleness card 344 (d) is about. Copying it into
+        // the answer cannot follow the page, and it can UNDO the state frame
+        // that does: the client applies any verb url it receives.
+        //
+        // What follows the page is the sixth occasion (see the test above).
         BrowserViewSocket socket = new BrowserViewSocket(
                 faces(headless(base), new AtomicBoolean(false), url -> null),
                 new SessionBrowserBridge());
@@ -618,21 +631,25 @@ class BrowserViewSocketTest {
         socket.afterConnectionEstablished(viewer);
         tell(socket, viewer, "{\"type\":\"navigate\",\"sessionId\":\"" + SESSION
                 + "\",\"url\":\"http://dev.example.com/\"}");
-        // A real engine reports the frame it landed on; QuietCdp is silent, so
-        // the fixture says it here rather than leaving the face's address unset
-        // and calling the resulting blank an answer.
-        engines.get(SESSION).listeners.getOrDefault("Page.frameNavigated", List.of())
-                .forEach(l -> l.accept(JSON.createObjectNode()
-                        .<com.fasterxml.jackson.databind.node.ObjectNode>set("frame",
-                                JSON.createObjectNode().put("url", "http://dev.example.com/"))));
+        tell(socket, viewer, "{\"type\":\"watch\",\"sessionId\":\"" + SESSION + "\"}");
+        // QuietCdp reports nothing on its own, so the fixture says where the
+        // navigate landed rather than calling an unset address an answer.
+        navigated("http://dev.example.com/");
 
         tell(socket, viewer, "{\"type\":\"input\",\"sessionId\":\"" + SESSION
                 + "\",\"action\":\"left_click\",\"coordinate\":[10,20]}");
 
         JsonNode verb = lastOfType(viewer, "verb");
         assertEquals("input", verb.path("verb").asText());
-        assertEquals("http://dev.example.com/", verb.path("url").asText(),
-                "the answer names the page it happened on: " + verb);
+        assertFalse(verb.has("url"),
+                "the click's answer names no address: the only one it could name is the one "
+                        + "before the click, and the client would apply it over a fresher "
+                        + "state frame: " + verb);
+
+        // And now the page moves, the way it does: after the dispatch.
+        navigated("http://dev.example.com/deep");
+        assertEquals("http://dev.example.com/deep",
+                awaitState(viewer, "http://dev.example.com/deep").path("url").asText());
     }
 
     @Test
@@ -717,6 +734,38 @@ class BrowserViewSocketTest {
     }
 
     @Test
+    void aClickAfterACloseDrivesNothing(@TempDir Path base) throws Exception {
+        // The server half of the same hazard the web face closes. The face kept
+        // the last frame of a CLOSED page on screen and kept it clickable, so a
+        // click on a page that is gone went out as an `input` verb naming a
+        // coordinate on it. The face no longer renders that frame — and this
+        // pins the floor under it: even a client that sent the verb anyway gets
+        // a refusal, not a click into whatever the engine is showing now.
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null),
+                new SessionBrowserBridge());
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+        tell(socket, viewer, "{\"type\":\"navigate\",\"sessionId\":\"" + SESSION
+                + "\",\"url\":\"http://dev.example.com/\"}");
+        tell(socket, viewer, "{\"type\":\"watch\",\"sessionId\":\"" + SESSION + "\"}");
+        tell(socket, viewer, "{\"type\":\"close_page\",\"sessionId\":\"" + SESSION + "\"}");
+
+        int dispatchesBefore = (int) engines.get(SESSION).called.stream()
+                .filter(m -> m.startsWith("Input.")).count();
+        tell(socket, viewer, "{\"type\":\"input\",\"sessionId\":\"" + SESSION
+                + "\",\"action\":\"left_click\",\"coordinate\":[10,20]}");
+
+        JsonNode verb = lastOfType(viewer, "verb");
+        assertEquals("input", verb.path("verb").asText());
+        assertFalse(verb.path("ok").asBoolean(),
+                "a click on a page that was closed is not an input the engine runs: " + verb);
+        assertEquals(dispatchesBefore, (int) engines.get(SESSION).called.stream()
+                        .filter(m -> m.startsWith("Input.")).count(),
+                "and nothing reached the engine: " + engines.get(SESSION).called);
+    }
+
+    @Test
     void closingThePageOnTheDesktopFaceClearsTheServersOwnAddressCache(@TempDir Path base)
             throws Exception {
         // Card 346 names this as not optional, and the measurement behind that
@@ -787,6 +836,15 @@ class BrowserViewSocketTest {
     }
 
     /** Waits for a state frame carrying the given address — the push is async. */
+    /** Fires Page.frameNavigated on this session's engine, the way a real
+     *  Chromium reports a main-frame navigation. */
+    private void navigated(String url) {
+        engines.get(SESSION).listeners.getOrDefault("Page.frameNavigated", List.of())
+                .forEach(l -> l.accept(JSON.createObjectNode()
+                        .<com.fasterxml.jackson.databind.node.ObjectNode>set("frame",
+                                JSON.createObjectNode().put("url", url))));
+    }
+
     private static JsonNode awaitState(FakeSocket viewer, String url) throws Exception {
         long deadline = System.currentTimeMillis() + 5_000;
         while (System.currentTimeMillis() < deadline) {

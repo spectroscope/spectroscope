@@ -219,6 +219,28 @@ export function parseViewMessage(data: unknown): ViewMessage | null {
   }
 }
 
+/**
+ * Whether a picture already on screen is still a picture of something, given
+ * the state frame that just arrived (card 346, criterion 5).
+ *
+ * <p>THE DEFECT IT CLOSES. The component dropped a held frame only on a face
+ * flip, and closing the page does not flip the face — the web engine stays
+ * live with no page in it. So the last frame of the CLOSED page stayed on
+ * screen, and because that frame is an interactive element, a click on it
+ * still went out as an `input` verb naming a coordinate on a page that is
+ * gone.
+ *
+ * <p>The rule is one sentence and it covers both cases: a frame is a picture
+ * OF a page, on the face that produced it. Another face's picture is not this
+ * one's, and where there is no page there is nothing the frame could be of.
+ *
+ * @param state the state frame that just arrived
+ * @return whether the held picture may stay
+ */
+export function heldPictureSurvives(state: ViewState): boolean {
+  return state.live === "web" && state.url !== null;
+}
+
 /** What the segment renders: connecting until the first state frame answers,
  *  then the server's own word for which face is live. */
 export type WebFaceMode = "connecting" | "desktop" | "web" | "none";

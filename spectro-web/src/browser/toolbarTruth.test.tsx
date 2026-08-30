@@ -209,3 +209,44 @@ describe("346: the page can be closed, on both faces", () => {
     }
   });
 });
+
+describe("346 (5): a closed page is gone from the hole, and cannot be driven", () => {
+  // THE HAZARD, and it is the reason this describe exists rather than one
+  // assertion inside the block above. Two independent things kept the closed
+  // page on screen and live under the reader's mouse:
+  //
+  //   the socket held the frame — a close leaves `live === "web"`, and the
+  //   only thing that dropped a held picture was a face flip;
+  //   the face RENDERED it — `live && picture !== null` asks nothing about
+  //   whether a page is open, and the img it builds carries onClick, onWheel
+  //   and onKeyDown, so a click on a page that is gone still went out as an
+  //   `input` verb naming a coordinate on it.
+  //
+  // The first is pinned in liveView.test.ts (heldPictureSurvives), the second
+  // here, and each fails on its own: neither is the other's second copy.
+  const closed = {
+    mode: "web" as const,
+    url: null,
+    picture: { dataUrl: "data:image/jpeg;base64,abc", deviceWidth: 1280, deviceHeight: 800, ts: 1 },
+  };
+
+  it("shows no live picture where no page is open, even holding one", () => {
+    expect(webView(closed)).not.toContain("view-live");
+  });
+
+  it("stands the start page there instead — the other half of what he asked for", () => {
+    expect(webView(closed)).toContain("browser-start");
+  });
+
+  it("leaves nothing focusable in the hole to drive", () => {
+    // The img was `tabIndex={0}` with three handlers on it. A frame that is
+    // not rendered cannot be clicked, and this is the assertion that says so
+    // in the markup rather than in a comment.
+    const hole = webView(closed);
+    expect(hole.slice(hole.indexOf("browser-hole"))).not.toContain('tabindex="0"');
+  });
+
+  it("still shows the picture while a page IS open", () => {
+    expect(webView({ ...closed, url: "https://example.test/" })).toContain("view-live");
+  });
+});

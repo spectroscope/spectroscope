@@ -13,8 +13,12 @@
 // control labels their rows carry. A control on one face and not the other is
 // red here and nowhere else.
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { t } from "../i18n/i18n";
+import { currentLang } from "../state/lang";
 import {
   DesktopFaceView,
   WebFaceView,
@@ -77,6 +81,25 @@ function rowControls(markup: string): string[] {
   return [...row.matchAll(/aria-label="([^"]*)"/g)].map((m) => m[1]).sort();
 }
 
+/**
+ * The control labels the SHARED row declares, read from NavControls' own
+ * source.
+ *
+ * <p>Not a list typed here: this file exists because two hand-typed lists
+ * could not go red, and a third one in the guard against them would be the
+ * same mistake wearing the cure's name. The source is the one place a control
+ * is added, so it is the one place the expectation comes from.
+ */
+const sharedRowLabels: string[] = (() => {
+  const source = readFileSync(path.join(__dirname, "BrowserSegment.tsx"), "utf8");
+  const start = source.indexOf("function NavControls(");
+  expect(start, "NavControls moved or was renamed").toBeGreaterThan(-1);
+  const end = source.indexOf("\nfunction ", start + 1);
+  const body = source.slice(start, end < 0 ? undefined : end);
+  const lang = currentLang();
+  return [...body.matchAll(/aria-label=\{t\(lang, "([^"]+)"/g)].map((m) => t(lang, m[1])).sort();
+})();
+
 describe("the two faces carry the same control row — compared, not listed", () => {
   const web = rowControls(renderToStaticMarkup(<WebFaceView {...webProps} />));
   const desktop = rowControls(renderToStaticMarkup(<DesktopFaceView {...desktopProps} />));
@@ -85,11 +108,26 @@ describe("the two faces carry the same control row — compared, not listed", ()
     expect(web).toEqual(desktop);
   });
 
-  it("compares a row that is not empty, so an equal pair of nothings cannot pass", () => {
-    // Two faces that both rendered no controls would satisfy the test above.
-    // The row is known to carry back, forward, reload, the address, the
-    // screenshot, the launch menu and the close — this asserts there ARE
-    // controls without re-typing which, which is the trap this file exists for.
-    expect(web.length).toBeGreaterThanOrEqual(5);
+  it("carries every control the shared row declares, so an equal pair of nothings cannot pass", () => {
+    // Two faces that both rendered NO controls would satisfy the test above,
+    // which is why this one stands beside it. A hand-typed floor stood here,
+    // `web.length >= 5`, beside a comment naming seven controls — and the gap
+    // was real slack, measured: the web row renders SEVEN labels, and with the
+    // close control stopped from rendering on both faces it renders six, which
+    // the old floor called fine. Two equal rows, one control quietly gone.
+    //
+    // Derived instead. NavControls is the row BOTH faces mount, so what it
+    // declares is the floor, read out of its own source rather than typed
+    // again here. Bitten in that exact direction: hiding one of its buttons
+    // leaves the comparison above green and turns this red.
+    //
+    // WHAT IT DOES NOT CATCH, said rather than implied: deleting a control
+    // from NavControls outright shrinks the expectation with the render, and
+    // both stay green. That case belongs to a reader of the card, not to a
+    // derivation from the same file — and toolbarTruth.test.tsx names each
+    // control it wants by hand, on purpose, one layer down.
+    expect(sharedRowLabels.length, "NavControls declares no labels — the parse missed").toBeGreaterThan(0);
+    expect(web).toEqual(expect.arrayContaining(sharedRowLabels));
+    expect(desktop).toEqual(expect.arrayContaining(sharedRowLabels));
   });
 });

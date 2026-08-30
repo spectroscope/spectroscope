@@ -35,6 +35,7 @@ import { useLang } from "../state/lang";
 import {
   clickFrame,
   closePageFrame,
+  heldPictureSurvives,
   faceLabelKey,
   historyFrame,
   reloadFrame,
@@ -257,10 +258,12 @@ export function BrowserSegment(props: {
         switch (msg.kind) {
           case "state":
             setView(msg.state);
-            // A face flip away from the web engine ends the cast; a held last
-            // frame would look exactly like a live one, which is the lie the
-            // state frame exists to prevent.
-            if (msg.state.live !== "web") setPicture(null);
+            // A held last frame would look exactly like a live one, which is
+            // the lie the state frame exists to prevent. This asked only about
+            // the FACE, and closing the page does not flip the face: the last
+            // frame of the closed page stayed on screen and stayed clickable.
+            // See heldPictureSurvives — it answers for both cases at once.
+            if (!heldPictureSurvives(msg.state)) setPicture(null);
             break;
           case "frame":
             setPicture(msg.picture);
@@ -269,6 +272,13 @@ export function BrowserSegment(props: {
             if (msg.ok) {
               setNotice(null);
               const url = msg.url;
+              // Applied unconditionally, which is only safe because no verb
+              // answers with an address it is not on: navigate, back, forward
+              // and reload each name where they LANDED, and the one verb whose
+              // reply carried a pre-click address — input — no longer sends
+              // one (BrowserViewSocket.answerVerb, and the test named
+              // aClickThatMovesThePage… on the server side). A verb url that
+              // could be older than the state frame beside it would undo it.
               if (url !== null) setView((v) => (v === null ? v : { ...v, url }));
               // The desktop row's screenshot: no client-side picture exists on
               // that face, so the shot rides the answer and is saved here.
@@ -594,7 +604,7 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
         )}
       </header>
       <div className="browser-hole">
-        {live && picture !== null ? (
+        {live && picture !== null && url !== null ? (
           <img
             className="view-live"
             src={picture.dataUrl}

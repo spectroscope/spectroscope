@@ -382,15 +382,19 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             reply.value().fields().forEachRemaining(field ->
                     answer.set(field.getKey(), field.getValue()));
         }
-        // Card 344 (d). This was computed and thrown away: the input verb's
-        // reply value has exactly one key, `detail`, so a click that followed a
-        // link left the address bar showing the page before the click. The
-        // value's own url wins where it has one — navigate and the history walk
-        // both answer with where they LANDED, which is the same fact said by
-        // the verb that produced it.
-        if (reply.ok() && !answer.has("url") && reply.pageUrl() != null) {
-            answer.put("url", reply.pageUrl());
-        }
+        // CARD 344 (d), AND WHAT DOES NOT CARRY IT. A back-fill from
+        // reply.pageUrl() stood here, and it was measured not to close the
+        // case: the only verb it reached was `input` — navigate, back, forward
+        // and reload all answer with their own landing url inside value — and
+        // an input reply's pageUrl is by CONSTRUCTION the address before the
+        // click. Input.dispatchMouseEvent returns as soon as the event is
+        // dispatched; the navigation follows. So it named the page the click
+        // left, not the page the click reached, and because the client applies
+        // any verb url it receives, it could UNDO the state frame that does
+        // follow the page (see watchNavigations, the sixth occasion).
+        //
+        // The address is the state frame's to say. Every verb that moves it
+        // pushes one immediately behind its answer on this same socket.
         send(socket, answer);
     }
 
