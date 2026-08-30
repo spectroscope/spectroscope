@@ -110,6 +110,11 @@ export function runSummary(run: ClaudeCodeRunImport): ImportedRunSummary {
     childrenMerged: run.childrenMerged,
     childrenSkipped: run.childrenSkipped,
     childrenUnrecorded: run.childrenUnrecorded,
+    // Forwarded VERBATIM, empty map included. The refusal to draw an empty
+    // declaration belongs to `importedPhasesOf` and lives there ONCE — the
+    // merge above already refuses to put a phase-less run in this map, and a
+    // second copy of that rule here is a copy that can go soft on its own.
+    declared: run.declared,
   };
 }
 

@@ -41,6 +41,7 @@ import { advanceScene, initialScene } from "../lab/labScene";
 import { WorkflowLens } from "../lab/workflow/WorkflowLens";
 import { setLang } from "../state/lang";
 import { t } from "../i18n/i18n";
+import { read, stripComments } from "../testkit/source";
 
 // ---- a synthetic recorded run -------------------------------------------
 
@@ -328,5 +329,40 @@ describe("the lens draws the imported run's own columns", () => {
     expect(html).not.toContain("wf-ranklabel");
     expect(html).toContain(t("en", "lab.lens.sourceRecovered"));
     expect(html).not.toContain(t("en", "lab.lens.legendDeclared"));
+  });
+});
+
+// ---- the two joins no unit test can reach --------------------------------
+
+/**
+ * Read off disk, because both ends of this wire live inside components this
+ * suite has no DOM to drive: the dialog's `onFile` fires on a file input, and
+ * `openImport` is a closure in App. Everything above pins what the seams DO;
+ * these pin that the two call sites still USE them. That is the exact gap card
+ * 315 came out of — the importer measured, the lens drew, and the literal
+ * between them quietly named four fields out of five while 5,600 tests stayed
+ * green.
+ */
+describe("the two call sites still go through the tested seams", () => {
+  const dialog = stripComments(read("../components/ImportDialog.tsx", import.meta.url));
+  const app = stripComments(read("../App.tsx", import.meta.url));
+
+  it("the dialog hands over `runSummary(run)`, and builds no summary of its own", () => {
+    expect(dialog).toContain("runSummary(run)");
+    // The literal that dropped the field. Any field name from the interface
+    // appearing as a key HERE means a second, hand-maintained summary is back.
+    expect(dialog).not.toMatch(/childrenUnrecorded\s*:/);
+    expect(dialog).not.toMatch(/childrenMerged\s*:/);
+  });
+
+  it("an import's declared phases go through the gate, off the summary", () => {
+    expect(app).toContain("importedPhasesOf(sessionId, run?.declared)");
+  });
+
+  it("a scenario's declaration goes through the SAME gate", () => {
+    // One gate, or the stamp and the empty-map refusal exist twice and one
+    // copy can rot. `declarationOf` returns undefined rather than an empty
+    // map, so routing it here changed nothing and keeps it that way.
+    expect(app).toContain("importedPhasesOf(sessionId, declarationOf(dsl, lang))");
   });
 });
