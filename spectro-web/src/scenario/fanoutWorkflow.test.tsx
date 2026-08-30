@@ -58,7 +58,7 @@ vi.mock("@xyflow/react", () => ({
 import { RELEASE_CHECK_SUBJECTS, SCENARIOS } from "./registry";
 import { compile, declarationOf } from "./compile";
 import { loc } from "./dsl";
-import type { Step } from "./dsl";
+import type { Localized, Step } from "./dsl";
 import { lensPhaseNodeId, spawnTree } from "../lab/spawnTree";
 import { layoutStateGraph } from "../stategraph/layout";
 import { SEATS_MAX_EXPANDED } from "../lab/flowmap/workerGrid";
@@ -165,6 +165,40 @@ const everyShownString = (lang: "en" | "de"): string[] => {
   };
   walk(dsl.steps);
   return out;
+};
+
+/** The workers of the wide phase, as the fan-out step declares them. */
+type FanoutWorker = { id: string; task: Localized; steps: Step[] };
+const fanoutWorkers = (): FanoutWorker[] => {
+  const out: FanoutWorker[] = [];
+  for (const s of dsl.steps) if ("fanout" in s) out.push(...s.fanout.agents);
+  return out;
+};
+
+/** Everything ONE worker puts on screen: its task, its status bands, the
+ *  commands it types, what came back, and its answer. */
+const workerShown = (a: FanoutWorker, lang: "en" | "de"): string[] => {
+  const out: string[] = [loc(a.task, lang)];
+  for (const s of a.steps) {
+    if ("status" in s) out.push(loc(s.status, lang));
+    else if ("say" in s) out.push(loc(s.say, lang));
+    else if ("think" in s) out.push(loc(s.think, lang));
+    else {
+      if ("run" in s) out.push(s.run);
+      else if ("read" in s) out.push(s.read);
+      else if ("write" in s) out.push(s.write);
+      else if ("list" in s) out.push(s.list);
+      if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
+    }
+  }
+  return out;
+};
+
+/** The head word of a subject, hyphens flattened and case folded: "the version
+ *  pins" → "pins", "die Konfigurations-Migration" → "migration". */
+const headNoun = (subject: string): string => {
+  const words = flat(subject).trim().split(/\s+/);
+  return words[words.length - 1].toLowerCase();
 };
 
 /** The lines a fan-out worker itself puts on screen: its status band and its
@@ -432,6 +466,35 @@ describe("the fan-out workflow scenario", () => {
       const run = joinList(subjects, lang === "en" ? "and" : "und");
       expect(prompt, lang).toContain(`: ${run}.`);
       expect(countsIn(prompt), lang).toEqual([declaredWidest()]);
+    }
+  });
+
+  it("gives each check a noun the worker's own lines carry", () => {
+    // `subject` is test-only data: the ask does not read it, nothing on screen
+    // reads it, and the case above only holds it against the ask. That left
+    // the step from a declared id to the noun the ask uses ASSERTED. Measured:
+    // rewriting `check-bench` to translate the release notes - a different
+    // task, a different command, a different answer - while its subject stayed
+    // "the benchmarks" left all twenty cases green, with the ask still asking
+    // for a benchmark nobody ran.
+    //
+    // This is the one thread back to the work: the head word of the noun has
+    // to turn up in something that worker actually renders. A thread, not a
+    // proof - it holds the noun against the worker's own words, and says
+    // nothing about whether those words describe the check they claim.
+    for (const lang of ["en", "de"] as const) {
+      const workers = fanoutWorkers();
+      expect(workers, lang).toHaveLength(declaredWidest());
+      for (const a of workers) {
+        const subject = RELEASE_CHECK_SUBJECTS[a.id];
+        expect(subject, `no subject declared for ${a.id}`).toBeDefined();
+        const noun = headNoun(subject[lang]);
+        const lines = workerShown(a, lang).map((l) => flat(l).toLowerCase());
+        expect(
+          lines.some((l) => l.includes(noun)),
+          `${lang} ${a.id}: nothing it shows says "${noun}"`,
+        ).toBe(true);
+      }
     }
   });
 

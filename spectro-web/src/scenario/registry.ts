@@ -1498,11 +1498,28 @@ const workflowPhases: Dsl = {
  * counts, the caption under the wide box, and the ask, which stops naming the
  * ninth); dropping one check's name from the ask with the array left alone
  * turns exactly ONE red, the ask's own, and so does reordering two of them.
+ * A third direction was open until the second round: the ask could still GROW
+ * a check nobody runs, because a joined list held by `toContain` reads "at
+ * least these, contiguously, in order". With ", and the release notes."
+ * appended to the ask alone, twenty cases stayed green. The ask now writes the
+ * list as a colon, the run, and a full stop, and the case pins all three, so
+ * an appended ninth is red as well.
  *
  * NO VERSION IS NAMED ANYWHERE. The first cut cut "0.11.0" through the ask, a
- * file the run read, a path it wrote and four of its lines, and would have
- * read as stale the day that version shipped. The run reaches for the last tag
- * instead, which is true for as long as the demo exists.
+ * file the run read, a path it wrote and lines the run says out loud, and
+ * would have read as stale the day that version shipped. The run reaches for
+ * the last tag instead, which is true for as long as the demo exists.
+ *
+ * THE SCAN THAT KEEPS IT OUT ONLY STARTED WORKING IN THE SECOND ROUND, and it
+ * is worth writing down where it was blind, because both spots looked fine.
+ * It walked the top level and the `spawn` steps for spoken lines and then, for
+ * a fan-out worker, collected only the task, the commands, the paths and the
+ * results: sixteen lines per locale — every worker's status band and every
+ * worker's answer — were never read. With "all six say 0.11.0." shipped in
+ * `check-pins`, twenty cases stayed green. And its regex had grown a hyphen in
+ * the lookbehind, to spare `Apache-2.0`, which blinded it to `spectro-0.11.0`
+ * and every other version a hyphen precedes. The licence id is excluded by
+ * name now, and the scan reads what the workers say.
  *
  * NO INVENTED VERBS OF OURS EITHER. The checks run as plain scripts of the
  * release repo the story is set in, which nobody reads as our tooling; the one
@@ -1519,8 +1536,18 @@ const workflowPhases: Dsl = {
 type FanoutAgent = {
   id: string;
   /** The noun the ASK has to use for this check. The ask does NOT read this;
-   *  it is written out. The two are held against each other instead, which is
-   *  the only arrangement in which either side can be wrong. */
+   *  it is written out, and the two are held against each other, so an edit to
+   *  either side turns the ask's case red.
+   *
+   *  WHAT THAT DOES NOT HOLD, said plainly because it was once claimed the
+   *  other way: this field is test-only data, so the step from an id to a noun
+   *  was pure assertion. `check-bench` was rewritten to translate the release
+   *  notes — another task, another command, another answer — with its subject
+   *  left at "the benchmarks", and all twenty cases stayed green. The one
+   *  thread back to the work is `gives each check a noun the worker's own
+   *  lines carry`: the head word of the noun has to turn up in something this
+   *  worker renders. That holds the noun to the worker's WORDS. Nothing here
+   *  holds those words to the work they describe. */
   subject: { en: string; de: string };
   task: Localized;
   steps: Step[];
@@ -1684,8 +1711,9 @@ const releaseChecks: FanoutAgent[] = [
 
 /** The noun the ask has to use for each declared check, keyed by the id the
  *  phase declares. Exported for `fanoutWorkflow.test.tsx`, which walks the
- *  phase's agent ids through this table and holds the result against the ask
- *  as WRITTEN. Nothing user-visible reads it. */
+ *  phase's agent ids through this table, holds the result against the ask as
+ *  WRITTEN, and holds each noun's head word against the lines that worker puts
+ *  on screen. Nothing user-visible reads it. */
 export const RELEASE_CHECK_SUBJECTS: Record<string, { en: string; de: string }> = Object.fromEntries(
   releaseChecks.map((c) => [c.id, c.subject]),
 );
