@@ -182,9 +182,7 @@ const declaredSubjects = (lang: "en" | "de"): string[] =>
 
 /** "a, b and c" / "a, b und c" — the shape the ask is written in. */
 const joinList = (items: string[], conj: string): string =>
-  items.length < 2
-    ? items.join("")
-    : `${items.slice(0, -1).join(", ")} ${conj} ${items[items.length - 1]}`;
+  items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} ${conj} ${items[items.length - 1]}`;
 
 /** The nouns this scenario counts. Hyphens are flattened first so a German
  *  compound ("Release-Prüfungen") is read as the two words it is. */
@@ -412,7 +410,10 @@ describe("the fan-out workflow scenario", () => {
       const shown = everyShownString(lang);
       expect(shown.length, lang).toBeGreaterThan(40);
       for (const line of shown) {
-        expect([...line.matchAll(VERSION_LIKE)].map((m) => m[0]), `${lang}: ${line}`).toEqual([]);
+        expect(
+          [...line.matchAll(VERSION_LIKE)].map((m) => m[0]),
+          `${lang}: ${line}`,
+        ).toEqual([]);
       }
     }
   });
