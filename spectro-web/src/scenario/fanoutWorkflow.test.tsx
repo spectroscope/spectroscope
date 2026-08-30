@@ -126,51 +126,61 @@ const ownCopy = (lang: "en" | "de"): string[] => {
   return out;
 };
 
-/** EVERYTHING this scenario puts on screen — every step kind the DSL has, so
- *  the word EVERYTHING keeps its meaning as the demo grows: the name, the ask,
- *  the captions,
- *  every worker's transcript, and the commands, paths and results the run
- *  shows. This walks the steps itself instead of starting from `ownCopy`,
- *  which stops at the top level and at `spawn`: the first cut did start from
- *  it and only added task/run/read/write/list/result for a fan-out worker, so
- *  a worker's `status` and `say` fell through the `else continue` and SIXTEEN
- *  rendered lines per locale were invisible to the scan below. Measured: with
- *  "Six files carry the version; all six say 0.11.0." shipped in one worker's
- *  answer, all twenty cases stayed green. */
-const everyShownString = (lang: "en" | "de"): string[] => {
-  const out: string[] = [loc(dsl.name, lang), loc(dsl.prompt, lang)];
-  for (const p of dsl.phases ?? []) {
-    out.push(loc(p.title, lang));
-    if (p.detail !== undefined) out.push(loc(p.detail, lang));
-  }
-  const walk = (steps: Step[]): void => {
-    for (const s of steps) {
-      if ("think" in s) out.push(loc(s.think, lang));
-      else if ("say" in s) out.push(loc(s.say, lang));
-      else if ("status" in s) out.push(loc(s.status, lang));
-      else if ("spawn" in s) {
-        out.push(loc(s.task, lang));
-        walk(s.steps);
-      } else if ("fanout" in s) {
-        for (const a of s.fanout.agents) {
-          out.push(loc(a.task, lang));
-          walk(a.steps);
-        }
-      } else {
-        if ("run" in s) out.push(s.run);
-        else if ("read" in s) out.push(s.read);
-        else if ("write" in s) out.push(s.write);
-        else if ("list" in s) out.push(s.list);
-        else if ("mcp" in s) out.push(s.mcp);
-        else if ("tool" in s) out.push(s.tool);
-        else if ("image" in s) out.push(loc(s.image, lang));
-        if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
-      }
-    }
-  };
-  walk(dsl.steps);
-  return out;
+/** Every string ONE step of the DSL puts on screen, for EVERY arm the union
+ *  has. The `never` on the last line is what makes the word EVERYTHING below
+ *  derived instead of promised: add an arm to `Step`, or drop a case from
+ *  here, and `npx tsc -b` stops — the scan cannot quietly fall behind the
+ *  union the way it did twice already. The first cut never read a worker's
+ *  `status` or `say` (SIXTEEN rendered lines per locale, and with "Six files
+ *  carry the version; all six say 0.11.0." in one worker's answer all twenty
+ *  cases stayed green). The second cut was written to make EVERYTHING true,
+ *  enumerated the union BY HAND, and skipped `context` — whose
+ *  `parts[].label` compile.ts maps through `loc()` into the context_info
+ *  event and `ContextRing` draws as `.context-part-label`; with "the 0.11.0
+ *  baseline" planted as one, twenty-one cases stayed green.
+ *
+ *  `usage` and `compact` are named and return nothing: they carry numbers,
+ *  not text. That is a statement about those two arms, not a gap. */
+const stepShown = (s: Step, lang: "en" | "de"): string[] => {
+  const withResult = (head: string, result?: Localized): string[] =>
+    result === undefined ? [head] : [head, loc(result, lang)];
+  const nested = (steps: Step[]): string[] => steps.flatMap((x) => stepShown(x, lang));
+  if ("think" in s) return [loc(s.think, lang)];
+  if ("say" in s) return [loc(s.say, lang)];
+  if ("status" in s) return [loc(s.status, lang)];
+  if ("spawn" in s) return [loc(s.task, lang), ...nested(s.steps)];
+  if ("fanout" in s) return s.fanout.agents.flatMap((a) => [loc(a.task, lang), ...nested(a.steps)]);
+  if ("run" in s) return withResult(s.run, s.result);
+  if ("read" in s) return withResult(s.read, s.result);
+  if ("write" in s) return withResult(s.write, s.result);
+  if ("list" in s) return withResult(s.list, s.result);
+  if ("mcp" in s) return withResult(s.mcp, s.result);
+  if ("tool" in s) return withResult(s.tool, s.result);
+  if ("image" in s) return [loc(s.image, lang)];
+  if ("context" in s) return s.context.parts.map((p) => loc(p.label, lang));
+  if ("usage" in s) return [];
+  if ("compact" in s) return [];
+  const unreached: never = s;
+  throw new Error(`unhandled step kind: ${JSON.stringify(unreached)}`);
 };
+
+/** The captions the three phase boxes draw. */
+const phaseCaptions = (lang: "en" | "de"): string[] =>
+  (dsl.phases ?? []).flatMap((p) =>
+    p.detail === undefined ? [loc(p.title, lang)] : [loc(p.title, lang), loc(p.detail, lang)],
+  );
+
+/** EVERYTHING this scenario puts on screen: the name, the ask, the captions,
+ *  every worker's transcript, and the commands, paths and results the run
+ *  shows. Every step goes through `stepShown`, so the coverage is the one the
+ *  compiler holds — this function adds only the strings that live OUTSIDE the
+ *  steps. */
+const everyShownString = (lang: "en" | "de"): string[] => [
+  loc(dsl.name, lang),
+  loc(dsl.prompt, lang),
+  ...phaseCaptions(lang),
+  ...dsl.steps.flatMap((s) => stepShown(s, lang)),
+];
 
 /** The workers of the wide phase, as the fan-out step declares them. */
 type FanoutWorker = { id: string; task: Localized; steps: Step[] };
@@ -180,27 +190,13 @@ const fanoutWorkers = (): FanoutWorker[] => {
   return out;
 };
 
-/** Everything ONE worker puts on screen: its task, its status bands, the
- *  commands it types, what came back, and its answer. */
-const workerShown = (a: FanoutWorker, lang: "en" | "de"): string[] => {
-  const out: string[] = [loc(a.task, lang)];
-  for (const s of a.steps) {
-    if ("status" in s) out.push(loc(s.status, lang));
-    else if ("say" in s) out.push(loc(s.say, lang));
-    else if ("think" in s) out.push(loc(s.think, lang));
-    else {
-      if ("run" in s) out.push(s.run);
-      else if ("read" in s) out.push(s.read);
-      else if ("write" in s) out.push(s.write);
-      else if ("list" in s) out.push(s.list);
-      else if ("mcp" in s) out.push(s.mcp);
-      else if ("tool" in s) out.push(s.tool);
-      else if ("image" in s) out.push(loc(s.image, lang));
-      if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
-    }
-  }
-  return out;
-};
+/** Everything ONE worker puts on screen: its task, and every string its steps
+ *  show. Same walker as above, so the two cannot drift apart — they did, and
+ *  `context` was missing from both. */
+const workerShown = (a: FanoutWorker, lang: "en" | "de"): string[] => [
+  loc(a.task, lang),
+  ...a.steps.flatMap((s) => stepShown(s, lang)),
+];
 
 /** The head word of a subject, hyphens flattened and case folded: "the version
  *  pins" → "pins", "die Konfigurations-Migration" → "migration". */
