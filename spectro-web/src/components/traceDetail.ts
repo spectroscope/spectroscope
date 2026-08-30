@@ -220,6 +220,17 @@ export function sourcePane(
  * break: the wire face is not on offer, and the line this pane shows is the
  * file's own either way.
  *
+ * THE THIRD CASE, which that sentence skipped and the re-review of card 326
+ * measured: a TRANSLATED SPECTROSCOPE IMPORT. That origin keeps wire, and
+ * App's `swapTracePayloads` replaces every trace row's payload with the
+ * translated one, so wire draws translated text under a face whose tooltip
+ * says "exactly the lines that crossed the wire". Card 326 withdrew source
+ * there — correctly, on the byte identity — and with it the one face that
+ * could still show the file's own bytes in that state. The lie in the wire
+ * face predates this card; the escape from it does not. Recorded on the card
+ * and left open rather than patched here, because answering it means the face
+ * rule taking a third fact.
+ *
  * @param pane what the pane found
  * @return the dictionary key for the sentence
  */
@@ -344,9 +355,14 @@ export interface DetailSource {
  * exactly one line of the file, however many wire lines its payload makes, so
  * the blank-line join the wire readings use never applies here: joining would
  * put a file nobody wrote in somebody's clipboard. The tree reading hands over
- * that one document laid out the way the tree lays it out, which is the same
- * text the insight face's button hands over — and pointedly not the pane's own
- * line breaks, because a tree is not text.
+ * that one document, pretty-printed the way the tree lays it out — and
+ * pointedly not the pane's own line breaks, because a tree is not text.
+ *
+ * That is the same FORM the insight face's button uses, over a different
+ * document: this one hands over the recorder's line, insight hands over our
+ * RunEvent. The two are never one click apart — the tree reading only exists
+ * on the source pane, and the source face only exists where insight is
+ * withdrawn — so this is a shared format, not a second copy of a button.
  *
  * @param source the frame's imported line and the pane's reading; absent means
  *               verbatim, and no source line

@@ -17,10 +17,21 @@
 //   native            no file at all. Source can answer nothing, and the pane
 //                     used to answer it with a correct sentence the reader had
 //                     to click to learn nothing from.
-//   spectroscope      an imported file our own writer produced. Measured over
-//                     727 files and 73,331 frames: the file line and the wire
-//                     line are byte-identical every time, so source is a
-//                     second copy of wire.
+//   spectroscope      an imported file our own writer produced. The file line
+//                     and the wire line are byte-identical, so source is a
+//                     second copy of wire. Re-measured 2026-08-30 — the number
+//                     carries the command that made it, because a remembered
+//                     one drifts:
+//
+//                       node -e '<walk ~/.spectro/sessions and
+//                         sessions-archive-20260812; count
+//                         JSON.stringify(JSON.parse(line)) === line>'
+//                       files 727  lines 73335  identical 73331  different 0
+//                         unparsable 4
+//
+//                     Zero divergences. The four unparsable lines cannot reach
+//                     a trace at all: detect.ts parses every line up front and
+//                     throws "invalid JSONL" for the whole file.
 //   claude-code       a foreign record; our RunEvent is a reconstruction of
 //                     it, so source and wire are two different documents and
 //                     source is the one that is the record.
@@ -125,15 +136,20 @@ export const TRACE_ORIGINS = ["native", ...IMPORT_KINDS] as const;
 /** Is the file behind these frames somebody ELSE'S record?
  *
  *  The one sentence the whole offer turns on, answered per origin rather than
- *  inferred, in the shape import/contextRecording.ts already uses for a
- *  question of this shape (`recordsSystemPrompt`). A Record and not a
- *  condition, so a format added to {@link IMPORT_KINDS} is a compile error
- *  here until somebody answers for it: an origin that quietly inherited
- *  `false` would ship a face list nobody decided.
+ *  inferred. A Record and not a condition, so a format added to
+ *  {@link IMPORT_KINDS} is a compile error here until somebody answers for it:
+ *  an origin that quietly inherited `false` would ship a face list nobody
+ *  decided.
+ *
+ *  import/contextRecording.ts asks a question of the same shape and does NOT
+ *  do this — `recordsSystemPrompt` is `kind === "spectroscope"`, a condition,
+ *  and a fourth format inherits `false` from it in silence. That file was cited
+ *  here as the precedent for the Record until the re-review of card 326
+ *  measured the opposite; it is named now as the hole it is, not as the model.
  *
  *  `native`: there is no file, so there is no record of anybody's.
  *  `spectroscope`: our own writer wrote it, and the file line IS the wire line
- *  — measured byte-identical on 73,331 frames across 727 files.
+ *  — byte-identical over 73,331 frames; the command is in this file's header.
  *  `claude-code`, `vscode-agent`: a foreign recorder wrote it and our RunEvent
  *  is a reconstruction; measured different on every frame of a real export. */
 const FOREIGN_RECORD: Readonly<Record<TraceOrigin, boolean>> = {
@@ -158,7 +174,10 @@ export function readsForeignRecord(origin: TraceOrigin): boolean {
  * of the 364 measured Claude Code transcripts.
  *
  * Filtered out of {@link TRACE_FACES}, never re-ordered, so the toolbar reads
- * the same way in every session.
+ * the same way in every session. It IS the toolbar's list since the re-review
+ * of card 326 — for a release the sentence above was true of the open row's
+ * strip and false of the master switch above it, which went on mapping
+ * TRACE_FACES and offered Source on sessions with no file.
  *
  * @param origin where the frames came from
  * @return the faces this session can fill, in the toolbar's own order

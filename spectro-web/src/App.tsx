@@ -1385,7 +1385,9 @@ export function App() {
       const seeded = recordResumeMarker(
         wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
         // history carries the full re-uploaded JSONL: the trace detail's
-        // Raw/Compact views show it line by line, exactly as it rides along.
+        // WIRE face shows it line by line, exactly as it rides along. (It was
+        // "Raw/Compact" here; raw was renamed to wire and compact retired on
+        // 2026-08-05.)
         { sessionId: id, ...summarizeHistory(events), history: events },
       );
       // The fold above is finite and keeps every row; what it becomes is not.
