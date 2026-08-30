@@ -31,10 +31,25 @@ class ClaudeTranscriptsControllerFenceTest {
 
     private MockMvc mvc;
 
+    /**
+     * A readable transcript that is NOT in the store, carrying a word nothing
+     * inside the store says. Every escape shape below aims at it, and every
+     * refusal is checked against its content as well as its status: a 404 is
+     * only half the claim, and the half that matters is that the bytes did not
+     * come back.
+     */
+    private Path outside;
+
+    private static final String SECRET = "outside-the-store-marker";
+
     @BeforeEach
     void aStoreWithOneTranscript() throws Exception {
         Path base = Files.createDirectories(home.resolve(".claude/projects/-Users-x-repo"));
         Files.writeString(base.resolve("s1.jsonl"), "{\"type\":\"run_start\"}\n");
+        outside = home.resolve("elsewhere");
+        Files.createDirectories(outside);
+        outside = outside.resolve("secret.jsonl");
+        Files.writeString(outside, "{\"type\":\"user\",\"text\":\"" + SECRET + "\"}\n");
         mvc = MockMvcBuilders
                 .standaloneSetup(new ClaudeTranscriptsController(home.resolve(".claude/projects")))
                 .build();
@@ -103,5 +118,94 @@ class ClaudeTranscriptsControllerFenceTest {
                         .content("{\"path\":\"-Users-x-repo/s1.jsonl\",\"what\":\"/etc\"}"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("missing")));
+    }
+
+    // ---- card 318: the run bundle wears the same fence ----------------------
+
+    /**
+     * The positive control, and the reason the four refusals below are worth
+     * anything.
+     *
+     * <p>A refusal test against an endpoint that does not exist is green for
+     * the wrong reason — everything 404s when nothing is mapped. This case
+     * fails until the bundle endpoint is really there, so the class as a whole
+     * cannot go green on a missing route.</p>
+     */
+    @Test
+    void aLoopbackCallerGetsTheRunBundle() throws Exception {
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
+                        .param("path", "-Users-x-repo/s1.jsonl"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sessionText")));
+    }
+
+    /**
+     * The bundle is the biggest read on this surface: a whole session plus
+     * every word its agents said. A rebound page reaches loopback like the real
+     * UI does, so the Host check is the only thing keeping it out.
+     */
+    @Test
+    void aReboundHostGetsNoRunBundle() throws Exception {
+        mvc.perform(get("http://evil.example/api/claude/transcripts/run")
+                        .param("path", "-Users-x-repo/s1.jsonl"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void noRunBundleForAPathThatClimbsOutOfTheStore() throws Exception {
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
+                        .param("path", "-Users-x-repo/../../elsewhere/secret.jsonl"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString(SECRET))));
+    }
+
+    /**
+     * An ABSOLUTE path, which {@code base.resolve} hands back unchanged. The
+     * suffix check cannot refuse this one — the target really is a readable
+     * {@code .jsonl} — so only the canonical base check can.
+     */
+    @Test
+    void noRunBundleForAnAbsolutePathOffTheWire() throws Exception {
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
+                        .param("path", outside.toAbsolutePath().toString()))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString(SECRET))));
+    }
+
+    /**
+     * A symlink INSIDE the store pointing out of it. Normalising the requested
+     * path is not enough here: the name never leaves the base, and only
+     * {@code toRealPath} sees where it lands.
+     */
+    @Test
+    void noRunBundleForASymlinkPointingOutOfTheStore() throws Exception {
+        Path link = home.resolve(".claude/projects/-Users-x-repo/link.jsonl");
+        Files.createSymbolicLink(link, outside);
+
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
+                        .param("path", "-Users-x-repo/link.jsonl"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString(SECRET))));
+    }
+
+    /**
+     * A directory, and a name that is not a transcript at all. The bundle
+     * derives a session FOLDER from the path it is given, so a caller naming
+     * the folder directly must get the same nothing as a caller naming a file
+     * outside the store.
+     */
+    @Test
+    void noRunBundleForANameThatIsNotATranscript() throws Exception {
+        Files.createDirectories(home.resolve(".claude/projects/-Users-x-repo/s1/subagents"));
+
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
+                        .param("path", "-Users-x-repo/s1"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
+                        .param("path", "-Users-x-repo/s1/subagents"))
+                .andExpect(status().isNotFound());
     }
 }
