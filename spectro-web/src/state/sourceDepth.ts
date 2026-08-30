@@ -24,11 +24,19 @@
 // mount (`useState(depth < defaultDepth)`), so handing a mounted tree a new
 // `defaultDepth` moves nothing at all. The epoch is therefore a REMOUNT key,
 // exactly as LlmExchangeDetail's `expandEpoch` already is: TraceView keys the
-// source pane on it, the tree is born again, and every node reads the new
-// level. Remove the epoch from that key and a hand-folded node survives
-// "verbose" — which is the whole promise, and it is checked live rather than
-// by a name here, because this repo renders to static markup with no DOM to
-// click in.
+// source pane on {@link sourcePaneKey}, the tree is born again, and every node
+// reads the new level. Remove the epoch from that key and a hand-folded node
+// survives "verbose" — which is the whole promise the dictionary makes to the
+// reader ("auch die Knoten, die du selbst zugeklappt hast").
+//
+// The key is BUILT HERE, next to the doctrine that needs it, rather than spelled
+// out at the mount. It was a template literal in TraceView until the re-review
+// of this card, and all three reviewers measured the same hole: taking the epoch
+// out of it left the whole suite green while the promise stopped holding. Two
+// halves guard it now — that the key moves with the epoch (pure, here) and that
+// the pane is mounted under it (read off TraceView, because a React key never
+// reaches the markup this gate renders). What neither half can see is React then
+// rebuilding the subtree; that is React's contract and it was checked live.
 //
 // SESSION-WIDE, and persisted like the face master beside it: the level is a
 // statement about how this reader reads, not about the file they happen to
@@ -94,6 +102,21 @@ export function currentSourceDepth(): SourceDepthPref {
  */
 export function openLevels(depth: SourceDepth): number {
   return depth === "verbose" ? ALL_LEVELS : 2;
+}
+
+/**
+ * The React key the source pane is mounted under.
+ *
+ * Built from the EPOCH and not from the level: the level is what a node reads
+ * once it is born, the epoch is what makes it be born again. A key built from
+ * the level alone would collapse default → verbose → default onto two keys, and
+ * the second press would hand every hand-folded node straight back.
+ *
+ * @param pref the master, epoch included
+ * @return a key that changes exactly when the master moves, and not otherwise
+ */
+export function sourcePaneKey(pref: SourceDepthPref): string {
+  return `depth-${pref.epoch}`;
 }
 
 export function useSourceDepth(): SourceDepthPref {

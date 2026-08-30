@@ -81,9 +81,9 @@ import {
 import { onlyClause } from "../state/viewState";
 import type { TraceColumns } from "../state/traceColumns";
 import {
-  TRACE_FACES,
   availableFace,
   facesFor,
+  facesOf,
   rowFace,
   setTraceFace,
   useTraceFace,
@@ -93,6 +93,7 @@ import {
   SOURCE_DEPTHS,
   openLevels,
   setSourceDepth,
+  sourcePaneKey,
   useSourceDepth,
   type SourceDepth,
 } from "../state/sourceDepth";
@@ -1562,13 +1563,15 @@ function TraceDetail({
         // has a reason to be folded.
         <JsonTree value={entry.payload} defaultDepth={ALL_LEVELS} />
       ) : pane !== null ? (
-        // Keyed on the depth master's epoch, which is the only way the master
-        // can win: JsonTree holds each node's open state from mount, so a
-        // changed defaultDepth on a mounted tree moves nothing. Remove the
-        // epoch and a node folded shut by hand survives "verbose" — the same
-        // idiom, for the same reason, as LlmExchangeDetail's expandEpoch.
+        // Keyed on the depth master, which is the only way that master can
+        // win: JsonTree holds each node's open state from mount, so a changed
+        // defaultDepth on a mounted tree moves nothing. The key is built in
+        // state/sourceDepth.ts, beside the doctrine that needs it — as a
+        // literal here it was a mechanism nothing in the gate could see, and
+        // taking the epoch out of it left every test green. Same idiom, same
+        // reason, as LlmExchangeDetail's expandEpoch.
         <SourceBody
-          key={`depth-${depthPref.epoch}`}
+          key={sourcePaneKey(depthPref)}
           pane={pane}
           reading={picked}
           lang={lang}
@@ -1995,6 +1998,23 @@ export function TraceView(props: {
   // Where this trace's frames came from. One string for the whole view: it says
   // nothing about a single frame, so it cannot vary by row.
   const origin = props.origin ?? "native";
+  // Which faces this SESSION can answer — the master switch's own list. It was
+  // TRACE_FACES until the re-review of card 326, and the toolbar therefore
+  // contradicted the strip inside every open row: a spectroscope session still
+  // offered Source ("the line of the imported file they were read from") with
+  // no file behind it, and a foreign import still offered the two readings of
+  // our RunEvent that its rows had already withdrawn. Two controls, one
+  // session, opposite answers.
+  //
+  // The frame TYPE's further withdrawal stays where it was — down in the row.
+  // The toolbar speaks for the whole view, and an exchange's missing source
+  // line is not a statement about the session.
+  const sessionFaces = facesOf(origin);
+  // Which button is lit. The stored master, unless this session cannot answer
+  // it, in which case the rows land elsewhere (availableFace) and the toolbar
+  // has to say where. It only READS that landing — the stored master is left
+  // alone, so the next native session gives the reader their own face back.
+  const litFace = availableFace(face, sessionFaces);
 
   // Jump: open the frame and bring its row into view (it may sit outside the
   // current scroll window; if a filter hides it, the row simply is not there).
@@ -2543,11 +2563,11 @@ export function TraceView(props: {
           <span className="trace-seg-label mono" title={t(lang, "trace.faceHint")}>
             {t(lang, "trace.face")}
           </span>
-          {TRACE_FACES.map((f) => (
+          {sessionFaces.map((f) => (
             <button
               key={f}
               type="button"
-              aria-pressed={face === f}
+              aria-pressed={litFace === f}
               title={t(lang, `trace.faceTitle.${f}`)}
               onClick={() => setTraceFace(f)}
             >
