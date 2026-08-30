@@ -33,17 +33,25 @@ def build():
     py = top_y + 18
     b.append(C.card(prov_x, py, prov_w, 306, "LLM providers", accent=C.ZONE_EXT))
     b.append(C.text(prov_x + 16, py + 48, "behind one port: LlmProvider.stream()", 12.5, C.GREY_MID))
+    # The third row's ids are SpectroConfig.openAiCompatProviders(), and there
+    # are five of them — two lines, because the single line this box was fitted
+    # to held four and llamacpp is the fifth (card 312). Held to the config by
+    # PrintedProviderListsDriftTest, which reads the tracked SVG rather than
+    # this file: a generator fixed and not re-run ships the old figure.
     rows = [
-        ("AnthropicProvider", "official SDK · SSE · prompt caching"),
-        ("OllamaProvider", "RestClient · NDJSON · local, key-free"),
-        ("OpenAiCompatProvider", "SSE · openai · lmstudio · openrouter · gemini"),
+        ("AnthropicProvider", ["official SDK · SSE · prompt caching"]),
+        ("OllamaProvider", ["RestClient · NDJSON · local, key-free"]),
+        ("OpenAiCompatProvider", ["SSE · openai · lmstudio · llamacpp",
+                                  "openrouter · gemini"]),
     ]
     ry = py + 66
-    for name, sub in rows:
-        b.append(C.rect(prov_x + 16, ry, prov_w - 32, 48, C.CARD_UP, C.STROKE, rx=8))
+    for name, subs in rows:
+        row_h = 48 + 14 * (len(subs) - 1)
+        b.append(C.rect(prov_x + 16, ry, prov_w - 32, row_h, C.CARD_UP, C.STROKE, rx=8))
         b.append(C.text(prov_x + 28, ry + 20, name, 13.5, C.GREY_LIGHT, mono=True))
-        b.append(C.text(prov_x + 28, ry + 37, sub, 11.5, C.GREY_MID))
-        ry += 56
+        for i, sub in enumerate(subs):
+            b.append(C.text(prov_x + 28, ry + 37 + i * 14, sub, 11.5, C.GREY_MID))
+        ry += row_h + 8
     b.append(C.text(prov_x + 16, ry + 16, "wrapped: Switchable( Retrying( .. ) )", 12, C.GREY_MID, mono=True))
     b.append(C.text(prov_x + 16, ry + 34, "swap mid-session · retry before first event", 11.5, C.GREY_DIM))
 

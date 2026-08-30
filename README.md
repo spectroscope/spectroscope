@@ -310,7 +310,7 @@ history intact:
 
 | provider | runs | needs |
 |---|---|---|
-| `built-in` | local, via llama-server | nothing with the desktop kits, which bundle one; with the server jar, `brew install llama.cpp` |
+| `spectro-local` | local, via llama-server — the picker calls it **built-in** | nothing with the desktop kits, which bundle one; with the server jar, `brew install llama.cpp` |
 | `anthropic` | cloud | `ANTHROPIC_API_KEY` |
 | `ollama` | local | a running Ollama |
 | `openai` | api.openai.com or any compatible server | `OPENAI_API_KEY` (optional for local servers) |
