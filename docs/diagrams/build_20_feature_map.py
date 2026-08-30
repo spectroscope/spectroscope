@@ -64,8 +64,8 @@ GROUPS = [
 ]
 
 FOOT = [
-    "Six backends: anthropic · openai · openrouter · gemini · ollama · LM Studio, plus a built-in "
-    "catalogue of local models that needs no key at all.",
+    "Seven backends: anthropic · openai · openrouter · gemini · ollama · LM Studio · llama.cpp, "
+    "plus a built-in catalogue of local models that needs no key at all.",
     "Everything above writes one thing to disk: append-only JSONL, one line per event, readable with "
     "jq. That file is the API, the storage format and the audit log.",
 ]
