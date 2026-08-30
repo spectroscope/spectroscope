@@ -93,6 +93,11 @@ export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
  *  names used to be spelled out as literals in `advanceLoop` below AND copied
  *  into fileTree.ts, which is three declarations of one vocabulary. */
 export const SHELL_TOOLS = new Set(["run_command", "Bash"]);
+/** The input field a shell call carries its command in — the ONE declaration of
+ *  it (card 320). The fold below reads the command out of this key, and the
+ *  station that draws it has to ask the classifier about the SAME key or the
+ *  two would disagree about what is being coloured. */
+export const SHELL_COMMAND_KEY = "command";
 
 /** Middle-ellipsis WITHOUT the basename split — for glob patterns and other
  *  non-path strings the disk pill shows, where the directories are the point. */
@@ -201,7 +206,7 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       // Both shell verbs, from the one set: they were two branches with
       // identical bodies, and each retyped a name the set already declares.
       if (SHELL_TOOLS.has(event.name)) {
-        return { ...base, focus: "cmd", activeCommand: inputStr(event.input, "command") };
+        return { ...base, focus: "cmd", activeCommand: inputStr(event.input, SHELL_COMMAND_KEY) };
       }
       if (DISK_TOOLS.has(event.name)) {
         const path = inputStr(event.input, "path");

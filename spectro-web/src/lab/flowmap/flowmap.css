@@ -811,6 +811,22 @@
   width: calc(var(--n, 1) * 1ch);
   animation: pf-type 1.05s steps(20, end) both;
 }
+/* ---- the full command, drawn like a command (card 320) -------------------
+   The box holds `breakShellChain`'s output, so its newlines ARE the reading:
+   one line per joint of the chain. `pre-wrap` keeps them, `anywhere` lets a
+   single long argument wrap instead of pushing a horizontal scrollbar under a
+   station that is 460px wide at its widest. The colour comes from the .hl-*
+   tokens in panels.css — the same ones the tool card's own blocks wear. */
+.pf-shell__box {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* The station card centres its text, and the old one-line `$ command` never
+     showed it. A broken chain centred is worse than an unbroken one: the joints
+     are the reading, and centred they have no shared edge to read down. Found
+     by looking at it, not by a test — the markup is identical either way. */
+  text-align: left;
+}
+
 .pf-shell__cursor {
   display: inline-block;
   width: 6px;

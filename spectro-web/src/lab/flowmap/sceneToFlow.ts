@@ -1305,6 +1305,16 @@ export function sceneToFlow(
     kind: "shell",
     active: atCmd !== undefined,
     command: atCmd?.loop.activeCommand ?? null,
+    // The CALL, not only its command string (card 320): the station asks the
+    // classifier what language it is drawing, and it has nothing to ask about
+    // otherwise. Read off the OCCUPANT, the way os-mcp reads its own, and that
+    // is what the guard is for — not staleness. `deriveDetail` already drops a
+    // call on its tool_result, so a finished command cannot linger here. What
+    // it does not do is say WHICH station a call belongs to: wired as the
+    // agent's current call outright, this station carries a `Read` while the
+    // disk beside it is the one spinning (measured 2026-08-30), and it carries
+    // main's call while a worker is the one standing here.
+    tool: atCmd === undefined ? null : (detail.tool[atCmd.agentId] ?? null),
     by: usersOf("cmd"),
     byTag: atCmd?.tag ?? null,
   });

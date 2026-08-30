@@ -285,4 +285,19 @@ describe("the station is handed the call it is drawing (card 320)", () => {
     expect(data.active).toBe(false);
     expect(data.tool ?? null, "a finished call is still on the station").toBeNull();
   });
+
+  // ADDED while making this file green. The case above passes with the station
+  // wired to the agent's current call OUTRIGHT — measured — because
+  // `deriveDetail` drops a call on its own tool_result, so the leak its comment
+  // describes cannot happen. The leak that CAN is a call standing somewhere
+  // else: a Read in flight is the agent's current call and belongs to the disk.
+  // Unguarded, this station carries it while the disk beside it is the one
+  // spinning, and the classifier is then asked about a tool that never came
+  // here. That is what the occupant test in sceneToFlow actually buys, so it is
+  // bitten here rather than only asserted there.
+  it("and never a call that is standing at another station", () => {
+    const data = shellNodeData("Read", { file_path: "/a/b.ts" });
+    expect(data.command ?? null, "a disk call left a command here").toBeNull();
+    expect(data.tool ?? null, "a disk call is standing on the shell station").toBeNull();
+  });
 });

@@ -600,12 +600,20 @@ function langFromToolName(name: string): HlLang | null {
  * coloured as the wrong language reads as a lie about the code, which is worse
  * than reading as text.
  *
+ * EXPORTED since card 320. The flow map's shell station draws the command of
+ * whatever tool is standing on it, and the owner asked the right question about
+ * that: if the thing on the station is not a shell command, is "shell" still
+ * the right colouring? It is not a question a station can answer by asserting a
+ * literal, and answering it a second way is how two surfaces start colouring
+ * one command differently. So the station asks this, the same rule the tool
+ * card's own blocks are coloured by.
+ *
  * @param name  the tool's wire name
  * @param key   the field being lifted
  * @param input the whole input object (siblings carry the evidence)
  * @return the tokenizer language, or null to render plain
  */
-function blockLang(name: string, key: string, input: unknown): HlLang | null {
+export function blockLang(name: string, key: string, input: unknown): HlLang | null {
   const declared = firstStr(input, "language", "lang");
   if (declared !== null) {
     const fenced = hlLangForFence(declared);
