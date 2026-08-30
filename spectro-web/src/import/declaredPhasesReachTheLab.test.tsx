@@ -39,6 +39,7 @@ import { importClaudeCodeRun, runSummary, type ImportedRunSummary } from "./clau
 import { importedPhasesOf } from "../lab/workflowGraph";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { WorkflowLens } from "../lab/workflow/WorkflowLens";
+import { boxNodeId, deriveDetail, sceneToFlow } from "../lab/flowmap/sceneToFlow";
 import { setLang } from "../state/lang";
 import { t } from "../i18n/i18n";
 import { read, stripComments } from "../testkit/source";
@@ -329,6 +330,77 @@ describe("the lens draws the imported run's own columns", () => {
     expect(html).not.toContain("wf-ranklabel");
     expect(html).toContain(t("en", "lab.lens.sourceRecovered"));
     expect(html).not.toContain(t("en", "lab.lens.legendDeclared"));
+  });
+});
+
+// ---- the neighbour the same value now reaches ----------------------------
+
+/**
+ * The house rule after card 284: ask what the fix makes TRUE for the
+ * neighbours that was false before. `replay.declared` feeds TWO readers in
+ * LabView — the lens above and the MAP (card 306) — off the same field, so
+ * the map has been drawing every imported run's agents as loose cards with
+ * nothing saying which phase any of them ran in, and now it will not.
+ *
+ * That is not free: a scenario's declaration is keyed "main", the root, while
+ * an import's is keyed by the `Workflow` tool_use id, a CHILD card. A map that
+ * only knew how to seat a box on the root would have looked right for every
+ * demo and drawn nothing for a real import. It seats both, and this says so.
+ */
+describe("the map seats the imported run's agents in their declared bands", () => {
+  /**
+   * The map is drawn at the CURSOR, from `st.applied` — the prefix the reader
+   * has stepped to — not from the whole file. That distinction is load-bearing
+   * here and was measured, not assumed: the root's own `run_end` RETIRES every
+   * subagent card (labScene, "only the root run ending retires them"), so a
+   * fold over the complete stream leaves the map with no agents to seat and a
+   * box with two empty bands. Reading a run means standing inside it, so the
+   * cursor here stands where a reader stands: at the last frame before the
+   * root run ends.
+   */
+  const flowFor = (json: string | null) => {
+    const events = eventsWith(json);
+    const ends = events.findIndex(
+      (e) => e.type === "run_end" && (e as { runId?: string }).runId === "cc-import",
+    );
+    const applied = events.slice(0, ends);
+    const stamped = importedPhasesOf("import:claude-code:run.jsonl", importedWith(json).declared);
+    const scene = applied.reduce((s, e) => advanceScene(s, e), initialScene());
+    return sceneToFlow(scene, deriveDetail(applied), {
+      provider: "anthropic",
+      model: "m",
+      ...(stamped !== null ? { declared: stamped.declared } : {}),
+    });
+  };
+
+  it("declared: one box, keyed by the run's own node and not by the root", () => {
+    const flow = flowFor(STATE_WITH_PHASES);
+    expect(flow.nodes.filter((n) => n.type === "wfbox").map((n) => n.id)).toEqual([
+      boxNodeId("toolu_workflow_synthetic"),
+    ]);
+  });
+
+  it("declared: the box's bands carry the recorded titles, and each holds its agent", () => {
+    const box = flowFor(STATE_WITH_PHASES).nodes.find((n) => n.type === "wfbox")!;
+    const bands = (box.data as { bands: { title: string; detail: string | null; count: number }[] }).bands;
+    expect(bands.map((b) => b.title)).toEqual(["Survey", "Diagnose"]);
+    expect(bands.map((b) => b.detail)).toEqual(["walk every open card", "three of them in depth"]);
+    // Not a formality: a box drawn with two named bands and nothing standing
+    // in either says the phases ran empty, which this run did not.
+    expect(bands.map((b) => b.count)).toEqual([1, 1]);
+  });
+
+  it("declared: each recorded agent becomes a child of that box", () => {
+    const flow = flowFor(STATE_WITH_PHASES);
+    for (const id of ["c1aaaaa", "c2bbbbb"]) {
+      expect(flow.nodes.find((n) => n.id === `sub-${id}`)?.parentId).toBe(
+        boxNodeId("toolu_workflow_synthetic"),
+      );
+    }
+  });
+
+  it("recovered: the same import without a state file gets no box at all", () => {
+    expect(flowFor(null).nodes.filter((n) => n.type === "wfbox")).toEqual([]);
   });
 });
 
