@@ -34,23 +34,44 @@ describe("parsing the live default", () => {
 });
 
 describe("parsing a live tab", () => {
-  it("knows the browser tab, which is a session feature with an address (card 218)", () => {
-    // The owner settled it while card 201 was building: the visible browser
-    // belongs to a session, so it sits in the session's own tab row — and a tab
-    // in that row is a place a link can land on.
-    expect(VIEW_TABS).toContain("browser");
+  it("no longer knows a browser tab, and says so by landing home rather than guessing", () => {
+    // REPLACED, not loosened. This test used to assert the opposite, on card
+    // 218's rule that the visible browser is a session feature and so belongs
+    // in the session's tab row. The owner took the tab back out on 2026-08-30
+    // because a tab is a HOLE the desktop shell lays a native view over, and a
+    // second hole meant a second rectangle for one view — the page rendered
+    // beside the panel instead of inside it (browser/oneDoor.drift.test.ts).
+    //
+    // WHAT IT COSTS, measured rather than assumed — the first draft of this
+    // test guessed that an old link would fall back to `s-1` with no tab, and
+    // it does not. A tab suffix is stripped only when it IS one of the
+    // literals, so the retired segment is read as part of the ID: an old
+    // `#/session/s-1/browser` opens a session called "s-1/browser", which does
+    // not exist. It does not 404 and it does not land home either; it lands on
+    // nothing.
+    //
+    // Left as it is, deliberately. The parser's stated rule is that an unknown
+    // address falls to the live default, and a retired-tab list would be real
+    // machinery for one removed segment. But it IS a loss, the browser had
+    // exactly one address in this grammar, and pretending otherwise is how a
+    // comment becomes the third place a lie lives. Recorded on card 334.
+    expect(VIEW_TABS).not.toContain("browser");
     expect(parseAppRoute("#/session/s-1/browser")).toEqual({
       kind: "session",
-      sessionId: "s-1",
+      sessionId: "s-1/browser",
       eventIndex: null,
-      tab: "browser",
+      tab: null,
     });
-    expect(formatRoute({ kind: "session", sessionId: "s-1", eventIndex: null, tab: "browser" })).toBe(
-      "#/session/s-1/browser",
+    // The bare `#/browser` is the gentler half: nothing to fold it into, so it
+    // takes the live default the way any unknown address does.
+    expect(parseAppRoute("#/browser")).toEqual({ kind: "live", tab: null });
+    // And the grammar cannot be talked into producing the old address either.
+    expect(formatRoute({ kind: "session", sessionId: "s-1", eventIndex: null, tab: null })).toBe(
+      "#/session/s-1",
     );
   });
 
-  it("reads each of the seven tab literals", () => {
+  it("reads each of the six tab literals", () => {
     for (const tab of VIEW_TABS) {
       expect(parseAppRoute(`#/${tab}`)).toEqual({ kind: "live", tab });
     }

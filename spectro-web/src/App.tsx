@@ -47,9 +47,7 @@ import {
   reportedViewFor,
   subscribeReportedViews,
 } from "./state/viewReport";
-import { BrowserSegment } from "./browser/BrowserSegment";
 import { SkillsPane } from "./components/SkillsPane";
-import { BrowserReplay } from "./browser/BrowserReplay";
 import { navDepth, navLanded, writeRoute, type NavCause, type NavIntent } from "./state/history";
 import { canGoBack, canGoForward, NAV_START, type NavDepth } from "./state/navDepth";
 import {
@@ -258,8 +256,9 @@ export function App() {
    * it has no artifact to reopen and nothing a deep link could promise.
    */
   // Card 228: the browser left this union — the rail lists places you go, and
-  // the browser is a thing a session has. Its doors are the session tab and
-  // the workspace's browser card.
+  // the browser is a thing a session has. Since 2026-08-30 it has exactly one
+  // door, the workspace's browser card; the session tab that was the other one
+  // is gone, because two holes meant two rectangles for one native view.
   const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "skills">("sessions");
   /*
    * The artifacts the state graph is drawing — up here because the arm below
@@ -507,7 +506,7 @@ export function App() {
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
     liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
     browserCuePushLive(batch); // card 226: an agent drove the browser — the web view re-watches
-    browserRevealPushLive(batch); // card 241: …and the dock's browser panel reveals, never the tab
+    browserRevealPushLive(batch); // card 241: …and the dock's browser panel reveals — the only door left
     // A refused resume (another socket already drives that session). Drop the
     // resume rather than let the transport retry it: the socket reconnects with
     // the same URL, so a page that kept ?resume= would be refused every second
@@ -2264,20 +2263,6 @@ export function App() {
             >
               lab
             </button>
-            {/* Card 218: the visible browser is a SESSION feature, so it sits in
-              the session's own tab row. Since card 228 this is the browser's
-              first door — the rail segment left (a browser without a session
-              was the contradiction) — and the workspace's browser card is the
-              second, both mounting BrowserSegment with the same session id. */}
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "browser"}
-              className={tab === "browser" ? "tab tab--active" : "tab"}
-              onClick={() => changeTab("browser")}
-            >
-              browser
-            </button>
             {/* The way back to the record, on EVERY lens, and the only always
               visible one: the copy that sat next to the translate trigger is
               gone (2026-08-03), the sheet's own copy needs the sheet open. A
@@ -2616,22 +2601,6 @@ export function App() {
                  keep in step. */
               onFocusEvent={focusInTrace}
             />
-          )
-        ) : tab === "browser" ? (
-          /* Live: the session's own browser surface. It is not a second
-             browser: the workspace's browser card hands BrowserSegment the
-             same session id, and only one door is ever on screen, so the
-             shell lays one view over whichever hole is showing.
-
-             Stored: the REPLAY (card 204). A session the reader reopened has no
-             live browser — card 218 retires it when the session's socket goes —
-             so the live surface here would be a frame around an honest but
-             useless "no pane attached". What that session does have is its
-             record, beside the file, and this is where it gets watched back. */
-          viewingLive ? (
-            <BrowserSegment active={true} sessionId={shownSessionId} />
-          ) : (
-            <BrowserReplay sessionId={shownSessionId} />
           )
         ) : null}
         {/* The trace is MOUNTED and hidden rather than unmounted (card 175), so

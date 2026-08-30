@@ -50,6 +50,7 @@ import { SystemContextTab } from "./SystemContextTab";
 import { WorkspaceTab } from "../workspace/WorkspaceTab";
 import { TerminalPanel } from "../panels/TerminalPanel";
 import { BrowserSegment } from "../browser/BrowserSegment";
+import { BrowserReplay } from "../browser/BrowserReplay";
 import { DOCK_ORDER, dockLabelKey, dockModes } from "../panels/dockModel";
 import type { WorkspaceInfo } from "../state/reducer";
 import { t } from "../i18n/i18n";
@@ -306,7 +307,15 @@ export function RightPanel({
       case "terminal":
         return <TerminalPanel sessionId={workspace?.sessionId} />;
       case "browser":
-        return (
+        // THE ONLY DOOR since 2026-08-30. It used to be the second of two: the
+        // session's `browser` tab mounted the same surface, and because the
+        // native view follows whichever hole reported last, the page landed
+        // under the door the reader was not looking at. The tab is gone, and
+        // with it the tab's second passenger came here — a STORED session has
+        // no live browser (card 218 retires it when the socket goes), so what
+        // it has is the record, and that is what this panel shows for it.
+        // Pinned by browser/oneDoor.drift.test.ts.
+        return liveView === true ? (
           <BrowserSegment
             active={
               modes.browser === "open" &&
@@ -320,6 +329,8 @@ export function RightPanel({
             floorGuard={fullPanel !== "browser"}
             reportNonce={reportNonce}
           />
+        ) : (
+          <BrowserReplay sessionId={sessionId} />
         );
     }
   };

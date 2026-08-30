@@ -14,14 +14,23 @@
 // real falls to the live default — landing wrong is worse than landing home.
 
 /**
- * The seven view tabs a hash may name. The literals ARE the URL segments.
+ * The six view tabs a hash may name. The literals ARE the URL segments.
  *
- * `browser` joined them on card 218: the owner settled that the visible browser
- * is a session feature — "weil jede session braucht ja seinen eigenen browser" —
- * so it belongs in the session's own tab row, which binds it to the session by
- * construction and gives it an address a link can land on.
+ * `browser` was the seventh from card 218 until 2026-08-30, when the owner took
+ * it back out — "hier oben den browser wegnehmen, der ist eh nicht lebensfähig".
+ * It is not a tidy-up: a tab is a HOLE the desktop shell lays a native view
+ * over, and a second hole on screen at the same time posted a second rectangle
+ * for the same view, so the page landed under whichever door the reader was not
+ * looking at. One door cannot disagree with itself. The workspace's browser card
+ * is that door, and it carries both faces now — live and the card 204 replay.
+ * See browser/oneDoor.drift.test.ts.
+ *
+ * The address `#/session/<id>/browser` therefore names nothing and falls to the
+ * live default, which is what this file already does with any tab it does not
+ * know. That is a deliberate loss: the browser had exactly one address and it
+ * was this tab, and no other surface in the app has one.
  */
-export const VIEW_TABS = ["chat", "spectrum", "graph", "trace", "text", "lab", "browser"] as const;
+export const VIEW_TABS = ["chat", "spectrum", "graph", "trace", "text", "lab"] as const;
 export type ViewTab = (typeof VIEW_TABS)[number];
 
 /** The settings sections a hash may name. */
