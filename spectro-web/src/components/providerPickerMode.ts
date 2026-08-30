@@ -53,8 +53,9 @@ export function modelFieldMode(
 
 /**
  * Which model to select once a provider's list has loaded, given whether that
- * list is AUTHORITATIVE. A local backend (ollama, lmstudio) and a keyed cloud
- * provider whose key is present ("ready") both return their real models, so a
+ * list is AUTHORITATIVE. A local backend (every provider addressSpecFor gives a
+ * field to) and a keyed cloud provider whose key is present ("ready") both
+ * return their real models, so a
  * selection that isn't in the list — e.g. claude-opus carried over from
  * anthropic, or "local-model" left seeded on a keyed openai — is replaced with
  * the first real one. A needs-key / curated-fallback list is NOT authoritative,

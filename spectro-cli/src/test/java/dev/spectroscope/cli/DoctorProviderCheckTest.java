@@ -50,6 +50,28 @@ class DoctorProviderCheckTest {
         }
     }
 
+    /**
+     * Card 312, round 3. {@code addressFieldFor} is a switch of three literal
+     * cases and its javadoc said "the two local-model backends" while there
+     * were three — the same class of defect as the CLI's first-run hint. The
+     * switch stays a switch (it maps a name to a settings key), but the set it
+     * has to cover is read off {@link SpectroConfig#keylessLocalServers()}, so
+     * a fourth free local backend cannot arrive without a doctor line that can
+     * name where it was dialled. Bitten by deleting the llamacpp case.
+     */
+    @Test
+    void everyKeylessLocalServerHasAnAddressFieldTheDoctorCanName() {
+        for (String provider : SpectroConfig.keylessLocalServers()) {
+            String field = DoctorCommand.addressFieldFor(provider);
+            assertNotNull(field,
+                    "\"" + provider + "\" is dialled at an address of its own and the doctor"
+                            + " knows no settings key for it, so its note cannot say where to"
+                            + " change it — add a case to DoctorCommand.addressFieldFor");
+            assertEquals(provider + "BaseUrl", field,
+                    "the doctor names a settings key that is not this provider's own");
+        }
+    }
+
     @Test
     void aProviderNobodyKnowsStillFallsThrough() {
         assertNull(DoctorCommand.providerCheckFor("hal9000"),

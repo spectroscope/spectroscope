@@ -8,20 +8,38 @@ import { addressSpecFor, localDownNote } from "./providerAddress";
 import { PROVIDERS } from "./providerPickerMode";
 
 describe("addressSpecFor", () => {
-  it("gives each local-model provider its own field and its own preset", () => {
-    expect(addressSpecFor("ollama")).toEqual({
-      field: "ollamaBaseUrl",
-      preset: "http://localhost:11434",
-    });
-    expect(addressSpecFor("lmstudio")).toEqual({
-      field: "lmstudioBaseUrl",
-      preset: "http://localhost:1234",
-    });
+  // The test that stood here was called "gives each local-model provider its
+  // own field and its own preset" and then named two of the three by hand, so
+  // llamacpp joined without it noticing and the name went on claiming the
+  // coverage (card 312, round 3). Every provider is walked now, and what is
+  // asserted is the SHAPE the card-193 rule requires of an owner — a field of
+  // its own name, a loopback preset, and a port nobody else has. The defect
+  // that rule exists for was one provider borrowing another's port.
+  it("gives every address owner its own field, on its own port", () => {
+    const owners = PROVIDERS.filter((p) => addressSpecFor(p) !== null);
+    expect(owners.length, "no provider owns an address any more").toBeGreaterThanOrEqual(2);
+    const ports = new Set<string>();
+    for (const p of owners) {
+      const spec = addressSpecFor(p)!;
+      expect(spec.field, `${p}'s field is not its own name`).toBe(`${p}BaseUrl`);
+      const port = spec.preset.match(/^http:\/\/localhost:(\d+)$/)?.[1];
+      expect(port, `${p}'s preset is not a loopback address with a port: ${spec.preset}`)
+        .toBeDefined();
+      expect(ports.has(port!), `${p} shares port ${port} with another provider`).toBe(false);
+      ports.add(port!);
+    }
   });
 
-  it("answers null for every provider without an address — the field stays hidden", () => {
-    for (const p of PROVIDERS) {
-      if (p === "ollama" || p === "lmstudio" || p === "llamacpp") continue;
+  it("answers null for every provider that is not an owner — the field stays hidden", () => {
+    // No skip list: the owners are read off addressSpecFor itself, and WHICH
+    // providers those are is pinned against the server's own answer in
+    // settingsReach.test.tsx and llamacppProvider.test.ts. Left that way with a
+    // reason: on the web side addressSpecFor IS the source, so a second copy
+    // here would be the hand-typed list this round is removing, not a check.
+    const owners = new Set(PROVIDERS.filter((p) => addressSpecFor(p) !== null));
+    const hidden = PROVIDERS.filter((p) => !owners.has(p));
+    expect(hidden.length, "every provider owns an address — the row can never hide").toBeGreaterThan(0);
+    for (const p of hidden) {
       expect(addressSpecFor(p), p).toBeNull();
     }
   });

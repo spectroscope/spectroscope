@@ -7,8 +7,10 @@
 //            (openai.com/index/gpt-4-1, openai.com/index/introducing-gpt-5-5)
 //   Gemini:  1.5 Pro up to 2M, 2.5 Pro/Flash = 1M
 //            (ai.google.dev/gemini-api/docs/long-context)
-// Local backends (ollama, lmstudio) and anything unrecognised vary widely, so
-// we return null rather than fabricate a number.
+// The local backends serve whatever model was loaded, so their windows and
+// anything unrecognised vary widely: we return null rather than fabricate a
+// number. Deliberately not a list of names — the pair that stood here missed
+// llamacpp the day it arrived (card 312).
 //
 // THIS TABLE IS A GUESS BY PREFIX AND WILL BE WRONG AGAIN. claude-fable-5 was
 // the last name it did not know: it starts with "claude" but with neither

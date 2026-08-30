@@ -32,8 +32,9 @@ public final class ReasoningCapabilities {
     /**
      * The static capability record for a (dialect, model) pair.
      *
-     * @param dialect the wire dialect: anthropic | openai | gemini | openrouter
-     *                | lmstudio | ollama | spectro-local | llamacpp
+     * @param dialect the wire dialect — a top-level key of
+     *                {@code reasoning/capabilities.json}, which is the table
+     *                itself and therefore the only list worth reading
      * @param model   the model id/name as configured; null or blank falls to
      *                the dialect's catch-all row
      * @return the matching record; an unknown dialect answers

@@ -591,11 +591,15 @@ public final class DoctorCommand implements Callable<Integer> {
 
     /**
      * The settings field carrying a provider's own address, or {@code null} for
-     * every provider that has none (card 193 gave one to the two local-model
-     * backends and to nobody else).
+     * every provider that has none. Card 193 gave one to each local-model
+     * backend and to nobody else; the set is
+     * {@link SpectroConfig#keylessLocalServers()}, and
+     * {@code DoctorProviderCheckTest} holds this switch to it rather than
+     * trusting the count in this sentence — which said "the two" through the
+     * release that made them three.
      *
      * @param provider the configured provider name
-     * @return "ollamaBaseUrl" | "lmstudioBaseUrl" | "llamacppBaseUrl" | null
+     * @return the provider's own {@code …BaseUrl} settings key, or null
      */
     static String addressFieldFor(String provider) {
         return switch (provider) {

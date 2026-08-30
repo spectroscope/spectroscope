@@ -49,9 +49,14 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * @param baseUrl the server root, e.g. http://localhost:1234 (a trailing slash is tolerated)
      * @param model   the model name requests are sent to
      * @param apiKey  optional — LM Studio and friends accept requests without one
-     * @param dialect the provider label this endpoint answers to ("openai",
-     *                "lmstudio", "openrouter", "gemini", "spectro-local"), or
-     *                null to infer from the base URL — the reasoning fields
+     * @param dialect the provider label this endpoint answers to — one of the
+     *                OpenAI-compatible members of
+     *                {@link dev.spectroscope.core.config.SpectroConfig#KNOWN_PROVIDERS},
+     *                or null to infer from the base URL. Not spelled out here:
+     *                the list that stood in its place named five and missed
+     *                llamacpp, which this class special-cases twice. The
+     *                dialects with rows of their own are the keys of
+     *                {@code reasoning/capabilities.json}; the reasoning fields
      *                differ per dialect, nothing else does
      */
     public record Options(String baseUrl, String model, String apiKey, String dialect) {

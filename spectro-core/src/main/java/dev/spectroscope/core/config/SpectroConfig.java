@@ -46,7 +46,7 @@ import java.util.function.Function;
  * (gitignored by convention) machine-specific. All fields are optional at
  * every layer; missing fields fall through to the layer below.
  *
- * @param provider            "anthropic", "ollama" or "openai" (LM Studio &amp; friends)
+ * @param provider            the LLM backend — any member of {@link #KNOWN_PROVIDERS}
  * @param model               model id for the chosen provider
  * @param baseUrl             base URL for ollama/openai (ignored for anthropic)
  * @param compactionThreshold input-token threshold that triggers compaction, or
@@ -299,7 +299,7 @@ public record SpectroConfig(
      * that built a config positionally keeps compiling and gets the shipped
      * defaults — both cheap detectors armed, the plan net off.
      *
-     * @param provider            "anthropic", "ollama" or "openai"
+     * @param provider            the LLM backend, a member of {@link #KNOWN_PROVIDERS}
      * @param model               model id for the chosen provider
      * @param baseUrl             base URL for ollama/openai
      * @param compactionThreshold input-token threshold, or null to derive it
@@ -349,7 +349,7 @@ public record SpectroConfig(
      * caller that built a config positionally keeps compiling and gets the
      * shipped budget.
      *
-     * @param provider            "anthropic", "ollama" or "openai"
+     * @param provider            the LLM backend, a member of {@link #KNOWN_PROVIDERS}
      * @param model               the model id
      * @param baseUrl             the legacy per-provider endpoint override
      * @param compactionThreshold input tokens that trigger compaction
@@ -1173,7 +1173,7 @@ public record SpectroConfig(
 
     /** Whether a LIVE provider switch to {@code provider} requires an API key to be
      *  present. True for the cloud services that cannot work without one (anthropic,
-     *  gemini, openrouter). False for the local backends (ollama, lmstudio) AND for
+     *  gemini, openrouter). False for every provider with no key variable AND for
      *  openai — openai is the generic OpenAI-compatible escape hatch, routinely
      *  pointed at a keyless local server via a custom base url, so a switch to it
      *  stays tolerant (its default-endpoint keyless gap is pre-existing and out of
@@ -1346,7 +1346,7 @@ public record SpectroConfig(
      * their own per-provider field first; the OpenAI-compatible cloud
      * providers keep the legacy shared rule.
      *
-     * @param provider one of ollama, lmstudio, openai, openrouter, gemini
+     * @param provider a provider with a configurable endpoint — the arms below
      * @return the effective endpoint for {@code provider} under this config
      * @throws IllegalArgumentException for providers without a configurable
      *         endpoint (anthropic's is fixed in the SDK; spectro-local is a
@@ -1415,7 +1415,8 @@ public record SpectroConfig(
     }
 
     /** The environment variable carrying a provider's API key, or {@code null}
-     *  for the local backends (ollama, lmstudio) that authenticate with nothing.
+     *  for the local backends that authenticate with nothing (the {@code default}
+     *  arm below, which is what {@link #keylessLocalServers} is filtered on).
      *  The single source for both the provider construction and the onboarding
      *  status the faces show.
      *  @param provider the provider name
@@ -1426,7 +1427,7 @@ public record SpectroConfig(
             case "openai" -> "OPENAI_API_KEY";
             case "openrouter" -> "OPENROUTER_API_KEY";
             case "gemini" -> "GEMINI_API_KEY"; // same key as the gemini image backend
-            default -> null; // ollama, lmstudio: local, no key
+            default -> null; // the local backends: no key to carry
         };
     }
 
@@ -1451,7 +1452,7 @@ public record SpectroConfig(
 
     /** A provider's onboarding status for the first-run dialog and the picker:
      *  an API provider is {@code "ready"} once its key is present and
-     *  {@code "needs-key"} otherwise; a local provider (ollama, lmstudio) is
+     *  {@code "needs-key"} otherwise; a provider with no key variable is
      *  {@code "local"} — its readiness is a reachability question the live model
      *  list answers, not a key check.
      *  @param provider   the provider name
@@ -1675,7 +1676,7 @@ public record SpectroConfig(
      *  for openrouter, {@code OPENAI_API_KEY} otherwise (LM Studio ignores it).
      *  @return the key, or null when unset */
     private String openAiCompatKey() {
-        return resolveApiKey(keyEnvFor(provider)); // null keyEnv (lmstudio) -> no key
+        return resolveApiKey(keyEnvFor(provider)); // null keyEnv (a local backend) -> no key
     }
 
     /**

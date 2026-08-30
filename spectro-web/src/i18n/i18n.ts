@@ -821,9 +821,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "no key set — add it to your .env (see the help)",
   },
   "pp.setInSettings": { de: "Key in den Einstellungen setzen →", en: "set a key in Settings →" },
+  // Names no backend on purpose (card 312): this is the fallback an OLD server
+  // triggers, for whichever local provider is selected, and the pair it used to
+  // name went stale the moment a third one arrived. The sentence that CAN be
+  // specific is the one below, which names the address instead of a product.
   "pp.localDown": {
-    de: "Backend nicht erreichbar — starte ollama / LM Studio (oder tipp eine Modell-ID)",
-    en: "backend not reachable — start ollama / LM Studio (or type a model id)",
+    de: "Backend nicht erreichbar — starte den gewählten lokalen Server (oder tipp eine Modell-ID)",
+    en: "backend not reachable — start the local server you picked (or type a model id)",
   },
   // Card 193: when the server reports the tried address, name it — "start
   // ollama" is the wrong advice when the backend runs fine one hostname away.

@@ -832,9 +832,10 @@ export function SettingsPanel({
                         />
                       )}
                     </label>
-                    {/* Card 193: the address beside the provider that needs it —
-                    ollama, lmstudio and llamacpp each carry their OWN field with their
-                    OWN preset as placeholder; other providers hide it. The
+                    {/* Card 193: the address beside the provider that needs it.
+                    Which providers those are is addressSpecFor's answer, not a
+                    list repeated here — each owns a field and a preset of its
+                    own, and every other provider hides the row. The
                     key includes the effective value so a reset or an external
                     change refreshes the uncontrolled input's default. */}
                     {addressSpec && (

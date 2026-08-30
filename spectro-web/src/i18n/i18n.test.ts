@@ -415,6 +415,28 @@ describe("the workspace gear describes baseUrl as what it now is", () => {
   });
 });
 
+// Card 312, round 3. The addressless "backend not reachable" sentence is the
+// fallback an OLD server triggers, for WHICHEVER local provider is selected —
+// and it named two products by hand, so it went stale the day a third local
+// backend arrived and would have told a llama.cpp operator to start LM Studio.
+// The specific sentence beside it (pp.localDownAt) names the ADDRESS, which is
+// a fact the server reports; the generic one may name no product at all.
+describe("the addressless unreachable sentence names no backend", () => {
+  it("mentions no provider that owns an address, in either language", () => {
+    const owners = PROVIDERS.filter((p) => addressSpecFor(p) !== null);
+    expect(owners.length, "no provider owns an address any more").toBeGreaterThan(0);
+    for (const lang of ["de", "en"] as const) {
+      // "LM Studio" and "llama.cpp" are the same names with punctuation in
+      // them, so the comparison is made on letters only.
+      const letters = dict["pp.localDown"][lang].toLowerCase().replace(/[^a-z]/g, "");
+      for (const owner of owners) {
+        expect(letters, `${lang} names "${owner}", and the reader may be running another`)
+          .not.toContain(owner.replace(/[^a-z]/g, ""));
+      }
+    }
+  });
+});
+
 // Card 222. The defect was a settings page that reported a state the run did
 // not have, and said nothing about which of the two it was describing. The fix
 // is that every saveable setting carries a sentence about WHEN it lands, so
