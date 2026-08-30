@@ -146,6 +146,107 @@ class ConfigDocDriftTest {
     }
 
     /**
+     * Card 312, round 4. The guard above holds the TABLE, and a table row is
+     * the one kind of list a doc can keep. The PROSE went stale underneath it
+     * and shipped, twice: two paragraphs above the closing sentence round 3
+     * corrected, the chapter still told a reader that the header picker
+     * "switches the headline backends (anthropic, ollama, openai)" and that
+     * "the two extra OpenAI-compatible ids (lmstudio, openrouter) are chosen in
+     * settings". Wrong on every count by then — five extra ids, three of them
+     * unnamed, and {@code ProviderPicker.tsx} maps over all eight (pinned by
+     * {@code SpectroServerIntegrationTest.theHeaderPickerAcceptsTheWiderProviderSet}).
+     * So the person who had just started a llama-server was sent to edit
+     * settings for a thing the picker in front of them already offered — the
+     * same wrong door, still open two paragraphs up, through a green gate and
+     * into both reprinted PDFs.
+     *
+     * <p>The rule this holds is ALL OR NONE: the section about what the picker
+     * reaches may name every provider id or none of them, never a hand-picked
+     * few. None is what it says now — the table two sections up is the list,
+     * and it is the one under guard. A subset is how the sentence was wrong
+     * both times, and it is the only shape that cannot be maintained.</p>
+     *
+     * <p>It walks the PART and both assembled editions, because the part is not
+     * what anybody reads. Measured while writing this: the part was fixed, this
+     * test went green, and the two shipped editions still carried the old
+     * sentence — the exact gap that let round 2's wrong door survive into two
+     * reprinted PDFs under a green gate. The editions are the artefact; the
+     * part is a source file.</p>
+     */
+    @Test
+    void theSwitchingSectionNeverNamesJustSomeOfTheProvidersThePickerOffers()
+            throws IOException {
+        assumeTrue(source() != null, "not running from a source checkout");
+        Path root = repoRoot();
+        List<Path> carriers = new ArrayList<>(List.of(root.resolve(BACKENDS)));
+        for (String edition : List.of("docs/USER-GUIDE.html", "docs/USER-GUIDE-LIGHT.html")) {
+            carriers.add(root.resolve(edition));
+        }
+
+        for (Path carrier : carriers) {
+            String section = section(Files.readString(carrier),
+                    "ch-providers-switch", "ch-providers-retry");
+            List<String> named = new ArrayList<>();
+            for (String provider : new java.util.TreeSet<>(SpectroConfig.knownProviders())) {
+                // The id as an id: case-sensitive and not inside a longer word,
+                // so "OpenAI-compatible" is prose about a protocol and not a
+                // mention of the openai backend.
+                if (Pattern.compile(
+                                "(?<![A-Za-z0-9-])" + Pattern.quote(provider) + "(?![A-Za-z0-9-])")
+                        .matcher(section).find()) {
+                    named.add(provider);
+                }
+            }
+
+            assertTrue(named.isEmpty() || named.size() == SpectroConfig.knownProviders().size(),
+                    "\"Switching mid-session\" in " + root.relativize(carrier) + " names "
+                            + named + " — " + named.size() + " of "
+                            + SpectroConfig.knownProviders().size() + " providers. That"
+                            + " section tells the reader which backends the header picker"
+                            + " reaches, and the picker reaches all of them. A hand-picked"
+                            + " few is how that sentence has been wrong twice; name them"
+                            + " all, or name none and let the \"provider id\" row two"
+                            + " sections up be the list. If the part is already right,"
+                            + " the editions lag it: rebuild them"
+                            + " (docs/guide-assets/build_user_guide.py, both themes, then"
+                            + " the PDFs).\n" + section);
+        }
+    }
+
+    /**
+     * The PROSE of one chapter section — its {@code <p>} paragraphs between
+     * this {@code <h2 id=…>} and the next, and nothing else.
+     *
+     * <p>Paragraphs only, because the assembled edition is not the part: the
+     * figure caption arrives as a {@code <figcaption>} and the mermaid diagram
+     * as an inlined {@code <svg>} whose labels are text too. Measured — a first
+     * cut that stripped every tag read {@code [anthropic without
+     * ANTHROPIC_API_KEY]} out of a diagram arrow and reported the section as
+     * naming one provider. A diagram may illustrate one backend; a sentence
+     * about which backends the picker reaches may not.</p>
+     */
+    private static String section(String chapter, String from, String to) {
+        int start = chapter.indexOf("<h2 id=\"" + from + "\">");
+        int end = chapter.indexOf("<h2 id=\"" + to + "\">");
+        assertTrue(start >= 0 && end > start,
+                "the backends chapter no longer runs from \"" + from + "\" to \"" + to
+                        + "\" — a drift test that cannot find its own subject must go"
+                        + " red, not quiet");
+        // Comments first, before tags: a <!--SHOT:…--> placeholder can carry a
+        // ">" of its own and would otherwise be cut in half.
+        String body = chapter.substring(start, end).replaceAll("(?s)<!--.*?-->", "");
+        StringBuilder prose = new StringBuilder();
+        Matcher paragraph = Pattern.compile("(?s)<p[ >].*?</p>").matcher(body);
+        while (paragraph.find()) {
+            prose.append(paragraph.group().replaceAll("<[^>]+>", "")).append('\n');
+        }
+        assertTrue(prose.length() > 0,
+                "the \"" + from + "\" section has no <p> prose at all — a drift test that"
+                        + " cannot find its own subject must go red, not quiet");
+        return prose.toString();
+    }
+
+    /**
      * The {@code model} row promises which default a provider falls back to, and
      * it said "if provider is ollama/openai … qwen3 / local-model" while
      * {@link SpectroConfig#defaultModelFor} mapped lmstudio and llamacpp to

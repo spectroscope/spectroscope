@@ -27,7 +27,7 @@ understands.</p>
   <tr><td>quirks</td><td>usage + parsed tool inputs exist only after the stream ends</td><td>mints its own call ids; vision fail-fast for non-vision models</td><td>assembles fragmented tool-call deltas per index</td></tr>
 </table>
 
-<p><strong>One wire, three hosts, no guessing.</strong> spectroscope used to redirect a
+<p><strong>One wire, one endpoint per id, no guessing.</strong> spectroscope used to redirect a
 keyless <code>openai</code> to a local LM Studio endpoint on your behalf. That guess is
 gone: the provider id names the endpoint, the key only authenticates. <code>openai</code>
 now always means the cloud. For a local OpenAI-compatible server, pick the id that matches
@@ -89,10 +89,12 @@ same file — chapter 17.</p>
 
 <!--SHOT:17-provider-picker|The header picker: provider select plus a real model dropdown — Ollama's list is live from the server, cloud lists are curated, and a custom model is always typeable.-->
 
-<p>The header chip opens the picker. It switches the headline backends (anthropic, ollama,
-openai) and the model; the two extra OpenAI-compatible ids (lmstudio, openrouter) are
-chosen in settings (<code>SPECTRO_PROVIDER</code> or <code>~/.spectro/settings.json</code>)
-or with a <code>--provider</code> flag. The model dropdown is honest: for Ollama it lists
+<p>The header chip opens the picker, and it offers every provider id in the table at the
+top of this chapter — the cloud backends, the OpenAI-compatible endpoints and the built-in
+model alike. Nothing has to be chosen in settings to be reachable from there;
+<code>SPECTRO_PROVIDER</code>, <code>~/.spectro/settings.json</code> and the
+<code>--provider</code> flag set the same thing before a session starts, which is the one
+difference. The model dropdown is honest: for Ollama it lists
 what is actually installed (live from <code>/api/tags</code>), for Anthropic what your key
 can use (its Models API), for an OpenAI-compatible endpoint whatever <code>/v1/models</code>
 returns, each with a curated fallback and “Custom model …” always available; an empty list
