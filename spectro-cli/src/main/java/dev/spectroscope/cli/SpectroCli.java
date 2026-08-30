@@ -60,7 +60,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * The CLI: the complete harness plus the Claude-Code
  * style extras — a settings hierarchy with a permission allowlist, slash
  * commands inside the REPL (/help /cost /model /sessions /compact /clear),
- * a doctor subcommand, and a third provider (openai-compatible).
+ * a doctor subcommand, and every backend
+ * {@link SpectroConfig#KNOWN_PROVIDERS_DISPLAY} names.
  *
  * <p>Run with: {@code ./gradlew :spectro-cli:run -q --console=plain}</p>
  */
@@ -85,7 +86,13 @@ public final class SpectroCli implements Runnable {
     @Option(names = "--resume", description = "Resume the session with this id.")
     String resume;
 
-    @Option(names = "--provider", description = "anthropic, ollama or openai (overrides the config).")
+    // The help screen names the providers by POINTING at the same listing the
+    // config's refusal message prints, because it used to name three of eight:
+    // `spectro --provider bogus` answered with all eight and `spectro --help`
+    // one line above said anthropic, ollama or openai (card 312). The constant
+    // is a compile-time String, so the annotation can hold it.
+    @Option(names = "--provider",
+            description = SpectroConfig.KNOWN_PROVIDERS_DISPLAY + " (overrides the config).")
     String providerFlag;
 
     @Option(names = "--model", description = "Model id (overrides the config).")
