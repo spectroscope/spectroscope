@@ -126,28 +126,60 @@ const ownCopy = (lang: "en" | "de"): string[] => {
   return out;
 };
 
-/** EVERYTHING this scenario puts on screen: the copy above, plus each worker's
- *  transcript, plus the commands, paths and results the run shows. */
+/** EVERYTHING this scenario puts on screen: the name, the ask, the captions,
+ *  every worker's transcript, and the commands, paths and results the run
+ *  shows. This walks the steps itself instead of starting from `ownCopy`,
+ *  which stops at the top level and at `spawn`: the first cut did start from
+ *  it and only added task/run/read/write/list/result for a fan-out worker, so
+ *  a worker's `status` and `say` fell through the `else continue` and SIXTEEN
+ *  rendered lines per locale were invisible to the scan below. Measured: with
+ *  "Six files carry the version; all six say 0.11.0." shipped in one worker's
+ *  answer, all twenty cases stayed green. */
 const everyShownString = (lang: "en" | "de"): string[] => {
-  const out: string[] = ownCopy(lang);
+  const out: string[] = [loc(dsl.name, lang), loc(dsl.prompt, lang)];
+  for (const p of dsl.phases ?? []) {
+    out.push(loc(p.title, lang));
+    if (p.detail !== undefined) out.push(loc(p.detail, lang));
+  }
   const walk = (steps: Step[]): void => {
     for (const s of steps) {
-      if ("run" in s) out.push(s.run);
-      else if ("read" in s) out.push(s.read);
-      else if ("write" in s) out.push(s.write);
-      else if ("list" in s) out.push(s.list);
-      else if ("spawn" in s) walk(s.steps);
-      else if ("fanout" in s) {
+      if ("think" in s) out.push(loc(s.think, lang));
+      else if ("say" in s) out.push(loc(s.say, lang));
+      else if ("status" in s) out.push(loc(s.status, lang));
+      else if ("spawn" in s) {
+        out.push(loc(s.task, lang));
+        walk(s.steps);
+      } else if ("fanout" in s) {
         for (const a of s.fanout.agents) {
           out.push(loc(a.task, lang));
           walk(a.steps);
         }
-        continue;
-      } else continue;
-      if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
+      } else {
+        if ("run" in s) out.push(s.run);
+        else if ("read" in s) out.push(s.read);
+        else if ("write" in s) out.push(s.write);
+        else if ("list" in s) out.push(s.list);
+        if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
+      }
     }
   };
   walk(dsl.steps);
+  return out;
+};
+
+/** The lines a fan-out worker itself puts on screen: its status band and its
+ *  answer. These are exactly the lines the first cut of `everyShownString`
+ *  dropped, so the scan proves it reaches them rather than assuming it. */
+const workerTranscriptLines = (lang: "en" | "de"): string[] => {
+  const out: string[] = [];
+  for (const s of dsl.steps) {
+    if (!("fanout" in s)) continue;
+    for (const a of s.fanout.agents)
+      for (const step of a.steps) {
+        if ("status" in step) out.push(loc(step.status, lang));
+        else if ("say" in step) out.push(loc(step.say, lang));
+      }
+  }
   return out;
 };
 
@@ -165,10 +197,23 @@ const runCommands = (): string[] => {
   return out;
 };
 
-/** A release number: `0.11.0`, `v0.10.0`, `0.10`. A hyphen in front rules out
- *  `Apache-2.0` and `-2.1%`, and a trailing `%` rules out the rest of a
- *  percentage — neither of those names a release of ours. */
-const VERSION_LIKE = /(?<![\w.-])v?\d+\.\d+(?:\.\d+)?(?![\d%])/g;
+/** A release number: `0.11.0`, `v0.10.0`, `0.10`. A trailing `%` rules out a
+ *  percentage (`-2.1%`), which names no release of ours.
+ *
+ *  A hyphen must NOT be in the lookbehind. It was, to spare `Apache-2.0`, and
+ *  that blinded the scan to every version a hyphen precedes — `spectro-0.11.0`,
+ *  `since-0.11.0`, `readiness-0.11.0.md` are the shapes this demo would most
+ *  plausibly grow. The one licence name that reads like a version is excluded
+ *  by name instead, which spares that string and nothing else. */
+const VERSION_LIKE = /(?<![\w.])v?\d+\.\d+(?:\.\d+)?(?![\d%])/g;
+
+/** A licence identifier, not a release of ours. The only such string in this
+ *  scenario's copy, and named in full so it cannot cover anything else. */
+const LICENCE_ID = /Apache-2\.0/g;
+
+/** Every release number a shown line names. */
+const versionsIn = (line: string): string[] =>
+  [...line.replace(LICENCE_ID, "Apache").matchAll(VERSION_LIKE)].map((m) => m[0]);
 
 /** The checks the wide phase DECLARES, in the order it declares them, said in
  *  the words the ask has to use. The ask does not read this — it is written
@@ -402,18 +447,21 @@ describe("the fan-out workflow scenario", () => {
 
   it("names no release version in anything it shows", () => {
     // A demo scenario ships once and is read for years. The first cut cut
-    // "0.11.0" through the ask, a file it read, a path it wrote and four of
-    // its lines, and its own author flagged that it would read as stale the
-    // day that version shipped. The story is the WORK, so the run reaches for
-    // the last tag instead of naming one.
+    // "0.11.0" through the ask, a file it read, a path it wrote and lines the
+    // run says out loud, and its own author flagged that it would read as
+    // stale the day that version shipped. The story is the WORK, so the run
+    // reaches for the last tag instead of naming one.
     for (const lang of ["en", "de"] as const) {
       const shown = everyShownString(lang);
       expect(shown.length, lang).toBeGreaterThan(40);
+      // The scan has to REACH the fan-out, not just the copy around it. Every
+      // worker's status band and answer is one of the strings scanned — the
+      // sixteen lines that a version hid in while twenty cases stayed green.
+      const transcript = workerTranscriptLines(lang);
+      expect(transcript, lang).toHaveLength(2 * declaredWidest());
+      for (const line of transcript) expect(shown, `${lang}: ${line}`).toContain(line);
       for (const line of shown) {
-        expect(
-          [...line.matchAll(VERSION_LIKE)].map((m) => m[0]),
-          `${lang}: ${line}`,
-        ).toEqual([]);
+        expect(versionsIn(line), `${lang}: ${line}`).toEqual([]);
       }
     }
   });
