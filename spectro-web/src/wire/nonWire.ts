@@ -98,7 +98,8 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
 /** What an import read out of somebody else's transcript: the todo list, the
  *  prompt queue, the file that was edited (card 141), every prompt of the
  *  session after the first, what a tool actually returned before the client
- *  flattened it into the text the model read, and what a launch record says
+ *  flattened it into the text the model read, what a workflow run wrote about
+ *  ITSELF in its own state file (card 322), and what a launch record says
  *  about the child it launched — the model it ran on, and whether it ever
  *  reported back (card 167), and the ground the run stood on — the working
  *  directory, the git branch and the client version, announced off the first
@@ -115,6 +116,7 @@ export const IMPORT_ONLY_TYPES: ReadonlySet<string> = new Set([
   "queued_command",
   "edited_text_file",
   "tool_result_detail",
+  "workflow_state",
   "agent_detail",
   "ground_info",
   "attachment_image",

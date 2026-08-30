@@ -25,6 +25,13 @@ export interface ToolCard {
    *  generated here nor on disk anywhere. */
   images?: UserAttachment[];
   durationMs?: number;
+  /** The text of the run's own state file for a `Workflow` launch (card 322):
+   *  `<session>/workflows/<runId>.json`, which carries the whole script a call
+   *  only NAMED, the phases it declared, and how the run ended. Import-only,
+   *  the same as `detail`: nothing in events.ts carries it, the importer alone
+   *  resolves which file belongs to which call, and a card from a live run
+   *  simply has none. */
+  runState?: string;
   /** What the tool did to the file it wrote (card 269): "created", "changed" or
    *  "unchanged", straight off the result's own field. Undefined when the tool
    *  claimed nothing — which is most tools, and every session older than the
@@ -1289,6 +1296,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         type: string;
         callId?: unknown;
         detail?: unknown;
+        runState?: unknown;
         agentId?: unknown;
         model?: unknown;
         launched?: unknown;
@@ -1299,6 +1307,12 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
       if (raw.type === "tool_result_detail" && typeof raw.callId === "string" && !!raw.detail)
         return patchCard(state, raw.callId, { detail: raw.detail as ToolResultDetail });
+      // Card 322: the state file of the workflow run this call launched, keyed
+      // to the call by the run id its own receipt printed. The same idiom one
+      // line up — it lands on the card its call built and nowhere else, so a
+      // card without one is exactly a call whose pick carried no state file.
+      if (raw.type === "workflow_state" && typeof raw.callId === "string" && typeof raw.runState === "string")
+        return patchCard(state, raw.callId, { runState: raw.runState });
       // A picture the transcript itself carried (card 179). Two homes, decided
       // by whether the block sat inside a tool_result: the card it answered, or
       // the next thing the person said. Deliberately NOT `state.images` — that

@@ -389,6 +389,30 @@ describe("card 322 — a path-only launch, with the run's own state loaded", () 
     expect(region(markup, EN("tv.phases"))?.meta).toBe("4 phases");
   });
 
+  it("reads to its last line, at the length real scripts actually are", () => {
+    // ADDED BY THE BUILD, not part of the red above — AC 9, which the card left
+    // to a decision. The decision taken: raise the reserve for THIS region.
+    //
+    // `cut()` clips at 4,000 characters, and the store's median workflow script
+    // is 9,417 with 557 of 591 over the clip — so 94 % of real scripts reached
+    // the card halved. Every other clipped body is a slice of the call, and a
+    // reader who wants the rest switches to the raw face; a script that came
+    // out of the run's STATE file is in neither, because raw and json show the
+    // call and the call carried a path. The reserve for the script region is
+    // 48,000, over the store's longest script (44,380).
+    const filler = Array.from({ length: 400 }, (_, i) => `  ctx.log("step ${i} of the long one");`);
+    const long = [SCRIPT_HEAD, ...filler, SCRIPT_TAIL].join("\n");
+    expect(long.length).toBeGreaterThan(9345);
+
+    const markup = card({ input: PATH_ONLY, output: RECEIPT, runState: stateJson({ script: long }) });
+    const body = text(region(markup, EN("tv.script"))?.body ?? "");
+
+    expect(body).toContain(SCRIPT_TAIL);
+    expect(body).not.toContain("(truncated)");
+    // Its own indentation, at the far end of the file and not only at the top.
+    expect(body.split("\n")).toContain('  ctx.log("step 399 of the long one");');
+  });
+
   it("still names the file it was launched from", () => {
     // The path does not stop being useful once the script is here: it is where
     // the reader goes to edit it. Pinned so the build does not trade one

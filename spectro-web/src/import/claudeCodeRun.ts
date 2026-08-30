@@ -732,6 +732,34 @@ export function importClaudeCodeRun(input: {
         origin: -1,
       });
   }
+  // CARD 322: the run's own state file, carried to the CALL that launched it.
+  //
+  // The join is already here — `resolveRuns` reads the run id out of the
+  // receipt and knows which `Workflow` tool_use it came back on — and the file
+  // holds what the call never sent: the whole script behind a `scriptPath`,
+  // the phases the run declared, and how it ended. Without this last step the
+  // chat card draws its regions empty over a run whose file states all of them
+  // and says "launched · no outcome recorded" over one that finished.
+  //
+  // EVERY resolved run with a state file, not only the ones that got a node:
+  // a run whose agents left no sidecar still launched from a script, and the
+  // tool card is about the CALL, not about the agents anybody can draw.
+  // Import-only and origin -1, the same as every other frame this merge builds
+  // — the session file has no line that says this.
+  for (const [runId, run] of runs) {
+    const raw = (input.runStates ?? []).find((st) => st.runId === runId);
+    if (raw === undefined) continue;
+    synth.push({
+      ev: {
+        type: "workflow_state",
+        callId: run.workflowId,
+        runState: raw.json,
+        ts: run.ts,
+      } as unknown as RunEvent,
+      origin: -1,
+    });
+  }
+
   // The merge below keeps each stream's order unconditionally, so this one
   // has to BE in order. A stable sort keeps a run's two frames in front of
   // the children that share their stamp.

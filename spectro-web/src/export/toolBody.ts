@@ -44,6 +44,7 @@ import type {
   TaskOp,
   TaskRow,
   ToolView,
+  WorkflowArgs,
   WorkflowRun,
   WorkflowStage,
 } from "../components/toolViews";
@@ -96,6 +97,25 @@ function well(text: string, lang: HlLang | null = null, cls = ""): string {
 
 /** The headline of most calls: the thing the tool acted on. */
 const pathLine = (text: string): string => `<div class="x-tv-path">${escapeHtml(text)}</div>`;
+
+/**
+ * A launch's `args` bag, read the way the card reads it (card 322).
+ *
+ * The reading is `describeTool`'s, not this file's: a payload that arrived as
+ * a JSON string is already re-printed by the time it gets here, and one that
+ * is not JSON is already untouched. All that is decided here is the markup —
+ * JSON gets the code well and the `json` colours, prose gets the prose well,
+ * and a bag that arrived as an object keeps the input rendering it always had.
+ *
+ * @param args the view's reading of the payload
+ * @param ctx  the tool's wire name and the document's language
+ * @return the region's markup
+ */
+function argsHtml(args: WorkflowArgs, ctx: ToolContext): string {
+  if (args.kind === "value") return inputHtml(args.value, ctx, "args");
+  const body = args.kind === "json" ? well(args.text, "json") : well(args.text, null, "x-tv-prose");
+  return head(label(ctx.lang, "args")) + body;
+}
 
 /** Rows rather than a blob — a listing and a match list are line-shaped. */
 function list(items: readonly string[], dirs = false): string {
@@ -480,7 +500,7 @@ export const TOOL_HTML: Writers = {
         phasesHtml(view.phases, view.run, ctx.lang)) +
     (view.scriptPath === null ? "" : head(label(ctx.lang, "file")) + pathLine(view.scriptPath)) +
     (view.script === null ? "" : head(label(ctx.lang, "script")) + well(view.script, "javascript")) +
-    (view.args === undefined ? "" : inputHtml(view.args, ctx, "args")) +
+    (view.args === null ? "" : argsHtml(view.args, ctx)) +
     outputHtml(view.result, ctx.lang) +
     // Last, and prose rather than code: a returned result is an agent's words
     // and can run to tens of thousands of characters. Available, not dominant.

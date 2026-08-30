@@ -1230,7 +1230,12 @@ describe("describeTool — the workflow", () => {
     if (v.kind !== "workflow") throw new Error("kind");
     expect(v.name).toBe("nightly-audit");
     expect(v.script).toBe(null);
-    expect(v.args).toEqual({ depth: 2 });
+    // REPLACED, not loosened (card 322). This asserted the raw value, and the
+    // premise under it is gone: `args` is now a READING, because every one of
+    // the 83 payloads in the store arrives as a string and a string is not read
+    // the same way twice. A bag that arrived as an object is the one case that
+    // keeps the input rendering it always had, and that is what `value` means.
+    expect(v.args).toEqual({ kind: "value", value: { depth: 2 } });
   });
 
   it("names the file when the script travels as a path", () => {
@@ -1242,6 +1247,136 @@ describe("describeTool — the workflow", () => {
 
   it("falls back to generic with no script, path or name", () => {
     expect(describeTool("Workflow", { args: { a: 1 } }, "", false).kind).toBe("generic");
+  });
+});
+
+// Card 322: the branches the run-state seam introduced. The card's own file
+// (workflowCardScript.test.tsx) asserts on the rendered markup, because a view
+// field that is populated and not drawn is the same defect from the reader's
+// chair. These are the readings underneath it that no markup case reaches —
+// each one a decision the build made, so each one is pinned where it was made.
+describe("describeTool — a workflow run's own state file", () => {
+  /** The shape every one of the store's 591 state files shares, trimmed to the
+   *  keys this card reads. Values invented; the SHAPE is measured. */
+  const state = (over: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      runId: "wf_2b9",
+      script:
+        "export const meta = { name: 'nightly', phases: [{ title: 'Sweep' }] };\nexport default async () => {};\n",
+      scriptPath: "/tmp/wf/nightly.js",
+      phases: [{ title: "Sweep", detail: "walk the tree" }],
+      status: "completed",
+      agentCount: 3,
+      durationMs: 4000,
+      totalTokens: 1200,
+      totalToolCalls: 9,
+      ...over,
+    });
+
+  const workflow = (input: unknown, out: string, runState?: string) => {
+    const v = describeTool("Workflow", input, out, false, null, null, runState);
+    if (v.kind !== "workflow") throw new Error(`kind ${v.kind}`);
+    return v;
+  };
+
+  it("reads the script and the phases the call never carried", () => {
+    const v = workflow({ scriptPath: "/tmp/wf/nightly.js" }, "launched", state());
+    expect(v.script).toContain("export const meta");
+    expect(v.phases).toEqual(["Sweep"]);
+    expect(v.run?.status).toBe("completed");
+  });
+
+  it("keeps the card empty when the state text is not a JSON object", () => {
+    // A file half-written, a directory that held something else. Degrading to
+    // "not known" is the rule this whole file lives by; a throw here would take
+    // the card down over a file nobody asked it to trust.
+    for (const bad of ["", "not json at all", "[1,2,3]", "null"]) {
+      const v = workflow({ scriptPath: "/tmp/wf/nightly.js" }, "launched", bad);
+      expect(v.script, bad).toBe(null);
+      expect(v.phases, bad).toEqual([]);
+      expect(v.run, bad).toBe(null);
+    }
+  });
+
+  it("falls back to the script's own meta when the file declared no phases", () => {
+    // The precedence has two sides and only one of them is exercised by a real
+    // file. This is the other: a state file with no `phases` array must not
+    // blank a list the script itself declares.
+    const v = workflow({ scriptPath: "/tmp/wf/nightly.js" }, "launched", state({ phases: [] }));
+    expect(v.phases).toEqual(["Sweep"]);
+  });
+
+  it("lets the notification that actually came back outrank the file", () => {
+    // The joined outcome names the agents that died; the state file never does.
+    // So a call that has both reads the notification — and the file is what
+    // answers when nothing came back at all.
+    const joined = `launched
+--- task t7 · failed ---
+usage: agent_count=2 agents_error=1
+failures: [Sweep] failed: ran out of context`;
+    const v = workflow({ scriptPath: "/tmp/wf/nightly.js" }, joined, state());
+    expect(v.run?.status).toBe("failed");
+    expect(v.run?.agents).toBe(2);
+    expect(v.run?.failures.map((f) => f.phase)).toEqual(["Sweep"]);
+  });
+
+  it("names the file off the state when the call named none", () => {
+    const v = workflow({ name: "nightly" }, "launched", state());
+    expect(v.scriptPath).toBe("/tmp/wf/nightly.js");
+  });
+
+  it("shows a script over a run the file has not ended", () => {
+    // The two halves are independent: the source arrives, and the outcome stays
+    // open, because a file that states no status states no ending. A build that
+    // tied them together would either withhold the script or invent an outcome.
+    const v = workflow({ scriptPath: "/tmp/wf/nightly.js" }, "launched", state({ status: undefined }));
+    expect(v.script).toContain("export const meta");
+    expect(v.run).toBe(null);
+    expect(v.stage).toBe("launched");
+  });
+
+  it("cannot turn a call that named no workflow into a workflow card", () => {
+    // The CALL decides what kind of card this is. A state file handed in beside
+    // a call that named neither script, path nor workflow is a caller's mistake,
+    // and the honest answer to it is the raw pair.
+    expect(describeTool("Workflow", { depth: 2 }, "ok", false, null, null, state()).kind).toBe("generic");
+  });
+});
+
+describe("describeTool — how a launch's args are read", () => {
+  const argsOf = (args: unknown) => {
+    const v = describeTool("Workflow", { scriptPath: "/tmp/wf/x.js", args }, "", false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    return v.args;
+  };
+
+  it("re-prints a JSON string as the object it always was", () => {
+    expect(argsOf('{"repo":"/tmp/r","depth":2}')).toEqual({
+      kind: "json",
+      text: '{\n  "repo": "/tmp/r",\n  "depth": 2\n}',
+    });
+  });
+
+  it("leaves a payload that is not JSON exactly as it arrived", () => {
+    const prose = 'Rebuild every shard under "shards/".\nDelete nothing.';
+    expect(argsOf(prose)).toEqual({ kind: "text", text: prose });
+  });
+
+  it("leaves a string that merely OPENS like JSON as the string it is", () => {
+    expect(argsOf("{ not really json")).toEqual({ kind: "text", text: "{ not really json" });
+  });
+
+  it("does not put quotes round a scalar JSON.parse would happily accept", () => {
+    // `JSON.parse` takes `7`, `null` and `"a word"` as well as objects, and
+    // re-printing one of those would hand the reader a quoted `"7"` where the
+    // call sent a `7`. So only an object or an array is ever re-printed.
+    for (const scalar of ["7", "null", "true", "a word"]) {
+      expect(argsOf(scalar), scalar).toEqual({ kind: "text", text: scalar });
+    }
+  });
+
+  it("says nothing at all when the launch sent no args", () => {
+    expect(argsOf(undefined)).toBe(null);
   });
 });
 

@@ -491,6 +491,11 @@ function toolHtml(card: ToolCard, lang: Lang, open: boolean): string {
   // be a second reading of the same call, and the export exists to be the view.
   // The sixth is what a write DID to the file (card 269), and it travels for the
   // same reason as the fifth: to both renderers or to neither.
+  //
+  // The seventh is the text of a workflow run's own state file (card 322) — the
+  // script a launch only NAMED, its declared phases, and how the run ended. Same
+  // rule again: a saved file that showed a launch's outcome while the screen
+  // beside it said "no outcome recorded" would be two readings of one call.
   const view = describeTool(
     card.name,
     card.input,
@@ -498,6 +503,7 @@ function toolHtml(card: ToolCard, lang: Lang, open: boolean): string {
     card.status === "error",
     denied ? null : card.detail,
     denied ? null : card.fileChange,
+    denied ? null : card.runState,
   );
   // Open by default, and the dialog can say otherwise: a collapsed command in a
   // file attached to a ticket is a command nobody reads, but a hundred-call
