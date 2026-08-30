@@ -1498,28 +1498,44 @@ const workflowPhases: Dsl = {
  * counts, the caption under the wide box, and the ask, which stops naming the
  * ninth); dropping one check's name from the ask with the array left alone
  * turns exactly ONE red, the ask's own, and so does reordering two of them.
- * A third direction was open until the second round: the ask could still GROW
- * a check nobody runs, because a joined list held by `toContain` reads "at
- * least these, contiguously, in order". With ", and the release notes."
- * appended to the ask alone, twenty cases stayed green. The ask now writes the
- * list as a colon, the run, and a full stop, and the case pins all three, so
- * an appended ninth is red as well.
+ * A third direction stayed open through two rounds: the ask could GROW a
+ * demand nobody runs. Round two bounded the LIST — a colon, the run, a full
+ * stop — after ", and the release notes." tacked onto the joined eight left
+ * twenty cases green. That bound the list and not the ask: "Also translate
+ * the release notes." as its OWN sentence walked past it, and past the count
+ * check, which finds no "<number> checks" in it (EXIT=0, 21 passed). The ask
+ * is now cut at its full stops and pinned at THREE sentences, with the middle
+ * one ENDING at the run. What that still does not hold is written into the
+ * case rather than promised here: a demand smuggled into the closing sentence
+ * with no full stop of its own is three sentences and passes, which is why
+ * that case is named for its three sentences and not for "exactly".
  *
  * NO VERSION IS NAMED ANYWHERE. The first cut cut "0.11.0" through the ask, a
  * file the run read, a path it wrote and lines the run says out loud, and
  * would have read as stale the day that version shipped. The run reaches for
  * the last tag instead, which is true for as long as the demo exists.
  *
- * THE SCAN THAT KEEPS IT OUT ONLY STARTED WORKING IN THE SECOND ROUND, and it
- * is worth writing down where it was blind, because both spots looked fine.
- * It walked the top level and the `spawn` steps for spoken lines and then, for
- * a fan-out worker, collected only the task, the commands, the paths and the
- * results: sixteen lines per locale — every worker's status band and every
- * worker's answer — were never read. With "all six say 0.11.0." shipped in
- * `check-pins`, twenty cases stayed green. And its regex had grown a hyphen in
- * the lookbehind, to spare `Apache-2.0`, which blinded it to `spectro-0.11.0`
- * and every other version a hyphen precedes. The licence id is excluded by
- * name now, and the scan reads what the workers say.
+ * THE SCAN THAT KEEPS IT OUT WAS BLIND IN A NEW PLACE EACH ROUND, and every
+ * one of them looked fine, so they are written down.
+ *   1. It walked the top level and the `spawn` steps for spoken lines and,
+ *      for a fan-out worker, collected only the task, the commands, the paths
+ *      and the results: sixteen lines per locale — every worker's status band
+ *      and every worker's answer — were never read. With "all six say
+ *      0.11.0." in `check-pins`, twenty cases stayed green.
+ *   2. Round two enumerated the whole `Step` union BY HAND to make the word
+ *      EVERYTHING true, and missed `context`, whose `parts[].label` is drawn
+ *      as `.context-part-label`. With "the 0.11.0 baseline" planted as one,
+ *      twenty-one cases stayed green. The enumeration is no longer a promise:
+ *      one walker serves every caller and its last branch assigns to `never`,
+ *      so dropping an arm stops `tsc -b` rather than the eye of a reviewer.
+ *   3. Its regex kept a hyphen in the lookbehind to spare `Apache-2.0`, going
+ *      blind to `spectro-0.11.0`; round two dropped the hyphen and kept `\w`,
+ *      which still carries the UNDERSCORE, so `notes_fetch_0.11.0` stayed
+ *      invisible one character narrower. The lookbehind now names digits and
+ *      the dot and nothing else, because its whole job is "do not start in
+ *      the middle of a longer number"; the licence id is excluded by name,
+ *      and dropping either exclusion turns a real line red, so neither is
+ *      dead code.
  *
  * NO INVENTED VERBS OF OURS EITHER. The checks run as plain scripts of the
  * release repo the story is set in, which nobody reads as our tooling; the one
