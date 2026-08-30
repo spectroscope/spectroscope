@@ -238,12 +238,23 @@ const runCommands = (): string[] => {
 /** A release number: `0.11.0`, `v0.10.0`, `0.10`. A trailing `%` rules out a
  *  percentage (`-2.1%`), which names no release of ours.
  *
- *  A hyphen must NOT be in the lookbehind. It was, to spare `Apache-2.0`, and
- *  that blinded the scan to every version a hyphen precedes — `spectro-0.11.0`,
- *  `since-0.11.0`, `readiness-0.11.0.md` are the shapes this demo would most
- *  plausibly grow. The one licence name that reads like a version is excluded
- *  by name instead, which spares that string and nothing else. */
-const VERSION_LIKE = /(?<![\w.])v?\d+\.\d+(?:\.\d+)?(?![\d%])/g;
+ *  THE LOOKBEHIND HAS ONE JOB: do not start reading in the MIDDLE of a longer
+ *  number. So it names digits and the dot, and nothing else — whatever else
+ *  stands in front is exactly what this scan has to see through. That rule
+ *  was arrived at by narrowing twice, and each narrowing left the door open
+ *  by the width of the characters still listed. It began as `\w`, to spare
+ *  `Apache-2.0`, and so went blind to every version a HYPHEN precedes
+ *  (`spectro-0.11.0`, `since-0.11.0`). Round two dropped the hyphen and kept
+ *  `\w` — which still carries the UNDERSCORE, so `notes_fetch_0.11.0` and
+ *  `readiness_0.11.0.md` stayed invisible while the comment reasoned about
+ *  the hyphen alone and read as if the door were shut. Measured:
+ *  `{ mcp: "notes_fetch_0.11.0" }` gave EXIT=0 and 21 passed, while the same
+ *  step written `notes fetch 0.11.0` was red. Listing characters is how this
+ *  went wrong twice; the rule is what is written down now.
+ *
+ *  The one licence name that reads like a version is excluded BY NAME below,
+ *  which spares that string and nothing else. */
+const VERSION_LIKE = /(?<![\d.])v?\d+\.\d+(?:\.\d+)?(?![\d%])/g;
 
 /** A licence identifier, not a release of ours. The only such string in this
  *  scenario's copy, and named in full so it cannot cover anything else. */
