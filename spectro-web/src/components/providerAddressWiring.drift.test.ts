@@ -18,6 +18,14 @@ const fieldTsx = read("./providerModelField.tsx", import.meta.url);
 const onboardingTsx = read("./Onboarding.tsx", import.meta.url);
 const appTsx = read("../App.tsx", import.meta.url);
 
+/** The onboarding source with its whitespace collapsed. A sentence in JSX is
+ *  laid out by prettier, so a phrase lands wherever the print width puts it:
+ *  card 312 round 5 named the three keyless backends by id in that paragraph
+ *  and the reflow split "anderen Maschine" across two lines, which reads as
+ *  "the German half is gone". The claim below is that the sentence is there,
+ *  never that it fits on one source line. */
+const onboardingProse = onboardingTsx.replace(/\s+/g, " ");
+
 describe("the settings page carries the address beside the provider that needs it", () => {
   it("renders the field from the one provider→field mapping", () => {
     // addressSpecFor is the single source: the providers it names get their
@@ -61,8 +69,8 @@ describe("the failure sentence names the address the probe tried", () => {
 
 describe("the startup tutorial points the remote-machine reader at the field", () => {
   it("carries the sentence in both languages, with a way into settings", () => {
-    expect(onboardingTsx).toContain("anderen Maschine");
-    expect(onboardingTsx).toContain("another machine");
+    expect(onboardingProse).toContain("anderen Maschine");
+    expect(onboardingProse).toContain("another machine");
     expect(onboardingTsx).toContain("onOpenSettings");
   });
 

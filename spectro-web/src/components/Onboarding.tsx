@@ -204,12 +204,17 @@ export function Onboarding(props: {
             exactly the person the local options just spoke to — say where the
             address goes before they conclude "local machine only". Card 312
             added a third backend with an address of its own; a sentence that
-            names two of three sends the third reader away. */}
+            names two of three sends the third reader away — which is what this
+            comment said while the sentence under it still named two, in a
+            fourth spelling of the same set. The names here are the picker's
+            ids, and ProviderListDriftTest holds them to
+            SpectroConfig.keylessLocalServers() in both locales. */}
         {props.onOpenSettings && (
           <p className="ob-remote">
             {de ? (
               <>
-                ollama, LM Studio oder llama.cpp laufen auf einer anderen Maschine? trag die Adresse in den{" "}
+                <code>ollama</code>, <code>lmstudio</code> oder <code>llamacpp</code> laufen auf einer anderen
+                Maschine? trag die Adresse in den{" "}
                 <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
                   Einstellungen
                 </button>{" "}
@@ -217,7 +222,8 @@ export function Onboarding(props: {
               </>
             ) : (
               <>
-                ollama, LM Studio or llama.cpp running on another machine? put its address in{" "}
+                <code>ollama</code>, <code>lmstudio</code> or <code>llamacpp</code> running on another
+                machine? put its address in{" "}
                 <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
                   settings
                 </button>{" "}

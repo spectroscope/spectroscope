@@ -22,9 +22,14 @@
 // node of the same body and drops the rest). Serving that number would cost a
 // field on the capability record (or a sibling endpoint), an async fetch keyed
 // on (provider, model) in ContextRing, and a null-until-known state the ring
-// already handles. It would NOT delete this file: only anthropic and
-// openrouter publish real discovery, so openai/gemini/lmstudio/local keep the
-// table as their fallback. Left as a note on purpose, not built here.
+// already handles. It would NOT delete this file, but the set it would leave
+// behind has grown since this note was written: anthropic and openrouter
+// publish a real window through their model APIs, and the two backends that
+// ARE a llama.cpp server answer GET /props with the n_ctx the loaded model is
+// really running at (OpenAiCompatProvider.readsWindowFromProps /
+// loadedWindowFromProps, card 312 — the same fact the guide's wire chapter
+// now sends a llamacpp reader to). Whatever publishes nothing keeps this
+// table as its fallback. Left as a note on purpose, not built here.
 
 /** Claude families whose current generation ships the 1M window. */
 const CLAUDE_1M = ["claude-opus", "claude-sonnet", "claude-fable", "claude-mythos"];

@@ -114,6 +114,60 @@ class ProviderListDriftTest {
         }
     }
 
+    /**
+     * The first-run sheet's remote-address hint names every KEYLESS LOCAL
+     * SERVER — in both locales, and by the id the picker shows.
+     *
+     * <p>Round 5. The test above guards the cloud option; six lines below it in
+     * the same file, the paragraph that tells a reader with the GPU box across
+     * the room where the address goes hand-typed "ollama, LM Studio or
+     * llama.cpp" — a fourth spelling of {@link SpectroConfig#keylessLocalServers()},
+     * in a paragraph whose own comment names this exact failure mode. The
+     * sentence is about which PROVIDER to pick, and the picker shows ids, so
+     * the ids are what it names and what this reads.</p>
+     *
+     * <p>Bitten the ordered way — {@code "vllm"} added to
+     * {@code SpectroConfig.KNOWN_PROVIDERS}, {@code endpointFor} and
+     * {@code isOpenAiCompat}, no TypeScript touched:</p>
+     *
+     * <pre>
+     * the first-run sheet's remote-address hint names "vllm" 0 time(s)
+     * </pre>
+     */
+    @Test
+    void theRemoteAddressHintNamesEveryKeylessLocalServerInBothLocales() throws IOException {
+        assumeTrue(sourceCheckout(), "not running from a source checkout");
+        String hint = remoteHint();
+        assertTrue(SpectroConfig.keylessLocalServers().size() >= 2,
+                "no keyless local servers left to point at another machine: "
+                        + SpectroConfig.keylessLocalServers());
+        for (String provider : new TreeSet<>(SpectroConfig.keylessLocalServers())) {
+            // Twice, for the same reason as the cloud option above: the
+            // paragraph carries a German body and an English one, and a name
+            // dropped from one of them is invisible to the other language's
+            // reader.
+            assertTrue(occurrences(hint, provider) >= 2,
+                    "the first-run sheet's remote-address hint names \"" + provider + "\" "
+                            + occurrences(hint, provider) + " time(s) — it needs one per"
+                            + " locale. A reader whose backend is missing from this"
+                            + " sentence is told the local backends are this-machine-only"
+                            + " and never finds the address field. (" + ONBOARDING + ")\n"
+                            + hint);
+        }
+    }
+
+    /** The {@code ob-remote} paragraph of the first-run sheet, both locales. */
+    private static String remoteHint() throws IOException {
+        String source = Files.readString(repoRoot().resolve(ONBOARDING), StandardCharsets.UTF_8);
+        int start = source.indexOf("className=\"ob-remote\"");
+        assertTrue(start > 0,
+                "no `className=\"ob-remote\"` paragraph in " + ONBOARDING + " — a drift"
+                        + " test that cannot find its own subject must go red, not quiet");
+        int end = source.indexOf("</p>", start);
+        assertTrue(end > start, "the ob-remote paragraph in " + ONBOARDING + " never closes");
+        return source.substring(start, end);
+    }
+
     /** The provider ids in the app's {@code PROVIDERS} array. */
     private static List<String> pickerProviders() throws IOException {
         String source = Files.readString(repoRoot().resolve(PICKER), StandardCharsets.UTF_8);
