@@ -361,6 +361,47 @@ class DoctorProviderCheckTest {
     }
 
     @Test
+    void aGeneralAddressThatWouldNotHaveAppliedAnywayIsNotBlamedOnTheOverride() {
+        // The one corner where the note's REASON was wrong while its claim was
+        // right. effectiveOpenAiBaseUrl reads the literal http://localhost:11434
+        // as "unset" for the openai-compat providers — a compatibility rule for
+        // configs written before each backend had its own field — so an
+        // lmstudio operator who typed exactly that value into the general field
+        // is not losing it to lmstudioBaseUrl. He never had it. Clearing the
+        // per-provider field to "get his general address back" lands him on LM
+        // Studio's preset instead, which is what the old sentence promised him
+        // out of.
+        String note = DoctorCommand.perProviderAddressLines("lmstudio", "http://gpu-box:1234",
+                "http://gpu-box:1234", "http://localhost:11434",
+                new SpectroConfig.Origin("user", List.of()),
+                new SpectroConfig.Origin("flags", List.of())).get(0).message();
+
+        assertFalse(note.contains("a provider's own address wins"),
+                "that is not why this general address does not apply — it would not have"
+                        + " applied with the per-provider field empty either: " + note);
+        assertTrue(note.contains("http://localhost:1234"),
+                "so say where clearing the field WOULD land, which is the provider's own"
+                        + " preset, not the typed address: " + note);
+        assertTrue(note.contains("lmstudioBaseUrl") && note.contains("http://gpu-box:1234"),
+                "the claim itself is unchanged — the per-provider address is what is"
+                        + " dialled: " + note);
+    }
+
+    @Test
+    void ollamaHasNoSuchCornerAndKeepsTheCausalSentence() {
+        // effectiveOllamaBaseUrl carries no sentinel: any non-blank general
+        // value is taken verbatim, the literal default included. So for ollama
+        // the general address really would apply once ollamaBaseUrl is cleared,
+        // and the note that says so is the true one.
+        String note = DoctorCommand.perProviderAddressLines("ollama", "http://gpu-box:11434",
+                "http://gpu-box:11434", "http://localhost:11434",
+                new SpectroConfig.Origin("user", List.of()),
+                new SpectroConfig.Origin("flags", List.of())).get(0).message();
+
+        assertTrue(note.contains("a provider's own address wins"), note);
+    }
+
+    @Test
     void theDoctorRunItselfCarriesTheShadowNote() throws IOException {
         String out = doctorOutputForSettings("""
                 { "provider": "lmstudio", "model": "local-model",

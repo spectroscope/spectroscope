@@ -613,6 +613,36 @@ public final class DoctorCommand implements Callable<Integer> {
     }
 
     /**
+     * The address {@code provider} would fall back to if its OWN field were
+     * cleared — {@link SpectroConfig#endpointFor} run with the per-provider
+     * value unset, which is exactly what the operator does when he empties the
+     * field to get his general address back.
+     *
+     * <p>It is NOT always {@code baseUrl}. {@link SpectroConfig#effectiveOpenAiBaseUrl}
+     * treats the literal ollama default as "unset" for the openai-compat
+     * providers — a compatibility rule for configs written before each backend
+     * had its own field — so an lmstudio operator who typed exactly that value
+     * into the general field lands on LM Studio's preset, not on what he typed.
+     * The ollama path carries no such sentinel and takes any non-blank general
+     * value verbatim.</p>
+     *
+     * <p>Computed rather than re-stated: the literal and the presets live in
+     * {@code SpectroConfig} and are reached through its own methods, so a
+     * change to either rule moves this answer with it.</p>
+     *
+     * @param provider the configured provider
+     * @param baseUrl  the shared field's folded value
+     * @return the endpoint an empty per-provider field would resolve to
+     */
+    static String generalFallbackFor(String provider, String baseUrl) {
+        return switch (provider) {
+            case "ollama" -> SpectroConfig.effectiveOllamaBaseUrl(null, baseUrl);
+            case "lmstudio" -> SpectroConfig.effectiveLmstudioBaseUrl(null, baseUrl);
+            default -> baseUrl;
+        };
+    }
+
+    /**
      * The note that makes card 193's fixed field priority visible.
      *
      * <p>The settings layers fold in ascending precedence (defaults &lt; env &lt;
@@ -674,12 +704,23 @@ public final class DoctorCommand implements Callable<Integer> {
         if (!addressSet || !baseUrlSet) {
             return List.of();       // nothing is being overridden — a line would be noise
         }
-        return List.of(new Line(Kind.INFO,
-                "address: " + field + " (from " + addressOrigin.winner() + ") is what "
-                        + provider + " dials — " + endpoint + "; baseUrl (from "
-                        + baseUrlOrigin.winner() + ") is set too and does NOT apply to "
-                        + provider + ": a provider's own address wins whatever layer"
-                        + " either value came from"));
+        String head = "address: " + field + " (from " + addressOrigin.winner() + ") is what "
+                + provider + " dials — " + endpoint + "; baseUrl (from "
+                + baseUrlOrigin.winner() + ") is set too and does NOT apply to " + provider;
+        // Card 311, review: the claim above is right in every case, but its
+        // REASON is wrong in one. When clearing the per-provider field would
+        // not hand the general address over either, "a provider's own address
+        // wins" names a cause that is not the one operating — and sends the
+        // operator to empty a field that will not give him back what he typed.
+        String fallback = generalFallbackFor(provider, baseUrl);
+        if (!baseUrl.equals(fallback)) {
+            return List.of(new Line(Kind.INFO, head
+                    + ": that value is the legacy shared default, which " + provider
+                    + " reads as unset — clearing " + field + " would fall back to "
+                    + fallback + ", not to it"));
+        }
+        return List.of(new Line(Kind.INFO, head
+                + ": a provider's own address wins whatever layer either value came from"));
     }
 
     /**
