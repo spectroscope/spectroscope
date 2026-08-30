@@ -164,15 +164,38 @@ export type AgentData = {
 export function AgentCardBody({
   data: d,
   scrollShelf = false,
+  budget = true,
 }: {
   data: AgentData;
   /** The worker card caps its picture shelf (card 296), so the shelf is a
-   *  scroll region and needs the canvas to keep its hands off it. The agent
-   *  hub's shelf is uncapped and stays a plain block. */
+   *  scroll region and needs the canvas to keep its hands off it. */
   scrollShelf?: boolean;
+  /**
+   * CARD 319 — hold every region's room whether it is carrying anything or
+   * not, so stepping the run cannot change the card's box.
+   *
+   * The owner: "maybe plan the maximum space for the commands from the start,
+   * so you say: a command is at most this long, and that size is budgeted into
+   * the main agent card from the beginning." Measured over his own 3328 steps,
+   * the card's height changed on 931 of them across a 569px swing, and the
+   * tool-call panel — created on `tool_call`, destroyed on `tool_result` —
+   * was 929 of those 931 changes.
+   *
+   * The HUB budgets; the worker card does not. Its own height is a measured
+   * bound (cardGeometry.ts, card 296) that the whole worker grid is seated
+   * from, so giving it the hub's reserves would move every seat on the map for
+   * a card nobody complained about. Off for the worker, and it renders exactly
+   * what it rendered before.
+   *
+   * Applies to the expanded card only: compact keeps all of this inside a
+   * closed disclosure, and was measured at one height across the whole
+   * recording already.
+   */
+  budget?: boolean;
 }) {
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
+  const budgeted = budget && expandAll;
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
   const maxTok = Math.max(1, ...(d.ctxParts ?? []).map((p) => p.estTokens));
 
@@ -255,23 +278,37 @@ export function AgentCardBody({
   // a generated image has no competing right-column JSON, so in the wide edu
   // layout it spans BOTH columns (full card width) — the prompt reads clearly.
   const isGenImage = d.tool?.name === "generate_image";
-  const sysPanel = d.systemPrompt ? (
-    <div className="pf-panelbox">
-      <div className="pf-panelbox__label">{t(lang, "map.ctx.systemPrompt")}</div>
-      <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
-        {d.systemPrompt}
-      </div>
-    </div>
-  ) : null;
-  const ctxBarsPanel =
-    d.ctxParts && d.ctxTotals ? (
+  // The three ctx-column panels. A budgeted card renders all three on every
+  // step, carrying or not: a panel that comes and goes IS the card changing
+  // size, and no fixed height on the card can hide that.
+  const sysPanel =
+    d.systemPrompt || budgeted ? (
       <div className="pf-panelbox">
+        <div className="pf-panelbox__label">{t(lang, "map.ctx.systemPrompt")}</div>
+        <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+          {d.systemPrompt ? d.systemPrompt : t(lang, "map.ctx.noSystemPrompt")}
+        </div>
+      </div>
+    ) : null;
+  const ctxBarsPanel =
+    (d.ctxParts && d.ctxTotals) || budgeted ? (
+      <div className="pf-panelbox nowheel">
         <div className="pf-panelbox__label">
-          {t(lang, "map.ctx.toLlm")} · {d.ctxTotals.estimatedTokens.toLocaleString()} /{" "}
-          {d.ctxTotals.threshold.toLocaleString()} tok
+          {d.ctxTotals === null ? (
+            t(lang, "map.ctx.toLlm")
+          ) : (
+            <>
+              {t(lang, "map.ctx.toLlm")} · {d.ctxTotals.estimatedTokens.toLocaleString()} /{" "}
+              {d.ctxTotals.threshold.toLocaleString()} tok
+            </>
+          )}
         </div>
         <div className="pf-ctx">
-          {d.ctxParts.map((p) => (
+          {/* The empty line sits AFTER the bars, not before them: the growth-
+              region derivation credits a `.map(` to the nearest classed element
+              above it, and a placeholder above the bars would have this region
+              reported as `.pf-kv` — a wrong answer wearing a right one's face. */}
+          {(d.ctxParts ?? []).map((p) => (
             <div className="pf-ctx__row" key={p.label}>
               <span>{p.label}</span>
               <span className="pf-ctx__bar">
@@ -280,6 +317,7 @@ export function AgentCardBody({
               <span className="pf-ctx__tok">{p.estTokens}</span>
             </div>
           ))}
+          {d.ctxParts === null && <div className="pf-kv">{t(lang, "map.ctx.noContext")}</div>}
         </div>
       </div>
     ) : null;
@@ -328,8 +366,13 @@ export function AgentCardBody({
     ) : null;
   // Two-faced since card 120: the insight tree or the call as the thing it is,
   // under the map's master face with a per-panel strip on top.
-  const toolPanel = d.tool && !isGenImage ? <ToolCallPanel tool={d.tool} /> : null;
-  const noToolPanel = d.tool ? null : <div className="pf-kv">{t(lang, "map.ctx.noTool")}</div>;
+  // Budgeted, the panel is always there and holds its own body height, so a
+  // call starting cannot grow the card and its answer cannot shrink it. It
+  // then carries a `generate_image` call too — unbudgeted that call is routed
+  // to the picture panel alone, but "no tool active" printed while one runs
+  // would be a card that lies, which is worse than a card that repeats itself.
+  const toolPanel = budgeted || (d.tool !== null && !isGenImage) ? <ToolCallPanel tool={d.tool} /> : null;
+  const noToolPanel = budgeted || d.tool ? null : <div className="pf-kv">{t(lang, "map.ctx.noTool")}</div>;
   // stacked (simulator / collapsed): everything inline, the image among the rest.
   const ctxPanels = (
     <>
@@ -363,11 +406,32 @@ export function AgentCardBody({
               {noToolPanel}
             </div>
           </div>
-          {(genImagePanel || attachedPanel) && (
-            <div className={`pf-agent__genfull${scrollShelf ? " nowheel nodrag" : ""}`}>
-              {genImagePanel}
-              {attachedPanel}
+          {budgeted ? (
+            // The picture strip, reserved. It holds its room from the first
+            // frame, so the shelf arriving on step 4 cannot move the card —
+            // measured, the six pictures the hub is allowed to hold stack
+            // 330.9px and stay, which is a floor-raise rather than a flicker
+            // but a floor-raise the owner still watches happen. The eyebrow
+            // sits OUTSIDE the scroller so it does not scroll away with the
+            // pictures, and the scroller is what the canvas keeps its hands
+            // off.
+            <div className="pf-agent__genfull">
+              <div className="pf-eyebrow">{t(lang, "map.ctx.pictures")}</div>
+              <div className="pf-agent__shelf nowheel nodrag">
+                {genImagePanel}
+                {attachedPanel}
+                {genImagePanel === null && attachedPanel === null && (
+                  <div className="pf-kv">{t(lang, "map.ctx.noPictures")}</div>
+                )}
+              </div>
             </div>
+          ) : (
+            (genImagePanel || attachedPanel) && (
+              <div className={`pf-agent__genfull${scrollShelf ? " nowheel nodrag" : ""}`}>
+                {genImagePanel}
+                {attachedPanel}
+              </div>
+            )
           )}
         </>
       ) : (
@@ -805,6 +869,10 @@ export function SubagentNode({ data }: NodeProps) {
         </div>
         <AgentCardBody
           scrollShelf
+          // CARD 319 budgets the HUB. This card's height is a measured bound
+          // that the whole worker grid is seated from (cardGeometry.ts), so
+          // the hub's reserves would move every seat on the map.
+          budget={false}
           data={workerAgentData({ active: d.active, focus: d.focus, activity: d.activity, full: d.full })}
         />
         <div className="pf-sub__meta nowheel nodrag">

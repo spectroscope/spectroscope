@@ -481,6 +481,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* CARD 319. The ellipsis above was decoration until these two lines, and it
+     takes BOTH — measured at a 1600x900 window, where the band went 47.0px idle
+     → 84.1 with a `sh scripts/...` command → 100.4 with a long `git add ...`,
+     squeezing .lab-flowmap from 581 to its 540px floor and carrying the whole
+     map (and the agent card the owner is reading) 53.4px down the screen.
+
+     `min-width: 0` because a flex item's default `min-width: auto` floors it at
+     its MIN-CONTENT width, and for a `nowrap` item min-content is the WHOLE
+     string. And `flex: 1 1 0` because min-width alone still measured 100.36:
+     a wrapping flex container breaks its lines BEFORE it shrinks anything, and
+     line-breaking uses the item's flex BASE size — `auto`, so the whole string
+     again. At a base of 0 the label always fits the first line, takes whatever
+     is left over, and truncates inside it instead of pushing the four controls
+     onto lines two and three. */
+  min-width: 0;
+  flex: 1 1 0;
 }
 .lab-now-queue {
   margin-left: auto;

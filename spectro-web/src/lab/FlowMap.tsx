@@ -31,6 +31,7 @@ import {
   reportOversizeCards,
   sceneToFlow,
 } from "./flowmap/sceneToFlow";
+import { reportRestlessCard, resetStillnessMemory } from "./flowmap/cardStillness";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
 import { foldSeatPool, workerChip, type RowsPref } from "./flowmap/workerGrid";
 import { RailBoxes, railBoxesFrom, seatingKey } from "./flowmap/railBoxes";
@@ -203,6 +204,11 @@ export function FlowMap(props: {
     const relayout = layoutRef.current !== seating;
     layoutRef.current = seating;
     if (relayout) pinned.current.clear();
+    // CARD 319: a view flip and a pane resize are BOTH re-layouts, and a card
+    // that lands somewhere else because the world it lives in changed shape is
+    // not the defect this arm is looking for. Only movement between two steps
+    // of the same seating counts.
+    if (relayout) resetStillnessMemory();
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout, freshRef.current));
     freshRef.current = flow.nodes;
     setEdges(flow.edges);
@@ -229,6 +235,24 @@ export function FlowMap(props: {
     const settled = setTimeout(() => reportOversizeCards(cards), UNDER_SETTLE_MS);
     return () => clearTimeout(settled);
   }, [nodes, expandAll]);
+
+  // CARD 319's runtime half, and the same reason as the block above: the
+  // measurement can only happen where the pixels are. The card's HEIGHT comes
+  // off React Flow's own measurement (world px, the units the envelope table is
+  // in) and its TOP is read against this pane, which is the distance the owner
+  // actually watches — his card's top took four values and travelled 53.3px
+  // while its world y never moved once. A pane that renders no frames measures
+  // nothing, so `measured` stays undefined, the height reads 0 and the arm
+  // treats it as no reading rather than as a card of no size.
+  useEffect(() => {
+    const pane = wrapRef.current;
+    const card = pane?.querySelector(".react-flow__node-agent");
+    if (pane == null || card == null) return;
+    reportRestlessCard({
+      top: card.getBoundingClientRect().top - pane.getBoundingClientRect().top,
+      height: nodes.find((n) => n.id === "agent")?.measured?.height ?? 0,
+    });
+  }, [nodes]);
 
   // The rails' live obstacle set: every card's rendered box (zones excluded),
   // recomputed from the node state so a dragged card re-routes its rails.

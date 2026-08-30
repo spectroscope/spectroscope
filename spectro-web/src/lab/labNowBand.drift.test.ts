@@ -93,6 +93,20 @@ describe("the band cannot be pushed onto a second line", () => {
     expect(rule.body, `${selector} refuses to break AND refuses to shrink`).toMatch(/min-width:\s*0/);
   });
 
+  // THE OTHER HALF, and it was found by measuring rather than by reading: with
+  // `min-width: 0` alone the band still rendered 100.36px on the same command.
+  // A wrapping flex container breaks its lines BEFORE it shrinks anything, and
+  // line-breaking uses the item's flex BASE size — `auto`, which for a nowrap
+  // item is the whole string again, so the label kept starting a line of its
+  // own. At a base of 0 it always fits the first line and truncates inside it.
+  // Both declarations or neither: either one alone leaves the band growing.
+  it.each(unbreakableSegments().map((r) => r.selector))("%s starts from no width at all", (selector) => {
+    const rule = bandRules().find((r) => r.selector === selector)!;
+    expect(rule.body, `${selector} may shrink but still claims a line of its own`).toMatch(
+      /flex:\s*\d+\s+\d+\s+0(?![.\d])/,
+    );
+  });
+
   // Shrinking without an ellipsis is just a different way to lose the command,
   // and losing it is worse than the flicker: the owner steps through this run
   // to read what is running.

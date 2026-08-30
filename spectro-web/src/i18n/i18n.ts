@@ -1505,6 +1505,21 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kein Tool aktiv — der Agent plant.",
     en: "No tool active, the agent is planning.",
   },
+  // Card 319: the budgeted agent card keeps every panel on every step, so each
+  // one needs something true to say while it is empty.
+  "map.ctx.noSystemPrompt": {
+    de: "Für diesen Lauf ist kein System-Prompt hinterlegt.",
+    en: "No system prompt was recorded for this run.",
+  },
+  "map.ctx.noContext": {
+    de: "Noch kein Kontext-Bericht in diesem Lauf.",
+    en: "No context report in this run yet.",
+  },
+  "map.ctx.pictures": { de: "Bilder", en: "Pictures" },
+  "map.ctx.noPictures": {
+    de: "Noch keine Bilder in diesem Lauf.",
+    en: "No pictures in this run yet.",
+  },
   "map.shell.cmd": { de: "Befehl", en: "Command" },
   "map.mcp.call": { de: "MCP-Aufruf", en: "MCP call" },
   "map.llm.reasoning": { de: "Reasoning & Antwort", en: "Reasoning & answer" },

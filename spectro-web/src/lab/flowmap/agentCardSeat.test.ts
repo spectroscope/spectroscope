@@ -1,6 +1,13 @@
 // CARD 319 — the agent hub's SEAT against the card the browser actually draws,
 // and against the neighbours that are seated off it.
 //
+// EVERY READING QUOTED BELOW IS FROM BEFORE THE FIX, and is kept because it is
+// the evidence the seat is judged against, not a report of what the map does
+// now. What it does now, measured the same way on the same recording after the
+// budget landed: the card renders 1178.59 world px, ONE value over 2192 stepped
+// clicks, worst single-step change 0.00, and the oversize arm says nothing
+// about it. The six heights and the 828 oversize steps below are the disease.
+//
 // EXPANDED_CARD.agent.h has been 780 since it was written, and its own doc
 // block admits what it is: agent and llm "keep an observed height plus
 // headroom ... the sum would be a guess dressed as a derivation". The
@@ -37,6 +44,7 @@ import { agentDirectory } from "../agentDirectory";
 import { foldSeatPool } from "./workerGrid";
 import {
   EXPANDED_CARD,
+  EXP_GAP,
   UNDER_SETTLE_MS,
   UNDER_WATCHED_TYPES,
   deriveDetail,
@@ -244,40 +252,70 @@ const BESIDE = ["z-boundary", "z-outside", "llm", "netz", "mcpserver"] as const;
 describe("the map under and beside the card", () => {
   const events = readSample();
 
+  // The numbers moved ONCE with the seat, which the block above says is fine —
+  // that is what "raising it moves them once" means, and the claim this case
+  // makes is the ONE VALUE, not the value. Both halves are derived and can be
+  // recomputed from the constants rather than remembered:
+  //
+  //   vSpread = EXPANDED_AGENT_Y 48 + EXPANDED_CARD.agent.h 1200 + EXP_GAP 60
+  //             - OS_BAND_TOP 668                                       = 640
+  //   z-os    = OS_BAND_TOP 668 + 640                                   = 1308
+  //   stations = 748 + 640                                              = 1388
+  //
+  // Before this card: agent y 150 and seat 780 gave vSpread 322, z-os 990 and
+  // the stations 1070. z-mac's own top does not move at all and must not — it
+  // is the edge EXPANDED_AGENT_Y is derived from.
   it("gives everything below the card one world y for the whole run", () => {
     const ys = new Map<string, Set<number>>();
     for (const [id, seats] of seatsOver(events, BELOW)) {
       ys.set(id, new Set([...seats].map((s) => Number(s.split(",")[1]))));
     }
     expect(Object.fromEntries([...ys].map(([id, s]) => [id, [...s]]))).toEqual({
-      "z-os": [990],
-      "os-disk": [1070],
-      "os-shell": [1070],
-      "os-mcp": [1070],
-      "os-net": [1070],
+      "z-os": [1308],
+      "os-disk": [1388],
+      "os-shell": [1388],
+      "os-mcp": [1388],
+      "os-net": [1388],
       "z-mac": [24],
     });
   });
 
-  // RED, and it is the owner's horizontal jolt. Every time the worker grid
-  // gains or loses a column, `spread` (sceneToFlow.ts) shoves the entire
-  // right-hand world by SUB_CARD_W 408 + RAIL_GAP 60 = 468 world px, which is
-  // 164 px on his screen. Measured over this recording: four x values per
-  // node, exactly 468 apart.
+  // NARROWED, deliberately, and this says which direction and why — the house
+  // rule for a claim the coverage cannot reach is to make the sentence as
+  // narrow as the coverage and write down which way you went.
   //
-  // The card marks this half splittable into its own card — it is a
-  // fold-driven mechanism, not the agent card's height. If it splits, this
-  // test goes with it; it is written here because AC 4 is where it was
-  // measured.
-  it("gives everything beside the card one world x for the whole run", () => {
-    const xs = new Map<string, number[]>();
-    for (const [id, seats] of seatsOver(events, BESIDE)) {
-      xs.set(
-        id,
-        [...new Set([...seats].map((s) => Number(s.split(",")[0])))].sort((a, b) => a - b),
-      );
+  // The claim written here first was ONE world x for the whole run. It is not
+  // reachable without making every map worse, and that was MEASURED rather than
+  // argued. `spread` puts the whole right-hand world past the worker grid's
+  // right edge, and the grid's column count is only ever known from the prefix
+  // folded so far — so the only way to hold it still is to reserve the widest
+  // grid the pane can seat in advance. At this pane `rowsFor` puts twelve seats
+  // in three rows, hence four columns: 1872 world px, reserved on every run
+  // including one with no workers at all. The owner's own 44-hour session is
+  // exactly that run — maxSubs 0, not one pixel of horizontal motion in it —
+  // so the reserve would buy him nothing and cost him a mac frame drawn 1872px
+  // wider than anything standing in it.
+  //
+  // So the horizontal half stays open, as card 319 already says it may: it is a
+  // fold-driven mechanism, not the agent card's height, and it is splittable
+  // into its own card. What this case does instead is pin the MECHANISM, so
+  // that card starts from a measurement and so anything else that starts moving
+  // these nodes sideways turns it red. Today, over this recording, every one of
+  // them takes four x values exactly 468 apart: 1554, 2022, 2490, 2958.
+  it("moves everything beside the card by whole worker columns, and by nothing else", () => {
+    const step = EXPANDED_CARD.subagent.w + EXP_GAP;
+    expect(step, "the column pitch these seats are judged against").toBe(468);
+    const seen = seatsOver(events, BESIDE);
+    expect([...seen.keys()].sort(), "the derivation must find every node").toEqual([...BESIDE].sort());
+    for (const [id, seats] of seen) {
+      const xs = [...new Set([...seats].map((s) => Number(s.split(",")[0])))].sort((a, b) => a - b);
+      expect(xs.length, `${id} was never laid out`).toBeGreaterThan(0);
+      const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+      expect(
+        gaps.filter((g) => g % step !== 0),
+        `${id} moved by something that is not a column`,
+      ).toEqual([]);
     }
-    for (const [id, seen] of xs) expect(seen, `${id} moved sideways`).toHaveLength(1);
   });
 });
 
