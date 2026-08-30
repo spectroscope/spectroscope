@@ -29,8 +29,10 @@ import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
-import { rowState, formatBytes, listingNotice } from "../import/rowState";
+import { rowState, listingNotice } from "../import/rowState";
+import { StoreRow } from "./StoreRow";
 import type { TranscriptRow, StoreLimits } from "../import/rowState";
+import { onLoadArgs, openFromStore, type StoreDoor } from "../import/storeDoor";
 import type { SubagentTranscript } from "../import/subagentFile";
 import { useTranscriptFacts } from "../import/useTranscriptFacts";
 import { missingGists, useGists } from "../import/useGists";
@@ -64,12 +66,20 @@ export function ImportDialog(props: {
      *  its subagents/ set. Absent for every single-file import, which is what
      *  keeps that path exactly as it was. */
     run?: ImportedRunSummary,
+    /** One sentence this import owes the reader beyond its own counts (card
+     *  318): the run was over the server's ceiling, so what arrived is the
+     *  session file and the agents beside it stayed on disk. It travels WITH
+     *  the import because this dialog is gone by the time it is read — the
+     *  same reason the children counts do. */
+    note?: string,
   ) => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  /** The row a store load is in flight for, or null. One click, one load. */
+  const [loading, setLoading] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptRow[]>([]);
   // What the SAME listing published about its own ceiling. Null until it
   // answers, and null forever against a server too old to say, in which case
@@ -216,7 +226,7 @@ export function ImportDialog(props: {
   // Every entry point clears the previous error before it starts. Without this
   // a failed pick left its red line standing while the next attempt succeeded,
   // and only the textarea's onChange ever cleared it.
-  const load = (raw: string, label: string, storePath?: string): void => {
+  const load = (raw: string, label: string, storePath?: string, note?: string): void => {
     setError(null);
     try {
       const { events, kind, source, subagent } = detectAndLoad(raw);
@@ -224,7 +234,7 @@ export function ImportDialog(props: {
       // never what it returned. Say that once, here, rather than leaving the
       // reader to infer it from a screen of empty tool bodies.
       setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
-      props.onLoad(events, label, kind, source, subagent, storePath);
+      props.onLoad(events, label, kind, source, subagent, storePath, undefined, note);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
@@ -234,28 +244,52 @@ export function ImportDialog(props: {
     }
   };
 
-  const loadFromStore = (tr: TranscriptRow): void => {
+  /**
+   * A row's click, through the door the row already named.
+   *
+   * Card 318. The merge that loads a workflow run's agents INTO the stream has
+   * shipped since card 291 and was reachable only from the folder picker; this
+   * list — the door the owner actually uses — asked for the session file alone,
+   * so a session with hundreds of agents beside it opened with none of them.
+   * The row's plan (rowState) decides which door, off the same fold that prints
+   * its `workflow-agents` chip, and the DEFAULT is the run. Nobody is sent to
+   * find a directory.
+   *
+   * WIRING ONLY. The door itself is `import/storeDoor.ts`, because a closure in
+   * a component can only be guarded by searching this file for substrings — and
+   * a reviewer restored the defect three ways with all of those green. The
+   * arguments below are spread from `onLoadArgs`, which is measured, so this
+   * call site cannot quietly lose the store path the way it did once already.
+   *
+   * @param tr the listing row
+   * @param door which door: the whole run, or the session file on its own
+   * @param agents what the row said sits beside this session, for the sentence
+   *        a degrade has to print
+   */
+  const loadFromStore = (tr: TranscriptRow, door: StoreDoor, agents: number): void => {
+    // One click, one load. The run door can carry a hundred megabytes and the
+    // browser is then busy for tens of seconds with the parse, the merge and the
+    // fold — during which the row stayed clickable and a second press fired a
+    // second whole bundle. Measured by a reviewer: two requests 402 ms apart,
+    // 117 MB each.
+    if (loading !== null) return;
     setError(null);
-    fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(tr.path)}`)
-      .then((r) => {
-        if (r.ok) return r.text();
-        // The rows are disabled before the click now, so a refusal here means
-        // the listing went stale: the store is live and a transcript can grow
-        // past the ceiling between the render and the click. The server names
-        // both numbers, so show what it said rather than a bare status.
-        if (r.status === 413) {
-          return r
-            .text()
-            .then((why) =>
-              Promise.reject(
-                new Error(why.trim() === "" ? t(lang, "imp.err.fetch", { status: 413 }) : why.trim()),
-              ),
-            );
-        }
-        return Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status })));
+    setLoading(tr.path);
+    openFromStore(tr, door, agents, lang)
+      .then((result) => {
+        // The VS Code export records that a tool ran and whether it succeeded,
+        // never what it returned. Say that once rather than leaving the reader
+        // to infer it from a screen of empty tool bodies.
+        setNote(result.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+        props.onLoad(...onLoadArgs(result));
       })
-      .then((raw) => load(raw, tr.file, tr.path))
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : String(e));
+        // The blind spot the ring exists for: the whole import path runs in the
+        // browser and reaches no server, so nothing else records it.
+        reportBrowserError("import", e);
+      })
+      .finally(() => setLoading(null));
   };
 
   const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -470,49 +504,66 @@ export function ImportDialog(props: {
 
             <div className="import-store" role="list" ref={listRef}>
               {verdict.rows.map((tr) => {
-                const state = rowState(tr, limits, lang);
                 const facts = factsFor(tr);
+                // The facts go IN, so the verdict and the door come out of one
+                // call: which agents sit beside this session is the same
+                // reading that prints the chip below, and a second answer to
+                // that question on the same row is how a panel starts
+                // contradicting itself (card 313, one surface earlier).
+                const state = rowState(tr, limits, lang, facts);
+                // Told only when it is known. A row whose facts have not landed
+                // still takes the run door — with nothing beside a session the
+                // bundle IS the file — but it must not print a count nobody
+                // measured.
+                // Two different questions, and they were one condition until a
+                // reviewer pointed at the window between them: the LABEL needs a
+                // measured count and must not print one nobody has, but the
+                // ESCAPE only needs to know which door the click takes. Gating
+                // both on the count meant the first click after the dialog opens
+                // — facts still in flight, run door taken — had no warning AND
+                // no way out.
+                // The row is its own component (StoreRow): as JSX in here the
+                // only guard reachable was a substring search over this file,
+                // and a reviewer rewired the press to the session door with
+                // every case green. As an element its buttons can be found and
+                // their handlers called.
                 return (
-                  <button
+                  <StoreRow
                     key={tr.path}
-                    type="button"
-                    className={state.enabled ? "import-store-row" : "import-store-row is-refused"}
-                    role="listitem"
-                    title={tr.path}
-                    disabled={!state.enabled}
-                    aria-disabled={!state.enabled}
-                    onClick={() => loadFromStore(tr)}
-                    ref={(el) => rowRef(el, tr)}
-                  >
-                    <span className="import-store-file mono">{tr.file}</span>
-                    {facts?.firstPrompt !== undefined && (
-                      <span className="import-store-prompt" title={facts.firstPrompt}>
-                        {facts.firstPrompt}
-                      </span>
-                    )}
-                    {gists.byPath.get(tr.path) !== undefined && (
-                      /* Marked as written by a model, with which one. It is a
-                         reading of the opening prompt, not a fact off the file,
-                         and the row says so rather than letting it pass as one. */
-                      <span
-                        className="import-store-gist"
-                        title={`${gists.byPath.get(tr.path)?.model ?? ""}${
-                          gists.byPath.get(tr.path)?.stale ? " · the file has changed since" : ""
-                        }`}
-                      >
-                        {gists.byPath.get(tr.path)?.stale ? "≈ " : "~ "}
-                        {gists.byPath.get(tr.path)?.text}
-                      </span>
-                    )}
-                    <span className="import-store-meta">
-                      <span className="import-store-project">{tr.project}</span>
-                      <span className="tabular">
-                        {relativeTime(tr.modifiedAt, now, lang)} · {formatBytes(tr.size)}
-                      </span>
-                    </span>
-                    {rowFacts(tr)}
-                    {!state.enabled && <span className="import-store-refused">{state.reason}</span>}
-                  </button>
+                    tr={tr}
+                    state={state}
+                    lang={lang}
+                    now={now}
+                    busy={loading !== null}
+                    loadingThis={loading === tr.path}
+                    rowRef={(el) => rowRef(el, tr)}
+                    onOpen={(door) => loadFromStore(tr, door, state.plan.agents)}
+                    chips={
+                      <>
+                        {facts?.firstPrompt !== undefined && (
+                          <span className="import-store-prompt" title={facts.firstPrompt}>
+                            {facts.firstPrompt}
+                          </span>
+                        )}
+                        {gists.byPath.get(tr.path) !== undefined && (
+                          /* Marked as written by a model, with which one. It is
+                           a reading of the opening prompt, not a fact off the
+                           file, and the row says so rather than letting it pass
+                           as one. */
+                          <span
+                            className="import-store-gist"
+                            title={`${gists.byPath.get(tr.path)?.model ?? ""}${
+                              gists.byPath.get(tr.path)?.stale ? " · the file has changed since" : ""
+                            }`}
+                          >
+                            {gists.byPath.get(tr.path)?.stale ? "≈ " : "~ "}
+                            {gists.byPath.get(tr.path)?.text}
+                          </span>
+                        )}
+                        {rowFacts(tr)}
+                      </>
+                    }
+                  />
                 );
               })}
             </div>
