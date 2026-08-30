@@ -573,6 +573,27 @@ describe("the moments panel", () => {
     const steps = momentsOf(run).map((m) => m.step);
     expect(steps).not.toContain(0);
     for (const step of steps) expect(html).toContain(t(lang, "lab.stepN", { n: step }));
+
+    // …and it is the STEP, not the cursor. On the run above every event is its
+    // own block, so the two numbers are equal for every moment (measured) and
+    // that fixture cannot tell them apart — a row printing `cursor` would read
+    // correctly there and be wrong on any run with a real block in it. This
+    // one has one: three deltas fold into a single step, so the moments after
+    // them sit two apart from the event count that reaches them.
+    const coarse: RunEvent[] = [
+      start("main", 1000),
+      { type: "text_delta", agentId: "main", text: "a", ts: 1010 } as RunEvent,
+      { type: "text_delta", agentId: "main", text: "b", ts: 1020 } as RunEvent,
+      { type: "text_delta", agentId: "main", text: "c", ts: 1030 } as RunEvent,
+      { type: "error", agentId: "main", message: "the only failure", ts: 1040 } as RunEvent,
+    ];
+    const rows = momentsOf(coarse);
+    expect(rows).toHaveLength(1);
+    const late = rows[0];
+    expect(late.step).not.toBe(late.cursor);
+    const coarseHtml = dock("moments", coarse);
+    expect(coarseHtml).toContain(t(lang, "lab.stepN", { n: late.step }));
+    expect(coarseHtml).not.toContain(t(lang, "lab.stepN", { n: late.cursor }));
   });
 
   it("shows a time only where the recording carried one", () => {
