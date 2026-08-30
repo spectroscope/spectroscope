@@ -8,6 +8,8 @@ import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
 import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS, sourceSentence } from "../components/traceDetail";
 import type { SourcePane } from "../components/traceDetail";
 import { HIDDEN_KINDS } from "../components/readable";
+import { PROVIDERS } from "../components/providerPickerMode";
+import { addressSpecFor } from "../components/providerAddress";
 import { CATEGORIES } from "../components/TraceView";
 import { TODO_STATUSES } from "../components/todoList";
 import { TRACE_FACES } from "../state/traceFace";
@@ -395,11 +397,20 @@ describe("the workspace gear describes baseUrl as what it now is", () => {
     expect(dict["wsg.local.desc.baseUrl"].de).not.toMatch(/^Die Adresse für ollama/);
   });
 
-  it("names the two fields that outrank it, in both languages", () => {
+  // Card 312 added a THIRD provider with its own address and the same
+  // precedence, and this guard was left naming two of them — so the sentence
+  // could keep saying "only applies to those two" with a green suite behind
+  // it. The list is no longer typed out here: it is DERIVED from the picker's
+  // providers and the address spec each one owns, so a fourth field cannot be
+  // added without this sentence being asked about it.
+  it("names every per-provider address field that outranks it, in both languages", () => {
+    const owned = PROVIDERS.map((p) => addressSpecFor(p)?.field).filter((f): f is string => f !== undefined);
+    expect(owned.length, "no provider owns an address field any more").toBeGreaterThan(0);
     for (const lang of ["de", "en"] as const) {
       const desc = dict["wsg.local.desc.baseUrl"][lang];
-      expect(desc, `${lang} names ollamaBaseUrl`).toContain("ollamaBaseUrl");
-      expect(desc, `${lang} names lmstudioBaseUrl`).toContain("lmstudioBaseUrl");
+      for (const field of owned) {
+        expect(desc, `${lang} names ${field}`).toContain(field);
+      }
     }
   });
 });

@@ -22,6 +22,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { NOTE_REACH, ReachBlock, SETTING_REACH, noteKeyFor, reachOf } from "./settingsReach";
 import type { SettingKey } from "./settingsReach";
 import { dict } from "../i18n/i18n";
+import { PROVIDERS } from "./providerPickerMode";
+import { addressSpecFor } from "./providerAddress";
 
 /**
  * The files that draw saveable settings — READ OFF THE DIRECTORY, never listed.
@@ -91,8 +93,16 @@ function blocksIn(file: string): Block[] {
  * Finding F10: only the first shape was looked for, so every control of the
  * second kind was invisible to a guard whose whole job is finding controls
  * nobody classified. The provider address field is neither: its name is chosen
- * at runtime (ollamaBaseUrl or lmstudioBaseUrl) and it stands for both.
+ * at runtime, so it stands for EVERY provider that owns an address. That list
+ * is derived, not typed out — card 312 added a third one and the two places
+ * that had spelled the pair by hand kept saying two.
  */
+/** Every settings field a provider owns as its address — derived from the
+ *  picker's provider list, so a new one cannot be missed by a guard. */
+const ADDRESS_FIELDS: string[] = PROVIDERS.map((p) => addressSpecFor(p)?.field).filter(
+  (f): f is string => f !== undefined,
+);
+
 function fieldsIn(jsx: string): string[] {
   const found = [...jsx.matchAll(/field="([^"]+)"/g)].map((m) => m[1] as string);
   for (const call of jsx.matchAll(/(?:onSave\??\.?|putSettings)\(\s*(?:"[a-z]+",\s*)?\{([^}]*)\}/g)) {
@@ -103,7 +113,7 @@ function fieldsIn(jsx: string): string[] {
     }
   }
   if (/field=\{addressSpec\.field\}/.test(jsx)) {
-    found.push("ollamaBaseUrl", "lmstudioBaseUrl");
+    found.push(...ADDRESS_FIELDS);
   }
   return [...new Set(found)];
 }
@@ -244,7 +254,7 @@ describe("the settings page, walked", () => {
     expect(reachOf(model!.fields as SettingKey[])).toBe("live");
     expect(provider).not.toBe(image);
     expect(image).not.toBe(model);
-    for (const field of ["model", "thinking", "ollamaBaseUrl", "lmstudioBaseUrl"]) {
+    for (const field of ["model", "thinking", ...ADDRESS_FIELDS]) {
       expect(
         provider!.fields.includes(field),
         `"${field}" was measured to stay behind in an open session and belongs beside the provider`,

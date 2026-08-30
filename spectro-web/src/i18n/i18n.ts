@@ -3293,8 +3293,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The model id at the chosen provider. Every provider names its own.",
   },
   "wsg.local.desc.baseUrl": {
-    de: "Die Ausweich-Adresse. ollama nimmt ollamaBaseUrl, LM Studio nimmt lmstudioBaseUrl — dieses Feld gilt für die beiden nur, solange ihr eigenes leer ist. Für openai, openrouter und gemini bleibt es die Adresse; anthropic ignoriert sie.",
-    en: "The fallback address. ollama reads ollamaBaseUrl and LM Studio reads lmstudioBaseUrl, so this field only applies to those two while their own is empty. For openai, openrouter and gemini it is still the address; anthropic ignores it.",
+    de: "Die Ausweich-Adresse. ollama nimmt ollamaBaseUrl, LM Studio nimmt lmstudioBaseUrl, llama.cpp nimmt llamacppBaseUrl — dieses Feld gilt für die drei nur, solange ihr eigenes leer ist. Für openai, openrouter und gemini bleibt es die Adresse; anthropic ignoriert sie.",
+    en: "The fallback address. ollama reads ollamaBaseUrl, LM Studio reads lmstudioBaseUrl and llama.cpp reads llamacppBaseUrl, so this field only applies to those three while their own is empty. For openai, openrouter and gemini it is still the address; anthropic ignores it.",
   },
   "wsg.local.desc.thinking": {
     de: "Den Denk-Kanal des Modells mitschreiben und anzeigen.",
