@@ -23,8 +23,7 @@ describe("addressSpecFor", () => {
       const spec = addressSpecFor(p)!;
       expect(spec.field, `${p}'s field is not its own name`).toBe(`${p}BaseUrl`);
       const port = spec.preset.match(/^http:\/\/localhost:(\d+)$/)?.[1];
-      expect(port, `${p}'s preset is not a loopback address with a port: ${spec.preset}`)
-        .toBeDefined();
+      expect(port, `${p}'s preset is not a loopback address with a port: ${spec.preset}`).toBeDefined();
       expect(ports.has(port!), `${p} shares port ${port} with another provider`).toBe(false);
       ports.add(port!);
     }

@@ -430,8 +430,9 @@ describe("the addressless unreachable sentence names no backend", () => {
       // them, so the comparison is made on letters only.
       const letters = dict["pp.localDown"][lang].toLowerCase().replace(/[^a-z]/g, "");
       for (const owner of owners) {
-        expect(letters, `${lang} names "${owner}", and the reader may be running another`)
-          .not.toContain(owner.replace(/[^a-z]/g, ""));
+        expect(letters, `${lang} names "${owner}", and the reader may be running another`).not.toContain(
+          owner.replace(/[^a-z]/g, ""),
+        );
       }
     }
   });
