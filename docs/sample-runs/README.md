@@ -23,9 +23,20 @@ on every test run, so it cannot drift away from the scenario in silence.
 
 **How to open it.** In the app: the import dialog takes a single file, or a
 whole folder — pointing the folder picker at this directory works too, because
-only `.jsonl` files are read as sessions and this README is passed over. Then
-the run replays on every face: chat, spectrum, trace, and the lab with its
-workflow box.
+only `.jsonl` files are read as sessions and this README is passed over. It
+then behaves like any other imported session: the chat, the trace and the rest
+of the tabs replay it, and scrubbing into the run puts the agents on the lab's
+map.
+
+**The workflow box is not in this file, and cannot be.** The five columns are
+*declared* — they live in the scenario, and `compile()` does not write them to
+the wire, so no `.jsonl` carries them. Measured through the app's own chain,
+an import of these bytes draws zero workflow boxes and the agents stand loose;
+the same bytes draw one box the moment a declaration is handed in. To see the
+box, load **Declared workflow · 5 phases, 13 agents** from the scenario picker
+— it compiles this very run and passes the phases alongside it. Both halves of
+that sentence are pinned in `sampleRecording.test.ts`, so this paragraph goes
+red rather than stale if the wire ever learns to carry a declaration.
 
 **English only, on purpose.** `compile()` takes a language and bakes it into
 the events, so every thought, message and status line in the file is prose in

@@ -33,6 +33,10 @@ import {
  *  depend on where vitest was started from. */
 const onDisk = fileURLToPath(new URL(`../../../${SAMPLE_PATH}`, import.meta.url));
 
+/** The signpost beside it, resolved the same way. */
+const README_PATH = SAMPLE_PATH.replace(/[^/]+$/, "README.md");
+const readmeOnDisk = fileURLToPath(new URL(`../../../${README_PATH}`, import.meta.url));
+
 /**
  * The full type tally of the shipped file, measured 2026-08-29 with
  *
@@ -259,13 +263,12 @@ describe("what the shipped file draws in the lab, and what it does not", () => {
       declared,
     });
   };
-  const readmePath = SAMPLE_PATH.replace(/[^/]+$/, "README.md");
 
   it("draws NO workflow box on import — the declaration is not in the bytes", () => {
     expect(
       flowOf(undefined).nodes.filter((n) => n.type === "wfbox"),
       `the shipped recording now draws a workflow box on a plain import — if the wire learned ` +
-        `to carry the declaration, say so in ${readmePath} instead of loosening this`,
+        `to carry the declaration, say so in ${README_PATH} instead of loosening this`,
     ).toEqual([]);
   });
 
@@ -274,7 +277,7 @@ describe("what the shipped file draws in the lab, and what it does not", () => {
     // there, they are simply not framed by anything, because nothing in the
     // file says which column each of them belongs to.
     const cards = flowOf(undefined).nodes.filter((n) => n.type === "subagent");
-    expect(cards.length, `the import draws no agents at all — ${readmePath} promises a run`).toBeGreaterThan(
+    expect(cards.length, `the import draws no agents at all — ${README_PATH} promises a run`).toBeGreaterThan(
       0,
     );
     expect(
@@ -290,5 +293,49 @@ describe("what the shipped file draws in the lab, and what it does not", () => {
     // And it holds the whole cast: the same thirteen the declaration names,
     // standing IN the box rather than beside it.
     expect(flow.nodes.filter((n) => n.parentId === box[0].id)).toHaveLength(13);
+  });
+});
+
+describe("the README beside it says what is true today", () => {
+  // The blocker this fix round came from: the README promised that opening
+  // the file replays "the lab with its workflow box", and it draws none. A
+  // docs page in a public repo is the third place a claim can be wrong, after
+  // the code and the test, and it is the only one a reader trusts on sight.
+  //
+  // So the facts it quotes are read back off the artefacts they describe. Not
+  // its prose — nobody should have to keep a sentence byte-identical to pass a
+  // test — only the handful of things a reader would act on: the numbers, the
+  // phase names, the entry in the picker, and the command that rewrites it.
+  const readme = () => readFileSync(readmeOnDisk, "utf8");
+  const fix = (what: string) => `${README_PATH} states a stale ${what} — correct the README`;
+
+  it("quotes the file's real size", () => {
+    const text = readFileSync(onDisk, "utf8");
+    const lines = text.trimEnd().split("\n").length;
+    const bytes = Buffer.byteLength(text, "utf8");
+    const said = readme();
+    expect(said.includes(String(lines)), fix(`line count (it is ${lines})`)).toBe(true);
+    // Written with a thousands separator in the prose, so ask for the form a
+    // reader actually sees.
+    const grouped = bytes.toLocaleString("en-US");
+    expect(said.includes(grouped), fix(`byte count (it is ${grouped})`)).toBe(true);
+  });
+
+  it("names the five phases the scenario declares", () => {
+    const said = readme();
+    for (const p of declarationOf(sampleScenario(), SAMPLE_LANG)?.get("main")?.phases ?? [])
+      expect(said.includes(p.title), fix(`phase list — "${p.title}" is missing`)).toBe(true);
+  });
+
+  it("names the picker entry that shows the workflow box", () => {
+    // The README sends a reader who wants the box to the scenario picker, and
+    // names the row to look for. A renamed scenario would leave that reader
+    // hunting a row that is not there.
+    const name = sampleScenario().name[SAMPLE_LANG];
+    expect(readme().includes(name), fix(`scenario name (it is "${name}")`)).toBe(true);
+  });
+
+  it("names the command that regenerates the file", () => {
+    expect(readme().includes(SAMPLE_REGEN_COMMAND), fix("regeneration command")).toBe(true);
   });
 });
