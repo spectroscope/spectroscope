@@ -33,9 +33,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * hold them to it — so the last two tests here are about llamacpp and the two
  * below them are about the class llamacpp was the third instance of. The
  * model-list route stays a switch: its arms are four different wire
- * protocols, not a list, and the guard for it is behavioural (every keyless
- * local server must reach a server that answers, rather than fall through to
- * the empty list).
+ * protocols, not a list. <b>Round 5</b> gave that one a behavioural guard too —
+ * every provider {@link SpectroConfig#openAiCompatProviders()} names must reach
+ * a server that answers, rather than fall through to the empty list — because
+ * until then the arm was a hand-typed copy of a package-private switch that
+ * nothing could compare it to.
  *
  * <p><b>Why every test here dials.</b> The first version of this file read
  * {@code SessionsController.java} off disk and grepped it for string literals.
@@ -99,6 +101,52 @@ class LlamaCppReachesTheFacesTest {
                     "the picker's model list must come from the llama-server that was dialled");
         } finally {
             fakeLlamaServer.stop(0);
+        }
+    }
+
+    /**
+     * Every backend that speaks the OpenAI wire gets served by this route.
+     *
+     * <p>Round 5. The arm was a hand-typed copy of
+     * {@code SpectroConfig.isOpenAiCompat}'s switch, and the javadoc over the
+     * route said so — pointing at a symbol that is package-private in
+     * {@code dev.spectroscope.core.config}, so the controller could not name it
+     * in code and no test could hold the two together. Measured: a ninth
+     * provider added to {@code KNOWN_PROVIDERS}, {@code endpointFor} and
+     * {@code isOpenAiCompat} and nothing else left the ENTIRE spectro-server
+     * suite green (exit 0, zero FAILED lines) while this route answered an
+     * empty list for it — the picker showing no models for a backend the config
+     * accepts and that speaks the wire.
+     *
+     * <p>One listener for the whole set, because one line of settings reaches
+     * all of it: the legacy shared {@code baseUrl} IS the address for the
+     * openai-compatible providers without a per-provider field, and the two
+     * that have one fall back to it while theirs is unset. So a provider that
+     * never dials is the only way to fail here, which is exactly the defect.</p>
+     */
+    @Test
+    void everyProviderThatSpeaksTheOpenAiWireIsServedByTheModelListRoute() throws IOException {
+        HttpServer fakeCompatServer = serve("/v1/models",
+                "{\"data\":[{\"id\":\"a-model-the-picker-can-show\",\"created\":1}]}");
+        try {
+            int port = fakeCompatServer.getAddress().getPort();
+            writeUserSettings("{ \"baseUrl\": \"http://127.0.0.1:%d\" }".formatted(port));
+            assertTrue(SpectroConfig.openAiCompatProviders().size() >= 2,
+                    "no openai-compatible providers left to serve: "
+                            + SpectroConfig.openAiCompatProviders());
+            for (String provider : new java.util.TreeSet<>(SpectroConfig.openAiCompatProviders())) {
+                assertEquals(List.of("a-model-the-picker-can-show"),
+                        new SessionsController().models(provider),
+                        "\"" + provider + "\" speaks the OpenAI wire and the config gives it"
+                                + " an endpoint, but /api/models never dialled it — it is"
+                                + " missing from the switch's openai-compatible arm, so the"
+                                + " picker shows an empty model list for a backend"
+                                + " spectroscope can actually talk to. The arm is held to"
+                                + " SpectroConfig.openAiCompatProviders(); add the name"
+                                + " there and here in one edit.");
+            }
+        } finally {
+            fakeCompatServer.stop(0);
         }
     }
 

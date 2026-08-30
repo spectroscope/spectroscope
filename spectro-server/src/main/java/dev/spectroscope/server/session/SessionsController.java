@@ -489,9 +489,9 @@ public class SessionsController {
     /**
      * Model names for the header picker's per-provider dropdown. The switch
      * below has three arms because there are three WIRE PROTOCOLS, not because
-     * there are three backends — every provider {@code SpectroConfig.isOpenAiCompat}
-     * answers for shares the third one, and this comment named three while the
-     * arm already carried five (card 312):
+     * there are three backends — every provider in
+     * {@link SpectroConfig#openAiCompatProviders()} shares the third one, and
+     * this comment named three while the arm already carried five (card 312):
      *
      * <ul>
      *   <li>ollama, from its /api/tags — the models actually installed;</li>
@@ -508,12 +508,13 @@ public class SessionsController {
      * on purpose — the bundled runtime's model is the download chooser's
      * question, not a dropdown's.</p>
      *
-     * @param provider a provider name; ollama, anthropic and every provider
-     *        {@code isOpenAiCompat} answers for have an arm, and everything
-     *        else answers empty — spectro-local included, which speaks the same
-     *        wire but is a subprocess with no endpoint to ask
-     *        ({@code endpointFor} refuses it). The names the config accepts at
-     *        all are {@link SpectroConfig#KNOWN_PROVIDERS_DISPLAY}
+     * @param provider a provider name; ollama, anthropic and every member of
+     *        {@link SpectroConfig#openAiCompatProviders()} have an arm — held to
+     *        that set by {@code LlamaCppReachesTheFacesTest}, which dials each
+     *        one — and everything else answers empty, spectro-local included,
+     *        which speaks the same wire but is a subprocess with no endpoint to
+     *        ask ({@code endpointFor} refuses it). The names the config accepts
+     *        at all are {@link SpectroConfig#KNOWN_PROVIDERS_DISPLAY}
      * @return the model ids, or an empty list
      */
     @GetMapping("/api/models")

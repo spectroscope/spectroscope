@@ -1125,6 +1125,27 @@ public record SpectroConfig(
                 .toList());
     }
 
+    /** Every backend that speaks the OpenAI chat/completions wire — the same
+     *  {@link #isOpenAiCompat} rule, handed out as a SET so a caller in another
+     *  package can be held to it.
+     *
+     *  <p>Exists because {@code isOpenAiCompat} is package-private and the
+     *  server's {@code /api/models} route is not in this package: its arm for
+     *  these providers was therefore a hand-typed copy of the switch below,
+     *  with a javadoc pointing at a symbol no test could reach. Measured on
+     *  card 312, round 5 — a ninth provider added to {@link #KNOWN_PROVIDERS},
+     *  {@link #endpointFor} and {@code isOpenAiCompat} and nowhere else left
+     *  the whole spectro-server suite green while the picker showed an empty
+     *  model list for a backend the config accepts and that speaks the wire.</p>
+     *
+     *  @return the OpenAI-compatible providers; iteration order is not
+     *          defined */
+    public static Set<String> openAiCompatProviders() {
+        return Set.copyOf(KNOWN_PROVIDERS.stream()
+                .filter(SpectroConfig::isOpenAiCompat)
+                .toList());
+    }
+
     /** The address {@code provider} is dialled at when nothing is configured —
      *  its own preset, taken from {@link #endpointFor} on the default config
      *  rather than by repeating that method's case list, so a preset that moves
@@ -1282,7 +1303,11 @@ public record SpectroConfig(
      * only authenticates. The provider, {@link #providerHost()} and the server's
      * live model list all derive from this one rule.
      *
-     * @param provider "openai" | "lmstudio" | "openrouter"
+     * @param provider an OpenAI-compatible provider — a member of
+     *                 {@link #openAiCompatProviders()}, named by the rule rather
+     *                 than retyped here: the three that stood in this line
+     *                 shipped while {@link #endpointFor} was already passing
+     *                 gemini in (card 312)
      * @param baseUrl  the configured base url
      * @return the endpoint the openai-compatible provider talks to
      */
