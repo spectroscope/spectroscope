@@ -176,7 +176,13 @@
 
   --sp-red: #c24b3e;
   --sp-amber: #a9762a;
-  --sp-teal: #0f9d77;
+  /* Card 325, owner call: darkened from #0f9d77, same hue. The old value
+     cleared the code floor on the page (3.13:1) but not inside a code well,
+     where the translucent --shade composites the ground darker - 2.71:1
+     against a floor of 3. This reads 3.28:1 there and 3.79:1 on the page.
+     --ok, --agent-root and --agent-w4 keep the old hex on purpose: they mark
+     status and identity rather than code, and answer to no code floor. */
+  --sp-teal: #0e8d6b;
   --sp-ocean: #0b8799;
   --sp-violet: #6c5ce7;
 

@@ -5,13 +5,16 @@
 //
 // Two failures it is meant to catch, in opposite directions: a token retuned in
 // tokens.css and not here (the export keeps printing last month's palette), and
-// a token that `still` starts declaring for itself (the borrow list below would
-// silently keep overriding it with paper's).
+// a design that stops declaring a token it owns, which in CSS is not an error
+// at all — the value falls through to :root and the design quietly wears
+// somebody else's. That second direction is why `still` is checked below for
+// the PRESENCE of its spectral ramp: its absence is exactly the defect card 325
+// fixed, and absence is the shape that fails nothing on its own.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { EXPORT_THEMES, GRAPHITE_BORROWS_FROM_ESPRESSO, STILL_BORROWS_FROM_PAPER } from "./themes";
+import { EXPORT_THEMES, GRAPHITE_BORROWS_FROM_ESPRESSO, SPECTRAL_TOKENS } from "./themes";
 import type { DesignId } from "../state/designPrefs";
 
 const read = (name: string): string =>
@@ -71,11 +74,16 @@ describe("the export table matches the app's stylesheets", () => {
 });
 
 describe("the borrow list still describes reality", () => {
-  it("borrows exactly the spectral tokens `still` leaves undeclared", () => {
-    // If `still` grows its own ramp, this fails and the borrow has to be
-    // removed rather than quietly outvoting the new values.
-    for (const key of STILL_BORROWS_FROM_PAPER) {
-      expect(SOURCE.still[key], `designs.css now declares --${key} for still`).toBeUndefined();
+  it("finds the whole spectral ramp declared by `still` itself", () => {
+    // The inverse of the guard this used to be, and the direction that matters
+    // now. Until card 325 `still` declared no ramp: the export lent it paper's,
+    // while the app — with nothing to lend — let every var(--sp-*) fall through
+    // to :root and printed code at 1.56:1 on white. Deleting these five lines
+    // again restores that silence, because a fallback is not an error. So this
+    // asks for their presence; codeContrast.test.ts measures what they are
+    // worth.
+    for (const key of SPECTRAL_TOKENS) {
+      expect(SOURCE.still[key], `designs.css stopped declaring --${key} for still`).toBeDefined();
     }
   });
 

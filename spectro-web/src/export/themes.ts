@@ -8,12 +8,18 @@
 // WHY EACH THEME NAMES ITS SOURCE PER TOKEN. In the app a skin overrides some
 // tokens and inherits the rest from :root. A file cannot inherit from an app it
 // is no longer inside, so each theme here is COMPLETE, and `borrows` records
-// which block a value really came from. That is not bookkeeping: `still`
-// declares no spectral ramp at all, so inheriting would hand a white document
-// espresso's ramp — and the export colours CODE with those tokens, not just the
-// mark. Espresso's teal on still's ground measures 1.83:1. Paper's measures
-// 3.33:1. So `still` borrows paper's ramp, deliberately, and the contrast floor
-// in themes.test.ts fails the day someone points it back at the dark one.
+// which block a value really came from.
+//
+// `still` was the headline case, and is worth keeping as the cautionary one. It
+// declared no spectral ramp, so this file handed it paper's rather than let a
+// white document print espresso's — and for a long time that made the EXPORT
+// the only place the rule existed. The app had nothing to lend itself: every
+// var(--sp-*) fell through to :root, and the default light design rendered code
+// at 1.56:1. Card 325 moved the rule into designs.css, so `still` now DECLARES
+// the ramp and borrows none of it, and the drift guard turned around with it —
+// themes.drift.test.ts asks that the ramp be PRESENT, where it used to insist
+// it was absent. The lesson the file keeps: a rule that lives only in the
+// exporter is a rule the product does not have.
 
 import type { DesignId } from "../state/designPrefs";
 import type { Lang } from "../i18n/i18n";
@@ -24,13 +30,18 @@ import type { Lang } from "../i18n/i18n";
 export const CODE_TOKENS = ["sp-violet", "sp-teal", "sp-ocean"] as const;
 
 /** WCAG's floor for large text, which is what highlighted code inside a <pre>
- *  behaves like. Paper's teal on paper clears it by 0.13 — thin, and the reason
- *  the number is measured here rather than eyeballed. */
+ *  behaves like. One number for two guards, deliberately: themes.test.ts next
+ *  door measures an exported document's ink on its --bg, and
+ *  styles/codeContrast.test.ts measures the app's ink on a code well, where a
+ *  translucent --shade composites the ground darker and the same ramp has less
+ *  room. Two floors that could disagree would be two floors nobody trusts. */
 export const MIN_CODE_CONTRAST = 3;
 
-/** The spectral tokens `still` never declares. Borrowed from paper because a
- *  light theme needs a light-ground ramp; see the file header for the numbers. */
-export const STILL_BORROWS_FROM_PAPER = ["sp-red", "sp-amber", "sp-teal", "sp-ocean", "sp-violet"] as const;
+/** The five spectral lines: the ramp a design declares whole or not at all.
+ *  Named once because three guards ask about it — the export's borrow list
+ *  below, the drift test's check that `still` really declares its own, and the
+ *  app-side contrast floor in styles/codeContrast.test.ts. */
+export const SPECTRAL_TOKENS = ["sp-red", "sp-amber", "sp-teal", "sp-ocean", "sp-violet"] as const;
 
 /**
  * What `graphite` never declares, and takes from espresso instead.
@@ -51,11 +62,7 @@ export const STILL_BORROWS_FROM_PAPER = ["sp-red", "sp-amber", "sp-teal", "sp-oc
 export const GRAPHITE_BORROWS_FROM_ESPRESSO = [
   "shade",
   "sand",
-  "sp-red",
-  "sp-amber",
-  "sp-teal",
-  "sp-ocean",
-  "sp-violet",
+  ...SPECTRAL_TOKENS,
   "ok",
   "warn",
   "error",
@@ -128,10 +135,17 @@ const ESPRESSO = {
   "font-mono": FONT_MONO,
 } as const;
 
-const PAPER_RAMP = {
+/** The light-ground ramp. BOTH light designs declare it now — paper in
+ *  tokens.css, still in designs.css — so one constant here keeps the exported
+ *  copies of two blocks from drifting apart. themes.drift.test.ts still holds
+ *  each theme to its OWN stylesheet, so the day the two blocks genuinely
+ *  diverge this constant has to be split rather than quietly averaged. */
+const LIGHT_RAMP = {
   "sp-red": "#c24b3e",
   "sp-amber": "#a9762a",
-  "sp-teal": "#0f9d77",
+  // Card 325: darkened from #0f9d77, which cleared the floor on the page
+  // (3.13:1) but not in a code well (2.71:1, floor 3). This reads 3.28:1 there.
+  "sp-teal": "#0e8d6b",
   "sp-ocean": "#0b8799",
   "sp-violet": "#6c5ce7",
 } as const;
@@ -161,7 +175,7 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       "text-faint": "#a39e92",
       accent: "#2e7ea6",
       sand: "#6c5ce7",
-      ...PAPER_RAMP,
+      ...LIGHT_RAMP,
       ok: "#0f9d77",
       warn: "#a9762a",
       error: "#c24b3e",
@@ -197,7 +211,7 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       "text-faint": "rgba(29, 29, 31, 0.38)",
       accent: "#0071e3",
       sand: "#6e6e73",
-      ...PAPER_RAMP,
+      ...LIGHT_RAMP,
       ok: "#248a3d",
       warn: "#c07600",
       error: "#d70015",
@@ -213,14 +227,9 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       "font-ui": 'Geist, Inter, "Helvetica Neue", Helvetica, system-ui, sans-serif',
       "font-mono": FONT_MONO,
     },
-    borrows: {
-      "sp-red": "paper",
-      "sp-amber": "paper",
-      "sp-teal": "paper",
-      "sp-ocean": "paper",
-      "sp-violet": "paper",
-      "font-mono": "spectroscope",
-    },
+    // The ramp is no longer borrowed: designs.css declares it here, so the
+    // drift test holds these five to still's OWN block (card 325).
+    borrows: { "font-mono": "spectroscope" },
   },
   {
     id: "graphite",
