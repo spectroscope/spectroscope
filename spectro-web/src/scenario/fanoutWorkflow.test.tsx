@@ -59,9 +59,55 @@
 // assembled with `+`. The counts case walks `ownCopy` and holds every line that
 // counts out loud, so this one takes the same predicate instead of a list.
 //
-// One source it reads NARROWER than the case does: of everything the noun case
-// scans off a worker, it demands the worker's status band and its answer, and
-// not the ids, labels and bands the stream wraps them in.
+// That was true of the counting lines and NOT of the worker lines, for one
+// round more. The demand took its worker side from an arm-enumerated walk that
+// yields a status band and a say; the noun case decides on everything the
+// stream shows for that worker, 35 to 42 strings, and four kinds of authored
+// copy ride in there that the walk never reaches — the task, the shell
+// command, that command's result, and the path of a file the worker reads.
+//
+// The sentence that stood here called the undemanded remainder "the ids,
+// labels and bands the stream wraps them in", which is narrower than what was
+// actually undemanded, and the gap was LIVE: assembling check-api's task left
+// every case green, because the noun and the only other line carrying it then
+// came off the same source. The worker side is now derived where the noun case
+// derives it, and what this suite does NOT hold is written out below rather
+// than sampled one clause at a time.
+//
+// WHAT THIS SUITE DOES NOT HOLD. Not a disclaimer — a boundary, so the next
+// reader does not have to rediscover it by planting something and watching
+// nothing happen. Each line was measured, not assumed.
+//
+//  1. NOTHING HERE HOLDS THE WORK TO THE WORDS. The thread from a declared
+//     check to the job is the noun case, and it reaches the worker's WORDS
+//     only. A worker whose task, command, result and answer all consistently
+//     describe a different job than its subject names would be red; one whose
+//     copy is internally consistent and describes nothing real is green. There
+//     is no execution here at all — every command in this scenario is authored
+//     copy with an authored result.
+//  2. THE SCAN SEES FOUR RENDERERS. `PRINTED_BY` names LabTrace.tsx,
+//     flowmap/nodes.tsx, flowmap/ToolCallPanel.tsx and components/ContextRing.tsx.
+//     Every `null` in that table is a claim about those four and about nothing
+//     else, so "names no release version in any string the stream carries" is
+//     bounded by them: an opened JSONL row draws the whole event as a tree and
+//     prints fields none of the four print.
+//  3. THE ASK'S PROSE IS UNHELD IN THREE PLACES. The bound is the sentence
+//     COUNT and the list's RIGHT EDGE. The opening sentence, the head of the
+//     middle sentence in front of its colon, and the closing sentence are
+//     prose no case reads.
+//  4. NOTHING COMPARES THE TWO LOCALES. Every case runs EN and DE through the
+//     same shape, and none of them says the German means what the English
+//     means. A mistranslation that keeps the counts and carries the noun is
+//     green.
+//  5. THE LITERAL DEMAND IS NOT TOTAL. It covers what the six reading cases
+//     read: the name, the ask, the captions, the subjects, each worker's
+//     status and say, the lines that count out loud, and the lines the noun
+//     case decides on. Authored strings outside all of those — a result that
+//     neither counts nor carries a noun — may be assembled without going red.
+//  6. NOTHING DRAWS. The lens is rendered to static markup and read for rows,
+//     labels and caption bands; the one geometric claim is that a rank caption
+//     sits above every box of its rank. Nothing here says the picture looks
+//     right, and no CSS is loaded.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -212,19 +258,39 @@ type FieldsOf<T extends RunEvent["type"]> = {
  *  deleting. The run holds that direction, and `tsc` cannot: `printedStringsOf`
  *  fails on an event kind with no entry and on a key no entry answers for, so a
  *  step kind added to this scenario later cannot reopen the gap in silence.
- *  Measured by deleting the `usage` entry — `tsc -b` stayed EXIT=0 and the run
- *  went red on three cases with "usage is compiled and no entry names the
- *  renderers that print it".
+ *  Measured by deleting the `usage` entry, re-measured on this commit rather
+ *  than carried forward: `npx tsc -b --force` stayed EXIT=0 and the run went
+ *  EXIT=1 with FOUR red on "usage is compiled and no entry names the renderers
+ *  that print it" — `counts the checks…`, `gives each check a noun…`,
+ *  `names no release version…` and `writes the words it shows instead of
+ *  assembling them`. The fourth is red because the drift case now reaches the
+ *  stream twice over, through `countingLines` and through the noun carriers;
+ *  the number here said three for a round after the first of those landed,
+ *  which is the same defect one level up — a sentence outliving the round that
+ *  moved it.
  *
- *  Every entry names a file and a line, and the list is short enough to check:
+ *  THE PATHS RESOLVE FROM `src/`, AND THREE OF THE FOUR SHARE A PREFIX THAT
+ *  THE FOURTH DOES NOT. LabTrace.tsx, flowmap/nodes.tsx and
+ *  flowmap/ToolCallPanel.tsx all sit under `src/lab/`; ContextRing.tsx sits in
+ *  `src/components/`, not beside the other three, and `src/lab/components/`
+ *  does not exist. So no single base resolves all four, and reading them
+ *  against one is how two rounds looked up a file that is not there. Written
+ *  in full: `src/lab/LabTrace.tsx`, `src/lab/flowmap/nodes.tsx`,
+ *  `src/lab/flowmap/ToolCallPanel.tsx`, `src/components/ContextRing.tsx`.
+ *
+ *  SIX FIELDS were measured by a reviewer, and they are fields, not files:
  *    - `tool_call.name`      LabTrace.tsx:33-35, renders `event.name` verbatim
  *    - `agent_message.text`  LabTrace.tsx:54-55
  *    - `agent_message.label` LabTrace.tsx:55, drawn as " (check)"
  *    - `tool_result.output`  LabTrace.tsx:38-39
  *    - the provider          flowmap/nodes.tsx:674,676, the map's LLM card
  *    - context part labels   components/ContextRing.tsx:103
- *  Those six are the ones a reviewer measured; the rest of each entry was read
- *  off the same two renderers while writing it down. */
+ *  The rest of each entry was read off the FOUR renderers this table cites
+ *  while writing it down. Four, counted over the values below and not
+ *  remembered: LabTrace.tsx, flowmap/nodes.tsx, flowmap/ToolCallPanel.tsx and
+ *  components/ContextRing.tsx. Both numbers in this file's earlier prose were
+ *  wrong and in opposite directions — "two renderers" here and "six" at the
+ *  case that rests on it, the six being these six FIELDS read as files. */
 const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
   // Every row of the JSONL strip prints its own kind, whatever the kind is,
   // which is why `type` is answered for identically on all thirteen.
@@ -398,6 +464,30 @@ const ownCopy = (lang: "en" | "de"): string[] => [
 const headNoun = (subject: string): string => {
   const words = flat(subject).trim().split(/\s+/);
   return words[words.length - 1].toLowerCase();
+};
+
+/** The head word of the noun ONE check is given, off the declaration. Both the
+ *  case that holds the noun against the worker's lines and the case that
+ *  demands those lines be written take the noun from here. */
+const nounFor = (id: string, lang: "en" | "de"): string => {
+  const subject = RELEASE_CHECK_SUBJECTS[id];
+  expect(subject, `no subject declared for ${id}`).toBeDefined();
+  return headNoun(subject[lang]);
+};
+
+/** The lines the noun case READS off one worker: everything the stream shows
+ *  for it, minus the two shapes that carry its own id. Kept as written — the
+ *  case that demands them as literals needs the line, not the folded form. */
+const nounScannedLines = (id: string, lang: "en" | "de"): string[] =>
+  shownForAgent(id, lang).filter((l) => l !== id && !l.includes(`[${id}]`));
+
+/** Of those, the ones that CARRY the noun — the lines that DECIDE the noun
+ *  case. Anything in here that is assembled at runtime turns that case into a
+ *  derivation compared against a derivation, which is why the drift case
+ *  demands exactly this set as literals rather than a walk of its own. */
+const nounCarriers = (id: string, lang: "en" | "de"): string[] => {
+  const noun = nounFor(id, lang);
+  return nounScannedLines(id, lang).filter((l) => flat(l).toLowerCase().includes(noun));
 };
 
 /** The lines a fan-out worker itself puts on screen: its status band and its
@@ -779,16 +869,11 @@ describe("the fan-out workflow scenario", () => {
       const workers = fanoutWorkers();
       expect(workers, lang).toHaveLength(declaredWidest());
       for (const a of workers) {
-        const subject = RELEASE_CHECK_SUBJECTS[a.id];
-        expect(subject, `no subject declared for ${a.id}`).toBeDefined();
-        const noun = headNoun(subject[lang]);
-        const lines = shownForAgent(a.id, lang)
-          .filter((l) => l !== a.id && !l.includes(`[${a.id}]`))
-          .map((l) => flat(l).toLowerCase());
+        const noun = nounFor(a.id, lang);
         expect(
-          lines.some((l) => l.includes(noun)),
+          nounCarriers(a.id, lang).length,
           `${lang} ${a.id}: nothing it shows says "${noun}"`,
-        ).toBe(true);
+        ).toBeGreaterThan(0);
       }
     }
   });
@@ -859,12 +944,48 @@ describe("the fan-out workflow scenario", () => {
       // it floors at are named on `countingLines`, and the counts case holds
       // the same floor from the other side.
       expect(counting.length, lang).toBeGreaterThanOrEqual(8);
+      // AND THE WORKER SIDE IS DERIVED WHERE THE NOUN CASE DERIVES IT. The
+      // transcript walk beside it reaches a worker's status band and its say,
+      // by enumerating the arms of `Step` — but the noun case does not decide
+      // on those two lines. It reads everything the STREAM shows for that
+      // worker, measured 35 to 42 strings each, and four KINDS of authored
+      // copy ride in there that the transcript walk never reaches: the task,
+      // the shell command, that command's result, and the path of a file the
+      // worker reads.
+      //
+      // Measured on check-api: after the case's own id filter the only two
+      // lines carrying the noun "api" are the task, `diff the public API`,
+      // and the command, `scripts/api-diff.sh --against-last-tag`. Its status
+      // band and its answer name no API at all. So assembling the task turned
+      // that case into a derivation compared against a derivation and nothing
+      // went red — measured with
+      // `task: { en: "diff " + "the public API", de: "öffentliche " + "API vergleichen" }`
+      // the shipped suite gave EXIT=0 with 21 passed.
+      //
+      // What closes it is the predicate the noun case DECIDES on — every line
+      // surviving its filter that carries the noun — demanded as a literal.
+      // Bitten one locale at a time on that plant: EN red with
+      // "en, not written out: diff the public API", DE red with
+      // "de, not written out: öffentliche API vergleichen", and the noun case
+      // green in both, which is the whole point. The transcript walk stays
+      // beside this: it holds the status and the say whether or not either
+      // happens to say the noun.
+      const carriers = fanoutWorkers().flatMap((a) => nounCarriers(a.id, lang));
+      // A floor on the TOTAL, and nothing finer: it rules out a derivation
+      // that quietly stopped reaching the stream, and it is the noun case —
+      // not this line — that demands a carrier from EVERY worker. Measured on
+      // this tree: 33 occurrences in EN and 26 in DE, which are 20 distinct
+      // lines in EN and 14 in DE — 30, not 34, once the four commands and
+      // paths both locales share are counted once. Every one of them is
+      // already a literal, and no worker has zero.
+      expect(carriers.length, lang).toBeGreaterThanOrEqual(declaredWidest());
       const written = [
         loc(dsl.name, lang),
         loc(dsl.prompt, lang),
         ...phaseCaptions(lang),
         ...declaredSubjects(lang),
         ...workerTranscriptLines(lang),
+        ...carriers,
         ...counting,
       ];
       expect(written.length, lang).toBeGreaterThan(3 * declaredWidest());
@@ -889,10 +1010,18 @@ describe("the fan-out workflow scenario", () => {
     // round four are caught without appearing in any list.
     //
     // What the name still does NOT say: "anything it shows". `PRINTED_BY`
-    // names six renderers and no others, every `null` in it is a claim about
-    // those six alone, and an opened JSONL row draws fields none of them
-    // print. That bound is the whole of it, and it is a short checkable list
-    // rather than an open-ended one.
+    // names FOUR renderers and no others — LabTrace.tsx, flowmap/nodes.tsx,
+    // flowmap/ToolCallPanel.tsx and components/ContextRing.tsx — and every
+    // `null` in that table is a claim about those four alone. An opened JSONL
+    // row draws the whole event as a tree and prints fields none of the four
+    // print, so those fields are outside this case whatever it says. That
+    // bound is the whole of it, and it is a short checkable list rather than
+    // an open-ended one.
+    //
+    // The number was "six" here for three rounds, and six is how many FIELDS
+    // the table's own doc block lists as measured. A count of files that was
+    // in fact a count of fields, inside the case whose entire bound rests on
+    // it — so it is counted off the values now, and stated where it is used.
     for (const lang of ["en", "de"] as const) {
       const shown = shownStrings(lang);
       // A floor, and deliberately a slack one: measured 470 strings per locale
