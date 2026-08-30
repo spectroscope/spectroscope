@@ -231,11 +231,35 @@ class DuckDuckGoSearcherTest {
                 "names the status it actually got, got: " + failure.getMessage());
         assertFalse(failure.getMessage().contains("bot check"),
                 "a broken server is not a challenge, got: " + failure.getMessage());
+
+        // Card 223's remedy reaches this doorway too. A person meeting a broken
+        // DuckDuckGo needs the same next step as a person meeting its challenge,
+        // and this tier has two exits.
+        assertTrue(failure.getMessage().contains(WebSearchTiers.SCRAPE),
+                "the phrase the other surfaces quote, got: " + failure.getMessage());
+        assertTrue(failure.getMessage().contains("Configure a SearXNG instance"),
+                "the remedy card 223 pinned across four surfaces, got: " + failure.getMessage());
+
+        // And the two exits say it with the SAME words. This is the assertion
+        // that was missing: the remedy used to be hand-copied into this branch,
+        // and deleting the whole copy left all 80 tests in this package green
+        // (measured 2026-08-30, exit 0). A shared phrase that nothing compares
+        // is a phrase waiting to drift, in the very file card 223 exists for.
+        String challenge = assertThrows(IllegalStateException.class,
+                () -> DuckDuckGoSearcher.parse(realCapture(), 5)).getMessage();
+        String remedy = challenge.substring(challenge.indexOf(" — ") + 3);
+        assertTrue(failure.getMessage().endsWith(remedy),
+                "the status exit and the challenge exit must end in one shared remedy.\n"
+                        + "challenge: " + challenge + "\nstatus:    " + failure.getMessage());
     }
 
     @Test
-    void theCanaryPinsTheParserAgainstOneRealCapturedResponse() throws IOException {
-        // WHAT THIS PROVES, and it is less than the name of a canary suggests.
+    void aRealCapturedResponsePinsTheChallengeDetectorAndNotTheRowParser() throws IOException {
+        // WHAT THIS PROVES — the name is the whole of it, and that is narrower
+        // than "a canary for the scrape", which is what this test was called
+        // until it was measured: changing RESULT_LINK and SNIPPET to patterns
+        // DuckDuckGo does not send reddens three tests in this file and leaves
+        // this one green.
         //
         // Every other fixture in this file is hand-written HTML whose own
         // comment calls it "realistic". Nothing anywhere pinned the scrape

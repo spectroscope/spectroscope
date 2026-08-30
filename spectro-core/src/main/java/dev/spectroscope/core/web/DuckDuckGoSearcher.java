@@ -59,6 +59,20 @@ public final class DuckDuckGoSearcher implements WebSearcher {
     /** Ad rows resolve through DuckDuckGo's y.js redirect — never a real hit. */
     private static final String AD_REDIRECT_MARKER = "duckduckgo.com/y.js";
 
+    /**
+     * Card 223's remedy, written once. This tier has two exits — a recognised
+     * challenge and any other failure status — and both must hand the reader
+     * the same next step in the same words, because those are the words the
+     * doctor line, the result header and the calibration panel also use. Round
+     * one of card 318 hand-copied this clause into the second exit instead of
+     * sharing it; deleting the copy left all 80 tests in this package green.
+     * Shared here, and compared end-to-end by
+     * aGenuineServerErrorFailsHonestlyAndIsNotParsedIntoZeroResults.
+     */
+    private static final String REMEDY = "this is the " + WebSearchTiers.SCRAPE + " tier, and "
+            + "it is the one nobody should be relying on. Configure a SearXNG instance, "
+            + "or a Tavily or Brave key, under Settings.";
+
     private final RestClient http;
 
     /** The production searcher against html.duckduckgo.com. */
@@ -127,9 +141,7 @@ public final class DuckDuckGoSearcher implements WebSearcher {
             // no results in it either, and handing that body to parse() would
             // answer "No results" to a 500 — the same lie in a new costume.
             throw new IllegalStateException("duckduckgo answered HTTP " + status
-                    + " instead of results — this is the " + WebSearchTiers.SCRAPE + " tier, and "
-                    + "it is the one nobody should be relying on. Configure a SearXNG instance, "
-                    + "or a Tavily or Brave key, under Settings.");
+                    + " instead of results — " + REMEDY);
         }
         return parse(page, maxResults);
     }
@@ -176,18 +188,16 @@ public final class DuckDuckGoSearcher implements WebSearcher {
     }
 
     /**
-     * The one challenge sentence, built in one place so the 2xx path and the
-     * failure-status path cannot drift apart. The phrase is shared, not
-     * repeated: a reader who lands here goes looking for the same words in the
-     * doctor line, the result header and the calibration panel (card 223).
+     * The challenge sentence, built in one place so the 2xx path and the
+     * failure-status path cannot drift apart. Only the diagnosis is written
+     * here; the next step comes from {@link #REMEDY}, which the other exit
+     * uses too.
      *
      * @return the failure to throw
      */
     private static IllegalStateException botCheckFailure() {
         return new IllegalStateException("duckduckgo answered with a bot check page "
-                + "instead of results — this is the " + WebSearchTiers.SCRAPE + " tier, and "
-                + "it is the one nobody should be relying on. Configure a SearXNG instance, "
-                + "or a Tavily or Brave key, under Settings.");
+                + "instead of results — " + REMEDY);
     }
 
     /**
