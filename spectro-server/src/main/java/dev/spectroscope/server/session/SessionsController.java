@@ -205,30 +205,41 @@ public class SessionsController {
         // Onboarding status per LLM provider (presence only, never values): the
         // picker shows an honest "needs-key — add it to .env" line instead of a
         // fake model list, and the first-run dialog points people at a backend
-        // that will actually answer. Local backends (ollama/lmstudio) report
-        // "local"; the client reads their reachability from the model list.
-        // llamacpp is one of them (card 312): keyless, and its /v1/models answers
-        // with the single model the server was started with.
+        // that will actually answer. A keyless backend reports "local" and the
+        // client reads its reachability from the model list.
+        //
+        // Walked off SpectroConfig.knownProviders() rather than typed out. This
+        // loop used to carry its own list of seven, so a provider added to the
+        // config was offered by the picker and had no onboarding line at all —
+        // and the comment above it named the local ones by hand, which made it
+        // the third place the same list could go stale (card 312, round 3).
         Map<String, String> providerStatus = new LinkedHashMap<>();
-        for (String p : List.of("anthropic", "openai", "openrouter", "gemini",
-                "ollama", "lmstudio", "llamacpp")) {
+        for (String p : SpectroConfig.knownProviders().stream().sorted().toList()) {
+            if ("spectro-local".equals(p)) {
+                // The built-in runtime is its own picker entry: keyless, and
+                // "ready" once ANY catalogue model resolves (bundled or
+                // downloaded), else "needs-download" (the picker opens the
+                // chooser dialog). Never "needs-key", so it cannot answer the
+                // key question the others answer.
+                providerStatus.put(p,
+                        SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.anyPresent()));
+                continue;
+            }
             String keyEnv = SpectroConfig.keyEnvFor(p);
             providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
         }
-        // The built-in local provider is its own picker entry: keyless, and
-        // "ready" once ANY catalogue model resolves (bundled or downloaded), else
-        // "needs-download" (the picker opens the chooser dialog). Never "needs-key".
-        providerStatus.put("spectro-local",
-                SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.anyPresent()));
         out.put("providerStatus", providerStatus);
         // Card 193: the address each LOCAL-MODEL provider would dial — the same
         // endpointFor the model-list probe itself uses, so the settings page's
         // address field and the "backend not reachable" sentence can name the
-        // exact endpoint that was tried, never a guess.
+        // exact endpoint that was tried, never a guess. The set is
+        // SpectroConfig.keylessLocalServers() and is no longer three literal
+        // puts: a fourth keyless local backend gets its address here the day it
+        // is declared, instead of the day the addressless sentence is noticed.
         Map<String, String> providerAddress = new LinkedHashMap<>();
-        providerAddress.put("ollama", c.endpointFor("ollama"));
-        providerAddress.put("lmstudio", c.endpointFor("lmstudio"));
-        providerAddress.put("llamacpp", c.endpointFor("llamacpp"));
+        for (String p : SpectroConfig.keylessLocalServers().stream().sorted().toList()) {
+            providerAddress.put(p, c.endpointFor(p));
+        }
         out.put("providerAddress", providerAddress);
         // Card 203: which web_search tier answers on this machine, straight
         // from the ONE resolver. The settings page renders this; it does not

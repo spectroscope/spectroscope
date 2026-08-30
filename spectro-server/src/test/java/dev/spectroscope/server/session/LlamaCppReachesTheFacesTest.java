@@ -18,15 +18,24 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Card 312: what the three hand-written provider lists in this controller
- * actually answer for llamacpp — the model-list route, {@code providerStatus}
- * and {@code providerAddress}. None of the three is derived from
- * {@link SpectroConfig#knownProviders()}, so each one can lose a provider on
- * its own: a name missing from the switch answers an empty model list (the
- * picker renders "not reachable" whatever the backend does), one missing from
- * {@code providerStatus} gets no onboarding line, and one missing from
- * {@code providerAddress} makes the unreachable sentence fall back to the
- * addressless wording card 193 removed.
+ * Card 312: what the three provider lists in this controller actually answer
+ * for llamacpp — the model-list route, {@code providerStatus} and
+ * {@code providerAddress}. A name missing from the model switch answers an
+ * empty list (the picker renders "not reachable" whatever the backend does),
+ * one missing from {@code providerStatus} gets no onboarding line, and one
+ * missing from {@code providerAddress} makes the unreachable sentence fall
+ * back to the addressless wording card 193 removed.
+ *
+ * <p><b>Round 3.</b> Two of the three were hand-written lists when this file
+ * was first written, and this javadoc said so and left it there. They are now
+ * walked off {@link SpectroConfig#knownProviders()} and
+ * {@link SpectroConfig#keylessLocalServers()}, and the two tests at the bottom
+ * hold them to it — so the last two tests here are about llamacpp and the two
+ * below them are about the class llamacpp was the third instance of. The
+ * model-list route stays a switch: its arms are four different wire
+ * protocols, not a list, and the guard for it is behavioural (every keyless
+ * local server must reach a server that answers, rather than fall through to
+ * the empty list).
  *
  * <p><b>Why every test here dials.</b> The first version of this file read
  * {@code SessionsController.java} off disk and grepped it for string literals.
@@ -123,6 +132,71 @@ class LlamaCppReachesTheFacesTest {
         assertNotNull(address, "/api/config carries the per-provider addresses");
         assertEquals("http://gpu-box:8080", address.get("llamacpp"),
                 "an absent entry drops the client back to the addressless wording: " + address);
+    }
+
+    // ---- the class llamacpp was the third instance of --------------------
+
+    /**
+     * Every provider the config accepts has an onboarding line. The loop behind
+     * {@code providerStatus} used to carry its own list of seven names; a
+     * provider added to {@link SpectroConfig#knownProviders()} was then offered
+     * by the picker with no status at all, and the picker's needs-key branch
+     * reads that map. Derived on both sides now, so the pin is that the
+     * derivation EXISTS: bitten by putting the literal list back with llamacpp
+     * missing, which reds this and the address test below.
+     */
+    @Test
+    void everyProviderTheConfigAcceptsGetsAnOnboardingStatus() throws IOException {
+        writeUserSettings("{ }");
+        @SuppressWarnings("unchecked")
+        Map<String, String> status =
+                (Map<String, String>) new SessionsController().config().get("providerStatus");
+        assertNotNull(status, "/api/config carries the onboarding status per provider");
+        for (String provider : SpectroConfig.knownProviders()) {
+            String line = status.get(provider);
+            assertNotNull(line,
+                    "\"" + provider + "\" is a selectable backend with no onboarding line,"
+                            + " so the picker offers it and says nothing about it: " + status);
+            if ("spectro-local".equals(provider)) {
+                // The bundled runtime answers a download question, never a key one.
+                assertTrue(List.of("ready", "needs-download").contains(line),
+                        "the built-in runtime cannot be \"" + line + "\": it has no key to check");
+                continue;
+            }
+            assertEquals(SpectroConfig.onboardingStatus(provider,
+                            SpectroConfig.keyEnvFor(provider) != null
+                                    && System.getenv(SpectroConfig.keyEnvFor(provider)) != null),
+                    line,
+                    "the controller's status for \"" + provider + "\" is not the one"
+                            + " SpectroConfig computes — a second rule written in the"
+                            + " controller is the defect card 203 removed from the doctor");
+        }
+    }
+
+    /**
+     * Every keyless local server names the address it would be dialled at.
+     * {@code providerAddress} used to be three literal puts, so a fourth free
+     * local backend would have got its address on the day somebody noticed the
+     * unreachable sentence had gone vague, not on the day it was declared.
+     */
+    @Test
+    void everyKeylessLocalServerNamesTheAddressItWouldBeDialledAt() throws IOException {
+        writeUserSettings("{ }");
+        @SuppressWarnings("unchecked")
+        Map<String, String> address =
+                (Map<String, String>) new SessionsController().config().get("providerAddress");
+        assertNotNull(address, "/api/config carries the per-provider addresses");
+        assertTrue(SpectroConfig.keylessLocalServers().size() >= 2,
+                "no keyless local servers left to address: " + SpectroConfig.keylessLocalServers());
+        for (String provider : SpectroConfig.keylessLocalServers()) {
+            assertEquals(SpectroConfig.presetEndpointFor(provider), address.get(provider),
+                    "\"" + provider + "\" has no address here, or not its own preset — the"
+                            + " client then falls back to the addressless \"start it\""
+                            + " sentence card 193 removed: " + address);
+        }
+        assertEquals(SpectroConfig.keylessLocalServers(), address.keySet(),
+                "the address map is not the keyless-local-server set — a cloud provider"
+                            + " listed here would get a local down-note it cannot act on");
     }
 
     @Test

@@ -809,8 +809,13 @@ public final class SessionConnection {
      * agent and its history stay put. A missing key (anthropic) is reported and the
      * switch is refused, exactly like the CLI's provider construction.
      *
-     * @param providerName one of {@link SpectroConfig#KNOWN_PROVIDERS} (anthropic,
-     *        ollama, openai, lmstudio, openrouter, gemini) — anything else is refused
+     * @param providerName one of {@link SpectroConfig#KNOWN_PROVIDERS} — anything
+     *        else is refused, with {@link SpectroConfig#KNOWN_PROVIDERS_DISPLAY}
+     *        as the message. Deliberately NOT spelled out here: the parenthesis
+     *        that used to stand in its place named six of eight, and the two it
+     *        missed (llamacpp, spectro-local) both worked — the guard has always
+     *        been isKnownProvider, so the prose was the only thing that was
+     *        wrong, and it was wrong for two releases
      * @param model the model to pair with the switch; blank picks the new provider's
      *        default, never the previous provider's model. A provider with no honest
      *        default (gemini, openrouter) needs an explicit model.
