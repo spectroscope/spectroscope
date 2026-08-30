@@ -1,13 +1,25 @@
 package dev.spectroscope.core.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.provider.LlmProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -126,6 +138,70 @@ class LlamaCppConnectorTest {
                 "the id is decorative — llama-server serves the one model it was "
                         + "started with and ignores the field (measured: a request "
                         + "naming a model that does not exist still completes)");
+    }
+
+    // ---- the wire the CONFIGURED provider actually posts ----------------
+
+    @Test
+    void aConfiguredLlamacppSwitchesThinkingOffOnTheWire(@TempDir Path projectDir)
+            throws IOException {
+        // The card's central claim, end to end and not in pieces: choosing
+        // llamacpp in the picker must reach llama.cpp's MEASURED off switch.
+        // Under the lmstudio label the honest answer to "off" is NOTHING (per-
+        // request reasoning control does not exist there, upstream #988/#1250),
+        // so a connector that borrows lmstudio's wiring turns the toggle into a
+        // silent no-op: the switch reads off and the model keeps thinking. This
+        // pins the whole chain — provider name to dialect to posted body —
+        // against a listener that records what left the machine.
+        AtomicReference<String> posted = new AtomicReference<>();
+        HttpServer server = scriptedCompletions(posted);
+        try {
+            SpectroConfig config = load(projectDir, """
+                    { "provider": "llamacpp", "model": "qwen3-4b-instruct",
+                      "llamacppBaseUrl": "http://127.0.0.1:%d" }
+                    """.formatted(server.getAddress().getPort()));
+            for (LlmProvider.ProviderEvent ignored : config.providerFromConfig().stream(
+                    new LlmProvider.ProviderRequest("sys", oneUser("hi"), List.of(), 512,
+                            LlmProvider.ProviderRequest.Reasoning.OFF, null, new CancelSignal()))) {
+                // drain — the request body is the subject
+            }
+            JsonNode sent = new ObjectMapper().readTree(posted.get());
+            JsonNode kwargs = sent.get("chat_template_kwargs");
+            assertNotNull(kwargs, "off never reached the template gate: " + sent);
+            assertFalse(kwargs.get("enable_thinking").asBoolean(),
+                    "the measured off switch must say false: " + sent);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private static List<LlmProvider.ProviderMessage> oneUser(String text) {
+        return List.of(new LlmProvider.ProviderMessage(LlmProvider.ProviderMessage.Role.USER,
+                List.of(new LlmProvider.TextContent(text))));
+    }
+
+    /** A loopback chat/completions that records the body and answers one SSE
+     *  chunk — the {@code ReasoningWireTest} idiom.
+     *  @param body where the received request body is stored
+     *  @return the started server; the caller stops it */
+    private static HttpServer scriptedCompletions(AtomicReference<String> body) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] sse = ("""
+                    data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+                    data: [DONE]
+
+                    """).getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, sse.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(sse);
+            }
+        });
+        server.start();
+        return server;
     }
 
     private static SpectroConfig load(Path projectDir, String json) {
