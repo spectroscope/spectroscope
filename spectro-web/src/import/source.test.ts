@@ -197,7 +197,7 @@ describe("the number the pane puts on screen", () => {
 
     const { events, source } = detectAndLoad(text);
     const rows = paneRows(events, source.origin);
-    const pane = sourcePane(rows[2], rows, source.lines, "stored");
+    const pane = sourcePane(rows[2], rows, source.lines);
 
     // The run_end record sits on line 5 of a file that has 5 lines.
     expect(pane).toMatchObject({ kind: "line", lineNumber: 5, total: 5 });
@@ -221,7 +221,7 @@ describe("the number the pane puts on screen", () => {
     const rows = paneRows(events, source.origin);
 
     const last = rows.filter((r) => r.sourceLine !== undefined).at(-1)!;
-    const pane = sourcePane(last, rows, source.lines, "stored");
+    const pane = sourcePane(last, rows, source.lines);
 
     expect(pane).toMatchObject({ kind: "line", lineNumber: 5, total: 5 });
     expect(Buffer.from(pane.kind === "line" ? pane.text : "", "utf8").equals(parts[4])).toBe(true);

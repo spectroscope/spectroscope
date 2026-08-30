@@ -703,30 +703,26 @@
 .trace-detail .json-tree { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip); box-shadow: inset 0 1px 3px var(--shade); padding: var(--sp-2) var(--sp-3); }
 .trace-detail .copy { top: var(--sp-3); right: var(--sp-5); }
 
-/* Detail view modes: Insight (tree) · Compact (highlighted, WRAPPED) · Wire
-   (byte faithful, one row per real wire line) · Source (the imported file's own
-   line). Compact wraps so the whole record is on screen without a sideways
-   scroll; Wire keeps one row per wire line and scrolls. That difference is what
-   makes the two names mean two different things (owner 2026-08-03). */
+/* Detail view modes: Structured (the frame as the thing it is) · Insight (the
+   tree over our own event) · Wire (byte faithful, one row per real wire line) ·
+   Source (the imported file's own line). Which of them a frame offers follows
+   where the session came from — state/traceFace.ts. `Compact` stood here until
+   2026-08-05 and its two rules outlived it: nothing has carried
+   .trace-detail-lines or .trace-detail-line since, and a stylesheet that keeps
+   dressing a face nobody can reach reads as evidence the face is still there. */
 .trace-detail-modes { display: inline-flex; gap: 2px; margin-bottom: var(--sp-2); padding: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; }
 .trace-detail-modes button { font: inherit; font-size: var(--fs-11); color: var(--text-dim); background: none; border: 0; border-radius: 999px; padding: 2px 10px; cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
 .trace-detail-modes button:hover { color: var(--text); }
 .trace-detail-modes button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
-.trace-detail-lines,
 .trace-detail-raw { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip); box-shadow: inset 0 1px 3px var(--shade); padding: var(--sp-2) var(--sp-3); overflow-x: auto; font-family: var(--font-mono); font-size: var(--fs-12); line-height: 1.7; }
-/* Compact wraps: the whole record, on screen, no horizontal scroll. It breaks
-   anywhere because JSON has no spaces to break at. The clipboard never learns
-   this. detailText still hands over one line per wire line. */
-.trace-detail-lines { overflow-x: hidden; }
-.trace-detail-line { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Wire does not wrap: one row per real wire line, byte for byte, sideways. */
 .trace-detail-raw { margin: 0; white-space: pre; color: var(--text); }
 /* A readable block prints the line breaks it opened, so it wraps like prose. */
 .trace-detail-raw--wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* The source pane: the line of the imported file this frame was read from.
-   Every case leads with a sentence, including the three that have no line to
-   show, because a blank pane is the silence this card exists to end. */
+   Every case leads with a sentence, the two that have no line to show
+   included, because a blank pane is the silence that pane exists to end. */
 .trace-source-note { margin: 0 0 var(--sp-2); font-size: var(--fs-12); color: var(--text-dim); max-width: 68ch; }
 .trace-source-blocks { display: flex; flex-direction: column; gap: var(--sp-2); }
 .trace-source-block { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -738,8 +734,9 @@
 .trace-source-cap { margin: 2px 0 0; font-size: var(--fs-11); color: var(--text-faint); }
 .trace-source-more { font: inherit; font-size: var(--fs-11); color: var(--accent); background: none; border: 0; border-bottom: 1px solid var(--accent); padding: 0; cursor: pointer; }
 .trace-source-more:hover { color: var(--text); border-bottom-color: var(--text); }
-/* The verbatim/readable strip sits inside the pane, a step quieter than the
-   face row above it: it picks a rendering, not a view. */
+/* The reading strip and, beside it on the tree reading, the depth strip. Both
+   sit inside the pane, a step quieter than the face row above it: one picks a
+   rendering, the other how far it opens, and neither picks a view. */
 .trace-detail-modes.trace-reading { margin-left: var(--sp-2); }
 /* The llm exchange detail reuses the lightbox's blob mark, but inert: there is
    no base64 face to open here, so the mark must not promise a click. */

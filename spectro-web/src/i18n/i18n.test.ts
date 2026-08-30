@@ -115,15 +115,14 @@ describe("i18n dict", () => {
     // The source pane's cases. Each one is a whole sentence, because each is a
     // different statement about where the frame came from, and a pane that fell
     // back to a shared word for two of them would be this card's own defect.
-    // Walked through the CHOOSER rather than over the kinds alone, because the
-    // sentence is not one per kind: a translation gives the "none" case a second
-    // one, since the byte-for-byte half of the first stops being true. Anything
-    // the chooser can return has to exist, or the pane prints the key.
+    // Walked through the CHOOSER rather than over the kinds alone, so anything
+    // it can return has to exist or the pane prints the key. It used to take a
+    // second argument for the translated reading of the "none" case; card 326
+    // withdrew the source face from every fileless session, and "none" went
+    // with it.
     for (const k of SOURCE_PANE_KINDS) {
-      for (const translated of [false, true]) {
-        const key = sourceSentence({ kind: k } as SourcePane, translated);
-        expect(dict[key], key).toBeDefined();
-      }
+      const key = sourceSentence({ kind: k } as SourcePane);
+      expect(dict[key], key).toBeDefined();
     }
     // Both reasons the readable pane collapses a value. They render the same
     // control and say different things, and one sentence for both is how a

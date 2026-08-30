@@ -8,6 +8,15 @@ import { useState, type ReactNode } from "react";
 
 const INDENT_PX = 14;
 
+/** How "open everything" is spelled as a level count.
+ *
+ *  One home for the number, because two places now say it: the trace's insight
+ *  face, which is always fully open, and the source pane's verbose reading
+ *  (state/sourceDepth.ts). Measured rather than picked: the deepest structural
+ *  nesting readable.ts found in the corpus is 9, so a real record never comes
+ *  within an order of magnitude of this and "99" reads as "all". */
+export const ALL_LEVELS = 99;
+
 /**
  * How a string leaf is shown: `inline` carries the JSON encoding of the value,
  * quotes included; `block` carries the value's own characters, and the caller

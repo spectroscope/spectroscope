@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { RunEvent } from "../events";
-import type { ImportSource } from "../import/detect";
+import type { ImportKind, ImportSource } from "../import/detect";
 import { detectAndLoad } from "../import/detect";
 import {
   groupPickedFiles,
@@ -51,7 +51,7 @@ export function ImportDialog(props: {
   onLoad: (
     events: RunEvent[],
     label: string,
-    kind: "spectroscope" | "claude-code" | "vscode-agent",
+    kind: ImportKind,
     source: ImportSource,
     /** What the file said about itself when it was one agent's transcript
      *  rather than a session's (card 152); absent for every other file. */

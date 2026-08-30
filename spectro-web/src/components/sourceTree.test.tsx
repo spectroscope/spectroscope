@@ -35,10 +35,7 @@ const render = (
   reading: Reading,
   depth: SourceDepth = "default",
   lang: Lang = "en",
-): string =>
-  renderToStaticMarkup(
-    <SourceBody pane={pane} reading={reading} lang={lang} translated={false} depth={depth} />,
-  );
+): string => renderToStaticMarkup(<SourceBody pane={pane} reading={reading} lang={lang} depth={depth} />);
 
 /**
  * Whether the node under this key is drawn open.
@@ -144,9 +141,7 @@ describe("a line that is not JSON", () => {
 
   it("says it in both languages", () => {
     for (const lang of ["de", "en"] as const) {
-      expect(render(lineOf(PROSE), "tree", "default", lang), lang).toContain(
-        t(lang, "trace.source.notJson"),
-      );
+      expect(render(lineOf(PROSE), "tree", "default", lang), lang).toContain(t(lang, "trace.source.notJson"));
     }
   });
 });
