@@ -263,6 +263,17 @@ const declaredSubjects = (lang: "en" | "de"): string[] =>
     return subject[lang];
   });
 
+/** The ask cut into sentences at its full stops, each keeping the stop it was
+ *  cut at. Naive on purpose: this ask has no decimals and no abbreviations,
+ *  and it must not grow any — a sentence count is only a bound while the
+ *  count means sentences. */
+const sentences = (s: string): string[] =>
+  s
+    .trim()
+    .split(/(?<=\.)\s+/)
+    .map((x) => x.trim())
+    .filter((x) => x !== "");
+
 /** "a, b and c" / "a, b und c" — the shape the ask is written in. */
 const joinList = (items: string[], conj: string): string =>
   items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} ${conj} ${items[items.length - 1]}`;
@@ -449,26 +460,42 @@ describe("the fan-out workflow scenario", () => {
     }
   });
 
-  it("asks for exactly the checks the fan-out declares, in that order", () => {
+  it("writes the ask as three sentences whose list is exactly the declared checks", () => {
     // THE TWO SIDES: the ask is a written sentence; the expectation is derived
     // from the wide phase's declared agent ids. Add a worker and the ask stops
     // naming one; edit the ask and it stops matching the phase. Both bite.
+    //
+    // WHAT IS HELD, and why the name says three sentences rather than
+    // "exactly". Round two bounded the LIST — written as a colon, the run, a
+    // full stop — which closed the appended-to-the-list direction: with
+    // ", and the release notes." tacked on, the joined eight were still a
+    // substring and twenty cases stayed green, and after the bound both
+    // locales went red. But a bounded list is not a bounded ASK. A ninth
+    // demand phrased as its OWN sentence walked straight past it, and past
+    // `countsIn` too, which sees no "<number> checks" in it: measured, with
+    // "Also translate the release notes." between the list and the go/no-go,
+    // EXIT=0 and 21 passed while the ask demanded work no worker here does.
+    // So the whole ask is bounded now: three sentences, the middle one ENDING
+    // at the run, and a fourth sentence is red.
+    //
+    // Still not held, said plainly rather than left for the next reader to
+    // find: a demand smuggled INTO the closing sentence, with no full stop of
+    // its own, is three sentences and passes. That is why the name reads
+    // "three sentences whose list is exactly the declared checks" and not
+    // "asks for exactly the checks".
     for (const lang of ["en", "de"] as const) {
       const prompt = loc(dsl.prompt, lang);
       const subjects = declaredSubjects(lang);
       expect(subjects, lang).toHaveLength(declaredWidest());
       // Named individually first, so a failure says WHICH check went missing.
       for (const c of subjects) expect(prompt, `${lang} ${c}`).toContain(c);
-      // Then as ONE BOUNDED RUN. A plain `toContain` of the joined list reads
-      // "at least these, contiguously, in order" — it catches a drop and a
-      // reorder and misses an ADDITION, because the run survives whatever is
-      // appended after it. Measured: with ", and the release notes." tacked
-      // onto the ask alone, the joined eight were still a substring, the count
-      // still read 8, and all twenty cases stayed green while the ask demanded
-      // work no worker here does. Both locales write the list as a colon, the
-      // run, and a full stop, so the run is pinned between the two.
+      const said = sentences(prompt);
+      expect(said, `${lang}: ${prompt}`).toHaveLength(3);
+      // The middle sentence is the list: a colon, the run, and then the full
+      // stop it was cut at. `endsWith` is what makes it a bound rather than a
+      // floor — nothing survives after the run inside its own sentence.
       const run = joinList(subjects, lang === "en" ? "and" : "und");
-      expect(prompt, lang).toContain(`: ${run}.`);
+      expect(said[1].endsWith(`: ${run}.`), `${lang}: ${said[1]}`).toBe(true);
       expect(countsIn(prompt), lang).toEqual([declaredWidest()]);
     }
   });
