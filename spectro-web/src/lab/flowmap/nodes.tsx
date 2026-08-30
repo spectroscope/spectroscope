@@ -13,7 +13,10 @@ import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
 import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
 import type { AgentStream, CtxPart } from "./sceneToFlow";
-import type { Focus, GateState, SubagentInfo } from "../labScene";
+import { SHELL_COMMAND_KEY, type Focus, type GateState, type SubagentInfo } from "../labScene";
+import { blockLang } from "../../components/toolViews";
+import { breakShellChain } from "../../components/shellChain";
+import { highlight } from "../../components/Highlighted";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
@@ -223,7 +226,13 @@ export function AgentCardBody({
           <span
             key={c.name}
             className={`pf-chip pf-chip--${c.kind}${c.on ? " pf-chip--on" : ""}`}
-            title={c.kind === "launch" ? LAUNCH_TITLE : undefined}
+            title={
+              c.kind === "launch"
+                ? LAUNCH_TITLE
+                : c.kind === "foreign"
+                  ? t(lang, "map.tools.foreign")
+                  : undefined
+            }
           >
             {c.kind === "launch" && (
               <span className="pf-chip__fan" aria-hidden="true">
@@ -477,10 +486,33 @@ function DiskBody({ disk, file }: { disk?: "idle" | "read" | "write"; file?: str
   );
 }
 
+interface ShellBodyProps {
+  command?: string | null;
+  active: boolean;
+  /** The call standing on the station right now, or null between calls. The
+   *  classifier is asked about IT — a station has no language of its own. */
+  tool?: { name: string; input: unknown } | null;
+}
+
 /** The prompt line typing the running command, plus its full-text disclosure.
  *  The widened expanded station (card 287) affords a longer preview and a
- *  taller scroll window — legible without opening anything. */
-function ShellBody({ command, active }: { command?: string | null; active: boolean }) {
+ *  taller scroll window — legible without opening anything.
+ *
+ *  Card 320: the disclosure used to hold `$ {command}` — one raw blob, no
+ *  colour, and no edge between the steps of a chain. 77% of the Bash cards in
+ *  the store carry `&&` or `||`, so a five-step command was a paragraph of
+ *  shell wrapped by the browser at whatever column the card happened to be. The
+ *  tool card one layer up already draws one properly, and the value here is
+ *  doing it the SAME way rather than a second way: `breakShellChain` and
+ *  `highlight`, the pair ToolViewBody's command region calls. Display only —
+ *  the record keeps its own bytes, which is what shellStation.test.tsx holds
+ *  the rendered text against.
+ *
+ *  The LANGUAGE is asked, not asserted. `blockLang` reads a declared `language`
+ *  field first and only then the key, so a call that says what it carries is
+ *  believed; a station that hardcoded a literal could not do that, and would be
+ *  a second answer to a question the tool card already answers. */
+function ShellBody({ command, active, tool }: ShellBodyProps) {
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
   const previewChars = expandAll ? SHELL_PREVIEW_CHARS_WIDE : SHELL_PREVIEW_CHARS;
@@ -489,6 +521,7 @@ function ShellBody({ command, active }: { command?: string | null; active: boole
       ? `${command.slice(0, previewChars - 1)}…`
       : command
     : "";
+  const hl = tool ? blockLang(tool.name, SHELL_COMMAND_KEY, tool.input) : null;
   return (
     <>
       <div className={`pf-shell${active ? " pf-shell--on" : ""}`}>
@@ -504,11 +537,13 @@ function ShellBody({ command, active }: { command?: string | null; active: boole
       </div>
       {command && (
         <Disclosure label={t(lang, "map.shell.cmd")}>
+          {/* No `$` in here any more: the block is now several lines, and one
+              prompt in front of a three-step chain would read as one command. */}
           <div
-            className="pf-panelbox pf-mono nowheel"
+            className="pf-panelbox pf-mono pf-shell__box nowheel"
             style={{ fontSize: 11, overflow: "auto", maxHeight: expandAll ? 240 : 90 }}
           >
-            $ {command}
+            {highlight(breakShellChain(command), hl)}
           </div>
         </Disclosure>
       )}
@@ -569,7 +604,10 @@ export function OsNode({ data }: NodeProps) {
       station = { title: "Disk", body: <DiskBody disk={d.disk} file={d.file} /> };
       break;
     case "shell":
-      station = { title: "Shell", body: <ShellBody command={d.command} active={d.active} /> };
+      station = {
+        title: "Shell",
+        body: <ShellBody command={d.command} active={d.active} tool={d.tool} />,
+      };
       break;
     case "net":
       station = { title: t(lang, "map.node.network"), body: <NetGlobe active={d.active} /> };

@@ -1547,6 +1547,19 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kein Tool aktiv — der Agent plant.",
     en: "No tool active, the agent is planning.",
   },
+  // The chip a running tool gets when the belt has no chip of its own for it
+  // (card 321). It appears out of nowhere printing a name, so the sentence has
+  // to say that is the point and not a fault.
+  //
+  // It used to say "the map has no station for this tool", and that named the
+  // wrong difference: the map has no station for `use_skill`, `generate_image`
+  // or `view_image` either (labScene's fold parks all three at the agent), and
+  // two of those wear ordinary chips. What separates THIS chip is the row it
+  // stands in, not the map.
+  "map.tools.foreign": {
+    de: "läuft gerade — dieses Werkzeug hat hier kein eigenes Feld",
+    en: "running now — this tool has no chip of its own here",
+  },
   "map.shell.cmd": { de: "Befehl", en: "Command" },
   "map.mcp.call": { de: "MCP-Aufruf", en: "MCP call" },
   "map.llm.reasoning": { de: "Reasoning & Antwort", en: "Reasoning & answer" },

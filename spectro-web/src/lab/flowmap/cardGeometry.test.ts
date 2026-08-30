@@ -17,6 +17,7 @@ import {
 } from "./cardGeometry";
 import { EXPANDED_CARD, EXP_GAP } from "./sceneToFlow";
 import { readFileSync } from "node:fs";
+import { agentBelt } from "./belt";
 
 describe("the worker card's geometry has ONE source", () => {
   it("the pitches derive from the card and the rail gap, never from a second literal", () => {
@@ -55,9 +56,9 @@ describe("the worker card's geometry has ONE source", () => {
   });
 });
 
-describe("the caps that make the reserve a bound", () => {
-  const css = readFileSync(new URL("./flowmap.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("./flowmap.css", import.meta.url), "utf8");
 
+describe("the caps that make the reserve a bound", () => {
   it("flowmap.css caps every growth region of the full worker card", () => {
     for (const [selector, cap] of [
       [".pf-sub--full .pf-sub__head", SUB_CAP_HEAD_PX],
@@ -68,5 +69,61 @@ describe("the caps that make the reserve a bound", () => {
       expect(block, selector).toContain(selector);
       expect(block.slice(0, block.indexOf("}")), selector).toContain(`max-height: ${cap}px`);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Card 321 put a THIRD kind on the agent belt — a chip printing the wire name
+// of a running tool this belt has no chip for. It shipped spanning the grid,
+// and a spanning chip is a ROW the seat above never priced.
+//
+// Measured live 2026-08-30, the real card in `.pf-root > .pf-flow >
+// .react-flow__node-subagent` with flowmap.css loaded, read through
+// getBoundingClientRect (so `zoom: 0.6` is inside the numbers, world px):
+//
+//   the card 287 fixture, Bash in flight       320.30   belt 106.45
+//   the same fixture, WebFetch in flight       342.31   belt 128.45
+//   delta                                      +22.01
+//
+// The bound above is 479.77 against a 480 seat — 0.23 px of headroom, tight on
+// purpose — so the same card with an unmapped tool in flight renders 501.78
+// into a 480 seat and trips reportOversizeCards (FlowMap.tsx:228). 5.9% of the
+// corpus reaches this chip, and WebFetch/StructuredOutput/ToolSearch are
+// exactly what a fan-out worker runs, so this is not a corner.
+//
+// The repair is not a fourth cap: the belt does not have to grow at all. Nine
+// chips in two columns leave half of the last row empty, and the tenth fits it.
+// Measured in the same pass: a half column is 193.9 world px against 75.2 for
+// `StructuredOutput`, the longest name in the census that can wear this chip.
+// So the belt costs the same rows either way, and BOTH halves of that sentence
+// are read rather than typed — the columns out of flowmap.css, the chips out
+// of belt.ts.
+describe("the belt is not a growth region of the worker card (card 321)", () => {
+  const cols = (): number => {
+    const block = css.slice(css.indexOf(".pf-tools {"));
+    const m = /grid-template-columns:([^;]+);/.exec(block.slice(0, block.indexOf("}")));
+    expect(m, ".pf-tools declares no grid-template-columns").not.toBeNull();
+    return m![1].trim().split(/\s+/).length;
+  };
+
+  /** A name no vocabulary spells, so nothing here is a second tool list: it is
+   *  only a string the classifier has never heard of. */
+  const NOT_A_TOOL = "zzz-no-such-tool";
+
+  it("a running tool with no chip of its own costs no extra belt row", () => {
+    const rows = (n: number) => Math.ceil(n / cols());
+    const fixed = agentBelt(null);
+    const foreign = agentBelt(NOT_A_TOOL);
+    expect(foreign.length, "nothing was added, so this case measures nothing").toBe(fixed.length + 1);
+    expect(rows(foreign.length), `${foreign.length} chips in ${cols()} columns`).toBe(rows(fixed.length));
+  });
+
+  it("and the chip it adds spends one cell, like every chip beside it", () => {
+    const block = css.slice(css.indexOf(".pf-chip--foreign {"));
+    const rule = block.slice(0, block.indexOf("}"));
+    expect(rule, "the block was not found where it is looked for").toContain("border-style");
+    expect(rule, "a spanning chip is a belt row the worker seat never priced").not.toMatch(
+      /grid-(column|area)/,
+    );
   });
 });
