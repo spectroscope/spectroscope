@@ -442,6 +442,41 @@ class BrowserViewSocketTest {
     }
 
     @Test
+    void launchListNamesTheFileItReadAndTheOneItPassedOver(@TempDir Path base)
+            throws Exception {
+        // Card 350: the operator has to be able to see WHICH of the two launch
+        // files answered. Without it the precedence is invisible from the app,
+        // which is the silent disagreement the card was cut to prevent.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project.resolve(".claude"));
+        java.nio.file.Files.writeString(project.resolve(".claude/launch.json"), """
+                {"version":"0.0.1","configurations":[{"name":"theirs","port":9999}]}
+                """);
+        dev.spectroscope.core.launch.LaunchWriter.write(project, java.util.List.of(
+                new dev.spectroscope.core.launch.LaunchEntry("ours", 5173, "npm",
+                        java.util.List.of("run", "dev"), null, java.util.List.of())));
+        SessionBrowserBridge bridge = new SessionBrowserBridge();
+        bridge.register(SESSION, new SessionBrowserBridge.Live(
+                dev.spectroscope.core.wire.BrowserWireTap.none(),
+                new dev.spectroscope.core.launch.LaunchSupervisor((host, port) -> true),
+                () -> project));
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_list\",\"sessionId\":\"" + SESSION + "\"}");
+        JsonNode answer = lastOfType(viewer, "launch_configs");
+
+        assertEquals(".spectro/launch.json", answer.path("location").asText(), answer.toString());
+        assertEquals(1, answer.path("shadowed").size(), answer.toString());
+        assertEquals(".claude/launch.json", answer.path("shadowed").get(0).asText());
+        assertEquals(1, answer.path("configs").size());
+        assertEquals("ours", answer.path("configs").get(0).path("name").asText(),
+                "ours wins whole — a merge would have carried theirs too: " + answer);
+    }
+
+    @Test
     void launchListWithoutALiveSessionOrFileSaysSo(@TempDir Path base) throws Exception {
         BrowserViewSocket socket = new BrowserViewSocket(
                 faces(headless(base), new AtomicBoolean(false), url -> null),

@@ -61,6 +61,13 @@ export interface LaunchList {
   sentence: string | null;
   /** How many entries the launch file carries that could not be offered. */
   skipped: number;
+  /** Which launch file answered, project-relative, or null when none did.
+   *  Card 350: there are two locations now, so "the file" is a question. */
+  location: string | null;
+  /** The locations that also carry a file and were passed over. Empty in every
+   *  ordinary project; non-empty is the case the operator has to be told about,
+   *  because he is editing one file and playing another. */
+  shadowed: string[];
   configs: LaunchConfigRow[];
 }
 
@@ -177,11 +184,19 @@ export function parseViewMessage(data: unknown): ViewMessage | null {
           });
         }
       }
+      const shadowed: string[] = [];
+      if (Array.isArray(frame.shadowed)) {
+        for (const raw of frame.shadowed) {
+          if (typeof raw === "string" && raw !== "") shadowed.push(raw);
+        }
+      }
       return {
         kind: "launchConfigs",
         ok: frame.ok === true,
         sentence: typeof frame.sentence === "string" ? frame.sentence : null,
         skipped: typeof frame.skipped === "number" ? frame.skipped : 0,
+        location: typeof frame.location === "string" ? frame.location : null,
+        shadowed,
         configs: rows,
       };
     }

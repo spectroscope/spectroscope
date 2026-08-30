@@ -162,6 +162,8 @@ describe("parsing what the server sends", () => {
       ok: true,
       sentence: null,
       skipped: 1,
+      location: null,
+      shadowed: [],
       configs: [
         { name: "web", address: "http://localhost:5173/", attaches: false, up: true, exitCode: null },
         { name: "api", address: "http://localhost:9999/", attaches: true, up: false, exitCode: 137 },
@@ -179,6 +181,8 @@ describe("parsing what the server sends", () => {
       ok: false,
       sentence: "this session is not open",
       skipped: 0,
+      location: null,
+      shadowed: [],
       configs: [],
     });
   });

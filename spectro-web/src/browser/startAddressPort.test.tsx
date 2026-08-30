@@ -31,6 +31,8 @@ const list = (address: string | null): LaunchList => ({
   ok: true,
   sentence: null,
   skipped: 0,
+  location: ".claude/launch.json",
+  shadowed: [],
   configs: [{ name: "particle-editor", address, attaches: false, up: false, exitCode: null }],
 });
 

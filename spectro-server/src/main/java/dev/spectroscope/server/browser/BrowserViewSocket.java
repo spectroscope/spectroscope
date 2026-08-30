@@ -58,7 +58,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *                                     or an agent call holding the browser
  * {"type":"error","sentence":...}     a frame this handler could not read
  * {"type":"launch_configs","sessionId":s,"ok":bool,"sentence"?,
- *  "configs":[{"name","address","attaches","up","exitCode"?}],"skipped":n}
+ *  "configs":[{"name","address","attaches","up","exitCode"?}],"skipped":n,
+ *  "location"?,"shadowed"?:[...]}   which launch file answered, card 350
  * {"type":"launch_played","sessionId":s,"name":n,"ok":bool,"up":bool,
  *  "url"?,"sentence"?}
  * </pre>
@@ -383,8 +384,9 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             read = dev.spectroscope.core.launch.LaunchFile.readFrom(project);
         } catch (IllegalArgumentException unreadable) {
             answer.put("ok", false);
-            answer.put("sentence", dev.spectroscope.core.launch.LaunchFile.LOCATION
-                    + " could not be read: " + unreadable.getMessage());
+            // The reader names the location it failed on (card 350: there are two
+            // now), so a prefix here would be a guess about which one that was.
+            answer.put("sentence", unreadable.getMessage());
             send(socket, answer);
             return;
         }
@@ -393,6 +395,13 @@ public class BrowserViewSocket extends TextWebSocketHandler {
         int skipped = 0;
         if (read.isPresent()) {
             skipped = read.get().skipped();
+            // Card 350: the operator is told WHICH of the two files answered, and
+            // which one it shadowed. A precedence nobody can see is the silent
+            // disagreement the card exists to prevent.
+            answer.put("location", read.get().location());
+            com.fasterxml.jackson.databind.node.ArrayNode shadowed =
+                    answer.putArray("shadowed");
+            read.get().shadowed().forEach(shadowed::add);
             for (dev.spectroscope.core.launch.LaunchEntry entry : read.get().entries()) {
                 ObjectNode row = configs.addObject();
                 row.put("name", entry.name());
@@ -456,14 +465,13 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             entry = read.flatMap(file -> file.find(name)).orElse(null);
         } catch (IllegalArgumentException unreadable) {
             send(socket, played(sessionId, name, false, false, null,
-                    dev.spectroscope.core.launch.LaunchFile.LOCATION + " could not be read: "
-                            + unreadable.getMessage()));
+                    unreadable.getMessage()));
             return;
         }
         if (entry == null) {
             send(socket, played(sessionId, name, false, false, null,
                     "no configuration of that name in "
-                            + dev.spectroscope.core.launch.LaunchFile.LOCATION));
+                            + dev.spectroscope.core.launch.LaunchFile.LOCATIONS_SENTENCE));
             return;
         }
         dev.spectroscope.core.launch.LaunchSupervisor.Outcome outcome = live.launches()

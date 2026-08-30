@@ -891,6 +891,14 @@ export function StartPage(props: {
       {launch !== null && launch.ok && launch.skipped > 0 && (
         <p className="browser-start-skipped">{t(lang, "browser.start.skipped", { n: launch.skipped })}</p>
       )}
+      {launch !== null && launch.ok && launch.location !== null && (
+        <p className="browser-start-source">{t(lang, "browser.start.source", { file: launch.location })}</p>
+      )}
+      {launch !== null && launch.ok && launch.shadowed.length > 0 && (
+        <p className="browser-start-shadowed">
+          {t(lang, "browser.start.shadowed", { file: launch.shadowed.join(", ") })}
+        </p>
+      )}
     </div>
   );
 }

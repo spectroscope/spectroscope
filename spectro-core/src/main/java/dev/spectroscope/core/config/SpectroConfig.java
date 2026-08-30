@@ -445,7 +445,7 @@ public record SpectroConfig(
             Path.of(System.getProperty("user.home"), ".spectro", "settings.json");
 
     /** Project-level settings file, relative to the working directory. */
-    public static final String PROJECT_SETTINGS = ".spectro/settings.json";
+    public static final String PROJECT_SETTINGS = SpectroDir.project("settings.json");
 
     /** Workspace-local settings file (machine-local, gitignored by convention) —
      *  sits directly above the workspace's own project settings in the chain,
@@ -455,7 +455,8 @@ public record SpectroConfig(
      *  <p>Public (like {@link #PROJECT_SETTINGS}): card 199's allowlist migration
      *  has to visit this layer too, and it lives in another package. It went
      *  unmigrated for exactly as long as it was invisible from outside here. */
-    public static final String WS_LOCAL_SETTINGS = ".spectro/settings.local.json";
+    public static final String WS_LOCAL_SETTINGS =
+            SpectroDir.project("settings.local.json");
 
     // Package-private (not private): SettingsWriter's patch validation references
     // these as the single source instead of re-declaring the same literals.

@@ -12,12 +12,52 @@ The point, in one line: **"show me the change running" should be one thought.**
 Before this, an agent that was supposed to check a web app had to be told how to
 start it, on what port, and where to look.
 
-## The file is Claude Code's, unedited
+## Two locations, one parser
 
-spectroscope reads `.claude/launch.json` from the project root — the same file
-Claude Code reads, in the same place. **A repository already set up for Claude
-Code needs no second config file.** That compatibility is the point of the card,
-not a convenience: there is deliberately no spectroscope dialect beside it.
+spectroscope looks for a launch file in two places, in this order:
+
+| # | where | whose |
+|---|---|---|
+| 1 | `.spectro/launch.json` | ours — the only place the product ever writes |
+| 2 | `.claude/launch.json` | Claude Code's, read exactly as it is written |
+
+**A repository already set up for Claude Code needs no second config file.**
+That compatibility is card 202's point rather than a convenience, and card 350
+did not reverse it: there is still no spectroscope dialect, the schema below is
+one schema, and a file written for either tool loads in the other. What changed
+on 2026-08-31 is only that the product now has somewhere of its own to put a
+file it has authored, because another vendor's folder is theirs — spectroscope
+reads `.claude`, and never writes it.
+
+### When both files exist
+
+**The first location that exists answers, whole.** `.spectro/launch.json` wins
+over `.claude/launch.json`, and the one that lost is named in the answer rather
+than passed over in silence — `launch_list` says which file it read, and the
+start page shows it.
+
+Two things this deliberately is not:
+
+- **Not a merge.** Two entries called `dev` in two files are two answers to one
+  question. A merge would have to pick one of them per key while looking like it
+  had picked neither, and the operator would be reading a configuration that
+  exists in no file on his disk. One file wins; that is a rule you can hold in
+  your head.
+- **Not "the first that parses".** If `.spectro/launch.json` exists and is
+  broken, that is an error naming that file — not a quiet fall-through to
+  `.claude/launch.json`. Falling through would hand you somebody else's
+  configurations under your own filename: you edited one file and played
+  another.
+
+### Can spectroscope write one?
+
+Into `.spectro/launch.json`, and nowhere else — the machinery takes a project
+folder, not a path, so there is no call that can aim it at `.claude`. **No agent
+tool reaches it.** Whether a model may author a launch entry is an open owner
+call (card 352): a launch file names a program to run with arguments to run it
+with, so an agent that can write one can arrange for arbitrary code to run under
+your account on the next play. Until that question is answered, the file is
+written by hand or not at all, exactly as it is for Claude Code.
 
 ```json
 {
@@ -266,9 +306,12 @@ transcript through `launch_list`, which is tier read and never prompts.
 
 ## What is not here
 
-- **Writing launch.json for you.** The file is authored by hand, as it is for
-  Claude Code. The one exception is the url-only fixture beside the test, which
-  is test material.
+- **A way to write a launch file.** The machinery exists and refuses four
+  things — an entry with no name, an entry that can neither run nor be reached,
+  two entries of one name, and any string carrying a control character that the
+  reader would otherwise have to flatten. What is missing is a door: no tool and
+  no screen calls it, so in practice the file is still authored by hand. See
+  "Can spectroscope write one?" above.
 - **A spectroscope dialect.** Unknown fields are tolerated, not adopted.
 - **The CLI.** The five tools are registered on the server session beside the
   browser family, because the browser this card opens is the desktop pane's.

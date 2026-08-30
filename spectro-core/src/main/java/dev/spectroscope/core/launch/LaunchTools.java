@@ -18,11 +18,17 @@ import java.util.function.Supplier;
  * The five launch tools of card 202 — "show me the change running" as one
  * thought instead of three.
  *
- * <p>The file they read is Claude Code's own {@code .claude/launch.json}, and
- * that is the card's compatibility goal rather than a convenience: a repository
- * already set up for Claude Code brings its configurations along unedited, with
- * no second config file to write. {@link LaunchFile} owns what the format is and
- * how forgiving the reader has to be; this class owns everything the model sees.
+ * <p>The file they read is {@code .spectro/launch.json} when the project carries
+ * one and Claude Code's own {@code .claude/launch.json} otherwise (card 350).
+ * Reading theirs at all is card 202's compatibility goal rather than a
+ * convenience: a repository already set up for Claude Code brings its
+ * configurations along unedited, with no second config file to write. {@link LaunchFile} owns what the format is, where it is
+ * looked for and how forgiving the reader has to be; this class owns everything
+ * the model sees.
+ *
+ * <p>None of the five writes anything. Card 352 asks whether spectroscope may
+ * author a launch file, and the answer for the AGENT is not yet given — see
+ * {@link LaunchWriter}, which no tool here reaches.
  *
  * <h2>The tiers, and why each one is what it is</h2>
  *
@@ -87,8 +93,9 @@ public final class LaunchTools {
     static final int DEFAULT_LOG_LINES = 80;
 
     /** What every tool here says when the project carries no launch file. */
-    static final String NO_FILE = "this project carries no " + LaunchFile.LOCATION
-            + ". That is the same file Claude Code reads: a top-level \"version\" beside a"
+    static final String NO_FILE = "this project carries no launch file — neither "
+            + LaunchFile.LOCATIONS_SENTENCE
+            + ". Both are the same format: a top-level \"version\" beside a"
             + " \"configurations\" array, and per entry a \"name\", a \"port\", and either a"
             + " \"runtimeExecutable\" with \"runtimeArgs\" to start, or a \"url\" of a server"
             + " that is already running. It is written by hand.";
@@ -134,8 +141,9 @@ public final class LaunchTools {
     private Tool list() {
         return new LaunchTool("launch_list",
                 "Lists the launch configurations this repository carries in "
-                        + LaunchFile.LOCATION + " — the same file Claude Code reads, so a repo "
-                        + "already set up for it needs no second config file. Shows each "
+                        + LaunchFile.LOCATIONS_SENTENCE + ". Ours is read first; theirs is "
+                        + "the same file Claude Code reads, so a repo already set up for it "
+                        + "needs no second config file. Shows each "
                         + "configuration's name, what it runs, the address it answers on and "
                         + "whether it is up right now. Start here before guessing a port.",
                 schema(properties -> { }),
@@ -149,14 +157,14 @@ public final class LaunchTools {
                 }
                 LaunchFile file = read.get();
                 if (file.entries().isEmpty()) {
-                    return LaunchFile.LOCATION + " carries no configurations"
+                    return file.location() + " carries no configurations"
                             + (file.skipped() > 0
                                     ? " this reader can address: " + file.skipped()
                                             + " entries carry no \"name\"." : ".");
                 }
                 StringBuilder said = new StringBuilder(file.entries().size()
                         + " launch configuration" + (file.entries().size() == 1 ? "" : "s")
-                        + " in " + LaunchFile.LOCATION
+                        + " in " + file.location()
                         + (file.version() == null ? "" : " (version " + clean(file.version()) + ")")
                         + ":\n");
                 for (LaunchEntry entry : file.entries()) {
@@ -210,8 +218,8 @@ public final class LaunchTools {
                         + "ATTACHED instead: nothing is started, and it counts as up once that "
                         + "address answers. Use launch_list first if you do not know the names.",
                 schema(properties -> {
-                    properties.set("name", string("The configuration name, exactly as "
-                            + LaunchFile.LOCATION + " spells it."));
+                    properties.set("name", string("The configuration name, exactly as the "
+                            + "launch file spells it. launch_list prints the names."));
                     properties.set("wait_seconds", integer("How long to wait for the address to "
                             + "answer. Default " + DEFAULT_WAIT_SECONDS + ", at most "
                             + MAX_WAIT_SECONDS + "."));
@@ -272,7 +280,9 @@ public final class LaunchTools {
         try {
             read = LaunchFile.readFrom(context.cwd());
         } catch (IllegalArgumentException unreadable) {
-            return "ERROR: " + tool + " could not read " + LaunchFile.LOCATION + " — "
+            // The message names the location itself now that there are two of
+            // them, so prefixing one here would be a guess about which failed.
+            return "ERROR: " + tool + " could not read the launch file — "
                     + clean(unreadable.getMessage());
         }
         if (read.isEmpty()) {
@@ -282,7 +292,7 @@ public final class LaunchTools {
         Optional<LaunchEntry> found = file.find(name);
         if (found.isEmpty()) {
             return "ERROR: " + tool + " found no configuration called \"" + clean(name)
-                    + "\" in " + LaunchFile.LOCATION + ". It carries "
+                    + "\" in " + file.location() + ". It carries "
                     + (file.names().isEmpty()
                             ? "none at all."
                             : String.join(", ", file.names().stream()
