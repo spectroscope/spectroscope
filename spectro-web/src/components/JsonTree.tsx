@@ -8,6 +8,15 @@ import { useState, type ReactNode } from "react";
 
 const INDENT_PX = 14;
 
+/** How "open everything" is spelled as a level count.
+ *
+ *  One home for the number: the trace's insight face, which is always fully
+ *  open, the source pane's verbose reading (state/sourceDepth.ts), and the
+ *  recorded exchange's four trees. Measured rather than picked: the deepest
+ *  structural nesting readable.ts found in the corpus is 9, so a real record
+ *  never comes within an order of magnitude of this and "99" reads as "all". */
+export const ALL_LEVELS = 99;
+
 /**
  * How a string leaf is shown: `inline` carries the JSON encoding of the value,
  * quotes included; `block` carries the value's own characters, and the caller
@@ -34,9 +43,10 @@ function hasOpaqueControl(value: string): boolean {
  * only form in which a lone control character is visible at all, and a value
  * that types its own backslash and n must not be read as a break.
  *
- * The encoded form stays reachable next to every tree — the trace detail's raw
- * face and its copy button hand over the payload with escapes intact — so this
- * is a second reading of the value, not the loss of the first.
+ * The encoded form stays reachable next to every tree — the trace detail's WIRE
+ * face and its copy button hand over the payload with escapes intact, and on a
+ * foreign import, where wire is withdrawn, the source pane's verbatim reading
+ * does — so this is a second reading of the value, not the loss of the first.
  */
 export function describeStringLeaf(value: string): StringLeaf {
   if (value.includes("\n") && !hasOpaqueControl(value)) {

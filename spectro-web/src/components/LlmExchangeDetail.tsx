@@ -30,7 +30,7 @@ import { useLang } from "../state/lang";
 import { AudioClipCard } from "./AudioClipCard";
 import { cutAroundBlob } from "../state/sourceWindow";
 import { withinBudget, SOURCE_DISPLAY_CHARS } from "./traceDetail";
-import { JsonTree } from "./JsonTree";
+import { ALL_LEVELS, JsonTree } from "./JsonTree";
 import { formatBytes } from "../workspace/preview";
 import { formatDuration } from "../format";
 import { readRequestParts, type LlmBlock, type LlmRequestParts } from "../wire/llmRequestParts";
@@ -291,7 +291,7 @@ function RequestParts({
              is the rule everywhere else; it applies here too. */
           <SegmentedText text={parsed} lang={lang} />
         ) : (
-          <JsonTree value={parsed} defaultDepth={expandAll ? 99 : 3} />
+          <JsonTree value={parsed} defaultDepth={expandAll ? ALL_LEVELS : 3} />
         )}
       </>
     );
@@ -359,7 +359,7 @@ function RequestParts({
         >
           {tools.map((tool, i) => (
             <Fold key={i} label={tool.name} note={tool.description} open={expandAll}>
-              <JsonTree value={tool.schema} defaultDepth={99} />
+              <JsonTree value={tool.schema} defaultDepth={ALL_LEVELS} />
             </Fold>
           ))}
           {parts.tools.length > PARTS_SHOWN && (
@@ -624,7 +624,7 @@ export function LlmExchangeDetail({
   if (face === "insight") {
     // The tree over the PARSED bodies, which is what the face promises. Over
     // the frame it would be the postmark again.
-    const depth = expandAll ? 99 : 4;
+    const depth = expandAll ? ALL_LEVELS : 4;
     return (
       <div className="ed">
         <ExpandStrip all={expandAll} onChange={setExpand} lang={lang} />
@@ -646,7 +646,7 @@ export function LlmExchangeDetail({
             {bodies.response.body !== null ? (
               <JsonTree value={safeParse(bodies.response.body)} defaultDepth={depth} />
             ) : bodies.response.lines.length > 0 ? (
-              <JsonTree value={parseLines(bodies.response.lines)} defaultDepth={expandAll ? 99 : 3} />
+              <JsonTree value={parseLines(bodies.response.lines)} defaultDepth={expandAll ? ALL_LEVELS : 3} />
             ) : (
               emptyNote(bodies.response, true, lang)
             )}

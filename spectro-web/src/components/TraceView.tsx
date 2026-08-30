@@ -22,7 +22,7 @@ import type { RunEvent } from "../events";
 import type { TraceEntry, UserAttachment } from "../state/reducer";
 import { agentAccent, compactJson, formatTokens, prettyJson } from "../format";
 import { CopyButton } from "./CopyButton";
-import { JsonTree } from "./JsonTree";
+import { ALL_LEVELS, JsonTree } from "./JsonTree";
 import { Markdown } from "./Markdown";
 import { highlight } from "./Highlighted";
 import { ToolViewBody } from "./ToolViewBody";
@@ -41,17 +41,19 @@ import {
 } from "./eventSummary";
 import type { LlmDir } from "./eventSummary";
 import {
-  READINGS,
   SOURCE_DISPLAY_CHARS,
+  availableReading,
   copyLabel,
   detailLines,
   detailText,
+  readingsFor,
+  resolvedReading,
   sourcePane,
   sourceSentence,
+  sourceTree,
   withinBudget,
   type Reading,
   type SourcePane,
-  type TraceProvenance,
 } from "./traceDetail";
 import { readable, type ReadableBlock } from "./readable";
 import { readTodoItems, statusLabel, todoSummary } from "./todoList";
@@ -80,13 +82,22 @@ import {
 import { onlyClause } from "../state/viewState";
 import type { TraceColumns } from "../state/traceColumns";
 import {
-  TRACE_FACES,
   availableFace,
   facesFor,
+  facesOf,
   rowFace,
   setTraceFace,
   useTraceFace,
+  type TraceOrigin,
 } from "../state/traceFace";
+import {
+  SOURCE_DEPTHS,
+  openLevels,
+  setSourceDepth,
+  sourcePaneKey,
+  useSourceDepth,
+  type SourceDepth,
+} from "../state/sourceDepth";
 import { frameLayer } from "./frameLayer";
 import { useVoiceExchanges } from "../state/voiceWire";
 import {
@@ -624,18 +635,15 @@ const TraceRow = memo(function TraceRow(props: {
   /** The source face's two inputs, and the same rule a third time: only the open
    *  row is handed the stream it stands in and the file it was read from. */
   source?: { rows: readonly TraceEntry[]; lines: readonly string[] | null };
-  /** Where this trace's frames came from when no file is loaded. A session-wide
-   *  fact and one stable string, so every row carries it: it decides a sentence
-   *  the pane must not get wrong, and an optional prop would decide it by
+  /** Where this trace's frames came from: a live socket or a stored session
+   *  (`native`), or the format an imported file was read from. A session-wide
+   *  fact and one stable string, so every row carries it: it decides which
+   *  faces the row may offer at all, and an optional prop would decide that by
    *  falling back. */
-  provenance: TraceProvenance;
-  /** Whether the rows are carrying translated payloads. Session-wide like
-   *  `provenance`, and required for the same reason: it decides whether the
-   *  pane may promise the wire line beside it is the stored line. */
-  translated: boolean;
+  origin: TraceOrigin;
   /** Where an llm_exchange row may fetch its recorded bodies from: the session
    *  the sidecar sits beside, or null when there is none to ask — an import, a
-   *  scenario, a fleet. Session-wide like `provenance`, and one stable string,
+   *  scenario, a fleet. Session-wide like `origin`, and one stable string,
    *  so it rides every row without waking the memo. */
   llmWireSessionId: string | null;
   /**
@@ -805,8 +813,7 @@ const TraceRow = memo(function TraceRow(props: {
           details={props.details}
           rows={props.source?.rows ?? [entry]}
           sourceLines={props.source?.lines ?? null}
-          provenance={props.provenance}
-          translated={props.translated}
+          origin={props.origin}
           llmWireSessionId={props.llmWireSessionId}
           onJump={(seq) => props.onJump?.(seq)}
         />
@@ -1213,7 +1220,7 @@ function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
   const { parsed, blocks } = useMemo(() => readable(line), [line]);
   return (
     <div className="trace-source-blocks">
-      {!parsed && <p className="trace-source-note">{t(lang, "trace.source.notJson")}</p>}
+      {!parsed && <p className="trace-source-note">{t(lang, "trace.source.noDocument")}</p>}
       {blocks.map((b, i) => (
         <ReadableBlockView key={`${b.path}#${i}`} block={b} lang={lang} />
       ))}
@@ -1221,31 +1228,63 @@ function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
   );
 }
 
+/** One line, parsed and drawn as the tree the insight face draws — the same
+ *  component, the same value-kind colours, no second renderer and no second
+ *  highlighter. Named exactly: JsonTree paints with its own
+ *  `json-key`/`json-string`/`json-punct` classes, and workspace/highlight.ts is
+ *  NOT involved — the card's own write-up said it was, and it never was. What
+ *  the owner asked for ("wie insight auch das higlighting macht") is these
+ *  classes, because the insight face is this component.
+ *
+ *  A line with no tree in it says WHICH of the two reasons it is and then shows
+ *  itself. The verdict is traceDetail's {@link sourceTree}: its shape half
+ *  borrows readable.ts's, so the two readings of this pane cannot disagree
+ *  about the same line, and its size half is the pane's own display ceiling.
+ *  Saying "there is no tree here" and then showing nothing would be the silence
+ *  this pane was built to end. */
+function SourceTreeLine({ line, lang, depth }: { line: string; lang: Lang; depth: SourceDepth }) {
+  const tree = useMemo(() => sourceTree(line), [line]);
+  if (!tree.parsed) {
+    return (
+      <div className="trace-source-blocks">
+        <p className="trace-source-note">{t(lang, `trace.source.${tree.why}`)}</p>
+        <Budgeted text={line} lang={lang} wrap />
+      </div>
+    );
+  }
+  return <JsonTree value={tree.value} defaultDepth={openLevels(depth)} />;
+}
+
 /**
  * The source face of one frame: the line of the imported file it was read from.
  *
- * One sentence per case, and the sentence comes FIRST in every one of them,
- * including the five that have no line to show. A pane that went blank for a
- * session produced here would be the same silence this card exists to end, and
- * a pane that promised a stored line for a frame nothing stored would be the
- * defect itself.
+ * One sentence per case, and the sentence comes FIRST in all three of them. A
+ * pane that promised a stored line for a frame nothing stored would be the
+ * defect itself. The four cases that answered "no file was imported" are gone
+ * with card 326: this face is offered only where the session read a foreign
+ * record, and a foreign record is a file.
+ *
+ * Exported for the render suite, which reads the DRAWN nodes and never the
+ * depth prop — JsonTree consults `defaultDepth` at mount only, so a test that
+ * asserted the prop would keep passing on a build where the prop reached a tree
+ * already on screen and moved nothing.
  */
-function SourceBody({
+export function SourceBody({
   pane,
   reading,
   lang,
-  translated,
+  depth,
 }: {
   pane: SourcePane;
   reading: Reading;
   lang: Lang;
-  /** Whether the rows are carrying translated payloads. The "none" sentence
-   *  promises the wire line beside it is the stored line byte for byte, and a
-   *  translation is exactly when that stops being true. */
-  translated: boolean;
+  /** How far the tree reading starts open. The MASTER, not a suggestion: the
+   *  caller remounts this pane whenever it moves (state/sourceDepth.ts), so a
+   *  node a reader folded shut by hand does not survive it. */
+  depth: SourceDepth;
 }) {
-  if (pane.kind !== "missing" && pane.kind !== "line") {
-    return <p className="trace-source-note">{t(lang, sourceSentence(pane, translated))}</p>;
+  if (pane.kind === "built") {
+    return <p className="trace-source-note">{t(lang, sourceSentence(pane))}</p>;
   }
   if (pane.kind === "missing") {
     return (
@@ -1274,6 +1313,8 @@ function SourceBody({
       </p>
       {reading === "readable" ? (
         <ReadableLine line={pane.text} lang={lang} />
+      ) : reading === "tree" ? (
+        <SourceTreeLine line={pane.text} lang={lang} depth={depth} />
       ) : (
         <Budgeted key={pane.lineNumber} text={pane.text} lang={lang} />
       )}
@@ -1281,17 +1322,19 @@ function SourceBody({
   );
 }
 
-/** The expanded frame, in one of five honest views: Structured (the frame as
- *  the thing it is), Insight (the collapsible tree), Compact (highlighted and
- *  WRAPPED, so the whole record is on screen without a horizontal scroll), Wire
- *  (plain text, one row per real wire line, byte faithful and scrolling
- *  sideways) and Source (the line of the imported file this frame was read
- *  from). session_resume expands to the whole
- *  re-uploaded history: one JSONL line per event, exactly what rides back to
- *  the LLM. Above the views: the causal chain (spectro-explain feature 2),
- *  walked back to the prompt. The face a frame lands on comes from the
- *  toolbar's master switch; the row of modes below the chain is the exception
- *  on top of it, and it holds until the master moves (state/traceFace.ts). */
+/** The expanded frame, in the honest views this SESSION can answer: Structured
+ *  (the frame as the thing it is), Insight (the collapsible tree over our
+ *  RunEvent), Wire (plain text, one row per real wire line, byte faithful and
+ *  scrolling sideways) and Source (the line of the imported file this frame was
+ *  read from). Which of the four are on offer follows where the session came
+ *  from — insight and wire only where the record is ours, source only where it
+ *  is somebody else's; see state/traceFace.ts for the measurements behind that.
+ *  session_resume expands to the whole re-uploaded history: one JSONL line per
+ *  event, exactly what rides back to the LLM. Above the views: the causal chain
+ *  (spectro-explain feature 2), walked back to the prompt. The face a frame
+ *  lands on comes from the toolbar's master switch; the row of modes below the
+ *  chain is the exception on top of it, and it holds until the master moves
+ *  (state/traceFace.ts). */
 function TraceDetail({
   entry,
   lang,
@@ -1300,8 +1343,7 @@ function TraceDetail({
   details,
   rows,
   sourceLines,
-  provenance,
-  translated,
+  origin,
   llmWireSessionId,
   onJump,
 }: {
@@ -1319,10 +1361,10 @@ function TraceDetail({
   rows: readonly TraceEntry[];
   /** The imported file's lines, or null when no file is loaded. */
   sourceLines?: readonly string[] | null;
-  /** Which of the three fileless cases this trace is, for the pane's sentence. */
-  provenance: TraceProvenance;
-  /** Whether the payload on the wire face is a translated one. */
-  translated: boolean;
+  /** Where this session's frames came from. It decides which faces this row may
+   *  offer at all, and it is set from the same fact `sourceLines` is: a foreign
+   *  record IS a file. */
+  origin: TraceOrigin;
   /** The session whose llm-wire sidecar an exchange row may ask, or null. */
   llmWireSessionId: string | null;
   onJump: (seq: number) => void;
@@ -1331,12 +1373,18 @@ function TraceDetail({
   // detail, so a master change re-renders exactly this one panel and leaves
   // every closed row closed — the switch picks a face, it does not expand.
   const master = useTraceFace();
+  // How far the source pane's tree opens, and when that last moved. Subscribed
+  // here for the same reason the face master is: only the OPEN row renders a
+  // detail, so a change re-renders exactly this panel.
+  const depthPref = useSourceDepth();
   const [override, setOverride] = useState<RowFace | null>(null);
-  // Which faces THIS row can fill, and the one it shows. A recorded LLM
-  // exchange has no source line, and the master is a default for every row at
-  // once, so a reader whose master is `source` has to land somewhere real:
-  // availableFace decides that once, deterministically (state/traceFace.ts).
-  const faces = facesFor(entry.type);
+  // Which faces THIS row can fill, and the one it shows. Two withdrawals: the
+  // session says which faces its origin can answer at all, and a recorded LLM
+  // exchange has no source line on top of that. The master is a default for
+  // every row at once, so a reader whose saved master this session cannot
+  // answer has to land somewhere real: availableFace decides that once,
+  // deterministically, and never writes the landing back (state/traceFace.ts).
+  const faces = facesFor(entry.type, origin);
   const mode = availableFace(rowFace(master, override), faces);
   // The recorded exchange renders itself on EVERY face, from ONE fetch. This
   // line is card 184's repair: the rejected version routed only `structured`
@@ -1352,20 +1400,35 @@ function TraceDetail({
   // over what the pane claims to show. Session state, never persisted, so the
   // choice cannot follow a reader into a file they have not looked at yet.
   const [chosen, setChosen] = useState<Reading>("readable");
-  // Only two panes have two readings to choose between. Structured and Insight
-  // already render the parsed payload, and Compact's whole job is the wire line
-  // with its escapes highlighted.
-  // The exchange's wire face is OUR rendering of recorded bytes, not a line of
-  // somebody's file, so it has no verbatim/readable pair to choose between.
-  const hasReading = !isExchange && (mode === "source" || mode === "wire");
-  const reading: Reading = hasReading ? chosen : "verbatim";
   const lines = detailLines(entry.type, entry.payload);
   // The line this frame was read from, or nothing. Only the source pane's copy
   // button hands it over, and only when there is one to hand over.
-  // Walked once: the sibling count reads every row, and the pane is needed both
-  // for the body and for whether there is anything to copy.
-  const pane = mode === "source" ? sourcePane(entry, rows, sourceLines, provenance) : null;
+  // Walked once: the sibling count reads every row, the pane decides which
+  // readings are on offer, and it says whether there is anything to copy.
+  // The face rule only offers `source` where the session read a foreign record,
+  // and a foreign record is a file — origin and sourceLines are set from the one
+  // fact, one component up. The fallback is what makes that a type rather than a
+  // comment: an empty file makes the pane say this frame's line is not in it,
+  // where a nullable argument would have let a caller draw the wire text under
+  // the source face and call it the record.
+  const pane = mode === "source" ? sourcePane(entry, rows, sourceLines ?? []) : null;
   const sourceText = pane?.kind === "line" ? pane.text : undefined;
+  // Which readings THIS pane offers, from the pane's own rule: three over a
+  // source line, two on wire, none on structured or insight, where what is
+  // rendered IS the parsed payload and there is no second version of it to
+  // name — and none over a source pane that shows no line at all, which used to
+  // draw three buttons that changed nothing above one sentence.
+  // The exchange's wire face is OUR rendering of recorded bytes, not a line of
+  // somebody's file, so it has no readings to choose between either.
+  const readings: readonly Reading[] = isExchange || mode === "structured" ? [] : readingsFor(mode, pane);
+  // A reading this pane does not offer lands on its nearest neighbour, the way
+  // a face does — not on verbatim, which this module argues the pane must not
+  // open on.
+  const picked: Reading = availableReading(chosen, readings);
+  // What the pane can ACTUALLY paint: a tree asked for over a line that is not a
+  // document falls to the bytes, and everything downstream — the copy verb, the
+  // depth control — names the resolved one, never the asked-for one.
+  const reading = resolvedReading(picked, sourceText);
   // The record behind this frame, for the structured face. Read right here and
   // not indexed up front: only the ONE open row renders a detail, so this is a
   // single JSON.parse on click, where an eager index over the whole import
@@ -1418,25 +1481,53 @@ function TraceDetail({
           </button>
         ))}
       </div>
-      {/* Which of the two readings the pane is showing. Inside the pane and not
-          a face. With readable opening first, this strip is what stops the pane
-          from passing an interpretation off as the bytes: it names the
-          rendering on screen, and verbatim is the click next to it. */}
-      {hasReading && (
+      {/* Which reading the pane is showing. Inside the pane and not a face.
+          With readable opening first, this strip is what stops the pane from
+          passing an interpretation off as the bytes: it names the rendering on
+          screen, and verbatim is the click next to it. Pressed on what the
+          reader PICKED, not on what could be painted — a tree asked for over a
+          line that has none stays pressed while the pane below says why. */}
+      {readings.length > 0 && (
         <div
           className="trace-detail-modes trace-reading"
           role="group"
           aria-label={t(lang, "trace.readingAria")}
         >
-          {READINGS.map((r) => (
+          {readings.map((r) => (
             <button
               key={r}
               type="button"
-              aria-pressed={reading === r}
+              aria-pressed={picked === r}
               title={t(lang, `trace.readingTitle.${r}`)}
               onClick={() => setChosen(r)}
             >
               {t(lang, `trace.reading.${r}`)}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* How far that tree opens (owner 2026-08-30). A MASTER, like the face
+          switch above it and unlike the chat's disclosure level: pressing
+          verbose opens the nodes this reader already folded shut, because a
+          control that left those alone would look broken in exactly the case it
+          exists for. Only drawn where a tree is actually on screen — over a
+          line that is no document, or one past the pane's display ceiling, a
+          depth control would be a button onto nothing. */}
+      {reading === "tree" && (
+        <div
+          className="trace-detail-modes trace-reading"
+          role="group"
+          aria-label={t(lang, "trace.depthAria")}
+        >
+          {SOURCE_DEPTHS.map((d) => (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={depthPref.depth === d}
+              title={t(lang, `trace.depthTitle.${d}`)}
+              onClick={() => setSourceDepth(d)}
+            >
+              {t(lang, `trace.depth.${d}`)}
             </button>
           ))}
         </div>
@@ -1476,11 +1567,27 @@ function TraceDetail({
         />
       ) : mode === "insight" ? (
         // Expand every level of the event from the start — no clicking open the
-        // nested {…} (e.g. a plan's steps, a context_info's parts). Real events
-        // never nest anywhere near this deep, so 99 reads as "all".
-        <JsonTree value={entry.payload} defaultDepth={99} />
+        // nested {…} (e.g. a plan's steps, a context_info's parts). This face
+        // has no depth control and is not getting one: it draws OUR event,
+        // which is a record of known shape, where the source pane draws
+        // whatever a foreign file put on one line. Two documents, one of which
+        // has a reason to be folded.
+        <JsonTree value={entry.payload} defaultDepth={ALL_LEVELS} />
       ) : pane !== null ? (
-        <SourceBody pane={pane} reading={reading} lang={lang} translated={translated} />
+        // Keyed on the depth master, which is the only way that master can
+        // win: JsonTree holds each node's open state from mount, so a changed
+        // defaultDepth on a mounted tree moves nothing. The key is built in
+        // state/sourceDepth.ts, beside the doctrine that needs it — as a
+        // literal here it was a mechanism nothing in the gate could see, and
+        // taking the epoch out of it left every test green. Same idiom, same
+        // reason, as LlmExchangeDetail's expandEpoch.
+        <SourceBody
+          key={sourcePaneKey(depthPref)}
+          pane={pane}
+          reading={picked}
+          lang={lang}
+          depth={depthPref.depth}
+        />
       ) : reading === "readable" ? (
         <div className="trace-source-blocks">
           {lines.map((ln, i) => (
@@ -1550,19 +1657,16 @@ export function TraceView(props: {
    *  null keeps the toolbar silent. */
   otlpFailure?: string | null;
   /** The imported file's own lines (card: the source line). null when no file
-   *  is loaded, which is the case `provenance` then has to tell apart. A few
-   *  fields live only in an imported transcript, and this is where the trace
-   *  reads them from. */
+   *  is loaded. A few fields live only in an imported transcript, and this is
+   *  where the trace reads them from. */
   sourceLines?: readonly string[] | null;
-  /** Where these frames came from when no file is loaded: produced and stored
-   *  here, compiled from a scenario, or another process's. The source pane says
-   *  a different sentence for each, and only the first one may promise a stored
-   *  line. Absent means the plain case, which is what a live socket is. */
-  provenance?: TraceProvenance;
-  /** Whether these rows are showing translated payloads. App swaps every row's
-   *  payload when a translation is applied, so the wire face is then a rebuilt
-   *  record and the source pane may not call it the stored line. */
-  translated?: boolean;
+  /** Where these frames came from: `native` for a live socket, a stored
+   *  session, a scenario or an entered fleet, else the format the file was read
+   *  from. It decides which faces a frame offers at all (state/traceFace.ts).
+   *  Absent means `native`, which is what a live socket is — and it is the one
+   *  origin that offers no source face, so a caller who forgets is not handed
+   *  the promise of a file it never loaded. */
+  origin?: TraceOrigin;
   /** The session whose llm-wire sidecar an expanded llm_exchange row may
    *  fetch from. Absent or null means there is none to ask — an import, a
    *  scenario, an entered fleet — and the detail says so instead of fetching. */
@@ -1902,9 +2006,26 @@ export function TraceView(props: {
     () => ({ rows: allEntries, lines: props.sourceLines ?? null }),
     [allEntries, props.sourceLines],
   );
-  // Which of the three fileless cases this trace is. One string for the whole
-  // view: it says nothing about a single frame, so it cannot vary by row.
-  const provenance = props.provenance ?? "stored";
+  // Where this trace's frames came from. One string for the whole view: it says
+  // nothing about a single frame, so it cannot vary by row.
+  const origin = props.origin ?? "native";
+  // Which faces this SESSION can answer — the master switch's own list. It was
+  // TRACE_FACES until the re-review of card 326, and the toolbar therefore
+  // contradicted the strip inside every open row: a spectroscope session still
+  // offered Source ("the line of the imported file they were read from") with
+  // no file behind it, and a foreign import still offered the two readings of
+  // our RunEvent that its rows had already withdrawn. Two controls, one
+  // session, opposite answers.
+  //
+  // The frame TYPE's further withdrawal stays where it was — down in the row.
+  // The toolbar speaks for the whole view, and an exchange's missing source
+  // line is not a statement about the session.
+  const sessionFaces = facesOf(origin);
+  // Which button is lit. The stored master, unless this session cannot answer
+  // it, in which case the rows land elsewhere (availableFace) and the toolbar
+  // has to say where. It only READS that landing — the stored master is left
+  // alone, so the next native session gives the reader their own face back.
+  const litFace = availableFace(face, sessionFaces);
 
   // Jump: open the frame and bring its row into view (it may sit outside the
   // current scroll window; if a filter hides it, the row simply is not there).
@@ -2343,8 +2464,7 @@ export function TraceView(props: {
         calls={openSeq === e.seq ? openCalls : undefined}
         details={openSeq === e.seq ? openDetails : undefined}
         source={openSeq === e.seq ? openSource : undefined}
-        provenance={provenance}
-        translated={props.translated ?? false}
+        origin={origin}
         llmWireSessionId={props.llmWireSessionId ?? null}
         blockRef={openSeq === e.seq ? measureOpen : undefined}
         onJump={jumpTo}
@@ -2454,11 +2574,11 @@ export function TraceView(props: {
           <span className="trace-seg-label mono" title={t(lang, "trace.faceHint")}>
             {t(lang, "trace.face")}
           </span>
-          {TRACE_FACES.map((f) => (
+          {sessionFaces.map((f) => (
             <button
               key={f}
               type="button"
-              aria-pressed={face === f}
+              aria-pressed={litFace === f}
               title={t(lang, `trace.faceTitle.${f}`)}
               onClick={() => setTraceFace(f)}
             >

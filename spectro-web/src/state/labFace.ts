@@ -9,8 +9,9 @@
 // Trace parity by owner decision (2026-07-30): the master ALSO re-faces
 // already-open panels; a per-panel choice made afterwards wins until the next
 // master change retires it (the epoch mechanism, see faceStore.ts). The value
-// spaces stay separate on purpose — "raw"/"compact" are the trace's words,
-// "json" the chat's, and none of them may leak in here through storage.
+// spaces stay separate on purpose — "raw" and "compact" WERE the trace's words
+// (raw is now "wire", compact was retired on 2026-08-05), "json" the chat's,
+// and none of them may leak in here through storage.
 
 import { createFaceStore, overrideFace, useFaceStore, type FaceOverride, type FacePref } from "./faceStore";
 

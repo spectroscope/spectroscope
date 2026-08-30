@@ -1023,6 +1023,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "common.copy": { de: "Kopieren", en: "Copy" },
   "common.copied": { de: "Kopiert", en: "Copied" },
   "common.copyReadable": { de: "Lesbares kopieren", en: "Copy readable" },
+  // A tree is not text, so what this one hands over is the document the tree is
+  // OF, laid out the way the tree lays it out — never the pane's line breaks.
+  "common.copyTree": { de: "Baum kopieren", en: "Copy tree" },
 
   // lab toolbar
   "lab.blocks": { de: "Blöcke", en: "Blocks" },
@@ -1764,7 +1767,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.logAria": { de: "Wire-Trace", en: "Wire trace" },
   "trace.modeAria": { de: "Detail-Ansicht", en: "Detail view" },
   "trace.mode.insight": { de: "Insight", en: "Insight" },
-  "trace.mode.compact": { de: "Compact", en: "Compact" },
+  // `compact` was a face here until 2026-08-05 and its label outlived it by
+  // three weeks. Nothing renders a mode label that DETAIL_MODES does not name,
+  // so a leftover one is invisible until somebody reads it as evidence that the
+  // face is still there.
   "trace.mode.wire": { de: "Draht", en: "Wire" },
   "trace.mode.source": { de: "Quelle", en: "Source" },
   // The llm-wire detail pane (wire/llmWire.ts): one honest sentence per
@@ -2481,10 +2487,6 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Frames als JSON-Baum aufklappen.",
     en: "Open frames as an expanded tree.",
   },
-  "trace.faceTitle.compact": {
-    de: "Frames hervorgehoben und umgebrochen aufklappen: der ganze Inhalt im Bild, ohne seitliches Scrollen.",
-    en: "Open frames highlighted and wrapped: the whole content on screen, no sideways scrolling.",
-  },
   "trace.faceTitle.wire": {
     de: "Frames als reinen Text aufklappen: genau die Zeilen, die über den Draht gingen, je eine Zeile.",
     en: "Open frames as plain text: exactly the lines that crossed the wire, one row each.",
@@ -2495,32 +2497,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
 
   // The source pane (card: the source line). One sentence per case and never a
-  // shared one: this card exists because one label meant two things. "There is
-  // no file" alone is four different statements, and the byte-for-byte promise
-  // is only the one about a frame this app wrote down itself.
-  "trace.source.none": {
-    de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile ist die gespeicherte Zeile, Byte für Byte.",
-    en: "This session was produced here, so there is no separate source. The wire line is the stored line, byte for byte.",
-  },
-  // The same session, while a translation is on screen. The first half still
-  // holds; the second one cannot, because the wire face is rendering a payload
-  // the translator rebuilt and the stored line still has the original words.
-  "trace.source.noneTranslated": {
-    de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile zeigt gerade die Übersetzung, nicht die gespeicherte Zeile.",
-    en: "This session was produced here, so there is no separate source. The wire line is showing the translation right now, not the stored line.",
-  },
-  "trace.source.unstored": {
-    de: "Die gespeicherte Sitzung enthält diesen Frame nicht. Die App hat ihn für das Bild gebaut oder über den Socket geschickt, und beides wird nicht in die Datei geschrieben.",
-    en: "The stored session does not contain this frame. The app built it for the screen or sent it over the socket, and neither of those is written to the file.",
-  },
-  "trace.source.scenario": {
-    de: "Das ist ein kompiliertes Szenario. Der Browser hat diese Frames aus dem Skript gebaut, es gibt also weder eine Datei noch eine Draht-Zeile dahinter.",
-    en: "This is a compiled scenario. The browser built these frames from its script, so there is no file and no wire line behind them.",
-  },
-  "trace.source.fleet": {
-    de: "Diesen Frame hat ein anderer Prozess erzeugt. Diese App schaut nur zu: was dieser Node gespeichert hat, bleibt bei ihm.",
-    en: "Another process produced this frame. This app is only watching: whatever that node wrote down stays with the node.",
-  },
+  // shared one: that card exists because one label meant two things.
+  //
+  // FIVE SENTENCES LEFT HERE ON 2026-08-30 (card 326) and they are not coming
+  // back by accident: `none`, `noneTranslated`, `unstored`, `scenario` and
+  // `fleet` all answered "no file was imported", and the face is now offered
+  // only where the session read a foreign record — which is to say, only where
+  // there IS a file. They were true, and a reader had to press a button to
+  // learn nothing from them. What is left is the three things a frame of an
+  // imported file can be: read off a line, built by the importer, or pointed at
+  // a line the file does not have.
   "trace.source.built": {
     de: "Diesen Frame hat der Import gebaut. Keine einzelne Zeile der Datei hat ihn erzeugt.",
     en: "The importer built this frame. No single line of the file produced it.",
@@ -2534,9 +2520,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Zeile {n} von {total}. Sie hat {k} Frames erzeugt; dies ist Frame {i}.",
     en: "Line {n} of {total}. It produced {k} frames; this is frame {i}.",
   },
-  "trace.source.notJson": {
-    de: "Diese Zeile ist kein JSON. Sie steht unverändert da.",
-    en: "This line is not JSON. It stands here unchanged.",
+  "trace.source.noDocument": {
+    de: "Diese Zeile ist kein JSON-Objekt und kein Array. Sie steht unverändert da.",
+    en: "This line is not a JSON object or array. It stands here unchanged.",
+  },
+  "trace.source.tooLong": {
+    de: "Diese Zeile ist zu lang für einen Baum.",
+    en: "This line is too long to draw as a tree.",
   },
   "trace.source.capped": {
     de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.",
@@ -2566,6 +2556,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.readingAria": { de: "Lesart", en: "Reading" },
   "trace.reading.verbatim": { de: "Wörtlich", en: "Verbatim" },
   "trace.reading.readable": { de: "Lesbar", en: "Readable" },
+  "trace.reading.tree": { de: "Baum", en: "Tree" },
   "trace.readingTitle.verbatim": {
     de: "Die Bytes zeigen, wie sie in der Datei stehen. Das ist die Voreinstellung und wird nicht gespeichert.",
     en: "Show the bytes as they stand in the file. This is the default and it is not remembered.",
@@ -2573,6 +2564,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.readingTitle.readable": {
     de: "Verschachtelte Dokumente aufschlagen und echte Zeilenumbrüche zeigen. Das ist eine Deutung der Zeile, nicht die Zeile.",
     en: "Open embedded documents and show real line breaks. This is a reading of the line, not the line.",
+  },
+  "trace.readingTitle.tree": {
+    de: "Die Zeile als aufklappbaren Baum zeichnen, in denselben Farben wie das eigene Ereignis. Eine Zeile ohne JSON sagt das und steht unverändert da.",
+    en: "Draw the line as a collapsible tree, in the same colours as our own event. A line that is not JSON says so and stands here unchanged.",
+  },
+  // How far that tree starts open. A master and not a per-node setting: press
+  // verbose and the nodes you folded shut open too, which is the whole point of
+  // pressing it. The same doctrine as the face switch above (state/traceFace.ts)
+  // and deliberately not the chat's, where a hand-made choice survives.
+  "trace.depthAria": { de: "Aufklapptiefe", en: "Expand depth" },
+  "trace.depth.default": { de: "Standard", en: "Default" },
+  "trace.depth.verbose": { de: "Ausführlich", en: "Verbose" },
+  "trace.depthTitle.default": {
+    de: "Zwei Ebenen offen. Tiefere Knoten klappst du selbst auf.",
+    en: "Two levels open. Deeper nodes are yours to open.",
+  },
+  "trace.depthTitle.verbose": {
+    de: "Jede Ebene offen, auch die Knoten, die du selbst zugeklappt hast.",
+    en: "Every level open, including the nodes you folded shut yourself.",
   },
   "search.regexTitle": { de: "Als regulären Ausdruck lesen", en: "Read as a regular expression" },
   "tr.applied": {

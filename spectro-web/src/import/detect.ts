@@ -101,10 +101,19 @@ function cut(text: string): { lines: string[]; at: number[] } {
 }
 
 /** The three formats this importer reads. Named rather than repeated, because
- *  a second module now answers a question PER format (contextRecording.ts: did
- *  this one record the assembled request?) and two hand-written copies of the
- *  same three words would drift the moment a fourth format arrives. */
-export type ImportKind = "spectroscope" | "claude-code" | "vscode-agent";
+ *  other modules now answer a question PER format (contextRecording.ts: did
+ *  this one record the assembled request? state/traceFace.ts: is its record a
+ *  foreign one?) and hand-written copies of the same three words would drift
+ *  the moment a fourth format arrives.
+ *
+ *  A VALUE and not only a type since card 326: the trace walks the formats to
+ *  build its face lists, and a hand-written list of three guarded by a test
+ *  that types the same three is two copies of one lie. Adding a format here
+ *  widens {@link ImportKind}, which is what makes the compiler ask every
+ *  per-format predicate for its answer. */
+export const IMPORT_KINDS = ["spectroscope", "claude-code", "vscode-agent"] as const;
+
+export type ImportKind = (typeof IMPORT_KINDS)[number];
 
 export function detectAndLoad(text: string): {
   events: RunEvent[];

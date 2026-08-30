@@ -100,6 +100,7 @@ import {
 import { TextView } from "./components/TextView";
 import { textExportViewKey } from "./components/textExportClaim";
 import { TraceView } from "./components/TraceView";
+import { traceOriginOf } from "./state/traceFace";
 import { useTraceWarm } from "./components/traceWarmup";
 import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
@@ -143,10 +144,9 @@ import { browserCuePushLive } from "./state/browserCue";
 import { browserRevealPushLive, revealBrowserPanel } from "./state/browserReveal";
 import { liveSessionsPushLive, readSessionBusy, startLiveSessionsPoll } from "./state/liveSessions";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
-import type { ImportSource } from "./import/detect";
+import type { ImportKind, ImportSource } from "./import/detect";
 import type { SubagentTranscript } from "./import/subagentFile";
 import { attachSources, sourceStats } from "./state/traceSource";
-import { traceProvenance } from "./components/traceDetail";
 import { childrenNote, shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
 import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
@@ -175,6 +175,12 @@ interface Replay {
    *  never written to disk (see `canResume`), and saying so is more honest than
    *  inventing a store for it. */
   source?: ImportSource;
+  /** WHICH format that file was, absent for every session this app produced.
+   *  A field and not a slice of `id`: the id is a display label with a
+   *  filename in it, and card 326 makes the format decide which faces the
+   *  trace offers — deriving a behavioural switch from a formatted string is
+   *  the class of defect state/traceFace.ts's header argues against. */
+  kind?: ImportKind;
 }
 
 // Right-panel resize clamps: the panel never shrinks below its minimum and
@@ -1216,7 +1222,7 @@ export function App() {
   const openImport = (
     events: RunEvent[],
     label: string,
-    kind: "spectroscope" | "claude-code" | "vscode-agent",
+    kind: ImportKind,
     source: ImportSource,
     subagent?: SubagentTranscript,
     storePath?: string,
@@ -1254,6 +1260,7 @@ export function App() {
       state: foldArchive(events),
       events,
       source,
+      kind,
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
     applyDockReturn(); // card 242: an import is an entered session too
@@ -1422,7 +1429,9 @@ export function App() {
       const seeded = recordResumeMarker(
         wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
         // history carries the full re-uploaded JSONL: the trace detail's
-        // Raw/Compact views show it line by line, exactly as it rides along.
+        // WIRE face shows it line by line, exactly as it rides along. (It was
+        // "Raw/Compact" here; raw was renamed to wire and compact retired on
+        // 2026-08-05.)
         { sessionId: id, ...summarizeHistory(events), history: events },
       );
       // The fold above is finite and keeps every row; what it becomes is not.
@@ -2379,8 +2388,7 @@ export function App() {
               langfuseUrl={langfuseUrl}
               otlpFailure={otlpFailure}
               sourceLines={null}
-              provenance={traceProvenance(replay?.id ?? null, enteredFleet)}
-              translated={false}
+              origin={traceOriginOf(replay?.kind, enteredFleet)}
             />
           ) : (
             <AgentFeed
@@ -2682,15 +2690,12 @@ export function App() {
               otlpFailure={otlpFailure}
               storePath={shownStorePath}
               sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
-              /* An entered fleet's rows are not the replay's rows, so its file is
-               taken away above. The sentence the pane then says is not "there
-               is no file" three times over: this is which of the three. */
-              provenance={traceProvenance(replay?.id ?? null, enteredFleet)}
-              /* The same condition the payload swap above runs under. With a
-               translation applied the wire face renders the rebuilt record, so
-               the source pane's "byte for byte" sentence would be describing a
-               line nobody stored. */
-              translated={showingTranslation && enteredFleet === null}
+              /* Read off the SAME two facts the line above is, so the pair
+               cannot come apart: an entered fleet's rows are not the replay's
+               rows, so its file is taken away and its origin with it. That
+               pairing is what lets the source face promise a file whenever it
+               is on offer at all. */
+              origin={traceOriginOf(replay?.kind, enteredFleet)}
               llmWireSessionId={llmWireSessionId}
             />
           </div>

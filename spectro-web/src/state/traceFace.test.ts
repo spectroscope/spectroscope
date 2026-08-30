@@ -13,6 +13,7 @@ import {
   parseTraceFace,
   rowFace,
   setTraceFace,
+  traceOriginOf,
 } from "./traceFace";
 
 describe("traceFace", () => {
@@ -20,7 +21,7 @@ describe("traceFace", () => {
     setTraceFace("structured");
   });
 
-  it("offers five faces, structured first", () => {
+  it("offers four faces, structured first", () => {
     expect(TRACE_FACES).toEqual(["structured", "insight", "wire", "source"]);
   });
 
@@ -148,7 +149,7 @@ describe("the retired compact face", () => {
   });
 });
 
-// Card 184: a row does not always have four faces to offer.
+// Card 184: a row does not always have every face its session can answer.
 //
 // A recorded LLM exchange has no SOURCE line to show. Its bytes live in the
 // sidecar, and the only endpoint that returns them re-serializes parsed nodes,
@@ -156,25 +157,59 @@ describe("the retired compact face", () => {
 // The old pane answered that with a riddle ("the stored session does not
 // contain this frame") while the frame's file lay right beside the session.
 // A face with nothing behind it is not offered at all.
+//
+// THE OLD FIRST CASE HERE WAS "offers all four for an ordinary frame", and card
+// 326 made it false rather than incomplete: no origin offers all four, because
+// source and the two readings of our own event are now mutually exclusive. It
+// is replaced and not loosened. What each origin offers is bitten one origin at
+// a time in traceFaceOrigin.test.ts; what stays here is card 184's own claim,
+// which is about the FRAME and holds inside whichever session it sits in.
 describe("which faces a row offers", () => {
-  it("offers all four for an ordinary frame", () => {
-    expect(facesFor("tool_call")).toEqual([...TRACE_FACES]);
+  it("gives an ordinary frame everything its session can answer", () => {
+    expect(facesFor("tool_call", "claude-code")).toEqual(["structured", "source"]);
+    expect(facesFor("tool_call", "native")).toEqual(["structured", "insight", "wire"]);
   });
 
   it("does not offer source for ANY row of a recorded LLM exchange", () => {
     // All three, not just the summary: the split into request and response rows
     // (leg 2) gave the same fileless frame two more shapes, and a face offered
-    // on one of them and not the others would be a riddle in a new place.
+    // on one of them and not the others would be a riddle in a new place. Asked
+    // of the one origin that WOULD have offered it, or the withdrawal proves
+    // nothing.
     for (const type of ["llm_exchange", "llm_request", "llm_response"]) {
-      expect(facesFor(type)).not.toContain("source");
-      expect(facesFor(type)).toEqual(["structured", "insight", "wire"]);
+      expect(facesFor(type, "claude-code"), type).not.toContain("source");
+      expect(facesFor(type, "native"), type).toEqual(["structured", "insight", "wire"]);
     }
   });
 
   it("keeps the order the toolbar uses, so the buttons never reshuffle", () => {
-    const offered = facesFor("llm_exchange");
+    const offered = facesFor("llm_exchange", "native");
     const order = TRACE_FACES.filter((f) => offered.includes(f));
     expect(offered).toEqual(order);
+  });
+});
+
+// Where the origin comes from. The one hop nothing else stands over: the trace
+// never learns the format by itself, and a wrong answer here silently gives a
+// whole session the wrong toolbar.
+describe("traceOriginOf", () => {
+  it("calls a session this app produced native", () => {
+    expect(traceOriginOf(undefined, null)).toBe("native");
+  });
+
+  it("carries an import's own format through", () => {
+    expect(traceOriginOf("claude-code", null)).toBe("claude-code");
+    expect(traceOriginOf("spectroscope", null)).toBe("spectroscope");
+    expect(traceOriginOf("vscode-agent", null)).toBe("vscode-agent");
+  });
+
+  // An entered fleet shows OTHER processes' frames. The file the replay behind
+  // it came from says nothing about them, and offering the source face over
+  // them would point every row at a line that produced something else — which
+  // is also why App takes the file away on exactly this condition.
+  it("calls an entered fleet native, whatever file is loaded behind it", () => {
+    expect(traceOriginOf("claude-code", "ctx-7")).toBe("native");
+    expect(traceOriginOf(undefined, "ctx-7")).toBe("native");
   });
 });
 
@@ -184,18 +219,18 @@ describe("which faces a row offers", () => {
 describe("a face a row cannot offer", () => {
   it("falls back to its nearest neighbour to the left", () => {
     // structured · insight · wire · [source] — source lands on wire.
-    expect(availableFace("source", facesFor("llm_exchange"))).toBe("wire");
+    expect(availableFace("source", facesFor("llm_exchange", "native"))).toBe("wire");
   });
 
   it("leaves an offered face alone", () => {
-    for (const face of facesFor("llm_exchange")) {
-      expect(availableFace(face, facesFor("llm_exchange"))).toBe(face);
+    for (const face of facesFor("llm_exchange", "native")) {
+      expect(availableFace(face, facesFor("llm_exchange", "native"))).toBe(face);
     }
   });
 
   it("is deterministic: the same input lands on the same face every time", () => {
-    const once = availableFace("source", facesFor("llm_exchange"));
-    expect(availableFace("source", facesFor("llm_exchange"))).toBe(once);
+    const once = availableFace("source", facesFor("llm_exchange", "native"));
+    expect(availableFace("source", facesFor("llm_exchange", "native"))).toBe(once);
   });
 
   it("falls forward when there is nothing to its left", () => {

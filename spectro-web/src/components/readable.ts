@@ -229,6 +229,35 @@ function emit(value: unknown, path: string, depth: number, blocks: ReadableBlock
 }
 
 /**
+ * Whether a whole line is a document, and the document if it is.
+ *
+ * THE one judgement about what counts as JSON here, so the readings that
+ * disagree about a line cannot exist. Two of them ask: this module, for
+ * whether to open the line out or stand it there verbatim, and the source
+ * pane's tree reading, for whether there is anything to draw a tree over. A
+ * second copy of the rule would drift the first time either side moved, and
+ * the two readings would then say different things about the same line in the
+ * same pane.
+ *
+ * A bare string or number is deliberately NOT a document: `12` would become a
+ * one-leaf tree and `"a"` a one-leaf tree, which is an empty tree wearing a
+ * caret. The same guard keeps this module from turning "12" into the number 12
+ * and calling that prettification.
+ *
+ * @param line one raw line, exactly as it was read
+ * @return the parsed document, or `ok: false` for anything else
+ */
+export function parseDocument(line: string): { ok: true; value: unknown } | { ok: false } {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return { ok: false };
+  }
+  return isDocument(value) ? { ok: true, value } : { ok: false };
+}
+
+/**
  * The line, opened out.
  *
  * @param line one raw line of a transcript, exactly as it was read
@@ -236,18 +265,12 @@ function emit(value: unknown, path: string, depth: number, blocks: ReadableBlock
  *         the document it came from; `parsed: false` for a line that is not JSON
  */
 export function readable(line: string): Readable {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return { parsed: false, blocks: [{ kind: "text", path: "", depth: 0, text: line }] };
-  }
-  if (!isDocument(value)) {
-    // A line that is a bare string or number is already as readable as it gets.
+  const doc = parseDocument(line);
+  if (!doc.ok) {
     return { parsed: false, blocks: [{ kind: "text", path: "", depth: 0, text: line }] };
   }
   const blocks: ReadableBlock[] = [];
-  emit(value, "", 0, blocks);
+  emit(doc.value, "", 0, blocks);
   return { parsed: true, blocks };
 }
 
