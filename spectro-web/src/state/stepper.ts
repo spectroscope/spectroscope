@@ -122,7 +122,7 @@ function foldFrom(events: RunEvent[]): Pick<StepperState, "ui" | "marking" | "sc
 /** Block step size (the "blocks" grain): a block is the maximal run of consecutive
  *  deltas OF THE SAME TYPE (one thinking run, one answer run — separate
  *  clicks), or exactly one non-delta event. */
-function blockCount(queue: RunEvent[]): number {
+function blockCount(queue: readonly RunEvent[]): number {
   if (queue.length === 0 || !isDelta(queue[0])) return Math.min(queue.length, 1);
   const runType = queue[0].type;
   let n = 1;
@@ -132,7 +132,7 @@ function blockCount(queue: RunEvent[]): number {
 
 /** The coarse-step boundaries of a stream: [0, b1, b2, …, length]. The replay
  *  scrubber walks these, so a drag lands on a whole step, never mid-block. */
-export function stepBoundaries(events: RunEvent[]): number[] {
+export function stepBoundaries(events: readonly RunEvent[]): number[] {
   const bs = [0];
   let cursor = 0;
   while (cursor < events.length) {
@@ -303,6 +303,26 @@ export interface MarkPosition {
 }
 
 /**
+ * The coarse step that SHOWS the event at `at`: the first boundary past it,
+ * never the one before, because the step before stops the run just short of the
+ * thing the caller pointed at.
+ *
+ * ONE PLACE, THREE READERS (card 309). The tick has used this rule since card
+ * 299; the moments panel and the file rows now print the same number and seek
+ * to it. Copied a second time, the panel and the tick would eventually name
+ * different steps for one moment, and neither would look wrong on its own.
+ *
+ * @param boundaries stepBoundaries of the stream `at` indexes into
+ * @param at an event index in that stream
+ * @return an index INTO `boundaries` — the step number the transport counter
+ *         shows, and `boundaries[step]` is the cursor to seek to
+ */
+export function stepOfEvent(boundaries: readonly number[], at: number): number {
+  const found = boundaries.findIndex((b) => b > at);
+  return found < 0 ? Math.max(0, boundaries.length - 1) : found;
+}
+
+/**
  * Place marks on the coarse-step bar the scrubber walks.
  *
  * @param marks what chapterMarks read off the same stream
@@ -311,8 +331,7 @@ export interface MarkPosition {
 export function markPositions(marks: readonly ChapterMark[], boundaries: readonly number[]): MarkPosition[] {
   const last = Math.max(0, boundaries.length - 1);
   return marks.map((mark) => {
-    const found = boundaries.findIndex((b) => b > mark.at);
-    const index = found < 0 ? last : found;
+    const index = stepOfEvent(boundaries, mark.at);
     return { mark, index, pct: last === 0 ? 0 : (index / last) * 100 };
   });
 }
@@ -420,9 +439,35 @@ export interface RunClock {
 }
 
 /** The event's timestamp, or null when it carries none a clock can read. */
-function timestampOf(e: RunEvent): number | null {
-  const ts = (e as { ts?: unknown }).ts;
+function timestampOf(e: RunEvent | undefined): number | null {
+  const ts = (e as { ts?: unknown } | undefined)?.ts;
   return typeof ts === "number" && Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
+/**
+ * How far into the run ONE event stands, in wall clock, or null when the
+ * recording carries no clock to measure it against.
+ *
+ * Card 309, and the reason it is here rather than in either caller: the file
+ * rows and the moments rows both print this, and `runClock` above already owns
+ * the reading of the wire's optional `ts`. A third and fourth copy of "what
+ * counts as a readable timestamp" is how two panels end up disagreeing about
+ * whether a run had a clock at all.
+ *
+ * Null is the answer, never zero: a "0:00" on a stampless import is a claim
+ * about when something happened that nothing measured.
+ *
+ * @param events the stream `at` indexes into — its FIRST event is the anchor
+ * @param at the event to measure
+ * @return milliseconds since the run's first stamped event, clamped at zero
+ *         (a session file may carry stamps out of order, and a negative elapsed
+ *         reads as a broken clock rather than as the disordered recording it
+ *         is), or null when either end carries no readable stamp
+ */
+export function elapsedAt(events: readonly RunEvent[], at: number): number | null {
+  const start = timestampOf(events[0]);
+  const here = at >= 0 && at < events.length ? timestampOf(events[at]) : null;
+  return start === null || here === null ? null : Math.max(0, here - start);
 }
 
 /**

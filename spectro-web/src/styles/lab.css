@@ -647,28 +647,50 @@
   opacity: 1;
   transform: scaleX(3);
 }
+/* THE KIND COLOURS — ONE TABLE, WORN BY TWO SURFACES.
+   A moment is an 11px tick on the transport row (card 299) and a chip in the
+   dock's moments panel (card 309), and the two must not read as different
+   moments. This table was briefly written twice, once per prefix: the tick
+   sits on the transport row and the chip in the dock, so neither inherits
+   anything from the other, and the two copies agreed only because they were
+   typed in the same minute. Both selectors are named on every row instead, so
+   re-colouring a kind IS one edit — pinned, rule by rule, in
+   lab/momentChipTakesTheTickColour.drift.test.ts.
+   A kind named on neither row falls through to `var(--tick, var(--text-faint))`,
+   which both surfaces declare, so an uncoloured kind is uncoloured in the same
+   way on both. `compaction` is the one that does. */
 .lab-mark--turn,
-.lab-mark--end {
+.lab-moment-kind--turn,
+.lab-mark--end,
+.lab-moment-kind--end {
   --tick: var(--ev-lifecycle);
 }
-.lab-mark--spawn {
+.lab-mark--spawn,
+.lab-moment-kind--spawn {
   --tick: var(--ev-subagent);
 }
 .lab-mark--gate,
-.lab-mark--denied {
+.lab-moment-kind--gate,
+.lab-mark--denied,
+.lab-moment-kind--denied {
   --tick: var(--ev-gate);
 }
-.lab-mark--error {
+.lab-mark--error,
+.lab-moment-kind--error {
   --tick: var(--error);
 }
 .lab-mark--no_progress,
-.lab-mark--intervention {
+.lab-moment-kind--no_progress,
+.lab-mark--intervention,
+.lab-moment-kind--intervention {
   --tick: var(--warn);
 }
-.lab-mark--question {
+.lab-mark--question,
+.lab-moment-kind--question {
   --tick: var(--ev-pending);
 }
-.lab-mark--skill {
+.lab-mark--skill,
+.lab-moment-kind--skill {
   --tick: var(--ev-tool);
 }
 .lab-clock {
@@ -1103,4 +1125,71 @@
 }
 .lab-files-badge {
   font-size: var(--fs-11);
+}
+
+/* ---- D. the moments panel (card 309) ---- */
+/* The kind colours are not written here. Every `.lab-moment-kind--*` selector
+   stands beside its `.lab-mark--*` twin in the one table up in the transport
+   block, so a moment cannot read as one colour on the bar and another in the
+   list. See the note there. */
+.lab-moments-hint,
+.lab-moments-empty {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lab-moments-count {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.lab-moments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lab-moment-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font-size: var(--fs-11);
+}
+.lab-moment-open:hover {
+  background: var(--surface-2);
+}
+.lab-moment-step {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+/* Colour on a line, never a fill: the kind is carried by the rule beside the
+   word, the same way the tick is a rule on the bar. */
+.lab-moment-kind {
+  padding-left: var(--sp-2);
+  border-left: 2px solid var(--tick, var(--text-faint));
+  white-space: nowrap;
+}
+.lab-moment-text {
+  flex: 1 1 12ch;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.lab-moment-clock {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* The moment on a file row (card 309B). */
+.lab-files-when {
+  color: var(--text-faint);
+  white-space: nowrap;
 }

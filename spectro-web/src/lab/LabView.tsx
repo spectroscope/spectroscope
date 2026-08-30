@@ -467,6 +467,9 @@ export function LabView(props: {
           tab={dockTab}
           onPickTab={pickDockTab}
           applied={st.applied}
+          /* The whole run for the moments panel — the same `applied` plus
+             `queue` the transport's scrub bar and its ticks already walk. */
+          stream={[...st.applied, ...st.queue]}
           /* The workspace the canon knows, for shortening displayed paths. A
              replay and an import have none, and then nothing is shortened. */
           workspaceRoot={st.ui.workspace?.path ?? null}

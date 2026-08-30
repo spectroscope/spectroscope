@@ -10,6 +10,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RunEvent } from "../events";
 import { LabTransport } from "./LabTransport";
+import { agentDirectory } from "./agentDirectory";
+import { setLang } from "../state/lang";
 import {
   MARK_MIN_GAP_PCT,
   __resetForTests,
@@ -36,6 +38,20 @@ const timed: RunEvent[] = [
   }),
   ev({ type: "permission_decision", callId: "c1", allowed: false, ts: T + 3000 }),
   ev({ type: "run_end", runId: "r1", stopReason: "end_turn", ts: T + 5000 }),
+];
+
+/** Two opaque child ids of the shape a real run carries — ULIDs, not words.
+ *  Named once so the assertions below cannot drift from the fixture. */
+const KID_A = "agent_01JQ8Z3K7NOPAQUE";
+const KID_B = "agent_01JQ8Z3K7OTHERKID";
+
+/** A run that spawns two children, so a tooltip has handles to find and the
+ *  reading cannot be a hard-coded "w1". */
+const spawned: RunEvent[] = [
+  ev({ type: "run_start", runId: "r1", agentId: "main", prompt: "p", ts: T }),
+  ev({ type: "agent_spawn", agentId: KID_A, parentId: "main", task: "read", ts: T + 1000 }),
+  ev({ type: "agent_spawn", agentId: KID_B, parentId: "main", task: "write", ts: T + 2000 }),
+  ev({ type: "run_end", runId: "r1", stopReason: "end_turn", ts: T + 3000 }),
 ];
 
 /** The same run with every line on one millisecond: no span was recorded. */
@@ -93,6 +109,37 @@ describe("the chapter ticks", () => {
     expect(html).toContain("lab-mark--denied");
     expect(html).toContain("refused at the gate");
     expect(html).toContain("the gate stopped write_file");
+  });
+
+  // Card 309, fix round. The moments panel was taught to read the child's
+  // HANDLE (momentLabel), the tick was not — and `lab.mark.spawn` prints
+  // `{id}`, the raw agent id, which is the one thing card 298's directory
+  // exists to keep off a screen. A tooltip is a smaller surface than a list
+  // row, not a different rule, so both now read the same directory.
+  it("names a spawned child by its handle in the tooltip, never by the raw id", () => {
+    loadReplay("s5", spawned);
+    const html = render();
+    expect((html.match(/lab-mark--spawn/g) ?? []).length).toBe(2);
+    expect(html).not.toContain(KID_A);
+    expect(html).not.toContain(KID_B);
+    // The handles are READ from the directory rather than written here, so the
+    // tick and every other surface cannot drift into two names for one child.
+    const dir = agentDirectory(spawned);
+    const tagA = dir.get(KID_A)?.tag;
+    const tagB = dir.get(KID_B)?.tag;
+    expect([tagA, tagB]).toEqual(["w1", "w2"]);
+    expect(html).toContain(`child agent ${tagA} starts`);
+    expect(html).toContain(`child agent ${tagB} starts`);
+  });
+
+  it("says the same handle in German", () => {
+    // Both locales or the leak comes back through the one nobody rendered.
+    setLang("de");
+    loadReplay("s5", spawned);
+    const html = render();
+    expect(html).not.toContain(KID_A);
+    expect(html).toContain("Kind-Agent w1 beginnt");
+    setLang("en");
   });
 
   it("draws nothing at all for a run with no chapters", () => {

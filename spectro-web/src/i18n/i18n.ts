@@ -3940,6 +3940,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "der Lauf hat angehalten und gefragt ({n})",
     en: "the run stopped and asked ({n})",
   },
+  // Card 309: the spawn line without the raw id. `lab.mark.spawn` prints the
+  // child's agent id, which is fine in an 11px tooltip and wrong in a list a
+  // person reads; the moments panel swaps it for the directory's handle, and
+  // falls back to this line when the directory holds none.
+  "lab.mark.spawn.unnamed": { de: "ein Kind-Agent beginnt", en: "a child agent starts" },
   "lab.mark.skill": { de: "Skill geladen · {name}", en: "skill loaded · {name}" },
   "lab.mark.skill.unnamed": { de: "ein Skill wurde geladen", en: "a skill was loaded" },
   "lab.mark.error": { de: "Fehler · {message}", en: "error · {message}" },
@@ -4002,6 +4007,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lab.dock.tab.ctx": { de: "Kontext", en: "context" },
   "lab.dock.tab.msg": { de: "Übergaben", en: "handovers" },
   "lab.dock.tab.files": { de: "Dateien", en: "files" },
+  "lab.dock.tab.moments": { de: "Momente", en: "moments" },
 
   // A. The message lane. Every line here is written so a reader can tell a
   // direction the SPAWN TREE established from one the role word guessed.
@@ -4082,6 +4088,42 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Pfade sind relativ zu {root} gekürzt.",
     en: "Paths are shortened against {root}.",
   },
+
+  // Card 309: the coarse step, named the same way wherever it is printed. ONE
+  // entry, because the file rows and the moments rows say the same thing about
+  // the same unit, and two entries holding one sentence are two sentences
+  // waiting to drift.
+  "lab.stepN": { de: "Schritt {n}", en: "step {n}" },
+
+  // Card 309A: the moments panel — the chapter marks of card 299 as rows,
+  // because a tick you have to hover is not something you can read.
+  "lab.moments.title": { de: "Momente", en: "moments" },
+  "lab.moments.aria": { de: "Momente dieses Laufs", en: "This run's moments" },
+  "lab.moments.hint": {
+    de: "Was in diesem Lauf passiert ist, der Reihe nach. Ein Klick springt dorthin.",
+    en: "What happened in this run, in order. A click jumps there.",
+  },
+  "lab.moments.empty": {
+    de: "Dieser Lauf trägt keinen dieser Momente: keinen Zug, kein Gate, keinen Fehler, kein Ende.",
+    en: "This run carries none of these moments: no turn, no gate, no error, no ending.",
+  },
+  "lab.moments.count": { de: "{n} Momente", en: "{n} moments" },
+  "lab.moments.countOne": { de: "1 Moment", en: "1 moment" },
+  "lab.moments.open": { de: "Zu diesem Moment springen", en: "Jump to this moment" },
+
+  // The kind of a moment, in words. The wire name (`no_progress`) is a field
+  // name, never a line a person reads.
+  "lab.moment.kind.turn": { de: "Zug", en: "turn" },
+  "lab.moment.kind.spawn": { de: "Kind-Agent", en: "child agent" },
+  "lab.moment.kind.compaction": { de: "Kompaktierung", en: "compaction" },
+  "lab.moment.kind.gate": { de: "Gate", en: "gate" },
+  "lab.moment.kind.denied": { de: "abgelehnt", en: "refused" },
+  "lab.moment.kind.noProgress": { de: "kein Fortschritt", en: "no progress" },
+  "lab.moment.kind.intervention": { de: "Eingriff", en: "intervention" },
+  "lab.moment.kind.question": { de: "Frage", en: "question" },
+  "lab.moment.kind.skill": { de: "Skill", en: "skill" },
+  "lab.moment.kind.error": { de: "Fehler", en: "error" },
+  "lab.moment.kind.end": { de: "Lauf zu Ende", en: "run ended" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

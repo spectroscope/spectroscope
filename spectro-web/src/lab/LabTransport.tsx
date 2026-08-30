@@ -51,7 +51,8 @@ import {
   thinMarks,
   useStepper,
 } from "../state/stepper";
-import { chapterLabel } from "./chapterLabel";
+import { agentDirectory } from "./agentDirectory";
+import { markTag, momentLabel } from "./chapterLabel";
 import { sceneNow } from "./sceneNow";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -110,6 +111,11 @@ export function LabTransport(props: {
   // thinning is not cosmetic: a 60-turn run draws 61 ticks 1.65% apart, and
   // ticks that touch cannot be aimed at individually.
   const marks = thinMarks(markPositions(chapterMarks(all), boundaries), MARK_MIN_GAP_PCT);
+  // The same directory the moments panel reads, over the same whole run. A
+  // spawn tick's sentence carries `{id}` — the raw agent id — and card 298
+  // exists to keep exactly that off a screen; a tooltip is a smaller surface
+  // than a list row, not a different rule.
+  const dir = agentDirectory(all);
   // The wall clock, or null when this recording never carried one.
   const clock = runClock(all, cursor);
   const factor = speedFactorOf(st.intervalMs);
@@ -227,7 +233,7 @@ export function LabTransport(props: {
             {marks.length > 0 && (
               <div className="lab-marks" role="group" aria-label={t(lang, "lab.marksAria")}>
                 {marks.map((m, i) => {
-                  const line = chapterLabel(m.mark, lang);
+                  const line = momentLabel(m.mark, markTag(m.mark, dir), lang);
                   return (
                     <button
                       key={`${m.mark.at}-${i}`}

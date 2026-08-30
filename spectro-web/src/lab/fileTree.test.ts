@@ -12,7 +12,11 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { agentDirectory } from "./agentDirectory";
-import { fileFootprint, shortenPath } from "./fileTree";
+import { fileFootprint, shortenPath, touchMoments } from "./fileTree";
+import { stepBoundaries } from "../state/stepper";
+
+/** One event of each shape, cast the way the rest of the suite casts them. */
+const ev = (e: Record<string, unknown>): RunEvent => e as unknown as RunEvent;
 
 const call = (agentId: string, name: string, input: unknown, ts: number): RunEvent => ({
   type: "tool_call",
@@ -248,5 +252,114 @@ describe("every agent the footprint names, the directory can name too", () => {
     // eight: a.ts is one entry that main both read and wrote, so main is
     // checked on both of its sides, and two of the calls share it.
     expect(checked).toBe(6);
+  });
+});
+
+// Card 309B: the row says WHEN. The fold already ordered the touches by first
+// contact and its own doc calls that order "the only record of the sequence the
+// run worked in" — but nothing on a row carried the moment, so the order was
+// legible only to somebody who had read this module. Every bite below is one
+// branch of that reading; the elapsed half in particular must be silent, never
+// approximate, on a recording that carries no clock.
+describe("touchMoments — the step, and a time only where the run kept one", () => {
+  it("gives no moments for no touches", () => {
+    expect(touchMoments([], [])).toEqual([]);
+  });
+
+  it("names the coarse step that SHOWS the touch, not the one before it", () => {
+    const events: RunEvent[] = [
+      delta("main", 1),
+      call("main", "read_file", { path: "a.ts" }, 2),
+      delta("main", 3),
+      call("main", "write_file", { path: "b.ts" }, 4),
+    ];
+    const fp = fileFootprint(events);
+    const boundaries = stepBoundaries(events);
+    const moments = touchMoments(events, fp.touches);
+    expect(moments).toHaveLength(2);
+    for (const [i, m] of moments.entries()) {
+      // The same rule markPositions uses for a tick: the first boundary PAST
+      // the event. Seeking to the boundary before shows the run one step short
+      // of the touch the row promised.
+      expect(boundaries[m.step]).toBeGreaterThan(fp.touches[i].firstIndex);
+      expect(boundaries[m.step - 1]).toBeLessThanOrEqual(fp.touches[i].firstIndex);
+    }
+  });
+
+  it("reads the same step whether the panel folded the prefix or the whole run", () => {
+    // The panel folds `applied`; the transport counts over applied PLUS the
+    // queue. The two agree because every disk call is a non-delta and therefore
+    // its own block, so a boundary always lands right behind it — but that is a
+    // property of two modules, so it is measured rather than assumed.
+    const whole: RunEvent[] = [
+      delta("main", 1),
+      call("main", "read_file", { path: "a.ts" }, 2),
+      delta("main", 3),
+      delta("main", 4),
+      call("main", "Edit", { file_path: "b.ts" }, 5),
+      delta("main", 6),
+      call("main", "Write", { file_path: "c.ts" }, 7),
+    ];
+    const applied = whole.slice(0, 6);
+    const prefixSteps = touchMoments(applied, fileFootprint(applied).touches).map((m) => m.step);
+    const wholeSteps = touchMoments(whole, fileFootprint(whole).touches)
+      .map((m) => m.step)
+      .slice(0, prefixSteps.length);
+    expect(prefixSteps).toEqual(wholeSteps);
+  });
+
+  it("measures elapsed from the run's first stamped event", () => {
+    const events: RunEvent[] = [
+      delta("main", 1000),
+      call("main", "read_file", { path: "a.ts" }, 3500),
+      call("main", "write_file", { path: "b.ts" }, 61000),
+    ];
+    const moments = touchMoments(events, fileFootprint(events).touches);
+    expect(moments.map((m) => m.elapsedMs)).toEqual([2500, 60000]);
+  });
+
+  it("says NOTHING about time when the recording carries no clock to start it", () => {
+    // An imported transcript with no stamps. A "0:00" here would be a claim
+    // about when the run touched a file that nothing measured.
+    const events: RunEvent[] = [
+      ev({ type: "text_delta", agentId: "main", text: "…" }),
+      ev({ type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: { path: "a.ts" } }),
+    ];
+    const moments = touchMoments(events, fileFootprint(events).touches);
+    expect(moments).toHaveLength(1);
+    expect(moments[0].elapsedMs).toBeNull();
+    // The step is still true — coarse steps are counted, not clocked — so a
+    // clockless run loses the time and keeps the order.
+    expect(moments[0].step).toBeGreaterThan(0);
+  });
+
+  it("stays silent for the ONE row whose own event lost its stamp", () => {
+    // Bitten apart from the case above: an anchor that reads and a row that
+    // does not is a different branch, and one test covering both would be
+    // green with either half missing.
+    const events: RunEvent[] = [
+      delta("main", 1000),
+      ev({ type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: { path: "a.ts" } }),
+      call("main", "write_file", { path: "b.ts" }, 4000),
+    ];
+    const moments = touchMoments(events, fileFootprint(events).touches);
+    expect(moments.map((m) => m.elapsedMs)).toEqual([null, 3000]);
+  });
+
+  it("never reports a negative elapsed when a session file's stamps run backwards", () => {
+    const events: RunEvent[] = [delta("main", 9000), call("main", "read_file", { path: "a.ts" }, 1000)];
+    expect(touchMoments(events, fileFootprint(events).touches)[0].elapsedMs).toBe(0);
+  });
+
+  it("leaves the paths count alone — a pattern is still not a file", () => {
+    // Card 301B's considered fix. Adding a column to the row must not move the
+    // number above it.
+    const events: RunEvent[] = [
+      call("main", "Glob", { pattern: "src/**" }, 1),
+      call("main", "Read", { file_path: "a.ts" }, 2),
+    ];
+    const fp = fileFootprint(events);
+    expect(fp.touches.filter((touch) => !touch.pattern)).toHaveLength(1);
+    expect(touchMoments(events, fp.touches)).toHaveLength(2);
   });
 });

@@ -24,6 +24,7 @@
 // Without that number a quiet panel is a lie.
 
 import type { RunEvent } from "../events";
+import { elapsedAt, stepBoundaries, stepOfEvent } from "../state/stepper";
 import { CC_DISK_READ, CC_DISK_WRITE, DISK_TOOLS, SHELL_TOOLS } from "./labScene";
 import { workspaceBasename } from "../workspace/paths";
 
@@ -135,6 +136,55 @@ export function fileFootprint(events: readonly RunEvent[], upto?: number): FileF
   });
 
   return { touches: [...byPath.values()].map((v) => v.touch), shellCalls };
+}
+
+// ---------------------------------------------------------------------------
+// Card 309B: WHEN a path was first touched.
+//
+// The order above is load-bearing and was invisible. `touches` is ordered by
+// first contact and the doc calls that "the only record of the sequence the run
+// worked in" — but the panel printed a list with nothing on it that said when,
+// so the order read as arbitrary to anyone who had not opened this file. The
+// row now carries the moment.
+//
+// THE STEP IS THE UNIT, and it is the transport's own: `stepOfEvent` is the
+// same rule a scrub tick is placed by, imported rather than copied, so the
+// number on a file row and the number in the step counter cannot drift apart.
+//
+// THE CLOCK IS OPTIONAL AND STAYS OPTIONAL. Coarse steps are counted; time is
+// only measured where the recording carried stamps. An import without them gets
+// the step and no time at all — a "0:00" would be a statement about when a run
+// touched a file that nothing measured. `elapsedAt` is imported for the same
+// reason `stepOfEvent` is: it is the reading `runClock` already does of the
+// wire's optional stamp, and a private copy here would let this panel and the
+// transport disagree about whether a run had a clock.
+// ---------------------------------------------------------------------------
+
+/** When one touch happened, in the coordinates the transport counts in. */
+export interface TouchMoment {
+  /** The coarse step that SHOWS the first touch — the first boundary past it. */
+  step: number;
+  /** Milliseconds from the run's first stamped event to this one, or null when
+   *  either end carries no readable stamp. Null is the honest answer, not a
+   *  zero. */
+  elapsedMs: number | null;
+}
+
+/**
+ * When each touch happened.
+ *
+ * @param events the prefix the footprint was folded from — `firstIndex` indexes
+ *   into exactly this array, so handing in a different stream would number the
+ *   rows against a run they did not come from
+ * @param touches that footprint's touches, in its own order
+ * @return one entry per touch, in the same order
+ */
+export function touchMoments(events: readonly RunEvent[], touches: readonly FileTouch[]): TouchMoment[] {
+  const boundaries = stepBoundaries(events);
+  return touches.map((touch) => ({
+    step: stepOfEvent(boundaries, touch.firstIndex),
+    elapsedMs: elapsedAt(events, touch.firstIndex),
+  }));
 }
 
 /**
