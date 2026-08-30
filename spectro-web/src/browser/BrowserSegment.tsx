@@ -34,8 +34,10 @@ import { useBrowserActionCue } from "../state/browserCue";
 import { useLang } from "../state/lang";
 import {
   clickFrame,
+  closePageFrame,
   faceLabelKey,
   historyFrame,
+  reloadFrame,
   keyFrame,
   keyName,
   launchListFrame,
@@ -361,6 +363,8 @@ export function BrowserSegment(props: {
         sessionId={sessionId}
         mode={webFaceMode(view)}
         url={view?.url ?? null}
+        canGoBack={view?.canGoBack ?? null}
+        canGoForward={view?.canGoForward ?? null}
         draft={draft}
         picture={picture}
         notice={notice}
@@ -382,6 +386,8 @@ export function BrowserSegment(props: {
       floored={floored}
       sessionId={sessionId}
       url={view?.url ?? status?.url ?? null}
+      canGoBack={view?.canGoBack ?? null}
+      canGoForward={view?.canGoForward ?? null}
       draft={draft}
       notice={notice}
       launch={launch}
@@ -423,6 +429,10 @@ export interface WebFaceViewProps {
   launch: LaunchList | null;
   /** The configuration a play press is starting, while it is in flight. */
   playing: string | null;
+  /** Whether the live face has anywhere to go back to, or null for "it did not
+   *  say" — card 344 (c). A null never disables; see ViewState. */
+  canGoBack: boolean | null;
+  canGoForward: boolean | null;
   send(frame: Record<string, unknown>): void;
   onDraft(next: string | null): void;
   onPlay(name: string): void;
@@ -531,11 +541,32 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
           aria-hidden="true"
         />
         {live ? (
-          <NavControls sessionId={sessionId} url={url} draft={draft} send={send} onDraft={onDraft} />
+          <NavControls
+            sessionId={sessionId}
+            url={url}
+            draft={draft}
+            canGoBack={props.canGoBack}
+            canGoForward={props.canGoForward}
+            send={send}
+            onDraft={onDraft}
+          />
         ) : (
-          <span className="browser-address" title={url ?? undefined}>
-            {url ?? t(lang, "browser.noPage")}
-          </span>
+          <>
+            <span className="browser-address" title={url ?? undefined}>
+              {url ?? t(lang, "browser.noPage")}
+            </span>
+            {mode === "desktop" && (
+              // CARD 344 (a). The row used to collapse to the address alone
+              // here, and this is the mode the OWNER is in whenever he runs the
+              // desktop app: back, forward, reload, the address field and the
+              // screenshot were simply absent, with nothing saying why. The two
+              // faces are mutually exclusive by design (one browser per
+              // session, the desktop pane wins), so the honest answer is a
+              // sentence and not a second driver — the precedence rule is
+              // untouched.
+              <span className="browser-row-note">{t(lang, "browser.view.rowDesktopNote")}</span>
+            )}
+          </>
         )}
         <LaunchMenu
           launch={launch}
@@ -612,21 +643,30 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
 }
 
 /**
- * The control row both faces share (card 227): back, forward, reload and the
- * address field, in this order, speaking the view channel's own frames. On
+ * The control row both faces share (card 227): back, forward, reload, close and
+ * the address field, in this order, speaking the view channel's own frames. On
  * the web face the verbs drive the server's headless Chrome; on the desktop
  * face the SAME frames route to the shell's pane — one browser per session,
  * whichever engine is live.
+ *
+ * <p>Card 344 made three of these honest. Back and forward carry a `disabled`
+ * only where the live face SAID there is nothing there — an unknown answer
+ * leaves them alone, because a wrong disabled is worse than the error sentence
+ * it replaces (see {@link ViewState}). Reload asks for a reload rather than
+ * re-navigating to the remembered address. Card 346 added the close.
  */
 function NavControls(props: {
   sessionId: string;
   url: string | null;
   draft: string | null;
+  /** Null means the live face did not say; a null never disables. */
+  canGoBack: boolean | null;
+  canGoForward: boolean | null;
   send(frame: Record<string, unknown>): void;
   onDraft(next: string | null): void;
 }): React.JSX.Element {
   const lang = useLang();
-  const { sessionId, url, draft, send, onDraft } = props;
+  const { sessionId, url, draft, canGoBack, canGoForward, send, onDraft } = props;
 
   const commit = (): void => {
     const target = typedAddress(draft ?? "");
@@ -643,6 +683,7 @@ function NavControls(props: {
         type="button"
         className="view-nav"
         aria-label={t(lang, "browser.view.back")}
+        disabled={canGoBack === false}
         onClick={() => send(historyFrame(sessionId, "back"))}
       >
         ‹
@@ -651,6 +692,7 @@ function NavControls(props: {
         type="button"
         className="view-nav"
         aria-label={t(lang, "browser.view.forward")}
+        disabled={canGoForward === false}
         onClick={() => send(historyFrame(sessionId, "forward"))}
       >
         ›
@@ -660,11 +702,18 @@ function NavControls(props: {
         className="view-nav"
         aria-label={t(lang, "browser.view.reload")}
         disabled={url === null}
-        onClick={() => {
-          if (url !== null) send(navigateFrame(sessionId, url));
-        }}
+        onClick={() => send(reloadFrame(sessionId))}
       >
         ⟳
+      </button>
+      <button
+        type="button"
+        className="view-nav"
+        aria-label={t(lang, "browser.view.closePage")}
+        disabled={url === null}
+        onClick={() => send(closePageFrame(sessionId))}
+      >
+        ✕
       </button>
       <form
         className="view-address"
@@ -912,6 +961,10 @@ export interface DesktopFaceViewProps {
   launch: LaunchList | null;
   /** The configuration a play press is starting, while it is in flight. */
   playing: string | null;
+  /** Whether the live face has anywhere to go back to, or null for "it did not
+   *  say" — card 344 (c). A null never disables; see ViewState. */
+  canGoBack: boolean | null;
+  canGoForward: boolean | null;
   /** Where BrowserSegment measures the pane's rectangle from. */
   holeRef?: React.Ref<HTMLDivElement>;
   send(frame: Record<string, unknown>): void;
@@ -944,6 +997,8 @@ export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element 
               sessionId={sessionId}
               url={url}
               draft={draft}
+              canGoBack={props.canGoBack}
+              canGoForward={props.canGoForward}
               send={props.send}
               onDraft={props.onDraft}
             />

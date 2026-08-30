@@ -35,6 +35,20 @@ import com.fasterxml.jackson.databind.JsonNode;
  *   <li>{@code console} — {@code {limit?, onlyErrors?, pattern?, tabId?}}</li>
  *   <li>{@code resize} — {@code {width, height, tabId?}}</li>
  * </ul>
+ *
+ * <p><b>Two more the OPERATOR has and the model does not</b> (cards 344 and
+ * 346), reached only from the toolbar over {@code /ws/browser-view}, like
+ * {@code back} and {@code forward} before them:
+ *
+ * <ul>
+ *   <li>{@code reload} — no arguments, deliberately. Chromium's own reload, so
+ *       what was typed into a form survives and nothing is re-posted; a
+ *       navigate to the remembered address is what this verb exists to stop
+ *       being.</li>
+ *   <li>{@code close_page} — drops the page and keeps the Chromium session, its
+ *       cookies and its cache. {@code closeSession} on {@link BrowserFaces} is
+ *       the destructive neighbour; this one is closing a tab.</li>
+ * </ul>
  */
 public interface BrowserFace {
 
@@ -69,6 +83,44 @@ public interface BrowserFace {
      * @return the reply, ok or failed
      */
     Reply send(String verb, JsonNode args);
+
+    /**
+     * Where this browser's history can go, for a toolbar to grey out what is
+     * not there (card 344, criterion 3).
+     *
+     * <p>The default is {@link History#UNKNOWN}, and that default is the point.
+     * A face that cannot answer FRESHLY must say nothing rather than guess:
+     * an unknown leaves the control alone and the operator learns by pressing
+     * it, which is exactly today's behaviour, while a wrong {@code false} is a
+     * dead button over a working page. The desktop shell pushes no navigation
+     * up its control channel, so its answer would be a cache that goes stale
+     * the moment the operator clicks a link on the real pane — it keeps the
+     * default deliberately.
+     *
+     * @return what is known about this browser's history right now
+     */
+    default History history() {
+        return History.UNKNOWN;
+    }
+
+    /**
+     * What a face knows about its own history.
+     *
+     * <p>Boxed on purpose: {@code null} is a THIRD state, "not known right
+     * now", and it must not be collapsed into {@code false}. See
+     * {@link #history()}.
+     *
+     * @param back    whether there is an entry earlier, or null when unknown
+     * @param forward whether there is one later, or null when unknown
+     */
+    record History(Boolean back, Boolean forward) {
+
+        /** A face that cannot answer. Never disables a control. */
+        public static final History UNKNOWN = new History(null, null);
+
+        /** A browser holding no page: provably nowhere to go, either way. */
+        public static final History NOWHERE = new History(false, false);
+    }
 
     /**
      * One reply from the browser.

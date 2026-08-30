@@ -102,6 +102,21 @@ export const dict: Record<string, { de: string; en: string }> = {
   "browser.view.reload": { de: "Seite neu laden", en: "Reload the page" },
   "browser.view.screenshot": { de: "Bild als Datei sichern", en: "Save the picture as a file" },
   "browser.view.address": { de: "Adresse", en: "Address" },
+  // CARD 344 (a) — the row that used to vanish. With the desktop pane live the
+  // web face gates its whole control row away, and the owner runs the desktop
+  // app, so the row he sees in a web window is the one that was never there.
+  // The two faces are mutually exclusive by design, so the honest answer is a
+  // sentence rather than a second driver.
+  "browser.view.rowDesktopNote": {
+    de: "Das Desktop-Fenster fährt diese Bedienleiste.",
+    en: "The desktop pane is driving these controls.",
+  },
+  // CARD 346 — closing the page without closing the session. The wording says
+  // what survives, because the owner's question was exactly that.
+  "browser.view.closePage": {
+    de: "Seite schließen (Anmeldungen bleiben)",
+    en: "Close the page (logins are kept)",
+  },
   "browser.view.addressHint": { de: "Adresse eintippen und Enter drücken", en: "type an address and press enter" },
   "browser.view.idleNote": {
     de: "Noch keine Seite offen. Tippe oben eine Adresse ein oder lass den Agenten navigieren — das Bild erscheint hier.",

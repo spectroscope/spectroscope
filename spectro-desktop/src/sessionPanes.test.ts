@@ -48,6 +48,8 @@ interface FakePage {
   url: string;
   visible: boolean[];
   closed: boolean;
+  /** How often Chromium's own reload ran — card 344 (b)'s whole distinction. */
+  reloads: number;
   consoleSink: ((event: { level: string; message: string }) => void) | null;
 }
 
@@ -83,6 +85,15 @@ function fakeWebContents(page: FakePage): Record<string, unknown> {
       page.loaded.push(url);
       page.url = url;
     },
+    reload: () => {
+      page.reloads += 1;
+    },
+    navigationHistory: {
+      canGoBack: () => false,
+      canGoForward: () => false,
+      goBack: () => {},
+      goForward: () => {},
+    },
     executeJavaScript: async () => null,
     capturePage: async () => ({
       getSize: () => ({ width: 800, height: 600 }),
@@ -107,6 +118,7 @@ const fakeElectron = {
         url: "about:blank",
         visible: [],
         closed: false,
+        reloads: 0,
         consoleSink: null,
       };
       pages.push(this.page);
@@ -472,5 +484,96 @@ describe("the agent drives the panel, never the surface (card 241)", () => {
 
     assert.equal(pageOf(A).visible.at(-1), false,
       "the fresh page starts with no pane over it");
+  });
+});
+
+// The two verbs cards 344 and 346 added, and the one thing each must NOT do.
+//
+// 344 (b): a reload is Chromium's own reload. The control used to send a
+// navigate frame naming the remembered address, which loses form state and
+// re-posts — and this very file states that objection in writing for
+// back/forward, three lines of comment above the case that avoids it. Nobody
+// carried it across, so the pinning is here: a loadURL on the reload path is
+// the defect back.
+//
+// 346: closing a page keeps the LOGIN. The owner answered the card's blocking
+// question on 2026-08-30 — "ja cookies behalten" — so retire() must not be
+// reachable from here, and the bite for that is the Chromium session's own
+// `cleared` log rather than "the view is gone".
+describe("reload, and closing a page without closing the session", () => {
+  beforeEach(() => {
+    pane.forgetPane();
+    reset();
+    pane.attachPaneTo(() => WINDOW as unknown as Electron.BaseWindow, () => {});
+  });
+
+  it("reloads the page it is holding instead of re-loading a remembered address", async () => {
+    await pane.runVerb("navigate", { url: "http://localhost:5173/form" }, OPEN, A);
+    const page = pageOf(A);
+    assert.equal(page.loaded.length, 1);
+
+    const reply = await pane.runVerb("reload", {}, OPEN, A);
+
+    assert.equal(reply.ok, true, String(reply.error));
+    assert.equal(page.reloads, 1, "Chromium's own reload is what keeps the form state");
+    assert.equal(page.loaded.length, 1,
+      "a reload that loads the address again re-posts and throws the form away: "
+      + JSON.stringify(page.loaded));
+  });
+
+  it("says so rather than reloading nothing when no page is open", async () => {
+    const reply = await pane.runVerb("reload", {}, OPEN, A);
+    assert.equal(reply.ok, false);
+    assert.match(String(reply.error), /no page is open/);
+  });
+
+  it("closes the page: the view is destroyed, not merely detached", async () => {
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+    const page = pageOf(A);
+
+    const reply = await pane.runVerb("close_page", {}, OPEN, A);
+
+    assert.equal(reply.ok, true, String(reply.error));
+    assert.equal(page.closed, true, "a hidden page keeps its timers and its websockets");
+    assert.equal(removedChildren, 1, "and it left the window");
+    assert.equal(pane.paneUrl(A), null, "the session reports no page");
+    assert.equal(reply.pageUrl, null, "and the reply says so, so the server clears its cache");
+  });
+
+  it("KEEPS the Chromium session: the partition, the cookies and the cache survive", async () => {
+    // The owner's answer, bitten in the direction that fails silently. A
+    // close_page that reached retire() would sign him out of everything the
+    // page was logged into, and nothing on screen would say so.
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+    const used = [...sessions.values()].at(-1);
+    assert.ok(used, "the navigate built a Chromium session");
+    const partition = used.partition;
+
+    await pane.runVerb("close_page", {}, OPEN, A);
+
+    assert.deepEqual(used.cleared, [],
+      "close_page emptied the jar: " + JSON.stringify(used.cleared));
+    assert.equal(sessions.size, 1, "and it must not have retired the partition either");
+
+    await pane.runVerb("navigate", { url: "http://localhost:5173/again" }, OPEN, A);
+    assert.equal(pages.at(-1)?.partition, partition,
+      "a navigate after a close walks back into the SAME jar, so the login is still there");
+    assert.equal(sessions.size, 1, "one partition across both pages: "
+      + [...sessions.keys()].join(" "));
+  });
+
+  it("leaves the neighbour's page alone", async () => {
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+    await pane.runVerb("navigate", { url: "http://localhost:5173/b" }, OPEN, B);
+
+    await pane.runVerb("close_page", {}, OPEN, A);
+
+    assert.equal(pane.paneUrl(B), "http://localhost:5173/b");
+  });
+
+  it("says so rather than closing nothing when no page is open", async () => {
+    const reply = await pane.runVerb("close_page", {}, OPEN, A);
+    assert.equal(reply.ok, false);
+    assert.match(String(reply.error), /no page is open/);
   });
 });

@@ -20,6 +20,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -491,6 +492,168 @@ class HeadlessBrowserFaceTest {
         BrowserFace.Reply forward = face.send("forward", JSON.createObjectNode());
         assertFalse(forward.ok(), "at the end of history, forward must say so");
         assertTrue(forward.error().contains("nothing later"), forward.error());
+    }
+
+    // ---- reload, history state, close_page (cards 344 and 346) -------------
+
+    @Test
+    void reloadIsAReloadAndNeverANavigateToTheRememberedAddress() {
+        // Card 344 (b). The control used to send a navigate frame naming the
+        // remembered address, which throws away form state and re-posts — the
+        // behaviour the desktop shell refuses IN WRITING for back/forward one
+        // file away. The mechanism that keeps form state is Chromium's own
+        // reload, so what is pinned here is the CDP method: a Page.navigate on
+        // this path would be the defect back, under a new name.
+        FakeCdp cdp = new FakeCdp();
+        cdp.scriptLoadingPage("http://dev.example.com/form", "Form");
+        HeadlessBrowserFace face = face(cdp);
+        face.send("navigate", JSON.createObjectNode().put("url", "http://dev.example.com/form"));
+        int navigatesBefore = (int) cdp.called.stream().filter("Page.navigate"::equals).count();
+
+        BrowserFace.Reply reply = face.send("reload", JSON.createObjectNode());
+
+        assertTrue(reply.ok(), () -> String.valueOf(reply.error()));
+        assertTrue(cdp.called.contains("Page.reload"), cdp.called.toString());
+        assertEquals(navigatesBefore,
+                (int) cdp.called.stream().filter("Page.navigate"::equals).count(),
+                "a reload that navigates is the defect this card closes: " + cdp.called);
+        assertEquals("http://dev.example.com/form", reply.pageUrl(),
+                "the reload happened on the page it is showing");
+    }
+
+    @Test
+    void reloadBeforeAnyPageSaysNoPageIsOpen() {
+        BrowserFace.Reply reply = face(new FakeCdp()).send("reload", JSON.createObjectNode());
+        assertFalse(reply.ok());
+        assertTrue(reply.error().contains("no page is open"), reply.error());
+    }
+
+    @Test
+    void theFaceReportsWhereItsHistoryCanGo() {
+        // Card 344 (c). The two booleans the toolbar disables on. Measured from
+        // Chromium's own history rather than remembered, because a remembered
+        // one goes stale on the first link the page follows by itself.
+        FakeCdp cdp = new FakeCdp();
+        cdp.scriptLoadingPage("http://dev.example.com/two", "Two");
+        HeadlessBrowserFace face = face(cdp);
+        face.send("navigate", JSON.createObjectNode().put("url", "http://dev.example.com/two"));
+        cdp.handlers.put("Page.getNavigationHistory", (fake, params) -> {
+            ObjectNode history = JSON.createObjectNode().put("currentIndex", 1);
+            history.set("entries", JSON.createArrayNode()
+                    .add(JSON.createObjectNode().put("id", 1).put("url", "http://a/one"))
+                    .add(JSON.createObjectNode().put("id", 2).put("url", "http://a/two")));
+            return history;
+        });
+
+        BrowserFace.History middle = face.history();
+        assertEquals(Boolean.TRUE, middle.back(), "there is an entry before this one");
+        assertEquals(Boolean.FALSE, middle.forward(), "and none after it");
+
+        cdp.handlers.put("Page.getNavigationHistory", (fake, params) -> {
+            ObjectNode history = JSON.createObjectNode().put("currentIndex", 0);
+            history.set("entries", JSON.createArrayNode()
+                    .add(JSON.createObjectNode().put("id", 1).put("url", "http://a/one"))
+                    .add(JSON.createObjectNode().put("id", 2).put("url", "http://a/two")));
+            return history;
+        });
+        BrowserFace.History first = face.history();
+        assertEquals(Boolean.FALSE, first.back());
+        assertEquals(Boolean.TRUE, first.forward());
+    }
+
+    @Test
+    void aFaceWithNoPageHasNowhereToGoAndSaysSoWithoutSpawningAnEngine() {
+        // Not UNKNOWN: no page means there is provably nothing earlier and
+        // nothing later, and asking Chrome would spawn one to find that out.
+        HeadlessBrowserFace face = new HeadlessBrowserFace("s-1", () -> {
+            throw new IllegalStateException("history() must not open an engine");
+        }, url -> null);
+        BrowserFace.History nowhere = face.history();
+        assertEquals(Boolean.FALSE, nowhere.back());
+        assertEquals(Boolean.FALSE, nowhere.forward());
+    }
+
+    @Test
+    void anEngineThatCannotAnswerLeavesTheHistoryUnknownRatherThanGuessing() {
+        // The floor: an unknown never disables a button (see ViewState in
+        // spectro-web). A face that guessed "false" here would kill a control
+        // that works.
+        FakeCdp cdp = new FakeCdp();
+        cdp.scriptLoadingPage("http://dev.example.com/", "x");
+        HeadlessBrowserFace face = face(cdp);
+        face.send("navigate", JSON.createObjectNode().put("url", "http://dev.example.com/"));
+        cdp.handlers.put("Page.getNavigationHistory", (fake, params) -> {
+            throw new IllegalStateException("the endpoint died");
+        });
+        BrowserFace.History unknown = face.history();
+        assertNull(unknown.back(), "an engine that cannot answer says nothing");
+        assertNull(unknown.forward());
+    }
+
+    @Test
+    void aPageThatNavigatesItselfTellsTheWatcherRatherThanWaitingToBeAsked() {
+        // Card 344 (d). The address bar kept the old address after a click on a
+        // link inside the streamed picture, because state frames are pushed on
+        // five occasions and a page-initiated navigation is none of them.
+        FakeCdp cdp = new FakeCdp();
+        cdp.scriptLoadingPage("http://dev.example.com/", "x");
+        HeadlessBrowserFace face = face(cdp);
+        face.send("navigate", JSON.createObjectNode().put("url", "http://dev.example.com/"));
+        List<String> announced = new java.util.concurrent.CopyOnWriteArrayList<>();
+        face.onNavigated(() -> announced.add(face.pageUrl()));
+
+        cdp.emit("Page.frameNavigated", JSON.createObjectNode()
+                .set("frame", JSON.createObjectNode().put("url", "http://dev.example.com/next")));
+
+        assertEquals(List.of("http://dev.example.com/next"), announced,
+                "the watcher hears about a page that moved on its own");
+
+        // An iframe is not THE page, and a watcher woken by every subframe would
+        // repaint the address bar with an address the reader is not on.
+        cdp.emit("Page.frameNavigated", JSON.createObjectNode()
+                .set("frame", JSON.createObjectNode().put("url", "http://ads.example/pixel")
+                        .put("parentId", "F1")));
+        assertEquals(1, announced.size(), "an iframe must not wake the watcher: " + announced);
+
+        face.onNavigated(null);
+        cdp.emit("Page.frameNavigated", JSON.createObjectNode()
+                .set("frame", JSON.createObjectNode().put("url", "http://dev.example.com/third")));
+        assertEquals(1, announced.size(), "a dropped watcher hears nothing: " + announced);
+    }
+
+    @Test
+    void closePageDropsThePageAndTheAddressWithIt() {
+        // Card 346. The engine survives — the cookies are the owner's call and
+        // they stay — but the face must report "no page", or the toolbar serves
+        // the closed address forever and the start page never returns.
+        FakeCdp cdp = new FakeCdp();
+        cdp.scriptLoadingPage("http://dev.example.com/app", "App");
+        HeadlessBrowserFace face = face(cdp);
+        face.send("navigate", JSON.createObjectNode().put("url", "http://dev.example.com/app"));
+        assertTrue(face.hasPage());
+        List<String> went = new ArrayList<>();
+        cdp.handlers.put("Page.navigate", (fake, params) -> {
+            went.add(params.path("url").asText());
+            return JSON.createObjectNode();
+        });
+
+        BrowserFace.Reply reply = face.send("close_page", JSON.createObjectNode());
+
+        assertTrue(reply.ok(), () -> String.valueOf(reply.error()));
+        assertEquals(List.of("about:blank"), went,
+                "criterion 2: the DOCUMENT goes, so its timers and its websockets go with "
+                        + "it — a page merely hidden keeps running behind the word closed");
+        assertNull(face.pageUrl(), "a closed page has no address");
+        assertNull(reply.pageUrl(), "and the reply says so, so the wire can clear its cache");
+        assertFalse(face.hasPage(), "and no cast may start on it");
+        assertFalse(cdp.closed, "the ENGINE survives — the partition and its logins are kept");
+    }
+
+    @Test
+    void closePageBeforeAnyPageSaysNoPageIsOpen() {
+        BrowserFace.Reply reply = face(new FakeCdp()).send("close_page", JSON.createObjectNode());
+        assertFalse(reply.ok());
+        assertTrue(reply.error().contains("no page is open"), reply.error());
     }
 
     // ---- unknown -----------------------------------------------------------

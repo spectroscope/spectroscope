@@ -43,6 +43,8 @@ function view(overrides: Partial<WebFaceViewProps>): string {
     notice: null,
     launch: null,
     playing: null,
+    canGoBack: null,
+    canGoForward: null,
     send: () => {},
     onDraft: () => {},
     onPlay: () => {},

@@ -292,6 +292,26 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
     }
 
     /**
+     * Forgets one session's address after its page was closed (card 346).
+     *
+     * <p>Not optional, and not something the reply could have carried:
+     * {@link #send} writes {@link #pageUrls} only when a reply has a NON-NULL
+     * {@code pageUrl}, so the shell has no way to report "no page" through it.
+     * Without this call the address line, every failure sentence's "on the page
+     * it happened" and the segment's start-page condition would all go on
+     * naming a page that is gone.
+     *
+     * <p>The Chromium session is untouched — this is a forgotten address, not a
+     * closed session. {@link #closeSession} is the destructive neighbour.
+     *
+     * @param sessionId the session whose page was closed
+     */
+    @Override
+    public void forgetPage(String sessionId) {
+        pageUrls.remove(sessionId);
+    }
+
+    /**
      * Tells the shell where the browser segment is and whose browser the app is
      * showing there.
      *

@@ -115,6 +115,15 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
     private volatile Consumer<JsonNode> frameSink;
 
     /**
+     * Who to wake when the MAIN frame moves, or null (card 344, criterion 4).
+     *
+     * <p>One slot, newest wins, exactly like {@link #frameSink}: the view
+     * socket serves one viewer per session, and a list here would be a way for
+     * a dropped viewer to keep being told about a page it is not watching.
+     */
+    private volatile Runnable navSink;
+
+    /**
      * @param sessionId the session this browser belongs to — for sentences only,
      *                  never for keying (the directory already resolved us)
      * @param opener    how the engine is spawned and dialled, run once on the
@@ -149,6 +158,67 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
     }
 
     /**
+     * Who to wake when the page moves by itself (card 344, criterion 4).
+     *
+     * <p>The defect this closes: the address bar kept the old address after a
+     * click on a link inside the streamed picture. State frames are pushed on
+     * five occasions and a page-initiated navigation is none of them, so the
+     * bar could only ever be as fresh as the last verb the operator ran.
+     *
+     * <p>Only the MAIN frame wakes it. An advert in an iframe moves constantly
+     * and is not the page the reader is on.
+     *
+     * @param sink runs after {@link #pageUrl()} has been updated, or null to
+     *             drop the current watcher
+     */
+    public void onNavigated(Runnable sink) {
+        navSink = sink;
+    }
+
+    private void announceNavigation() {
+        Runnable sink = navSink;
+        if (sink == null) {
+            return;
+        }
+        try {
+            sink.run();
+        } catch (RuntimeException watcherBroke) {
+            // A watcher that throws must not take down the CDP reader thread —
+            // every later event, the fence's own included, rides this listener.
+            navSink = null;
+        }
+    }
+
+    /**
+     * Where this browser's history can go, asked of Chromium rather than
+     * remembered (card 344, criterion 3).
+     *
+     * <p>Remembering it would be the same defect the address had: a number
+     * cached at verb time is wrong the moment the page follows a link by
+     * itself. This is a CDP round trip, and it is affordable because the
+     * state frame that carries it is pushed on operator-scale events only.
+     *
+     * @return the two answers, or {@link BrowserFace.History#UNKNOWN} when the
+     *         engine could not be asked
+     */
+    @Override
+    public History history() {
+        if (!navigatedOnce) {
+            // Provable without an engine, and asking would SPAWN one: watching
+            // an idle session must stay free (see hasPage).
+            return History.NOWHERE;
+        }
+        try {
+            JsonNode walk = engine().call("Page.getNavigationHistory", null);
+            int current = walk.path("currentIndex").asInt(0);
+            int size = walk.path("entries").size();
+            return new History(current > 0, current < size - 1);
+        } catch (RuntimeException cannotAsk) {
+            return History.UNKNOWN;
+        }
+    }
+
+    /**
      * Runs one verb. Never throws: transport failures, timeouts and page errors
      * all come back as a failed reply carrying a sentence.
      *
@@ -175,8 +245,10 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
             case "find" -> withPage(() -> find(args));
             case "console" -> console(args);
             case "resize" -> withPage(() -> resize(args));
-            case "back" -> withPage(() -> history(-1));
-            case "forward" -> withPage(() -> history(+1));
+            case "back" -> withPage(() -> walkHistory(-1));
+            case "forward" -> withPage(() -> walkHistory(+1));
+            case "reload" -> withPage(this::reload);
+            case "close_page" -> withPage(this::closePage);
             default -> Reply.failed("this browser does not know the verb \""
                     + String.valueOf(verb).substring(0, Math.min(40, String.valueOf(verb).length()))
                     + "\"", pageUrl);
@@ -221,6 +293,7 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
                     String url = frame.path("url").asText(null);
                     if (url != null && !url.isBlank() && !"about:blank".equals(url)) {
                         pageUrl = url;
+                        announceNavigation();
                     }
                 }
             });
@@ -780,7 +853,7 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
 
     // ---- history -----------------------------------------------------------
 
-    private Reply history(int direction) {
+    private Reply walkHistory(int direction) {
         Cdp opened = engine();
         JsonNode history = opened.call("Page.getNavigationHistory", null);
         int current = history.path("currentIndex").asInt(0);
@@ -801,6 +874,45 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
         value.put("url", url);
         value.put("title", entry.path("title").asText(""));
         return Reply.ok(value, url);
+    }
+
+    /**
+     * A reload (card 344, criterion 2): Chromium's own, never a fresh load of
+     * the remembered address.
+     *
+     * <p>The distinction is the whole card. {@code Page.navigate} to the
+     * address the bar is showing loses what was typed into a form and re-posts
+     * what was posted; the desktop shell states that objection in writing for
+     * back/forward, and the reload control did exactly the thing it names.
+     */
+    private Reply reload() {
+        engine().call("Page.reload", JSON.createObjectNode().put("ignoreCache", false));
+        return Reply.ok(JSON.createObjectNode().put("url", pageUrl == null ? "" : pageUrl),
+                pageUrl);
+    }
+
+    /**
+     * Closes the page and keeps the login (card 346).
+     *
+     * <p>The owner's call, 2026-08-30: "ja cookies behalten". Closing a tab in
+     * a real browser does not sign you out, so the ENGINE, its profile and its
+     * cookie jar all survive — what goes is the page. {@link #close()} is the
+     * destructive neighbour and is deliberately not called from here.
+     *
+     * <p>The address goes with the page and {@link #hasPage()} goes back to
+     * false, because "no page" has to mean the same thing here as it does
+     * before the first navigate: the toolbar would otherwise serve the closed
+     * address forever and the start page would never come back.
+     */
+    private Reply closePage() {
+        stopScreencast();
+        engine().call("Page.navigate", JSON.createObjectNode().put("url", "about:blank"));
+        pageUrl = null;
+        navigatedOnce = false;
+        refusals.clear();
+        consoleLines.clear();
+        announceNavigation();
+        return Reply.ok(JSON.createObjectNode().put("closed", true), null);
     }
 
     // ---- the picture channel (card 226's UI half consumes this) ------------
