@@ -87,6 +87,32 @@ export interface ClaudeCodeRunImport extends ImportedRunSummary {
   source: ImportSource;
 }
 
+/**
+ * The summary a run import hands the app — the measured half of the result,
+ * without the stream.
+ *
+ * `ClaudeCodeRunImport` already IS an `ImportedRunSummary` structurally, so
+ * handing the whole result over would compile. It would also carry the events,
+ * the source map and the origin array into a value the app KEEPS for as long
+ * as the session is open, which is not what that field is for. So the summary
+ * is narrowed — and narrowed HERE, once, beside the interface it answers to,
+ * rather than as a literal at the call site. A literal is where a field the
+ * importer computes gets forgotten, and one was: `declared` was measured on
+ * every run import from card 302 on, and no imported run ever reached the lab
+ * with it (card 315).
+ *
+ * @param run the coordinator's result
+ * @return what the banner, the workspace pane and the lab read
+ */
+export function runSummary(run: ClaudeCodeRunImport): ImportedRunSummary {
+  return {
+    workspace: run.workspace,
+    childrenMerged: run.childrenMerged,
+    childrenSkipped: run.childrenSkipped,
+    childrenUnrecorded: run.childrenUnrecorded,
+  };
+}
+
 /** The root run id the single-file importer stamps on the file's own run. */
 const ROOT_RUN_ID = "cc-import";
 
