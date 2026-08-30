@@ -1103,6 +1103,44 @@ public record SpectroConfig(
         return KNOWN_PROVIDERS;
     }
 
+    /** Every backend a newcomer can run for free on a machine they control —
+     *  DERIVED from two facts each provider already declares, never typed out
+     *  again: it needs no key ({@link #keyEnvFor} returns null) and it owns an
+     *  address somebody dials ({@link #endpointFor} answers instead of
+     *  refusing). The second half is what separates these from the bundled
+     *  runtime, which is keyless too but is a subprocess, not a server.
+     *
+     *  <p>Exists so an onboarding screen can be HELD to this list instead of
+     *  repeating it. Card 312 added a third member, and the CLI's first-run
+     *  hint, the comment above its call site and the test under it all still
+     *  said two — the test spelled the same pair out, so nothing could go
+     *  red.</p>
+     *
+     *  @return the keyless local server providers; iteration order is not
+     *          defined */
+    public static Set<String> keylessLocalServers() {
+        return Set.copyOf(KNOWN_PROVIDERS.stream()
+                .filter(provider -> keyEnvFor(provider) == null)
+                .filter(provider -> presetEndpointFor(provider) != null)
+                .toList());
+    }
+
+    /** The address {@code provider} is dialled at when nothing is configured —
+     *  its own preset, taken from {@link #endpointFor} on the default config
+     *  rather than by repeating that method's case list, so a preset that moves
+     *  moves everywhere it is quoted. {@code null} for a provider that owns no
+     *  address at all (anthropic's is fixed in the SDK; the bundled runtime is
+     *  a subprocess).
+     *  @param provider the provider name
+     *  @return the preset endpoint, or null when the provider has none */
+    public static String presetEndpointFor(String provider) {
+        try {
+            return DEFAULTS.endpointFor(provider);
+        } catch (IllegalArgumentException noAddressToDial) {
+            return null;
+        }
+    }
+
     /**
      * The default model for a provider when none is set explicitly, or {@code null}
      * when the provider has no honest default. A local backend serves whatever model

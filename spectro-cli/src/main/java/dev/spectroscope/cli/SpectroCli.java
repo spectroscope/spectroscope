@@ -222,8 +222,9 @@ public final class SpectroCli implements Runnable {
 
         // First-run onboarding (the CLI twin of the web's first-run sheet): if the
         // configured API provider has no key, don't fail with a terse line — tell a
-        // newcomer how to get a backend running. Local providers (ollama/lmstudio)
-        // are left to try; an unreachable one fails clearly on the first call.
+        // newcomer how to get a backend running. A keyless local backend (every
+        // member of SpectroConfig.keylessLocalServers) is left to try; an
+        // unreachable one fails clearly on the first call.
         if ("needs-key".equals(
                 SpectroConfig.onboardingStatus(config.provider(), providerKeyPresent(config.provider())))) {
             System.err.print(firstRunHint(config.provider()));
@@ -412,9 +413,9 @@ public final class SpectroCli implements Runnable {
         return childBelt;
     }
 
-    /** Whether this provider's API key is present in the environment. A local
-     *  provider (ollama, lmstudio) carries no key requirement, so it counts as
-     *  present. */
+    /** Whether this provider's API key is present in the environment. A
+     *  provider with no key variable at all ({@link SpectroConfig#keyEnvFor}
+     *  returns null) carries no key requirement, so it counts as present. */
     private static boolean providerKeyPresent(String provider) {
         String env = SpectroConfig.keyEnvFor(provider);
         return env == null || SpectroConfig.hasApiKey(env); // local needs none; else env or ~/.spectro/.env
@@ -425,8 +426,9 @@ public final class SpectroCli implements Runnable {
      * provider really dials when it has one.
      *
      * <p>The address comes off the PROVIDER, never off {@code config.baseUrl()}:
-     * card 193 gave ollama and LM Studio addresses of their own, so the legacy
-     * shared field is no longer the string a run dials, and {@code /help}
+     * card 193 gave the local backends addresses of their own (see
+     * {@link SpectroConfig#endpointFor}), so the legacy shared field is no
+     * longer the string a run dials, and {@code /help}
      * advertises this line as "the active base URL". Providers that have no
      * address to name — anthropic's is fixed in the SDK, the built-in runtime is
      * a subprocess — print none, where they used to be handed ollama's default
@@ -479,8 +481,17 @@ public final class SpectroCli implements Runnable {
     }
 
     /** The first-run onboarding message for a keyless API provider — the CLI's
-     *  version of the web's first-run sheet: the two zero-cost local paths and how
-     *  to add a cloud key to .env. Package-private + static so it is unit-testable.
+     *  version of the web's first-run sheet: one row per zero-cost local backend,
+     *  then how to add a cloud key to .env.
+     *
+     *  <p>The rows are written out one at a time because each backend is
+     *  installed differently, so the LIST is held to
+     *  {@link SpectroConfig#keylessLocalServers()} by {@code SpectroCliTest}
+     *  instead of being counted in this sentence. It used to say "the two
+     *  zero-cost local paths", and it went on saying it through the release that
+     *  made them three (card 312).</p>
+     *
+     *  <p>Package-private + static so it is unit-testable.</p>
      *  @param provider the configured provider whose key is missing
      *  @return the multi-line hint to print on stderr */
     static String firstRunHint(String provider) {
@@ -490,9 +501,11 @@ public final class SpectroCli implements Runnable {
                 spectroscope needs an llm backend — none is ready. pick one:
 
                   ollama    (local, free)  install https://ollama.com, run `ollama pull qwen3`,
-                                           then start with SPECTRO_PROVIDER=ollama
+                                           it serves on :11434 — then SPECTRO_PROVIDER=ollama
                   lmstudio  (local, free)  run LM Studio's server on :1234,
                                            then start with SPECTRO_PROVIDER=lmstudio
+                  llamacpp  (local, free)  run llama.cpp's `llama-server` on :8080,
+                                           then start with SPECTRO_PROVIDER=llamacpp
                   %s  (needs a key)  add %s=... to a .env file next to spectroscope, then rerun
 
                 set the provider for good in ~/.spectro/settings.json; run `spectro doctor` to check.
