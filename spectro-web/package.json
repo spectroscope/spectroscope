@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "generate:sample-run": "vite-node src/scenario/sampleRecording.generate.ts",
     "gate": "tsc -b && eslint . && prettier --check . && vitest run && vite build"
   },
   "dependencies": {
@@ -36,6 +37,7 @@
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.65.0",
     "vite": "^6.3.5",
+    "vite-node": "^3.2.4",
     "vitest": "^3.2.4"
   }
 }
