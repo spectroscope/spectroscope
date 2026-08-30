@@ -187,9 +187,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * that endpoint answers 404, the parse finds nothing, and the run lands on
      * the documented fallback having spent one request.</p>
      *
-     * <p>Only a POSITIVE answer is remembered. Both LM Studio and ollama load
-     * models just in time, so the very first run of a session can legitimately
-     * find nothing loaded; freezing that into "unknowable" would deny the truth
+     * <p>Only a POSITIVE answer is remembered. A local backend may load models
+     * just in time, so the very first run of a session can legitimately find
+     * nothing loaded; freezing that into "unknowable" would deny the truth
      * to every later run of the session.</p>
      *
      * @return the loaded instance's context length, or 0 when nothing is known

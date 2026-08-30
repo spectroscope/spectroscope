@@ -20,8 +20,8 @@ const appTsx = read("../App.tsx", import.meta.url);
 
 describe("the settings page carries the address beside the provider that needs it", () => {
   it("renders the field from the one provider→field mapping", () => {
-    // addressSpecFor is the single source: ollama/lmstudio get their field
-    // (preset as placeholder), every other provider hides it.
+    // addressSpecFor is the single source: the providers it names get their
+    // field (preset as placeholder), every other provider hides it.
     expect(settingsTsx).toContain("addressSpecFor(");
     expect(settingsTsx).toContain("placeholder={addressSpec.preset}");
   });

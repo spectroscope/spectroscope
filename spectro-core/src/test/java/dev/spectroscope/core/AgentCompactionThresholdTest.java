@@ -225,7 +225,8 @@ class AgentCompactionThresholdTest {
     void theWindowIsAskedOncePerRunAndNotOncePerTurn() {
         // Non-functional criterion: one capability lookup per session at most,
         // memoized, and never on the hot path of a turn. A provider whose window
-        // costs a round trip (LM Studio's listing, ollama's /api/ps) must not
+        // costs a round trip (LM Studio's listing, ollama's /api/ps, a
+        // llama-server's /props) must not
         // pay it per turn — and the context_info event is emitted per turn, so
         // the naive place to ask is exactly the wrong one.
         ToolRegistry registry = new ToolRegistry();

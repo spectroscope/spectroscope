@@ -31,7 +31,7 @@ export function Onboarding(props: {
   /** "start with the built-in model": closes the sheet and opens the local
    *  chooser — the zero-install path a newcomer should meet first. */
   onStartLocal?: () => void;
-  /** Card 193: the reader whose ollama / LM Studio runs on another machine —
+  /** Card 193: the reader whose local backend runs on another machine —
    *  closes the sheet and opens Settings at the session defaults, where the
    *  address field sits beside the provider. */
   onOpenSettings?: () => void;
