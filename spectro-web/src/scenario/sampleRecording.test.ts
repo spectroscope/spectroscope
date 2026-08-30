@@ -20,6 +20,7 @@ import { detectAndLoad } from "../import/detect";
 import { deriveDetail, sceneToFlow } from "../lab/flowmap/sceneToFlow";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { declarationOf } from "./compile";
+import { loc } from "./dsl";
 import {
   SAMPLE_LANG,
   SAMPLE_PATH,
@@ -331,7 +332,7 @@ describe("the README beside it says what is true today", () => {
     // The README sends a reader who wants the box to the scenario picker, and
     // names the row to look for. A renamed scenario would leave that reader
     // hunting a row that is not there.
-    const name = sampleScenario().name[SAMPLE_LANG];
+    const name = loc(sampleScenario().name, SAMPLE_LANG);
     expect(readme().includes(name), fix(`scenario name (it is "${name}")`)).toBe(true);
   });
 
