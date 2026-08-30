@@ -167,6 +167,57 @@
    four designs answer through --surface/--border/--text, colour rides the ok
    token on the running chip and the accent on hover — lines and small marks,
    never a fill, per the non-negotiables. */
+/* CARD 345 — the door to the launch configurations, reachable at any time.
+ *
+ * The popover holds `StartPage` itself rather than a copy of its rows, so the
+ * width rule below is the ONE place this surface differs from the panel: the
+ * start page is `width: min(52ch, 100%)` against a panel, and against a header
+ * it would otherwise take the header's width. Everything else — the row, the
+ * play button, the port split card 335 built — is inherited and must stay that
+ * way.
+ *
+ * No shadow, per the house rules; the layer reads as a layer through its border
+ * and its ground, the way every other popover in this app does. */
+.browser-launchmenu {
+  position: relative;
+  flex: 0 0 auto;
+}
+.browser-launchmenu__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-family: var(--font-mono, monospace);
+}
+.browser-launchmenu__btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.browser-launchmenu__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 22rem;
+  max-width: min(52ch, 90vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+/* Inside the popover the start page is the whole content, so its own page
+   padding and width cap would double up on the layer's. */
+.browser-launchmenu__pop .browser-start {
+  width: auto;
+  padding: 0.75rem;
+}
+
 .browser-start {
   width: min(52ch, 100%);
   max-height: 100%;

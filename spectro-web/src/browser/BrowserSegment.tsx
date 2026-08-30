@@ -28,6 +28,7 @@
 // ever on screen, because they are two arms of the same layout.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { dismissesMenu, MODAL_LAYER } from "../components/menuDismiss";
 import { t } from "../i18n/i18n";
 import { useBrowserActionCue } from "../state/browserCue";
 import { useLang } from "../state/lang";
@@ -440,6 +441,10 @@ export interface WebFaceViewProps {
 export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
   const lang = useLang();
   const { sessionId, mode, url, draft, picture, notice, launch, playing, send, onDraft, onPlay } = props;
+  // Card 345: each face owns whether its launch menu is open. Not lifted —
+  // the two faces are mutually exclusive per session, so a shared flag would be
+  // one more thing that can disagree with what is on screen.
+  const [launchOpen, setLaunchOpen] = useState(false);
   // Wheel deltas pool here between flushes — a ref, because pooling must not
   // re-render, and the flush must read what accumulated after it was armed.
   const wheel = useRef<{ dx: number; dy: number; point: [number, number] | null; timer: number | null }>({
@@ -532,6 +537,14 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
             {url ?? t(lang, "browser.noPage")}
           </span>
         )}
+        <LaunchMenu
+          launch={launch}
+          playing={playing}
+          onPlay={onPlay}
+          open={launchOpen}
+          onOpenChange={setLaunchOpen}
+          onRefresh={() => send(launchListFrame(sessionId))}
+        />
         {mode !== "connecting" && (
           <span className="view-face" title={t(lang, "browser.view.faceTitle")}>
             {t(lang, faceLabelKey(mode))}
@@ -728,6 +741,90 @@ function splitAddress(address: string): { head: string; tail: string | null } {
   return { head: address.slice(0, at), tail: address.slice(at) };
 }
 
+/**
+ * The launch configurations, reachable while a page is open (card 345).
+ *
+ * <p>THE DEFECT IT CLOSES. {@link StartPage} is the only place in the product
+ * that lists a session's launch configurations, and both its mounts sit behind
+ * `live && url === null` — a condition that is true once, before anything opens
+ * a page, and never again. The owner: "so kann ich … nie auf das default bild
+ * mit den launch konfigs kommen."
+ *
+ * <p>IT RENDERS StartPage ITSELF rather than its own rows. Not tidiness: a
+ * second rendering of the same list is a second place for the empty state, the
+ * play button, the running chip and card 335's port split to drift. One
+ * component, two places on screen.
+ *
+ * <p>The dismissal is the house's — `menuDismiss`, which already answers the
+ * question card 255 walked into: a row inside a menu can open a modal, and a
+ * modal that portals to the body is "outside" the anchor by construction.
+ */
+export function LaunchMenu(props: {
+  launch: LaunchList | null;
+  playing: string | null;
+  onPlay(name: string): void;
+  open: boolean;
+  onOpenChange(open: boolean): void;
+  /** Ask the server for the list again. Called each time the menu opens: the
+   *  running/exited chips are otherwise refreshed only on socket open and after
+   *  a play, so a long-lived session shows an hour-old state under a green dot. */
+  onRefresh(): void;
+}): React.JSX.Element {
+  const lang = useLang();
+  const { launch, playing, onPlay, open, onOpenChange, onRefresh } = props;
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    onRefresh();
+  }, [open, onRefresh]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (
+        dismissesMenu({
+          inAnchor: ref.current !== null && ref.current.contains(target),
+          inModal: target !== null && target.closest(MODAL_LAYER) !== null,
+        })
+      ) {
+        onOpenChange(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onOpenChange]);
+
+  return (
+    <div className="browser-launchmenu" ref={ref}>
+      <button
+        type="button"
+        className="browser-launchmenu__btn"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={t(lang, "browser.launchMenu")}
+        title={t(lang, "browser.launchMenu")}
+        onClick={() => onOpenChange(!open)}
+      >
+        {"\u25B8"}
+      </button>
+      {open && (
+        <div className="browser-launchmenu__pop" role="menu">
+          <StartPage launch={launch} playing={playing} onPlay={onPlay} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StartPage(props: {
   launch: LaunchList | null;
   playing: string | null;
@@ -834,6 +931,8 @@ export interface DesktopFaceViewProps {
 export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element {
   const lang = useLang();
   const { state, floored, sessionId, url, draft, notice, launch, playing } = props;
+  // Card 345, this face's own — see the note on the web face.
+  const [launchOpen, setLaunchOpen] = useState(false);
   const attached = state === "attached" && sessionId !== null;
   return (
     <section className="browser-segment" aria-label={t(lang, "browser.title")}>
@@ -863,6 +962,19 @@ export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element 
             {url ?? t(lang, "browser.noPage")}
           </span>
         )}
+        <LaunchMenu
+          launch={launch}
+          playing={playing}
+          onPlay={props.onPlay}
+          open={launchOpen}
+          onOpenChange={setLaunchOpen}
+          // `sessionId` is nullable on this face — a pane with no session has
+          // no list to ask for, and asking with an empty id would be a frame the
+          // server has to refuse.
+          onRefresh={() => {
+            if (sessionId !== null) props.send(launchListFrame(sessionId));
+          }}
+        />
       </header>
       <div className="browser-hole" ref={props.holeRef}>
         {state !== "attached" && (

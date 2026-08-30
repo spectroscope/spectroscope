@@ -123,6 +123,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "browser.start.running": { de: "läuft", en: "running" },
   "browser.start.exited": { de: "beendet · {code}", en: "exited · {code}" },
   "browser.start.attach": { de: "verbindet nur", en: "attach only" },
+  // CARD 345: the control that reaches the launch configurations while a page
+  // is open. The list itself is StartPage's; this names the door.
+  "browser.launchMenu": { de: "Launch-Konfigurationen", en: "Launch configurations" },
   "browser.start.none": {
     de: "Keine Launch-Konfigurationen. Lege .claude/launch.json im Projektordner an — ein Eintrag pro App, mit Port.",
     en: "No launch configurations. Add .claude/launch.json to the project folder — one entry per app, with its port.",
