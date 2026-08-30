@@ -209,7 +209,18 @@ export function fleetToFlow(
     {
       id: "os-shell",
       x: MAC_PAD + 212,
-      data: { kind: "shell", active: atCmd !== undefined, command: atCmd?.activeCommand ?? null },
+      data: {
+        kind: "shell",
+        active: atCmd !== undefined,
+        command: atCmd?.activeCommand ?? null,
+        // The CALL, not only its command string (card 320). The station asks
+        // the classifier what language it is drawing and has nothing to ask
+        // about otherwise: handed no call it renders the chain in plain text,
+        // which is this card half-built on a shipped surface. Read off the
+        // OCCUPANT, the way os-mcp two entries down reads its own — the agent's
+        // current call outright would stand a `Read` on the shell station.
+        tool: atCmd === undefined ? null : (detail.tool[atCmd.id] ?? null),
+      },
     },
     {
       id: "os-mcp",

@@ -29,10 +29,10 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ExpandAllContext } from "./expandContext";
 import { breakShellChain } from "../../components/shellChain";
-import { highlight } from "../../components/Highlighted";
+import { ToolViewBody } from "../../components/ToolViewBody";
 import * as toolViews from "../../components/toolViews";
 import { describeTool } from "../../components/toolViews";
-import { advanceScene, initialScene, ROOT_AGENT, SHELL_TOOLS } from "../labScene";
+import { advanceScene, initialScene, ROOT_AGENT, SHELL_COMMAND_KEY, SHELL_TOOLS } from "../labScene";
 import type { RunEvent } from "../../events";
 
 vi.mock("@xyflow/react", () => ({
@@ -42,6 +42,9 @@ vi.mock("@xyflow/react", () => ({
 
 import { AgentCardBody, OsNode } from "./nodes";
 import { deriveDetail, sceneToFlow } from "./sceneToFlow";
+import { fleetToFlow } from "./fleetToFlow";
+import { buildFleetLabScene } from "../fleetLabScene";
+import type { FleetModel } from "../../spectrum/fleetModel";
 
 const Os = OsNode as unknown as (p: { data: unknown }) => ReturnType<typeof AgentCardBody>;
 
@@ -78,6 +81,22 @@ const textOf = (html: string): string =>
 
 const shownText = (command: string): string => textOf(discBody(shellMarkup(command)));
 
+/** The command box's own opening tag and inner markup. `highlight` emits only
+ *  spans and text, so the first `</div>` after the box IS the box's closer —
+ *  and if that ever stops being true the slice comes up short and the cases
+ *  below go red, which is the right way round. */
+const boxOf = (markup: string): { classes: string; inner: string } => {
+  // Found by the scroll window only this element carries, NOT by the class
+  // whose presence one of the cases below is about — a locator that keys on
+  // the thing under test turns "the class is gone" into "nothing found".
+  const m = /<div class="([^"]*)" style="[^"]*max-height[^"]*">/.exec(markup);
+  expect(m, "the station renders no command box").not.toBeNull();
+  const from = m!.index + m![0].length;
+  const to = markup.indexOf("</div>", from);
+  expect(to, "the command box is never closed").toBeGreaterThan(from);
+  return { classes: m![1], inner: markup.slice(from, to) };
+};
+
 // The three shapes shellChain.ts exists for, plus the plain chain.
 const CHAIN = "cd /tmp/spectro && ls -la && echo done";
 const QUOTED = "echo 'a && b' && ls";
@@ -102,10 +121,42 @@ describe("the shell station renders a command, not a blob (card 320)", () => {
   });
 
   it("renders it exactly the way the tool card beside it renders it", () => {
-    // Not "it calls highlight" — the produced structure, so the two faces
-    // cannot drift into two ways of drawing one command.
-    const neighbour = renderToStaticMarkup(<>{highlight(breakShellChain(CHAIN), "shell")}</>);
-    expect(discBody(shellMarkup(CHAIN))).toContain(neighbour);
+    // The NEIGHBOUR ITSELF, rendered. This used to re-write the neighbour's own
+    // call by hand — `highlight(breakShellChain(CHAIN), "shell")` — so both
+    // sides of the comparison moved together and the tool card was free to walk
+    // away from it. Measured 2026-08-30 with the hand-written case restored:
+    // dropping `breakShellChain` from ToolViewBody's command region left this
+    // whole file green — the drift the case is named for, invisible to it.
+    const card = renderToStaticMarkup(
+      <ToolViewBody
+        mode="structured"
+        name="Bash"
+        input={{ command: CHAIN }}
+        output=""
+        isError={false}
+        denied={false}
+      />,
+    );
+    const region = /<div class="tv-cmd mono">([\s\S]*?)<\/div>/.exec(card);
+    expect(region, "the tool card renders no command region to compare against").not.toBeNull();
+    // The card prints a `$` prompt in front of its one-line region and the
+    // station deliberately does not (a prompt in front of a three-step chain
+    // reads as one command), so the prompt is the one part not compared.
+    //
+    // And the scope is a SHELL CALL, not "the two faces can never differ":
+    // the card hardcodes the language (ToolViewBody.tsx:409) while the
+    // station asks `blockLang`, whose first rule is a `language`/`lang`
+    // field declared on the input — so a Bash call carrying
+    // `language: "python"` WOULD colour the two differently. Measured
+    // before writing it down rather than argued — every tool_use block in
+    // ~/.claude/projects parsed and its input keys read, 2026-08-30:
+    // 0 of 171,438 real Bash/run_command calls carry either field (the
+    // keys that DO occur: command 171,438 · description 150,781 ·
+    // timeout 16,767 · run_in_background 1,603 · four more under 100).
+    // Unreachable, so the code is not widened for it and the sentence is
+    // narrowed instead.
+    const drawn = region![1].replace(/<span class="tv-prompt"[^>]*>\s*\$\s*<\/span>/, "");
+    expect(boxOf(shellMarkup(CHAIN)).inner).toBe(drawn);
   });
 });
 
@@ -126,11 +177,23 @@ describe("the record keeps its bytes (card 320)", () => {
     expect(shown.split("\n")).toHaveLength(breakShellChain(HEREDOC).split("\n").length);
   });
 
-  it("a command longer than the reserve is scrolled, never truncated into a lie", () => {
+  it("a command longer than the reserve is never truncated into a lie", () => {
     const long = Array.from({ length: 40 }, (_, i) => `step${i} --flag=${i}`).join(" && ");
     const shown = shownText(long);
     expect(shown).toContain(breakShellChain(long));
     expect(shown, "the full text is clipped with an ellipsis").not.toContain("…");
+  });
+
+  // `toContain` was all three cases above had, and containment is not what the
+  // card claims. Measured 2026-08-30: putting the old `$ ` prompt back in front
+  // of the block left the fifteen cases this file then had all green, while
+  // nodes.tsx says in its own comment that there is no `$` in there any more —
+  // one prompt in front of a three-step chain reads as one command. So the box
+  // is held to the bytes.
+  it("and the box holds those bytes and nothing else", () => {
+    for (const command of [CHAIN, QUOTED, HEREDOC]) {
+      expect(textOf(boxOf(shellMarkup(command)).inner), command).toBe(breakShellChain(command));
+    }
   });
 });
 
@@ -138,6 +201,26 @@ describe("the record keeps its bytes (card 320)", () => {
 // The two things that must NOT change while this lands.
 // ---------------------------------------------------------------------------
 describe("the box and the preview line still behave (card 320)", () => {
+  // `breakShellChain` puts \n into a TEXT NODE, and a text node's newlines
+  // collapse to spaces under the browser default. So one CSS class carries the
+  // whole deliverable, and every case in this file reads the break out of the
+  // markup, where it is there either way. Measured 2026-08-30: dropping
+  // `pf-shell__box` from the box left the fifteen cases this file then had and
+  // nodeCards.test.tsx's fourteen all green, with the owner back in front of
+  // the blob.
+  //
+  // Both halves are read, neither typed: the classes off the rendered box, the
+  // rule out of flowmap.css.
+  it("the box wears a class that KEEPS the newlines it renders", () => {
+    const css = readFileSync(new URL("./flowmap.css", import.meta.url).pathname, "utf8");
+    const { classes } = boxOf(shellMarkup(CHAIN));
+    const keeps = classes.split(/\s+/).filter((c) => {
+      const at = css.indexOf(`.${c} {`);
+      return at > -1 && /white-space:\s*pre(-wrap|-line)?\s*;/.test(css.slice(at, css.indexOf("}", at)));
+    });
+    expect(keeps, `none of "${classes}" keeps the line breaks — they collapse to spaces`).not.toEqual([]);
+  });
+
   it("the box still scrolls in its own container, and the wheel stays off the canvas", () => {
     const body = discBody(shellMarkup(CHAIN));
     expect(body).toContain("nowheel");
@@ -171,12 +254,33 @@ const sourceBlock = (src: string, opener: string, closer: string): string => {
 
 const SHELL_BODY = sourceBlock(NODES_SRC, "function ShellBody(", "\n}");
 
+/** The classifier, read off the module rather than imported by name, so a
+ *  toolViews.ts that has not exported it yet fails a CASE with its own message
+ *  instead of killing the whole file at link time. */
+const blockLangOf = (name: string, input: unknown): string | null => {
+  const fn = (toolViews as unknown as { blockLang?: (n: string, k: string, i: unknown) => string | null })
+    .blockLang;
+  expect(fn, "toolViews.ts exports no blockLang — the station has no classifier to ask").toBeTypeOf(
+    "function",
+  );
+  return fn!(name, SHELL_COMMAND_KEY, input);
+};
+
 describe("the language is asked, not asserted (card 320)", () => {
   it("ShellBody spells no language out", () => {
-    // Scoped to ShellBody on purpose. `"shell"` DOES appear elsewhere in
+    // Scoped to ShellBody on purpose. The language DOES appear elsewhere in
     // nodes.tsx — `case "shell":` is the STATION's own kind and it stays; a
     // file-wide ban would be a claim about the wrong thing.
-    expect(SHELL_BODY).not.toContain('"shell"');
+    //
+    // The banned word is the classifier's OWN answer, not a literal typed here,
+    // and every quoting form is banned. `not.toContain('"shell"')` was the
+    // guard, and measured 2026-08-30 the naive fix in BACKTICKS walked past it
+    // and past eslint and prettier as well.
+    const answer = blockLangOf("Bash", { command: "ls -la" });
+    expect(answer, "the classifier answers nothing for a shell call").not.toBeNull();
+    expect(SHELL_BODY, `ShellBody spells "${answer}" out instead of asking`).not.toMatch(
+      new RegExp(`["'\`]${answer}["'\`]`),
+    );
   });
 
   it("ShellBody asks the classifier instead", () => {
@@ -247,10 +351,13 @@ describe("the station is handed the call it is drawing (card 320)", () => {
     });
   });
 
-  // The leak this guards is a real one: `deriveDetail` keeps the LAST call per
-  // agent, so a station wired as `tool: detail.tool[agent]` outright would go
-  // on drawing a finished command after the packet has left. os-mcp asks
-  // whether its occupant is there first; os-shell has to as well.
+  // What this pins is that the station empties with the packet. It does NOT
+  // pin the occupant guard, and an earlier version of this comment claimed it
+  // did — measured wrong, and left standing forty lines above its own
+  // correction. `deriveDetail` drops a call on its tool_result (sceneToFlow.ts,
+  // `d.tool[e.agentId] = undefined`), so a finished command cannot linger here
+  // whatever the station is wired to. The leak that CAN happen is the case
+  // below, and that is where the guard is bitten.
   it("and carries none once the call has finished", () => {
     const events: RunEvent[] = [
       {
@@ -299,5 +406,97 @@ describe("the station is handed the call it is drawing (card 320)", () => {
     const data = shellNodeData("Read", { file_path: "/a/b.ts" });
     expect(data.command ?? null, "a disk call left a command here").toBeNull();
     expect(data.tool ?? null, "a disk call is standing on the shell station").toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `os-shell` is built in TWO places, and only one of them was taught. The lab
+// map's builder hands the station its call; the fleet machine room's does not,
+// although `os-mcp` two entries further down the SAME array does. `ShellBody`
+// then asks the classifier about nothing, gets null, and `highlight` returns
+// the string untouched: on a shipped surface (FleetLab) the chain still breaks
+// and the colour is simply absent — half of this card.
+//
+// Nothing here decides WHICH producers exist. They are found by asking the
+// flow builders for the station, so a third builder is covered the day it is
+// written, and a builder that stops emitting the station is red.
+// ---------------------------------------------------------------------------
+const CMD = "cd /tmp/spectro && ls -la && echo done";
+
+const runOf = (name: string, input: unknown): RunEvent[] => [
+  {
+    type: "run_start",
+    runId: "r1",
+    agentId: ROOT_AGENT,
+    prompt: "hi",
+    provider: "anthropic",
+    ts: T,
+  } as RunEvent,
+  { type: "tool_call", agentId: ROOT_AGENT, callId: "c1", name, input, ts: T } as RunEvent,
+];
+
+const labShell = (name = "Bash", input: unknown = { command: CMD }): Record<string, unknown> => {
+  const events = runOf(name, input);
+  const scene = events.reduce(advanceScene, initialScene());
+  const flow = sceneToFlow(scene, deriveDetail(events), { provider: "anthropic", model: "m" });
+  return flow.nodes.find((n) => n.id === "os-shell")!.data as Record<string, unknown>;
+};
+
+const fleetShell = (name = "Bash", input: unknown = { command: CMD }): Record<string, unknown> => {
+  const events = runOf(name, input);
+  const model: FleetModel = {
+    roster: [
+      { id: ROOT_AGENT, role: "root", capabilities: [], topic: "ctx.events", connected: true, lastSeen: T },
+    ],
+    events,
+    frames: [],
+    epochBySender: {},
+  };
+  const flow = fleetToFlow(buildFleetLabScene(model), deriveDetail(events), { lang: "en" });
+  const node = flow.nodes.find((n) => n.id === "os-shell");
+  expect(node, "the fleet machine room has no shell station").toBeDefined();
+  return node!.data as Record<string, unknown>;
+};
+
+describe("both producers of this station draw the same command (card 320)", () => {
+  const producers: [string, (n?: string, i?: unknown) => Record<string, unknown>][] = [
+    ["the lab map", labShell],
+    ["the fleet machine room", fleetShell],
+  ];
+
+  it("each one hands the station the call it is drawing", () => {
+    for (const [where, produce] of producers) {
+      const data = produce();
+      expect(data.command, where).toBe(CMD);
+      expect(data.tool ?? null, `${where}: the station has nothing to ask the classifier about`).toEqual({
+        name: "Bash",
+        input: { command: CMD },
+      });
+    }
+  });
+
+  it("so the box reads the same on both, coloured and broken at its joints", () => {
+    const drawn = producers.map(([where, produce]) => {
+      const markup = renderToStaticMarkup(
+        <ExpandAllContext.Provider value={true}>
+          <Os data={produce()} />
+        </ExpandAllContext.Provider>,
+      );
+      const box = boxOf(markup).inner;
+      expect(box, `${where}: the command is not coloured — the station was handed no call`).toContain(
+        'class="hl hl-keyword"',
+      );
+      expect(textOf(box), where).toBe(breakShellChain(CMD));
+      return box;
+    });
+    expect(drawn[0], "the two faces of one station drew one command differently").toBe(drawn[1]);
+  });
+
+  it("and neither hands it a call that is standing at another station", () => {
+    for (const [where, produce] of producers) {
+      const data = produce("Read", { file_path: "/a/b.ts" });
+      expect(data.command ?? null, `${where}: a disk call left a command here`).toBeNull();
+      expect(data.tool ?? null, `${where}: a disk call is standing on the shell station`).toBeNull();
+    }
   });
 });

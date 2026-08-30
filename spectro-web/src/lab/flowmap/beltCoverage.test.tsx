@@ -17,13 +17,18 @@
 // `Read → read_file` — and the next transcript carrying a name nobody typed
 // goes dark again, silently, exactly as it does today. This house has been
 // bitten by a hand list guarded by a test that types the same hand list three
-// times in one card. So NOTHING below types a tool name that is not this
-// belt's OWN chip label:
+// times in one card. So NO COVERAGE BELOW IS DECIDED BY A NAME TYPED HERE:
 //
 //   - every name in the coverage cases is read out of `describeTool`'s own
 //     `case "…":` labels in toolViews.ts (card 314's sourceBlock technique);
 //   - every name in the station cases is read out of the sets labScene
 //     exports (DISK_TOOLS, CC_DISK_READ, CC_DISK_WRITE, SHELL_TOOLS).
+//
+// Names ARE typed below, and the sentence is kept narrow enough to be true: the
+// three the owner is looking at (their own cases, so a failure names the tool
+// he named), the census exemplars of the honesty half, and the one `mcp__`
+// wire prefix. Not one of them decides what any other name is covered as —
+// remove any of them and no coverage claim in this file gets weaker.
 //
 // THE BITE that proves it: plant `case "ReadFile":` beside `Read` in
 // toolViews.ts and run this file. Nothing else edited, the name typed in
@@ -49,7 +54,6 @@ import {
   DISK_TOOLS,
   ROOT_AGENT,
   SHELL_TOOLS,
-  type Focus,
 } from "../labScene";
 import type { RunEvent } from "../../events";
 
@@ -60,7 +64,7 @@ vi.mock("@xyflow/react", () => ({
 
 import { AgentCardBody, type AgentData } from "./nodes";
 
-const { agentBelt, TOOL_CHIPS, LAUNCH_CHIPS } = beltModule;
+const { agentBelt, TOOL_CHIPS, LAUNCH_CHIPS, CHIP_FOR_KIND, viewKindOf } = beltModule;
 
 const litChips = (activeTool: string | null) => agentBelt(activeTool).filter((c) => c.on);
 const lit = (activeTool: string | null): string[] => litChips(activeTool).map((c) => c.name);
@@ -199,10 +203,16 @@ describe("a tool with no chip is REPORTED, not silently dark", () => {
   });
 
   it("the other unmapped names of the census are named too, and all as one kind", () => {
-    // StructuredOutput 4,066 · ToolSearch 1,883 · TaskUpdate · Task. Exemplars,
-    // not a mapping — nothing is derived from these four.
+    // StructuredOutput 4,066 · ToolSearch 1,883 · WebSearch 2,718 · TaskUpdate.
+    // Exemplars, not a mapping — nothing is derived from these four.
+    //
+    // `Task` used to stand here and was WRONG for the job, though nothing was
+    // red: it is the importer's spawn verb (claudeCode.ts, `isSpawnTool`), so a
+    // transcript turns it into `agent_spawn` and it can never be the tool in
+    // flight. An exemplar of the census that no session can reach only looks
+    // like coverage.
     const kinds = new Set<string>();
-    for (const name of ["StructuredOutput", "ToolSearch", "TaskUpdate", "Task"]) {
+    for (const name of ["StructuredOutput", "ToolSearch", "WebSearch", "TaskUpdate"]) {
       expect(lit(name), name).toEqual([name]);
       kinds.add(litKind(name));
     }
@@ -220,9 +230,38 @@ describe("a tool with no chip is REPORTED, not silently dark", () => {
 // THE DERIVATIONS. Nothing here types a tool name.
 // ---------------------------------------------------------------------------
 describe("the coverage is derived from describeTool, not listed (card 321)", () => {
-  it("every name describeTool answers to lights exactly one chip", () => {
+  // NARROWED after review. This used to be titled "lights exactly one chip"
+  // and read as the card's whole invariant, but it is TRUE BY CONSTRUCTION
+  // once an unmapped tool gets a chip of its own: `lit(x)` then has length 1
+  // for every non-null x, whatever chipFor answers. Measured 2026-08-30 by
+  // writing `chipFor` back to the pre-card behaviour — the exact defect this
+  // card exists to remove — and running this file: this case stayed GREEN
+  // while six around it went red. What it really pins is that no name lights
+  // two chips at once, which is worth keeping and is all it says now. The
+  // invariant itself is the case below.
+  it("no name lights two chips at once, and between calls none is lit", () => {
     for (const name of CASE_NAMES) expect(lit(name), name).toHaveLength(1);
     expect(litChips(null), "and none between calls").toEqual([]);
+  });
+
+  // THE INVARIANT, where it bites: the belt has to agree with the kind table it
+  // exports, name by name. A `chipFor` that stops consulting the table — a hand
+  // list, or the pre-card exact match — leaves every one of these names wearing
+  // a bare name chip instead of the chip its shape belongs to.
+  it("and lights the chip its own kind table names for that shape", () => {
+    let checked = 0;
+    for (const name of CASE_NAMES) {
+      // A launch is asked FIRST and on purpose (the Monitor case below).
+      if (LAUNCH_CHIPS.includes(name)) continue;
+      const chip = CHIP_FOR_KIND[viewKindOf(name)];
+      if (chip === null) continue;
+      expect(lit(name), `${name} answers to the "${viewKindOf(name)}" shape`).toEqual([chip]);
+      expect(litKind(name), name).toBe("tool");
+      checked++;
+    }
+    // A floor, so a table that stopped answering cannot turn this into a scan
+    // over nothing: 21 of the 41 case labels on 2026-08-30.
+    expect(checked, "no name reached the table at all").toBeGreaterThanOrEqual(20);
   });
 
   it("names that share one describeTool case share one chip", () => {
@@ -263,9 +302,16 @@ describe("the coverage is derived from describeTool, not listed (card 321)", () 
     expect(covered).toBeGreaterThanOrEqual(12);
   });
 
+  // The search set is BOTH vocabularies, and it has to be. Read out of
+  // describeTool alone it had a hole at exactly the name step 4 of `chipFor`
+  // exists for: `MultiEdit` has no case in the classifier, so a hand list
+  // spelling the names the fold routes and the classifier has never heard of —
+  // precisely the vocabulary the derivation was built to avoid typing — walked
+  // past a guard whose title promises it cannot (measured 2026-08-30).
   it("belt.ts spells no vocabulary but its own chip labels", () => {
     const own = new Set([...TOOL_CHIPS, ...LAUNCH_CHIPS]);
-    for (const name of CASE_NAMES) {
+    const searched = [...CASE_NAMES, ...DISK_TOOLS, ...CC_DISK_READ, ...CC_DISK_WRITE, ...SHELL_TOOLS];
+    for (const name of new Set(searched)) {
       if (own.has(name)) continue;
       expect(new RegExp(`\\b${name}\\b`).test(BELT_CODE), `belt.ts names ${name} in its code`).toBe(false);
     }
@@ -335,35 +381,55 @@ describe("the kind→chip table is exhaustive over the view kinds", () => {
 // `MultiEdit`, which sits in CC_DISK_WRITE and has no case in describeTool at
 // all (zero calls in the census — latent, not theoretical).
 // ---------------------------------------------------------------------------
-const station = (name: string): Focus =>
-  advanceScene(initialScene(), {
+/** Where the fold puts a call, and — at the disk — which VERB it recorded. The
+ *  station alone is too coarse to pin this belt: three of the seven chips are
+ *  disk chips, so a case that only asks "is it a disk chip" is green while the
+ *  belt says READ for a call the fold folded as a WRITE. Measured 2026-08-30 by
+ *  swapping the write set's chip for the read one in belt.ts: 23 green. */
+const routedTo = (name: string): string => {
+  const scene = advanceScene(initialScene(), {
     type: "tool_call",
     agentId: ROOT_AGENT,
     callId: "c1",
     name,
     input: {},
     ts: 0,
-  } as RunEvent).focus;
+  } as RunEvent);
+  return scene.focus === "disk" ? `disk:${scene.disk}` : scene.focus;
+};
 
-/** Which chips belong to which station. A mapping of STATIONS — four of them,
- *  fixed by the map's own geometry — and deliberately not of tool names: every
- *  name below is read out of the sets labScene exports, so a fourth name added
- *  to CC_DISK_WRITE must go red until the belt covers it. */
-const STATION_CHIPS: Partial<Record<Focus, string[]>> = {
+/** Which chips belong where. A mapping of STATIONS — and at the disk, of the
+ *  fold's own two verbs — deliberately not of tool names: every name asked
+ *  about is read out of the sets labScene exports, so a fourth name added to
+ *  CC_DISK_WRITE must go red until the belt covers it. */
+const STATION_CHIPS: Record<string, string[]> = {
   cmd: ["run_command"],
-  disk: ["read_file", "write_file", "list_dir"],
+  "disk:read": ["read_file", "list_dir"],
+  "disk:write": ["write_file"],
   mcp: ["call_mcp"],
 };
 
-describe("the belt and the station agree about where a call goes (card 321)", () => {
+// ONE direction, and the title says so since the review. A name the fold routes
+// nowhere is free to light a station chip anyway and nothing here sees it:
+// `Grep` answers to the `matches` shape and lights `list_dir` while the fold
+// leaves it at the agent, so the belt reads "a disk verb is running" with the
+// disk station dark. Real, and latent rather than live:
+//
+//   cd ~/.claude/projects && grep -roh '"name":"Grep"' . | wc -l   -> 1
+//   ... the same for Bash                                         -> 171405
+//
+// (2026-08-30, whole corpus). Closing it means teaching the FOLD about `Grep`,
+// which is card 301's vocabulary and not this card's. Written down rather than
+// quietly widened.
+describe("every name the fold routes to a station lights a chip of it (card 321)", () => {
   it("every name the fold routes to a station lights a chip of that station", () => {
     const routed = [...DISK_TOOLS, ...CC_DISK_READ, ...CC_DISK_WRITE, ...SHELL_TOOLS];
     // Floor: 3 + 2 + 3 + 2 on 2026-08-30 (labScene.ts).
     expect(routed.length).toBeGreaterThanOrEqual(10);
     for (const name of routed) {
-      const where = station(name);
+      const where = routedTo(name);
       const allowed = STATION_CHIPS[where];
-      expect(allowed, `${name} is routed to the "${where}" station, which has no chips`).toBeDefined();
+      expect(allowed, `${name} is routed to "${where}", which has no chips`).toBeDefined();
       expect(lit(name), name).toHaveLength(1);
       expect(allowed, `${name} lights ${lit(name)[0]}, which is not a "${where}" chip`).toContain(
         lit(name)[0],

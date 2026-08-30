@@ -410,18 +410,26 @@
   color: var(--text);
 }
 
-/* ---- a tool this belt has no station for (card 321) ----------------------
+/* ---- a tool this belt has no chip for (card 321) -------------------------
    Measured over ~/.claude/projects on 2026-08-30: 18,300 of 292,465 tool_use
    blocks — 6.3% — answer to none of the chips above. They used to leave the
    belt dark, which reads as "nothing is running". This chip prints the wire
-   name instead. It spans the belt because a name like mcp__server__tool does
-   not fit a half-width column, it is DOTTED so the three kinds are told apart
-   without colour, and lit it wears the event palette's own tool colour: it is
-   a tool call like any other, it just has no rail on this map. */
+   name instead. It is DOTTED so the three kinds are told apart without colour,
+   and lit it wears the event palette's own tool colour: it is a tool call like
+   any other, it just has no chip of its own here.
+
+   It spends ONE cell, like its siblings, and that is a geometry decision, not
+   a cosmetic one. It shipped spanning the belt, on the stated reason that a
+   name like mcp__server__tool needs the width — a name that can never wear
+   this chip, since every mcp__ prefix reaches the call_mcp chip through the
+   classifier's default arm. What the span really bought was a sixth belt row
+   on a card whose seat has 0.23px of headroom: measured live, the full worker
+   card went 320.30 -> 342.31 world px the moment the running tool had no chip.
+   Nine chips leave half of the last row empty and the tenth fits it, with room
+   to spare — a half column is 193.9 world px against 75.2 for the longest name
+   in the census that can land here. cardGeometry.test.ts holds both halves. */
 .pf-chip--foreign {
-  grid-column: 1 / -1;
   border-style: dotted;
-  text-align: center;
 }
 .pf-chip--foreign.pf-chip--on {
   background: transparent;
@@ -816,7 +824,22 @@
    one line per joint of the chain. `pre-wrap` keeps them, `anywhere` lets a
    single long argument wrap instead of pushing a horizontal scrollbar under a
    station that is 460px wide at its widest. The colour comes from the .hl-*
-   tokens in panels.css — the same ones the tool card's own blocks wear. */
+   tokens in panels.css — the same ones the tool card's own blocks wear.
+
+   THOSE TOKENS ARE NOT LEGIBLE ON THE LIGHT DESIGNS, and the number is written
+   down here so nobody has to find it twice. Contrast of .hl-string against the
+   box behind it, measured live 2026-08-30 in all four designs:
+
+     espresso 9.16 · graphite 7.18 · paper 2.91 · still 1.89
+
+   A quoted argument at 11px in `still` is a pale smear. It is NOT this card's
+   doing: the tool card, which ships today and which this station was told to
+   match, measures 9.82 / 8.00 / 3.13 / 1.83 on the same colours in the same
+   pass — the same token, the same problem, one surface earlier. --sp-teal is
+   only overridden for `paper` (#0f9d77); `still` and `graphite` keep the dark
+   value. Repairing it is a brand-token change that moves every highlighted
+   block in the product — markdown answers, file previews, tool cards — so it
+   is an owner/design call and its own card, not a line in this one. */
 .pf-shell__box {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

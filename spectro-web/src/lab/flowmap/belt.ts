@@ -109,10 +109,13 @@ export function viewKindOf(tool: string): ToolView["kind"] {
  *   But it addresses the tree by PATTERN and never opens a file the caller
  *   named, and `read_file` would claim it did. The two share one arm of the
  *   classifier, so they share one chip whatever it is.
- * - `image` draws nothing. The arm carries both a generated image and a picture
- *   READ off the disk, and lighting `generate_image` for the second would say a
- *   picture was made that was only looked at. `generate_image` itself is a chip
- *   label and is answered by name before any of this runs.
+ * - `image` gets no chip of this belt's. The arm carries both a generated
+ *   image and a picture READ off the disk, and lighting `generate_image` for
+ *   the second would say a picture was made that was only looked at. Since the
+ *   review round that is not the same as drawing nothing: a `view_image` in
+ *   flight now wears the name chip below, like any other tool this belt has no
+ *   chip for. `generate_image` itself is a chip label and is answered by name
+ *   before any of this runs.
  */
 export const CHIP_FOR_KIND: Record<ToolView["kind"], string | null> = {
   file: "read_file",
@@ -161,8 +164,13 @@ const STATION_CHIP: [ReadonlySet<string>, string][] = [
  *
  * 1. a launch name FIRST, because one of them sits inside the classifier's
  *    command arm and would otherwise be drawn as an ordinary shell call;
- * 2. this belt's own labels, because one of them has no arm in the classifier
- *    at all and would fall through everything below it;
+ * 2. this belt's own labels, because two of them would otherwise fall through
+ *    everything below, for two different reasons: `call_mcp` has no arm in the
+ *    classifier at all (the mcp shape is reached by the `mcp__` wire prefix,
+ *    never by that name), and `generate_image` has an arm whose guard the probe
+ *    below does not satisfy, so asked by name it answers `generic`. Measured
+ *    2026-08-30: narrowing this step to `call_mcp` alone drops the
+ *    `generate_image` chip;
  * 3. the classifier, which is the point of the card: one place already answers
  *    "what is this call", and the trace, the chat card and this belt read it;
  * 4. the fold's own station sets, for the names it routes that the classifier
@@ -174,7 +182,12 @@ const STATION_CHIP: [ReadonlySet<string>, string][] = [
 function chipFor(tool: string): string | null {
   if (LAUNCH_CHIPS.includes(tool)) return tool;
   if (TOOL_CHIPS.includes(tool)) return tool;
-  const byShape = CHIP_FOR_KIND[viewKindOf(tool)];
+  // `?? null` is load-bearing, not defensive noise: a kind the table has no key
+  // for reads back as `undefined`, and `undefined !== null` would return it as
+  // though it were a chip — lighting nothing AND skipping the honesty chip,
+  // because that one guards on `lit === null`. beltOffUnion.test.ts mocks the
+  // classifier into answering off the union and demands this.
+  const byShape = CHIP_FOR_KIND[viewKindOf(tool)] ?? null;
   if (byShape !== null) return byShape;
   for (const [names, chip] of STATION_CHIP) if (names.has(tool)) return chip;
   return null;
@@ -192,8 +205,14 @@ function chipFor(tool: string): string | null {
  *
  * A tool the belt has no chip for gets a chip of its own, printing its wire
  * name, rather than leaving the belt dark: 18,300 of those blocks (6.3%)
- * resolve to no chip even now, and "running something I have no station for" is
- * a different fact from "running nothing".
+ * resolve to no chip even now, and "running something with no chip of its own"
+ * is a different fact from "running nothing".
+ *
+ * 947 of those 18,300 never reach this function at all, and the number is kept
+ * honest rather than rounded: `Task` and `Agent` are the importer's SPAWN
+ * verbs (claudeCode.ts, `isSpawnTool`), so they leave a transcript as
+ * `agent_spawn` and never as a `tool_call`. What an imported session can
+ * actually put on this chip is the other 17,353 — 5.9%.
  *
  * @param activeTool the wire name of the call in flight, null between calls
  * @return every chip in reading order, tools first; the running tool's own
