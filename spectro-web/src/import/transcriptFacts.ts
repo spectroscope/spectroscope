@@ -48,6 +48,22 @@ export interface TranscriptFacts {
    * server does not send it, and absent means "did not say", not zero.
    */
   images?: number;
+  /**
+   * How many workflow runs the session folder holds (card 318). Optional for
+   * the same reason as {@link workflowAgents}: an older server does not send
+   * it, and absent means "did not say", not zero.
+   */
+  runs?: number;
+  /**
+   * What one click on this row would FETCH, in bytes — the session file plus
+   * every agent, meta and run state beside it. It is the server's own
+   * `RunBundle.totalBytes`, the same weigh a 413 refuses on, so this number and
+   * the one in the refusal cannot be two counters. The row's other byte figure
+   * is the session file alone: on the operator's own session that is 11.4 MB
+   * against the 105.8 the press really costs. Optional, and absent means "did
+   * not say".
+   */
+  runBytes?: number;
   language?: string;
   firstPrompt?: string;
 }

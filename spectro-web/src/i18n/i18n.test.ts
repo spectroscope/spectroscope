@@ -5,6 +5,7 @@ import { dict, t } from "./i18n";
 import { DENSITIES } from "../state/density";
 import { LAB_FACES } from "../state/labFace";
 import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
+import { degradeKey, RUN_DEGRADE_REASONS } from "../import/storeDoor";
 import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS, sourceSentence } from "../components/traceDetail";
 import type { SourcePane } from "../components/traceDetail";
 import { HIDDEN_KINDS } from "../components/readable";
@@ -111,6 +112,14 @@ describe("i18n dict", () => {
     for (const k of SOURCE_NOTE_KINDS) {
       expect(dict[`trace.note.${k}`], `trace.note.${k}`).toBeDefined();
       expect(dict[`trace.note.${k}Title`], `trace.note.${k}Title`).toBeDefined();
+    }
+    // Card 318. Why a run load came back as the session file alone: too big,
+    // the server did not answer, the agents are not there any more. Each is a
+    // different fact and each owes the reader its own sentence, reached only as
+    // `imp.run.<code>` — so a fourth reason without a word is red here rather
+    // than printing its own key at the reader.
+    for (const reason of RUN_DEGRADE_REASONS) {
+      expect(dict[degradeKey(reason)], degradeKey(reason)).toBeDefined();
     }
     // The source pane's cases. Each one is a whole sentence, because each is a
     // different statement about where the frame came from, and a pane that fell

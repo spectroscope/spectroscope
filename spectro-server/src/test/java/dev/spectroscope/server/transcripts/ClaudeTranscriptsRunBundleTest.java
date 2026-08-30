@@ -84,6 +84,16 @@ class ClaudeTranscriptsRunBundleTest {
      */
     private static final int RUN_WITHOUT_STATE = 3;
 
+    /**
+     * The direct {@code Task} spawns beside the session — agents under
+     * {@code subagents/} itself rather than under a run directory.
+     *
+     * <p>Two, so a bundle that carried "the first one" is not enough, and named
+     * rather than numbered because the whole point is that they have no run id
+     * to be derived from.</p>
+     */
+    private static final List<String> DIRECT = List.of("directspawn1", "directspawn2");
+
     @TempDir
     Path home;
 
@@ -102,6 +112,11 @@ class ClaudeTranscriptsRunBundleTest {
         Path folder = Files.createDirectories(project.resolve("s1"));
         Path agentRoot = Files.createDirectories(folder.resolve("subagents").resolve("workflows"));
         Path stateRoot = Files.createDirectories(folder.resolve("workflows"));
+        for (String agentId : DIRECT) {
+            Path sub = folder.resolve("subagents");
+            Files.writeString(sub.resolve("agent-" + agentId + ".jsonl"), agentText(agentId));
+            Files.writeString(sub.resolve("agent-" + agentId + ".meta.json"), META);
+        }
         for (int r = 0; r < RUNS; r++) {
             String runId = runId(r);
             Path runDir = Files.createDirectories(agentRoot.resolve(runId));
@@ -157,7 +172,7 @@ class ClaudeTranscriptsRunBundleTest {
         Set<String> onDisk = agentIdsOnDisk();
         // Sanity on the fixture itself, so a walk that found nothing cannot
         // pass this test by matching an empty answer.
-        assertThat(onDisk).hasSize(RUNS * (RUNS + 1) / 2);
+        assertThat(onDisk).hasSize(RUNS * (RUNS + 1) / 2 + DIRECT.size());
 
         Set<String> inBundle = new LinkedHashSet<>();
         for (JsonNode sidecar : bundle(SESSION).path("sidecars")) {
@@ -167,9 +182,53 @@ class ClaudeTranscriptsRunBundleTest {
         assertThat(inBundle).containsExactlyInAnyOrderElementsOf(onDisk);
     }
 
+    /**
+     * A DIRECT spawn is an agent too, and it carries no run.
+     *
+     * <p>The gap this closes, found by review: every agent in this fixture used
+     * to sit under {@code subagents/workflows/<runId>/}, so a bundle that
+     * dropped every direct spawn — {@code if (a.runId() == null) continue;} —
+     * was green under a case named "every agent the session folder holds". 15%
+     * of the agent transcripts in the real store are {@code Task} spawns
+     * directly under {@code subagents/}, and {@code rowState.doorFor} counts
+     * them when it chooses the run door, so those clicks would land in this
+     * card's own defect.</p>
+     *
+     * <p>The second half is the {@code runId} rule the class javadoc argues at
+     * length and nothing measured: the field is OMITTED rather than written
+     * null, because {@code SidecarText.runId} is optional and the coordinator
+     * reads whether it is there.</p>
+     */
+    @Test
+    void aDirectSpawnIsInTheBundleAndCarriesNoRunIdAtAll() throws Exception {
+        List<JsonNode> direct = new ArrayList<>();
+        for (JsonNode sidecar : bundle(SESSION).path("sidecars")) {
+            if (DIRECT.contains(sidecar.path("agentId").asText())) {
+                direct.add(sidecar);
+            }
+        }
+
+        assertThat(direct)
+                .as("the direct spawns beside the session must be in its bundle")
+                .hasSize(DIRECT.size());
+        for (JsonNode sidecar : direct) {
+            assertThat(sidecar.has("runId"))
+                    .as("a direct spawn has no run, and the field must be ABSENT rather than null")
+                    .isFalse();
+            assertThat(sidecar.path("jsonlText").asText())
+                    .isEqualTo(agentText(sidecar.path("agentId").asText()));
+        }
+    }
+
     @Test
     void everySidecarCarriesTheThreeThingsTheImporterTakes() throws Exception {
-        for (JsonNode sidecar : bundle(SESSION).path("sidecars")) {
+        JsonNode sidecars = bundle(SESSION).path("sidecars");
+        // A loop over an empty array asserts nothing. Every "for every sidecar"
+        // case in this class says how many it expects to walk, off the disk walk
+        // rather than a literal, so an endpoint that answered `[]` cannot pass
+        // three of them by having nothing to check.
+        assertThat(sidecars).hasSize(agentIdsOnDisk().size());
+        for (JsonNode sidecar : sidecars) {
             String agentId = sidecar.path("agentId").asText();
             // The names are the contract: these three fields ARE `SidecarText`,
             // so the browser hands the array straight to importClaudeCodeRun.
@@ -229,7 +288,9 @@ class ClaudeTranscriptsRunBundleTest {
 
     @Test
     void theRunsJournalIsNotAnAgentAndIsNotInTheBundle() throws Exception {
-        for (JsonNode sidecar : bundle(SESSION).path("sidecars")) {
+        JsonNode sidecars = bundle(SESSION).path("sidecars");
+        assertThat(sidecars).hasSize(agentIdsOnDisk().size());
+        for (JsonNode sidecar : sidecars) {
             assertThat(sidecar.path("jsonlText").asText())
                     .as("a journal reached the importer as an agent transcript")
                     .doesNotContain("run log");
@@ -238,7 +299,9 @@ class ClaudeTranscriptsRunBundleTest {
 
     @Test
     void aNeighbourSessionsAgentsAreNotInThisSessionsBundle() throws Exception {
-        for (JsonNode sidecar : bundle(SESSION).path("sidecars")) {
+        JsonNode sidecars = bundle(SESSION).path("sidecars");
+        assertThat(sidecars).hasSize(agentIdsOnDisk().size());
+        for (JsonNode sidecar : sidecars) {
             assertThat(sidecar.path("agentId").asText()).isNotEqualTo("neighbour1");
         }
     }
@@ -307,6 +370,36 @@ class ClaudeTranscriptsRunBundleTest {
                 .as("the refusal must name what it weighs and what is allowed")
                 .contains(String.valueOf(total))
                 .contains(String.valueOf(limit));
+    }
+
+    /**
+     * The refusal names the AGENT COUNT too, and the server's count is the one
+     * that is current.
+     *
+     * <p>The sentence the dialog prints over the ceiling says how many agents
+     * were left on disk. Its other source is the row's own fold, which is cached
+     * under the SESSION file's path, mtime and size — the sidecar directory is
+     * not in that key, so agents can accrue or be pruned while that number sits
+     * still. This one was counted by the same walk that decided the refusal.</p>
+     *
+     * <p>Derived, not typed: the expectation is an independent walk of the
+     * fixture, so a sixth agent moves both sides.</p>
+     */
+    @Test
+    void theRefusalAlsoNamesHowManyAgentsWereLeftBehind() throws Exception {
+        long weighs = bundleBytesOnDisk();
+        MockMvc oneByteOver = MockMvcBuilders
+                .standaloneSetup(new ClaudeTranscriptsController(store, weighs - 1)).build();
+
+        MvcResult refused = oneByteOver
+                .perform(get("http://127.0.0.1/api/claude/transcripts/run").param("path", SESSION))
+                .andReturn();
+
+        assertThat(refused.getResponse().getStatus()).isEqualTo(413);
+        JsonNode body = MAPPER.readTree(refused.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        assertThat(body.path("agents").asInt())
+                .as("the count the sentence prints must come from the walk that refused")
+                .isEqualTo(agentIdsOnDisk().size());
     }
 
     /**
@@ -382,6 +475,43 @@ class ClaudeTranscriptsRunBundleTest {
                 .isEqualTo(413);
     }
 
+    // ---- the row is told what the press costs -------------------------------
+
+    /**
+     * ONE counter, structurally.
+     *
+     * <p>AC7 asks that agents, runs and bytes reach the reader before the press,
+     * "sourced from the same fold" — and warns that a second counter which can
+     * disagree on the same screen fails it. So the row's byte figure is not a
+     * second walk: {@code /facts} answers with {@link RunBundle#totalBytes()},
+     * the very number {@code /run} refuses on. This case holds the two answers
+     * against each other over one session, which is the only way that claim can
+     * be a fact rather than a comment.</p>
+     *
+     * <p>The bite: move the weigh (cap the walk, drop the states) and BOTH sides
+     * move together, so the equality stands while the neighbouring cases that
+     * pin the set go red. Move only one side and this one goes red.</p>
+     */
+    @Test
+    void theRowIsToldWhatThePressWillFetchAndItIsTheEndpointsOwnNumber() throws Exception {
+        JsonNode bundle = bundle(SESSION);
+        MvcResult res = mvc.perform(get("http://127.0.0.1/api/claude/transcripts/facts")
+                        .param("path", SESSION))
+                .andReturn();
+        JsonNode facts = MAPPER.readTree(res.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("facts").path(0);
+
+        assertThat(facts.path("runBytes").asLong())
+                .as("the row's byte figure and the refusal's must be one number")
+                .isEqualTo(bundle.path("totalBytes").asLong())
+                .isEqualTo(bundleBytesOnDisk());
+        // Both sides of the union: a run with agents and no state file counts,
+        // which is why RUNS and not RUNS-1.
+        assertThat(facts.path("runs").asInt())
+                .as("how many workflow runs the press would bring")
+                .isEqualTo(RUNS);
+    }
+
     // ---- fixture ------------------------------------------------------------
 
     /** What every workflow child's meta really carries, in full. */
@@ -395,9 +525,9 @@ class ClaudeTranscriptsRunBundleTest {
         return String.format("a%02x%02xdeadbeef", r, a);
     }
 
-    /** Which run an agent id belongs to, by the same rule that built it. */
+    /** Which run an agent id belongs to, or "" for a direct spawn that has none. */
     private static String runOf(String agentId) {
-        return runId(Integer.parseInt(agentId.substring(1, 3), 16));
+        return DIRECT.contains(agentId) ? "" : runId(Integer.parseInt(agentId.substring(1, 3), 16));
     }
 
     private static String sessionText() {

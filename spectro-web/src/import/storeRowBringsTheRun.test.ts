@@ -28,6 +28,15 @@
 // what he sees, and a test that counted fetches would go green on a door that
 // asks for everything and then throws it away.
 //
+// AND THE DOOR IS DRIVEN, not grepped. The first version of this file held the
+// requirement as four `toContain` searches over the source text of
+// `loadFromStore`. A reviewer restored the defect three separate ways with every
+// one of them green — the row wired to the session door, the coordinator called
+// with `sidecars: []`, the run branch made unreachable — because none of those
+// edits removes a substring. So the door moved out of the component into
+// `storeDoor.ts`, where a test can call it with a stubbed store and measure what
+// comes back, which is the only kind of guard the sentence above deserves.
+//
 // Nothing here is copied out of the real store.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -39,7 +48,8 @@ import { besideReading } from "../components/workLevels";
 import { foldWork, type WorkItem } from "../state/work";
 import { initialState, normalizeReplay, reduceAll, type AgentInfo } from "../state/reducer";
 import type { RunEvent } from "../events";
-import { read, stripComments } from "../testkit/source";
+import { degradeKey, onLoadArgs, openFromStore, RUN_DEGRADE_REASONS, type StoreLoad } from "./storeDoor";
+import { dict, t } from "../i18n/i18n";
 
 // ---- a synthetic recording of the shape the owner's store holds ------------
 
@@ -280,53 +290,175 @@ describe("the two doors over one recorded session", () => {
   });
 });
 
-// ---- the requirement -------------------------------------------------------
+// ---- the requirement, driven ------------------------------------------------
 
-describe("a store row must bring what the folder pick brings", () => {
-  /**
-   * The whole card in one line.
-   *
-   * The reading a row produces is the reading of whatever its ONE request
-   * brings back, and the two cases above measure both possible answers. So the
-   * demand is on the request: the row has to be able to ask the store for the
-   * RUN. Until that route is asked for, the row can only ever produce the
-   * second reading above, whatever else changes.
-   */
-  it("the row asks the store for the run", () => {
-    expect(storeDoor()).toContain("/api/claude/transcripts/run");
+/**
+ * The store as the server answers it: the bundle on `/run`, the session file
+ * alone on `/content`. Built off the SAME fixture the folder pick uses, so the
+ * two doors are measured over one recorded session and a difference between
+ * them is a difference in the door.
+ *
+ * @param over what this particular store does differently — a status the run
+ *        route answers with, or a body that is not the shape
+ */
+function stubStore(over: { runStatus?: number; runBody?: unknown; contentStatus?: number } = {}): void {
+  const bundle = {
+    path: STORE_PATH,
+    sessionText: SESSION_TEXT,
+    limitBytes: 128 * 1024 * 1024,
+    totalBytes: 109_063_005,
+    sidecars: AGENTS.map((agentId, i) => ({
+      agentId,
+      runId: RUN,
+      jsonlText: childText(agentId, T0 + 3_000 + i * 100),
+      metaJson: META,
+    })),
+    runStates: [{ runId: RUN, json: STATE_TEXT }],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (url.includes("/api/claude/transcripts/run")) {
+        const status = over.runStatus ?? 200;
+        return Promise.resolve({
+          ok: status === 200,
+          status,
+          json: () => Promise.resolve(over.runBody ?? bundle),
+          text: () => Promise.resolve(JSON.stringify(over.runBody ?? bundle)),
+        } as unknown as Response);
+      }
+      const status = over.contentStatus ?? 200;
+      return Promise.resolve({
+        ok: status === 200,
+        status,
+        text: () => Promise.resolve(status === 200 ? SESSION_TEXT : ""),
+      } as unknown as Response);
+    }),
+  );
+}
+
+const ROW = { path: STORE_PATH, file: "s1.jsonl" };
+
+/** What the panel reads off a completed store load: the roster the merge left,
+ *  against the file listing the same address also answers. */
+const readingOf = async (load: StoreLoad): Promise<ReturnType<typeof besideReading>> =>
+  besideReading(launchItem(load.events), roster(load.events), await sidecarIndex());
+
+describe("a store row brings what the folder pick brings", () => {
+  it("the run door puts the agents IN THE STREAM, over the same session", async () => {
+    // The whole card in one measurement, and it is the reading — not a call
+    // count, not a substring. Compare with the second case in the block above:
+    // same session, same fixture, and the row that said "3 files sit beside
+    // this" now says "3 agents of this run are in this stream".
+    stubStore();
+    const load = await openFromStore(ROW, "run", AGENTS.length, "en");
+    const reading = await readingOf(load);
+
+    expect(reading?.kind).toBe("inStream");
+    expect(reading?.kind === "inStream" ? reading.agents : []).toEqual([...AGENTS]);
+    expect(roster(load.events)).toHaveLength(2 + AGENTS.length);
+    expect(load.events.length).toBe(folderPick().events.length);
+    expect(load.note).toBeUndefined();
   });
 
-  it("and hands the answer to the coordinator, not to the single-file importer", () => {
-    // AC2: the same three text inputs the folder pick builds, through the same
-    // already-tested merge. A second merge written into the dialog is the way
-    // the two doors start disagreeing about one session.
-    expect(storeDoor()).toContain("importClaudeCodeRun");
+  it("and the triple it reports is the folder pick's triple", async () => {
+    // AC2: the same three text inputs through the same already-tested merge.
+    stubStore();
+    const load = await openFromStore(ROW, "run", AGENTS.length, "en");
+    const control = folderPick();
+
+    expect(load.run?.childrenMerged).toBe(control.childrenMerged);
+    expect(load.run?.childrenSkipped).toBe(control.childrenSkipped);
+    expect(load.run?.childrenUnrecorded).toBe(control.childrenUnrecorded);
+    expect(load.run?.childrenMerged).toBe(AGENTS.length);
   });
 
-  it("and carries BOTH the store path and the run summary to onLoad", () => {
-    // AC9. `storePath` is what keeps the deep link and the import address
-    // right; `runSummary(run)` is what carries the merged/skipped/unrecorded
-    // triple and the declared phases. A store run load needs both, and card
-    // 315 is the record of what happens when a summary is assembled by hand at
-    // a call site instead of by the importer's own narrowing.
-    //
-    // Read out of the CALL, not out of the door. Written as two `toContain`s
-    // over the whole slice this was green with the store path deliberately
-    // dropped from `onLoad` — `tr.path` is in the fetch URL either way, so the
-    // guard was satisfied by the thing it was not about. Measured 2026-08-30 by
-    // making exactly that change and watching all seven cases pass.
-    const door = storeDoor();
-    const at = door.indexOf("props.onLoad(");
-    expect(at, "the run door must hand its result to onLoad").toBeGreaterThan(-1);
-    const call = door.slice(at, door.indexOf(");", at));
-    expect(call, "the run summary comes from the importer's own narrowing").toContain("runSummary(");
-    expect(call, "a store load is an address, and onLoad must carry it").toContain("tr.path");
+  it("and hands onLoad BOTH the store path and the run summary", async () => {
+    // AC9, read out of the argument list the dialog spreads rather than out of
+    // its source text. The previous version of this guard sliced the component
+    // and searched for `tr.path`, which is in the fetch URL either way — a
+    // reviewer dropped `storePath` from the call and every case stayed green.
+    stubStore();
+    const args = onLoadArgs(await openFromStore(ROW, "run", AGENTS.length, "en"));
+
+    expect(args[5], "a store load is an address, and onLoad must carry it").toBe(STORE_PATH);
+    expect(args[6], "the summary comes from the importer's own narrowing").toBeDefined();
+    expect(args[6]?.childrenMerged).toBe(AGENTS.length);
+    expect(args[0].length, "the merged stream travels first").toBe(folderPick().events.length);
   });
 
-  it("keeps the single-file route as the escape, and does not delete it", () => {
-    // Green today, and it must stay green: the secondary "session file only"
-    // path and the degrade-over-the-ceiling path both land on this route.
-    expect(storeDoor()).toContain("/api/claude/transcripts/content");
+  it("the session door is still reachable, and still brings the file alone", async () => {
+    // The escape the owner asked for, and the shape every degrade lands in.
+    stubStore();
+    const load = await openFromStore(ROW, "session", AGENTS.length, "en");
+    const reading = await readingOf(load);
+
+    expect(reading?.kind).toBe("files");
+    expect(roster(load.events)).toHaveLength(1);
+    expect(load.run).toBeUndefined();
+    expect(onLoadArgs(load)[5]).toBe(STORE_PATH);
+  });
+});
+
+// ---- and a refusal degrades LOUDLY ------------------------------------------
+
+describe("what the reader is told when the run does not arrive", () => {
+  it("over the ceiling: the session file loads and the sentence names both numbers", async () => {
+    // AC8. The 413's own two numbers, and the agent count the SERVER counted
+    // while it weighed the bundle — not the row's cached one, which is what a
+    // pruned sidecar folder makes stale.
+    stubStore({ runStatus: 413, runBody: { totalBytes: 109_063_005, limitBytes: 67_108_864, agents: 240 } });
+    const load = await openFromStore(ROW, "run", 13, "en");
+
+    expect(roster(load.events)).toHaveLength(1); // the file, and only the file
+    expect(load.note).toContain("104.0 MB");
+    expect(load.note).toContain("64.0 MB");
+    expect(load.note).toContain("240");
+  });
+
+  it("anything else that goes wrong ALSO loads the file, and says so", async () => {
+    // The regression this closes: only a 413 degraded, so a 500 — the shape a
+    // heap-starved server really answers with — left the reader with nothing
+    // at all, where the door before this card loaded the session file.
+    stubStore({ runStatus: 500 });
+    const load = await openFromStore(ROW, "run", 13, "en");
+
+    expect(roster(load.events)).toHaveLength(1);
+    expect(load.note, "a silent nothing is this card's own defect in a new coat").toBeDefined();
+    expect(load.note).toContain("500");
+  });
+
+  it("promised agents that are not on disk any more are announced, not swallowed", async () => {
+    // The row's count comes from the facts cache, whose key is the SESSION
+    // file's path, mtime and size — the sidecar directory is not in it. Prune
+    // that directory and the row still promises N while the bundle honestly
+    // carries none, and the merge of zero sidecars is byte-for-byte today's
+    // single-file import. Without this the row promises the run and delivers
+    // the defect.
+    stubStore({ runBody: { path: STORE_PATH, sessionText: SESSION_TEXT, sidecars: [], runStates: [] } });
+    const load = await openFromStore(ROW, "run", AGENTS.length, "en");
+
+    expect(roster(load.events)).toHaveLength(1);
+    expect(load.note).toContain(String(AGENTS.length));
+  });
+
+  it("every degrade reason has its own sentence in both languages", () => {
+    // The codes are the mechanism, not the prose: a degrade matched by
+    // substring goes soft the day somebody rewords the copy. Walked off the
+    // exported list, so a fourth reason with no word for it is red here — and
+    // the sentences must DIFFER, or two reasons have collapsed into one and the
+    // reader cannot tell "too big" from "gone".
+    const seen = new Set<string>();
+    for (const reason of RUN_DEGRADE_REASONS) {
+      const key = degradeKey(reason);
+      expect(dict[key], `${key} is missing from the dictionary`).toBeDefined();
+      for (const lang of ["en", "de"] as const) {
+        const said = t(lang, key, { size: "104.0 MB", limit: "64.0 MB", agents: 240, status: 500 });
+        expect(said, `${key}.${lang} fell back to the key`).not.toBe(key);
+        seen.add(said);
+      }
+    }
+    expect(seen.size, "each reason and language needs its own sentence").toBe(RUN_DEGRADE_REASONS.length * 2);
   });
 });
 
@@ -352,24 +484,3 @@ describe("with the roster and the file listing both answering, the roster wins",
     expect(besideReading(launchItem(run.events), roster(run.events), files)?.kind).toBe("inStream");
   });
 });
-
-// ---- the door itself, read off disk ----------------------------------------
-
-/**
- * `loadFromStore` is a closure inside a component and this suite has no DOM
- * (house rule), so the door is read as source — the same move
- * `declaredPhasesReachTheLab.test.tsx` makes for the two joins no unit test can
- * reach, and the same gap card 315 came out of.
- *
- * The slice is the store door only. A dialog-wide search would be satisfied by
- * `onFile`, which has done the right thing since card 291 — and a guard that a
- * neighbour can satisfy is not a guard.
- */
-function storeDoor(): string {
-  const src = stripComments(read("../components/ImportDialog.tsx", import.meta.url));
-  const from = src.indexOf("const loadFromStore");
-  const to = src.indexOf("const onFile", from + 1);
-  expect(from, "ImportDialog no longer has a `loadFromStore`; this guard must follow it").toBeGreaterThan(-1);
-  expect(to, "`onFile` no longer follows `loadFromStore`; this guard must follow it").toBeGreaterThan(from);
-  return src.slice(from, to);
-}

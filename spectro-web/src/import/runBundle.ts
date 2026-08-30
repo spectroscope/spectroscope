@@ -79,6 +79,12 @@ export function runBundleInput(body: unknown): RunBundleInput {
 export interface RunRefusal {
   totalBytes: number;
   limitBytes: number;
+  /** How many agents the server counted while it weighed the bundle. Optional
+   *  because a server older than this field does not say — and when it does not,
+   *  the sentence falls back to the row's own count, which is the number that
+   *  can be stale (the facts cache is keyed on the SESSION file's stat, and the
+   *  sidecar directory is not in that key). */
+  agents?: number;
 }
 
 /**
@@ -95,5 +101,7 @@ export interface RunRefusal {
 export function runRefusal(body: unknown): RunRefusal | null {
   const totalBytes = num(body, "totalBytes");
   const limitBytes = num(body, "limitBytes");
-  return totalBytes === undefined || limitBytes === undefined ? null : { totalBytes, limitBytes };
+  if (totalBytes === undefined || limitBytes === undefined) return null;
+  const agents = num(body, "agents");
+  return { totalBytes, limitBytes, ...(agents === undefined ? {} : { agents }) };
 }

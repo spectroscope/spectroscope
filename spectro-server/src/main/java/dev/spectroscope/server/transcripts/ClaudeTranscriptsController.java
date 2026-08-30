@@ -118,13 +118,22 @@ public class ClaudeTranscriptsController {
      * and the tab holds all of it. A run this size has to be refused on its
      * total or not at all.</p>
      *
-     * <p>128 MiB is deliberately the same number as the per-file ceiling and for
-     * the same reason: what it bounds is the BROWSER, which holds the response
-     * text, the parsed texts and the folded rows. It leaves the owner's 104.0
-     * MiB run inside the line — which is the point, because a card whose whole
-     * subject is "the store list brings the run" that then refused his own
-     * session would have shipped a sentence instead of a feature. Over the line
-     * the row degrades to the session file and SAYS so, with both numbers.</p>
+     * <p>128 MiB is deliberately the same number as the per-file ceiling. What it
+     * bounds directly is BYTES ON DISK — a sum of {@code stat} calls, which is
+     * what lets a run be refused before any of it is read. The response text is
+     * bigger than that sum, because every one of those bytes is JSON-escaped:
+     * measured at 1.06x on real transcripts (110,904,820 on disk against
+     * 117,162,217 on the wire) and at 6.0x on a file of raw control bytes, which
+     * is the honest worst case and reachable through exactly the file {@code
+     * text()} was written to tolerate. So this is a bound on the browser's cost
+     * only up to that factor, and the server holds the whole answer in heap
+     * besides — see {@code RunBundle}'s note on the writer.</p>
+     *
+     * <p>It leaves the owner's 104.0 MiB run inside the line, which is the
+     * point: a card whose whole subject is "the store list brings the run" that
+     * then refused his own session would have shipped a sentence instead of a
+     * feature. Over the line the row degrades to the session file and SAYS so,
+     * with both numbers and the agent count.</p>
      */
     private static final long MAX_BUNDLE_BYTES = 128L * 1024 * 1024;
 
@@ -305,8 +314,8 @@ public class ClaudeTranscriptsController {
      * @param request the servlet request, for the local-origin fence
      * @return 404 for a non-local caller or a rebound Host, and 404 for anything
      *         that is not a transcript inside the store; 413 above
-     *         {@link #MAX_BUNDLE_BYTES} with both numbers in the body, decided
-     *         from sizes before a byte is read; else the bundle
+     *         {@link #MAX_BUNDLE_BYTES} with both numbers and the agent count in
+     *         the body, decided from sizes before a byte is read; else the bundle
      */
     @GetMapping("/api/claude/transcripts/run")
     public ResponseEntity<Resource> run(@RequestParam("path") String rel, HttpServletRequest request) {
@@ -323,7 +332,7 @@ public class ClaudeTranscriptsController {
             // the walk relative paths that resolve somewhere else entirely.
             RunBundle bundle = RunBundle.beside(session, base.toRealPath());
             if (bundle.totalBytes() > maxBundleBytes) {
-                return json(413, RunBundle.refusal(bundle.totalBytes(), maxBundleBytes));
+                return json(413, bundle.refusal(maxBundleBytes));
             }
             return json(200, bundle.json(rel, maxBundleBytes));
         } catch (IOException unreadable) {
@@ -396,12 +405,36 @@ public class ClaudeTranscriptsController {
                 // folder fills up while the parent transcript sits unchanged,
                 // and a count cached under the transcript's stamp was measured
                 // answering yesterday's number for as long as it sat still.
-                rows.add(facts.facts(file)
+                // …and so is what a click on the row would FETCH. Card 318 made
+                // the row's press pull the whole run, and the only byte figure
+                // on the line was the session file's own — 11.4 MB against the
+                // 105.8 the press really costs on the operator's session. This
+                // is RunBundle's own weigh, the same one the endpoint refuses
+                // on, so the number the row prints and the number a 413 quotes
+                // are one number by construction.
+                rows.add(withRunShape(facts.facts(file), file)
                         .withSidecars(TranscriptFacts.sidecarsBeside(file))
                         .at(rel));
             }
         }
         return ResponseEntity.ok(new FactsResponse(MAX_FACT_BATCH, List.copyOf(rows)));
+    }
+
+    /**
+     * What a click on this row would fetch, weighed now.
+     *
+     * @param folded the cached fold for the transcript
+     * @param file the resolved transcript
+     * @return the facts carrying the run's shape, or unchanged when the store
+     *         root will not resolve — a row that says nothing about the run is
+     *         the honest answer there, never a zero that reads like a fact
+     */
+    private TranscriptFacts.Facts withRunShape(TranscriptFacts.Facts folded, Path file) {
+        try {
+            return folded.withRun(RunBundle.beside(file, base.toRealPath()));
+        } catch (IOException gone) {
+            return folded;
+        }
     }
 
     /** One row of the gist surface. */

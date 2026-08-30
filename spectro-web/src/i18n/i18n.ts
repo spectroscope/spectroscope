@@ -445,16 +445,38 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "lädt den ganzen Lauf · {agents} Agenten daneben",
     en: "loads the whole run · {agents} agents beside it",
   },
+  // …and the same sentence once the server has weighed the run. The size is
+  // what the press FETCHES, not the session file's own — on the owner's session
+  // those are 105.8 MB and 11.4 MB, and printing only the second understated the
+  // press tenfold. Two keys rather than an empty clause: an older server does
+  // not weigh the run, and "0 runs · 1 kB" would be a number nobody measured.
+  "imp.run.bringsWeighed": {
+    de: "lädt den ganzen Lauf · {agents} Agenten in {runs} Läufen · {size}",
+    en: "loads the whole run · {agents} agents in {runs} runs · {size}",
+  },
   // The escape, and it stays a small secondary thing next to the row. What it
   // must never become is the answer "go and find the folder yourself".
   "imp.run.only": { de: "nur diese Datei", en: "this file only" },
-  // Over the ceiling the row falls back to the session file — today's
-  // behaviour — and it must be impossible to mistake it for today's behaviour.
-  // Both numbers come from the server's own refusal; the agent count is the
-  // row's.
-  "imp.run.tooBig": {
+  // The three ways a run can fail to arrive, one sentence each. They are apart
+  // on purpose — "too big", "the server did not answer" and "the agents are not
+  // there any more" are three different facts, and one sentence for the set
+  // would be false for two of them. Keyed by the reason CODE
+  // (RUN_DEGRADE_REASONS in storeDoor.ts): `imp.run.<code>`, walked by the suite
+  // so a fourth reason without a word is red.
+  "imp.run.tooLarge": {
     de: "{size} — mehr, als dieser Server auf einmal trägt ({limit}). Geladen ist nur die Session-Datei, die {agents} Agenten daneben fehlen.",
     en: "{size} — more than this server carries at once ({limit}). Only the session file is loaded; the {agents} agents beside it are missing.",
+  },
+  // No count in this one, deliberately: when the server does not answer, nobody
+  // knows how many agents are beside the session, and the number the row happens
+  // to be holding is the one that can be stale.
+  "imp.run.unreachable": {
+    de: "Der ganze Lauf war nicht zu holen (Status {status}). Geladen ist nur die Session-Datei; die Agenten daneben stehen weiter auf der Platte.",
+    en: "The whole run could not be fetched (status {status}). Only the session file is loaded; the agents beside it are still on disk.",
+  },
+  "imp.run.vanished": {
+    de: "Die {agents} Agenten, die diese Zeile angekündigt hat, liegen nicht mehr neben der Session. Geladen ist die Session-Datei allein.",
+    en: "The {agents} agents this row announced are no longer beside the session. What is loaded is the session file alone.",
   },
   "imp.err.noSession": {
     de: "Keine Session-.jsonl in der Auswahl gefunden.",

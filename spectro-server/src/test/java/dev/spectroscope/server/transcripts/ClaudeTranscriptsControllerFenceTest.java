@@ -40,6 +40,10 @@ class ClaudeTranscriptsControllerFenceTest {
      */
     private Path outside;
 
+    /** The same marker under a {@code .json} name, for the meta and the run
+     *  state — two derived files whose suffix is not {@code .jsonl}. */
+    private Path outsideJson;
+
     private static final String SECRET = "outside-the-store-marker";
 
     @BeforeEach
@@ -50,6 +54,8 @@ class ClaudeTranscriptsControllerFenceTest {
         Files.createDirectories(outside);
         outside = outside.resolve("secret.jsonl");
         Files.writeString(outside, "{\"type\":\"user\",\"text\":\"" + SECRET + "\"}\n");
+        outsideJson = outside.resolveSibling("secret.json");
+        Files.writeString(outsideJson, "{\"text\":\"" + SECRET + "\"}");
         mvc = MockMvcBuilders
                 .standaloneSetup(new ClaudeTranscriptsController(home.resolve(".claude/projects")))
                 .build();
@@ -217,5 +223,121 @@ class ClaudeTranscriptsControllerFenceTest {
         mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
                         .param("path", "-Users-x-repo/s1/subagents"))
                 .andExpect(status().isNotFound());
+    }
+
+    // ---- card 318: the fence covers what the bundle DERIVES ----------------
+
+    /**
+     * The store, as one session with a run beside it. Everything the bundle
+     * reads besides the transcript itself hangs off this shape, and every case
+     * below replaces exactly one of those files with a symlink out.
+     *
+     * @return the session folder, {@code <store>/-Users-x-repo/s1}
+     */
+    private Path aSessionWithARunBesideIt() throws Exception {
+        Path project = home.resolve(".claude/projects/-Users-x-repo");
+        Path runDir = Files.createDirectories(
+                project.resolve("s1/subagents/workflows/wf_one"));
+        Files.writeString(runDir.resolve("agent-aaa.jsonl"), "{\"type\":\"user\"}\n");
+        Files.writeString(runDir.resolve("agent-aaa.meta.json"), META);
+        Path states = Files.createDirectories(project.resolve("s1/workflows"));
+        Files.writeString(states.resolve("wf_one.json"), "{\"runId\":\"wf_one\"}");
+        return project.resolve("s1");
+    }
+
+    /** What a workflow child's meta really carries, in full. */
+    private static final String META = "{\"agentType\":\"workflow-subagent\",\"spawnDepth\":1}";
+
+    /** The bundle for the one session, as a string. */
+    private String runBundleBody() throws Exception {
+        return mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
+                        .param("path", "-Users-x-repo/s1.jsonl"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    /**
+     * An agent transcript that is a symlink out of the store.
+     *
+     * <p>The name is the only thing the walk checks, and {@code isRegularFile}
+     * follows the link — so the file is admitted as an agent and its target is
+     * read. {@code /content} refuses this same file by canonicalising it; the
+     * bundle must not be the one door on this surface that does not.</p>
+     *
+     * <p>Not theoretical: {@code ~/.claude/projects/<project>/<session>/subagents}
+     * is an ordinary directory the operator's own agents can write into.</p>
+     */
+    @Test
+    void aPoisonedAgentTranscriptIsNotReadIntoTheBundle() throws Exception {
+        Path session = aSessionWithARunBesideIt();
+        Files.createSymbolicLink(
+                session.resolve("subagents/workflows/wf_one/agent-evil.jsonl"), outside);
+
+        org.assertj.core.api.Assertions.assertThat(runBundleBody())
+                .as("a symlinked agent transcript handed its target to the importer")
+                .doesNotContain(SECRET);
+    }
+
+    /**
+     * The meta beside an agent, the same shape one file over. It is derived by
+     * NAME from the transcript, so a link here is reached even when the
+     * transcript itself is honest.
+     */
+    @Test
+    void aPoisonedAgentMetaIsNotReadIntoTheBundle() throws Exception {
+        Path session = aSessionWithARunBesideIt();
+        Path runDir = session.resolve("subagents/workflows/wf_one");
+        Files.writeString(runDir.resolve("agent-bbb.jsonl"), "{\"type\":\"user\"}\n");
+        Files.createSymbolicLink(runDir.resolve("agent-bbb.meta.json"), outsideJson);
+
+        org.assertj.core.api.Assertions.assertThat(runBundleBody())
+                .as("a symlinked meta handed its target to the importer")
+                .doesNotContain(SECRET);
+    }
+
+    /** A run state file that is a symlink out. Its own walk, its own bite. */
+    @Test
+    void aPoisonedRunStateIsNotReadIntoTheBundle() throws Exception {
+        Path session = aSessionWithARunBesideIt();
+        Files.createSymbolicLink(session.resolve("workflows/wf_evil.json"), outsideJson);
+
+        org.assertj.core.api.Assertions.assertThat(runBundleBody())
+                .as("a symlinked run state handed its target to the importer")
+                .doesNotContain(SECRET);
+    }
+
+    /**
+     * The {@code workflows} DIRECTORY as a symlink out: the listing walks
+     * through the link and every file behind it is a run state.
+     */
+    @Test
+    void aWorkflowsFolderPointingOutOfTheStoreBringsNoRunStates() throws Exception {
+        Path session = aSessionWithARunBesideIt();
+        Path elsewhere = Files.createDirectories(home.resolve("elsewhere/states"));
+        Files.writeString(elsewhere.resolve("wf_elsewhere.json"), "{\"secret\":\"" + SECRET + "\"}");
+        Path states = session.resolve("workflows");
+        Files.delete(states.resolve("wf_one.json"));
+        Files.delete(states);
+        Files.createSymbolicLink(states, elsewhere);
+
+        org.assertj.core.api.Assertions.assertThat(runBundleBody())
+                .as("a symlinked workflows folder handed its contents to the importer")
+                .doesNotContain(SECRET);
+    }
+
+    /**
+     * The whole session FOLDER as a symlink out — one link, and both walks
+     * start outside the store.
+     */
+    @Test
+    void aSessionFolderPointingOutOfTheStoreBringsNothingBesideTheFile() throws Exception {
+        Path project = home.resolve(".claude/projects/-Users-x-repo");
+        Path elsewhere = Files.createDirectories(home.resolve("elsewhere/planted/subagents/workflows/wf_x"));
+        Files.writeString(elsewhere.resolve("agent-ccc.jsonl"), "{\"secret\":\"" + SECRET + "\"}");
+        Files.createSymbolicLink(project.resolve("s1"), home.resolve("elsewhere/planted"));
+
+        org.assertj.core.api.Assertions.assertThat(runBundleBody())
+                .as("a symlinked session folder handed its contents to the importer")
+                .doesNotContain(SECRET);
     }
 }

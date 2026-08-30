@@ -120,7 +120,7 @@ import { AgentFeed } from "./spectrum/AgentFeed";
 import { FleetHome } from "./spectrum/FleetHome";
 import { FleetLobby } from "./spectrum/FleetLobby";
 import { loadSidecarAgents, NO_SIDECARS, type SidecarAgent, type SidecarIndex } from "./import/sidecarAgents";
-import { detectAndLoad } from "./import/detect";
+import { openFromStore, type StoreDoor } from "./import/storeDoor";
 import { reportBrowserError } from "./state/browserLog";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import {
@@ -1164,13 +1164,48 @@ export function App() {
    * readable in the same faces as everything else (card 152 taught that path
    * to read an `agent-*.jsonl` as a session in its own right).
    */
-  const openStoreTranscript = (path: string, label: string, cause: NavCause): void => {
-    void fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(path)}`)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
-      .then((raw) => {
-        const { events, kind, source, subagent } = detectAndLoad(raw);
-        openImport(events, label, kind, source, subagent, path, undefined, undefined, cause);
-      })
+  /**
+   * One store address, opened.
+   *
+   * Card 318, second half. The address a run load WRITES has to reopen as the
+   * run: this function serves the deep link, and it fetched the session file
+   * alone, so Back, Forward, a reload or a shared link put the reader back on
+   * the exact screen the card exists to delete — with nothing saying anything
+   * had been lost. Measured over the owner's own session at one URL: 51,759
+   * frames and a roster of 295 after the click, 3,389 and a roster of 1 after
+   * `history.back(); history.forward()`.
+   *
+   * The door is a parameter because the two callers are not the same question.
+   * An ADDRESS is a session and takes the run; one agent's transcript, opened
+   * from the sidecar list, is a file and stays one.
+   *
+   * @param path the store-relative transcript
+   * @param label what to call the tab
+   * @param cause "gesture" pushes a history entry, "apply" replaces it
+   * @param door which door; the file alone unless told otherwise
+   */
+  const openStoreTranscript = (
+    path: string,
+    label: string,
+    cause: NavCause,
+    door: StoreDoor = "session",
+  ): void => {
+    // No count to promise here — there is no row — so the degrade sentences
+    // that name one stay quiet rather than printing a number nobody measured.
+    void openFromStore({ path, file: label }, door, 0, lang)
+      .then((res) =>
+        openImport(
+          res.events,
+          label,
+          res.kind,
+          res.source,
+          res.subagent,
+          res.storePath,
+          res.run,
+          res.note,
+          cause,
+        ),
+      )
       .catch((e) => reportBrowserError("store-open", e));
   };
 
@@ -1477,7 +1512,7 @@ export function App() {
         case "open-import":
           // Following an address, so it REPLACES rather than pushes: the entry
           // is already in history, and pushing would make Back a no-op.
-          openStoreTranscript(action.path, action.path.split("/").pop() ?? action.path, "apply");
+          openStoreTranscript(action.path, action.path.split("/").pop() ?? action.path, "apply", "run");
           break;
         case "enter-fleet":
           applyFleet(action.contextId); // the beaconless core

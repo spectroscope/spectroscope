@@ -37,6 +37,19 @@ import java.util.stream.Stream;
  * describe the same agents on the same screen and a second rule for "what is an
  * agent beside this session" is a second rule that can drift.</p>
  *
+ * <p><b>Derived is not the same as safe, and that cost a hole.</b> The walk
+ * admits an entry on its NAME and on {@code Files.isRegularFile}, which follows
+ * symlinks — so a file called {@code agent-x.jsonl} pointing at {@code
+ * /etc/passwd} was admitted as an agent and its target read into the answer.
+ * {@code ~/.claude/projects/<project>/<session>/subagents} is an ordinary
+ * directory, and this harness hands agents write tools. Five shapes leaked
+ * (agent transcript, agent meta, run state, the {@code workflows} folder, the
+ * session folder), each measured, and {@code /content} refused every one of the
+ * same files by canonicalising them. So every file this class opens now goes
+ * through {@link #insideStore} first: resolved for real, required to land under
+ * the store root, dropped when it does not. See
+ * {@code ClaudeTranscriptsControllerFenceTest}.</p>
+ *
  * <p><b>Sized before it is read.</b> {@link #totalBytes()} is a sum of
  * {@code stat} calls, so the ceiling can refuse a run without materialising a
  * byte of it. That ordering is the whole protection: the alternative reads 104
@@ -44,7 +57,19 @@ import java.util.stream.Stream;
  */
 final class RunBundle {
 
-    /** Streaming writer: one file is in memory at a time, never all of them. */
+    /**
+     * The generator the answer is written with.
+     *
+     * <p>It is NOT a streaming writer, and the comment that said so was wrong:
+     * {@link #json} builds the whole body in a {@link ByteArrayOutputStream} and
+     * hands back its bytes, so at the return the entire bundle is resident, and
+     * briefly twice over the copy. Measured on the owner's own session by a
+     * reviewer: the endpoint answers at {@code -Xmx512m} and dies with
+     * {@code OutOfMemoryError} at {@code -Xmx256m} for a 105.8 MiB bundle. The
+     * shipped desktop runs {@code -XX:MaxRAMPercentage=33}, which is why this is
+     * a documented cost rather than a crash — but the sentence has to match the
+     * code, and streaming it properly is a change with its own card.</p>
+     */
     private static final JsonFactory FACTORY = new JsonFactory();
 
     /** A workflow run's id, and so its state file's name, starts with this. */
@@ -93,11 +118,14 @@ final class RunBundle {
     static RunBundle beside(Path session, Path root) {
         List<Agent> agents = new ArrayList<>();
         for (TranscriptFacts.SidecarAgent a : TranscriptFacts.sidecarAgentsBeside(session, root)) {
-            Path jsonl = root.resolve(a.path());
-            Path meta = jsonl.resolveSibling("agent-" + a.agentId() + ".meta.json");
-            agents.add(new Agent(a.agentId(), a.runId(), jsonl, Files.isRegularFile(meta) ? meta : null));
+            Path jsonl = insideStore(root, root.resolve(a.path()));
+            if (jsonl == null) {
+                continue; // a name that resolves out of the store is not an agent
+            }
+            Path meta = insideStore(root, jsonl.resolveSibling("agent-" + a.agentId() + ".meta.json"));
+            agents.add(new Agent(a.agentId(), a.runId(), jsonl, meta));
         }
-        List<State> states = statesIn(SessionFolders.runStates(session));
+        List<State> states = statesIn(SessionFolders.runStates(session), root);
         long total = sizeOf(session);
         for (Agent a : agents) {
             total += sizeOf(a.jsonl()) + sizeOf(a.meta());
@@ -119,9 +147,11 @@ final class RunBundle {
      * what {@code childrenUnrecorded} is counted from (card 297).</p>
      *
      * @param folder {@code <session>/workflows}, or null
+     * @param root the store root, real: a state file is a file this class opens,
+     *             so it goes through the same fence the agents do
      * @return one entry per {@code wf_*.json}, by run id
      */
-    private static List<State> statesIn(Path folder) {
+    private static List<State> statesIn(Path folder, Path root) {
         if (folder == null || !Files.isDirectory(folder)) {
             return List.of();
         }
@@ -129,11 +159,14 @@ final class RunBundle {
         try (Stream<Path> list = Files.list(folder)) {
             for (Path entry : (Iterable<Path>) list::iterator) {
                 String name = entry.getFileName().toString();
-                if (!name.startsWith(RUN_PREFIX) || !name.endsWith(STATE_SUFFIX)
-                        || !Files.isRegularFile(entry)) {
+                if (!name.startsWith(RUN_PREFIX) || !name.endsWith(STATE_SUFFIX)) {
                     continue;
                 }
-                found.add(new State(name.substring(0, name.length() - STATE_SUFFIX.length()), entry));
+                Path real = insideStore(root, entry);
+                if (real == null) {
+                    continue;
+                }
+                found.add(new State(name.substring(0, name.length() - STATE_SUFFIX.length()), real));
             }
         } catch (IOException unreadable) {
             return List.of();
@@ -145,6 +178,34 @@ final class RunBundle {
     /** @return what this bundle weighs on disk, summed from stats alone */
     long totalBytes() {
         return totalBytes;
+    }
+
+    /**
+     * How many workflow runs this session recorded.
+     *
+     * <p>Both sides of the union, for the reason {@link #statesIn} spells out:
+     * a run can have agents and no state file, and a state file can name a run
+     * whose agents were never written. Counting one side would under-report the
+     * other, and the number is printed to a reader before he presses.</p>
+     *
+     * @return the distinct run ids, agents and states together
+     */
+    int runs() {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+        for (Agent a : agents) {
+            if (a.runId() != null) {
+                ids.add(a.runId());
+            }
+        }
+        for (State s : states) {
+            ids.add(s.runId());
+        }
+        return ids.size();
+    }
+
+    /** @return how many agent transcripts this bundle carries */
+    int agentCount() {
+        return agents.size();
     }
 
     /**
@@ -209,7 +270,7 @@ final class RunBundle {
     }
 
     /**
-     * The refusal, with BOTH numbers in it.
+     * The refusal, with the two numbers AND the agent count in it.
      *
      * <p>JSON rather than the prose {@code /content} answers with, because this
      * one is read by the client and printed as a sentence of its own: the row
@@ -217,12 +278,19 @@ final class RunBundle {
      * the run was and how much this server will carry. A prose body would make
      * that sentence a parse of English.</p>
      *
-     * @param totalBytes what the bundle weighs
+     * <p>The agent count travels with the two sizes because the sentence names
+     * it, and the client's own number is the one that can be stale: the row's
+     * count comes from a fold cached under the SESSION file's path, mtime and
+     * size, and the sidecar directory is not in that key. This one was counted
+     * by the same walk that decided the refusal.</p>
+     *
      * @param limitBytes what this server allows
      * @return the UTF-8 body
      */
-    static byte[] refusal(long totalBytes, long limitBytes) {
-        return ("{\"totalBytes\":" + totalBytes + ",\"limitBytes\":" + limitBytes + "}")
+    byte[] refusal(long limitBytes) {
+        return ("{\"totalBytes\":" + totalBytes
+                + ",\"limitBytes\":" + limitBytes
+                + ",\"agents\":" + agentCount() + "}")
                 .getBytes(StandardCharsets.UTF_8);
     }
 
@@ -250,6 +318,30 @@ final class RunBundle {
             return new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
         } catch (IOException unreadable) {
             return "";
+        }
+    }
+
+    /**
+     * One derived file, resolved for real and required to be inside the store.
+     *
+     * <p>The same canonical check {@code /content} makes on the path it is
+     * handed, applied to the paths this class computes. A name inside the store
+     * is not a location inside the store: {@code Files.isRegularFile} follows
+     * symlinks, so the walk admits a link and only {@code toRealPath} sees where
+     * it lands. A file that fails is dropped from the bundle rather than
+     * refusing the whole run — the run is a legitimate read and one planted
+     * name must not take the operator's own session down with it.</p>
+     *
+     * @param root the store root, already real
+     * @param candidate the derived path, possibly a link
+     * @return the real file inside the store, or null
+     */
+    private static Path insideStore(Path root, Path candidate) {
+        try {
+            Path real = candidate.toRealPath();
+            return real.startsWith(root) && Files.isRegularFile(real) ? real : null;
+        } catch (IOException notThere) {
+            return null;
         }
     }
 

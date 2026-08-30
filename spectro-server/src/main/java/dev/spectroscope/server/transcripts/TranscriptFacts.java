@@ -82,6 +82,15 @@ final class TranscriptFacts {
      *               pass as everything else — a transcript that carries screenshots
      *               is a different kind of record to read, and 764 of the operator's
      *               5,260 files carry them
+     * @param runs how many workflow runs the session folder holds (card 318)
+     * @param runBytes what one click on this row will actually fetch, in bytes:
+     *                 the session file plus every agent, meta and run state
+     *                 beside it. It is {@link RunBundle}'s own {@code
+     *                 totalBytes} — the SAME weigh the endpoint refuses on — so
+     *                 the number the row prints and the number the 413 quotes
+     *                 cannot be two counters. The row's other byte figure is the
+     *                 session file alone, which on the operator's own session
+     *                 understates the click tenfold (11.4 MB against 105.8)
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Facts(
@@ -92,17 +101,34 @@ final class TranscriptFacts {
             int workflowAgents,
             String language,
             String firstPrompt,
-            int images) {
+            int images,
+            int runs,
+            long runBytes) {
 
         /** The empty answer for a file that could not be read. */
         static Facts none(String path) {
-            return new Facts(path, List.of(), 0, 0, 0, null, null, 0);
+            return new Facts(path, List.of(), 0, 0, 0, null, null, 0, 0, 0L);
         }
 
         /** Re-labels a folded answer with the path the caller asked under. */
         Facts at(String path) {
             return new Facts(path, models, workflowCalls, subagents, workflowAgents, language,
-                    firstPrompt, images);
+                    firstPrompt, images, runs, runBytes);
+        }
+
+        /**
+         * Stamps what a click on this row would fetch, weighed at ask time by
+         * the class that will serve it.
+         *
+         * <p>Not cached, for the reason {@link #withSidecars} is not: the
+         * bundle grows while the transcript sits still.</p>
+         *
+         * @param bundle the weighed run beside this session
+         * @return the same facts, carrying the run's shape
+         */
+        Facts withRun(RunBundle bundle) {
+            return new Facts(path, models, workflowCalls, subagents, workflowAgents, language,
+                    firstPrompt, images, bundle.runs(), bundle.totalBytes());
         }
 
         /**
@@ -113,7 +139,7 @@ final class TranscriptFacts {
          */
         Facts withSidecars(Sidecars sidecars) {
             return new Facts(path, models, workflowCalls, sidecars.subagents(),
-                    sidecars.workflowAgents(), language, firstPrompt, images);
+                    sidecars.workflowAgents(), language, firstPrompt, images, runs, runBytes);
         }
     }
 
@@ -185,7 +211,9 @@ final class TranscriptFacts {
                 0,
                 languageOf(firstPrompt),
                 bound(firstPrompt),
-                images);
+                images,
+                0, // and so is the run's shape, for the same reason
+                0L);
     }
 
     /**

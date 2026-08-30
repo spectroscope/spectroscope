@@ -29,7 +29,6 @@ import { describe, expect, it } from "vitest";
 import { rowState, type RowState, type StoreLimits, type TranscriptRow } from "./rowState";
 import type { TranscriptFacts } from "./transcriptFacts";
 import { dict, t, type Lang } from "../i18n/i18n";
-import * as rowStateModule from "./rowState";
 
 // ---- the contract this card adds to rowState -------------------------------
 
@@ -37,10 +36,10 @@ import * as rowStateModule from "./rowState";
  * Which door a row's click takes, and the numbers the reader is told before it
  * opens.
  *
- * `agents` is not a second counter. It is the SAME number the row's
- * `workflow-agents ×N` chip prints, off the same fold, because two counts of
- * one thing on one screen is how a panel starts contradicting itself — card
- * 313's lesson, one surface earlier.
+ * `agents` comes off the same fold that prints the row's agent chips, and it is
+ * their SUM — the row prints `subagents ×N` and `workflow-agents ×N` apart, so
+ * with both populations present the plan's number is a third figure on the same
+ * line. One fold, one reading; not literally the number in either chip.
  */
 type RowPlan =
   { door: "run"; agents: number } | { door: "session"; reason: "noAgents" | "tooLarge"; agents: number };
@@ -151,7 +150,7 @@ describe("the number the row prints and the number the plan carries are one numb
  * Every user-visible string goes through `i18n.ts` with de AND en; `t` returns
  * the KEY for anything missing, so a bare key coming back is the red.
  */
-const KEYS = ["imp.run.brings", "imp.run.only", "imp.run.tooBig"] as const;
+const KEYS = ["imp.run.brings", "imp.run.only", "imp.run.tooLarge"] as const;
 
 describe("what the reader is told", () => {
   it("both languages carry all three sentences", () => {
@@ -182,23 +181,18 @@ describe("what the reader is told", () => {
     // behaviour. The server names both numbers in its 413; this sentence is
     // where they are printed.
     for (const lang of ["en", "de"] as const) {
-      const said = t(lang, "imp.run.tooBig", { size: "104.0 MB", limit: "64.0 MB", agents: 240 });
+      const said = t(lang, "imp.run.tooLarge", { size: "104.0 MB", limit: "64.0 MB", agents: 240 });
       expect(said).toContain("104.0 MB");
       expect(said).toContain("64.0 MB");
       expect(said).toContain("240");
     }
   });
 
-  it("the degrade is keyed on a reason code the module owns, not on prose", () => {
-    // A sentence matched by substring goes soft the day somebody rewords it,
-    // and rewording user copy is the one thing that happens to every string in
-    // this file. The codes belong beside the decision that produces them and
-    // are exported so `i18n.test.ts` can demand a word for each, the way it
-    // already does for SOURCE_NOTE_KINDS and TODO_STATUSES.
-    const codes = (rowStateModule as { RUN_DOOR_REASONS?: readonly string[] }).RUN_DOOR_REASONS;
-    expect(codes, "rowState.ts must export the reason codes its plan can carry").toBeDefined();
-    expect([...(codes ?? [])].sort()).toEqual(["noAgents", "tooLarge"]);
-  });
+  // What a DEGRADE says lives with the degrade, in `storeDoor.ts`, and is walked
+  // off `RUN_DEGRADE_REASONS` there and in `i18n.test.ts`. A case here used to
+  // assert that `rowState` exported its own reason list and that the list read
+  // `["noAgents","tooLarge"]` — a hand-typed copy of a hand-typed constant, with
+  // no consumer between them that a third entry could ever have broken.
 });
 
 // ---- what must not have moved ----------------------------------------------

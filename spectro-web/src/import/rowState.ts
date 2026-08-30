@@ -69,21 +69,6 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
- * Why a row's click takes the session-file door instead of the run door.
- *
- * Two codes, and they are bitten apart on purpose: both end at the same single
- * file, and one code for the pair would let the dialog print "the agents were
- * left behind" over a session that never had any. Exported because the sentence
- * under the row is keyed on the CODE — a degrade matched by a prose substring
- * goes soft the day somebody rewords the copy, and rewording copy is the one
- * thing that happens to every string in this product.
- */
-export const RUN_DOOR_REASONS = ["noAgents", "tooLarge"] as const;
-
-/** One of {@link RUN_DOOR_REASONS}. */
-export type RunDoorReason = (typeof RUN_DOOR_REASONS)[number];
-
-/**
  * Which door a row's click takes, and the number the reader is told first.
  *
  * The owner, watching a session open with none of its agents: "you do not want
@@ -92,12 +77,41 @@ export type RunDoorReason = (typeof RUN_DOOR_REASONS)[number];
  * degrades loudly rather than back into something that looks like the old
  * behaviour.
  *
- * `agents` is not a second counter. It is the same number the row's
- * `workflow-agents xN` chip prints, off the same fold, because two counts of
- * one thing on one screen is how a panel starts contradicting itself.
+ * `reason` is the plan's own record of WHY it fell back, and the two values are
+ * apart on purpose: both end at the same single file, and one code for the pair
+ * would let a caller print "the agents were left behind" over a session that
+ * never had any. It is not printed today — the row is already disabled with its
+ * own sentence in the `tooLarge` case, and `noAgents` is the ordinary load. The
+ * sentence a DEGRADE prints is keyed on a different set of codes
+ * (`RUN_DEGRADE_REASONS` in `storeDoor.ts`), which is where a run that did not
+ * arrive is described. Earlier this comment claimed the row's sentence was keyed
+ * on the codes below; it never was.
+ *
+ * `agents` is what the click is about to bring, and it comes off the same fold
+ * that prints the row's two agent chips — but it is their SUM, and the row
+ * prints them apart (`subagents xN`, `workflow-agents xN`). With four direct
+ * spawns and thirteen workflow children the line reads "…4 · …13 · 17 agents
+ * beside it", and 17 appears nowhere else on it. That is one fold and one
+ * reading, not two counters — but it is not literally the number in the chip,
+ * which is what this comment used to say.
+ *
+ * `runs` and `bytes` are what the press will FETCH, and they are null when the
+ * server did not say. `bytes` is the server's own weigh of the bundle — the
+ * same one it refuses on — so the figure the row prints and the figure a 413
+ * quotes are one number. It is NOT the session file's size, which the row
+ * prints separately and which understated the press tenfold on the operator's
+ * own session (11.4 MB against 105.8).
  */
+export interface RunCost {
+  /** How many workflow runs are in there, or null when the server did not say. */
+  runs: number | null;
+  /** What the press fetches, in bytes, or null when the server did not say. */
+  bytes: number | null;
+}
+
 export type RowPlan =
-  { door: "run"; agents: number } | { door: "session"; reason: RunDoorReason; agents: number };
+  | ({ door: "run"; agents: number } & RunCost)
+  | ({ door: "session"; reason: "noAgents" | "tooLarge"; agents: number } & RunCost);
 
 /**
  * The one place that decides whether an import row is clickable.
@@ -170,11 +184,15 @@ export function rowState(
  */
 function doorFor(loadable: boolean, facts: TranscriptFacts | undefined): RowPlan {
   const agents = (facts?.workflowAgents ?? 0) + (facts?.subagents ?? 0);
+  // Null, never zero: an older server does not weigh the run at all, and a row
+  // that printed "0 runs · 1 kB" would be inventing the one figure this exists
+  // to make honest.
+  const cost: RunCost = { runs: facts?.runs ?? null, bytes: facts?.runBytes ?? null };
   // The session file itself is over the server's ceiling, so there is no run to
   // bring and no agents were left behind — a different fact from having none.
-  if (!loadable) return { door: "session", reason: "tooLarge", agents };
-  if (facts === undefined || agents > 0) return { door: "run", agents };
-  return { door: "session", reason: "noAgents", agents };
+  if (!loadable) return { door: "session", reason: "tooLarge", agents, ...cost };
+  if (facts === undefined || agents > 0) return { door: "run", agents, ...cost };
+  return { door: "session", reason: "noAgents", agents, ...cost };
 }
 
 /**
