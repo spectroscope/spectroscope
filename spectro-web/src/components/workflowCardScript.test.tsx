@@ -198,6 +198,33 @@ const PHASES = [
   { title: "Prove", detail: "query the fresh index and compare the counts" },
 ];
 
+/**
+ * `workflowProgress`'s agent entries, one per word.
+ *
+ * The FILE's own bookkeeping of who ran and how it went, in the shape measured
+ * over the store — 5,203 entries across 592 files, every one of them carrying
+ * `label`, `phaseTitle` and `state`, the vocabulary being `done` (4,864),
+ * `error` (228), `progress` (86) and `start` (25):
+ *
+ *   node -e '…' over ~/.claude/projects/**\/workflows/wf_*.json
+ *
+ * `agentCount` equals the number of these entries in 592 of 592 files, so a
+ * fixture whose count and entries disagree is a shape the engine never writes.
+ */
+function agentEntries(states: readonly string[]): unknown[] {
+  return states.map((state, i) => ({
+    type: "workflow_agent",
+    agentId: `a${i + 1}`,
+    label: `rebuild:shard-0${i}`,
+    phaseIndex: 2,
+    phaseTitle: "Rebuild",
+    model: "claude-opus-5",
+    state,
+    startedAt: 1787900050000 + i,
+    durationMs: 90000,
+  }));
+}
+
 /** Every top-level key a real state file carries, with invented values. */
 const BASE_STATE = {
   runId: "wf_7c1e40a9-b2d",
@@ -219,17 +246,7 @@ const BASE_STATE = {
   workflowProgress: [
     { type: "workflow_phase", index: 1, title: "Survey" },
     { type: "workflow_phase", index: 2, title: "Rebuild" },
-    {
-      type: "workflow_agent",
-      agentId: "a1",
-      label: "rebuild:shard-00",
-      phaseIndex: 2,
-      phaseTitle: "Rebuild",
-      model: "claude-opus-5",
-      state: "done",
-      startedAt: 1787900050000,
-      durationMs: 90000,
-    },
+    ...agentEntries(["done", "done", "done", "done", "done", "done", "done"]),
   ],
   totalTokens: 918273,
   totalToolCalls: 164,
@@ -296,7 +313,7 @@ describe("card 322 — the instrument reads the card that exists today", () => {
    *  this path is byte-identical to the row demanded of the state-file path. */
   const JOINED = `${RECEIPT}
 --- task k3n2v9pq7 · completed ---
-usage: agent_count=7 subagent_tokens=918273 tool_uses=164 duration_ms=512430`;
+usage: agent_count=7 agents_done=7 subagent_tokens=918273 tool_uses=164 duration_ms=512430`;
 
   it("finds a SCRIPT region and reads the program out of it", () => {
     const markup = card({ input: { script: SCRIPT }, output: RECEIPT });
@@ -318,7 +335,7 @@ usage: agent_count=7 subagent_tokens=918273 tool_uses=164 duration_ms=512430`;
     const markup = card({ input: { script: SCRIPT }, output: JOINED });
 
     expect(region(markup, EN("tv.outcome"))?.meta).toBe("completed");
-    expect(outcomeRow(markup)).toEqual(["agents=7", "tokens=918k", "tool calls=164", "elapsed=8 m 32 s"]);
+    expect(outcomeRow(markup)).toEqual(["agents=7 / 7", "tokens=918k", "tool calls=164", "elapsed=8 m 32 s"]);
     expect(text(markup)).not.toContain(EN("tv.wfOpen"));
   });
 
@@ -509,7 +526,7 @@ describe("card 322 — the outcome line stops under-reporting", () => {
 
     // Every figure off a named key: status, agentCount, totalTokens,
     // totalToolCalls, durationMs — in `runStats`' own order and format.
-    expect(outcomeRow(markup)).toEqual(["agents=7", "tokens=918k", "tool calls=164", "elapsed=8 m 32 s"]);
+    expect(outcomeRow(markup)).toEqual(["agents=7 / 7", "tokens=918k", "tool calls=164", "elapsed=8 m 32 s"]);
     expect(region(markup, EN("tv.outcome"))?.meta).toBe("completed");
     // And the sentence it replaces is gone — a card that says both says
     // nothing.
@@ -523,7 +540,7 @@ describe("card 322 — the outcome line stops under-reporting", () => {
       runState: stateJson({ totalTokens: undefined, totalToolCalls: undefined }),
     });
 
-    expect(outcomeRow(markup)).toEqual(["agents=7", "elapsed=8 m 32 s"]);
+    expect(outcomeRow(markup)).toEqual(["agents=7 / 7", "elapsed=8 m 32 s"]);
   });
 
   it("carries `killed` through as the file's own word", () => {
@@ -533,6 +550,7 @@ describe("card 322 — the outcome line stops under-reporting", () => {
       runState: stateJson({
         status: "killed",
         agentCount: 4,
+        workflowProgress: agentEntries(["done", "done", "done", "done"]),
         durationMs: 61000,
         totalTokens: undefined,
         totalToolCalls: undefined,
@@ -543,7 +561,7 @@ describe("card 322 — the outcome line stops under-reporting", () => {
     // "changed ("))` is green for "unchanged (", and this file will not repeat
     // that. 42 of the 590 state files in the store say `killed`.
     expect(region(markup, EN("tv.outcome"))?.meta).toBe("killed");
-    expect(outcomeRow(markup)).toEqual(["agents=4", "elapsed=1 m 1 s"]);
+    expect(outcomeRow(markup)).toEqual(["agents=4 / 4", "elapsed=1 m 1 s"]);
   });
 
   it("says the figures in the reader's own language", () => {
@@ -552,7 +570,12 @@ describe("card 322 — the outcome line stops under-reporting", () => {
     // English word in the build would show up here and nowhere else.
     const markup = card({ input: PATH_ONLY, output: RECEIPT, runState: stateJson(), lang: "de" });
 
-    expect(outcomeRow(markup)).toEqual(["Agenten=7", "Tokens=918k", "Tool-Aufrufe=164", "Dauer=8 m 32 s"]);
+    expect(outcomeRow(markup)).toEqual([
+      "Agenten=7 / 7",
+      "Tokens=918k",
+      "Tool-Aufrufe=164",
+      "Dauer=8 m 32 s",
+    ]);
   });
 
   it("keeps today's sentence for a run that is still out there", () => {
@@ -577,5 +600,274 @@ describe("card 322 — the outcome line stops under-reporting", () => {
     expect(region(markup, EN("tv.outcome")), "an outcome over a run with no ending").toBeNull();
     expect(outcomeRow(markup)).toEqual([]);
     expect(text(markup)).toContain(EN("tv.wfOpen"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Card 322, round two: what the first build claimed and did not read
+// ---------------------------------------------------------------------------
+
+describe("card 322 — the file's own agent bookkeeping", () => {
+  // THE DEFECT. `readCardRunState` set `done`, `errors` and `failures` to
+  // "nothing reported" and said so in three comments: the file "states nowhere
+  // how many finished", losses are "counted nowhere in this file", it "names no
+  // dead agent". All three are false. Measured over ~/.claude/projects, 592
+  // state files:
+  //
+  //   workflow_agent entries          5,203, every one with label+phaseTitle
+  //   their `state` vocabulary        done 4,864 · error 228 · progress 86 · start 25
+  //   agentCount === entry count      592 / 592
+  //   files holding a non-done agent  81 — of which 35 say status "completed"
+  //
+  // So a run whose file records seven dead agents drew `agents 17` and nothing
+  // else, under a heading `runStats` documents as "a loss appears only when
+  // there was one" — which makes a short row an affirmative claim of a clean
+  // run. Those 35 files are the ones where the card said so and was wrong.
+
+  it("counts the agents that finished, not only the agents there were", () => {
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({
+        agentCount: 7,
+        workflowProgress: agentEntries(["done", "done", "done", "done", "done", "error", "error"]),
+      }),
+    });
+
+    // done / total, exactly as `agentsValue` prints the joined path's two
+    // halves — and the losses in their own cell, which is what makes the SHORT
+    // row on a clean run mean something.
+    expect(outcomeRow(markup)).toEqual([
+      "agents=5 / 7",
+      "failed=2",
+      "tokens=918k",
+      "tool calls=164",
+      "elapsed=8 m 32 s",
+    ]);
+  });
+
+  it("says the two it could not name, rather than drawing an empty Failures list", () => {
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({
+        agentCount: 7,
+        workflowProgress: agentEntries(["done", "done", "done", "done", "done", "error", "error"]),
+      }),
+    });
+
+    // The file carries `label` for every entry and an `error` string for the
+    // 228 that failed, but `readWorkflowState` — the reader this card shares
+    // with the lens — exposes neither reason. So the count travels and the
+    // names do not, and the renderer's existing sentence for exactly that case
+    // is the one that must appear. A FAILURES region here would be a list of
+    // blanks under a heading.
+    expect(region(markup, EN("tv.failures")), "a Failures region with nothing in it").toBeNull();
+    expect(text(markup)).toContain(EN("tv.wfUnnamed").replace("{n}", "2"));
+  });
+
+  it("counts no loss where the file records none", () => {
+    // The other direction, bitten on its own: a clean run must not grow a
+    // `failed` cell, or the cell means nothing.
+    const markup = card({ input: PATH_ONLY, output: RECEIPT, runState: stateJson() });
+
+    expect(outcomeRow(markup).some((cell) => cell.startsWith("failed="))).toBe(false);
+    expect(text(markup)).not.toContain(EN("tv.wfUnnamed").replace("{n}", "0"));
+  });
+
+  it("counts neither half where the file listed no agents at all", () => {
+    // 3 of the store's 592 files carry `agentCount` and no `workflow_agent`
+    // entries. No entries is NOTHING REPORTED, not "nobody finished" — a zero
+    // in the done half would be the card claiming a total loss off a silence.
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({ workflowProgress: [] }),
+    });
+
+    expect(outcomeRow(markup)[0]).toBe("agents=7");
+    expect(outcomeRow(markup).some((cell) => cell.startsWith("failed="))).toBe(false);
+  });
+
+  it("counts an agent still in flight as neither finished nor failed", () => {
+    // `progress` and `start` are two of the four words the file uses (86 and 25
+    // entries in the store). An agent wearing one of them has not finished and
+    // has not died, and rounding it into either half would be this card
+    // inventing an ending for it.
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({
+        agentCount: 4,
+        workflowProgress: agentEntries(["done", "done", "progress", "start"]),
+      }),
+    });
+
+    expect(outcomeRow(markup)[0]).toBe("agents=2 / 4");
+    expect(outcomeRow(markup).some((cell) => cell.startsWith("failed="))).toBe(false);
+  });
+});
+
+describe("card 322 — a run that has not ended is not an outcome", () => {
+  // THE DEFECT. The guard for AC 8 was `status === null`, so ANY word became an
+  // ending: the OUTCOME region drew, `tv.wfOpen` vanished, and the run's
+  // half-way counters were printed as its final ones. The fixture that pinned
+  // it removed the `status` key altogether — the one shape the engine is not
+  // known to write. Its own word for a workflow in flight is `running`:
+  //
+  //   grep -ohE '\{[^{}]*"task_type":"local_workflow"[^{}]*\}' -r \
+  //     ~/.claude/projects --include='*.jsonl' | grep -o '"status":"[a-z_]*"' | sort | uniq -c
+  //   → 35 × "status":"running"
+
+  it("keeps the open sentence for a file whose status says the run is running", () => {
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({ status: "running" }),
+    });
+
+    expect(region(markup, EN("tv.outcome")), "an outcome over a run still going").toBeNull();
+    expect(outcomeRow(markup)).toEqual([]);
+    expect(text(markup)).toContain(EN("tv.wfOpen"));
+  });
+
+  it("still shows the script and the phases of a run that is running", () => {
+    // The bound on the fix, bitten separately: what the file says the run IS
+    // stays true while it runs. Only the ENDING is withheld.
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({ status: "running" }),
+    });
+
+    expect(text(region(markup, EN("tv.script"))?.body ?? "")).toContain(SCRIPT_HEAD);
+    expect(phaseRows(markup)).toEqual(["1 Survey", "2 Rebuild", "3 Prove"]);
+  });
+
+  it("carries an ending word through, so the gate cannot swallow the outcome", () => {
+    // The opposite bite. A gate that refuses everything it does not recognise
+    // would put the card back to "no outcome recorded" over 592 of 592 files.
+    for (const status of ["completed", "killed", "failed"]) {
+      const markup = card({ input: PATH_ONLY, output: RECEIPT, runState: stateJson({ status }) });
+      expect(region(markup, EN("tv.outcome"))?.meta, status).toBe(status);
+      expect(text(markup), status).not.toContain(EN("tv.wfOpen"));
+    }
+  });
+});
+
+describe("card 322 — a field the file left blank is not a region", () => {
+  // `str` keeps "", so without a guard a file carrying `"script": ""` draws the
+  // empty well under a heading that AC 4 calls the one thing this card must not
+  // draw. Each branch bitten on its own: one case per field.
+
+  it("draws no SCRIPT region for a file whose script is the empty string", () => {
+    const markup = card({ input: PATH_ONLY, output: RECEIPT, runState: stateJson({ script: "" }) });
+
+    expect(labels(markup)).not.toContain(EN("tv.script"));
+  });
+
+  it("draws no OUTCOME region for a file whose status is the empty string", () => {
+    const markup = card({ input: PATH_ONLY, output: RECEIPT, runState: stateJson({ status: "" }) });
+
+    expect(labels(markup)).not.toContain(EN("tv.outcome"));
+    expect(text(markup)).toContain(EN("tv.wfOpen"));
+  });
+
+  it("draws no FILE region for a file whose scriptPath is the empty string", () => {
+    const markup = card({
+      input: { name: "index-rebuild" },
+      output: RECEIPT,
+      runState: stateJson({ scriptPath: "" }),
+    });
+
+    expect(labels(markup)).not.toContain(EN("tv.file"));
+  });
+});
+
+describe("card 322 — a phase keeps the number the file gave it", () => {
+  // THE DEFECT. The read filtered untitled phases out while the renderer numbers
+  // by POSITION, so a file declaring [Survey, untitled, Prove] drew "1 Survey,
+  // 2 Prove" — and the run's own second phase is not Prove. The comment above
+  // the read claimed the card and the lens "agree on what a phase entry IS by
+  // construction"; `workflowGraph.ts` keeps an untitled entry, so they did not.
+  // 0 of the store's 1,488 phase entries are untitled — this is what happens
+  // when one is.
+
+  const GAPPED = [{ title: "Survey" }, { detail: "the one the file never named" }, { title: "Prove" }];
+
+  it("draws the row the file declared, blank title and all", () => {
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({ script: undefined, phases: GAPPED }),
+    });
+
+    expect(phaseRows(markup)).toEqual(["1 Survey", "2", "3 Prove"]);
+  });
+
+  it("counts it too, so the heading and the list say the same number", () => {
+    const markup = card({
+      input: PATH_ONLY,
+      output: RECEIPT,
+      runState: stateJson({ script: undefined, phases: GAPPED }),
+    });
+
+    expect(region(markup, EN("tv.phases"))?.meta).toBe("3 phases");
+  });
+});
+
+describe("card 322 — the arguments well has the reserve its content needs", () => {
+  /** A payload that pretty-prints past `CLIP_CHARS`. Five of the store's 76
+   *  parsing payloads do (4,817 · 5,040 · 6,936 · 7,191 · 8,381), and all five
+   *  are over 4,000 RAW as well — so the raw face, the fallback the script's
+   *  own reserve was argued from, is cut at the same place. */
+  const BIG = JSON.stringify(
+    Object.fromEntries([
+      ...Array.from({ length: 300 }, (_, i) => [`key_${String(i).padStart(3, "0")}`, `value ${i}`]),
+      ["zz_last_key", "the end of the payload"],
+    ]),
+  );
+
+  it("reaches the last key of an oversized payload", () => {
+    expect(JSON.stringify(JSON.parse(BIG), null, 2).length).toBeGreaterThan(4000);
+    const markup = card({ input: { ...PATH_ONLY, args: BIG }, output: RECEIPT });
+    const body = text(region(markup, EN("tv.args"))?.body ?? "");
+
+    expect(body).toContain("zz_last_key");
+    expect(body).not.toContain("(truncated)");
+  });
+});
+
+describe("card 322 — the arguments keep their three readings", () => {
+  it("colours the payload's parts, not merely something", () => {
+    // The old assertion was /hl-[a-z]+/, which any grammar in the registry
+    // satisfies. Pinned on the TOKENS instead: `json` and `javascript` render
+    // valid JSON byte-identically (JSON is a subset), so the grammar's NAME is
+    // not a thing a test can see — what it can see is that a string reads as a
+    // string, a number as a number and `true` as a keyword.
+    const markup = card({
+      input: { ...PATH_ONLY, args: JSON.stringify({ repo: "/tmp/demo", shards: 7, dry: true }) },
+      output: RECEIPT,
+    });
+    const html = region(markup, EN("tv.args"))?.body ?? "";
+
+    expect(html).toContain('<span class="hl hl-string">&quot;repo&quot;</span>');
+    expect(html).toContain('<span class="hl hl-number">7</span>');
+    expect(html).toContain('<span class="hl hl-keyword">true</span>');
+  });
+
+  it("keeps the input reading for a payload that arrived as an object", () => {
+    // The third branch, which no store payload takes today — 83 of 83 arrive
+    // as strings. It is drawn all the same, because `describeTool` yields it
+    // and a view field that is populated and not drawn is the same defect as a
+    // missing one.
+    const markup = card({
+      input: { ...PATH_ONLY, args: { repo: "/tmp/demo-repo", shards: 7 } },
+      output: RECEIPT,
+    });
+    const body = text(region(markup, EN("tv.args"))?.body ?? "");
+
+    expect(body).toContain("repo");
+    expect(body).toContain("/tmp/demo-repo");
   });
 });

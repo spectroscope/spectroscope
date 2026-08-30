@@ -1230,6 +1230,16 @@ export type WorkflowArgs =
  * that peels one layer off the wrapper eats the quotes the prose itself
  * contains.
  *
+ * WHAT THE RE-PRINT COSTS, said out loud because it is a re-print and not the
+ * payload: `JSON.parse` + `prettyJson` is not a round trip. A duplicate key
+ * keeps only its last value, integer-like keys are reordered ahead of the
+ * others by the object's own key order, an integer past 2^53 comes back
+ * changed (`12345678901234567890` → `12345678901234567000`) and `1e999` comes
+ * back as `null`. None of the four is present in the store's 76 parsing
+ * payloads — measured 2026-08-30, 0 integer-like keys and 0 numeric literals
+ * of 16 digits or more — and the raw face still holds the string the call
+ * carried, so this is a bound on the reading, not a live lie.
+ *
  * @param value the raw `args` field, of whatever type the call sent
  * @return the reading, or null when the launch sent no `args` at all
  */
@@ -1274,6 +1284,29 @@ export type WorkflowStateRead = {
   run: WorkflowRun | null;
 };
 
+/**
+ * The words this engine writes for a run that has NOT ended.
+ *
+ * MEASURED, not assumed. No state file in the store is mid-run — all 592 are
+ * terminal — so the vocabulary comes from the other place the engine writes its
+ * own status, the Monitor task record for a `local_workflow`:
+ *
+ *   grep -ohE '\{[^{}]*"task_type":"local_workflow"[^{}]*\}' -r \
+ *     ~/.claude/projects --include='*.jsonl' \
+ *     | grep -o '"status":"[a-z_]*"' | sort | uniq -c     → 35 x "running"
+ *
+ * The gate that stood here was `status === null`, so ANY word became an ending:
+ * a file written mid-run had its half-way counters drawn as the run's final
+ * ones and lost the sentence that says the run is still out there.
+ *
+ * A word NOT in this set is read as an ending, and that is a stated choice
+ * rather than an oversight — refusing every unfamiliar word would put the card
+ * back to "no outcome recorded" over a run whose file recorded all of it. The
+ * bound comes with it: an in-flight word this list has never seen would be
+ * drawn as an outcome until somebody adds it here.
+ */
+const STILL_RUNNING: ReadonlySet<string> = new Set(["running"]);
+
 /** A non-empty string field, or null. `str` keeps "", and a file that states
  *  an empty script states no script — an empty well under a heading is the one
  *  thing this card must not draw. */
@@ -1307,34 +1340,58 @@ function readCardRunState(json: string): WorkflowStateRead | null {
     return null;
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const state = readWorkflowState(json);
   const status = someStr(parsed, "status");
+  // The file's own bookkeeping of who ran, off the `workflow_agent` entries in
+  // `workflowProgress` that `readWorkflowState` already parses. Null where the
+  // file listed none at all — 3 of the store's 592 files — because no entries
+  // is "nothing reported", not "nobody finished".
+  const agents = state?.agents ?? [];
+  const counted = (word: string): number | null =>
+    agents.length === 0 ? null : agents.filter((a) => a.state === word).length;
   return {
     script: someStr(parsed, "script"),
     scriptPath: someStr(parsed, "scriptPath"),
-    // A phase the file left untitled is dropped rather than listed as a blank
-    // row: the list is what a reader scans, and a blank line names nothing.
-    // No file in the store has one — this is what happens if one ever does.
-    phases: (readWorkflowState(json)?.phases ?? []).map((p) => p.title).filter((title) => title !== ""),
+    // Every phase the file declares, in its own order. An untitled one is KEPT:
+    // the renderer numbers by POSITION, so dropping it would renumber its
+    // neighbours and print the run's third phase as its second. Keeping it is
+    // also what makes the sentence above true — `workflowGraph.ts` keeps an
+    // untitled entry, so a filter here made the card and the lens disagree
+    // about what a phase entry IS. 0 of the store's 1,488 entries are untitled.
+    phases: (state?.phases ?? []).map((p) => p.title),
     run:
-      status === null
+      status === null || STILL_RUNNING.has(status)
         ? null
         : {
             status,
             agents: num(parsed, "agentCount"),
-            // The file counts the agents a run HAD, and states nowhere how
-            // many of them finished — so the cell reads "7", never "7 / 7".
-            done: null,
-            // Losses are counted nowhere in this file. Null is "not reported"
-            // and `runStats` leaves the cell out; a zero would be this card
-            // claiming that nothing went wrong.
-            errors: null,
+            // Both halves, because the file records both. `agentCount` equals
+            // the number of agent entries in 592 of 592 files, and each entry
+            // carries the run's own word for how that agent went — so "5 / 7"
+            // is the file's own arithmetic, not this card's.
+            done: counted("done"),
+            // A loss the file DID record. The three comments that stood here
+            // said the file counts none, names none and states none; all three
+            // were false, and the short row they produced reads — by
+            // `runStats`' own documented rule — as a clean run. 228 of the
+            // store's 5,203 entries are in `error`, spread over 81 files, and
+            // 35 of those files report a top-level status of `completed`.
+            errors: counted("error"),
+            // `progress` (86 entries) and `start` (25) are neither: an agent
+            // still in flight is counted into no half, so the two numbers can
+            // legitimately fail to add up to `agentCount`.
             skipped: null,
             empty: null,
             tokens: num(parsed, "totalTokens"),
             toolUses: num(parsed, "totalToolCalls"),
             durationMs: num(parsed, "durationMs"),
-            // The file names no dead agent. An empty list here is the truth
-            // about this SOURCE, and `runStats` never reads it as a clean run.
+            // The file DOES name its dead agents — `label` and `phaseTitle` on
+            // every one of the 5,203 entries — but not why they died in a form
+            // this reader has: `readWorkflowState` carries no `error` string,
+            // and a Failures list of blank reasons says less than the count
+            // does. So the count travels, the names do not, and `RunOutcome`'s
+            // existing sentence for exactly that case ("in the outcome: N
+            // failed, none of them named") is what the reader gets.
             failures: [],
             // `result` in this file is a structured return value — measured:
             // 501 objects, 33 arrays, 50 absent, 7 strings — and the RETURNED

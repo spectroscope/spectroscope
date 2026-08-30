@@ -294,11 +294,12 @@
 .tv-well--error { color: var(--error); }
 /* Some wells hold a whole program rather than a value: a workflow script, a
    lifted code field. At 260px those show the opening lines and hide the work,
-   and the text is there to be scrolled to — a workflow script keeps 48,000
-   characters (card 322: over the longest of the 591 measured), a lifted field
-   the ordinary 4,000. The box is a viewport, never the limit. One height for
-   both, because two arbitrary heights for the same kind of thing is a decision
-   nobody can defend later. */
+   and the text is there to be scrolled to — a workflow script and a re-printed
+   arguments payload both keep 48,000 characters (card 322: over the longest of
+   the 592 measured, and past the five payloads whose raw face is cut at 4,000
+   too), a lifted field the ordinary 4,000. The box is a viewport, never the
+   limit. One height for both, because two arbitrary heights for the same kind
+   of thing is a decision nobody can defend later. */
 .tv-well--script { max-height: 780px; }
 
 /* A command reads like a command. */

@@ -279,8 +279,31 @@
   word-break: break-word;
 }
 /* Syntax highlighting wherever the tokenizer runs — the file preview and the
-   fenced code blocks in an answer. Brand spectral palette, both themes (the
-   --sp-* tokens carry their own light-design values). Read-only, no glow.
+   fenced code blocks in an answer. Brand spectral palette. Read-only, no glow.
+
+   WHERE THE COLOUR ACTUALLY COMES FROM, and it is not what the sentence that
+   stood here said. The --sp-* ramp is declared twice: on :root (the dark
+   ground) and on [data-design="paper"]. Every OTHER design inherits :root's,
+   including the light ones — so on `still`, the SHIPPING DEFAULT
+   (state/designPrefs.ts), --surface is #ffffff and .hl-string resolves to
+   :root's #2dd4a7.
+
+   MEASURED LIVE 2026-08-30 through the app's own design switcher, on a real
+   workflow card, grounds composited (kanban/evidence/card-322/):
+
+     design                       .hl-string   .hl-number
+     still (default, light)          1.57         2.12
+     paper (light)                   2.72         3.36
+     spectroscope (espresso, dark)  10.09         7.45
+     graphite (dark)                 8.70         6.43
+
+   The floor is MIN_CODE_CONTRAST = 3 in export/themes.ts, and BOTH light
+   designs miss it for strings — paper included, which is why the old sentence
+   ("the --sp-* tokens carry their own light-design values") was misleading even
+   where it was literally true. export/themes.ts also declares
+   STILL_BORROWS_FROM_PAPER, so an exported file renders this code more legibly
+   than the app does. Nothing here changes a colour: repainting the spectral
+   ramp for two shipping designs is the owner's call, not a card's. */
    Unscoped on purpose: the class comes only from tokenize(), so anything
    wearing it IS a token, and scoping the colour to one surface is what left
    markdown blocks rendering grey spans that had already been classified. */

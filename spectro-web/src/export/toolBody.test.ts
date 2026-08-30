@@ -266,6 +266,46 @@ describe("the shapes that are not files", () => {
     expect(html).toContain('<span class="hl hl-keyword">export</span>');
   });
 
+  // Card 322 threaded the launch `args` into the export beside the screen, and
+  // the region it added was drawn by nothing that could go red: `argsHtml`
+  // could be neutered to `return ""` — call site or body — with the whole suite
+  // green. `html.ts` states the rule these three hold to: a saved file that
+  // showed one reading while the screen beside it showed another would be two
+  // readings of one call.
+
+  it("draws a JSON args payload as JSON, one key per line", () => {
+    const args = JSON.stringify({ repo: "/tmp/demo-repo", shards: 7, dry: true });
+    const html = body(card("Workflow", { scriptPath: "/tmp/wf/x.js", args }, "ok"));
+
+    expect(html).toContain('<div class="x-io">arguments</div>');
+    // Coloured, and coloured by parts — a string as a string, a number as a
+    // number, `true` as a keyword.
+    expect(html).toContain('<span class="hl hl-string">&quot;repo&quot;</span>');
+    expect(html).toContain('<span class="hl hl-number">7</span>');
+    expect(html).toContain('<span class="hl hl-keyword">true</span>');
+    // Re-printed, not the doubly-escaped one-liner the call carried.
+    expect(html).not.toContain("\\&quot;");
+  });
+
+  it("draws an args payload that is not JSON as the prose it is", () => {
+    const prose = 'Rebuild every shard under "shards/", then prove it.\nDelete nothing.';
+    const html = body(card("Workflow", { scriptPath: "/tmp/wf/x.js", args: prose }, "ok"));
+
+    expect(html).toContain('<div class="x-io">arguments</div>');
+    // The prose well, not the code well — and its own quotes intact, which is
+    // what a half-unescaping renderer eats.
+    expect(html).toContain("x-tv-prose");
+    expect(html).toContain("under &quot;shards/&quot;");
+    expect(html).not.toContain("\\n");
+  });
+
+  it("draws an args bag that arrived as an object the way an input is drawn", () => {
+    const html = body(card("Workflow", { scriptPath: "/tmp/wf/x.js", args: { repo: "/tmp/demo" } }, "ok"));
+
+    expect(html).toContain('<div class="x-io">arguments</div>');
+    expect(html).toContain("/tmp/demo");
+  });
+
   it("says an image is not in the file rather than pointing at a fetch", () => {
     const html = body(
       card("generate_image", { prompt: "a cat" }, "Image generated with gemini: /demo/cat.png (1024x1024)"),
