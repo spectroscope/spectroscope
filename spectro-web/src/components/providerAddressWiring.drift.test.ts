@@ -170,7 +170,7 @@ describe("the fallback rule mirrors the server's, by value", () => {
   // matches `case "ollama" -> "qwen3";` in defaultModelFor twenty lines up and
   // compares a preset against a MODEL ID — measured while writing this, and it
   // would have been green in exactly one direction.
-  const presetBody = /static String openAiCompatPreset\([^)]*\)\s*\{([\s\S]*?)\n    \}/.exec(
+  const presetBody = /static String openAiCompatPreset\([^)]*\)\s*\{([\s\S]*?)\n {4}\}/.exec(
     spectroConfigJava,
   )?.[1];
   const ollamaFallback = /effectiveOllamaBaseUrl\([\s\S]*?return "([^"]+)";\s*\}/.exec(
