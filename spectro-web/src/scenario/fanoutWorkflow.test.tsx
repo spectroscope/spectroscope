@@ -126,7 +126,9 @@ const ownCopy = (lang: "en" | "de"): string[] => {
   return out;
 };
 
-/** EVERYTHING this scenario puts on screen: the name, the ask, the captions,
+/** EVERYTHING this scenario puts on screen — every step kind the DSL has, so
+ *  the word EVERYTHING keeps its meaning as the demo grows: the name, the ask,
+ *  the captions,
  *  every worker's transcript, and the commands, paths and results the run
  *  shows. This walks the steps itself instead of starting from `ownCopy`,
  *  which stops at the top level and at `spawn`: the first cut did start from
@@ -159,6 +161,9 @@ const everyShownString = (lang: "en" | "de"): string[] => {
         else if ("read" in s) out.push(s.read);
         else if ("write" in s) out.push(s.write);
         else if ("list" in s) out.push(s.list);
+        else if ("mcp" in s) out.push(s.mcp);
+        else if ("tool" in s) out.push(s.tool);
+        else if ("image" in s) out.push(loc(s.image, lang));
         if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
       }
     }
@@ -188,6 +193,9 @@ const workerShown = (a: FanoutWorker, lang: "en" | "de"): string[] => {
       else if ("read" in s) out.push(s.read);
       else if ("write" in s) out.push(s.write);
       else if ("list" in s) out.push(s.list);
+      else if ("mcp" in s) out.push(s.mcp);
+      else if ("tool" in s) out.push(s.tool);
+      else if ("image" in s) out.push(loc(s.image, lang));
       if ("result" in s && s.result !== undefined) out.push(loc(s.result, lang));
     }
   }
