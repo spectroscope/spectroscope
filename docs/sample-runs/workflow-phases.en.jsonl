@@ -1,0 +1,196 @@
+{"type":"run_start","runId":"workflow-phases-main","agentId":"main","prompt":"Go over the settings screen in phases: scope it, probe it five ways, merge what comes back, draft the write-up, then audit every claim in it.","provider":"ollama","ts":1783000000000}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1783000001200}
+{"type":"context_info","agentId":"main","turn":1,"messages":1,"estimatedTokens":1091,"threshold":100000,"parts":[{"label":"system prompt","chars":0,"estTokens":0},{"label":"tool schemas","chars":4224,"estTokens":1056},{"label":"conversation","chars":141,"estTokens":35}],"ts":1783000002400}
+{"type":"thinking_delta","agentId":"main","text":"Five phases, and the middle one and the last one fan out.","ts":1783000003600}
+{"type":"tool_call","agentId":"main","callId":"workflow-phases-c1","name":"scope","input":{"task":"scope the pass"},"ts":1783000004800}
+{"type":"agent_spawn","agentId":"scope","parentId":"main","task":"scope the pass","ts":1783000006000}
+{"type":"agent_message","from":"main","to":"scope","role":"task","state":"submitted","text":"scope the pass","label":"scope","ts":1783000007200}
+{"type":"run_start","runId":"workflow-phases-scope","agentId":"scope","parentId":"main","prompt":"scope the pass","provider":"ollama","ts":1783000008400}
+{"type":"turn_start","agentId":"scope","turn":1,"ts":1783000009600}
+{"type":"tool_call","agentId":"scope","callId":"workflow-phases-c2","name":"report_status","input":{"message":"scoping"},"ts":1783000010800}
+{"type":"agent_message","from":"scope","to":"main","role":"status","state":"working","text":"scoping","ts":1783000012000}
+{"type":"tool_result","agentId":"scope","callId":"workflow-phases-c2","output":"ok","isError":false,"durationMs":0,"ts":1783000013200}
+{"type":"tool_call","agentId":"scope","callId":"workflow-phases-c3","name":"list_dir","input":{"path":"src/settings"},"ts":1783000014400}
+{"type":"tool_result","agentId":"scope","callId":"workflow-phases-c3","output":"Panel.tsx  Profile.tsx  Notifications.tsx  errors.ts  track.ts","isError":false,"durationMs":3,"ts":1783000015600}
+{"type":"usage","agentId":"scope","inputTokens":9000,"outputTokens":600,"ts":1783000016800}
+{"type":"text_delta","agentId":"scope","text":"five angles to probe","ts":1783000018000}
+{"type":"run_end","runId":"workflow-phases-scope","stopReason":"end_turn","ts":1783000019200}
+{"type":"agent_message","from":"scope","to":"main","role":"result","state":"completed","text":"[scope] done","ts":1783000020400}
+{"type":"tool_result","agentId":"main","callId":"workflow-phases-c1","output":"[scope] result","isError":false,"durationMs":21400,"ts":1783000021600}
+{"type":"tool_call","agentId":"main","callId":"workflow-phases-c4","name":"probe","input":{"areas":["probe-1","probe-2","probe-3","probe-4","probe-5"]},"ts":1783000022800}
+{"type":"agent_spawn","agentId":"probe-1","parentId":"main","task":"probe the settings panel","ts":1783000024000}
+{"type":"agent_message","from":"main","to":"probe-1","role":"task","state":"submitted","text":"probe the settings panel","label":"probe","ts":1783000025200}
+{"type":"agent_spawn","agentId":"probe-2","parentId":"main","task":"probe the profile section","ts":1783000026400}
+{"type":"agent_message","from":"main","to":"probe-2","role":"task","state":"submitted","text":"probe the profile section","label":"probe","ts":1783000027600}
+{"type":"agent_spawn","agentId":"probe-3","parentId":"main","task":"probe the notification toggles","ts":1783000028800}
+{"type":"agent_message","from":"main","to":"probe-3","role":"task","state":"submitted","text":"probe the notification toggles","label":"probe","ts":1783000030000}
+{"type":"agent_spawn","agentId":"probe-4","parentId":"main","task":"probe the error states","ts":1783000031200}
+{"type":"agent_message","from":"main","to":"probe-4","role":"task","state":"submitted","text":"probe the error states","label":"probe","ts":1783000032400}
+{"type":"agent_spawn","agentId":"probe-5","parentId":"main","task":"probe the analytics hooks","ts":1783000033600}
+{"type":"agent_message","from":"main","to":"probe-5","role":"task","state":"submitted","text":"probe the analytics hooks","label":"probe","ts":1783000034800}
+{"type":"run_start","runId":"workflow-phases-probe-1","agentId":"probe-1","parentId":"main","prompt":"probe the settings panel","provider":"ollama","ts":1783000036000}
+{"type":"turn_start","agentId":"probe-1","turn":1,"ts":1783000037200}
+{"type":"run_start","runId":"workflow-phases-probe-2","agentId":"probe-2","parentId":"main","prompt":"probe the profile section","provider":"ollama","ts":1783000038400}
+{"type":"turn_start","agentId":"probe-2","turn":1,"ts":1783000039600}
+{"type":"run_start","runId":"workflow-phases-probe-3","agentId":"probe-3","parentId":"main","prompt":"probe the notification toggles","provider":"ollama","ts":1783000040800}
+{"type":"turn_start","agentId":"probe-3","turn":1,"ts":1783000042000}
+{"type":"run_start","runId":"workflow-phases-probe-4","agentId":"probe-4","parentId":"main","prompt":"probe the error states","provider":"ollama","ts":1783000043200}
+{"type":"turn_start","agentId":"probe-4","turn":1,"ts":1783000044400}
+{"type":"run_start","runId":"workflow-phases-probe-5","agentId":"probe-5","parentId":"main","prompt":"probe the analytics hooks","provider":"ollama","ts":1783000045600}
+{"type":"turn_start","agentId":"probe-5","turn":1,"ts":1783000046800}
+{"type":"tool_call","agentId":"probe-1","callId":"workflow-phases-c5","name":"report_status","input":{"message":"reading the panel"},"ts":1783000048000}
+{"type":"agent_message","from":"probe-1","to":"main","role":"status","state":"working","text":"reading the panel","ts":1783000049200}
+{"type":"tool_result","agentId":"probe-1","callId":"workflow-phases-c5","output":"ok","isError":false,"durationMs":0,"ts":1783000050400}
+{"type":"tool_call","agentId":"probe-2","callId":"workflow-phases-c6","name":"report_status","input":{"message":"reading the profile section"},"ts":1783000051600}
+{"type":"agent_message","from":"probe-2","to":"main","role":"status","state":"working","text":"reading the profile section","ts":1783000052800}
+{"type":"tool_result","agentId":"probe-2","callId":"workflow-phases-c6","output":"ok","isError":false,"durationMs":0,"ts":1783000054000}
+{"type":"tool_call","agentId":"probe-3","callId":"workflow-phases-c7","name":"report_status","input":{"message":"reading the toggles"},"ts":1783000055200}
+{"type":"agent_message","from":"probe-3","to":"main","role":"status","state":"working","text":"reading the toggles","ts":1783000056400}
+{"type":"tool_result","agentId":"probe-3","callId":"workflow-phases-c7","output":"ok","isError":false,"durationMs":0,"ts":1783000057600}
+{"type":"tool_call","agentId":"probe-4","callId":"workflow-phases-c8","name":"report_status","input":{"message":"reading the error states"},"ts":1783000058800}
+{"type":"agent_message","from":"probe-4","to":"main","role":"status","state":"working","text":"reading the error states","ts":1783000060000}
+{"type":"tool_result","agentId":"probe-4","callId":"workflow-phases-c8","output":"ok","isError":false,"durationMs":0,"ts":1783000061200}
+{"type":"tool_call","agentId":"probe-5","callId":"workflow-phases-c9","name":"report_status","input":{"message":"reading the hooks"},"ts":1783000062400}
+{"type":"agent_message","from":"probe-5","to":"main","role":"status","state":"working","text":"reading the hooks","ts":1783000063600}
+{"type":"tool_result","agentId":"probe-5","callId":"workflow-phases-c9","output":"ok","isError":false,"durationMs":0,"ts":1783000064800}
+{"type":"tool_call","agentId":"probe-1","callId":"workflow-phases-c10","name":"read_file","input":{"path":"src/settings/Panel.tsx"},"ts":1783000066000}
+{"type":"tool_result","agentId":"probe-1","callId":"workflow-phases-c10","output":"export function Panel() { … }","isError":false,"durationMs":3,"ts":1783000067200}
+{"type":"tool_call","agentId":"probe-2","callId":"workflow-phases-c11","name":"read_file","input":{"path":"src/settings/Profile.tsx"},"ts":1783000068400}
+{"type":"tool_result","agentId":"probe-2","callId":"workflow-phases-c11","output":"export function Profile() { … }","isError":false,"durationMs":3,"ts":1783000069600}
+{"type":"tool_call","agentId":"probe-3","callId":"workflow-phases-c12","name":"read_file","input":{"path":"src/settings/Notifications.tsx"},"ts":1783000070800}
+{"type":"tool_result","agentId":"probe-3","callId":"workflow-phases-c12","output":"export function Notifications() { … }","isError":false,"durationMs":3,"ts":1783000072000}
+{"type":"tool_call","agentId":"probe-4","callId":"workflow-phases-c13","name":"read_file","input":{"path":"src/settings/errors.ts"},"ts":1783000073200}
+{"type":"tool_result","agentId":"probe-4","callId":"workflow-phases-c13","output":"export const ERRORS = { … }","isError":false,"durationMs":3,"ts":1783000074400}
+{"type":"tool_call","agentId":"probe-5","callId":"workflow-phases-c14","name":"read_file","input":{"path":"src/settings/track.ts"},"ts":1783000075600}
+{"type":"tool_result","agentId":"probe-5","callId":"workflow-phases-c14","output":"export function track(step: string) { … }","isError":false,"durationMs":3,"ts":1783000076800}
+{"type":"usage","agentId":"probe-1","inputTokens":21000,"outputTokens":800,"ts":1783000078000}
+{"type":"usage","agentId":"probe-2","inputTokens":21000,"outputTokens":800,"ts":1783000079200}
+{"type":"usage","agentId":"probe-3","inputTokens":21000,"outputTokens":800,"ts":1783000080400}
+{"type":"usage","agentId":"probe-4","inputTokens":21000,"outputTokens":800,"ts":1783000081600}
+{"type":"usage","agentId":"probe-5","inputTokens":21000,"outputTokens":800,"ts":1783000082800}
+{"type":"text_delta","agentId":"probe-1","text":"probe the settings panel — done","ts":1783000084000}
+{"type":"text_delta","agentId":"probe-2","text":"probe the profile section — done","ts":1783000085200}
+{"type":"text_delta","agentId":"probe-3","text":"probe the notification toggles — done","ts":1783000086400}
+{"type":"text_delta","agentId":"probe-4","text":"probe the error states — done","ts":1783000087600}
+{"type":"text_delta","agentId":"probe-5","text":"probe the analytics hooks — done","ts":1783000088800}
+{"type":"run_end","runId":"workflow-phases-probe-1","stopReason":"end_turn","ts":1783000090000}
+{"type":"agent_message","from":"probe-1","to":"main","role":"result","state":"completed","text":"[probe-1] done","ts":1783000091200}
+{"type":"run_end","runId":"workflow-phases-probe-2","stopReason":"end_turn","ts":1783000092400}
+{"type":"agent_message","from":"probe-2","to":"main","role":"result","state":"completed","text":"[probe-2] done","ts":1783000093600}
+{"type":"run_end","runId":"workflow-phases-probe-3","stopReason":"end_turn","ts":1783000094800}
+{"type":"agent_message","from":"probe-3","to":"main","role":"result","state":"completed","text":"[probe-3] done","ts":1783000096000}
+{"type":"run_end","runId":"workflow-phases-probe-4","stopReason":"end_turn","ts":1783000097200}
+{"type":"agent_message","from":"probe-4","to":"main","role":"result","state":"completed","text":"[probe-4] done","ts":1783000098400}
+{"type":"run_end","runId":"workflow-phases-probe-5","stopReason":"end_turn","ts":1783000099600}
+{"type":"agent_message","from":"probe-5","to":"main","role":"result","state":"completed","text":"[probe-5] done","ts":1783000100800}
+{"type":"tool_result","agentId":"main","callId":"workflow-phases-c4","output":"5 reviews back","isError":false,"durationMs":21400,"ts":1783000102000}
+{"type":"tool_call","agentId":"main","callId":"workflow-phases-c15","name":"merge","input":{"task":"merge the five probes"},"ts":1783000103200}
+{"type":"agent_spawn","agentId":"merge","parentId":"main","task":"merge the five probes","ts":1783000104400}
+{"type":"agent_message","from":"main","to":"merge","role":"task","state":"submitted","text":"merge the five probes","label":"merge","ts":1783000105600}
+{"type":"run_start","runId":"workflow-phases-merge","agentId":"merge","parentId":"main","prompt":"merge the five probes","provider":"ollama","ts":1783000106800}
+{"type":"turn_start","agentId":"merge","turn":1,"ts":1783000108000}
+{"type":"tool_call","agentId":"merge","callId":"workflow-phases-c16","name":"report_status","input":{"message":"merging"},"ts":1783000109200}
+{"type":"agent_message","from":"merge","to":"main","role":"status","state":"working","text":"merging","ts":1783000110400}
+{"type":"tool_result","agentId":"merge","callId":"workflow-phases-c16","output":"ok","isError":false,"durationMs":0,"ts":1783000111600}
+{"type":"tool_call","agentId":"merge","callId":"workflow-phases-c17","name":"write_file","input":{"path":"docs/settings/findings.md"},"ts":1783000112800}
+{"type":"tool_result","agentId":"merge","callId":"workflow-phases-c17","output":"Wrote: docs/settings/findings.md (4102 bytes)","isError":false,"durationMs":3,"ts":1783000114000}
+{"type":"usage","agentId":"merge","inputTokens":44000,"outputTokens":2100,"ts":1783000115200}
+{"type":"text_delta","agentId":"merge","text":"one picture, five sources","ts":1783000116400}
+{"type":"run_end","runId":"workflow-phases-merge","stopReason":"end_turn","ts":1783000117600}
+{"type":"agent_message","from":"merge","to":"main","role":"result","state":"completed","text":"[merge] done","ts":1783000118800}
+{"type":"tool_result","agentId":"main","callId":"workflow-phases-c15","output":"[merge] result","isError":false,"durationMs":21400,"ts":1783000120000}
+{"type":"tool_call","agentId":"main","callId":"workflow-phases-c18","name":"draft","input":{"task":"draft the write-up"},"ts":1783000121200}
+{"type":"agent_spawn","agentId":"draft","parentId":"main","task":"draft the write-up","ts":1783000122400}
+{"type":"agent_message","from":"main","to":"draft","role":"task","state":"submitted","text":"draft the write-up","label":"draft","ts":1783000123600}
+{"type":"run_start","runId":"workflow-phases-draft","agentId":"draft","parentId":"main","prompt":"draft the write-up","provider":"ollama","ts":1783000124800}
+{"type":"turn_start","agentId":"draft","turn":1,"ts":1783000126000}
+{"type":"tool_call","agentId":"draft","callId":"workflow-phases-c19","name":"report_status","input":{"message":"drafting"},"ts":1783000127200}
+{"type":"agent_message","from":"draft","to":"main","role":"status","state":"working","text":"drafting","ts":1783000128400}
+{"type":"tool_result","agentId":"draft","callId":"workflow-phases-c19","output":"ok","isError":false,"durationMs":0,"ts":1783000129600}
+{"type":"tool_call","agentId":"draft","callId":"workflow-phases-c20","name":"write_file","input":{"path":"docs/settings/report.md"},"ts":1783000130800}
+{"type":"tool_result","agentId":"draft","callId":"workflow-phases-c20","output":"Wrote: docs/settings/report.md (6820 bytes)","isError":false,"durationMs":3,"ts":1783000132000}
+{"type":"usage","agentId":"draft","inputTokens":31000,"outputTokens":1900,"ts":1783000133200}
+{"type":"text_delta","agentId":"draft","text":"draft is out","ts":1783000134400}
+{"type":"run_end","runId":"workflow-phases-draft","stopReason":"end_turn","ts":1783000135600}
+{"type":"agent_message","from":"draft","to":"main","role":"result","state":"completed","text":"[draft] done","ts":1783000136800}
+{"type":"tool_result","agentId":"main","callId":"workflow-phases-c18","output":"[draft] result","isError":false,"durationMs":21400,"ts":1783000138000}
+{"type":"tool_call","agentId":"main","callId":"workflow-phases-c21","name":"audit","input":{"areas":["audit-1","audit-2","audit-3","audit-4","audit-5"]},"ts":1783000139200}
+{"type":"agent_spawn","agentId":"audit-1","parentId":"main","task":"audit the panel claims","ts":1783000140400}
+{"type":"agent_message","from":"main","to":"audit-1","role":"task","state":"submitted","text":"audit the panel claims","label":"audit","ts":1783000141600}
+{"type":"agent_spawn","agentId":"audit-2","parentId":"main","task":"audit the profile claims","ts":1783000142800}
+{"type":"agent_message","from":"main","to":"audit-2","role":"task","state":"submitted","text":"audit the profile claims","label":"audit","ts":1783000144000}
+{"type":"agent_spawn","agentId":"audit-3","parentId":"main","task":"audit the notification claims","ts":1783000145200}
+{"type":"agent_message","from":"main","to":"audit-3","role":"task","state":"submitted","text":"audit the notification claims","label":"audit","ts":1783000146400}
+{"type":"agent_spawn","agentId":"audit-4","parentId":"main","task":"audit the error claims","ts":1783000147600}
+{"type":"agent_message","from":"main","to":"audit-4","role":"task","state":"submitted","text":"audit the error claims","label":"audit","ts":1783000148800}
+{"type":"agent_spawn","agentId":"audit-5","parentId":"main","task":"audit the analytics claims","ts":1783000150000}
+{"type":"agent_message","from":"main","to":"audit-5","role":"task","state":"submitted","text":"audit the analytics claims","label":"audit","ts":1783000151200}
+{"type":"run_start","runId":"workflow-phases-audit-1","agentId":"audit-1","parentId":"main","prompt":"audit the panel claims","provider":"ollama","ts":1783000152400}
+{"type":"turn_start","agentId":"audit-1","turn":1,"ts":1783000153600}
+{"type":"run_start","runId":"workflow-phases-audit-2","agentId":"audit-2","parentId":"main","prompt":"audit the profile claims","provider":"ollama","ts":1783000154800}
+{"type":"turn_start","agentId":"audit-2","turn":1,"ts":1783000156000}
+{"type":"run_start","runId":"workflow-phases-audit-3","agentId":"audit-3","parentId":"main","prompt":"audit the notification claims","provider":"ollama","ts":1783000157200}
+{"type":"turn_start","agentId":"audit-3","turn":1,"ts":1783000158400}
+{"type":"run_start","runId":"workflow-phases-audit-4","agentId":"audit-4","parentId":"main","prompt":"audit the error claims","provider":"ollama","ts":1783000159600}
+{"type":"turn_start","agentId":"audit-4","turn":1,"ts":1783000160800}
+{"type":"run_start","runId":"workflow-phases-audit-5","agentId":"audit-5","parentId":"main","prompt":"audit the analytics claims","provider":"ollama","ts":1783000162000}
+{"type":"turn_start","agentId":"audit-5","turn":1,"ts":1783000163200}
+{"type":"tool_call","agentId":"audit-1","callId":"workflow-phases-c22","name":"report_status","input":{"message":"re-running the panel checks"},"ts":1783000164400}
+{"type":"agent_message","from":"audit-1","to":"main","role":"status","state":"working","text":"re-running the panel checks","ts":1783000165600}
+{"type":"tool_result","agentId":"audit-1","callId":"workflow-phases-c22","output":"ok","isError":false,"durationMs":0,"ts":1783000166800}
+{"type":"tool_call","agentId":"audit-2","callId":"workflow-phases-c23","name":"report_status","input":{"message":"re-running the profile checks"},"ts":1783000168000}
+{"type":"agent_message","from":"audit-2","to":"main","role":"status","state":"working","text":"re-running the profile checks","ts":1783000169200}
+{"type":"tool_result","agentId":"audit-2","callId":"workflow-phases-c23","output":"ok","isError":false,"durationMs":0,"ts":1783000170400}
+{"type":"tool_call","agentId":"audit-3","callId":"workflow-phases-c24","name":"report_status","input":{"message":"re-running the notification checks"},"ts":1783000171600}
+{"type":"agent_message","from":"audit-3","to":"main","role":"status","state":"working","text":"re-running the notification checks","ts":1783000172800}
+{"type":"tool_result","agentId":"audit-3","callId":"workflow-phases-c24","output":"ok","isError":false,"durationMs":0,"ts":1783000174000}
+{"type":"tool_call","agentId":"audit-4","callId":"workflow-phases-c25","name":"report_status","input":{"message":"re-running the error checks"},"ts":1783000175200}
+{"type":"agent_message","from":"audit-4","to":"main","role":"status","state":"working","text":"re-running the error checks","ts":1783000176400}
+{"type":"tool_result","agentId":"audit-4","callId":"workflow-phases-c25","output":"ok","isError":false,"durationMs":0,"ts":1783000177600}
+{"type":"tool_call","agentId":"audit-5","callId":"workflow-phases-c26","name":"report_status","input":{"message":"re-running the analytics checks"},"ts":1783000178800}
+{"type":"agent_message","from":"audit-5","to":"main","role":"status","state":"working","text":"re-running the analytics checks","ts":1783000180000}
+{"type":"tool_result","agentId":"audit-5","callId":"workflow-phases-c26","output":"ok","isError":false,"durationMs":0,"ts":1783000181200}
+{"type":"tool_call","agentId":"audit-1","callId":"workflow-phases-c27","name":"run_command","input":{"command":"npm test -- settings/Panel"},"ts":1783000182400}
+{"type":"permission_request","agentId":"audit-1","callId":"workflow-phases-c27","name":"run_command","input":{"command":"npm test -- settings/Panel"},"ts":1783000183600}
+{"type":"permission_decision","callId":"workflow-phases-c27","allowed":true,"ts":1783000184800}
+{"type":"tool_result","agentId":"audit-1","callId":"workflow-phases-c27","output":"12 passed","isError":false,"durationMs":40,"ts":1783000186000}
+{"type":"tool_call","agentId":"audit-2","callId":"workflow-phases-c28","name":"run_command","input":{"command":"npm test -- settings/Profile"},"ts":1783000187200}
+{"type":"permission_request","agentId":"audit-2","callId":"workflow-phases-c28","name":"run_command","input":{"command":"npm test -- settings/Profile"},"ts":1783000188400}
+{"type":"permission_decision","callId":"workflow-phases-c28","allowed":true,"ts":1783000189600}
+{"type":"tool_result","agentId":"audit-2","callId":"workflow-phases-c28","output":"9 passed","isError":false,"durationMs":40,"ts":1783000190800}
+{"type":"tool_call","agentId":"audit-3","callId":"workflow-phases-c29","name":"run_command","input":{"command":"npm test -- settings/Notifications"},"ts":1783000192000}
+{"type":"permission_request","agentId":"audit-3","callId":"workflow-phases-c29","name":"run_command","input":{"command":"npm test -- settings/Notifications"},"ts":1783000193200}
+{"type":"permission_decision","callId":"workflow-phases-c29","allowed":true,"ts":1783000194400}
+{"type":"tool_result","agentId":"audit-3","callId":"workflow-phases-c29","output":"7 passed","isError":false,"durationMs":40,"ts":1783000195600}
+{"type":"tool_call","agentId":"audit-4","callId":"workflow-phases-c30","name":"run_command","input":{"command":"npm test -- settings/errors"},"ts":1783000196800}
+{"type":"permission_request","agentId":"audit-4","callId":"workflow-phases-c30","name":"run_command","input":{"command":"npm test -- settings/errors"},"ts":1783000198000}
+{"type":"permission_decision","callId":"workflow-phases-c30","allowed":true,"ts":1783000199200}
+{"type":"tool_result","agentId":"audit-4","callId":"workflow-phases-c30","output":"5 passed","isError":false,"durationMs":40,"ts":1783000200400}
+{"type":"tool_call","agentId":"audit-5","callId":"workflow-phases-c31","name":"run_command","input":{"command":"npm test -- settings/track"},"ts":1783000201600}
+{"type":"permission_request","agentId":"audit-5","callId":"workflow-phases-c31","name":"run_command","input":{"command":"npm test -- settings/track"},"ts":1783000202800}
+{"type":"permission_decision","callId":"workflow-phases-c31","allowed":true,"ts":1783000204000}
+{"type":"tool_result","agentId":"audit-5","callId":"workflow-phases-c31","output":"4 passed","isError":false,"durationMs":40,"ts":1783000205200}
+{"type":"usage","agentId":"audit-1","inputTokens":12000,"outputTokens":400,"ts":1783000206400}
+{"type":"usage","agentId":"audit-2","inputTokens":12000,"outputTokens":400,"ts":1783000207600}
+{"type":"usage","agentId":"audit-3","inputTokens":12000,"outputTokens":400,"ts":1783000208800}
+{"type":"usage","agentId":"audit-4","inputTokens":12000,"outputTokens":400,"ts":1783000210000}
+{"type":"usage","agentId":"audit-5","inputTokens":12000,"outputTokens":400,"ts":1783000211200}
+{"type":"text_delta","agentId":"audit-1","text":"audit the panel claims — checks out","ts":1783000212400}
+{"type":"text_delta","agentId":"audit-2","text":"audit the profile claims — checks out","ts":1783000213600}
+{"type":"text_delta","agentId":"audit-3","text":"audit the notification claims — checks out","ts":1783000214800}
+{"type":"text_delta","agentId":"audit-4","text":"audit the error claims — checks out","ts":1783000216000}
+{"type":"text_delta","agentId":"audit-5","text":"audit the analytics claims — checks out","ts":1783000217200}
+{"type":"run_end","runId":"workflow-phases-audit-1","stopReason":"end_turn","ts":1783000218400}
+{"type":"agent_message","from":"audit-1","to":"main","role":"result","state":"completed","text":"[audit-1] done","ts":1783000219600}
+{"type":"run_end","runId":"workflow-phases-audit-2","stopReason":"end_turn","ts":1783000220800}
+{"type":"agent_message","from":"audit-2","to":"main","role":"result","state":"completed","text":"[audit-2] done","ts":1783000222000}
+{"type":"run_end","runId":"workflow-phases-audit-3","stopReason":"end_turn","ts":1783000223200}
+{"type":"agent_message","from":"audit-3","to":"main","role":"result","state":"completed","text":"[audit-3] done","ts":1783000224400}
+{"type":"run_end","runId":"workflow-phases-audit-4","stopReason":"end_turn","ts":1783000225600}
+{"type":"agent_message","from":"audit-4","to":"main","role":"result","state":"completed","text":"[audit-4] done","ts":1783000226800}
+{"type":"run_end","runId":"workflow-phases-audit-5","stopReason":"end_turn","ts":1783000228000}
+{"type":"agent_message","from":"audit-5","to":"main","role":"result","state":"completed","text":"[audit-5] done","ts":1783000229200}
+{"type":"tool_result","agentId":"main","callId":"workflow-phases-c21","output":"5 reviews back","isError":false,"durationMs":21400,"ts":1783000230400}
+{"type":"text_delta","agentId":"main","text":"Five phases done: 13 agents, every claim checked on its own.","ts":1783000231600}
+{"type":"usage","agentId":"main","inputTokens":65,"outputTokens":200,"ts":1783000232800}
+{"type":"run_end","runId":"workflow-phases-main","stopReason":"end_turn","ts":1783000234000}
