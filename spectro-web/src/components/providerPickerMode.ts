@@ -1,10 +1,15 @@
 // Pure logic for the provider picker, split out so it is testable without a DOM.
 
-/** Every selectable LLM backend. The two OpenAI-compatible presets (lmstudio,
- *  openrouter) sit next to the cloud ones; llamacpp is an operator's own
- *  llama-server, kept apart from lmstudio because it answers what it has
- *  loaded (card 312); spectro-local is the bundled model,
- *  its own first-class entry; the picker treats them uniformly. */
+/** Every selectable LLM backend, and the app's only copy of that set — it is
+ *  held to SpectroConfig.KNOWN_PROVIDERS from the Java side by
+ *  ProviderListDriftTest, which reads this array out of this file. Before that
+ *  guard existed, a backend declared in Java left the picker silent about it
+ *  with every test in both languages green (card 312, round 4).
+ *
+ *  The OpenAI-compatible ids sit next to the cloud ones and the picker treats
+ *  them all uniformly; llamacpp is an operator's own llama-server, kept apart
+ *  from lmstudio because it answers with what it has loaded (card 312), and
+ *  spectro-local is the bundled model, its own first-class entry. */
 export const PROVIDERS = [
   "anthropic",
   "ollama",

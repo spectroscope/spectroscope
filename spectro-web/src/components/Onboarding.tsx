@@ -181,18 +181,19 @@ export function Onboarding(props: {
           <Option
             badge="cloud"
             free={false}
-            title={de ? "anthropic · openai · openrouter" : "anthropic · openai · openrouter"}
+            title="anthropic · openai · openrouter · gemini"
             body={
               de ? (
                 <>
                   trag deinen Key in eine <code>.env</code> neben spectroscope:{" "}
                   <code>ANTHROPIC_API_KEY=…</code> (oder <code>OPENAI_API_KEY</code> /{" "}
-                  <code>OPENROUTER_API_KEY</code>) und starte neu.
+                  <code>OPENROUTER_API_KEY</code> / <code>GEMINI_API_KEY</code>) und starte neu.
                 </>
               ) : (
                 <>
                   add your key to a <code>.env</code> next to spectroscope: <code>ANTHROPIC_API_KEY=…</code>{" "}
-                  (or <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code>), then restart.
+                  (or <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code> /{" "}
+                  <code>GEMINI_API_KEY</code>), then restart.
                 </>
               )
             }

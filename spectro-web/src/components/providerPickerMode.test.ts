@@ -71,7 +71,11 @@ describe("modelFieldMode", () => {
     expect(modelFieldMode("anthropic", undefined, [])).toBe("freetext");
   });
 
-  it("offers every provider, including the OpenAI-compatible ones and the built-in", () => {
+  // The SET is guarded across the language boundary by ProviderListDriftTest,
+  // which reads PROVIDERS out of providerPickerMode.ts and compares it to
+  // SpectroConfig.KNOWN_PROVIDERS — this list alone could only ever agree with
+  // itself. What is left here, and only here, is the ORDER the picker draws.
+  it("offers every provider, in the order the picker draws them", () => {
     expect(PROVIDERS).toEqual([
       "anthropic",
       "ollama",
