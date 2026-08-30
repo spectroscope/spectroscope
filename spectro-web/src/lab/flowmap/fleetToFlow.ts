@@ -24,6 +24,7 @@ import {
   activity,
   EXPANDED_CARD,
   lifecycleLabel,
+  mcpChainView,
   STATE_COLOR,
   type AgentStream,
   type Detail,
@@ -193,7 +194,11 @@ export function fleetToFlow(
   const atCmd = cards.find((c) => c.focus === "cmd");
   const mcpUser = cards.find((c) => c.activeMcp !== null);
   const mcpInUse = mcpUser !== undefined;
-  const mcpTool = mcpUser ? detail.tool[mcpUser.id] : undefined;
+  // CARD 328: the fleet room draws the SAME two cards as the single-run map, so
+  // it takes the same derivation rather than a second one beside it. Without
+  // this line the answer would be visible on one surface and missing on the
+  // other, which is half a feature shipped.
+  const chain = mcpChainView(detail, mcpUser?.id ?? null, mcpUser?.activeMcp ?? null);
   const osY = osTop + 80;
   const OS_STATIONS: { id: string; x: number; data: Record<string, unknown> }[] = [
     {
@@ -214,12 +219,7 @@ export function fleetToFlow(
     {
       id: "os-mcp",
       x: MAC_PAD + 438,
-      data: {
-        kind: "mcp",
-        active: mcpInUse,
-        mcp: mcpUser?.activeMcp ?? null,
-        tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
-      },
+      data: { kind: "mcp", active: mcpInUse, mcp: chain.line, call: chain.call },
     },
     { id: "os-net", x: MAC_PAD + 654, data: { kind: "net", active: mcpInUse } },
   ];
@@ -264,7 +264,7 @@ export function fleetToFlow(
     id: "mcpserver",
     type: "ext",
     position: { x: outsideX + 240, y: macH - 240 },
-    data: { kind: "mcpserver", active: mcpInUse, mcp: mcpUser?.activeMcp ?? null },
+    data: { kind: "mcpserver", active: mcpInUse, mcp: chain.line, answer: chain.answer },
     zIndex: 10,
   });
 
@@ -299,7 +299,10 @@ export function fleetToFlow(
   if (main !== undefined) {
     E("e-user-main", "user", "card-main", "rs", "lt", main.focus === "agent" || main.focus === "gate");
   }
-  const mcpErr = mcpUser?.isError === true;
+  // CARD 328, same repair as the single-run map: the live occupant is gone the
+  // instant `tool_result` clears `activeMcp`, so this alone could never be true
+  // for an ANSWERED error. The exchange the two cards are showing can.
+  const mcpErr = mcpUser?.isError === true || chain.isError;
   for (const card of cards) {
     const id = `card-${card.id}`;
     // Every card rails to the one station, and every one of those legs crosses

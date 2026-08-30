@@ -12,7 +12,7 @@ import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
 import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
-import type { AgentStream, CtxPart } from "./sceneToFlow";
+import type { AgentStream, CtxPart, McpAnswerView } from "./sceneToFlow";
 import type { Focus, GateState, SubagentInfo } from "../labScene";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { t } from "../../i18n/i18n";
@@ -516,16 +516,24 @@ function ShellBody({ command, active }: { command?: string | null; active: boole
   );
 }
 
-/** The active MCP call line plus its call disclosure — the same two-faced
- *  panel as the agent card's, so the master face governs it too. */
+/**
+ * The MCP call line plus its call disclosure — the same two-faced panel as the
+ * agent card's, so the master face governs it too.
+ *
+ * CARD 328: this is the ASKING half of one exchange, and the `data-call` mark
+ * is what lets a reader see that the MCP-Server card across the boundary is
+ * answering THIS call and not some other. It used to be fed the in-flight tool
+ * slot, which `tool_result` empties — so the question vanished from the map at
+ * the exact moment the answer arrived.
+ */
 function McpBody({
   active,
   mcp,
-  tool,
+  call,
 }: {
   active: boolean;
   mcp?: string | null;
-  tool?: { name: string; input: unknown } | null;
+  call?: { callId: string; name: string; input: unknown } | null;
 }) {
   const lang = useLang();
   return (
@@ -533,10 +541,12 @@ function McpBody({
       <div className={`pf-os__line${active ? " pf-os__line--on" : ""}`}>
         {mcp ?? t(lang, "map.gate.none")}
       </div>
-      {tool && (
-        <Disclosure label={t(lang, "map.mcp.call")}>
-          <ToolCallPanel tool={tool} />
-        </Disclosure>
+      {call && (
+        <div className="pf-mcp" data-call={call.callId}>
+          <Disclosure label={t(lang, "map.mcp.call")}>
+            <ToolCallPanel tool={{ name: call.name, input: call.input }} />
+          </Disclosure>
+        </div>
       )}
     </>
   );
@@ -550,7 +560,8 @@ export function OsNode({ data }: NodeProps) {
     file?: string | null;
     command?: string | null;
     mcp?: string | null;
-    tool?: { name: string; input: unknown } | null;
+    /** CARD 328: the MCP exchange this card is the asking half of. */
+    call?: { callId: string; name: string; input: unknown } | null;
     /** Who is on the station right now — first entry is the occupant whose
      *  content shows, the rest are "also" (stationUsers, owner call 2026-08-26).
      *  Each carries its agentId since card 295, so a caller can address the
@@ -575,7 +586,7 @@ export function OsNode({ data }: NodeProps) {
       station = { title: t(lang, "map.node.network"), body: <NetGlobe active={d.active} /> };
       break;
     case "mcp":
-      station = { title: "MCP-Client", body: <McpBody active={d.active} mcp={d.mcp} tool={d.tool} /> };
+      station = { title: "MCP-Client", body: <McpBody active={d.active} mcp={d.mcp} call={d.call} /> };
       break;
   }
 
@@ -689,8 +700,49 @@ export function LlmNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 // External services (Netz / MCP-Server)
 // ---------------------------------------------------------------------------
+/**
+ * The answer half of one MCP exchange (card 328).
+ *
+ * An error is an answer and is drawn as one — a mark and the server's own
+ * words, never a crash — because that is what the reader has to be able to
+ * read: a `mcp__` result that failed carries at most 911 bytes (measured over
+ * 191 of them) and saying WHAT the server refused is the whole value.
+ */
+function McpAnswerBody({ a }: { a: McpAnswerView }) {
+  const lang = useLang();
+  if (a.state === "waiting") {
+    // A call can stay here for an hour — measured max 3 598 164 ms over 503
+    // pairs, and 3 of 783 sessions never answer at all. Nothing decays it.
+    return <div className="pf-mcpa pf-mcpa--waiting">{t(lang, "map.mcp.waiting")}</div>;
+  }
+  if (a.state === "empty") return <div className="pf-mcpa pf-mcpa--empty">{t(lang, "map.mcp.empty")}</div>;
+  const cut = a.chars - a.text.length;
+  return (
+    <div className={`pf-mcpa${a.isError ? " pf-mcpa--err" : ""}`}>
+      <div className="pf-mcpa__meta">
+        {t(lang, a.isError ? "map.mcp.errored" : "map.mcp.answered")} · {a.durationMs} ms
+      </div>
+      <div className="pf-mcpa__body pf-mono nowheel">{a.text}</div>
+      {cut > 0 && (
+        // The cut is said, never hidden. The chip is what fits on a 150px card;
+        // its title carries the sentence, including where the whole answer is —
+        // the tool_result row in the JSONL trace, which holds it uncut.
+        <div className="pf-mcpa__cut" title={t(lang, "map.mcp.cut", { shown: a.text.length, all: a.chars })}>
+          {t(lang, "map.mcp.more", { n: cut })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExtNode({ data }: NodeProps) {
-  const d = data as { kind: "netz" | "mcpserver"; active: boolean; mcp?: string | null };
+  const d = data as {
+    kind: "netz" | "mcpserver";
+    active: boolean;
+    mcp?: string | null;
+    /** CARD 328: the answering half of the exchange the MCP client is asking. */
+    answer?: McpAnswerView | null;
+  };
   const lang = useLang();
   if (d.kind === "netz") {
     return (
@@ -702,13 +754,22 @@ export function ExtNode({ data }: NodeProps) {
       </div>
     );
   }
+  const a = d.answer ?? null;
   return (
-    <div className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}>
-      <div className="pf-ext__head">MCP-Server</div>
+    <div
+      className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}
+      // The two marks that make this card checkable rather than decorative:
+      // WHICH call it is answering, and WHICH of the four things it is saying.
+      data-answer={a === null ? "none" : a.state}
+      {...(a === null ? {} : { "data-call": a.callId })}
+      {...(a !== null && a.isError ? { "data-answer-error": "true" } : {})}
+    >
+      <div className="pf-ext__head">{t(lang, "map.node.mcpServer")}</div>
       <AluChip active={d.active} />
       <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>
         {d.mcp ?? t(lang, "map.extServer")}
       </div>
+      {a !== null && <McpAnswerBody a={a} />}
       <Handles />
     </div>
   );

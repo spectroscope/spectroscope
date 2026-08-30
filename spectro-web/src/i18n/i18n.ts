@@ -1466,8 +1466,28 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.node.netStack2": { de: "stack", en: "stack" },
   "map.node.network": { de: "Netzwerk", en: "Network" },
   "map.node.netz": { de: "Netz", en: "Net" },
-  "map.node.mcpServer": { de: "MCP-SERVER", en: "MCP SERVER" },
+  // The MCP-Server card's own name. It was a dead key from the retired SVG map
+  // while nodes.tsx spelled the name itself; card 328 made the card say
+  // something, so the name goes through the dict like the rest of it.
+  "map.node.mcpServer": { de: "MCP-Server", en: "MCP-Server" },
   "map.extServer": { de: "externer Server", en: "external server" },
+  // CARD 328 — the four readings of the MCP-Server card. "waiting" and
+  // "answered with nothing" are two different facts and never share a word:
+  // one call in 783 sessions was still open after an hour, and not one of
+  // 3 503 measured answers was empty.
+  "map.mcp.waiting": { de: "wartet auf die Antwort …", en: "waiting for the answer …" },
+  "map.mcp.empty": { de: "geantwortet, ohne Inhalt", en: "answered with nothing" },
+  "map.mcp.answered": { de: "geantwortet", en: "answered" },
+  // Not "error": an error IS an answer here, and a word that reads as a crash
+  // would say the opposite of what the card is for.
+  "map.mcp.errored": { de: "Fehler-Antwort", en: "error answer" },
+  // The card is 150px wide, so the remainder is a chip and the sentence that
+  // explains it — and says where the whole answer is — rides its title.
+  "map.mcp.more": { de: "+{n} Zeichen", en: "+{n} chars" },
+  "map.mcp.cut": {
+    de: "die ersten {shown} von {all} Zeichen — die ganze Antwort steht in der JSONL-Zeile",
+    en: "the first {shown} of {all} characters — the whole answer is on the JSONL row",
+  },
   "map.remote": { de: "remote", en: "remote" },
   "map.more": { de: "+{n} weitere", en: "+{n} more" },
   "map.aria": {

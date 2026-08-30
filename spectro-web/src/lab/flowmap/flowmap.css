@@ -1176,6 +1176,66 @@
   color: var(--sand);
 }
 
+/* ---- CARD 328: ONE MCP exchange, drawn in two halves ----------------------
+ * The MCP-Client card holds what was ASKED, the MCP-Server card what came
+ * BACK, and both carry the call's id so a reader can see they are the same
+ * call. An ERROR answer is an answer: it gets a mark and the server's own
+ * words, never a crash. Colour rides the border and the text, never a fill.
+ * ------------------------------------------------------------------------ */
+.pf-mcp {
+  margin-top: 8px;
+}
+.pf-mcpa {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+}
+.pf-mcpa--waiting {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--warn);
+}
+.pf-mcpa--empty {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+/* The error mark rides the LINE, never the words. Two reasons and both are
+ * rules: the brand's own non-negotiable is colour on lines only, and measured
+ * on this card `--error` as 10px text lands at 2.77:1 (graphite), 3.66
+ * (spectroscope), 3.81 (paper) and 4.82 (still) against the card surface —
+ * three of the four under the 4.5:1 floor for small text. The words stay on
+ * `--text-dim`, which is the token that is legible in all four. */
+.pf-mcpa--err {
+  border-top-color: var(--error);
+  border-top-width: 2px;
+}
+.pf-mcpa__meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+/* BOUNDED and scrolling, which is the whole of criterion 7: the answers behind
+ * this box run from 2 bytes to 246 112 (measured over 3 000 mcp__ results),
+ * and a card that grew with them would push its neighbours off seats that were
+ * committed before it painted. */
+.pf-mcpa__body {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 64px;
+  overflow: auto;
+}
+.pf-mcpa__cut {
+  margin-top: 4px;
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
 /* ---- Subagent node ------------------------------------------------------ */
 .pf-sub {
   width: 216px;

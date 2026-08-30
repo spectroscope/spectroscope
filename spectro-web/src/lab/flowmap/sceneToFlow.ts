@@ -6,7 +6,7 @@
 // local/remote flip literally re-places the LLM inside vs. outside "Dein Mac".
 
 import type { Edge, Node } from "@xyflow/react";
-import { ROOT_AGENT } from "../labScene";
+import { isMcpTool, prettyMcp, ROOT_AGENT } from "../labScene";
 import type { DiskState, Focus, GateState, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
 import type { AgentDirectory } from "../agentDirectory";
@@ -44,6 +44,144 @@ export interface AgentStream {
   agent: string;
   text: string;
 }
+/**
+ * The most of ONE MCP answer this fold keeps.
+ *
+ * A bound, not a taste. Measured over 3 000 `mcp__` results sampled out of
+ * ~/.claude/projects (random.seed(328)): p50 209 bytes, p75 934, p90 27 832,
+ * p99 78 277, max 246 112 — a 130x spread between the median and the p90, and
+ * 14.6 % of the answers are an image block rather than text. Keeping them all
+ * whole would put a quarter of a megabyte per call into a structure the map
+ * re-derives on every frame; rendering them whole would put it into the DOM.
+ * At 2 000 characters roughly four answers in five arrive intact, and the card
+ * says how many characters it is not showing rather than pretending it has
+ * them all.
+ */
+export const MCP_ANSWER_CAP = 2000;
+
+/**
+ * One MCP call and the answer that came back for it (card 328).
+ *
+ * The answer was always on the wire — `tool_result` carries `output`,
+ * `isError` and `durationMs`, joined to the call by `callId` — and the fold
+ * threw it away at the `tool_result` case. This record is what survives it.
+ *
+ * The JOIN IS SCOPED TO ONE RUN and that is not defensive: measured over 783
+ * session files, `callId` is not globally unique — "c1" appears in 31 distinct
+ * files, 472 distinct ids over 506 calls. A record kept across a `run_start`
+ * would let a later run's call inherit an earlier run's answer with nothing
+ * red anywhere, so {@link deriveDetail} clears the table whenever the runId
+ * changes.
+ */
+export interface McpExchange {
+  callId: string;
+  agentId: string;
+  /** The wire's tool name. Only the CALL ever said it — `tool_result` has no
+   *  name field, which is what makes this a join and not a lookup. */
+  name: string;
+  /** What the call asked, as the model wrote it. */
+  input: unknown;
+  /**
+   * The answer, cut to {@link MCP_ANSWER_CAP}.
+   *
+   * `null` while the call is still open, `""` for an answer that was empty.
+   * Two different facts: over 3 503 measured results not one was empty, so the
+   * empty case is a contract the corpus has never exercised — and collapsing
+   * it into "waiting" would tell a reader a finished call is still running.
+   */
+  output: string | null;
+  /** How long the answer was BEFORE the cap; 0 while the call is open. */
+  outputChars: number;
+  isError: boolean;
+  durationMs: number;
+}
+
+/** Which of the four things the MCP-Server card can be saying. */
+export type McpAnswerState = "none" | "waiting" | "answered" | "empty";
+
+/**
+ * What one exchange reads as.
+ *
+ * @param x the exchange, or null when the run has asked nothing
+ * @return the reading the server card renders
+ */
+export function mcpAnswerState(x: McpExchange | null): McpAnswerState {
+  if (x === null) return "none";
+  if (x.output === null) return "waiting";
+  return x.output === "" ? "empty" : "answered";
+}
+
+/** The answering half of one exchange, as the MCP-Server card is handed it. */
+export interface McpAnswerView {
+  callId: string;
+  name: string;
+  state: McpAnswerState;
+  /** The answer, already cut at {@link MCP_ANSWER_CAP} by the fold. */
+  text: string;
+  /** How long the answer really was, so the card can say what it is not showing. */
+  chars: number;
+  isError: boolean;
+  durationMs: number;
+}
+
+/** Both halves of the one exchange the MCP chain is showing. */
+export interface McpChainView {
+  /** The MCP line BOTH cards carry. */
+  line: string | null;
+  /** The asking half, for the MCP-Client station. */
+  call: { callId: string; name: string; input: unknown } | null;
+  /** The answering half, for the MCP-Server card. */
+  answer: McpAnswerView | null;
+  /** Whether the exchange the two cards show came back an error. */
+  isError: boolean;
+}
+
+/**
+ * CARD 328 — the ONE call both halves of the MCP chain show.
+ *
+ * One derivation, and that is the card's whole claim: the client card and the
+ * server card have to be visibly the same call, and two expressions is exactly
+ * how they would come to disagree. It is also why this is a function and not
+ * three lines in sceneToFlow — BOTH the single-run map and the fleet machine
+ * room draw these two cards, and a fix applied to one of them is half a
+ * feature on a live surface.
+ *
+ * The live occupant's own call wins where there is one, so a station saying
+ * "main is on it" cannot be showing a worker's call. With nobody on the
+ * station the run's last MCP call stands, which is what lets the answer stay
+ * on the card after `tool_result` cleared the station out from under it.
+ *
+ * @param detail the fold
+ * @param occupantId the agent standing on the MCP station, or null
+ * @param liveLine the occupant's own `activeMcp` line, or null
+ * @return what the two cards render
+ */
+export function mcpChainView(
+  detail: Detail,
+  occupantId: string | null,
+  liveLine: string | null,
+): McpChainView {
+  const askedId = (occupantId === null ? undefined : detail.lastAsk[occupantId]) ?? detail.lastMcp;
+  const asked = askedId === null || askedId === undefined ? null : (detail.answers[askedId] ?? null);
+  return {
+    line: liveLine ?? (asked === null ? null : prettyMcp(asked.name)),
+    call: asked === null ? null : { callId: asked.callId, name: asked.name, input: asked.input },
+    answer:
+      asked === null
+        ? null
+        : {
+            callId: asked.callId,
+            name: asked.name,
+            state: mcpAnswerState(asked),
+            text: asked.output ?? "",
+            chars: asked.outputChars,
+            isError: asked.isError,
+            durationMs: asked.durationMs,
+          },
+    isError: asked?.isError ?? false,
+  };
+}
+
 export interface Detail {
   prompt: string;
   ctxParts: CtxPart[] | null;
@@ -56,7 +194,16 @@ export interface Detail {
      *  exactly what a percentage may honestly be built on. */
     thresholdSource?: "override" | "window" | "fallback";
   } | null;
-  /** in-flight tool per agent (set on tool_call, cleared on tool_result). */
+  /**
+   * in-flight tool per agent (set on tool_call, cleared on tool_result).
+   *
+   * Still exactly that, and card 328 deliberately left it alone: the agent hub,
+   * the worker cards and the fleet room all read this field to say what is
+   * running RIGHT NOW, and a slot that outlived its result would have every one
+   * of them claiming a finished call is still in flight. What the MCP answer
+   * needed is a record of its own — {@link Detail.answers} — which keeps the
+   * whole exchange past the result instead of widening this one.
+   */
   tool: Record<string, { name: string; input: unknown } | undefined>;
   /** rolling last-N chars of the reasoning / answer streams, per agent. */
   think: Record<string, string>;
@@ -103,6 +250,22 @@ export interface Detail {
    * shown how big it got. `turns` counts the usage events.
    */
   spend: Record<string, { peak: number; turns: number }>;
+  /**
+   * CARD 328 — the MCP conversation of THIS run, keyed by callId.
+   *
+   * Only `mcp__` calls enter. Two reasons, and both are the card's: the two
+   * cards this feeds are the MCP client and the MCP server, and a session that
+   * ran 506 tool calls with answers out to 33 KB would otherwise be carrying
+   * every one of them on a structure the map re-derives per frame.
+   *
+   * Cleared whenever a `run_start` names a new runId — see {@link McpExchange}.
+   */
+  answers: Record<string, McpExchange | undefined>;
+  /** The callId of the last MCP call each agent made in this run (card 328). */
+  lastAsk: Record<string, string | undefined>;
+  /** The callId of the last MCP call ANY agent made in this run (card 328).
+   *  What the two cards fall back to once nobody is standing on the station. */
+  lastMcp: string | null;
 }
 
 /** How many pictures one card shows. The rest are in the chat and the trace. */
@@ -153,8 +316,14 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     briefs: {},
     models: {},
     spend: {},
+    answers: {},
+    lastAsk: {},
+    lastMcp: null,
   };
   let rootSeen = false;
+  /** The run the MCP table belongs to (card 328). A `callId` is unique inside
+   *  ONE run and nowhere else, so the table cannot outlive its run. */
+  let runId: string | null = null;
   for (const e of applied) {
     // Import-only frames are not in the RunEvent union — they never travel the
     // wire, so they are read off the shape rather than switched on. Kept ahead
@@ -175,6 +344,18 @@ export function deriveDetail(applied: RunEvent[]): Detail {
         d.genImage[e.agentId] = { src: imageUrl(e.blobPath), prompt: e.prompt };
         break;
       case "run_start":
+        // CARD 328: a new run empties the MCP table. Measured: "c1" is the
+        // callId of a first call in 31 different session files, so a table that
+        // survived a run boundary would hand run two the answer run one got —
+        // silently, and with the right id on it. A CHILD's run_start carries
+        // the same runId as its parent's, so spawning a subagent does not throw
+        // the run's own conversation away.
+        if (e.runId !== runId) {
+          runId = e.runId;
+          d.answers = {};
+          d.lastAsk = {};
+          d.lastMcp = null;
+        }
         // The FIRST run_start names the root. Later ones are children.
         if (!rootSeen) {
           d.root = e.agentId;
@@ -212,10 +393,43 @@ export function deriveDetail(applied: RunEvent[]): Detail {
       case "tool_call":
       case "permission_request":
         d.tool[e.agentId] = { name: e.name, input: e.input };
+        // CARD 328: an MCP call opens its own exchange, which outlives the
+        // in-flight slot above. `permission_request` opens it too — a gated
+        // call is asked before it is allowed to run, and the client card has to
+        // be able to say WHICH call is standing at the gate.
+        if (isMcpTool(e.name)) {
+          d.answers[e.callId] = {
+            callId: e.callId,
+            agentId: e.agentId,
+            name: e.name,
+            input: e.input,
+            output: null,
+            outputChars: 0,
+            isError: false,
+            durationMs: 0,
+          };
+          d.lastAsk[e.agentId] = e.callId;
+          d.lastMcp = e.callId;
+        }
         break;
-      case "tool_result":
+      case "tool_result": {
         d.tool[e.agentId] = undefined;
+        // CARD 328: and the answer lands on the exchange the call opened. Only
+        // on one this run opened — a result whose call belongs to an earlier
+        // run finds nothing, which is the run scope doing its job rather than a
+        // guard bolted on top of it.
+        const open = d.answers[e.callId];
+        if (open !== undefined) {
+          d.answers[e.callId] = {
+            ...open,
+            output: e.output.slice(0, MCP_ANSWER_CAP),
+            outputChars: e.output.length,
+            isError: e.isError,
+            durationMs: e.durationMs,
+          };
+        }
         break;
+      }
     }
   }
   return d;
@@ -352,6 +566,38 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   // measured on a four-phase fleet).
   "fleet-card": { w: 216, h: 300 },
   ext: { w: 150, h: 110 },
+  /*
+   * CARD 328 — the MCP-Server card's OWN seat.
+   *
+   * `ext` sizes BOTH external cards through envelopeOf's type fallback, so
+   * growing it would silently have resized the Net card by the same amount.
+   * A key of the card's own id wins over the type lookup and moves nothing
+   * else. The WIDTH stays at ext's 150 on purpose: `EXT_W` -> `EXT_ROW_W` ->
+   * `MCPSERVER_X` and the outside frame all derive from it, and that
+   * arithmetic belongs to card 319.
+   *
+   * MEASURED, not summed, and at the card's WORST case rather than its
+   * typical one. 2026-08-30, Chrome, devicePixelRatio 2, both variable fonts
+   * `document.fonts.load`ed before the read (fonts.ready alone came out short
+   * on card 296's pass); the real markup rendered inside
+   * `.pf-root > .pf-flow > .react-flow__node-ext` and read through
+   * getBoundingClientRect. These cards carry no zoom, so the numbers are world
+   * px as they stand:
+   *
+   *   nothing asked yet                                      102.87
+   *   waiting for the answer (en and de alike)               152.41
+   *   answered with nothing                                  152.41
+   *   answered, 2 000 chars shown of 246 112, en             222.09
+   *   an error answer at 3 598 164 ms, en                    230.59
+   *   the same in German, with its "+244 112 Zeichen" chip   238.59  <- the bound
+   *
+   * The last one is the WORST case this card can reach, not its typical one:
+   * the answer region is capped at 64px by flowmap.css and scrolls, so no
+   * answer can grow it, and the two lines that CAN wrap — the meta and the cut
+   * chip — are both at their longest German there. 250 leaves 11px over it and
+   * seats the card 14px clear of the outside frame's floor.
+   */
+  mcpserver: { w: 150, h: 250 },
   // The stations grew (card 287): sized so an ACTIVE station's content is
   // legible without opening a disclosure — the command line whole, the MCP
   // call readable. Starting values from a downstream measurement (shell fully
@@ -1289,7 +1535,8 @@ export function sceneToFlow(
   const atCmd = on("cmd")[0];
   const mcpUser = on("mcp")[0];
   const mcpInUse = mcpUser !== undefined;
-  const mcpTool = mcpUser ? detail.tool[mcpUser.agentId] : undefined;
+  // CARD 328: both halves of the one exchange the chain is showing.
+  const chain = mcpChainView(detail, mcpUser?.agentId ?? null, mcpUser?.loop.activeMcp ?? null);
   /** The rails that are hot right now, keyed agent+station. */
   const hot = new Set(occupants.map((o) => `${o.agentId}\u0000${o.station}`));
   const isHot = (agentId: string, st: Station) => hot.has(`${agentId}\u0000${st}`);
@@ -1311,8 +1558,13 @@ export function sceneToFlow(
   N("os-mcp", "os", {
     kind: "mcp",
     active: mcpInUse,
-    mcp: mcpUser?.loop.activeMcp ?? null,
-    tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
+    mcp: chain.line,
+    // CARD 328: the client card holds what was ASKED, and holds it past the
+    // answer. It used to read `detail.tool[occupant]`, which is the in-flight
+    // slot and is empty the instant `tool_result` lands — so the half of the
+    // map that shows the question went blank at the exact moment the other
+    // half could finally show the reply.
+    call: chain.call,
     by: usersOf("mcp"),
     byTag: mcpUser?.tag ?? null,
   });
@@ -1336,7 +1588,7 @@ export function sceneToFlow(
   // ----- external services ----- (edu declutter drops the whole "outside")
   if (!declutter) {
     N("netz", "ext", { kind: "netz", active: mcpInUse });
-    N("mcpserver", "ext", { kind: "mcpserver", active: mcpInUse, mcp: mcpUser?.loop.activeMcp ?? null });
+    N("mcpserver", "ext", { kind: "mcpserver", active: mcpInUse, mcp: chain.line, answer: chain.answer });
   }
 
   // ----- subagents (each its own loop) -----
@@ -1582,7 +1834,17 @@ export function sceneToFlow(
   //   <caller> → MCP-client → network stack →⟂ Netz → MCP-server
   // The first leg belongs to the CALLING agent (main's rail or the child's
   // own rail below); the chain from the client outward is shared.
-  const mcpErr = !!mcpUser?.loop.isError;
+  // CARD 328 — and the error mark is REACHABLE now, which it was not.
+  //
+  // `mcpUser?.loop.isError` alone could never be true for an ANSWERED error, by
+  // construction: `advanceLoop`'s tool_result case spreads `idleActivity()`,
+  // which sets `activeMcp: null`; MCP occupancy IS `activeMcp !== null`
+  // (stationUsers.ts); so the very event that sets `isError` also empties
+  // `on("mcp")` and left `mcpUser` undefined. The only chain that could ever go
+  // red was a DENIED permission_decision — and all three MCP calls in the whole
+  // store were allowed, so it had never once fired. The answer the card now
+  // keeps is what makes the mark reachable.
+  const mcpErr = (mcpUser?.loop.isError ?? false) || chain.isError;
   const mcpByWorker = mcpUser !== undefined && mcpUser.agentId !== "main";
   E("e-agent-osmcp", "agent", "os-mcp", "bs", "tt", isHot("main", "mcp"), {
     err: mcpErr && mcpUser?.agentId === "main",

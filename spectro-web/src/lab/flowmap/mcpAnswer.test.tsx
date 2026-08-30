@@ -196,6 +196,25 @@ describe("the join cannot pair across runs (card 328, criterion 3)", () => {
     expect(server).not.toContain("THE FIRST RUN'S ANSWER");
     expect(answerMark(server)).toBe("waiting");
   });
+
+  it("a second run that asks nothing does not inherit the first run's answer", () => {
+    // ADDED DURING THE BUILD, and the house rule is why. The case above is
+    // green in BOTH directions against the run scope: run two re-uses the same
+    // callId, so the tool_call case overwrites the record on its own and the
+    // clear never has to fire — deleting the clear left the whole file green,
+    // measured. This is the shape only the clear can carry: run two asks
+    // nothing at all, so nothing overwrites anything, and a table that outlived
+    // its run would hang run one's answer on run two's map.
+    const events = [
+      runStart("r1"),
+      mcpCall(CALL_A, "gate"),
+      mcpResult(CALL_A, MEDIAN_ANSWER),
+      runStart("r2", T + 1000),
+    ];
+    const server = serverMarkup(events);
+    expect(answerMark(server)).toBe("none");
+    expect(server).not.toContain(MEDIAN_ANSWER.slice(0, 40));
+  });
 });
 
 // ---------------------------------------------------------------------------

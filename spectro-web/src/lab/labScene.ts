@@ -150,8 +150,23 @@ function inputStr(input: unknown, key: string): string | null {
   return null;
 }
 
+/**
+ * Whether a tool name is an MCP call.
+ *
+ * ONE rule, three readers. The station switch below, the map's MCP client card
+ * and — since card 328 — the fold that keeps the server's answer each spelled
+ * `name.startsWith("mcp__")` for themselves, which is three places for the
+ * prefix to drift apart and nothing to notice.
+ *
+ * @param name the wire's tool name
+ * @return true for an MCP tool
+ */
+export function isMcpTool(name: string): boolean {
+  return name.startsWith("mcp__");
+}
+
 /** "mcp__notes__search_notes" -> "notes · search_notes". */
-function prettyMcp(name: string): string {
+export function prettyMcp(name: string): string {
   const rest = name.slice("mcp__".length);
   const sep = rest.indexOf("__");
   if (sep < 0) return rest;
@@ -195,7 +210,7 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       return { ...loop, focus: "llm", isError: false };
     case "tool_call": {
       const base = { ...loop, ...idleActivity(), activeTool: event.name, isError: false };
-      if (event.name.startsWith("mcp__")) {
+      if (isMcpTool(event.name)) {
         return { ...base, focus: "mcp", activeMcp: prettyMcp(event.name) };
       }
       // Both shell verbs, from the one set: they were two branches with
