@@ -9,28 +9,34 @@ model mid-session.</p>
 <!--SVG:03-provider-port|One port, many backends: the loop only ever sees stream(request). Anthropic, Ollama and the OpenAI-compatible family each implement it; the retry decorator wraps whichever one you picked.-->
 
 <h2 id="ch-providers-three">The backends</h2>
-<p>Five provider ids resolve to three implementations. The three OpenAI-compatible ids
-(<code>openai</code>, <code>lmstudio</code>, <code>openrouter</code>) share one wire
-protocol and differ only in which host they talk to and whether a key is attached.</p>
+<p>Eight provider ids resolve to three implementations. Six of them
+(<code>openai</code>, <code>lmstudio</code>, <code>llamacpp</code>, <code>openrouter</code>,
+<code>gemini</code>, <code>spectro-local</code>) share one wire protocol and differ in which
+host they talk to, whether a key is attached, and which reasoning fields that host
+understands.</p>
 
 <table class="tbl">
   <tr><th></th><th>anthropic</th><th>ollama</th><th>openai-compatible</th></tr>
-  <tr><td>provider id</td><td><code>anthropic</code></td><td><code>ollama</code></td><td><code>openai</code> · <code>lmstudio</code> · <code>openrouter</code></td></tr>
+  <tr><td>provider id</td><td><code>anthropic</code></td><td><code>ollama</code></td><td><code>openai</code> · <code>lmstudio</code> · <code>llamacpp</code> · <code>openrouter</code> · <code>gemini</code> · <code>spectro-local</code></td></tr>
   <tr><td>implementation</td><td><code>AnthropicProvider</code></td><td><code>OllamaProvider</code></td><td><code>OpenAiCompatProvider</code></td></tr>
   <tr><td>transport</td><td>official SDK, SSE</td><td>NDJSON over <code>POST /api/chat</code></td><td>SSE over <code>POST /v1/chat/completions</code></td></tr>
-  <tr><td>endpoint</td><td><code>api.anthropic.com</code> (fixed)</td><td><code>localhost:11434</code> (default)</td><td>openai → <code>api.openai.com</code>; lmstudio → <code>localhost:1234</code>; openrouter → <code>openrouter.ai/api</code> (a set <code>baseUrl</code> overrides the preset)</td></tr>
-  <tr><td>key</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td><code>OPENAI_API_KEY</code> (openai) · none (lmstudio) · <code>OPENROUTER_API_KEY</code> (openrouter)</td></tr>
-  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td>name one for the cloud ids; a local server just serves the model it has loaded</td></tr>
-  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td><code>reasoning_content</code> deltas split out (LM Studio, vLLM)</td></tr>
+  <tr><td>endpoint</td><td><code>api.anthropic.com</code> (fixed)</td><td><code>localhost:11434</code> (preset)</td><td>openai → <code>api.openai.com</code>; lmstudio → <code>localhost:1234</code>; llamacpp → <code>localhost:8080</code>; openrouter → <code>openrouter.ai/api</code>; gemini → the Google gateway; spectro-local → a <code>llama-server</code> spectroscope starts itself. The three local ids read their own <code>…BaseUrl</code> key first (chapter 18); for the rest a set <code>baseUrl</code> overrides the preset</td></tr>
+  <tr><td>key</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td><code>OPENAI_API_KEY</code> (openai) · <code>OPENROUTER_API_KEY</code> (openrouter) · <code>GEMINI_API_KEY</code> (gemini) · none (lmstudio, llamacpp, spectro-local)</td></tr>
+  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td>openai, lmstudio and llamacpp fall back to the placeholder <code>local-model</code>, which a local server ignores; spectro-local takes the bundled catalogue's default; gemini and openrouter have none, so name one</td></tr>
+  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td><code>reasoning_content</code> deltas split out (LM Studio, vLLM). Turning it OFF differs per id: openrouter takes <code>reasoning.enabled</code>, spectro-local takes <code>chat_template_kwargs.enable_thinking</code>, llamacpp takes both that and <code>reasoning_effort: none</code>, LM Studio takes nothing at all</td></tr>
   <tr><td>quirks</td><td>usage + parsed tool inputs exist only after the stream ends</td><td>mints its own call ids; vision fail-fast for non-vision models</td><td>assembles fragmented tool-call deltas per index</td></tr>
 </table>
 
 <p><strong>One wire, three hosts, no guessing.</strong> spectroscope used to redirect a
 keyless <code>openai</code> to a local LM Studio endpoint on your behalf. That guess is
 gone: the provider id names the endpoint, the key only authenticates. <code>openai</code>
-now always means the cloud; for a local OpenAI-compatible server (LM Studio, llama.cpp,
-vLLM) pick <code>lmstudio</code> or set an explicit <code>baseUrl</code>. Same wire either
-way.</p>
+now always means the cloud. For a local OpenAI-compatible server, pick the id that matches
+it: <code>lmstudio</code> for LM Studio, <code>llamacpp</code> for your own
+<code>llama-server</code>, and for anything else (vLLM and friends) <code>lmstudio</code>
+with an explicit <code>baseUrl</code>. Same wire either way — but not the same questions:
+a <code>llamacpp</code> endpoint is asked <code>GET /props</code> for the window the loaded
+model really has, where <code>lmstudio</code> is asked for a model listing a llama-server
+does not serve. Pointing <code>lmstudio</code> at one works on the wire and loses that.</p>
 
 <h2 id="ch-providers-start">First run — choosing a backend</h2>
 <p>Out of the box the provider is <code>anthropic</code> with <code>claude-opus-4-8</code>,
@@ -68,7 +74,8 @@ gitignored, and spectroscope reads it as the environment base at startup. One
 ANTHROPIC_API_KEY=sk-ant-...        # anthropic
 OPENAI_API_KEY=sk-...               # openai (the cloud); also the image backend's key
 OPENROUTER_API_KEY=sk-or-...        # openrouter
-# ollama and lmstudio need no key</pre>
+GEMINI_API_KEY=...                  # gemini (the LLM and the image backend share it)
+# the local ids need no key: ollama, lmstudio, llamacpp, spectro-local</pre>
 <p>The <code>.env</code> is only the <em>base</em> layer: a value in
 <code>~/.spectro/settings.json</code> (or a flag) wins over it, and
 <code>spectro doctor</code> names any <code>SPECTRO_*</code> variable that is set <em>and</em>

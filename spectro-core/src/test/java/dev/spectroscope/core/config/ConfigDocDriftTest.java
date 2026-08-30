@@ -21,6 +21,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -48,6 +49,10 @@ class ConfigDocDriftTest {
 
     private static final Path REFERENCE =
             Path.of("docs/guide-assets/parts/18-ref-config-build.html");
+
+    /** The backends chapter — the other page that lists the providers by name. */
+    private static final Path BACKENDS =
+            Path.of("docs/guide-assets/parts/12-providers-senses.html");
 
     /** What each tracked PDF was printed from, written by the rebuild ritual. */
     private static final Path PDF_STAMP = Path.of("docs/guide-assets/pdf-stamp.txt");
@@ -105,6 +110,80 @@ class ConfigDocDriftTest {
                             + " for the providers that own \"" + field + "\" it does not:"
                             + " endpointFor takes the per-provider field first, whatever"
                             + " layer either value came from. Row: " + row);
+        }
+    }
+
+    /**
+     * Card 312, round 3. Two chapters print the provider names, and a printed
+     * list is the one kind that cannot point at a constant — so the guard walks
+     * {@link SpectroConfig#knownProviders()} instead, and the pages are held to
+     * it. Measured before the fix: the config reference named six of eight
+     * (gemini and spectro-local had never been added) and the backends chapter
+     * named five, opening with "Five provider ids" over a set of eight.
+     */
+    @Test
+    void bothChaptersThatPrintTheProviderNamesPrintAllOfThem() throws IOException {
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        Path root = repoRoot();
+
+        String providerRow = rowStartingWith(Files.readString(source), "<code>provider</code>");
+        String backends = Files.readString(root.resolve(BACKENDS));
+        int idRow = backends.indexOf("<tr><td>provider id</td>");
+        assertTrue(idRow > 0, "the backends chapter has lost its \"provider id\" row");
+        String backendsRow = backends.substring(idRow, backends.indexOf("</tr>", idRow));
+
+        for (String provider : SpectroConfig.knownProviders()) {
+            assertTrue(providerRow.contains("<code>" + provider + "</code>"),
+                    "the config reference's provider row does not list \"" + provider
+                            + "\", so the one chapter a reader consults before setting"
+                            + " the key says it is not a valid value. Row: " + providerRow);
+            assertTrue(backendsRow.contains("<code>" + provider + "</code>"),
+                    "the backends chapter's \"provider id\" row does not name \""
+                            + provider + "\" — the table that claims to be the map of"
+                            + " what spectroscope talks to. Row: " + backendsRow);
+        }
+    }
+
+    /**
+     * The {@code model} row promises which default a provider falls back to, and
+     * it said "if provider is ollama/openai … qwen3 / local-model" while
+     * {@link SpectroConfig#defaultModelFor} mapped lmstudio and llamacpp to
+     * local-model too and gave two providers no default at all. Both halves are
+     * derived: every provider whose default is not the record's own has to be
+     * named, and every model id the row quotes has to be one the method really
+     * returns — so a row cannot be completed with an invented name either.
+     */
+    @Test
+    void theModelRowNamesEveryProviderWhoseDefaultIsNotTheRecordDefault() throws IOException {
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String row = rowStartingWith(Files.readString(source), "<code>model</code>");
+        String description = row.substring(row.lastIndexOf("<td>"));
+
+        String recordDefault = SpectroConfig.defaultModelFor("anthropic");
+        assertNotNull(recordDefault, "anthropic lost its default — this test's baseline is gone");
+        List<String> quotable = new ArrayList<>(SpectroConfig.knownProviders());
+        for (String provider : SpectroConfig.knownProviders()) {
+            String fallback = SpectroConfig.defaultModelFor(provider);
+            if (fallback != null) {
+                quotable.add(fallback);
+            }
+            if (fallback != null && fallback.equals(recordDefault)) {
+                continue; // it IS the column's own default; nothing to say
+            }
+            assertTrue(description.contains("<code>" + provider + "</code>"),
+                    "the model row never names \"" + provider + "\", whose default is "
+                            + (fallback == null ? "nothing at all" : fallback)
+                            + " and not the " + recordDefault + " in the column beside it."
+                            + " Description: " + description);
+        }
+        for (Matcher quoted = Pattern.compile("<code>([^<]+)</code>").matcher(description);
+                quoted.find(); ) {
+            assertTrue(quotable.contains(quoted.group(1)),
+                    "the model row quotes \"" + quoted.group(1) + "\", which is neither a"
+                            + " provider nor anything defaultModelFor returns — a row"
+                            + " completed from memory is the defect this test exists for");
         }
     }
 

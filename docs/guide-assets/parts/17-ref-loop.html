@@ -99,11 +99,13 @@ cheap, and introspection shows you both at work.</p>
       of the window the backend says it loaded (LM Studio answers
       <code>loaded_instances[].config.context_length</code> on its own
       <code>/api/v1/models</code>, ollama answers <code>context_length</code> on
-      <code>/api/ps</code>), asked once per run. The last quarter is kept back
+      <code>/api/ps</code>, and a llama.cpp server — <code>llamacpp</code> or the
+      built-in runtime, which is one — answers <code>n_ctx</code> on
+      <code>GET /props</code>), asked once per run. The last quarter is kept back
       because the very next call after the trip is the summarizer, which re-sends
       the history <em>and</em> asks for a completion on top. A backend that states
-      no window — anthropic, any plain OpenAI-compatible server — keeps the old
-      100&thinsp;000, and a server that answers "no such endpoint" is not asked
+      no window — anthropic, any OpenAI-compatible server of unknown make — keeps
+      the old 100&thinsp;000, and a server that answers "no such endpoint" is not asked
       again for the rest of the session. An explicit setting always wins — and
       costs no round trip at all, because there is nothing the backend could say
       that would change it. Children inherit that setting, so one number governs
