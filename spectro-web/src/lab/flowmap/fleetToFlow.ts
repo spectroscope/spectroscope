@@ -25,6 +25,7 @@ import {
   EXPANDED_CARD,
   lifecycleLabel,
   mcpChainView,
+  netCardView,
   STATE_COLOR,
   type AgentStream,
   type Detail,
@@ -199,6 +200,8 @@ export function fleetToFlow(
   // this line the answer would be visible on one surface and missing on the
   // other, which is half a feature shipped.
   const chain = mcpChainView(detail, mcpUser?.id ?? null, mcpUser?.activeMcp ?? null);
+  // CARD 329, same reason: the fleet room draws the same boundary nodes.
+  const netView = netCardView(detail);
   const osY = osTop + 80;
   const OS_STATIONS: { id: string; x: number; data: Record<string, unknown> }[] = [
     {
@@ -221,7 +224,11 @@ export function fleetToFlow(
       x: MAC_PAD + 438,
       data: { kind: "mcp", active: mcpInUse, mcp: chain.line, call: chain.call },
     },
-    { id: "os-net", x: MAC_PAD + 654, data: { kind: "net", active: mcpInUse } },
+    {
+      id: "os-net",
+      x: MAC_PAD + 654,
+      data: { kind: "net", active: mcpInUse || netView.crossed },
+    },
   ];
   for (const station of OS_STATIONS) {
     nodes.push({
@@ -257,7 +264,7 @@ export function fleetToFlow(
     id: "netz",
     type: "ext",
     position: { x: outsideX + 40, y: macH - 240 },
-    data: { kind: "netz", active: mcpInUse },
+    data: { kind: "netz", active: mcpInUse || netView.crossed, net: netView },
     zIndex: 10,
   });
   nodes.push({

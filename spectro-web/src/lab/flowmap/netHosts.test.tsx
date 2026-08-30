@@ -282,6 +282,28 @@ describe("a redacted address stays redacted (card 329, criterion 7)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ADDED DURING THE BUILD. The fold clears what a run reached when the next run
+// starts — a `reached` list that outlived its run would hang run one's hosts on
+// run two's map, which is the same trap card 328's callId table has and the
+// same fix. Nothing in the shipped file could have gone red for it.
+// ---------------------------------------------------------------------------
+describe("what the LAST run reached is not what this one reached (card 329)", () => {
+  it("a second run starts with an empty list", () => {
+    const second: RunEvent = {
+      type: "run_start",
+      runId: "r2",
+      agentId: "main",
+      prompt: "go again",
+      provider: "anthropic",
+      ts: T + 1000,
+    } as RunEvent;
+    const m = netCard([runStart(), exchange("https://api.anthropic.com/v1/messages"), second]);
+    expect(hostsIn(m)).toEqual([]);
+    expect(m).toContain('data-reached="none"');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 8. The node lights for what crossed the boundary.
 //    Today `active: mcpInUse` is the whole condition, so every one of the 137
 //    measured exchanges leaves it dark.

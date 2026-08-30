@@ -1236,6 +1236,67 @@
   color: var(--text-faint);
 }
 
+/* ---- CARD 329: the Net card says what LEFT this machine ------------------
+ * One row per host the run actually reached, in the order it reached them, and
+ * a counted remainder rather than a silent cut. Measured: 34 of the 36 sessions
+ * that reached anything reached exactly one host and 2 reached two, so this is
+ * a short list by nature and the rows can afford to be legible.
+ * ------------------------------------------------------------------------ */
+.pf-net {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+.pf-net__row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  border-left: 2px solid var(--border-strong);
+  padding-left: 6px;
+}
+/* Redacted rides the LINE, like every other state on this map: the row is
+ * still a row, and the words stay on a legible token. */
+.pf-net__row--redacted {
+  border-left-color: var(--warn);
+  color: var(--text-dim);
+}
+/* ONE line per host, with the whole address on the row's title. A host can be
+ * 47 characters on a 150px card and four wrapped rows put the card through the
+ * floor of the frame it stands in; the title is the same device the station
+ * chips already use to keep a clipped name recoverable. */
+.pf-net__host {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-net__hits {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 9.5px;
+}
+.pf-net__more {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  padding-left: 8px;
+}
+/* The empty state is the COMMON one — 36 of 783 sessions reached anything at
+ * all — so it is the card's load-bearing sentence and does not sit on
+ * --text-faint, which measures 2.06:1 (spectroscope), 2.12 (paper) and 3.73
+ * (graphite) against the card. --text-dim is the token that reads in all four. */
+.pf-net__none {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
 /* ---- Subagent node ------------------------------------------------------ */
 .pf-sub {
   width: 216px;

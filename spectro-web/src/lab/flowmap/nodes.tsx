@@ -12,7 +12,7 @@ import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
 import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
-import type { AgentStream, CtxPart, McpAnswerView } from "./sceneToFlow";
+import type { AgentStream, CtxPart, McpAnswerView, NetCardView } from "./sceneToFlow";
 import type { Focus, GateState, SubagentInfo } from "../labScene";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
 import { t } from "../../i18n/i18n";
@@ -742,14 +742,50 @@ export function ExtNode({ data }: NodeProps) {
     mcp?: string | null;
     /** CARD 328: the answering half of the exchange the MCP client is asking. */
     answer?: McpAnswerView | null;
+    /** CARD 329: what this run put across the network boundary. */
+    net?: NetCardView | null;
   };
   const lang = useLang();
   if (d.kind === "netz") {
+    const net = d.net ?? { hosts: [], more: 0, redacted: false, crossed: false };
     return (
-      <div className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}>
+      <div
+        className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}
+        // The mark that makes the empty state checkable — and the empty state
+        // is the COMMON one: 36 of 783 sessions reached anything at all.
+        data-reached={net.crossed ? "reached" : "none"}
+      >
         <div className="pf-ext__head">{t(lang, "map.node.netz")}</div>
         <Router active={d.active} />
-        <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>Routing · Internet</div>
+        {net.crossed ? (
+          <div className="pf-net">
+            {net.redacted && (
+              // Never a host. The record says an address was there and
+              // deliberately does not say which — a different fact from both
+              // "reached this host" and "reached nothing".
+              <div className="pf-net__row pf-net__row--redacted" data-host-state="redacted">
+                {t(lang, "map.net.redacted")}
+              </div>
+            )}
+            {net.hosts.map((h) => (
+              // The host as recorded, NOT filed under a category. 58 of the 137
+              // exchanges on this machine went to a tailnet address that is
+              // neither loopback nor the public internet, and which shape ships
+              // is an owner call — so the card prints what it has.
+              <div key={h.host} className="pf-net__row" data-host={h.host} title={h.host}>
+                <span className="pf-net__host">{h.host}</span>
+                {h.hits > 1 && <span className="pf-net__hits">{t(lang, "map.net.hits", { n: h.hits })}</span>}
+              </div>
+            ))}
+            {net.more > 0 && (
+              <div className="pf-net__more" data-hosts-more={String(net.more)}>
+                {t(lang, "map.more", { n: net.more })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="pf-net__none">{t(lang, "map.net.nothing")}</div>
+        )}
         <Handles />
       </div>
     );

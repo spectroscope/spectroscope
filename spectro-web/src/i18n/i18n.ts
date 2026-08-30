@@ -1471,6 +1471,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   // something, so the name goes through the dict like the rest of it.
   "map.node.mcpServer": { de: "MCP-Server", en: "MCP-Server" },
   "map.extServer": { de: "externer Server", en: "external server" },
+  // CARD 329 — the Net card says what LEFT this machine, and nothing else.
+  // "Routing · Internet" is gone: it was printed over every run, including the
+  // 4.6 % that reached anything and the 58 of 137 exchanges that went to a
+  // tailnet address, which is neither loopback nor the public internet.
+  "map.net.nothing": { de: "nichts hat diesen Rechner verlassen", en: "nothing left this machine" },
+  "map.net.redacted": { de: "Adresse geschwärzt", en: "address redacted" },
+  "map.net.hits": { de: "{n}x", en: "{n}x" },
   // CARD 328 — the four readings of the MCP-Server card. "waiting" and
   // "answered with nothing" are two different facts and never share a word:
   // one call in 783 sessions was still open after an hour, and not one of

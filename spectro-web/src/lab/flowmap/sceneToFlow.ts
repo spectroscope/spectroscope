@@ -12,6 +12,7 @@ import type { RunEvent } from "../../events";
 import type { AgentDirectory } from "../agentDirectory";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
+import { outboundHop } from "./addresses";
 import { stationOccupants, type Station, type StationOccupant } from "./stationUsers";
 import {
   SEAT_ROWS_COMPACT,
@@ -156,6 +157,47 @@ export interface McpChainView {
  * @param liveLine the occupant's own `activeMcp` line, or null
  * @return what the two cards render
  */
+/**
+ * How many hosts the Net card draws before it starts counting.
+ *
+ * Measured over 783 session files: 36 reached anything at all, and of those 34
+ * reached exactly ONE host and 2 reached two — never three. Four rows is twice
+ * the worst case the corpus has ever produced; a design for twelve rows would
+ * be a design for data that does not exist. Nothing is dropped silently: what
+ * does not fit is counted.
+ */
+export const NET_HOST_ROWS = 4;
+
+/** What the Net card was handed about this run's outbound traffic. */
+export interface NetCardView {
+  /** The hosts it draws, first seen first. */
+  hosts: { host: string; hits: number }[];
+  /** How many more there are below the row cap. */
+  more: number;
+  /** Whether any recorded address was a redaction marker. */
+  redacted: boolean;
+  /** Whether anything crossed the boundary at all. */
+  crossed: boolean;
+}
+
+/**
+ * CARD 329 — the Net card's whole content, derived from the run.
+ *
+ * A shared derivation for the same reason as {@link mcpChainView}: both the
+ * single-run map and the fleet machine room draw this node.
+ *
+ * @param detail the fold
+ * @return what the card renders
+ */
+export function netCardView(detail: Detail): NetCardView {
+  return {
+    hosts: detail.reached.slice(0, NET_HOST_ROWS),
+    more: Math.max(0, detail.reached.length - NET_HOST_ROWS),
+    redacted: detail.redactedHops > 0,
+    crossed: detail.reached.length > 0 || detail.redactedHops > 0,
+  };
+}
+
 export function mcpChainView(
   detail: Detail,
   occupantId: string | null,
@@ -266,6 +308,25 @@ export interface Detail {
   /** The callId of the last MCP call ANY agent made in this run (card 328).
    *  What the two cards fall back to once nobody is standing on the station. */
   lastMcp: string | null;
+  /**
+   * CARD 329 — every host this run REACHED, first seen first, with how often.
+   *
+   * Derived from the two events that carry an outbound address and nothing
+   * else: `llm_exchange.url` and `browser_action.url`. A loopback address never
+   * enters — 45 of the 137 exchanges in this machine's whole history are
+   * loopback, and drawing a backend that never left the machine as outbound is
+   * the exact lie the network node exists to prevent.
+   *
+   * NOT classified. 58 of those 137 went to 100.90.57.62:1234, a Tailscale
+   * address in 100.64.0.0/10 — the largest single group, and neither loopback
+   * nor the public internet. Which shape ships (a third category, or none) is
+   * an owner call, so the fold carries the host and the card prints it.
+   */
+  reached: { host: string; hits: number }[];
+  /** How many recorded addresses were a redaction marker (card 329). The run
+   *  reached SOMETHING and the record deliberately does not say where; that is
+   *  a fact of its own and never a host. */
+  redactedHops: number;
 }
 
 /** How many pictures one card shows. The rest are in the chat and the trace. */
@@ -302,6 +363,28 @@ function asAttachment(
   };
 }
 
+/**
+ * Fold one recorded address onto the run's outbound list.
+ *
+ * The list is DERIVED, never typed: whatever host the events carry appears,
+ * and a host nothing recorded cannot. First-seen order, so the reading matches
+ * the run rather than an alphabet.
+ *
+ * @param d the detail being folded
+ * @param url the recorded address, in whatever shape it arrived
+ */
+function reach(d: Detail, url: unknown): void {
+  const hop = outboundHop(url);
+  if (hop.kind === "redacted") {
+    d.redactedHops += 1;
+    return;
+  }
+  if (hop.kind !== "host") return;
+  const seen = d.reached.find((r) => r.host === hop.host);
+  if (seen === undefined) d.reached.push({ host: hop.host, hits: 1 });
+  else seen.hits += 1;
+}
+
 export function deriveDetail(applied: RunEvent[]): Detail {
   const d: Detail = {
     prompt: "",
@@ -319,6 +402,8 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     answers: {},
     lastAsk: {},
     lastMcp: null,
+    reached: [],
+    redactedHops: 0,
   };
   let rootSeen = false;
   /** The run the MCP table belongs to (card 328). A `callId` is unique inside
@@ -355,6 +440,10 @@ export function deriveDetail(applied: RunEvent[]): Detail {
           d.answers = {};
           d.lastAsk = {};
           d.lastMcp = null;
+          // CARD 329, the same scope for the same reason: what the PREVIOUS
+          // run reached is not what this one reached.
+          d.reached = [];
+          d.redactedHops = 0;
         }
         // The FIRST run_start names the root. Later ones are children.
         if (!rootSeen) {
@@ -389,6 +478,19 @@ export function deriveDetail(applied: RunEvent[]): Detail {
         break;
       case "text_delta":
         d.answer[e.agentId] = tail(d.answer[e.agentId] ?? "", e.text);
+        break;
+      // CARD 329 — the two events that name an address, folded the same way.
+      // The map read NEITHER of them before this: `grep -rn
+      // "llm_exchange\|browser_action" src/lab/` returned zero matches, tests
+      // included, so the Net node drew a router glyph and measured nothing.
+      case "llm_exchange":
+        reach(d, e.url);
+        break;
+      case "browser_action":
+        // `url` is ABSENT on 3 of the 4 real browser_action events on this
+        // machine — a failed navigate records no page — and `outboundHop`
+        // reads that as `none`, which is what it is.
+        reach(d, (e as { url?: unknown }).url);
         break;
       case "tool_call":
       case "permission_request":
@@ -598,6 +700,30 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
    * seats the card 14px clear of the outside frame's floor.
    */
   mcpserver: { w: 150, h: 250 },
+  /*
+   * CARD 329 — the Net card's own seat, for the same reason as the one above:
+   * `ext` sizes BOTH, so growing it would silently resize the MCP-Server card.
+   * The width stays ext's 150; NETZ_X and EXT_ROW_W derive from `ext.w` and
+   * that arithmetic is card 319's.
+   *
+   * MEASURED at the card's WORST case in the same browser pass as the entry
+   * above (Chrome, devicePixelRatio 2, both variable fonts document.fonts.
+   * load-ed before the read, real markup inside `.pf-root > .pf-flow`, no zoom
+   * on this card):
+   *
+   *   nothing left this machine (en and de alike)          114.59
+   *   one host, the ordinary case                          102.09
+   *   four hosts + a redaction row + a "+8 more" remainder  193.81  <- the bound
+   *
+   * The last one is the WORST case, not the typical one, and it is well past
+   * what the corpus can produce: 34 of the 36 sessions that reached anything
+   * reached exactly ONE host, 2 reached two, never three, and zero redaction
+   * markers exist anywhere in the store. It is also the reason a host row is
+   * one line with the address on its title — a 47-character host wrapped over
+   * four rows measured 271.31 and put the card through the floor of the frame
+   * it stands in. 210 leaves 16px over the bound.
+   */
+  netz: { w: 150, h: 210 },
   // The stations grew (card 287): sized so an ACTIVE station's content is
   // legible without opening a disclosure — the command line whole, the MCP
   // call readable. Starting values from a downstream measurement (shell fully
@@ -1537,6 +1663,12 @@ export function sceneToFlow(
   const mcpInUse = mcpUser !== undefined;
   // CARD 328: both halves of the one exchange the chain is showing.
   const chain = mcpChainView(detail, mcpUser?.agentId ?? null, mcpUser?.loop.activeMcp ?? null);
+  // CARD 329: what this run actually put across the network boundary. The two
+  // boundary nodes used to light for `mcpInUse` and nothing else, so every one
+  // of the 137 llm_exchanges in this machine's history left them dark — the
+  // node whose job is to say what left the machine was dark for almost
+  // everything that left it.
+  const netView = netCardView(detail);
   /** The rails that are hot right now, keyed agent+station. */
   const hot = new Set(occupants.map((o) => `${o.agentId}\u0000${o.station}`));
   const isHot = (agentId: string, st: Station) => hot.has(`${agentId}\u0000${st}`);
@@ -1568,7 +1700,11 @@ export function sceneToFlow(
     by: usersOf("mcp"),
     byTag: mcpUser?.tag ?? null,
   });
-  N("os-net", "os", { kind: "net", active: mcpInUse, byTag: mcpUser?.tag ?? null });
+  N("os-net", "os", {
+    kind: "net",
+    active: mcpInUse || netView.crossed,
+    byTag: mcpUser?.tag ?? null,
+  });
 
   // ----- LLM ----- (the SHARED model — it works for main and every subagent,
   // so it animates and streams for whichever agent is at it right now)
@@ -1587,7 +1723,7 @@ export function sceneToFlow(
 
   // ----- external services ----- (edu declutter drops the whole "outside")
   if (!declutter) {
-    N("netz", "ext", { kind: "netz", active: mcpInUse });
+    N("netz", "ext", { kind: "netz", active: mcpInUse || netView.crossed, net: netView });
     N("mcpserver", "ext", { kind: "mcpserver", active: mcpInUse, mcp: chain.line, answer: chain.answer });
   }
 
