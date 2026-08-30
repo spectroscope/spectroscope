@@ -1493,9 +1493,11 @@ const workflowPhases: Dsl = {
  * both locales; every expectation is derived from the phases as DECLARED; and
  * `writes the words it shows instead of assembling them` reads this file back
  * to keep one `${…}` from collapsing them into one side again. Bitten in both
- * directions, separately: a ninth worker added to the array with the ask left
- * alone turns four cases red, and an ask edited with the array left alone
- * turns two red.
+ * directions, separately and measured: a ninth check added to this array with
+ * the ask left alone turns FIVE cases red (both halves of the name, the copy's
+ * counts, the caption under the wide box, and the ask, which stops naming the
+ * ninth); dropping one check's name from the ask with the array left alone
+ * turns exactly ONE red, the ask's own, and so does reordering two of them.
  *
  * NO VERSION IS NAMED ANYWHERE. The first cut cut "0.11.0" through the ask, a
  * file the run read, a path it wrote and four of its lines, and would have
