@@ -2,7 +2,7 @@
 // Each is a Dsl the compiler turns into a deterministic RunEvent stream —
 // scripted demo runs that need no server, no key and no Ollama.
 
-import type { Dsl } from "./dsl";
+import type { Dsl, DslPhase, Localized, Step } from "./dsl";
 
 const buildplan: Dsl = {
   id: "buildplan",
@@ -1461,6 +1461,406 @@ const workflowPhases: Dsl = {
   ],
 };
 
+/* ── Card 314: the workflow whose SHAPE IS THE FAN-OUT ────────────────────
+ *
+ * `workflowPhases` above is a five-stage pipeline that happens to contain two
+ * fan-outs. This one is the other picture: a small scope, ONE wide phase, a
+ * sign-off. A release-readiness pass, where the checks in `releaseChecks` run
+ * at the same time and one agent turns what comes back into a single answer.
+ *
+ * WHY EIGHT, and not a number that reads bigger. The Lab's worker grid seats
+ * `SEATS_MAX_EXPANDED` = 12 workers expanded and `SEATS_MAX_COMPACT` = 6
+ * compact; past the ceiling the map stops drawing and the chip confesses the
+ * gap. Eight is the width already exercised at both ends of that range: it is
+ * card 287's shipped `fanout-eight`, and `FlowMap`'s fit zoom was dropped to
+ * 0.1 for "an expanded eight-worker map". It leaves four seats spare under the
+ * ceiling, and it makes a phase box `phaseHeight(8)` = 152px tall against the
+ * 107px of card 302's fan-outs of five (both measured, not derived here).
+ * `fanoutWorkflow.test.tsx` pins the width against `SEATS_MAX_EXPANDED` rather
+ * than against the literal 8, so raising the ceiling frees the width and
+ * lowering it below the declaration fails the case, bitten by setting the
+ * ceiling to 4.
+ *
+ * THE COPY IS WRITTEN, NOT COMPUTED, and that is a correction. The first cut
+ * assembled the name, both captions, the ask and every line the run says out
+ * loud out of THIS array, which felt drift-proof and was the opposite: the
+ * cases then derived their expectation from the same array, so "asks for
+ * exactly the checks the fan-out runs" could only prove that a join of a list
+ * contains that list. It was measured. Renaming one worker's subject to "the
+ * release notes", which no agent here checks, left all seventeen cases green.
+ *
+ * So the two sides are now genuinely two. Everything shown is typed out, in
+ * both locales; every expectation is derived from the phases as DECLARED; and
+ * `writes the words it shows instead of assembling them` reads this file back
+ * to keep one `${…}` from collapsing them into one side again. Bitten in both
+ * directions, separately and measured: a ninth check added to this array with
+ * the ask left alone turns FIVE cases red (both halves of the name, the copy's
+ * counts, the caption under the wide box, and the ask, which stops naming the
+ * ninth); dropping one check's name from the ask with the array left alone
+ * turns exactly ONE red, the ask's own, and so does reordering two of them.
+ * A third direction stayed open through two rounds: the ask could GROW a
+ * demand nobody runs. Round two bounded the LIST — a colon, the run, a full
+ * stop — after ", and the release notes." tacked onto the joined eight left
+ * twenty cases green. That bound the list and not the ask: "Also translate
+ * the release notes." as its OWN sentence walked past it, and past the count
+ * check, which finds no "<number> checks" in it (EXIT=0, 21 passed). The ask
+ * is now cut at its full stops and pinned at THREE sentences, with the middle
+ * one ENDING at the run.
+ *
+ * What that still does not hold, and it is THREE open positions rather than
+ * the one this note used to name: the bound covers the sentence COUNT and the
+ * list's RIGHT EDGE, and no prose at all. Prose sits in three places here —
+ * the opening sentence, the head of the middle sentence in front of its colon,
+ * and the closing sentence — and a demand for work no worker here does can
+ * ride in any of them and still be three sentences whose list ends at the run.
+ * Naming only the closing one read as if the other two were held, which is the
+ * very defect this block keeps recording one level down. That is why that case
+ * is named for its three sentences and not for "exactly".
+ *
+ * NO VERSION IS NAMED ANYWHERE. The first cut cut "0.11.0" through the ask, a
+ * file the run read, a path it wrote and lines the run says out loud, and
+ * would have read as stale the day that version shipped. The run reaches for
+ * the last tag instead, which is true for as long as the demo exists.
+ *
+ * THE SCAN THAT KEEPS IT OUT WAS BLIND IN A NEW PLACE EACH ROUND, and every
+ * one of them looked fine, so they are written down.
+ *   1. It walked the top level and the `spawn` steps for spoken lines and,
+ *      for a fan-out worker, collected only the task, the commands, the paths
+ *      and the results: sixteen lines per locale — every worker's status band
+ *      and every worker's answer — were never read. With "all six say
+ *      0.11.0." in `check-pins`, twenty cases stayed green.
+ *   2. Round two enumerated the whole `Step` union BY HAND to make the word
+ *      EVERYTHING true, and missed `context`, whose `parts[].label` is drawn
+ *      as `.context-part-label`. With "the 0.11.0 baseline" planted as one,
+ *      twenty-one cases stayed green. The enumeration is no longer a promise:
+ *      one walker serves every caller and its last branch assigns to `never`,
+ *      so dropping an arm stops `tsc -b` rather than the eye of a reviewer.
+ *   3. Its regex kept a hyphen in the lookbehind to spare `Apache-2.0`, going
+ *      blind to `spectro-0.11.0`; round two dropped the hyphen and kept `\w`,
+ *      which still carries the UNDERSCORE, so `notes_fetch_0.11.0` stayed
+ *      invisible one character narrower. The lookbehind now names digits and
+ *      the dot and nothing else, because its whole job is "do not start in
+ *      the middle of a longer number"; the licence id is excluded by name,
+ *      and dropping either exclusion turns a real line red, so neither is
+ *      dead code.
+ *   4. The `never` from round two holds the ARMS of `Step` and nothing about
+ *      the FIELDS inside one, and three rounds of prose read it as if it held
+ *      both. A field added to an existing arm compiles silently. Four kinds of
+ *      shown text were never walked: an mcp or tool step's `input`, an image
+ *      step's provider, model and asset, and the `label` of a spawn or a
+ *      fan-out — which compile.ts turns into a `tool_call` name on screen and
+ *      which this scenario ships THREE of. Measured one at a time before the
+ *      fix: `label: "scope 0.11.0"`, `label: "check v0.10"` and
+ *      `label: "sign off 0.11.0"` each gave EXIT=0 with 21 passed. Round four
+ *      took the narrow branch on purpose: the labels are walked, because they
+ *      are cheap and shipped; the `input` objects and the image fields are
+ *      not, because they are empty here and carry no localized line — and the
+ *      walker's own comment names them instead of implying coverage.
+ *
+ * NO INVENTED VERBS OF OURS EITHER. The checks run as plain scripts of the
+ * release repo the story is set in, which nobody reads as our tooling; the one
+ * command that IS ours, `spectro doctor`, is a verb the CLI really declares
+ * and the test checks it against the CLI's source. An earlier cut typed
+ * `./gradlew licenseReport`, `./gradlew apiDiff` and `./gradlew jmh`, none of
+ * which this build has.
+ */
+
+/** One agent inside a fan-out step, named so the array below can be ANNOTATED
+ *  rather than inferred. Inference widened `gate: "allow"` to `string` here
+ *  and `npx tsc -b` was the only thing that said so — vitest erases types, so
+ *  all thirteen cases were green over code that did not compile. */
+type FanoutAgent = {
+  id: string;
+  /** The noun the ASK has to use for this check. The ask does NOT read this;
+   *  it is written out, and the two are held against each other, so an edit to
+   *  either side turns the ask's case red.
+   *
+   *  WHAT THAT DOES NOT HOLD, said plainly because it was once claimed the
+   *  other way: this field is test-only data, so the step from an id to a noun
+   *  was pure assertion. `check-bench` was rewritten to translate the release
+   *  notes — another task, another command, another answer — with its subject
+   *  left at "the benchmarks", and all twenty cases stayed green. The one
+   *  thread back to the work is `gives each check a noun the worker's own
+   *  lines carry`: the head word of the noun has to turn up in something this
+   *  worker renders. That holds the noun to the worker's WORDS. Nothing here
+   *  holds those words to the work they describe. */
+  subject: { en: string; de: string };
+  task: Localized;
+  steps: Step[];
+};
+
+/** The wide phase's workers, authored once. The phase's `agents` list and the
+ *  fan-out that spawns them both read this array, so the declaration and the
+ *  stream cannot disagree about who ran. */
+const releaseChecks: FanoutAgent[] = [
+  {
+    id: "check-changelog",
+    subject: { en: "the changelog", de: "das Changelog" },
+    task: { en: "reconcile the changelog", de: "Changelog abgleichen" },
+    steps: [
+      { status: { en: "reading the merged commits", de: "lese die gemergten Commits" } },
+      { run: "git log --oneline $(git describe --tags --abbrev=0)..HEAD", result: "31 commits" },
+      { read: "CHANGELOG.md", result: "## Unreleased\n- fleet message verb\n- deep links\n…" },
+      { usage: { in: 26_000, out: 900 } },
+      {
+        say: {
+          en: "31 commits, 28 of them in the changelog. Three merges are missing an entry.",
+          de: "31 Commits, 28 davon im Changelog. Bei drei Merges fehlt der Eintrag.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-pins",
+    subject: { en: "the version pins", de: "die Versions-Pins" },
+    task: { en: "verify the version pins", de: "Versions-Pins prüfen" },
+    steps: [
+      {
+        status: {
+          en: "reading the files that carry the version",
+          de: "lese die Dateien, die die Version tragen",
+        },
+      },
+      { run: "scripts/version-pins.sh --check", result: "6 files carry the version, 6 agree" },
+      { usage: { in: 18_000, out: 700 } },
+      {
+        say: {
+          en: "Six files carry the version, and all six agree with the tag.",
+          de: "Sechs Dateien tragen die Version, und alle sechs stimmen mit dem Tag überein.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-licences",
+    subject: { en: "the dependency licences", de: "die Lizenzen" },
+    task: { en: "review dependency licences", de: "Lizenzen sichten" },
+    steps: [
+      { status: { en: "resolving the dependency tree", de: "löse den Abhängigkeitsbaum auf" } },
+      { run: "scripts/license-report.sh", result: "214 dependencies, 9 licences" },
+      { usage: { in: 22_000, out: 800 } },
+      {
+        say: {
+          en: "Two dependencies are new since the last tag, both Apache-2.0, so nothing copyleft came in.",
+          de: "Zwei Abhängigkeiten sind seit dem letzten Tag neu, beide Apache-2.0, also ist nichts Copyleft dazugekommen.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-api",
+    subject: { en: "the public API", de: "die öffentliche API" },
+    task: { en: "diff the public API", de: "öffentliche API vergleichen" },
+    steps: [
+      { status: { en: "comparing against the last tag", de: "vergleiche mit dem letzten Tag" } },
+      { run: "scripts/api-diff.sh --against-last-tag", result: "+14 added, 0 removed, 0 changed" },
+      { usage: { in: 31_000, out: 1_100 } },
+      {
+        say: {
+          en: "Fourteen additions and nothing removed or changed, so the release stays source compatible.",
+          de: "Vierzehn Ergänzungen und nichts entfernt oder geändert, das Release bleibt also quellkompatibel.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-migrations",
+    subject: { en: "the config migration", de: "die Konfigurations-Migration" },
+    task: { en: "migrate config, then back", de: "Konfig vor und zurück fahren" },
+    steps: [
+      {
+        status: {
+          en: "migrating a settings file from the last release",
+          de: "migriere eine Settings-Datei des letzten Releases",
+        },
+      },
+      {
+        run: "scripts/migrate-settings.sh --from-previous --dry-run",
+        result: "3 keys moved, 1 renamed",
+      },
+      {
+        run: "scripts/migrate-settings.sh --rollback --dry-run",
+        result: "restored, checksum matches",
+      },
+      { usage: { in: 24_000, out: 900 } },
+      {
+        say: {
+          en: "The migration ran forward and back without complaint, and the rolled-back file matches the original byte for byte.",
+          de: "Die Migration lief vor und zurück ohne Murren, und die zurückgerollte Datei stimmt Byte für Byte mit dem Original überein.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-docs",
+    subject: { en: "the docs commands", de: "die Doku-Befehle" },
+    task: { en: "check the docs commands", de: "Doku-Befehle prüfen" },
+    steps: [
+      { status: { en: "extracting the shell blocks", de: "ziehe die Shell-Blöcke heraus" } },
+      { run: "scripts/check-docs-commands.sh docs/", result: "41 commands, 40 ok, 1 unknown flag" },
+      { usage: { in: 19_000, out: 700 } },
+      {
+        say: {
+          en: "One command in the install guide still passes --port, which moved to the config file.",
+          de: "Ein Befehl im Installations-Guide übergibt noch --port, das in die Konfigurationsdatei gewandert ist.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-install",
+    subject: { en: "a clean install", de: "eine saubere Installation" },
+    task: { en: "smoke-test a clean install", de: "saubere Installation testen" },
+    steps: [
+      { status: { en: "installing into an empty prefix", de: "installiere in ein leeres Prefix" } },
+      { run: "scripts/install-smoke.sh --clean", gate: "allow", result: "installed in 41s" },
+      { run: "spectro doctor", result: "12 checks, all green" },
+      { usage: { in: 15_000, out: 600 } },
+      {
+        say: {
+          en: "A machine with nothing installed gets to a CLI that passes doctor in 41 seconds.",
+          de: "Eine Maschine ohne Vorinstallation kommt in 41 Sekunden zu einer CLI, die doctor besteht.",
+        },
+      },
+    ],
+  },
+  {
+    id: "check-bench",
+    subject: { en: "the benchmarks", de: "die Benchmarks" },
+    task: { en: "benchmark against the tag", de: "gegen den Tag benchen" },
+    steps: [
+      { status: { en: "running the benchmark suite", de: "lasse die Benchmark-Suite laufen" } },
+      {
+        run: "scripts/bench.sh --against-last-tag",
+        result: "12 benchmarks, median delta -2.1%",
+      },
+      { usage: { in: 28_000, out: 1_000 } },
+      {
+        say: {
+          en: "Twelve benchmarks, all within 5% of the last tag. Event replay is 2% faster.",
+          de: "Zwölf Benchmarks, alle innerhalb von 5% des letzten Tags. Event-Replay ist 2% schneller.",
+        },
+      },
+    ],
+  },
+];
+
+/** The noun the ask has to use for each declared check, keyed by the id the
+ *  phase declares. Exported for `fanoutWorkflow.test.tsx`, which walks the
+ *  phase's agent ids through this table, holds the result against the ask as
+ *  WRITTEN, and holds each noun's head word against the lines that worker puts
+ *  on screen. Nothing user-visible reads it. */
+export const RELEASE_CHECK_SUBJECTS: Record<string, { en: string; de: string }> = Object.fromEntries(
+  releaseChecks.map((c) => [c.id, c.subject]),
+);
+
+/** The three declared columns, as ids. This is the side every case derives its
+ *  expectation from: the counts in the name and in the copy, the rows of each
+ *  box, and the list the ask names are all checked against it. */
+const fanoutWorkflowRanks: string[][] = [["scope-tag"], releaseChecks.map((c) => c.id), ["sign-off"]];
+
+/** `detail` is not a comment: `WorkflowLens` draws it as `.wf-rankdetail` in
+ *  the caption band, under the box whose rows the number counts. */
+const fanoutWorkflowPhases: DslPhase[] = [
+  {
+    title: { en: "scope", de: "abstecken" },
+    detail: { en: "name the checks the tag needs", de: "die nötigen Prüfungen benennen" },
+    agents: fanoutWorkflowRanks[0],
+  },
+  {
+    title: { en: "check", de: "prüfen" },
+    detail: {
+      en: "8 independent checks at once",
+      de: "8 unabhängige Prüfungen gleichzeitig",
+    },
+    agents: fanoutWorkflowRanks[1],
+  },
+  {
+    title: { en: "sign off", de: "freigeben" },
+    detail: {
+      en: "one answer out of 8 reports",
+      de: "eine Antwort aus 8 Berichten",
+    },
+    agents: fanoutWorkflowRanks[2],
+  },
+];
+
+const fanoutWorkflow: Dsl = {
+  id: "fanout-workflow",
+  name: {
+    en: "Fan-out workflow · 10 agents, 8 abreast",
+    de: "Fan-out-Workflow · 10 Agenten, 8 nebeneinander",
+  },
+  prompt: {
+    en: "We are cutting the next release. Scope what has changed since the last tag, then run the 8 release checks in parallel: the changelog, the version pins, the dependency licences, the public API, the config migration, the docs commands, a clean install and the benchmarks. Give me one go/no-go at the end.",
+    de: "Wir schneiden das nächste Release. Steck ab, was sich seit dem letzten Tag geändert hat, und lass dann die 8 Release-Prüfungen parallel laufen: das Changelog, die Versions-Pins, die Lizenzen, die öffentliche API, die Konfigurations-Migration, die Doku-Befehle, eine saubere Installation und die Benchmarks. Am Ende will ich ein einziges Go/No-Go.",
+  },
+  provider: "ollama",
+  phases: fanoutWorkflowPhases,
+  steps: [
+    {
+      think: {
+        en: "3 phases. The middle one does the work: 8 checks that never wait for each other.",
+        de: "3 Phasen. Die mittlere macht die Arbeit: 8 Prüfungen, die nie aufeinander warten.",
+      },
+    },
+    {
+      spawn: "scope-tag",
+      label: "scope",
+      task: { en: "scope the release tag range", de: "Tag-Bereich abstecken" },
+      steps: [
+        { status: { en: "reading the tag range", de: "lese den Tag-Bereich" } },
+        {
+          run: "git diff --stat $(git describe --tags --abbrev=0)..HEAD",
+          result: "184 files changed, 6 modules",
+        },
+        { list: "docs/release", result: "CHECKLIST.md  RELEASE-PLAYBOOK.md  DESKTOP-SIGNING.md" },
+        { usage: { in: 12_000, out: 800 } },
+        {
+          say: {
+            en: "6 modules moved. The checklist names 8 checks, and none of them depends on another.",
+            de: "6 Module haben sich bewegt. Die Checkliste nennt 8 Prüfungen, und keine hängt von einer anderen ab.",
+          },
+        },
+      ],
+    },
+    { fanout: { label: "check", tool: "release_check", agents: releaseChecks } },
+    {
+      spawn: "sign-off",
+      label: "sign off",
+      task: {
+        en: "Go/No-Go from 8 reports",
+        de: "Go/No-Go aus 8 Berichten",
+      },
+      steps: [
+        {
+          status: {
+            en: "weighing the 8 reports",
+            de: "wäge die 8 Berichte ab",
+          },
+        },
+        {
+          write: "docs/release/readiness.md",
+          result: "Wrote: docs/release/readiness.md (3140 bytes)",
+        },
+        { usage: { in: 58_000, out: 2_400 } },
+        {
+          say: {
+            en: "The changelog is missing three entries, and the install guide still passes a flag that moved into the config file. Everything else came back clean. Go, once those two edits are made.",
+            de: "Im Changelog fehlen drei Einträge, und der Installations-Guide übergibt noch ein Flag, das in die Konfigurationsdatei gewandert ist. Alles andere kam sauber zurück. Go, sobald diese zwei Änderungen gemacht sind.",
+          },
+        },
+      ],
+    },
+    {
+      say: {
+        en: "8 checks ran side by side. The readiness note lists the two things left to fix before the tag.",
+        de: "8 Prüfungen liefen nebeneinander. Die Readiness-Notiz listet die zwei Dinge, die vor dem Tag noch zu erledigen sind.",
+      },
+    },
+  ],
+};
+
 export const SCENARIOS: Dsl[] = [
   buildplan,
   bughunt,
@@ -1468,6 +1868,7 @@ export const SCENARIOS: Dsl[] = [
   fanout,
   fanoutEight,
   workflowPhases,
+  fanoutWorkflow,
   permission,
   diskshell,
   agentsmd,

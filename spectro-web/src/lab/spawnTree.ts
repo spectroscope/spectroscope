@@ -112,7 +112,10 @@ export interface SpawnTree {
   knownAgents: ReadonlySet<string>;
 }
 
-const LABEL_MAX = 28;
+/** How wide a card label may be before `clipMiddle` eats its middle. Exported
+ *  so a test can rebuild the label a row is EXPECTED to carry instead of
+ *  repeating the number and going stale when it moves. */
+export const LABEL_MAX = 28;
 
 /** The node id of one run's declared phase — re-exported from the reader so
  *  the lens and the reader cannot end up with two id schemes for one box. */

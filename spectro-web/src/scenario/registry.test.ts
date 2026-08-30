@@ -20,6 +20,7 @@ describe("registry", () => {
       "diskshell",
       "fanout",
       "fanout-eight",
+      "fanout-workflow",
       "fleetswarm",
       "imagegen",
       "permission",
