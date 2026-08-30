@@ -13,23 +13,46 @@
 // release notes" — work no agent in this scenario does — left all seventeen
 // cases green.
 //
-// So the copy is now WRITTEN OUT, in both locales. SEVEN of the twenty-one
-// cases below hold those written words against the phases as DECLARED, and
-// the seven are named so the number and the list have to agree: the two
-// numbers in the name, the guard against a third number in it, the counts the
-// copy says out loud, the ask, the noun each check is given, and the caption
-// under the wide box.
+// So the copy is now WRITTEN OUT, in both locales. SIX of the twenty-one cases
+// below hold those written words against the phases as DECLARED, and the six
+// are named so the number and the list have to agree: the two numbers in the
+// name, the counts the copy says out loud, the ask, the noun each check is
+// given, and the caption under the wide box.
 //
-// The other fourteen hold something else — the declaration against the
-// compiled stream, the stream against the rendered markup, the copy against
-// our CLI's own source, the copy against a rule (no release version, no
-// spelled-out count), or the registry's source text against itself. Saying
-// "every case" was the same overreach this file keeps finding one level down.
+// SIX AND NOT SEVEN. `puts no third number in its name that nothing pins` was
+// counted here for three rounds and does not belong. Its whole body is
+// `expect(numbersInName(lang)).toHaveLength(2)` — a literal against a literal.
+// `declaredWidths`, `declaredTotal` and `declaredWidest` are all absent from
+// it, and it is the only one of the seven that can say that. It holds the name
+// against a RULE, which is the other bucket, and a header that miscounts its
+// own buckets is this file's own recurring defect in miniature.
+//
+// The criterion is what the body READS, not what one mutation happens to
+// catch. Dropping a declared check turns five of the six red — the two numbers
+// in the name, the counts, the ask, the caption — and leaves it green; the
+// noun case stays green there too, because dropping a check moves both of its
+// sides at once. It still reads `declaredWidest`, so it stays in this bucket.
+//
+// The other fifteen hold something else — the declaration against the compiled
+// stream, the stream against the rendered markup, the copy against our CLI's
+// own source, the copy against a rule (no release version, no spelled-out
+// count, no third number in the name), or the registry's source text against
+// itself. Saying "every case" was the same overreach this file keeps finding
+// one level down.
+//
+// WHAT IS ON SCREEN IS READ OFF `compile()`, NOT OFF THE DSL. Four rounds of
+// review each found one more DSL field that is shown and unwalked, because the
+// walk enumerated fields by hand. The scan now compiles the scenario and reads
+// the events, and the only list left is `PRINTED_BY` — which renderer prints
+// which field of an event, held by `tsc` in one direction and by the run in
+// the other. The long version stands above that table.
 //
 // A literal that has to match a derivation bites in both directions; a
 // derivation compared against itself bites in neither. `writes the words it
-// shows instead of assembling them` keeps the two sides apart, because the
-// cheapest way to hollow all of this out again is one `${…}` in the ask.
+// shows instead of assembling them` keeps the two sides apart. It used to scan
+// for `${` alone, which `+` and `.join()` walk past, so it now demands that
+// every string the six cases compare against stand in the source inside ONE
+// PAIR OF QUOTES.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -70,6 +93,7 @@ import { RELEASE_CHECK_SUBJECTS, SCENARIOS } from "./registry";
 import { compile, declarationOf } from "./compile";
 import { loc } from "./dsl";
 import type { Localized, Step } from "./dsl";
+import type { RunEvent } from "../events";
 import { LABEL_MAX, lensPhaseNodeId, spawnTree } from "../lab/spawnTree";
 import { layoutStateGraph } from "../stategraph/layout";
 import { SEATS_MAX_EXPANDED } from "../lab/flowmap/workerGrid";
@@ -112,119 +136,228 @@ const declaredWidest = (): number => Math.max(...declaredWidths());
 const numbersInName = (lang: "en" | "de"): number[] =>
   [...loc(dsl.name, lang).matchAll(/\d+/g)].map((m) => Number(m[0]));
 
-/** Every string of the scenario's OWN copy: the name, the ask, the captions,
- *  and the words the run itself says. A fan-out worker's transcript is its
- *  own copy and is deliberately left out — those lines talk about one check,
- *  not about how many there are. */
-const ownCopy = (lang: "en" | "de"): string[] => {
-  const out: string[] = [loc(dsl.name, lang), loc(dsl.prompt, lang)];
-  for (const p of dsl.phases ?? []) {
-    out.push(loc(p.title, lang));
-    if (p.detail !== undefined) out.push(loc(p.detail, lang));
-  }
-  const walk = (steps: Step[]): void => {
-    for (const s of steps) {
-      if ("think" in s) out.push(loc(s.think, lang));
-      else if ("say" in s) out.push(loc(s.say, lang));
-      else if ("status" in s) out.push(loc(s.status, lang));
-      else if ("spawn" in s) {
-        out.push(loc(s.task, lang));
-        walk(s.steps);
-      }
-    }
-  };
-  walk(dsl.steps);
-  return out;
-};
-
-/** Every LOCALIZED string one step of the DSL puts on screen, plus the two
- *  unlocalized ones a step shows verbatim: the command, path or tool name the
- *  step is keyed by, and the `label` a spawn or a fan-out is drawn under.
- *
- *  WHAT THE `never` ON THE LAST LINE HOLDS — and it is less than three rounds
- *  of this file read into it. It holds the ARMS of the union: add a member to
- *  `Step`, or drop a case from here, and `npx tsc -b` stops. It holds NOTHING
- *  about the FIELDS inside an arm. A new field on an existing arm compiles
- *  silently and this walk never sees it, so "the coverage is the one the
- *  compiler holds" was true of arms and false of shown text, which is the
- *  same overclaim this suite keeps finding elsewhere.
- *
- *  So the gaps are NAMED instead of implied. Not scanned, on purpose:
- *    - `mcp.input` and `tool.input` — the argument objects. They are
- *      `Record<string, unknown>`, so there is no localized line to read and no
- *      cheap way to walk them; the tool row still draws them.
- *    - `image.provider`, `image.model`, `image.asset` — the caption is
- *      scanned, the three fields under it are not.
- *  Both gaps are EMPTY in this scenario today (no `input:`, no `image:` step
- *  anywhere in its block), which is why the narrow branch was taken.
- *
- *  The step `label`s ARE scanned, because unlike the two above this scenario
- *  ships three of them — "scope", "check" and "sign off" — and compile.ts
- *  turns each into the `name` of a `tool_call` the transcript prints.
- *  Measured before they were walked: `label: "scope 0.11.0"` gave EXIT=0 with
- *  21 passed, and so did the other two, one at a time.
- *
- *  `usage` and `compact` are named and return nothing: they carry numbers,
- *  not text. That is a statement about those two arms, not a gap.
- *
- *  The localized side went blind twice, so both are written down. The first
- *  cut never read a worker's `status` or `say` (SIXTEEN rendered lines per
- *  locale, and with "Six files carry the version; all six say 0.11.0." in one
- *  worker's answer all twenty cases stayed green). The second cut enumerated
- *  the union BY HAND and skipped `context` — whose `parts[].label` compile.ts
- *  maps through `loc()` into the context_info event and `ContextRing` draws as
- *  `.context-part-label`; with "the 0.11.0 baseline" planted as one,
- *  twenty-one cases stayed green. */
-const stepShown = (s: Step, lang: "en" | "de"): string[] => {
-  const withResult = (head: string, result?: Localized): string[] =>
-    result === undefined ? [head] : [head, loc(result, lang)];
-  const nested = (steps: Step[]): string[] => steps.flatMap((x) => stepShown(x, lang));
-  const withLabel = (label: string | undefined, rest: string[]): string[] =>
-    label === undefined ? rest : [label, ...rest];
-  if ("think" in s) return [loc(s.think, lang)];
-  if ("say" in s) return [loc(s.say, lang)];
-  if ("status" in s) return [loc(s.status, lang)];
-  if ("spawn" in s) return withLabel(s.label, [loc(s.task, lang), ...nested(s.steps)]);
-  if ("fanout" in s)
-    return withLabel(
-      s.fanout.label,
-      s.fanout.agents.flatMap((a) => [loc(a.task, lang), ...nested(a.steps)]),
-    );
-  if ("run" in s) return withResult(s.run, s.result);
-  if ("read" in s) return withResult(s.read, s.result);
-  if ("write" in s) return withResult(s.write, s.result);
-  if ("list" in s) return withResult(s.list, s.result);
-  if ("mcp" in s) return withResult(s.mcp, s.result);
-  if ("tool" in s) return withResult(s.tool, s.result);
-  if ("image" in s) return [loc(s.image, lang)];
-  if ("context" in s) return s.context.parts.map((p) => loc(p.label, lang));
-  if ("usage" in s) return [];
-  if ("compact" in s) return [];
-  const unreached: never = s;
-  throw new Error(`unhandled step kind: ${JSON.stringify(unreached)}`);
-};
-
-/** The captions the three phase boxes draw. */
+/** The captions the three phase boxes draw. They reach the screen through the
+ *  DECLARATION and `WorkflowLens`, never through `compile()`, so they are read
+ *  off the DSL here — one of the two things below that genuinely cannot come
+ *  out of the stream. */
 const phaseCaptions = (lang: "en" | "de"): string[] =>
   (dsl.phases ?? []).flatMap((p) =>
     p.detail === undefined ? [loc(p.title, lang)] : [loc(p.title, lang), loc(p.detail, lang)],
   );
 
-/** Every line of this scenario that `stepShown` reaches, plus the strings that
- *  live OUTSIDE the steps: the name, the ask and the phase captions. Which is
- *  the name, the ask, the captions, every worker's transcript, and each step's
- *  command, path, tool name, label and result.
+// ---------------------------------------------------------------------------
+// WHAT REACHES THE SCREEN IS READ OFF `compile()`, NOT OFF THE DSL.
+//
+// Four rounds of review found one defect four times under four names, and each
+// finding was proved with the SAME sentence: "this field reaches the screen via
+// compile.ts:NNN". The walk that used to stand here enumerated the fields of
+// each DSL arm BY HAND — the hand-typed-list defect, one level down, inside the
+// very suite written to catch overclaiming. A `never` held the ARMS of `Step`;
+// nothing held the FIELDS. So every round a reviewer named another field that
+// is shown and unwalked, and every round the fix added it: round four added
+// `spawn.label` and `fanout.label` and in the same breath missed `fanout.tool`,
+// the spawn id and `dsl.provider`. Measured on that walk, one at a time, each
+// gave EXIT=0 with 21 passed:
+//   { fanout: { …, tool: "release_check_0.11.0", … } }
+//   spawn: "scope-tag-0.11.0" (declared under the same id)
+//   provider: "ollama-0.11.0"
+//
+// The DSL is therefore not the source of truth about what is shown; the
+// compiler is. Nothing below walks a `Step`. The scan compiles the scenario and
+// reads the RunEvents, and the only list left is `PRINTED_BY` — which renderer
+// prints which field of an event — held in one direction by `tsc` and in the
+// other by the run.
+// ---------------------------------------------------------------------------
+
+/** Where one field of a compiled event reaches the screen, as `file:line`, or
+ *  `null` for the claim that NONE OF THE RENDERERS NAMED HERE prints it.
  *
- *  NOT "everything it shows". `stepShown` names the two kinds of shown text it
- *  leaves out — the `input` object of an mcp or tool step, and an image step's
- *  provider, model and asset — and both are empty in this scenario today. Any
- *  case built on this list inherits exactly that bound, and says so. */
-const everyShownString = (lang: "en" | "de"): string[] => [
-  loc(dsl.name, lang),
-  loc(dsl.prompt, lang),
-  ...phaseCaptions(lang),
-  ...dsl.steps.flatMap((s) => stepShown(s, lang)),
-];
+ *  `null` is the narrow claim on purpose. It does not say the field is
+ *  invisible — an opened JSONL row draws the whole event as a tree
+ *  (`LabTrace.tsx:103`) — it says this scan does not follow that field, and
+ *  every sentence built on the scan carries exactly that bound. */
+type PrintedBy = string | null;
+
+/** Every field of one arm of the wire, each answering for itself. The `-?` is
+ *  the guard the four rounds were missing: it makes the optional fields
+ *  required HERE, so the compiler holds the FIELDS now and not just the arms.
+ *  Bitten one direction at a time, `npx tsc -b --force`, exit read from a file:
+ *    - a field added to a `RunEvent` arm (`blurb` on `agent_spawn`) — EXIT=2,
+ *      "Property 'blurb' is missing … in type 'FieldsOf<\"agent_spawn\">'";
+ *    - a key dropped from an entry here (`run_end.runId`) — EXIT=2, the same
+ *      error the other way round.
+ *  Neither is a claim about `stepShown`'s old `never`, which held only the
+ *  arms of `Step` and is the reason this table exists. */
+type FieldsOf<T extends RunEvent["type"]> = {
+  [K in keyof Extract<RunEvent, { type: T }>]-?: PrintedBy;
+};
+
+/** The thirteen event kinds this scenario compiles to, and no others. Arms the
+ *  compiler never emits here are LEFT OUT rather than filled in with guesses —
+ *  a claim nobody exercises is exactly the kind of line this file keeps
+ *  deleting. The run holds that direction, and `tsc` cannot: `printedStringsOf`
+ *  fails on an event kind with no entry and on a key no entry answers for, so a
+ *  step kind added to this scenario later cannot reopen the gap in silence.
+ *  Measured by deleting the `usage` entry — `tsc -b` stayed EXIT=0 and the run
+ *  went red on three cases with "usage is compiled and no entry names the
+ *  renderers that print it".
+ *
+ *  Every entry names a file and a line, and the list is short enough to check:
+ *    - `tool_call.name`      LabTrace.tsx:33-35, renders `event.name` verbatim
+ *    - `agent_message.text`  LabTrace.tsx:54-55
+ *    - `agent_message.label` LabTrace.tsx:55, drawn as " (check)"
+ *    - `tool_result.output`  LabTrace.tsx:38-39
+ *    - the provider          flowmap/nodes.tsx:674,676, the map's LLM card
+ *    - context part labels   ContextRing.tsx:103
+ *  Those six are the ones a reviewer measured; the rest of each entry was read
+ *  off the same two renderers while writing it down. */
+const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
+  // Every row of the JSONL strip prints its own kind, whatever the kind is,
+  // which is why `type` is answered for identically on all thirteen.
+  run_start: {
+    type: "LabTrace.tsx:87",
+    prompt: "LabTrace.tsx:26-27",
+    // The map's LLM card: the model line falls back to the provider when no
+    // model is named, and the location line under it names the provider.
+    provider: "flowmap/nodes.tsx:674,676",
+    model: "flowmap/nodes.tsx:674",
+    runId: null,
+    agentId: null,
+    parentId: null,
+    trigger: null,
+    attachments: null,
+    ts: null,
+  },
+  turn_start: { type: "LabTrace.tsx:87", turn: "LabTrace.tsx:28-29", agentId: null, ts: null },
+  text_delta: { type: "LabTrace.tsx:87", text: "LabTrace.tsx:30-32", agentId: null, ts: null },
+  thinking_delta: { type: "LabTrace.tsx:87", text: "LabTrace.tsx:30-32", agentId: null, ts: null },
+  tool_call: {
+    type: "LabTrace.tsx:87",
+    name: "LabTrace.tsx:33-35",
+    // The map's tool panel draws the whole argument object, in both faces.
+    // This is the gap an earlier round NAMED and left open ("no localized line
+    // to read, and no cheap way to walk them"); walking the compiled value
+    // closes it without anybody listing a key.
+    input: "flowmap/ToolCallPanel.tsx:60-68",
+    agentId: null,
+    callId: null,
+    ts: null,
+  },
+  permission_request: {
+    type: "LabTrace.tsx:87",
+    name: "LabTrace.tsx:33-35",
+    // Not followed here, and it costs the scan nothing: compile.ts:108 and
+    // :113 push the SAME object onto the tool_call that opens every gate pair,
+    // and the scan reads it there.
+    input: null,
+    agentId: null,
+    callId: null,
+    ts: null,
+  },
+  permission_decision: {
+    type: "LabTrace.tsx:87",
+    allowed: "LabTrace.tsx:36-37",
+    callId: null,
+    ts: null,
+  },
+  tool_result: {
+    type: "LabTrace.tsx:87",
+    output: "LabTrace.tsx:38-39",
+    isError: "LabTrace.tsx:38-39",
+    durationMs: "LabTrace.tsx:38-39",
+    agentId: null,
+    callId: null,
+    fileChange: null,
+    ts: null,
+  },
+  agent_spawn: {
+    type: "LabTrace.tsx:87",
+    agentId: "LabTrace.tsx:46-47",
+    task: "LabTrace.tsx:46-47",
+    parentId: null,
+    ts: null,
+  },
+  usage: {
+    type: "LabTrace.tsx:87",
+    inputTokens: "LabTrace.tsx:40-41",
+    outputTokens: "LabTrace.tsx:40-41",
+    agentId: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
+    ts: null,
+  },
+  run_end: { type: "LabTrace.tsx:87", stopReason: "LabTrace.tsx:42-43", runId: null, ts: null },
+  context_info: {
+    type: "LabTrace.tsx:87",
+    estimatedTokens: "LabTrace.tsx:52-53",
+    parts: "ContextRing.tsx:101-107",
+    messages: "ContextRing.tsx:109-111",
+    turn: "ContextRing.tsx:109-111",
+    agentId: null,
+    threshold: null,
+    thresholdSource: null,
+    ts: null,
+  },
+  agent_message: {
+    type: "LabTrace.tsx:87",
+    from: "LabTrace.tsx:54-55",
+    to: "LabTrace.tsx:54-55",
+    state: "LabTrace.tsx:54-55",
+    label: "LabTrace.tsx:54-55",
+    text: "LabTrace.tsx:54-55",
+    role: null,
+    ts: null,
+  },
+};
+
+/** Every string a value carries, however deep: a field, an array element, a
+ *  value inside a tool call's argument object. Nothing is enumerated — the walk
+ *  takes whatever the compiled value turns out to be, which is the difference
+ *  between deriving the coverage and listing it. */
+const stringsIn = (v: unknown): string[] => {
+  if (typeof v === "string") return [v];
+  if (Array.isArray(v)) return v.flatMap(stringsIn);
+  if (typeof v === "object" && v !== null) return Object.values(v).flatMap(stringsIn);
+  return [];
+};
+
+/** The strings ONE compiled event carries into the renderers `PRINTED_BY`
+ *  names — and the place the table is held in the direction `tsc` cannot see:
+ *  a kind with no entry fails, and so does a key riding on a real compiled
+ *  event that its entry does not answer for. */
+const printedStringsOf = (e: RunEvent): string[] => {
+  const fields = PRINTED_BY[e.type] as Record<string, PrintedBy> | undefined;
+  expect(fields, `${e.type} is compiled and no entry names the renderers that print it`).toBeDefined();
+  const out: string[] = [];
+  for (const [key, value] of Object.entries(e)) {
+    expect(
+      Object.prototype.hasOwnProperty.call(fields, key),
+      `${e.type}.${key} rides on a compiled event and no entry answers for it`,
+    ).toBe(true);
+    if (fields![key] !== null) out.push(...stringsIn(value));
+  }
+  return out;
+};
+
+/** Whether a compiled event is part of one agent's own life: it is the agent of
+ *  the event, an end of the message, or the run that carries its id. */
+const belongsTo = (e: RunEvent, id: string): boolean => {
+  const p = e as { agentId?: string; from?: string; to?: string; runId?: string };
+  return p.agentId === id || p.from === id || p.to === id || p.runId === `${dsl.id}-${id}`;
+};
+
+/** Every string the compiled stream carries into those renderers, for one
+ *  locale, optionally dropping the events that belong to the named agents. */
+const shownStrings = (lang: "en" | "de", skip: ReadonlySet<string> = new Set()): string[] =>
+  compile(dsl, lang)
+    .filter((e) => ![...skip].some((id) => belongsTo(e, id)))
+    .flatMap(printedStringsOf);
+
+/** Everything ONE agent puts on screen, out of that same stream. */
+const shownForAgent = (id: string, lang: "en" | "de"): string[] =>
+  compile(dsl, lang)
+    .filter((e) => belongsTo(e, id))
+    .flatMap(printedStringsOf);
 
 /** The workers of the wide phase, as the fan-out step declares them. */
 type FanoutWorker = { id: string; task: Localized; steps: Step[] };
@@ -233,13 +366,17 @@ const fanoutWorkers = (): FanoutWorker[] => {
   for (const s of dsl.steps) if ("fanout" in s) out.push(...s.fanout.agents);
   return out;
 };
+const fanoutWorkerIds = (): ReadonlySet<string> => new Set(fanoutWorkers().map((a) => a.id));
 
-/** Everything ONE worker puts on screen: its task, and every string its steps
- *  show. Same walker as above, so the two cannot drift apart — they did, and
- *  `context` was missing from both. */
-const workerShown = (a: FanoutWorker, lang: "en" | "de"): string[] => [
-  loc(a.task, lang),
-  ...a.steps.flatMap((s) => stepShown(s, lang)),
+/** Every string of the scenario's OWN copy: what the stream shows MINUS the
+ *  fan-out workers' own lives, plus the two things no stream carries — the name
+ *  the picker lists it under, and the phase captions the lens draws from the
+ *  declaration. A worker's transcript is its own copy and is left out on
+ *  purpose: those lines talk about one check, not about how many there are. */
+const ownCopy = (lang: "en" | "de"): string[] => [
+  loc(dsl.name, lang),
+  ...phaseCaptions(lang),
+  ...shownStrings(lang, fanoutWorkerIds()),
 ];
 
 /** The head word of a subject, hyphens flattened and case folded: "the version
@@ -591,6 +728,24 @@ describe("the fan-out workflow scenario", () => {
     // to turn up in something that worker actually renders. A thread, not a
     // proof - it holds the noun against the worker's own words, and says
     // nothing about whether those words describe the check they claim.
+    //
+    // ITS OWN NAME IS NOT ONE OF ITS WORDS. The lines come out of the compiled
+    // stream now, and the stream carries the worker's id into rendered text
+    // three ways: `agent_message.from`, `agent_message.to` and the `[id] done`
+    // envelope compile.ts:288 writes. The ids are named after the checks, so
+    // letting them count hands the noun a free pass. Measured over the eight
+    // workers against those three strings alone: SIX pass on the id in EN
+    // (changelog, pins, licences, api, migrations, install) and FOUR in DE,
+    // where the compounds part the noun from the id (changelog, pins, api,
+    // migrations). So the id's own strings are dropped, and what is left is
+    // what the scenario wrote.
+    //
+    // The filter is what does the work, not decoration. Measured: rewrite
+    // check-install's task, status, command, command result and answer so none
+    // of the five says "install" - its subject "a clean install" left alone,
+    // so the noun is unchanged - and the case is RED in EN with the filter
+    // ("en check-install: nothing it shows says install") and GREEN without it,
+    // where `from`, `to` and `[check-install] done` cover for it.
     for (const lang of ["en", "de"] as const) {
       const workers = fanoutWorkers();
       expect(workers, lang).toHaveLength(declaredWidest());
@@ -598,7 +753,9 @@ describe("the fan-out workflow scenario", () => {
         const subject = RELEASE_CHECK_SUBJECTS[a.id];
         expect(subject, `no subject declared for ${a.id}`).toBeDefined();
         const noun = headNoun(subject[lang]);
-        const lines = workerShown(a, lang).map((l) => flat(l).toLowerCase());
+        const lines = shownForAgent(a.id, lang)
+          .filter((l) => l !== a.id && !l.includes(`[${a.id}]`))
+          .map((l) => flat(l).toLowerCase());
         expect(
           lines.some((l) => l.includes(noun)),
           `${lang} ${a.id}: nothing it shows says "${noun}"`,
@@ -612,38 +769,85 @@ describe("the fan-out workflow scenario", () => {
     // is a written literal held against a derivation. Interpolate any of them
     // from the same array the derivation reads and the pin turns into a
     // tautology that cannot fail — which is what the first cut shipped.
+    //
+    // THE `${` SCAN IS THE CHEAP HALF AND IT IS NOT ENOUGH. It sees a template
+    // literal and nothing else, so `+` and `.join()` walk straight past it.
+    // Measured in three steps on the tree as it stood:
+    //   (a) the EN and DE ask rewritten as
+    //       "…in parallel: " + releaseChecks.slice(0, -1).map((c) => c.subject[lang]).join(", ")
+    //       + " and " + … — EXIT=0, 21 passed;
+    //   (b) swapping check-api and check-migrations in `releaseChecks` on the
+    //       pristine tree — EXIT=1, the ask's case red;
+    //   (c) the same swap ON TOP of the assembled ask — EXIT=0, 21 passed.
+    // So the ask had become a derivation compared against itself: the exact
+    // tautology this case exists to prevent, and the exact failure the first
+    // cut shipped.
+    //
+    // What closes it is a demand no concatenation can meet: every string the
+    // cases above hold against a derivation must stand in the source INSIDE
+    // ONE PAIR OF QUOTES. An assembled sentence is a real sentence at runtime
+    // and never a literal in the file, so (a) and (c) both go red.
     const blocks: [string, string, string][] = [
       ["const releaseChecks: FanoutAgent[] = [", "\n];", "check-changelog"],
       ["const fanoutWorkflowPhases: DslPhase[] = [", "\n];", "sign off"],
       ["const fanoutWorkflow: Dsl = {", "\n};", "fanout-workflow"],
     ];
-    for (const [opener, closer, anchor] of blocks) {
-      const src = sourceBlock(opener, closer);
-      expect(src, opener).toContain(anchor);
-      expect(src.includes("${"), opener).toBe(false);
+    const authored = blocks
+      .map(([opener, closer, anchor]) => {
+        const src = sourceBlock(opener, closer);
+        expect(src, opener).toContain(anchor);
+        expect(src.includes("${"), opener).toBe(false);
+        return src;
+      })
+      .join("\n");
+    for (const lang of ["en", "de"] as const) {
+      // The name, the ask, the captions, the noun each check is given, and
+      // every line a worker says — which is every string the six cases in the
+      // first bucket compare against something derived.
+      const written = [
+        loc(dsl.name, lang),
+        loc(dsl.prompt, lang),
+        ...phaseCaptions(lang),
+        ...declaredSubjects(lang),
+        ...workerTranscriptLines(lang),
+      ];
+      expect(written.length, lang).toBeGreaterThan(3 * declaredWidest());
+      for (const line of written) {
+        expect(authored.includes(`"${line}"`), `${lang}, not written out: ${line}`).toBe(true);
+      }
     }
   });
 
-  it("names no release version in any line the scan reaches", () => {
+  it("names no release version in any string the stream carries to the renderers named here", () => {
     // A demo scenario ships once and is read for years. The first cut cut
     // "0.11.0" through the ask, a file it read, a path it wrote and lines the
     // run says out loud, and its own author flagged that it would read as
     // stale the day that version shipped. The story is the WORK, so the run
     // reaches for the last tag instead of naming one.
     //
-    // The name says "the scan reaches" and not "anything it shows", because
-    // those are different and only the first is held. `everyShownString` walks
-    // every localized line, every command, path and tool name, and every step
-    // label; it does not walk an mcp or tool step's `input` object or an image
-    // step's provider, model and asset. Both are empty here, so the narrow
-    // scan is the whole picture TODAY — and if a later edit adds one, this
-    // case will keep passing and the name will still be true.
+    // THE NAME IS THE COVERAGE, and the coverage is now derived rather than
+    // listed. The scan compiles the scenario and walks the RunEvents; whatever
+    // string a compiled event carries in a field `PRINTED_BY` does not mark
+    // `null` is scanned, however deep it sits. Nothing here knows the word
+    // `fanout`, `spawn` or `provider`, which is why the three fields that beat
+    // round four are caught without appearing in any list.
+    //
+    // What the name still does NOT say: "anything it shows". `PRINTED_BY`
+    // names six renderers and no others, every `null` in it is a claim about
+    // those six alone, and an opened JSONL row draws fields none of them
+    // print. That bound is the whole of it, and it is a short checkable list
+    // rather than an open-ended one.
     for (const lang of ["en", "de"] as const) {
-      const shown = everyShownString(lang);
-      expect(shown.length, lang).toBeGreaterThan(40);
-      // The scan has to REACH the fan-out, not just the copy around it. Every
-      // worker's status band and answer is one of the strings scanned — the
-      // sixteen lines that a version hid in while twenty cases stayed green.
+      const shown = shownStrings(lang);
+      // A floor, and deliberately a slack one: measured 470 strings per locale
+      // over 173 events, and a floor that tracks the real number is a number
+      // somebody has to maintain. It only rules out a green run over an empty
+      // scan.
+      expect(shown.length, lang).toBeGreaterThan(200);
+      // The scan has to REACH the fan-out, not just the copy around it, and
+      // this is the one place a second source says so: the transcript lines
+      // are walked off the DSL, the scanned ones out of the stream, and the
+      // sixteen lines a version once hid in have to appear in both.
       const transcript = workerTranscriptLines(lang);
       expect(transcript, lang).toHaveLength(2 * declaredWidest());
       for (const line of transcript) expect(shown, `${lang}: ${line}`).toContain(line);
