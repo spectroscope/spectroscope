@@ -421,9 +421,16 @@ describe("the fan-out workflow scenario", () => {
       expect(subjects, lang).toHaveLength(declaredWidest());
       // Named individually first, so a failure says WHICH check went missing.
       for (const c of subjects) expect(prompt, `${lang} ${c}`).toContain(c);
-      // Then as one run, which is also completeness and order: a ninth check
-      // wedged into the middle of the phase breaks the joined list.
-      expect(prompt, lang).toContain(joinList(subjects, lang === "en" ? "and" : "und"));
+      // Then as ONE BOUNDED RUN. A plain `toContain` of the joined list reads
+      // "at least these, contiguously, in order" — it catches a drop and a
+      // reorder and misses an ADDITION, because the run survives whatever is
+      // appended after it. Measured: with ", and the release notes." tacked
+      // onto the ask alone, the joined eight were still a substring, the count
+      // still read 8, and all twenty cases stayed green while the ask demanded
+      // work no worker here does. Both locales write the list as a colon, the
+      // run, and a full stop, so the run is pinned between the two.
+      const run = joinList(subjects, lang === "en" ? "and" : "und");
+      expect(prompt, lang).toContain(`: ${run}.`);
       expect(countsIn(prompt), lang).toEqual([declaredWidest()]);
     }
   });
