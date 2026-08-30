@@ -102,6 +102,15 @@ describe("what the tool returned reaches the card that draws it", () => {
     expect(element(card, "ToolViewBody")).toContain("fileChange=");
   });
 
+  it("hands the run's own state file down as well (card 322)", () => {
+    // The third of exactly this class. The importer resolves which state file
+    // belongs to which launch, the reducer patches it on, describeTool reads
+    // the script out of it and the body draws it — and a mount that passes
+    // every prop but this one leaves the reader looking at an empty SCRIPT
+    // region over a run whose file holds the whole program.
+    expect(element(card, "ToolViewBody")).toContain("runState=");
+  });
+
   it("hands it on to describeTool, which has taken it all along", () => {
     // Read to the MATCHING paren, not to the first one: the call outgrew a
     // single line when card 269 gave it a sixth argument, and the old slice
@@ -112,12 +121,14 @@ describe("what the tool returned reaches the card that draws it", () => {
     const call = argsOf(bodyView, "describeTool(");
     expect(call).toContain("props.detail");
     expect(call).toContain("props.fileChange");
+    expect(call).toContain("props.runState");
   });
 
   it("hands it to the export too, so a saved file says what the screen says", () => {
     const call = argsOf(html, "const view = describeTool(");
     expect(call).toContain("card.detail");
     expect(call).toContain("card.fileChange");
+    expect(call).toContain("card.runState");
   });
 });
 

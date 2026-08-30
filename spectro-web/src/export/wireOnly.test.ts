@@ -65,6 +65,12 @@ describe("what a written jsonl may contain", () => {
       "queued_command",
       "edited_text_file",
       "tool_result_detail",
+      // Card 322: the state file a workflow run wrote about itself — the whole
+      // script a launch only NAMED, the phases it declared, how it ended. It is
+      // a file BESIDE the session, read by the importer and keyed to the call
+      // the receipt named. Nothing in the session's own history, so nothing a
+      // session file may hold.
+      "workflow_state",
       "agent_detail",
       "ground_info",
       "attachment_image",
@@ -86,9 +92,10 @@ describe("what a written jsonl may contain", () => {
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    // Twenty-two: eighteen, plus card 212's two, plus card 261's `pong` and
-    // card 267's `goal_info`. The number is asserted so the set cannot grow or
-    // shrink by accident — only on purpose, with the reason written above.
+    // Twenty-three: eighteen, plus card 212's two, plus card 261's `pong`,
+    // card 267's `goal_info` and card 322's `workflow_state`. The number is
+    // asserted so the set cannot grow or shrink by accident — only on purpose,
+    // with the reason written above.
     //
     // This literal is what caught the merge of the two waves. 261 and 267 were
     // built on separate branches and each raised the count from 20 to 21 for
@@ -97,7 +104,7 @@ describe("what a written jsonl may contain", () => {
     // identical. The compiler had nothing to say either. This guard was the
     // only thing that noticed, which is the whole argument for keeping a bare
     // number in a test.
-    expect(NON_WIRE_TYPES.size).toBe(22);
+    expect(NON_WIRE_TYPES.size).toBe(23);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

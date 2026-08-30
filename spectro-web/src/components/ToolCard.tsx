@@ -182,6 +182,7 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
             denied={denied}
             detail={card.detail}
             fileChange={card.fileChange}
+            runState={card.runState}
           />
           {/* What the tool RETURNED as a picture, out of the transcript itself
               (card 179). Roughly 7,300 of the corpus's 8,788 image blocks sit in

@@ -31,6 +31,33 @@ import type { Lang } from "../i18n/i18n";
 /** Visible clip for long bodies — the full payload lives in raw/json. */
 const CLIP_CHARS = 4000;
 
+/**
+ * The clip for the two workflow bodies with no second face.
+ *
+ * Every other clipped body is a slice of the tool's own input or output, so a
+ * reader who wants the rest switches to the raw face and reads it there. Two on
+ * this card are not:
+ *
+ *   THE SCRIPT recovered from the run's state file (card 322). The call carried
+ *   a path, and raw/json show the CALL — so at 4,000 characters the card hands
+ *   the reader half a program and no way at all to the other half.
+ *
+ *   THE ARGUMENTS payload, re-printed. The raw face does carry it, but through
+ *   the same `CLIP_CHARS`: 5 of the store's 76 parsing payloads pretty-print
+ *   past 4,000 (4,817 · 5,040 · 6,936 · 7,191 · 8,381) and every one of those
+ *   five is over 4,000 raw as well, so both faces stopped in the same place and
+ *   neither reached the end. The fallback the script's reserve was argued from
+ *   is not there for these.
+ *
+ * 48,000 because the store's longest script is 44,380 characters and the median
+ * 9,417 — so no real body is cut, and the number is still a bound rather than a
+ * promise to render anything. Both figures measured 2026-08-30 over the 592
+ * files matched by
+ *
+ *   find ~/.claude/projects -path '*\/workflows/wf_*.json'
+ */
+const WELL_CHARS = 48000;
+
 const cut = (s: string, max = CLIP_CHARS): string =>
   s.length > max ? `${s.slice(0, max)}\n... (truncated)` : s;
 
@@ -669,9 +696,10 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
         <>
           {/* The reader's order: what this workflow is, how far it goes, then
               the code — and the code is never withheld over a header that would
-              not parse. A script named only by path HAS no header, so the region
-              is left out entirely rather than shown as an empty label; the card
-              already carries the tool's name. */}
+              not parse. A call with no script anywhere HAS no header: neither
+              the call nor a run's state file carried one, so the region is left
+              out entirely rather than shown as an empty label; the card already
+              carries the tool's name. */}
           {(view.name !== null || view.description !== null) && (
             <Region label={t(lang, "tv.workflow")}>
               {view.name !== null && <div className="tv-path mono">{view.name}</div>}
@@ -712,12 +740,31 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
           )}
           {view.script !== null && (
             <Region label={t(lang, "tv.script")}>
-              <pre className="tv-well tv-well--script mono">{highlight(cut(view.script), "javascript")}</pre>
+              <pre className="tv-well tv-well--script mono">
+                {highlight(cut(view.script, WELL_CHARS), "javascript")}
+              </pre>
             </Region>
           )}
-          {view.args !== undefined && (
-            <InputRegions label={t(lang, "tv.args")} name={name} input={view.args} lang={lang} />
-          )}
+          {/* Card 322: the payload arrives as a STRING every time, and a string
+              is not read the same way twice. JSON becomes JSON — indented, one
+              key per line, on `WELL_CHARS` because the raw face is cut at the
+              same 4,000 this well would be. Anything else is shown as ITSELF,
+              in the prose well, because the seven payloads that are not JSON
+              are prompts somebody wrote and unescaping them by hand would eat
+              the quotes they contain. A bag that arrived as an object keeps the
+              input reading it always had. */}
+          {view.args !== null &&
+            (view.args.kind === "value" ? (
+              <InputRegions label={t(lang, "tv.args")} name={name} input={view.args.value} lang={lang} />
+            ) : (
+              <Region label={t(lang, "tv.args")}>
+                {view.args.kind === "json" ? (
+                  <pre className="tv-well mono">{highlight(cut(view.args.text, WELL_CHARS), "json")}</pre>
+                ) : (
+                  <pre className="tv-well">{cut(view.args.text, WELL_CHARS)}</pre>
+                )}
+              </Region>
+            ))}
           {view.result !== "" && (
             <Region label={t(lang, "tv.output")}>
               <pre className="tv-well mono">{cut(view.result)}</pre>
@@ -776,6 +823,13 @@ export function ToolViewBody(props: {
    *  copy of the news the model got. Only the structured face shows it: json and
    *  raw are the pair as it stands. */
   fileChange?: string;
+  /** The text of the run's own state file for a `Workflow` launch (card 322):
+   *  `<session>/workflows/<runId>.json`, which carries the script the call only
+   *  named, the phases it declared and how the run ended. Import-only, the same
+   *  as `detail`, and only the structured face reads it — json and raw are the
+   *  call as it stands, and a face that says "raw" may not quietly show a
+   *  second reading. A card without one renders exactly as it did. */
+  runState?: string;
 }) {
   const lang = useLang();
 
@@ -793,6 +847,7 @@ export function ToolViewBody(props: {
           props.isError,
           props.detail,
           props.fileChange,
+          props.runState,
         )}
         name={props.name}
         lang={lang}

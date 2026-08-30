@@ -10,7 +10,8 @@
 
 import type { PatchHunk, ToolResultDetail } from "../import/toolResultDetail";
 import { hlLangForFence, hlLangForPath, tokenize, type HlLang } from "../workspace/highlight";
-import { formatDuration, formatTokens } from "../format";
+import { formatDuration, formatTokens, prettyJson } from "../format";
+import { readWorkflowState } from "../lab/workflowGraph";
 
 /** One tool call, described as what it actually is. */
 export type ToolView =
@@ -71,7 +72,10 @@ export type ToolView =
       phases: string[];
       script: string | null;
       scriptPath: string | null;
-      args: unknown;
+      /** The `args` bag as the reader should read it, or null when the launch
+       *  sent none (card 322). Not the raw value: every payload in the store
+       *  arrives as a STRING, and a string is not read the same way twice. */
+      args: WorkflowArgs | null;
       stage: WorkflowStage;
       run: WorkflowRun | null;
       result: string;
@@ -1195,6 +1199,209 @@ export function runStats(run: WorkflowRun): RunStat[] {
   return stats;
 }
 
+// ---------------------------------------------------------------------------
+// Card 322: what the CALL did not carry, and the run's own file does
+// ---------------------------------------------------------------------------
+
+/**
+ * The `args` bag, as the reader should read it.
+ *
+ *   json   the payload was a JSON string; `text` is it, re-printed indented
+ *   text   a string that is NOT JSON; `text` is it, byte for byte
+ *   value  anything else the call sent, read as an input object, as before
+ *
+ * Measured 2026-08-30 over ~/.claude/projects: 83 launches carried an `args`
+ * payload and every single one of them was a STRING — the model writes JSON
+ * into a string field. 76 of the 83 parse; the other 7 are prose, three of
+ * them with real line breaks.
+ */
+export type WorkflowArgs =
+  { kind: "json"; text: string } | { kind: "text"; text: string } | { kind: "value"; value: unknown };
+
+/**
+ * How to read one launch's `args`.
+ *
+ * A JSON string printed through `prettyJson` is quoted once and escaped once
+ * more, so the reader reads backslashes — the wall in the owner's screenshot.
+ * Parsed, it is the object it always was.
+ *
+ * The seven that do not parse are shown as THEMSELVES: no unquoting, no
+ * unescaping, no guess. Half-unescaping is the way to fail this — a renderer
+ * that peels one layer off the wrapper eats the quotes the prose itself
+ * contains.
+ *
+ * WHAT THE RE-PRINT COSTS, said out loud because it is a re-print and not the
+ * payload: `JSON.parse` + `prettyJson` is not a round trip. A duplicate key
+ * keeps only its last value, integer-like keys are reordered ahead of the
+ * others by the object's own key order, an integer past 2^53 comes back
+ * changed (`12345678901234567890` → `12345678901234567000`) and `1e999` comes
+ * back as `null`. None of the four is present in the store's 76 parsing
+ * payloads — measured 2026-08-30, 0 integer-like keys and 0 numeric literals
+ * of 16 digits or more — and the raw face still holds the string the call
+ * carried, so this is a bound on the reading, not a live lie.
+ *
+ * @param value the raw `args` field, of whatever type the call sent
+ * @return the reading, or null when the launch sent no `args` at all
+ */
+function workflowArgs(value: unknown): WorkflowArgs | null {
+  if (value === undefined) return null;
+  if (typeof value !== "string") return { kind: "value", value };
+  const trimmed = value.trim();
+  // Only an object or an array is re-printed. `JSON.parse` also accepts `7`,
+  // `null` and `"already a string"`, and re-printing one of those would put
+  // quotes round a word the reader is meant to read as a word.
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return { kind: "text", text: value };
+  try {
+    return { kind: "json", text: prettyJson(JSON.parse(trimmed)) };
+  } catch {
+    return { kind: "text", text: value };
+  }
+}
+
+/**
+ * A workflow run's own state file, as far as the CARD reads it.
+ *
+ * `<session>/workflows/<runId>.json` is where the engine keeps what a launch
+ * carried and what became of it. A launch that named a file and sent no source
+ * carries none of that in the call — 111 of the store's 685 `Workflow` calls
+ * are exactly that shape — so without this the card draws its regions over a
+ * run whose own file states all of them.
+ *
+ * Measured 2026-08-30 over ~/.claude/projects, 591 state files: every one of
+ * them carries `script`, `scriptPath`, `phases`, `status`, `agentCount`,
+ * `durationMs`, `totalTokens` and `totalToolCalls`, all 1,486 phase entries
+ * carry a title, and `status` reads `completed` 542 times, `killed` 42 and
+ * `failed` 7.
+ */
+export type WorkflowStateRead = {
+  /** The run's source, whole, or null where the file states none. */
+  script: string | null;
+  /** The file the run was launched from, as the run itself recorded it. */
+  scriptPath: string | null;
+  /** The titles of the file's `phases` array, in its own order. */
+  phases: string[];
+  /** How it ended, or null while the file states no status. */
+  run: WorkflowRun | null;
+};
+
+/**
+ * The words this engine writes for a run that has NOT ended.
+ *
+ * MEASURED, not assumed. No state file in the store is mid-run — all 592 are
+ * terminal — so the vocabulary comes from the other place the engine writes its
+ * own status, the Monitor task record for a `local_workflow`:
+ *
+ *   grep -ohE '\{[^{}]*"task_type":"local_workflow"[^{}]*\}' -r \
+ *     ~/.claude/projects --include='*.jsonl' \
+ *     | grep -o '"status":"[a-z_]*"' | sort | uniq -c     → 35 x "running"
+ *
+ * The gate that stood here was `status === null`, so ANY word became an ending:
+ * a file written mid-run had its half-way counters drawn as the run's final
+ * ones and lost the sentence that says the run is still out there.
+ *
+ * A word NOT in this set is read as an ending, and that is a stated choice
+ * rather than an oversight — refusing every unfamiliar word would put the card
+ * back to "no outcome recorded" over a run whose file recorded all of it. The
+ * bound comes with it: an in-flight word this list has never seen would be
+ * drawn as an outcome until somebody adds it here.
+ */
+const STILL_RUNNING: ReadonlySet<string> = new Set(["running"]);
+
+/** A non-empty string field, or null. `str` keeps "", and a file that states
+ *  an empty script states no script — an empty well under a heading is the one
+ *  thing this card must not draw. */
+function someStr(input: unknown, key: string): string | null {
+  const value = str(input, key);
+  return value === null || value === "" ? null : value;
+}
+
+/**
+ * Read one run's state file.
+ *
+ * The phases come out of `readWorkflowState` — the reader card 302 already
+ * pinned for this exact file — so the card and the lens agree on what a phase
+ * entry IS by construction, rather than by two copies of the rule staying in
+ * step. Everything else is read here, because no other reader of this file
+ * wants it.
+ *
+ * The run is reported when, and only when, the file states a `status`. That
+ * word travels through untranslated, `killed` included, because it is the
+ * file's own; a counter the file left out stays null, which `runStats` prints
+ * as nothing rather than as zero.
+ *
+ * @param json the text of `<session>/workflows/<runId>.json`
+ * @return what the card reads, or null for text that is not a JSON object
+ */
+function readCardRunState(json: string): WorkflowStateRead | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const state = readWorkflowState(json);
+  const status = someStr(parsed, "status");
+  // The file's own bookkeeping of who ran, off the `workflow_agent` entries in
+  // `workflowProgress` that `readWorkflowState` already parses. Null where the
+  // file listed none at all — 3 of the store's 592 files — because no entries
+  // is "nothing reported", not "nobody finished".
+  const agents = state?.agents ?? [];
+  const counted = (word: string): number | null =>
+    agents.length === 0 ? null : agents.filter((a) => a.state === word).length;
+  return {
+    script: someStr(parsed, "script"),
+    scriptPath: someStr(parsed, "scriptPath"),
+    // Every phase the file declares, in its own order. An untitled one is KEPT:
+    // the renderer numbers by POSITION, so dropping it would renumber its
+    // neighbours and print the run's third phase as its second. Keeping it is
+    // also what makes the sentence above true — `workflowGraph.ts` keeps an
+    // untitled entry, so a filter here made the card and the lens disagree
+    // about what a phase entry IS. 0 of the store's 1,488 entries are untitled.
+    phases: (state?.phases ?? []).map((p) => p.title),
+    run:
+      status === null || STILL_RUNNING.has(status)
+        ? null
+        : {
+            status,
+            agents: num(parsed, "agentCount"),
+            // Both halves, because the file records both. `agentCount` equals
+            // the number of agent entries in 592 of 592 files, and each entry
+            // carries the run's own word for how that agent went — so "5 / 7"
+            // is the file's own arithmetic, not this card's.
+            done: counted("done"),
+            // A loss the file DID record. The three comments that stood here
+            // said the file counts none, names none and states none; all three
+            // were false, and the short row they produced reads — by
+            // `runStats`' own documented rule — as a clean run. 228 of the
+            // store's 5,203 entries are in `error`, spread over 81 files, and
+            // 35 of those files report a top-level status of `completed`.
+            errors: counted("error"),
+            // `progress` (86 entries) and `start` (25) are neither: an agent
+            // still in flight is counted into no half, so the two numbers can
+            // legitimately fail to add up to `agentCount`.
+            skipped: null,
+            empty: null,
+            tokens: num(parsed, "totalTokens"),
+            toolUses: num(parsed, "totalToolCalls"),
+            durationMs: num(parsed, "durationMs"),
+            // The file DOES name its dead agents — `label` and `phaseTitle` on
+            // every one of the 5,203 entries — but not why they died in a form
+            // this reader has: `readWorkflowState` carries no `error` string,
+            // and a Failures list of blank reasons says less than the count
+            // does. So the count travels, the names do not, and `RunOutcome`'s
+            // existing sentence for exactly that case ("in the outcome: N
+            // failed, none of them named") is what the reader gets.
+            failures: [],
+            // `result` in this file is a structured return value — measured:
+            // 501 objects, 33 arrays, 50 absent, 7 strings — and the RETURNED
+            // region renders an agent's prose. Printing an object under that
+            // heading would label a value as somebody's words.
+            result: "",
+          },
+  };
+}
+
 /**
  * Describe one tool call as its real shape.
  *
@@ -1255,6 +1462,12 @@ export function describeTool(
    *  import, on every session older than the field, and on every tool that
    *  touched no file — and absent is not "unchanged", it is no claim. */
   reportedChange?: string | null,
+  /** The text of the run's own state file, for a `Workflow` call whose caller
+   *  found the one belonging to it (card 322). Absent on every live call and
+   *  on every pick that carried no `workflows/` directory — and absent means
+   *  the card is exactly what it was. WHICH file belongs to WHICH call is
+   *  resolved by the caller, the same way `detail` is. */
+  runState?: string | null,
 ): ToolView {
   const out = output ?? "";
   const d = detail ?? null;
@@ -1527,27 +1740,49 @@ export function describeTool(
 
     case "Workflow": {
       // Three ways in: the script inline, a saved workflow by name, or a file.
-      // The meta only exists in the first — the other two are a reference to a
-      // script this card never sees, and inventing a header for them would be
-      // describing content that is not here.
-      const script = str(input, "script");
-      const scriptPath = firstStr(input, "scriptPath", "script_path");
+      // Only the CALL decides whether this is a workflow card at all — a state
+      // file handed in beside a call that named no workflow must not be able to
+      // turn one into the other.
+      const inline = str(input, "script");
+      const calledPath = firstStr(input, "scriptPath", "script_path");
       const saved = str(input, "name");
-      if (script === null && scriptPath === null && saved === null) return generic;
+      if (inline === null && calledPath === null && saved === null) return generic;
+      // Card 322: the run's own state file, when the caller found it. A launch
+      // that named a file and sent no source has no script and no phases in the
+      // call; its file has both, and what became of the run besides.
+      const state = runState === undefined || runState === null ? null : readCardRunState(runState);
+      const script = inline ?? state?.script ?? null;
+      const scriptPath = calledPath ?? state?.scriptPath ?? null;
+      // The meta is read out of whichever source the script came from. Where
+      // there is no script at all — a saved workflow by name, a file nothing
+      // could read — there is no header either, and inventing one would be
+      // describing content that is not here.
       const meta = script === null ? NO_META : workflowMeta(script);
+      // The FILE's list leads. It is the run's own bookkeeping; the meta
+      // literal is what the source said before the run started. They agree in
+      // every file measured (591 of 591), so this precedence only decides a
+      // case the store does not contain — and the card says the file decides
+      // it. A file that declared nothing falls through to the literal.
+      const phases = state !== null && state.phases.length > 0 ? state.phases : meta.phases;
       // The result is the launch RECEIPT; the outcome is what the importer
       // joined under it. Split them at the first section, so the receipt does
       // not carry the whole outcome a second time as its own text.
-      const run = workflowRun(out, meta.phases);
+      //
+      // The JOINED outcome leads over the state file: it is the notification
+      // this session actually received, and it names the agents that died,
+      // which the state file never does. The file answers where nothing came
+      // back — which, before this, was the card saying "no outcome recorded"
+      // over a run whose file recorded all of it.
+      const run = workflowRun(out, phases) ?? state?.run ?? null;
       const joined = sections(out)[0]?.at ?? -1;
       return {
         kind: "workflow",
         name: meta.name ?? saved,
         description: meta.description,
-        phases: meta.phases,
+        phases,
         script,
         scriptPath,
-        args: field(input, "args"),
+        args: workflowArgs(field(input, "args")),
         stage: run !== null ? "done" : out === "" ? "pending" : isError ? "failed" : "launched",
         run,
         result: joined < 0 ? out : out.slice(0, joined).trimEnd(),
