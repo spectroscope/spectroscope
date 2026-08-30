@@ -31,6 +31,7 @@ import {
   reportOversizeCards,
   sceneToFlow,
 } from "./flowmap/sceneToFlow";
+import { cardFrame, reportRestlessCard, resetStillnessMemory } from "./flowmap/cardStillness";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
 import { foldSeatPool, workerChip, type RowsPref } from "./flowmap/workerGrid";
 import { RailBoxes, railBoxesFrom, seatingKey } from "./flowmap/railBoxes";
@@ -203,6 +204,11 @@ export function FlowMap(props: {
     const relayout = layoutRef.current !== seating;
     layoutRef.current = seating;
     if (relayout) pinned.current.clear();
+    // CARD 319: a view flip and a pane resize are BOTH re-layouts, and a card
+    // that lands somewhere else because the world it lives in changed shape is
+    // not the defect this arm is looking for. Only movement between two steps
+    // of the same seating counts.
+    if (relayout) resetStillnessMemory();
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout, freshRef.current));
     freshRef.current = flow.nodes;
     setEdges(flow.edges);
@@ -229,6 +235,59 @@ export function FlowMap(props: {
     const settled = setTimeout(() => reportOversizeCards(cards), UNDER_SETTLE_MS);
     return () => clearTimeout(settled);
   }, [nodes, expandAll]);
+
+  // How far every scroll container around the map has been scrolled, added up.
+  // `.lab-center` is one of them, and it scrolls on its own while the reader
+  // steps.
+  const scrolledAbove = (el: Element): number => {
+    let total = 0;
+    for (let at: Element | null = el; at !== null; at = at.parentElement) total += at.scrollTop;
+    return total;
+  };
+
+  // CARD 319's runtime half, and the same reason as the block above: the
+  // measurement can only happen where the pixels are. The card's HEIGHT comes
+  // off React Flow's own measurement (world px, the units the envelope table is
+  // in). A pane that renders no frames measures nothing, so `measured` stays
+  // undefined, the height reads 0 and the arm treats it as no reading rather
+  // than as a card of no size.
+  //
+  // THE TOP IS READ AGAINST THE WINDOW, and that correction is the point of
+  // `cardFrame`. This call used to subtract the pane's own top here, and the
+  // band mover — the bigger half of what the owner sees — slides the PANE down
+  // with the card inside it: measured on the pre-fix build, the card's top in
+  // the pane was one value with a worst step of 0.00 while its top on his
+  // screen took three and travelled 53.31. The arm answered "0.0px of screen
+  // top" to the travel it exists for. Both tops are readings now, assembled in
+  // one tested place so the call site cannot mix them up again.
+  //
+  // The scroll around the map comes back out of that top: the lab's centre
+  // column is a scroll container and one step off `run_start` scrolls it 252px
+  // at a short window, which carries the card and is not the card moving.
+  //
+  // And the reading carries WHAT THE MAP WAS DOING: the card's world seat and
+  // the viewport transform. The world grows as workers arrive and `fitView`
+  // re-fits (0.27 -> 0.19 -> 0.10 over the shipped recording), and a reader can
+  // drag the card. Neither is the budget, and the arm may only speak about the
+  // budget.
+  useEffect(() => {
+    const pane = wrapRef.current;
+    const card = pane?.querySelector(".react-flow__node-agent");
+    if (pane == null || card == null) return;
+    const agent = nodes.find((n) => n.id === "agent");
+    const viewport = pane.querySelector(".react-flow__viewport");
+    reportRestlessCard(
+      cardFrame({
+        card: card.getBoundingClientRect(),
+        paneTop: pane.getBoundingClientRect().top,
+        scrolled: scrolledAbove(pane),
+        height: agent?.measured?.height ?? 0,
+        view: `${agent?.position.x ?? 0},${agent?.position.y ?? 0} @ ${
+          viewport === null ? "" : getComputedStyle(viewport).transform
+        }`,
+      }),
+    );
+  }, [nodes]);
 
   // The rails' live obstacle set: every card's rendered box (zones excluded),
   // recomputed from the node state so a dragged card re-routes its rails.

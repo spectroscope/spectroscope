@@ -331,15 +331,52 @@ const OS_STATION_DY = 80;
  * Hand-summed CSS lands a couple of percent under the browser (the user card
  * measured 166 against 164 derived), hence the rounding up.
  *
- * agent and llm keep an observed height plus headroom: their growth regions are
- * capped too (.pf-llm__streams 260, the tool JSON at 150, .pf-prose 120), but
- * the fixed chrome around them can only be read off the DOM, so the sum would
- * be a guess dressed as a derivation. Those two are the entries the runtime
- * check below exists for — see reportOversizeCards.
+ * The line that stood here read:
+ * "agent and llm keep an observed height plus headroom", and it justified that
+ * with the caps on the regions inside them — ".pf-llm__streams 260, the tool
+ * JSON at 150, .pf-prose 120". Card 319 measured it, and it was wrong twice.
+ *
+ * THE 150 NEVER EXISTED. ToolCallPanel.tsx has read `maxHeight: 240` since card
+ * 287 and says so in its own comment; there is no 150 cap anywhere in
+ * flowmap.css. That is not a slip in prose — it was the sentence the agent's
+ * 780 rested on, and it was stale about exactly the region that caused 929 of
+ * the 931 height changes the owner's own 3328 steps produced.
+ *
+ * AND "OBSERVED PLUS HEADROOM" WAS WRONG IN BOTH DIRECTIONS AT ONCE, the same
+ * double error cardGeometry.ts records for the worker card's old 560. Measured
+ * over his run: 363.97 on 6.5 % of steps — 416px of air, 53 % of the seat —
+ * against 932.98 on his tallest, which is 153px OVER it, on 828 steps (24.9 %).
+ * With every region present the same card measured 1188.29, 393px over.
+ *
+ * So that sentence now holds for the LLM alone, on the two caps flowmap.css
+ * really sets (.pf-llm__streams 260, .pf-prose 120). The AGENT's entry is no
+ * longer an observation: every region inside that card states a fixed box
+ * (`.pf-toolbody` at the 240 above, `.pf-ctx`, `.pf-agent__shelf`, `.pf-prose`)
+ * and the card renders every one of them on every step, so the card has ONE
+ * height and this entry is that height, measured in a browser, plus rounding.
+ * The LLM is now the only entry the runtime check below exists for — see
+ * reportOversizeCards.
+ *
+ * `.pf-prose` is in that list because of a second pass and not a first: it
+ * stated only a `max-height`, so the card measured 1075.09 until `/api/context`
+ * answered and 1178.59 after — 103.50px, on a step, with the runtime arm saying
+ * so. A cap is not a reserve, and the sentence above was true of every region
+ * but the one nobody had looked at.
  */
 export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   user: { w: 400, h: 180 },
-  agent: { w: 680, h: 780 },
+  // CARD 319. MEASURED, not observed: the budgeted card renders every region at
+  // its reserved size on every step, so it has one height and this is it plus
+  // rounding. Chrome, both variable fonts loaded before the read, the owner's
+  // own recording stepped through the real Step forward control at a 1600x900
+  // window (.pf-flow 1272x579, zoom 0.351332), through getBoundingClientRect on
+  // `.pf-root > .pf-flow > .react-flow__node-agent` divided by that zoom:
+  //
+  //   1178.60 world px, ONE value over the run, worst single-step change 0.00
+  //
+  // The 21px on top is for a machine whose font stack is not this one — the
+  // fixed regions hold there too, the chrome around them does not have to.
+  agent: { w: 680, h: 1200 },
   llm: { w: 440, h: 540 },
   // The full worker card (card 287): the 680-wide agent instrument under the
   // fixed 0.6 zoom paints 408 wide. Card 296 took the height out of this table
@@ -371,6 +408,36 @@ export const EXP_GAP = RAIL_GAP;
 /** Frame left below the lowest card it holds, so a zone's label and border never
  *  sit on a card. */
 const FRAME_PAD = 24;
+
+/** The mac frame's own top edge — where the machine every inside card lives in
+ *  starts. Read off the zone table below, which is the only place it is set. */
+const MAC_FRAME_Y = 24;
+
+/**
+ * Where the agent hub sits in the EXPANDED world (card 319).
+ *
+ * The owner's second ask: "maybe place the main agent a bit higher so it does
+ * not keep popping around at the bottom." It is a DERIVATION rather than a
+ * taste — the same FRAME_PAD the frame already leaves BELOW its lowest card,
+ * left above its first one, so the hub sits exactly one pad inside the machine
+ * it belongs to. Measured at a 1600x900 window it puts the card's top 45.8px
+ * below the top of `.lab-flowmap`, against 84.27 before and a proposed ceiling
+ * of 64 (cardStillness.AGENT_TOP_CEILING_PX, still an owner call) — see below
+ * for what that reading is and is not.
+ *
+ * Expanded only. COMMON's 150 still seats the compact world, which was measured
+ * still and is not this card's business.
+ *
+ * AND THE 45.8 IS A READING OF THAT PANE, not a property of the seat. `fitView`
+ * scales the world into whatever pane it is given, and most of that 45.8 is the
+ * fit's own padding rather than the card's 24 world px of air — at a much
+ * larger window the same seat reads considerably more. So 64 is a threshold a
+ * bigger screen can cross with nothing here having changed, and the gate holds
+ * the SHAPE instead: the hub is nearer the frame above it than the band below
+ * it, and the air above it is under a third of the air below
+ * (agentCardSeat.test.ts). Both are ratios and survive the zoom.
+ */
+const EXPANDED_AGENT_Y = MAC_FRAME_Y + FRAME_PAD;
 
 // ---------------------------------------------------------------------------
 // The envelope, checked. A seat is only as good as the number it was derived
@@ -455,8 +522,18 @@ export function oversizeCards(
  *
  * So the arm watches what this card measured. Widening it belongs to whichever
  * card corrects the next envelope, one at a time, with its own measurement.
+ *
+ * CARD 319 IS THAT CARD FOR THE AGENT HUB, and it brings the measurement: the
+ * seat was 780 against a card that rendered 363.97 on 6.5 % of the owner's
+ * steps — the 364 named two paragraphs up, found by this very arm and left
+ * standing because nobody had corrected the envelope yet. The hub's card is now
+ * budgeted to one measured height and the seat is that height, so the arm has
+ * nothing to say about it; the point of letting it watch is that it WOULD, the
+ * moment someone raises the seat past twice the card again. Four envelopes are
+ * still waiting for a card of their own: llm 540 for 378.74, os-mcp and
+ * os-shell 340 for 64.55 bare, os-disk 240 for 103.50.
  */
-export const UNDER_WATCHED_TYPES: ReadonlySet<string> = new Set(["subagent"]);
+export const UNDER_WATCHED_TYPES: ReadonlySet<string> = new Set(["agent", "subagent"]);
 
 /**
  * How long a watched envelope's tallest card has to stand still before the
@@ -781,7 +858,18 @@ const LAYOUT: Layout = {
     mcpserver: { x: MCPSERVER_X, y: 660 },
   },
   zones: [
-    { id: "z-mac", x: 0, y: 24, w: MAC_W, h: 900, variant: "mac", label: "AGENTENSYSTEM · DEIN MAC" },
+    // MAC_FRAME_Y, not a literal: EXPANDED_AGENT_Y is derived from this edge,
+    // and two 24s with nothing between them is how a derivation quietly stops
+    // being one.
+    {
+      id: "z-mac",
+      x: 0,
+      y: MAC_FRAME_Y,
+      w: MAC_W,
+      h: 900,
+      variant: "mac",
+      label: "AGENTENSYSTEM · DEIN MAC",
+    },
     { id: "z-os", x: 24, y: OS_BAND_TOP, w: 792, h: OS_BAND_H, variant: "os", label: "BETRIEBSSYSTEM" },
     { id: "z-outside", x: OUTSIDE_X, y: 24, w: OUTSIDE_W, h: 900, variant: "outside", label: "AUSSERHALB" },
   ],
@@ -1094,7 +1182,7 @@ export function sceneToFlow(
     spread = Math.max(0, subX + boxColStep + grid.cols * subColPitch - rightWorld, bandNeed);
     vSpread = Math.max(
       0,
-      L.pos.agent.y + EXPANDED_CARD.agent.h + EXP_GAP - OS_BAND_TOP,
+      EXPANDED_AGENT_Y + EXPANDED_CARD.agent.h + EXP_GAP - OS_BAND_TOP,
       L.pos.llm.y + EXPANDED_CARD.llm.h + EXP_GAP - L.pos.netz.y,
     );
     // An open station (the shell with a running command, the MCP client with its
@@ -1103,7 +1191,7 @@ export function sceneToFlow(
       ...["os-disk", "os-shell", "os-mcp", "os-net"].map((id) => EXPANDED_CARD[id].h),
     );
     bandGrow = Math.max(0, OS_STATION_DY + tallestStation + 20 - OS_BAND_H);
-    posL.agent = { x: agentX, y: L.pos.agent.y };
+    posL.agent = { x: agentX, y: EXPANDED_AGENT_Y };
     boxBaseL = { x: subX, y: L.subBase.y };
     subBaseL = { x: subX + boxColStep, y: L.subBase.y };
     // The worker column is the only place two cards of the SAME kind sit above

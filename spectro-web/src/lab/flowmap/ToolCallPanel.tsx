@@ -27,15 +27,38 @@ export function pickPanelFace(master: LabFacePref, face: LabFace): PanelFace {
   return { face, epoch: master.epoch };
 }
 
-export function ToolCallPanel({ tool }: { tool: { name: string; input: unknown } }) {
+/**
+ * The panel body's cap. 240 since card 287 — the widened stations and worker
+ * cards afford a panel a person can actually read; it scrolls either way.
+ *
+ * Card 319 makes the same number a FLOOR as well, on the budgeted agent hub
+ * only, so a call starting cannot grow the card and its answer cannot shrink
+ * it. That half is a `height` in flowmap.css beside every other reserve rather
+ * than a second literal here, and `.pf-toolbody` is the hook it hangs off.
+ */
+const TOOL_BODY = { maxHeight: 240, overflow: "auto" } as const;
+
+export function ToolCallPanel({
+  tool,
+}: {
+  /** The call in flight, or null — the panel then holds its box and says the
+   *  agent is planning. Null only ever reaches here from a budgeted card. */
+  tool: { name: string; input: unknown } | null;
+}) {
   const lang = useLang();
   const master = useLabFace();
   const [override, setOverride] = useState<PanelFace | null>(null);
   const face = panelFace(master, override);
   return (
     <div className="pf-panelbox">
-      <div className="pf-panelbox__label">
-        {t(lang, "map.ctx.toolCall")} · {tool.name}
+      {/* The title carries the name whole. On the budgeted agent card this label
+          is held to one line — a second line moved the card 15.5px, the only
+          thing still moving it after the reserves landed — and card 296 already
+          settled what a cap owes the reader when it clipped the worker card's
+          task title: keep the cap, and put the text somewhere it can be read. */}
+      <div className="pf-panelbox__label" title={tool === null ? undefined : tool.name}>
+        {t(lang, "map.ctx.toolCall")}
+        {tool === null ? "" : ` · ${tool.name}`}
       </div>
       <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
         {LAB_FACES.map((f) => (
@@ -51,10 +74,10 @@ export function ToolCallPanel({ tool }: { tool: { name: string; input: unknown }
           </button>
         ))}
       </div>
-      {/* 240 since card 287 — the widened stations and worker cards afford a
-          panel a person can actually read; it scrolls either way. */}
-      <div className="nowheel" style={{ maxHeight: 240, overflow: "auto" }}>
-        {face === "structured" ? (
+      <div className="nowheel pf-toolbody" style={TOOL_BODY}>
+        {tool === null ? (
+          <div className="pf-kv">{t(lang, "map.ctx.noTool")}</div>
+        ) : face === "structured" ? (
           /* No output on purpose: sceneToFlow clears the tool on tool_result,
              so the panel only ever holds a pending call. */
           <ToolViewBody

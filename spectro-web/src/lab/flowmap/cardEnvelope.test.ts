@@ -123,11 +123,17 @@ describe("the under-fill arm", () => {
   // already shouting and bury the first real finding exactly the way the
   // missing caller buried it. Card 296 corrected one envelope; the arm watches
   // that one, and widening it belongs to whichever card corrects the next.
-  it("watches only the envelope this card measured", () => {
-    expect([...UNDER_WATCHED_TYPES]).toEqual(["subagent"]);
+  //
+  // CARD 319 IS THE NEXT ONE, for the agent hub — and it is the seat named in
+  // the paragraph above, 780 against the 364 this arm read. It brought its own
+  // browser measurement, budgeted the card to one height and set the seat to
+  // it, so `agent` joins the watched set here and its own coverage lives in
+  // agentCardSeat.test.ts. The three still standing are untouched, and each one
+  // waits for a card that corrects it the same way.
+  it("watches the envelopes a card has corrected, and no others", () => {
+    expect([...UNDER_WATCHED_TYPES].sort()).toEqual(["agent", "subagent"]);
     expect(
       settledVerdict([
-        { id: "agent", type: "agent", h: 364 },
         { id: "llm", type: "llm", h: 168 },
         { id: "os-disk", type: "os-disk", h: 104 },
       ]),

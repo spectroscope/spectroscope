@@ -1728,6 +1728,131 @@
   height: 99px;
 }
 
+/* ---- CARD 319: the expanded agent hub's BUDGET ---------------------------
+ * The owner, stepping his own 44-hour run: "it really goes back and forth,
+ * flick, flick, flick, it flickers the whole time when you step through,
+ * depending on how big the command is ... maybe plan the maximum space for the
+ * commands from the start, so you say: a command is at most this long, and that
+ * size is budgeted into the main agent card from the beginning."
+ *
+ * Two rules, and both are needed. `nodes.tsx` keeps every panel on the card on
+ * every step (a panel that comes and goes IS the card changing size, and no
+ * height here can hide that); these declarations give each region that grows
+ * with its data a FIXED box, so what is inside it can change all it likes and
+ * the card cannot move.
+ *
+ * A RESERVE IS NOT A CLIP. flowmap.css already says it at the workflow box —
+ * "content is capped and CLIPPED — a max-height alone stops the box growing" —
+ * and a budgeted card that hides the command the owner is stepping through to
+ * read would be a worse defect than the flicker it fixed. Every box below
+ * scrolls, and the ones the reader's pointer can land in carry `nowheel` so the
+ * canvas does not eat the wheel.
+ *
+ * Scoped to `.pf-agent--wide` on purpose. The worker card renders the SAME body
+ * (card 287) and its height is a measured bound the whole worker grid is seated
+ * from (cardGeometry.ts, card 296), so a reserve leaking into it would move
+ * every seat on the map. Compact is out of reach for the same reason: it keeps
+ * all of this inside a closed disclosure and was measured at one height across
+ * the whole recording already.
+ *
+ * Every number here was measured in Chrome with both variable fonts loaded
+ * before the read, through getBoundingClientRect inside
+ * `.pf-root > .pf-flow > .react-flow__node-agent` — the cardGeometry.ts method,
+ * frames counted before any of it was believed. The walk is a playwright script
+ * driving the real "Step forward" control against a dev server, sampling the
+ * card and the React Flow viewport transform after each click and waiting for
+ * both to hold still; the numbers below are what it printed. It is not in the
+ * repo, and this comment said it was in card 319's evidence folder, which does
+ * not exist — the honest version is the recipe. */
+
+/* A panel's own label is ONE line. Measured, and it is the last thing that
+ * still moved the budgeted card: stepping the owner's run, 298 of 300 steps
+ * rendered 1178.59 and two rendered 1194.09 — a tool name long enough to wrap
+ * `Tool call · <name>` onto a second line, 15.50px, which is exactly the
+ * "+15.50 for the longest real MCP tool name" the measurement pass recorded
+ * against the old card. The name is not lost: ToolCallPanel puts it in the
+ * label's `title`, the way the worker card's clipped task title is recovered. */
+.pf-agent--wide .pf-panelbox__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The system prompt. The one panel that does not come from the fold at all:
+ * the card is handed it as a prop off `/api/context` (LabView), so it arrives
+ * when that fetch lands and not on any step. It stated a `max-height` and
+ * nothing else — a CAP, which is exactly what agentCardStillness's reserve rule
+ * refuses: "a max-height still collapses when its region is empty, and a region
+ * that collapses is a region that moves the card". Measured in the running app
+ * at a 1600x900 window with the answer held back nine seconds, the card went
+ * 1075.09 -> 1178.59 world px the moment it landed (.pf-prose 16.50 -> 120.00)
+ * and the runtime arm next door reported the 103.50px itself. */
+.pf-agent--wide .pf-prose {
+  height: 120px;
+  overflow-y: auto;
+}
+
+/* The context bars. Uncapped until this card and the one region no seat could
+ * ever cover: 22.27px per row, forever — seven more rows took a measured card
+ * from 1188.29 to 1344.20. `align-content: start` because a grid with a fixed
+ * height stretches its rows into it otherwise, which would fatten three bars
+ * into the room reserved for six. */
+.pf-agent--wide .pf-ctx {
+  height: 134px;
+  overflow-y: auto;
+  align-content: start;
+}
+
+/* The tool call — the region that caused 929 of the 931 height changes over the
+ * owner's 3328 steps, because it was created on `tool_call` and destroyed on
+ * `tool_result`. The height is the cap ToolCallPanel.tsx already set (240 since
+ * card 287); this line only makes the same number a floor as well, so the box
+ * is the same box whether a call is in flight or not. */
+.pf-agent--wide .pf-toolbody {
+  height: 240px;
+  overflow-y: auto;
+}
+
+/* The picture strip. The shelf accumulates and stops at MAX_CARD_SHOTS, so it
+ * is a floor-raise rather than a flicker — but a floor that arrives on step 4
+ * still moves the card on step 4, and it is what carried the card through its
+ * old 780 seat.
+ *
+ * TWO BOXES, and the first cut of this comment named the wrong one. `.pf-shots`
+ * is the strip: six pictures stack 330.9px in two rows, measured, so it states
+ * 331. `.pf-agent__shelf` is what the strip sits in, and it also holds the
+ * generated-picture panel, which is a second panel with its own label — so the
+ * shelf reserves 380 and lets its own content scroll. A run that has both an
+ * attached strip and a generated picture reaches the last of the six by
+ * scrolling the SHELF, not the strip. */
+.pf-agent--wide .pf-agent__shelf {
+  height: 380px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pf-agent--wide .pf-shots {
+  max-height: 331px;
+  overflow-y: auto;
+  align-content: start;
+}
+
+/* The two regions in the LEFT column, which `align-items: stretch` absorbs —
+ * measured by injecting five declared phases into a real card and reading it
+ * back: +0.00px, because the context column is always the taller one. They are
+ * bounded anyway: a region with no stated bound is a region nothing can be
+ * derived from, and the next card to widen this column would inherit the same
+ * blind spot the shelf and the context bars had. */
+.pf-agent--wide .pf-tools {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.pf-agent--wide .pf-phases__list {
+  max-height: 160px;
+  overflow-y: auto;
+}
+
 /* ---- Who is on the station (stationUsers, owner call 2026-08-26) -------- */
 .pf-os__by {
   display: flex;
