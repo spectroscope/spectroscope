@@ -373,6 +373,28 @@ class DoctorProviderCheckTest {
                         + " must say which one it obeyed and why, got:\n" + out);
     }
 
+    @Test
+    void theDoctorRunItselfCarriesTheShadowNoteForOllamaToo() throws IOException {
+        // The twin of the test above, and it was missing: perProviderAddressOf
+        // is a two-arm switch and only lmstudio's arm was held. Changing
+        // ollama's arm to config.lmstudioBaseUrl() — the exact copy-paste slip
+        // a two-arm switch invites — left the whole :spectro-cli:test module
+        // green, while an ollama operator with both fields set silently lost
+        // the note: perProviderAddressOf reads null, addressSet goes false.
+        String out = doctorOutputForSettings("""
+                { "provider": "ollama", "model": "qwen3",
+                  "baseUrl": "http://127.0.0.1:5111",
+                  "ollamaBaseUrl": "http://127.0.0.1:5222" }
+                """);
+
+        assertTrue(out.contains("ollamaBaseUrl"),
+                "a doctor that probes 5222 while a baseUrl of 5111 sits in the same file"
+                        + " must say which one it obeyed and why, got:\n" + out);
+        assertTrue(out.contains("does NOT apply to ollama"),
+                "and the note must be about ollama, not about whichever arm of the"
+                        + " switch was read, got:\n" + out);
+    }
+
     // ── the built-in provider's model swap ───────────────────────────────────
 
     @Test
