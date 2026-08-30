@@ -159,3 +159,62 @@ export function addressOverrideNote(
     },
   };
 }
+
+/** Card 311, review: the fourth face — the one beside the field that LOSES.
+ *
+ *  The three surfaces this card served all sit beside the winning value: the
+ *  doctor line, the settings page's address field, the failure sentence under
+ *  it. The general `baseUrl` is edited somewhere else entirely — the composer
+ *  gear's machine-local overrides — and that surface said nothing at all. So
+ *  the operator who types his address into the GEAR, which is where the
+ *  reported symptom starts, was still looking at a field ignored in silence.
+ *
+ *  Unlike {@link addressOverrideNote} this fires on the FIELD BEING EDITED
+ *  rather than on a collision that already exists: the general value may still
+ *  be empty here, and that is exactly the moment worth interrupting — the
+ *  operator is about to create the symptom, not reading about it afterwards.
+ *
+ *  It also promises nothing about clearing the per-provider field, because
+ *  what that would yield depends on the value typed (see
+ *  {@link generalFallbackFor}). It names the address in force and where to
+ *  change it.
+ *
+ *  @param field the key the gear's editor currently has selected
+ *  @param view  the resolved settings view; null while it loads
+ *  @param lang  the operator's language, for the layer name
+ *  @returns the note, or null when the edited field does reach the provider */
+export function generalAddressIgnoredNote(
+  field: string,
+  view: SettingsView | null,
+  lang: Lang,
+): { key: string; vars: Record<string, string> } | null {
+  if (field !== "baseUrl" || view === null) return null;
+  const provider = String(view.effective.provider ?? "");
+  const spec = addressSpecFor(provider);
+  if (spec === null) return null;
+
+  // Same "set" test as the override note, and for the same reason: a present
+  // key is not a value that wins. A blank per-provider field is skipped by
+  // endpointFor, so the general one IS what gets dialled and a warning here
+  // would be a lie.
+  //
+  // Only the VALUE half bites, and that is the same asymmetry the override
+  // note documents: the per-provider fields default to null, so the origin
+  // check is belt beside braces here (measured — dropping it alone leaves
+  // every test green, dropping the blank check alone is red). It stays for
+  // the hand-edited file whose key is present with some non-blank default.
+  const own = view.effective[spec.field];
+  const ownOrigin = view.origins[spec.field];
+  if (ownOrigin === undefined || ownOrigin.winner === "defaults") return null;
+  if (typeof own !== "string" || own.trim() === "") return null;
+
+  return {
+    key: "wsg.local.addressIgnored",
+    vars: {
+      provider,
+      field: spec.field,
+      addr: own,
+      winner: layerLabel(ownOrigin.winner, lang),
+    },
+  };
+}

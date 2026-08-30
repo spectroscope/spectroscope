@@ -3261,6 +3261,16 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ein lokaler Override sticht diesen Wert — nur auf diesem Rechner.",
     en: "A local override beats that value — on this machine only.",
   },
+  // Card 311, review: the gear is where the general address is TYPED, and it
+  // was the one surface that said nothing while the value went nowhere.
+  // Deliberately promises nothing about clearing the per-provider field — what
+  // that yields depends on the value typed (generalFallbackFor) — and points
+  // at the place the winning address is edited instead. Placeholders appear
+  // exactly once each; t() replaces only the first occurrence.
+  "wsg.local.addressIgnored": {
+    de: "{provider} liest dieses Feld nicht. Die eigene Adresse {field} (aus {winner}) steht auf {addr}, und genau die wird gewählt — geändert wird sie in den Einstellungen, neben dem Provider.",
+    en: "{provider} does not read this field. Its own address {field} (from {winner}) is set to {addr}, and that is what gets dialled — change it in Settings, beside the provider.",
+  },
   "wsg.local.setHere": {
     de: "Dieser Wert kommt bereits aus deinen lokalen Overrides.",
     en: "That value already comes from your local overrides.",

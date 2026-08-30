@@ -38,6 +38,7 @@ import {
   rulesWithout,
   type OverrideSupport,
 } from "./workspaceGear";
+import { generalAddressIgnoredNote } from "./providerAddress";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -267,6 +268,12 @@ export function ComposerGear({
   // write's fresh view flows straight into the provenance line.
   const selected = overrideSupport(localField, model.view);
   const choices = selected.spec.kind === "boolean" ? ["true", "false"] : selected.spec.options;
+  // Card 311: baseUrl is the general address, and a local-model provider with
+  // its own address field never reads it. This popover is where that value is
+  // typed, so it is where the silence hurt — the operator sets it here and
+  // every request keeps going to the per-provider address. Keyed on the
+  // SELECTED field: the editor shows one key at a time.
+  const addressIgnored = generalAddressIgnoredNote(localField, model.view, lang);
 
   const removeLocalOverride = (field: string): void => {
     if (sessionId === undefined) return;
@@ -510,6 +517,11 @@ export function ComposerGear({
                 <p className="wsg-local-note">
                   {t(lang, selected.setLocally ? "wsg.local.setHere" : "wsg.local.beats")}
                 </p>
+                {addressIgnored && (
+                  <p className="wsg-local-note wsg-local-note--address" role="note">
+                    {t(lang, addressIgnored.key, addressIgnored.vars)}
+                  </p>
+                )}
                 <p className="wsg-local-rule">{ruleLine(selected, lang)}</p>
                 <div className="wsg-local-add">
                   {selected.spec.kind === "enum" || selected.spec.kind === "boolean" ? (

@@ -270,6 +270,19 @@
   color: var(--text-faint);
 }
 
+/* Card 311: the note that says this provider does not read the field being
+   edited. Same treatment as the settings page's override note — a rule down
+   the left edge rather than tinted text, because colour lives on lines here,
+   and one ink step up from the advisory lines around it: those are hints
+   somebody may read, this one answers the question the operator is asking
+   while he types. */
+.wsg-local-note--address {
+  border-left: 2px solid var(--accent);
+  padding-left: var(--sp-2);
+  margin-top: 2px;
+  color: var(--text-dim);
+}
+
 .wsg-local-rule {
   overflow-wrap: anywhere;
 }

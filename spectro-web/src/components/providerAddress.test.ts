@@ -4,7 +4,13 @@
 
 import { describe, expect, it } from "vitest";
 import { t } from "../i18n/i18n";
-import { addressOverrideNote, addressSpecFor, LEGACY_SHARED_DEFAULT, localDownNote } from "./providerAddress";
+import {
+  addressOverrideNote,
+  addressSpecFor,
+  generalAddressIgnoredNote,
+  LEGACY_SHARED_DEFAULT,
+  localDownNote,
+} from "./providerAddress";
 import { PROVIDERS } from "./providerPickerMode";
 import type { Origin, SettingsView } from "../state/serverSettings";
 
@@ -257,5 +263,89 @@ describe("addressOverrideNote", () => {
         { ollama: "http://gpu-box:11434" },
       )?.key,
     ).toBe("set.addressOverride");
+  });
+});
+
+// ── Card 311, review: the note hangs on the field that WINS ──────────────────
+// Three faces were served and all three sit beside the winning field. The
+// general baseUrl is edited in the composer gear (workspaceGear.ts lists it
+// among the machine-local overrides), and that surface said nothing at all —
+// so the operator who types his address into the GEAR, which is where the
+// reported symptom starts, is still looking at a field ignored in silence.
+
+describe("generalAddressIgnoredNote", () => {
+  const withProvider = (
+    provider: string,
+    own: unknown,
+    ownOrigin: Origin,
+    field = provider === "ollama" ? "ollamaBaseUrl" : "lmstudioBaseUrl",
+  ): SettingsView => viewWith({ provider, [field]: own }, { provider: set("user"), [field]: ownOrigin });
+
+  it("warns beside the general field when the provider reads its own instead", () => {
+    const note = generalAddressIgnoredNote(
+      "baseUrl",
+      withProvider("lmstudio", "http://gpu-box:1234", set("user")),
+      "en",
+    );
+    expect(note?.vars.field).toBe("lmstudioBaseUrl");
+    expect(note?.vars.addr).toBe("http://gpu-box:1234");
+    expect(note?.vars.provider).toBe("lmstudio");
+  });
+
+  it("fires on an EMPTY general field — the point is to catch the typing, not the typo", () => {
+    // The settings-page note needs both values set, because it explains a
+    // collision that already happened. This one has to speak BEFORE the
+    // operator types, which is the moment the symptom is created.
+    const view = withProvider("ollama", "http://gpu-box:11434", set("env"));
+    view.effective.baseUrl = "";
+    view.origins.baseUrl = unset;
+    expect(generalAddressIgnoredNote("baseUrl", view, "en")).not.toBeNull();
+  });
+
+  it("says nothing for any field but the general address", () => {
+    const view = withProvider("ollama", "http://gpu-box:11434", set("user"));
+    for (const field of ["model", "provider", "sttModel", "maxRetries"]) {
+      expect(generalAddressIgnoredNote(field, view, "en"), field).toBeNull();
+    }
+  });
+
+  it("says nothing when the provider has no address of its own", () => {
+    for (const p of PROVIDERS) {
+      if (p === "ollama" || p === "lmstudio") continue;
+      expect(
+        generalAddressIgnoredNote("baseUrl", withProvider(p, "http://x:1", set("user")), "en"),
+        p,
+      ).toBeNull();
+    }
+  });
+
+  it("says nothing when the provider's own address is unset or blank", () => {
+    // Then the general field is exactly what gets dialled and a warning would
+    // be a lie. Blank counts as unset: effectiveOllamaBaseUrl skips it.
+    expect(generalAddressIgnoredNote("baseUrl", withProvider("ollama", null, unset), "en")).toBeNull();
+    expect(generalAddressIgnoredNote("baseUrl", withProvider("ollama", "  ", set("user")), "en")).toBeNull();
+  });
+
+  it("says nothing while the view has not loaded", () => {
+    expect(generalAddressIgnoredNote("baseUrl", null, "en")).toBeNull();
+  });
+
+  it("names the provider, its field, the layer and the address, in both languages", () => {
+    for (const lang of ["de", "en"] as const) {
+      const note = generalAddressIgnoredNote(
+        "baseUrl",
+        withProvider("lmstudio", "http://gpu-box:1234", set("env")),
+        lang,
+      );
+      const sentence = t(lang, note!.key, note!.vars);
+      expect(sentence, lang).not.toBe(note!.key); // the key resolves
+      expect(sentence, lang).not.toMatch(/\{[a-z]+\}/i); // every hole filled
+      expect(sentence, lang).toContain("http://gpu-box:1234");
+      expect(sentence, lang).toContain("lmstudioBaseUrl");
+      expect(sentence, lang).toContain(t(lang, "set.layer.env"));
+      // Same substring trap as the override sentence: "lmstudioBaseUrl"
+      // contains "lmstudio", so the field token has to go before asking.
+      expect(sentence.split("lmstudioBaseUrl").join(""), lang).toContain("lmstudio");
+    }
   });
 });

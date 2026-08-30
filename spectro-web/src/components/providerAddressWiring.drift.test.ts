@@ -157,3 +157,48 @@ describe("the fallback rule mirrors the server's, by value", () => {
     expect(addressSpecFor("lmstudio")?.preset).toBe(m?.[1]);
   });
 });
+
+// ── Card 311, review: the fourth face, beside the field that loses ───────────
+// The general baseUrl is edited in the composer gear (it is one of
+// workspaceGear's machine-local override keys), and that is where the reported
+// symptom starts: the operator types his address there and every request keeps
+// going elsewhere. All three surfaces this card served sit beside the WINNING
+// field, so the gear said nothing at all.
+
+describe("the composer gear warns beside the general address it edits", () => {
+  const gearTsx = read("./ComposerGear.tsx", import.meta.url);
+  const gearCss = read("../styles/workspace-gear.css", import.meta.url);
+
+  it("still offers baseUrl as an editable key — the note exists because it does", () => {
+    expect(read("./workspaceGear.ts", import.meta.url)).toContain('spec("baseUrl", "text")');
+  });
+
+  it("derives the note from the one shared function, on the SELECTED field", () => {
+    // The gear's editor shows one key at a time, so the note has to follow
+    // localField rather than the popover being open.
+    expect(gearTsx).toContain("generalAddressIgnoredNote(");
+    expect(gearTsx).toMatch(/generalAddressIgnoredNote\(\s*localField/);
+  });
+
+  it("renders the resolved sentence, under a rule the stylesheet declares", () => {
+    // Boundaries on both halves, for the reason the override note's pair
+    // carries them: a class name is a substring of its own typo.
+    expect(gearTsx).toMatch(/wsg-local-note--address["\s]/);
+    expect(gearCss).toMatch(/\.wsg-local-note--address\s*[,{]/);
+  });
+
+  it("says the whole sentence in both languages", () => {
+    for (const lang of ["de", "en"] as const) {
+      const sentence = t(lang, "wsg.local.addressIgnored", {
+        provider: "lmstudio",
+        field: "lmstudioBaseUrl",
+        addr: "http://gpu-box:1234",
+        winner: t(lang, "set.layer.user"),
+      });
+      expect(sentence, lang).not.toBe("wsg.local.addressIgnored");
+      expect(sentence, lang).not.toMatch(/\{[a-z]+\}/i);
+      expect(sentence, lang).toContain("http://gpu-box:1234");
+      expect(sentence.split("lmstudioBaseUrl").join(""), lang).toContain("lmstudio");
+    }
+  });
+});
