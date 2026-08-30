@@ -303,7 +303,8 @@
    where it was literally true. export/themes.ts also declares
    STILL_BORROWS_FROM_PAPER, so an exported file renders this code more legibly
    than the app does. Nothing here changes a colour: repainting the spectral
-   ramp for two shipping designs is the owner's call, not a card's. */
+   ramp for two shipping designs is the owner's call, not a card's.
+
    Unscoped on purpose: the class comes only from tokenize(), so anything
    wearing it IS a token, and scoping the colour to one surface is what left
    markdown blocks rendering grey spans that had already been classified. */
