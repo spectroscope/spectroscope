@@ -106,6 +106,22 @@
   --accent-glow: rgba(0, 113, 227, 0.24);
   --sand: #6e6e73; /* calm graphite eyebrows — the Apple way */
   --sand-glow: rgba(110, 110, 115, 0.16);
+  /* The spectral ramp, in a light-ground tune. Until card 325 this block
+     declared no ramp at all, so every var(--sp-*) fell through to :root and a
+     white design painted espresso's lines - a ramp built for an L* 6 ground.
+     That is not decoration: panels.css colours CODE with these tokens, and
+     --sp-teal measured 1.56:1 in a code well against a floor of 3, so the
+     default design rendered strings very nearly invisible. Same argument as
+     the handle ramp below, and the same answer the exported file has given
+     since card 297: the values are paper's, because a light theme needs a
+     light-ground ramp and two of them would be two things to retune.
+     codeContrast.test.ts measures all three code lines on this design's own
+     well, so a drift back to the dark ramp is red rather than quiet. */
+  --sp-red: #c24b3e;
+  --sp-amber: #a9762a;
+  --sp-teal: #0e8d6b;
+  --sp-ocean: #0b8799;
+  --sp-violet: #6c5ce7;
   --ok: #248a3d;
   --warn: #c07600;
   --warn-soft: rgba(192, 118, 0, 0.1);

@@ -84,7 +84,7 @@ describe("themeCss", () => {
   it("emits every token as a custom property", () => {
     const css = themeCss(themeById("paper"));
     expect(css).toContain("--bg: #f6f4ee");
-    expect(css).toContain("--sp-teal: #0f9d77");
+    expect(css).toContain("--sp-teal: #0e8d6b");
   });
 
   it("declares the colour scheme, so form controls and scrollbars match", () => {
