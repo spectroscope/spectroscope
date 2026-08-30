@@ -49,6 +49,13 @@ class SpectroCliTest {
      * not started it yet. Derived the same way as the row list itself: the port
      * comes from {@link SpectroConfig#endpointFor}, so a preset that moves
      * cannot leave a stale number on the first screen a newcomer reads.
+     *
+     * <p>Card 312, round 4: the port used to be looked for in the WHOLE hint,
+     * which is not the same claim at all. A llamacpp row printing {@code :1234}
+     * passed, because lmstudio's row had already put {@code :1234} into the
+     * string — the assertion said "this number appears somewhere on the screen"
+     * while its message said "the llamacpp row names its port". The row block is
+     * cut out first now, the way the sibling above builds a per-row pattern.</p>
      */
     @Test
     void everyLocalRowNamesThePortThatBackendListensOn() {
@@ -57,9 +64,35 @@ class SpectroCliTest {
             String endpoint = SpectroConfig.presetEndpointFor(provider);
             Matcher port = Pattern.compile(":(\\d+)").matcher(endpoint);
             assertTrue(port.find(), "no port in " + provider + "'s preset " + endpoint);
-            assertTrue(hint.contains(":" + port.group(1)),
-                    "the " + provider + " row never names its port " + port.group(1) + ":\n" + hint);
+            String row = rowBlock(hint, provider);
+            assertTrue(row.contains(":" + port.group(1)),
+                    "the " + provider + " row never names its port " + port.group(1)
+                            + " — the reader is told to start it and not where it will"
+                            + " then be.\nrow: " + row + "\nfull hint:\n" + hint);
         }
+    }
+
+    /**
+     * One provider's block of the hint: its own row line plus the continuation
+     * lines under it, and nothing from its neighbours. A row runs until the
+     * next one begins (or the list ends), which is what makes an assertion
+     * about "the llamacpp row" mean llamacpp.
+     */
+    private static String rowBlock(String hint, String provider) {
+        Pattern rowStart = Pattern.compile(
+                "^\\s+(\\S+)\\s+\\((?:local, free|needs a key)\\)", Pattern.MULTILINE);
+        Matcher rows = rowStart.matcher(hint);
+        int start = -1;
+        while (rows.find()) {
+            if (start >= 0) {
+                return hint.substring(start, rows.start());
+            }
+            if (provider.equals(rows.group(1))) {
+                start = rows.start();
+            }
+        }
+        assertTrue(start >= 0, "the hint has no row for \"" + provider + "\":\n" + hint);
+        return hint.substring(start);
     }
 
     @Test
