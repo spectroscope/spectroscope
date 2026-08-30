@@ -159,6 +159,125 @@ describe("the fold learns browser_action (card 330, criterion 2)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ADDED DURING THE BUILD, and it is the half the shipped file could not see.
+//
+// Every render case above hands the card a page object BY HAND, so all of them
+// stayed green whatever the fold did — the component's contract was pinned and
+// its producer was not. Both joins that fill that object come off the SESSION
+// wire and neither had a case:
+//
+//   the READING — measured on all four real browser calls on this machine, the
+//     `tool_result` for the same callId carries the tool's whole answer. That
+//     is where "no screenshot -> the recorded reading" and "a refused localhost
+//     call renders the refusal AND its rule" actually come from.
+//   the SHOT — `browser_action` carries a HASH and no path, and the store is
+//     content-addressed. The `image_generated` the same screenshot emitted
+//     carries the path for that hash, so the join produces a recorded path
+//     instead of a guess about the file extension.
+// ---------------------------------------------------------------------------
+describe("the fold fills the page from the session wire (card 330)", () => {
+  const CALL = "toolu_013Sdr8vpiqu5sWsu1SwwucK";
+  const call = (name: string, url: string): RunEvent =>
+    ({ type: "tool_call", agentId: "main", callId: CALL, name, input: { url }, ts: T - 1 }) as RunEvent;
+  const result = (output: string, isError: boolean): RunEvent =>
+    ({
+      type: "tool_result",
+      agentId: "main",
+      callId: CALL,
+      output,
+      isError,
+      durationMs: 28,
+      ts: T + 1,
+    }) as RunEvent;
+
+  it("a refused localhost call carries its refusal, and its rule, to the node", () => {
+    // Verbatim from the store: 3 of the 4 real sidecars are localhost attempts
+    // and NONE succeeded. `allowLocalhost` is off by default and the fence
+    // names itself in the answer.
+    const page = nodeData([
+      runStart(),
+      call("browser_navigate", "http://localhost:8080/"),
+      browserAction({ ok: false }),
+      result(REFUSAL, true),
+    ])?.page as { reading?: string } | undefined;
+    expect(page?.reading).toContain("refused localhost:8080");
+    expect(page?.reading).toContain("rule: loopback");
+  });
+
+  it("some OTHER tool's answer does not become the page's reading", () => {
+    // Without this the join is only a "first tool_result after the browser
+    // action wins" — measured green with the callId guard deleted, which is a
+    // guard that cannot fire. A run does not stop at its browser call: the next
+    // tool_result is an ordinary one and would have been printed as the page.
+    const page = nodeData([
+      runStart(),
+      call("browser_navigate", "https://www.test.de/"),
+      browserAction({ url: "https://www.test.de/", ok: true }),
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "toolu_someOtherCallEntirely",
+        output: "THE SHELL'S ANSWER, WHICH IS NOT A PAGE",
+        isError: false,
+        durationMs: 4,
+        ts: T + 2,
+      } as RunEvent,
+    ])?.page as { reading?: string | null } | undefined;
+    expect(page?.reading ?? null).toBeNull();
+  });
+
+  it("a CHILD starting does not throw the recorded page away", () => {
+    // 25 of 25 child run_starts on this machine carry their own runId.
+    const page = nodeData([
+      runStart(),
+      browserAction({ url: "https://www.test.de/", ok: true }),
+      {
+        type: "run_start",
+        runId: "worker-1-run",
+        agentId: "worker-1",
+        prompt: "look",
+        provider: "anthropic",
+        ts: T + 500,
+      } as RunEvent,
+    ])?.page as { url?: string } | undefined;
+    expect(page?.url).toBe("https://www.test.de/");
+  });
+
+  it("a recorded hash finds the path the image_generated announced for it", () => {
+    const page = nodeData([
+      runStart(),
+      {
+        type: "image_generated",
+        agentId: "main",
+        callId: CALL,
+        prompt: "browser_computer screenshot of https://www.test.de/",
+        provider: "browser",
+        model: "webcontentsview",
+        mediaType: "image/png",
+        blobPath: "images/9f2c1a.png",
+        sha256: "9f2c1a",
+        ts: T - 1,
+      } as RunEvent,
+      browserAction({ url: "https://www.test.de/", ok: true, sha256: "9f2c1a" }),
+    ])?.page as { shot?: { blobPath: string } | null } | undefined;
+    expect(page?.shot?.blobPath).toBe("images/9f2c1a.png");
+  });
+
+  it("a hash the run never stored a path for is not turned into one", () => {
+    // The other direction, and it is the honest state: the card has a hash and
+    // no address for it, which is "a picture was recorded and this card cannot
+    // load it" — not "no picture was taken". Guessing `images/<sha>.png` would
+    // be the card inventing a file name.
+    const page = nodeData([
+      runStart(),
+      browserAction({ url: "https://www.test.de/", ok: true, sha256: "deadbeef" }),
+    ])?.page as { shot?: unknown; sha256?: string } | undefined;
+    expect(page?.sha256).toBe("deadbeef");
+    expect(page?.shot ?? null).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3. The card never fetches anything the recording did not record.
 //    This is the criterion that keeps a replay from becoming a browser.
 // ---------------------------------------------------------------------------

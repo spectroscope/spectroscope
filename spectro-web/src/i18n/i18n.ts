@@ -1478,6 +1478,20 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.net.nothing": { de: "nichts hat diesen Rechner verlassen", en: "nothing left this machine" },
   "map.net.redacted": { de: "Adresse geschwärzt", en: "address redacted" },
   "map.net.hits": { de: "{n}x", en: "{n}x" },
+  // CARD 330 — the browser station. It replays what was RECORDED and never
+  // reaches a page, so every sentence here is about the record, not the web.
+  "map.node.browser": { de: "Browser", en: "Browser" },
+  "map.browser.none": { de: "kein Browser gefahren", en: "no browser was driven" },
+  "map.browser.noPage": { de: "keine Adresse aufgezeichnet", en: "no address recorded" },
+  "map.browser.shotAlt": { de: "aufgezeichneter Screenshot", en: "the recorded screenshot" },
+  "map.browser.shotGone": {
+    de: "Screenshot aufgezeichnet, die Datei liegt nicht mehr im Speicher",
+    en: "a screenshot was recorded; its file is no longer in the store",
+  },
+  "map.browser.nothing": {
+    de: "weder Bild noch Mitschrift aufgezeichnet",
+    en: "neither a picture nor a reading was recorded",
+  },
   // CARD 328 — the four readings of the MCP-Server card. "waiting" and
   // "answered with nothing" are two different facts and never share a word:
   // one call in 783 sessions was still open after an hour, and not one of

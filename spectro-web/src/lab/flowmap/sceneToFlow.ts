@@ -24,7 +24,7 @@ import {
   seatOf,
   type SeatPool,
 } from "./workerGrid";
-import { osBandWidth, stationSeats } from "./stationSeats";
+import { osBandWidth, STATION_GAP, stationSeats } from "./stationSeats";
 import { workflowBoxLayout, type BoxLayout } from "./workflowBox";
 import { orderParentsFirst, worldBoxes } from "./worldBox";
 import type { WorkflowDeclaration } from "../workflowGraph";
@@ -224,6 +224,54 @@ export function mcpChainView(
   };
 }
 
+/**
+ * The most of ONE recorded browser reading this fold keeps (card 330).
+ *
+ * Same bound as the MCP answer and for the same reason. What a browser tool
+ * answers is a `tool_result` like any other: the four real ones on this machine
+ * run 123-264 bytes, but `browser_read_page` hands back a whole accessibility
+ * tree and `get_page_text` a whole page, and the card is 190px wide.
+ */
+export const BROWSER_READING_CAP = 2000;
+
+/**
+ * The last browser call this run recorded, and what it left behind (card 330).
+ *
+ * THERE IS NO HTML ON THE WIRE and that is deliberate — `browser_action` is
+ * metadata only, "no bytes ride here, ever: a screenshot is a blob in the store
+ * and a hash on this line". Two better sources exist and both are on the
+ * SESSION wire, so this card fetches nothing:
+ *
+ *  · the SCREENSHOT. `browser_action.sha256` is the blob's hash, and when the
+ *    same call took the picture through `browser_computer` the run also emitted
+ *    an `image_generated` carrying the store PATH for that exact hash. Joining
+ *    the two gives a real recorded path instead of a guess about the extension.
+ *  · the READING. Measured on all four real browser calls in this machine's
+ *    store: the `tool_result` for the same callId carries the tool's whole
+ *    answer — the page's title line, the accessibility tree, or the refusal.
+ *    The sidecar has it too, behind an endpoint; the session file has it here.
+ */
+export interface BrowserPageRecord {
+  /** The sidecar's own id, so a reader can find the two lines over there. */
+  cid: string;
+  callId: string;
+  /** The wire name: browser_navigate, browser_read_page, browser_computer, … */
+  tool: string;
+  /** The address the call ENDED on. Absent on 3 of the 4 real events — a failed
+   *  navigate records no page — and it can be a redaction marker rather than an
+   *  address. Absent, redacted and an address are three states of one field. */
+  url?: string;
+  ok: boolean;
+  /** The screenshot blob's hash; absent for a call that took no picture. */
+  sha256?: string;
+  /** The blob the card can actually load, when an `image_generated` on the same
+   *  wire named the path for that hash. A hash with no path is not a picture
+   *  this card can show, and it says so rather than guessing a file name. */
+  shot: { blobPath: string; sha256: string } | null;
+  /** What the tool answered, cut at {@link BROWSER_READING_CAP}. */
+  reading: string | null;
+}
+
 export interface Detail {
   prompt: string;
   ctxParts: CtxPart[] | null;
@@ -323,6 +371,8 @@ export interface Detail {
    * an owner call, so the fold carries the host and the card prints it.
    */
   reached: { host: string; hits: number }[];
+  /** CARD 330: the last browser call this run recorded, or null. */
+  page: BrowserPageRecord | null;
   /** How many recorded addresses were a redaction marker (card 329). The run
    *  reached SOMETHING and the record deliberately does not say where; that is
    *  a fact of its own and never a host. */
@@ -404,7 +454,11 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     lastMcp: null,
     reached: [],
     redactedHops: 0,
+    page: null,
   };
+  /** CARD 330: store paths by content hash, so a browser_action's hash can find
+   *  the path the `image_generated` for the same shot already announced. */
+  const blobs = new Map<string, string>();
   let rootSeen = false;
   /** The run the MCP table belongs to (card 328). A `callId` is unique inside
    *  ONE run and nowhere else, so the table cannot outlive its run. */
@@ -427,28 +481,38 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     switch (e.type) {
       case "image_generated":
         d.genImage[e.agentId] = { src: imageUrl(e.blobPath), prompt: e.prompt };
+        // CARD 330: the store is content-addressed, so this line is the only
+        // place the run says which PATH a given hash lives at. A browser
+        // screenshot announces itself here and references itself by hash on the
+        // browser_action beside it.
+        blobs.set(e.sha256, e.blobPath);
         break;
       case "run_start":
-        // CARD 328: a new run empties the MCP table. Measured: "c1" is the
-        // callId of a first call in 31 different session files, so a table that
-        // survived a run boundary would hand run two the answer run one got —
-        // silently, and with the right id on it. A CHILD's run_start carries
-        // the same runId as its parent's, so spawning a subagent does not throw
-        // the run's own conversation away.
-        if (e.runId !== runId) {
-          runId = e.runId;
-          d.answers = {};
-          d.lastAsk = {};
-          d.lastMcp = null;
-          // CARD 329, the same scope for the same reason: what the PREVIOUS
-          // run reached is not what this one reached.
-          d.reached = [];
-          d.redactedHops = 0;
-        }
         // The FIRST run_start names the root. Later ones are children.
         if (!rootSeen) {
           d.root = e.agentId;
           rootSeen = true;
+        }
+        // CARD 328/329/330: a new run of the ROOT empties what the last run
+        // recorded — its MCP conversation, the hosts it reached and the page it
+        // opened. Measured: "c1" is the callId of a first call in 31 different
+        // session files, so a table that survived a run boundary would hand run
+        // two the answer run one got, silently and with the right id on it.
+        //
+        // ONLY the root's, and that is measured too. A CHILD's run_start
+        // carries its OWN runId, never its parent's — 25 of 25 child run_starts
+        // across this machine's 783 session files, not one of them shared. So a
+        // scope keyed on the runId alone would have thrown the parent's whole
+        // record away the moment it spawned a subagent, which is the ordinary
+        // case on this map and not a corner of it.
+        if (e.agentId === d.root && e.runId !== runId) {
+          runId = e.runId;
+          d.answers = {};
+          d.lastAsk = {};
+          d.lastMcp = null;
+          d.reached = [];
+          d.redactedHops = 0;
+          d.page = null;
         }
         d.think[e.agentId] = "";
         d.answer[e.agentId] = "";
@@ -486,12 +550,26 @@ export function deriveDetail(applied: RunEvent[]): Detail {
       case "llm_exchange":
         reach(d, e.url);
         break;
-      case "browser_action":
+      case "browser_action": {
         // `url` is ABSENT on 3 of the 4 real browser_action events on this
         // machine — a failed navigate records no page — and `outboundHop`
         // reads that as `none`, which is what it is.
         reach(d, (e as { url?: unknown }).url);
+        // CARD 330: the run's latest browser call. Its reading arrives later,
+        // on the tool_result for the same callId.
+        const path = e.sha256 === undefined ? undefined : blobs.get(e.sha256);
+        d.page = {
+          cid: e.cid,
+          callId: e.callId ?? "",
+          tool: e.tool,
+          ...(e.url === undefined ? {} : { url: e.url }),
+          ok: e.ok,
+          ...(e.sha256 === undefined ? {} : { sha256: e.sha256 }),
+          shot: e.sha256 !== undefined && path !== undefined ? { blobPath: path, sha256: e.sha256 } : null,
+          reading: null,
+        };
         break;
+      }
       case "tool_call":
       case "permission_request":
         d.tool[e.agentId] = { name: e.name, input: e.input };
@@ -520,6 +598,12 @@ export function deriveDetail(applied: RunEvent[]): Detail {
         // on one this run opened — a result whose call belongs to an earlier
         // run finds nothing, which is the run scope doing its job rather than a
         // guard bolted on top of it.
+        // CARD 330: a browser tool's answer is a tool_result like any other,
+        // and it is where the recorded READING actually lives — the
+        // accessibility tree, the page text, or the refusal and its rule.
+        if (d.page !== null && d.page.callId === e.callId && d.page.reading === null) {
+          d.page = { ...d.page, reading: e.output.slice(0, BROWSER_READING_CAP) };
+        }
         const open = d.answers[e.callId];
         if (open !== undefined) {
           d.answers[e.callId] = {
@@ -622,6 +706,10 @@ interface Layout {
   subBase: XY;
   subGap: number;
 }
+
+/** CARD 330: the browser station's COMPACT width — `.pf-os--browser` in
+ *  flowmap.css, and the number the compact band's own width grows by. */
+const COMPACT_BROWSER_W = 190;
 
 /** The OS band's top edge — the seat of the `z-os` zone in BOTH layouts, and the
  *  ceiling every card above it has to stay clear of. */
@@ -734,7 +822,43 @@ export const EXPANDED_CARD: Record<string, { w: number; h: number }> = {
   "os-shell": { w: 460, h: 340 },
   "os-mcp": { w: 500, h: 340 },
   "os-net": { w: 104, h: 100 },
+  /*
+   * CARD 330 — the browser station, a NEW node and therefore a NEW key: it
+   * collides with nothing this table already holds. Wider than the other
+   * stations because what it shows is a picture of a page.
+   *
+   * MEASURED in the same pass as the two external cards above (2026-08-30,
+   * Chrome, devicePixelRatio 2, both variable fonts document.fonts.load-ed
+   * before the read, the real markup inside `.pf-root > .pf-flow >
+   * .react-flow__node-os`, no zoom on this card). This entry bounds the WIDE
+   * shell, which is the only one the seats and the runtime check ever judge:
+   *
+   *   no browser was driven                                    64.55
+   *   an address, and neither a picture nor a reading           83.00
+   *   a screenshot recorded whose blob is gone                  97.00
+   *   the refusal + a 30-fold accessibility tree, read region   229.00
+   *   a screenshot at its 200px cap, with a long address        269.00  <- bound
+   *
+   * The last is the WORST case and it is a cap, not an observation: a page
+   * screenshot is 1200x800 and would otherwise set this card's height out of
+   * the image store. Both growth regions are capped in flowmap.css (the shot
+   * 200, the reading 160, and 96 apiece in the compact shell), which is what
+   * makes 280 a bound. It leaves 11px over the worst case and does not move
+   * `tallestStation`, which the two 340px stations already own.
+   */
+  "os-browser": { w: 300, h: 280 },
 };
+
+/**
+ * The OS band's stations, left to right — ONE list.
+ *
+ * It used to be typed out three times inside sceneToFlow (the expanded seating,
+ * the tallest-station sum, and the vertical-shift loop), and card 330 adding a
+ * fifth station is exactly the change where two of three copies get updated and
+ * the third quietly seats the new card on top of its neighbour. The order is
+ * the drawing order and the seats derive from it.
+ */
+export const OS_STATION_IDS = ["os-disk", "os-shell", "os-mcp", "os-net", "os-browser"] as const;
 
 /** Rail room between two expanded cards — one source with the row derivation
  *  (cardGeometry.RAIL_GAP), re-exported under the name the layout uses. */
@@ -1083,6 +1207,12 @@ const COMMON: Record<string, XY> = {
   "os-shell": { x: 236, y: 748 },
   "os-mcp": { x: 462, y: 748 },
   "os-net": { x: 678, y: 748 }, // the network stack sits right of the MCP client — the exit to the outside
+  // CARD 330: the browser station, the fifth seat — 678 + 104 + the same 26px
+  // gap the other four use, which is stationSeats' derivation over the compact
+  // widths (disk 152 · shell 200 · mcp 190 · net 104 · browser 190). It is the
+  // LAST seat on purpose: the four before it keep the exact x they have always
+  // had, so this card moves no station that card 319 is standing on.
+  "os-browser": { x: 808, y: 748 },
 };
 
 // ---------------------------------------------------------------------------
@@ -1154,7 +1284,20 @@ const LAYOUT: Layout = {
   },
   zones: [
     { id: "z-mac", x: 0, y: 24, w: MAC_W, h: 900, variant: "mac", label: "AGENTENSYSTEM · DEIN MAC" },
-    { id: "z-os", x: 24, y: OS_BAND_TOP, w: 792, h: OS_BAND_H, variant: "os", label: "BETRIEBSSYSTEM" },
+    // CARD 330: 792 held the four-station row. The fifth station is seated 26px
+    // past the fourth and is 190 wide compact, so the frame that has to HOLD it
+    // grows by exactly that — a frame that does not is a frame with a card
+    // sticking through its side, and a frame never complains about what is
+    // drawn over it.
+    {
+      id: "z-os",
+      x: 24,
+      y: OS_BAND_TOP,
+      w: 792 + STATION_GAP + COMPACT_BROWSER_W,
+      h: OS_BAND_H,
+      variant: "os",
+      label: "BETRIEBSSYSTEM",
+    },
     { id: "z-outside", x: OUTSIDE_X, y: 24, w: OUTSIDE_W, h: 900, variant: "outside", label: "AUSSERHALB" },
   ],
   boundary: { x: BOUNDARY_X, y: 24, h: 900 },
@@ -1440,7 +1583,7 @@ export function sceneToFlow(
     // The widened stations re-seat left-to-right from their own envelopes, and
     // the band width follows them (stationSeats — the derivation that replaced
     // the hand-written seats).
-    const stationIds = ["os-disk", "os-shell", "os-mcp", "os-net"] as const;
+    const stationIds = OS_STATION_IDS;
     const stationWs = stationIds.map((sid) => EXPANDED_CARD[sid].w);
     const stationXs = stationSeats(stationWs);
     stationIds.forEach((sid, i) => {
@@ -1471,9 +1614,7 @@ export function sceneToFlow(
     );
     // An open station (the shell with a running command, the MCP client with its
     // call) is taller than the band was drawn for, so the band grows to hold it.
-    const tallestStation = Math.max(
-      ...["os-disk", "os-shell", "os-mcp", "os-net"].map((id) => EXPANDED_CARD[id].h),
-    );
+    const tallestStation = Math.max(...OS_STATION_IDS.map((id) => EXPANDED_CARD[id].h));
     bandGrow = Math.max(0, OS_STATION_DY + tallestStation + 20 - OS_BAND_H);
     posL.agent = { x: agentX, y: L.pos.agent.y };
     boxBaseL = { x: subX, y: L.subBase.y };
@@ -1537,7 +1678,7 @@ export function sceneToFlow(
     for (const id of ["llm", "netz", "mcpserver"]) posL[id] = { ...posL[id], x: posL[id].x + spread };
   }
   if (vSpread !== 0) {
-    for (const id of ["netz", "mcpserver", "os-disk", "os-shell", "os-mcp", "os-net"]) {
+    for (const id of ["netz", "mcpserver", ...OS_STATION_IDS]) {
       posL[id] = { ...posL[id], y: posL[id].y + vSpread };
     }
   }
@@ -1669,6 +1810,10 @@ export function sceneToFlow(
   // node whose job is to say what left the machine was dark for almost
   // everything that left it.
   const netView = netCardView(detail);
+  /** CARD 330: whether any loop is inside a browser tool right now. */
+  const onBrowser = (l: { activeTool: string | null }) =>
+    l.activeTool !== null && l.activeTool.startsWith("browser_");
+  const browserBusy = onBrowser(scene) || scene.subagents.some(onBrowser);
   /** The rails that are hot right now, keyed agent+station. */
   const hot = new Set(occupants.map((o) => `${o.agentId}\u0000${o.station}`));
   const isHot = (agentId: string, st: Station) => hot.has(`${agentId}\u0000${st}`);
@@ -1705,6 +1850,16 @@ export function sceneToFlow(
     active: mcpInUse || netView.crossed,
     byTag: mcpUser?.tag ?? null,
   });
+  // CARD 330 — the browser station, the owner's "counterpart in the OS, namely
+  // the headless browser / demo browser". It is drawn on EVERY map, empty when
+  // the run drove no browser: a station that appears and disappears is a card
+  // whose absence a reader has to interpret.
+  //
+  // Busy is the ONE thing the scene can honestly say about it. A browser tool
+  // has no station in `advanceLoop` — it lands on "agent" like any unknown tool
+  // — so occupancy is read off the tool NAME in flight, which is the same fact
+  // the agent card is showing.
+  N("os-browser", "os", { kind: "browser", active: browserBusy, page: detail.page });
 
   // ----- LLM ----- (the SHARED model — it works for main and every subagent,
   // so it animates and streams for whichever agent is at it right now)
@@ -1966,6 +2121,10 @@ export function sceneToFlow(
   E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net: true });
   E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", isHot("main", "disk"), { lane: stationLane(null) });
   E("e-agent-osshell", "agent", "os-shell", "bs", "tt", isHot("main", "cmd"), { lane: stationLane(null) });
+  // CARD 330: the browser station's rail home. STRUCTURAL, like the disk and
+  // shell rails — drawn always, lit while a browser tool is in flight. Card 295
+  // is why: a station with no rail reads as a card floating beside the map.
+  E("e-agent-osbrowser", "agent", "os-browser", "bs", "tt", browserBusy, { lane: stationLane(null) });
   // The MCP call rides the whole chain and lights it end to end while in use:
   //   <caller> → MCP-client → network stack →⟂ Netz → MCP-server
   // The first leg belongs to the CALLING agent (main's rail or the child's

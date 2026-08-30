@@ -74,3 +74,35 @@ export function outboundHop(url: unknown): Hop {
   if (host === "" || isLoopbackAddress(host)) return { kind: "none" };
   return { kind: "host", host };
 }
+
+/** The three things a recorded page address can be. */
+export type RecordedUrlState = "address" | "redacted" | "absent";
+
+/**
+ * Which of the three a recorded address is.
+ *
+ * They are three states of ONE field and may never collapse into two:
+ * `url` is ABSENT on 3 of the 4 real `browser_action` events on this machine —
+ * a failed navigate records no page at all — and "absent" is not "empty" and
+ * neither of them is "the address was recorded and deliberately withheld".
+ *
+ * @param url the recorded address, in whatever shape it arrived
+ * @return which state it is in
+ */
+export function recordedUrlState(url: unknown): RecordedUrlState {
+  if (isRedactionMarker(url)) return "redacted";
+  return typeof url === "string" && url !== "" ? "address" : "absent";
+}
+
+/**
+ * The redaction rule that fired, when the marker names one.
+ *
+ * @param url the recorded address, in whatever shape it arrived
+ * @return the rule, or "" when the marker does not say
+ */
+export function redactionRule(url: unknown): string {
+  if (typeof url === "string") return /^\[redacted: ([^\]]*)\]$/.exec(url)?.[1] ?? "";
+  if (typeof url !== "object" || url === null) return "";
+  const rule = (url as { rule?: unknown }).rule;
+  return typeof rule === "string" ? rule : "";
+}

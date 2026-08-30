@@ -609,6 +609,12 @@
 .pf-os--net {
   width: 104px;
 } /* the network is just a small globe → narrower */
+/* CARD 330: the browser station shows a picture of a page, so it is the second
+ * widest thing in the band. The compact band's own width derives from this
+ * number (sceneToFlow: COMPACT_BROWSER_W). */
+.pf-os--browser {
+  width: 190px;
+}
 .pf-os__head {
   display: flex;
   align-items: center;
@@ -1289,6 +1295,63 @@
  * all — so it is the card's load-bearing sentence and does not sit on
  * --text-faint, which measures 2.06:1 (spectroscope), 2.12 (paper) and 3.73
  * (graphite) against the card. --text-dim is the token that reads in all four. */
+/* ---- CARD 330: the browser station, which REPLAYS and never browses --------
+ * The card can show three things and says which: the picture the run stored,
+ * the reading it recorded, or the honest sentence that neither happened. Every
+ * region that grows with content is capped, so the seat under it is a bound.
+ * ------------------------------------------------------------------------ */
+.pf-browser {
+  margin-top: 8px;
+  text-align: left;
+}
+.pf-browser__url {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 2px solid var(--border-strong);
+  padding-left: 6px;
+}
+/* The picture is capped, and the cap is what makes the seat under this card a
+ * bound rather than a hope: a page screenshot is 1200x800 and would otherwise
+ * set the card's height from the store. Compact matches the reading region's
+ * own cap so the two worst cases are the same card. */
+.pf-browser__shot {
+  display: block;
+  margin-top: 6px;
+  width: 100%;
+  max-height: 96px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+/* Expanded, the station is 300 wide and is meant to be read rather than
+ * glanced at, so the page gets twice the room. */
+.pf-os--wide .pf-browser__shot {
+  max-height: 200px;
+}
+.pf-os--wide .pf-browser__read {
+  max-height: 160px;
+}
+.pf-browser__gone {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.pf-browser__read {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 96px;
+  overflow: auto;
+}
 .pf-net__none {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1910,6 +1973,9 @@
 }
 .pf-os--wide.pf-os--net {
   width: 104px;
+}
+.pf-os--wide.pf-os--browser {
+  width: 300px;
 }
 
 /* ---------------------------------------------------------------------------

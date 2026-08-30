@@ -80,6 +80,15 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
  * record cannot exist without is defaulted, so an older or newer server
  * degrades a cell rather than dropping a step out of the replay.
  *
+ * TWO SHAPES, one reader (card 330). The index endpoint FLATTENS the picture to
+ * the top level — `openEntry` in BrowserWireController writes blobPath, sha256,
+ * mediaType, width and height as siblings of `cid` — while the raw sidecar
+ * nests them under `browser_result.image`. Fed the nested shape this used to
+ * hand back a perfectly valid step that said no screenshot was taken, silently:
+ * a row that HAD a picture read as a row that never took one, which is exactly
+ * the difference the card is built to show. The flat keys still win, so nothing
+ * about the endpoint's answer changes.
+ *
  * @param value one row of the ledger
  * @return the record, or null for a row without a cid (nothing to drill into)
  *         or without a ts (no place on the scrubber)
@@ -88,6 +97,8 @@ export function readBrowserAction(value: unknown): BrowserActionMeta | null {
   if (typeof value !== "object" || value === null) return null;
   const v = value as Record<string, unknown>;
   if (typeof v.cid !== "string" || v.cid === "" || typeof v.ts !== "number") return null;
+  const img: Record<string, unknown> =
+    typeof v.image === "object" && v.image !== null ? (v.image as Record<string, unknown>) : {};
   return {
     cid: v.cid,
     epoch: num(v.epoch),
@@ -99,11 +110,11 @@ export function readBrowserAction(value: unknown): BrowserActionMeta | null {
     ok: v.ok === true,
     resultBytes: num(v.resultBytes),
     durationMs: num(v.durationMs),
-    blobPath: str(v.blobPath),
-    sha256: str(v.sha256),
-    mediaType: str(v.mediaType),
-    width: num(v.width),
-    height: num(v.height),
+    blobPath: str(v.blobPath) || str(img.blobPath),
+    sha256: str(v.sha256) || str(img.sha256),
+    mediaType: str(v.mediaType) || str(img.mediaType),
+    width: num(v.width) || num(img.width),
+    height: num(v.height) || num(img.height),
     ts: v.ts,
     startedAt: typeof v.startedAt === "number" ? v.startedAt : v.ts,
   };
@@ -156,10 +167,14 @@ export function hasScreenshot(step: BrowserActionMeta): boolean {
  * endpoint takes a file name and jails it on its own side too — this is the
  * near half of that fence, on the side that builds the request.
  *
- * @param step the ledger record
+ * Takes anything that CARRIES a blobPath rather than a whole ledger record, so
+ * the flow map's browser card (card 330) is held to this one rule instead of
+ * writing a third copy of it — a third copy is a third place for a traversal.
+ *
+ * @param step anything carrying the recorded blob path
  * @return the URL, or null when the step recorded no picture
  */
-export function screenshotUrl(step: BrowserActionMeta): string | null {
+export function screenshotUrl(step: { blobPath: string }): string | null {
   if (step.blobPath === "") return null;
   const name = step.blobPath.split("/").pop() ?? "";
   return name === "" ? null : `/api/images/${encodeURIComponent(name)}`;

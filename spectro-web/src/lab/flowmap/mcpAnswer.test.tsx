@@ -215,6 +215,32 @@ describe("the join cannot pair across runs (card 328, criterion 3)", () => {
     expect(answerMark(server)).toBe("none");
     expect(server).not.toContain(MEDIAN_ANSWER.slice(0, 40));
   });
+
+  it("a CHILD starting does not throw its parent's exchange away", () => {
+    // ADDED DURING THE BUILD, off a live scrub. Measured over 783 session
+    // files: 25 of 25 child run_starts carry their OWN runId and not one shares
+    // the parent's. A run scope keyed on the runId alone therefore emptied the
+    // parent's whole record the moment it spawned a subagent — the ordinary
+    // case on this map, not a corner of it — and every case above stayed green
+    // because none of them spawns anything.
+    const events: RunEvent[] = [
+      runStart("r1"),
+      mcpCall(CALL_A, "gate"),
+      mcpResult(CALL_A, MEDIAN_ANSWER),
+      { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "look", ts: T + 100 } as RunEvent,
+      {
+        type: "run_start",
+        runId: "worker-1-run",
+        agentId: "worker-1",
+        prompt: "look",
+        provider: "anthropic",
+        ts: T + 101,
+      } as RunEvent,
+    ];
+    const server = serverMarkup(events);
+    expect(answerMark(server)).toBe("answered");
+    expect(callMark(server)).toBe(CALL_A);
+  });
 });
 
 // ---------------------------------------------------------------------------

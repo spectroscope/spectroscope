@@ -301,6 +301,21 @@ describe("what the LAST run reached is not what this one reached (card 329)", ()
     expect(hostsIn(m)).toEqual([]);
     expect(m).toContain('data-reached="none"');
   });
+
+  it("but a CHILD starting keeps what the run has already reached", () => {
+    // 25 of 25 child run_starts on this machine carry their own runId, so a
+    // scope keyed on the runId alone emptied the list on every spawn.
+    const child: RunEvent = {
+      type: "run_start",
+      runId: "worker-1-run",
+      agentId: "worker-1",
+      prompt: "look",
+      provider: "anthropic",
+      ts: T + 500,
+    } as RunEvent;
+    const m = netCard([runStart(), exchange("https://api.anthropic.com/v1/messages"), child]);
+    expect(hostsIn(m)).toEqual(["api.anthropic.com"]);
+  });
 });
 
 // ---------------------------------------------------------------------------

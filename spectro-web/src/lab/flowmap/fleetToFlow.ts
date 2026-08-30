@@ -41,7 +41,9 @@ const GRID_X = 250; // first column (right of the user station)
 const GRID_Y = 110; // first row
 const OS_GAP = 56; // space between the deepest card and the OS band
 const OS_H = 236; // the OS band's height (matches the single-run map)
-const OS_W = 792; // the OS band's width (disk/shell/mcp/net row)
+// CARD 330: the band holds five stations now (disk/shell/mcp/net/browser) —
+// 792 was the four-station row, plus the same 26px gap and the browser's 190.
+const OS_W = 1008;
 const MAC_PAD = 24;
 const USER_X = 40; // the user station's own column, left of the card grid
 
@@ -228,6 +230,19 @@ export function fleetToFlow(
       id: "os-net",
       x: MAC_PAD + 654,
       data: { kind: "net", active: mcpInUse || netView.crossed },
+    },
+    // CARD 330: the fleet room's OS band draws the same stations as the
+    // single-run map's, so the browser station is here too — one producer left
+    // behind is half a feature on a live surface. `browserBusy` is read off the
+    // tool in flight, the same fact the single-run map reads.
+    {
+      id: "os-browser",
+      x: MAC_PAD + 784,
+      data: {
+        kind: "browser",
+        active: cards.some((c) => c.activeTool !== null && c.activeTool.startsWith("browser_")),
+        page: detail.page,
+      },
     },
   ];
   for (const station of OS_STATIONS) {

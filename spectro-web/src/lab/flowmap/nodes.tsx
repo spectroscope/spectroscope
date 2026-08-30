@@ -15,6 +15,8 @@ import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
 import type { AgentStream, CtxPart, McpAnswerView, NetCardView } from "./sceneToFlow";
 import type { Focus, GateState, SubagentInfo } from "../labScene";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
+import { recordedUrlState, redactionRule } from "./addresses";
+import { screenshotUrl } from "../../wire/browserWire";
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 
@@ -552,9 +554,84 @@ function McpBody({
   );
 }
 
+/** What the browser station was handed about the last call it recorded. */
+export interface BrowserPageView {
+  /** The recorded address: a string, a redaction marker, or absent. */
+  url?: unknown;
+  tool?: string;
+  ok?: boolean;
+  /** The blob the card can load, when the run recorded a path for it. */
+  shot?: { blobPath: string; sha256: string } | null;
+  /** The component's own latch: the blob was named and the store no longer has
+   *  it. The map cannot know — only the failed load can. */
+  shotBroken?: boolean;
+  /** What the tool answered: the accessibility tree, the page text, or the
+   *  refusal and the rule that fired. */
+  reading?: string | null;
+}
+
+/**
+ * The browser station's body — the page this run RECORDED (card 330).
+ *
+ * It is a replay, never a browser: nothing here reaches the recorded address,
+ * and the only request the card can make is to the image endpoint for a blob
+ * the run itself stored. There is no HTML on the wire and there never was —
+ * `browser_action` is metadata only, by design — so what the card can show is
+ * the picture that was taken, or the reading that was recorded, or the honest
+ * sentence that neither happened. Those are four different facts and none of
+ * them is drawn as another.
+ */
+function BrowserBody({ page }: { page?: BrowserPageView | null }) {
+  const lang = useLang();
+  // Seeded from the data so the state is drivable, latched by the failed load
+  // in a browser: of six image_generated events on this machine five blobs
+  // exist and one does not, so a named blob that is gone is a live case on a
+  // shipped surface and not a corner.
+  const [broken, setBroken] = useState(page?.shotBroken === true);
+  if (page === undefined || page === null) {
+    return <div className="pf-os__line">{t(lang, "map.browser.none")}</div>;
+  }
+  const urlState = recordedUrlState(page.url);
+  const shotSrc = page.shot == null || broken ? null : screenshotUrl(page.shot);
+  const reading = page.reading ?? null;
+  const pageState =
+    shotSrc !== null
+      ? "shot"
+      : page.shot != null
+        ? "shot-missing"
+        : reading !== null && reading !== ""
+          ? "reading"
+          : "nothing";
+  const rule = urlState === "redacted" ? redactionRule(page.url) : "";
+  return (
+    <div className="pf-browser" data-url-state={urlState} data-page-state={pageState}>
+      <div className="pf-browser__url" title={urlState === "address" ? String(page.url) : undefined}>
+        {urlState === "address"
+          ? String(page.url)
+          : urlState === "redacted"
+            ? `${t(lang, "map.net.redacted")}${rule === "" ? "" : ` · ${rule}`}`
+            : t(lang, "map.browser.noPage")}
+      </div>
+      {pageState === "shot" && shotSrc !== null && (
+        <img
+          className="pf-browser__shot"
+          src={shotSrc}
+          alt={t(lang, "map.browser.shotAlt")}
+          onError={() => setBroken(true)}
+        />
+      )}
+      {pageState === "shot-missing" && (
+        <div className="pf-browser__gone">{t(lang, "map.browser.shotGone")}</div>
+      )}
+      {pageState === "reading" && <div className="pf-browser__read pf-mono nowheel">{reading}</div>}
+      {pageState === "nothing" && <div className="pf-browser__gone">{t(lang, "map.browser.nothing")}</div>}
+    </div>
+  );
+}
+
 export function OsNode({ data }: NodeProps) {
   const d = data as {
-    kind: "disk" | "shell" | "net" | "mcp";
+    kind: "disk" | "shell" | "net" | "mcp" | "browser";
     active: boolean;
     disk?: "idle" | "read" | "write";
     file?: string | null;
@@ -562,6 +639,8 @@ export function OsNode({ data }: NodeProps) {
     mcp?: string | null;
     /** CARD 328: the MCP exchange this card is the asking half of. */
     call?: { callId: string; name: string; input: unknown } | null;
+    /** CARD 330: the last browser call this run recorded. */
+    page?: BrowserPageView | null;
     /** Who is on the station right now — first entry is the occupant whose
      *  content shows, the rest are "also" (stationUsers, owner call 2026-08-26).
      *  Each carries its agentId since card 295, so a caller can address the
@@ -587,6 +666,9 @@ export function OsNode({ data }: NodeProps) {
       break;
     case "mcp":
       station = { title: "MCP-Client", body: <McpBody active={d.active} mcp={d.mcp} call={d.call} /> };
+      break;
+    case "browser":
+      station = { title: t(lang, "map.node.browser"), body: <BrowserBody page={d.page} /> };
       break;
   }
 
