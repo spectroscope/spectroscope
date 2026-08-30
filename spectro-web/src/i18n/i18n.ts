@@ -436,6 +436,26 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "{n} agents named by a workflow with no transcript.",
   },
   "imp.pickFolder": { de: "Session-Ordner wählen …", en: "Pick a session folder …" },
+  // Card 318. A store row whose session has agents beside it brings the whole
+  // run on a plain click, and says so BEFORE the click rather than after it:
+  // the reader is not surprised by a 104 MB import he never asked for. The
+  // count is the row's own `workflow-agents ×N`, off the same fold, so the two
+  // cannot disagree on one line.
+  "imp.run.brings": {
+    de: "lädt den ganzen Lauf · {agents} Agenten daneben",
+    en: "loads the whole run · {agents} agents beside it",
+  },
+  // The escape, and it stays a small secondary thing next to the row. What it
+  // must never become is the answer "go and find the folder yourself".
+  "imp.run.only": { de: "nur diese Datei", en: "this file only" },
+  // Over the ceiling the row falls back to the session file — today's
+  // behaviour — and it must be impossible to mistake it for today's behaviour.
+  // Both numbers come from the server's own refusal; the agent count is the
+  // row's.
+  "imp.run.tooBig": {
+    de: "{size} — mehr, als dieser Server auf einmal trägt ({limit}). Geladen ist nur die Session-Datei, die {agents} Agenten daneben fehlen.",
+    en: "{size} — more than this server carries at once ({limit}). Only the session file is loaded; the {agents} agents beside it are missing.",
+  },
   "imp.err.noSession": {
     de: "Keine Session-.jsonl in der Auswahl gefunden.",
     en: "No session .jsonl found in the selection.",

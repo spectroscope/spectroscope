@@ -30,7 +30,8 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
 import { rowState, formatBytes, listingNotice } from "../import/rowState";
-import type { TranscriptRow, StoreLimits } from "../import/rowState";
+import type { RowPlan, TranscriptRow, StoreLimits } from "../import/rowState";
+import { runBundleInput, runRefusal } from "../import/runBundle";
 import type { SubagentTranscript } from "../import/subagentFile";
 import { useTranscriptFacts } from "../import/useTranscriptFacts";
 import { missingGists, useGists } from "../import/useGists";
@@ -64,6 +65,12 @@ export function ImportDialog(props: {
      *  its subagents/ set. Absent for every single-file import, which is what
      *  keeps that path exactly as it was. */
     run?: ImportedRunSummary,
+    /** One sentence this import owes the reader beyond its own counts (card
+     *  318): the run was over the server's ceiling, so what arrived is the
+     *  session file and the agents beside it stayed on disk. It travels WITH
+     *  the import because this dialog is gone by the time it is read — the
+     *  same reason the children counts do. */
+    note?: string,
   ) => void;
   onClose: () => void;
 }) {
@@ -216,7 +223,7 @@ export function ImportDialog(props: {
   // Every entry point clears the previous error before it starts. Without this
   // a failed pick left its red line standing while the next attempt succeeded,
   // and only the textarea's onChange ever cleared it.
-  const load = (raw: string, label: string, storePath?: string): void => {
+  const load = (raw: string, label: string, storePath?: string, note?: string): void => {
     setError(null);
     try {
       const { events, kind, source, subagent } = detectAndLoad(raw);
@@ -224,7 +231,7 @@ export function ImportDialog(props: {
       // never what it returned. Say that once, here, rather than leaving the
       // reader to infer it from a screen of empty tool bodies.
       setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
-      props.onLoad(events, label, kind, source, subagent, storePath);
+      props.onLoad(events, label, kind, source, subagent, storePath, undefined, note);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
@@ -234,28 +241,97 @@ export function ImportDialog(props: {
     }
   };
 
-  const loadFromStore = (tr: TranscriptRow): void => {
+  /**
+   * A row's click, through the door the row already named.
+   *
+   * Card 318. The merge that loads a workflow run's agents INTO the stream has
+   * shipped since card 291 and was reachable only from the folder picker; this
+   * list — the door the owner actually uses — asked for the session file alone,
+   * so a session with hundreds of agents beside it opened with none of them.
+   * The row's plan (rowState) decides which door, off the same fold that prints
+   * its `workflow-agents` chip, and the DEFAULT is the run. Nobody is sent to
+   * find a directory.
+   *
+   * One request either way, and the run door hands its answer to the
+   * coordinator the folder pick already uses — untouched, so the two doors
+   * cannot drift into two merges.
+   *
+   * @param tr the listing row
+   * @param door which door: the whole run, or the session file on its own
+   * @param agents what the row said sits beside this session, for the sentence
+   *        a refusal has to print
+   */
+  const loadFromStore = (tr: TranscriptRow, door: RowPlan["door"], agents: number): void => {
     setError(null);
-    fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(tr.path)}`)
-      .then((r) => {
-        if (r.ok) return r.text();
-        // The rows are disabled before the click now, so a refusal here means
-        // the listing went stale: the store is live and a transcript can grow
-        // past the ceiling between the render and the click. The server names
-        // both numbers, so show what it said rather than a bare status.
+    // The escape AND the degrade land here: one file, through the route that
+    // has always served it. `note` is the sentence the import bar carries when
+    // this was a fall-back rather than a choice.
+    const sessionFileOnly = (note?: string): void => {
+      fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(tr.path)}`)
+        .then((r) => {
+          if (r.ok) return r.text();
+          // The rows are disabled before the click now, so a refusal here means
+          // the listing went stale: the store is live and a transcript can grow
+          // past the ceiling between the render and the click. The server names
+          // both numbers, so show what it said rather than a bare status.
+          if (r.status === 413) {
+            return r
+              .text()
+              .then((why) =>
+                Promise.reject(
+                  new Error(why.trim() === "" ? t(lang, "imp.err.fetch", { status: 413 }) : why.trim()),
+                ),
+              );
+          }
+          return Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status })));
+        })
+        .then((raw) => load(raw, tr.file, tr.path, note))
+        .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    };
+    if (door === "session") {
+      sessionFileOnly();
+      return;
+    }
+    fetch(`/api/claude/transcripts/run?path=${encodeURIComponent(tr.path)}`)
+      .then(async (r): Promise<unknown> => {
+        if (r.ok) return (await r.json()) as unknown;
         if (r.status === 413) {
-          return r
-            .text()
-            .then((why) =>
-              Promise.reject(
-                new Error(why.trim() === "" ? t(lang, "imp.err.fetch", { status: 413 }) : why.trim()),
-              ),
-            );
+          // The run is more than this server carries at once. Fall back to the
+          // file — and SAY so, with both of the server's own numbers and the
+          // agents left on disk. A silent fall-back is this card's own defect
+          // wearing a new coat, so the sentence is keyed on the refusal, not on
+          // the reader noticing that something is missing.
+          const refusal = runRefusal(await r.json().catch(() => null));
+          sessionFileOnly(
+            refusal === null
+              ? t(lang, "imp.err.fetch", { status: 413 })
+              : t(lang, "imp.run.tooBig", {
+                  size: formatBytes(refusal.totalBytes),
+                  limit: formatBytes(refusal.limitBytes),
+                  agents,
+                }),
+          );
+          return null;
         }
-        return Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status })));
+        throw new Error(t(lang, "imp.err.fetch", { status: r.status }));
       })
-      .then((raw) => load(raw, tr.file, tr.path))
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .then((body) => {
+        if (body === null) return; // the degrade above already loaded the file
+        // The SAME coordinator the folder pick calls, on the same three text
+        // sets, and the summary from its own `runSummary` rather than a literal
+        // built here (card 315). `tr.path` goes with it: a store load is an
+        // address, and the agents panel's roster outranks the file listing that
+        // address also fetches (workLevels.ts besideReading).
+        const run = importClaudeCodeRun(runBundleInput(body));
+        setNote(run.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+        props.onLoad(run.events, tr.file, run.kind, run.source, run.subagent, tr.path, runSummary(run));
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : String(e));
+        // The blind spot the ring exists for: the whole import path runs in the
+        // browser and reaches no server, so nothing else records it.
+        reportBrowserError("import", e);
+      });
   };
 
   const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -470,49 +546,76 @@ export function ImportDialog(props: {
 
             <div className="import-store" role="list" ref={listRef}>
               {verdict.rows.map((tr) => {
-                const state = rowState(tr, limits, lang);
                 const facts = factsFor(tr);
+                // The facts go IN, so the verdict and the door come out of one
+                // call: which agents sit beside this session is the same
+                // reading that prints the chip below, and a second answer to
+                // that question on the same row is how a panel starts
+                // contradicting itself (card 313, one surface earlier).
+                const state = rowState(tr, limits, lang, facts);
+                // Told only when it is known. A row whose facts have not landed
+                // still takes the run door — with nothing beside a session the
+                // bundle IS the file — but it must not print a count nobody
+                // measured.
+                const bringsRun = state.plan.door === "run" && state.plan.agents > 0;
                 return (
-                  <button
-                    key={tr.path}
-                    type="button"
-                    className={state.enabled ? "import-store-row" : "import-store-row is-refused"}
-                    role="listitem"
-                    title={tr.path}
-                    disabled={!state.enabled}
-                    aria-disabled={!state.enabled}
-                    onClick={() => loadFromStore(tr)}
-                    ref={(el) => rowRef(el, tr)}
-                  >
-                    <span className="import-store-file mono">{tr.file}</span>
-                    {facts?.firstPrompt !== undefined && (
-                      <span className="import-store-prompt" title={facts.firstPrompt}>
-                        {facts.firstPrompt}
-                      </span>
-                    )}
-                    {gists.byPath.get(tr.path) !== undefined && (
-                      /* Marked as written by a model, with which one. It is a
+                  <div key={tr.path} className="import-store-line" role="listitem">
+                    <button
+                      type="button"
+                      className={state.enabled ? "import-store-row" : "import-store-row is-refused"}
+                      title={tr.path}
+                      disabled={!state.enabled}
+                      aria-disabled={!state.enabled}
+                      onClick={() => loadFromStore(tr, state.plan.door, state.plan.agents)}
+                      ref={(el) => rowRef(el, tr)}
+                    >
+                      <span className="import-store-file mono">{tr.file}</span>
+                      {facts?.firstPrompt !== undefined && (
+                        <span className="import-store-prompt" title={facts.firstPrompt}>
+                          {facts.firstPrompt}
+                        </span>
+                      )}
+                      {gists.byPath.get(tr.path) !== undefined && (
+                        /* Marked as written by a model, with which one. It is a
                          reading of the opening prompt, not a fact off the file,
                          and the row says so rather than letting it pass as one. */
-                      <span
-                        className="import-store-gist"
-                        title={`${gists.byPath.get(tr.path)?.model ?? ""}${
-                          gists.byPath.get(tr.path)?.stale ? " · the file has changed since" : ""
-                        }`}
+                        <span
+                          className="import-store-gist"
+                          title={`${gists.byPath.get(tr.path)?.model ?? ""}${
+                            gists.byPath.get(tr.path)?.stale ? " · the file has changed since" : ""
+                          }`}
+                        >
+                          {gists.byPath.get(tr.path)?.stale ? "≈ " : "~ "}
+                          {gists.byPath.get(tr.path)?.text}
+                        </span>
+                      )}
+                      <span className="import-store-meta">
+                        <span className="import-store-project">{tr.project}</span>
+                        <span className="tabular">
+                          {relativeTime(tr.modifiedAt, now, lang)} · {formatBytes(tr.size)}
+                        </span>
+                      </span>
+                      {rowFacts(tr)}
+                      {bringsRun && (
+                        <span className="import-store-brings">
+                          {t(lang, "imp.run.brings", { agents: state.plan.agents })}
+                        </span>
+                      )}
+                      {!state.enabled && <span className="import-store-refused">{state.reason}</span>}
+                    </button>
+                    {/* The escape the owner asked for: secondary, labelled, and
+                      never the answer "go and find the folder yourself". It is
+                      offered only where there is something to leave behind. */}
+                    {bringsRun && state.enabled && (
+                      <button
+                        type="button"
+                        className="ghost import-store-only"
+                        onClick={() => loadFromStore(tr, "session", state.plan.agents)}
                       >
-                        {gists.byPath.get(tr.path)?.stale ? "≈ " : "~ "}
-                        {gists.byPath.get(tr.path)?.text}
-                      </span>
+                        {t(lang, "imp.run.only")}
+                      </button>
                     )}
-                    <span className="import-store-meta">
-                      <span className="import-store-project">{tr.project}</span>
-                      <span className="tabular">
-                        {relativeTime(tr.modifiedAt, now, lang)} · {formatBytes(tr.size)}
-                      </span>
-                    </span>
-                    {rowFacts(tr)}
-                    {!state.enabled && <span className="import-store-refused">{state.reason}</span>}
-                  </button>
+                  </div>
                 );
               })}
             </div>

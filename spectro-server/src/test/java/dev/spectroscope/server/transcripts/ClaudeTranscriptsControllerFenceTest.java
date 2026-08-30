@@ -151,10 +151,20 @@ class ClaudeTranscriptsControllerFenceTest {
                 .andExpect(status().isNotFound());
     }
 
+    /**
+     * The climb has to REACH something, or it is not a test of the fence.
+     *
+     * <p>Two segments up from {@code -Users-x-repo} lands in {@code .claude},
+     * where nothing is — so the same 404 comes back whether the fence is there
+     * or not. Measured 2026-08-30 by removing the fence from the run endpoint:
+     * the symlink and absolute-path cases went red and this one stayed green.
+     * Three segments up is the store's own parent, where the outside file
+     * really sits, and now only the canonical check refuses it.</p>
+     */
     @Test
     void noRunBundleForAPathThatClimbsOutOfTheStore() throws Exception {
         mvc.perform(get("http://127.0.0.1/api/claude/transcripts/run")
-                        .param("path", "-Users-x-repo/../../elsewhere/secret.jsonl"))
+                        .param("path", "-Users-x-repo/../../../elsewhere/secret.jsonl"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString(SECRET))));

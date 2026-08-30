@@ -1169,7 +1169,7 @@ export function App() {
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((raw) => {
         const { events, kind, source, subagent } = detectAndLoad(raw);
-        openImport(events, label, kind, source, subagent, path, undefined, cause);
+        openImport(events, label, kind, source, subagent, path, undefined, undefined, cause);
       })
       .catch((e) => reportBrowserError("store-open", e));
   };
@@ -1187,6 +1187,10 @@ export function App() {
     storePath?: string,
     /** What a run import measured (card 291); absent for every lone file. */
     run?: ImportedRunSummary,
+    /** One sentence this import owes the reader beyond its own counts (card
+     *  318): the run was over the server's ceiling, so what arrived is the
+     *  session file and its agents stayed on disk. */
+    note?: string,
     /** "gesture" pushes a history entry; "apply" replaces it, so following an
      *  address does not stack a second one on top of itself. */
     cause: NavCause = "gesture",
@@ -1251,6 +1255,11 @@ export function App() {
           // Card 291: what a run import carried — "N children merged", and
           // when some were skipped it says so.
           childrenNote(lang, run),
+          // Card 318: and what it could NOT carry. A store row whose run is
+          // over the server's ceiling loads the session file instead, which is
+          // exactly what the old behaviour looked like — so the fall-back says
+          // so here, with both numbers, rather than passing for a normal load.
+          note ?? null,
         ]
           .filter((line): line is string => line !== null)
           .join(" ") || null,

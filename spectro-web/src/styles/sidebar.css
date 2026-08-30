@@ -437,6 +437,24 @@
   color: var(--text-dim);
 }
 .import-store-row.is-refused:hover { background: none; border-left-color: transparent; }
+/* Card 318: one row is now a row PLUS its escape, so the line is the flex
+   container and the row keeps being the thing that fills it. */
+.import-store-line { display: flex; align-items: center; gap: var(--sp-1); }
+.import-store-line .import-store-row { flex: 1 1 auto; min-width: 0; }
+/* What the click is about to bring, said before it happens. Dim, like every
+   other derived fact on the row — the count itself is the news, not its colour. */
+.import-store-brings { font-size: var(--fs-11); color: var(--text-dim); }
+/* The secondary door. Small and quiet on purpose: the default is the run, and
+   this is the way out for a reader who wants only the file. */
+.import-store-only {
+  flex: 0 0 auto;
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+}
+.import-store-only:hover { color: var(--text); border-color: var(--border-strong); }
 .import-store-refused { font-size: var(--fs-11); color: var(--warn); }
 .import-store-file { font-size: var(--fs-12); }
 .import-store-meta { display: flex; gap: var(--sp-2); font-size: var(--fs-11); color: var(--text-dim); }

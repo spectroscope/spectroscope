@@ -108,6 +108,27 @@ public class ClaudeTranscriptsController {
     private static final long MAX_CONTENT_BYTES = 128L * 1024 * 1024;
 
     /**
+     * The largest RUN this server hands over in one answer, published by the
+     * bundle itself and enforced from this one constant.
+     *
+     * <p>A second ceiling, because {@link #MAX_CONTENT_BYTES} does not protect
+     * this read at all. Measured on the owner's own reference session: the
+     * bundle is 527 files and 109,063,005 bytes, and the LARGEST single file in
+     * it is far under 128 MiB — so the per-file ceiling passes the whole thing
+     * and the tab holds all of it. A run this size has to be refused on its
+     * total or not at all.</p>
+     *
+     * <p>128 MiB is deliberately the same number as the per-file ceiling and for
+     * the same reason: what it bounds is the BROWSER, which holds the response
+     * text, the parsed texts and the folded rows. It leaves the owner's 104.0
+     * MiB run inside the line — which is the point, because a card whose whole
+     * subject is "the store list brings the run" that then refused his own
+     * session would have shipped a sentence instead of a feature. Over the line
+     * the row degrades to the session file and SAYS so, with both numbers.</p>
+     */
+    private static final long MAX_BUNDLE_BYTES = 128L * 1024 * 1024;
+
+    /**
      * The most transcripts one facts call will fold.
      *
      * <p>This is the bound on work per request, and it is deliberately about a
@@ -134,6 +155,9 @@ public class ClaudeTranscriptsController {
     /** The thing that spends the operator's key, only when he presses. */
     private final GistWriter gistWriter = new GistWriter();
 
+    /** What {@link #run} will carry, in bytes. See {@link #MAX_BUNDLE_BYTES}. */
+    private final long maxBundleBytes;
+
     /** Spring wiring: the real transcript store under {@code ~/.claude/projects}. */
     public ClaudeTranscriptsController() {
         this(Path.of(System.getProperty("user.home"), ".claude", "projects"));
@@ -145,7 +169,23 @@ public class ClaudeTranscriptsController {
      * @param base the directory to treat as the sandboxed transcript store
      */
     ClaudeTranscriptsController(Path base) {
+        this(base, MAX_BUNDLE_BYTES);
+    }
+
+    /**
+     * Seam for tests: a throwaway base AND a ceiling small enough to reach.
+     *
+     * <p>The bundle ceiling is 128 MiB, and a test that wanted to stand one byte
+     * on either side of it would have to build 128 MiB of readable bundle — not
+     * a sparse file, because the answer at the limit is a 200 that gets read.
+     * So the number is injectable, and the both-ways bite is a cheap one.</p>
+     *
+     * @param base the directory to treat as the sandboxed transcript store
+     * @param maxBundleBytes the largest run {@link #run} will carry
+     */
+    ClaudeTranscriptsController(Path base, long maxBundleBytes) {
         this.base = base;
+        this.maxBundleBytes = maxBundleBytes;
     }
 
     /**
@@ -242,6 +282,70 @@ public class ClaudeTranscriptsController {
             // path was DIFFERENT from the ones that answer 404.
             return ResponseEntity.notFound().build();
         }
+    }
+
+    /**
+     * {@code GET /api/claude/transcripts/run}: one whole recorded run, as texts.
+     *
+     * <p><b>The defect this exists for.</b> The merge that loads a workflow
+     * run's agents INTO the stream shipped in card 291 and was reachable only
+     * from the folder picker. The store list — the one-click door — fetched
+     * {@link #content} for the session file alone, so the owner's session opened
+     * with 3,327 events, 48 work items and a roster of ONE, against the 50,907 /
+     * 303 / 288 the same session gives through the picker. The browser's merge
+     * was never the problem; it was starved of input, and being told to go find
+     * a directory is the answer card 318 was cut to delete.</p>
+     *
+     * <p>ONE parameter, and every other path derived from it — the agents from
+     * the same walk {@link #sidecars} answers with, the run states from their own
+     * folder beside them. Nothing off the wire is ever opened.</p>
+     *
+     * @param rel the session transcript, store-relative — canonicalized and
+     *            checked against the real base before anything is read
+     * @param request the servlet request, for the local-origin fence
+     * @return 404 for a non-local caller or a rebound Host, and 404 for anything
+     *         that is not a transcript inside the store; 413 above
+     *         {@link #MAX_BUNDLE_BYTES} with both numbers in the body, decided
+     *         from sizes before a byte is read; else the bundle
+     */
+    @GetMapping("/api/claude/transcripts/run")
+    public ResponseEntity<Resource> run(@RequestParam("path") String rel, HttpServletRequest request) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
+        Path session = insideStore(rel);
+        if (session == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            // The REAL root, because the transcript went through the same
+            // resolution: a base reached through a symlink would otherwise hand
+            // the walk relative paths that resolve somewhere else entirely.
+            RunBundle bundle = RunBundle.beside(session, base.toRealPath());
+            if (bundle.totalBytes() > maxBundleBytes) {
+                return json(413, RunBundle.refusal(bundle.totalBytes(), maxBundleBytes));
+            }
+            return json(200, bundle.json(rel, maxBundleBytes));
+        } catch (IOException unreadable) {
+            // The session went away between the fence and the read. Same answer
+            // as a path that was never in the store: this surface tells a prober
+            // nothing about what exists.
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * A JSON body already built, at a given status.
+     *
+     * @param status the status to answer with
+     * @param body the UTF-8 bytes
+     * @return the response
+     */
+    private static ResponseEntity<Resource> json(int status, byte[] body) {
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .contentLength(body.length)
+                .body(new ByteArrayResource(body));
     }
 
     /**

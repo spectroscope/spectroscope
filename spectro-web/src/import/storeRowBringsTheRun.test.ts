@@ -309,9 +309,18 @@ describe("a store row must bring what the folder pick brings", () => {
     // triple and the declared phases. A store run load needs both, and card
     // 315 is the record of what happens when a summary is assembled by hand at
     // a call site instead of by the importer's own narrowing.
+    //
+    // Read out of the CALL, not out of the door. Written as two `toContain`s
+    // over the whole slice this was green with the store path deliberately
+    // dropped from `onLoad` — `tr.path` is in the fetch URL either way, so the
+    // guard was satisfied by the thing it was not about. Measured 2026-08-30 by
+    // making exactly that change and watching all seven cases pass.
     const door = storeDoor();
-    expect(door).toContain("runSummary(");
-    expect(door).toContain("tr.path");
+    const at = door.indexOf("props.onLoad(");
+    expect(at, "the run door must hand its result to onLoad").toBeGreaterThan(-1);
+    const call = door.slice(at, door.indexOf(");", at));
+    expect(call, "the run summary comes from the importer's own narrowing").toContain("runSummary(");
+    expect(call, "a store load is an address, and onLoad must carry it").toContain("tr.path");
   });
 
   it("keeps the single-file route as the escape, and does not delete it", () => {

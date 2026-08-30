@@ -342,6 +342,46 @@ class ClaudeTranscriptsRunBundleTest {
                 .isEqualTo(413);
     }
 
+    /**
+     * The ceiling, bitten on BOTH sides, one byte apart.
+     *
+     * <p>The card asks for it and the shipped number cannot give it: standing
+     * one byte either side of 128 MiB means building 128 MiB of bundle that is
+     * really read on the passing side, which no test should cost. So the
+     * ceiling is a constructor seam and the bundle stays small — the comparison
+     * under test is the same {@code >} either way.</p>
+     *
+     * <p>The published number is checked against the ENFORCED one in the same
+     * breath. Two copies of a limit is how a dialog comes to offer the one file
+     * its server refuses, which is the defect {@code MAX_CONTENT_BYTES} was
+     * consolidated to end.</p>
+     */
+    @Test
+    void exactlyAtTheCeilingIsServedAndOneByteOverIsRefused() throws Exception {
+        long weighs = bundleBytesOnDisk();
+        MockMvc atTheLine = MockMvcBuilders
+                .standaloneSetup(new ClaudeTranscriptsController(store, weighs)).build();
+        MockMvc oneByteOver = MockMvcBuilders
+                .standaloneSetup(new ClaudeTranscriptsController(store, weighs - 1)).build();
+
+        MvcResult served = atTheLine
+                .perform(get("http://127.0.0.1/api/claude/transcripts/run").param("path", SESSION))
+                .andReturn();
+        assertThat(served.getResponse().getStatus())
+                .as("a bundle of exactly the ceiling is inside it")
+                .isEqualTo(200);
+        JsonNode body = MAPPER.readTree(served.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        assertThat(body.path("limitBytes").asLong())
+                .as("the published ceiling must be the one that was enforced")
+                .isEqualTo(weighs);
+
+        assertThat(oneByteOver
+                .perform(get("http://127.0.0.1/api/claude/transcripts/run").param("path", SESSION))
+                .andReturn().getResponse().getStatus())
+                .as("one byte over is refused")
+                .isEqualTo(413);
+    }
+
     // ---- fixture ------------------------------------------------------------
 
     /** What every workflow child's meta really carries, in full. */

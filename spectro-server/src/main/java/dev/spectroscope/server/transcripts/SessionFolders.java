@@ -75,6 +75,36 @@ final class SessionFolders {
     }
 
     /**
+     * Where a session's workflow runs recorded THEMSELVES:
+     * {@code <project>/<session>/workflows/<runId>.json}.
+     *
+     * <p>Not a {@link Kind}, and not the same folder as {@link Kind#WORKFLOWS}.
+     * That one is {@code <session>/subagents/workflows}, the directory the run's
+     * AGENTS sit in; this one is its sibling and holds one state file per run —
+     * the script text, the declared phases, the agent count. Measured on the
+     * owner's own session: 47 run directories under the first, 46 state files
+     * under the second, because {@code wf_b6437d8a-34d} has agents and never
+     * wrote a state. So neither folder can be derived from the other, and a
+     * reader that used one path for both would either invent a state file or
+     * drop that run's agents with it.</p>
+     *
+     * <p>Derived like everything else here: computed from a transcript the
+     * caller already proved it may read, never accepted off the wire.</p>
+     *
+     * @param transcript the resolved transcript inside the store
+     * @return the folder, whether or not it exists, or null when this
+     *         transcript cannot have one
+     */
+    static Path runStates(Path transcript) {
+        Path project = transcript.getParent();
+        String session = sessionIdOf(transcript);
+        if (project == null || session == null) {
+            return null;
+        }
+        return project.resolve(session).resolve("workflows");
+    }
+
+    /**
      * The scratchpad for one session, by the layout the harness writes:
      * {@code <tmp>/claude-<uid>/<project>/<session>/scratchpad}.
      *

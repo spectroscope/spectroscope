@@ -18,6 +18,7 @@
 
 import type { Lang } from "../i18n/i18n";
 import { t } from "../i18n/i18n";
+import type { TranscriptFacts } from "./transcriptFacts";
 
 /** One row of GET /api/claude/transcripts. */
 export interface TranscriptRow {
@@ -68,6 +69,37 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
+ * Why a row's click takes the session-file door instead of the run door.
+ *
+ * Two codes, and they are bitten apart on purpose: both end at the same single
+ * file, and one code for the pair would let the dialog print "the agents were
+ * left behind" over a session that never had any. Exported because the sentence
+ * under the row is keyed on the CODE — a degrade matched by a prose substring
+ * goes soft the day somebody rewords the copy, and rewording copy is the one
+ * thing that happens to every string in this product.
+ */
+export const RUN_DOOR_REASONS = ["noAgents", "tooLarge"] as const;
+
+/** One of {@link RUN_DOOR_REASONS}. */
+export type RunDoorReason = (typeof RUN_DOOR_REASONS)[number];
+
+/**
+ * Which door a row's click takes, and the number the reader is told first.
+ *
+ * The owner, watching a session open with none of its agents: "you do not want
+ * to be told: go find the folder yourself". So the DEFAULT is the run, the
+ * session-file-only path stays reachable and clearly secondary, and a refusal
+ * degrades loudly rather than back into something that looks like the old
+ * behaviour.
+ *
+ * `agents` is not a second counter. It is the same number the row's
+ * `workflow-agents xN` chip prints, off the same fold, because two counts of
+ * one thing on one screen is how a panel starts contradicting itself.
+ */
+export type RowPlan =
+  { door: "run"; agents: number } | { door: "session"; reason: RunDoorReason; agents: number };
+
+/**
  * The one place that decides whether an import row is clickable.
  *
  * The server owns the verdict. This module never compares the size against a
@@ -83,7 +115,77 @@ export function formatBytes(bytes: number): string {
  * @param lang the UI-chrome language
  * @returns whether the row may be clicked, and why not when it may not
  */
-export function rowState(row: TranscriptRow, limits: StoreLimits | null, lang: Lang): RowState {
+export function rowState(row: TranscriptRow, limits: StoreLimits | null, lang: Lang): RowState;
+/**
+ * The same verdict, plus the door — for a caller that has asked about the row's
+ * contents, whether or not the answer has landed.
+ *
+ * @param facts what the facts endpoint said about this row, or undefined when
+ *        it has not answered yet: absent means "did not say", never zero
+ */
+export function rowState(
+  row: TranscriptRow,
+  limits: StoreLimits | null,
+  lang: Lang,
+  facts: TranscriptFacts | undefined,
+): RowState & { plan: RowPlan };
+export function rowState(
+  row: TranscriptRow,
+  limits: StoreLimits | null,
+  lang: Lang,
+  // A REST parameter, and it is load-bearing. JavaScript cannot tell an omitted
+  // argument from an explicit `undefined` any other way, and those two are
+  // different questions here: "just tell me if it is clickable" against "the
+  // facts have not landed yet, which door do I take?". The second has an
+  // answer — the run — and the first must not grow a field its callers never
+  // asked for.
+  ...asked: (TranscriptFacts | undefined)[]
+): (RowState & { plan: RowPlan }) | RowState {
+  const verdict = verdictOf(row, limits, lang);
+  if (asked.length === 0) return verdict;
+  const plan = doorFor(verdict.enabled, asked[0]);
+  return verdict.enabled
+    ? { enabled: true, kind: "whole", plan }
+    : { enabled: false, kind: "too-large", reason: verdict.reason, plan };
+}
+
+/**
+ * Which door, off the facts the dialog already holds for the row.
+ *
+ * Direct spawns count as much as a workflow run's do: 15% of the agent
+ * transcripts in the real store are `Task` spawns under `subagents/` rather
+ * than under a run directory, and a plan that read only `workflowAgents` would
+ * send exactly those sessions down the session-only door with their agents one
+ * directory away.
+ *
+ * Facts that have not landed take the run door. The list never waits for facts,
+ * so a click can land on a row that has not filled in, and guessing "no agents"
+ * there is the silence this card removes; guessing the other way costs nothing,
+ * because a session with nothing beside it answers a bundle with empty arrays
+ * and the merge of zero sidecars is today's single-file import byte for byte.
+ *
+ * @param loadable the server's verdict on the session file itself
+ * @param facts what is known about the row, or undefined
+ * @return the door, with the count the row is about to print
+ */
+function doorFor(loadable: boolean, facts: TranscriptFacts | undefined): RowPlan {
+  const agents = (facts?.workflowAgents ?? 0) + (facts?.subagents ?? 0);
+  // The session file itself is over the server's ceiling, so there is no run to
+  // bring and no agents were left behind — a different fact from having none.
+  if (!loadable) return { door: "session", reason: "tooLarge", agents };
+  if (facts === undefined || agents > 0) return { door: "run", agents };
+  return { door: "session", reason: "noAgents", agents };
+}
+
+/**
+ * The verdict alone, unchanged since card 116.
+ *
+ * @param row the listing row
+ * @param limits what the listing published about its limit, or null
+ * @param lang the UI-chrome language
+ * @return whether the row may be clicked, and why not when it may not
+ */
+function verdictOf(row: TranscriptRow, limits: StoreLimits | null, lang: Lang): RowState {
   if (row.loadable !== false) return { enabled: true, kind: "whole" };
 
   const size = formatBytes(row.size);
