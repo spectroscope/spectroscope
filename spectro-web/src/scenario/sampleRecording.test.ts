@@ -16,6 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
+import { detectAndLoad } from "../import/detect";
 import {
   SAMPLE_LANG,
   SAMPLE_PATH,
@@ -135,5 +136,22 @@ describe("the shipped recording is still the run card 310 describes", () => {
     const tally: Record<string, number> = {};
     for (const e of events()) tally[e.type] = (tally[e.type] ?? 0) + 1;
     expect(tally, note).toEqual(MEASURED_MIX);
+  });
+});
+
+describe("the shipped recording opens the way the README says it does", () => {
+  // The README tells a reader to drop this file into the import dialog. That
+  // is a claim about the app's own reader, so it is checked here with the
+  // app's own reader — detectAndLoad is exactly what ImportDialog calls on the
+  // text of a picked file. Bytes that match their source and still fail to
+  // load would be a sample nobody can use.
+  it("reads back through detectAndLoad as a spectroscope session of 196 events", () => {
+    const loaded = detectAndLoad(readFileSync(onDisk, "utf8"));
+    expect(loaded.kind).toBe("spectroscope");
+    expect(loaded.events.length).toBe(196);
+    // A session, not one agent's transcript: the bar in the app says so, and a
+    // sample that announced itself as a subagent would be teaching the wrong
+    // thing about the format.
+    expect(loaded.subagent).toBeUndefined();
   });
 });
