@@ -42,7 +42,12 @@ class WorkspaceControllerTest {
     }
 
     @Test
-    void listsTheTreeDirsFirstSkippingHiddenAndIgnored() throws Exception {
+    void listsTheTreeDirsFirstPruningTheIgnoredDirectoriesOnly() throws Exception {
+        // Replaced rather than loosened (card 351): this test used to say
+        // "SkippingHiddenAndIgnored" and pinned a tree with no dot-entries in
+        // it, which is the behaviour the card removes. The threshold it really
+        // guards — dirs before files, ignored directories gone — is unchanged,
+        // and the claim underneath it is now the new one.
         Files.createDirectories(root.resolve("src/app"));
         Files.writeString(root.resolve("src/app/Main.java"), "class Main {}");
         Files.writeString(root.resolve("README.md"), "# hello");
@@ -55,7 +60,8 @@ class WorkspaceControllerTest {
 
         assertThat(res.truncated()).isFalse();
         assertThat(res.entries()).extracting(WorkspaceController.FileNode::name)
-                .containsExactly("src", "README.md"); // dirs first, hidden/ignored gone
+                // dirs first, ignored gone, the dot-file visible and still unreadable
+                .containsExactly("src", ".env", "README.md");
         WorkspaceController.FileNode src = res.entries().get(0);
         assertThat(src.dir()).isTrue();
         assertThat(src.children()).hasSize(1);

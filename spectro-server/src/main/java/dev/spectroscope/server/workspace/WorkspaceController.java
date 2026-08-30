@@ -24,10 +24,10 @@ import java.util.function.Supplier;
 /**
  * Phase 5: the workspace panel's backend — a read-only, sandboxed view of the
  * agent's working directory. {@code GET /api/files} returns the tree of the
- * requesting SESSION's workspace (hidden files and build/dependency
- * directories skipped, capped); {@code GET /api/file} serves one file for the
- * preview pane. Both require a session that has actually resolved a workspace
- * and answer 409 otherwise, see {@link #rootFor}.
+ * requesting SESSION's workspace (build and dependency directories pruned,
+ * capped); {@code GET /api/file} serves one file for the preview pane. Both
+ * require a session that has actually resolved a workspace and answer 409
+ * otherwise, see {@link #rootFor}.
  *
  * <p>{@code ?scope=prospective} is the one read that needs no session: the
  * folder a run started right now would use, for the pane that has been told its
@@ -160,8 +160,10 @@ public class WorkspaceController {
     }
 
     /**
-     * {@code GET /api/files}: the whole workspace tree in one response — hidden
-     * and ignored directories skipped, capped by depth and entry budget.
+     * {@code GET /api/files}: the whole workspace tree in one response — the
+     * ignored directories pruned, capped by depth and entry budget. Dot-entries
+     * are listed and their contents are still refused, see
+     * {@link #omittedFromTree} against {@link #refusedForReading}.
      *
      * @param session the session whose workspace is asked for; ignored entirely
      *                under {@code scope=prospective}
@@ -303,7 +305,7 @@ public class WorkspaceController {
         List<FileNode> out = new ArrayList<>();
         for (Path child : children) {
             String name = child.getFileName().toString();
-            if (skipped(name)) {
+            if (omittedFromTree(name)) {
                 continue;
             }
             if (Files.isSymbolicLink(child) && !insideRealBase(child, realBase)) {
@@ -329,13 +331,53 @@ public class WorkspaceController {
     }
 
     /**
-     * The hide rule shared by tree AND content: dot-files and build/dependency
-     * directories never leave the server (the .env with the API key answers 404).
+     * What the TREE leaves out: the build and dependency directories, and
+     * nothing else. {@code .git} is on that list by name, so the split below
+     * does not hand the operator thousands of loose objects.
+     *
+     * <p>Dot-entries are listed (card 351). One predicate used to answer both
+     * questions this class asks — may the operator SEE this name, and may he
+     * READ these bytes — and the answer to the first was collateral damage from
+     * the second. He could not tell whether a folder held a
+     * {@code .claude/launch.json}, so an empty file view read as a regression
+     * rather than as an empty folder, while the agent beside him carries no
+     * dot-file rule at all and reads that file whenever it likes.</p>
+     *
+     * <p>Always on, with no preference behind it, and that was measured rather
+     * than defaulted into (card 351 criterion 5). On the folder that produced
+     * the card the tree grows from 9 nodes to 12; on this repository, with the
+     * entry budget lifted, from 2576 to 3142, and 541 of those 566 come from
+     * one directory. This repository's listing was ALREADY over the 2000-entry
+     * budget before the change and already said so through {@code truncated},
+     * so the cost is a different cut point, not a newly capped tree. A switch
+     * would buy persisted state for a difference the operator takes in at a
+     * glance; if some folder's dot-noise ever does matter, the answer is a name
+     * on {@code IGNORED_DIRS}, not a preference.</p>
      *
      * @param name one bare path segment to test
-     * @return {@code true} when the segment must not be exposed
+     * @return {@code true} when the segment does not belong in the listing
      */
-    private static boolean skipped(String name) {
+    private static boolean omittedFromTree(String name) {
+        return IGNORED_DIRS.contains(name);
+    }
+
+    /**
+     * What the CONTENT endpoint refuses: every dot segment on top of the
+     * ignored directories, so the {@code .env} with the API key still answers
+     * 404 whether or not its name is now visible.
+     *
+     * <p>This deliberately makes the tree list names the preview will not open,
+     * which is the shape {@link #scopeOf} calls half an answer for the two
+     * roots. The difference is that there it was a drift nobody chose; here it
+     * is the smallest of the three shapes card 351 puts to the owner, and
+     * whether any dot-file becomes readable is his call and not this change's.
+     * The preview says which of the two it is hitting rather than reporting a
+     * missing file, see {@code previewNoteKey} in the web pane.</p>
+     *
+     * @param name one bare path segment to test
+     * @return {@code true} when the segment's bytes must not leave the server
+     */
+    private static boolean refusedForReading(String name) {
         return name.startsWith(".") || IGNORED_DIRS.contains(name);
     }
 
@@ -385,9 +427,11 @@ public class WorkspaceController {
         } catch (IOException outside) {
             return ResponseEntity.notFound().build();
         }
-        // Defense in depth: what the tree hides, the content endpoint refuses.
+        // The refusal the tree no longer makes on the operator's behalf: every
+        // segment, not just the last, so a readable name under a hidden folder
+        // stays shut. The tree hands out exactly such paths now.
         for (Path segment : realBase.relativize(requested)) {
-            if (skipped(segment.toString())) {
+            if (refusedForReading(segment.toString())) {
                 return ResponseEntity.notFound().build();
             }
         }
