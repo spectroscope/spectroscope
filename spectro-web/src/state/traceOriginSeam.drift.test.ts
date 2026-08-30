@@ -77,9 +77,7 @@ describe("the trace is told where its frames came from", () => {
     // it renders, and it silently answers for every session in the app.
     for (const props of traceMounts()) {
       for (const kind of IMPORT_KINDS) {
-        expect(props, `${kind} written into a mount instead of measured`).not.toContain(
-          `origin="${kind}"`,
-        );
+        expect(props, `${kind} written into a mount instead of measured`).not.toContain(`origin="${kind}"`);
       }
       expect(props).not.toContain('origin="native"');
     }

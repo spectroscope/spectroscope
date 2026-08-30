@@ -41,8 +41,8 @@ const LINE = JSON.stringify({
   message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
 });
 
-/** A line that is not JSON at all. Hand-edited files and concatenated logs both
- *  produce them, and the import dialog accepts whatever it is given. */
+/** A line that does not parse at all. Hand-edited files and concatenated logs
+ *  both produce them, and the import dialog accepts whatever it is given. */
 const PROSE = "2026-08-30 12:04:11  INFO  the run finished with 3 warnings";
 
 /** A source pane with a line behind it — since the re-review of card 326
@@ -91,7 +91,7 @@ describe("which readings each pane offers", () => {
   });
 });
 
-describe("a line that is not JSON does not become an empty tree", () => {
+describe("a line that is no JSON document does not become an empty tree", () => {
   // Three lines, three separate bites. They fail for three different reasons —
   // one does not parse, one parses to something that is not a document, one is
   // a document that happens to be empty — and a single `it` over all three
@@ -120,12 +120,14 @@ describe("a line that is not JSON does not become an empty tree", () => {
     expect(tree.parsed ? tree.value : null).toEqual(JSON.parse(LINE));
   });
 
-  // ONE judgement, not two. The pane already says "This line is not JSON. It
-  // stands here unchanged." on the readable reading, and readable.ts owns the
-  // rule that produces it (a parse, plus the document check). A second copy of
-  // that rule here would drift the first time either side moved, and the two
-  // readings would disagree about the same line in the same pane.
-  it("agrees with the readable reading about what counts as JSON", () => {
+  // ONE judgement, not two. The pane already says "This line is not a JSON
+  // object or array. It stands here unchanged." on the readable reading, and
+  // readable.ts owns the rule that produces it (a parse, plus the document
+  // check). A second copy of that rule here would drift the first time either
+  // side moved, and the two readings would disagree about the same line in the
+  // same pane. The SIZE half of sourceTree's verdict is its own and is pinned
+  // in sourceReadingLimits.test.ts; readable.ts has no opinion about length.
+  it("agrees with the readable reading about what counts as a document", () => {
     for (const line of [
       LINE,
       PROSE,
@@ -152,7 +154,7 @@ describe("the reading the pane can actually give", () => {
     expect(resolvedReading("tree", LINE)).toBe("tree");
   });
 
-  it("falls to verbatim when the tree was asked for over a line that is not JSON", () => {
+  it("falls to verbatim when the tree was asked for over a line that is no document", () => {
     expect(resolvedReading("tree", PROSE)).toBe("verbatim");
   });
 

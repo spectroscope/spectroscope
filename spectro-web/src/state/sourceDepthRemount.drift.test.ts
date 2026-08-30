@@ -51,9 +51,7 @@ describe("the key the source pane is mounted under", () => {
     // A key that changed on every render would remount the tree under the
     // reader's hands and lose every fold they made, which is the opposite
     // defect and just as invisible from here.
-    expect(sourcePaneKey({ depth: "verbose", epoch: 4 })).toBe(
-      sourcePaneKey({ depth: "verbose", epoch: 4 }),
-    );
+    expect(sourcePaneKey({ depth: "verbose", epoch: 4 })).toBe(sourcePaneKey({ depth: "verbose", epoch: 4 }));
   });
 });
 

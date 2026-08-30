@@ -125,9 +125,7 @@ describe("a line too long to draw is not drawn, and says which of the two reason
   it("still hands the WHOLE line to the clipboard", () => {
     // The ceiling caps the paint, never the copy — or the reader walks away
     // with a file they believe is complete.
-    expect(detailText("source", "tool_call", null, { line: overBudget, reading: "tree" })).toBe(
-      overBudget,
-    );
+    expect(detailText("source", "tool_call", null, { line: overBudget, reading: "tree" })).toBe(overBudget);
   });
 });
 
@@ -180,9 +178,7 @@ describe("a reading this pane does not offer lands on its nearest neighbour", ()
         const offered = readingsFor(mode, pane);
         if (offered.length === 0) continue;
         for (const r of READINGS) {
-          expect(offered, `${r} on ${mode}/${pane?.kind ?? "none"}`).toContain(
-            availableReading(r, offered),
-          );
+          expect(offered, `${r} on ${mode}/${pane?.kind ?? "none"}`).toContain(availableReading(r, offered));
         }
       }
     }

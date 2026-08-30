@@ -110,7 +110,7 @@ describe("the tree reading draws the line as a tree", () => {
   });
 });
 
-describe("a line that is not JSON", () => {
+describe("a line that is no JSON document", () => {
   // Three bites, three reasons. A single case over all three would report one
   // and hide two.
   it("says so for prose, and draws no tree", () => {
@@ -120,8 +120,8 @@ describe("a line that is not JSON", () => {
   });
 
   it("still shows the line itself, unchanged", () => {
-    // Saying "this is not JSON" and then showing nothing is the silence this
-    // whole pane was built to end.
+    // Saying "there is no document here" and then showing nothing is the
+    // silence this whole pane was built to end.
     expect(render(lineOf(PROSE), "tree")).toContain(PROSE);
   });
 
@@ -132,7 +132,7 @@ describe("a line that is not JSON", () => {
   });
 
   it("draws an empty document as the empty tree it really is", () => {
-    // `{}` IS JSON. Calling it "not JSON" would be a different lie from the one
+    // `{}` IS a document. Refusing it would be a different lie from the one
     // above, so the two are pinned apart.
     const html = render(lineOf("{}"), "tree");
     expect(html).toContain('class="json-tree"');
@@ -141,7 +141,9 @@ describe("a line that is not JSON", () => {
 
   it("says it in both languages", () => {
     for (const lang of ["de", "en"] as const) {
-      expect(render(lineOf(PROSE), "tree", "default", lang), lang).toContain(t(lang, "trace.source.noDocument"));
+      expect(render(lineOf(PROSE), "tree", "default", lang), lang).toContain(
+        t(lang, "trace.source.noDocument"),
+      );
     }
   });
 });

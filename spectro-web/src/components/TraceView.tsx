@@ -1420,8 +1420,7 @@ function TraceDetail({
   // draw three buttons that changed nothing above one sentence.
   // The exchange's wire face is OUR rendering of recorded bytes, not a line of
   // somebody's file, so it has no readings to choose between either.
-  const readings: readonly Reading[] =
-    isExchange || mode === "structured" ? [] : readingsFor(mode, pane);
+  const readings: readonly Reading[] = isExchange || mode === "structured" ? [] : readingsFor(mode, pane);
   // A reading this pane does not offer lands on its nearest neighbour, the way
   // a face does — not on verbatim, which this module argues the pane must not
   // open on.
@@ -1511,8 +1510,9 @@ function TraceDetail({
           switch above it and unlike the chat's disclosure level: pressing
           verbose opens the nodes this reader already folded shut, because a
           control that left those alone would look broken in exactly the case it
-          exists for. Only drawn where a tree is actually on screen — a depth
-          control over a line that is not JSON would be a button onto nothing. */}
+          exists for. Only drawn where a tree is actually on screen — over a
+          line that is no document, or one past the pane's display ceiling, a
+          depth control would be a button onto nothing. */}
       {reading === "tree" && (
         <div
           className="trace-detail-modes trace-reading"
