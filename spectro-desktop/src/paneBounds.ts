@@ -21,6 +21,42 @@ export interface Rect {
   height: number;
 }
 
+/**
+ * A rectangle the PAGE measured, in the units the SHELL positions in.
+ *
+ * `getBoundingClientRect()` returns CSS pixels. `WebContentsView.setBounds` and
+ * `BrowserWindow.getContentBounds` are in DIP. At a zoom factor of 1 those are
+ * the same number, which is why the seam shipped and why nobody saw it: the
+ * whole arithmetic in this file was correct for the only case anyone tested.
+ *
+ * MEASURED on the owner's machine, 2026-08-30. He reported a loaded page
+ * rendering BESIDE its panel rather than inside it, and his app's own Chromium
+ * profile carries `per_host_zoom_levels = { "127.0.0.1": 0.5 }`. Chromium's
+ * factor is `1.2 ** level`, so the app was running at 1.0954 — every reported
+ * coordinate landed about 9.5 % short of where the hole actually was. The error
+ * grows with x, so the further right the panel sat, the further left its page
+ * was painted. That is the signature in his screenshots.
+ *
+ * A zoom is one keystroke away (`role: "zoomIn"`, menuModel.ts:264) and
+ * Chromium persists it per origin, so a single accidental Cmd+ leaves the pane
+ * misplaced for every later run of the app.
+ *
+ * @param rect the rectangle the page reported, in CSS pixels
+ * @param zoomFactor the host window's zoom factor
+ * @return the same rectangle in DIP, or unchanged when the factor is not a
+ *         usable number — a pane positioned at NaN is invisible with no error
+ *         anywhere, which is worse than ignoring a bad reading
+ */
+export function toDeviceRect(rect: Rect, zoomFactor: number): Rect {
+  if (!Number.isFinite(zoomFactor) || zoomFactor <= 0) return rect;
+  return {
+    x: Math.round(rect.x * zoomFactor),
+    y: Math.round(rect.y * zoomFactor),
+    width: Math.round(rect.width * zoomFactor),
+    height: Math.round(rect.height * zoomFactor),
+  };
+}
+
 /** The smallest pane worth painting — below this a page cannot lay out at all. */
 export const MIN_PANE = { width: 320, height: 240 };
 

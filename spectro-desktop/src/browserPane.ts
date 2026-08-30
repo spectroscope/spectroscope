@@ -40,7 +40,7 @@ import {
   cachedLookup, refuse, refuseResolved, type FenceRefusal, type FencePolicy, type HostLookup,
 } from "./browserFence";
 import { applyViewport, forgetBaseUserAgent } from "./deviceEmulation";
-import { isUsable, paneBounds, type Rect } from "./paneBounds";
+import { isUsable, paneBounds, toDeviceRect, type Rect } from "./paneBounds";
 import { findScript, readPageScript, refRectScript } from "./pageScript";
 
 /** One reply, exactly as the control channel puts it on the wire. */
@@ -280,6 +280,26 @@ function paneSession(pane: SessionPane): Session {
 type WindowSource = () => BaseWindow | BrowserWindow | null;
 let windowSource: WindowSource = () => null;
 
+/**
+ * The app's own page, held so the pane can be positioned in its units.
+ *
+ * The rectangle the app reports is in ITS CSS pixels, and the zoom factor that
+ * turns those into DIP belongs to that page — not to the window and not to the
+ * pane. Null until `wirePaneLifecycle` runs, which is the same window in which
+ * nothing has reported yet.
+ */
+let appPage: Electron.WebContents | null = null;
+
+/** The app page's zoom, or 1 when there is no page to ask. */
+function appZoom(): number {
+  if (appPage === null || appPage.isDestroyed()) return 1;
+  try {
+    return appPage.getZoomFactor();
+  } catch {
+    return 1;
+  }
+}
+
 /** Asks the app's page to move to the browser segment, so the layout makes room. */
 type SegmentRequest = () => void;
 let showSegment: SegmentRequest = () => {};
@@ -353,12 +373,26 @@ function ensureView(pane: SessionPane): WebContentsView {
   return created;
 }
 
-/** Puts a pane on screen at the rectangle the web UI last measured. */
+/**
+ * Puts a pane on screen at the rectangle the web UI last measured.
+ *
+ * TWO UNITS MEET HERE, and until 2026-08-30 nothing converted between them.
+ * `reported` comes from `getBoundingClientRect()` and is CSS pixels;
+ * `getContentBounds()` and `setBounds` are DIP. They agree only at a zoom factor
+ * of 1, so the seam was invisible to every test and to every unzoomed run —
+ * and one Cmd+ puts the pane about 9.5 % of its x to the left, for good, because
+ * Chromium persists the zoom per origin.
+ *
+ * The conversion happens BEFORE `isUsable`, on purpose: MIN_PANE is a statement
+ * about how small a pane can be and still lay a page out, which is a fact about
+ * painted pixels, not about the page's own coordinate system.
+ */
 function layout(pane: SessionPane): void {
   const win = windowSource();
   if (!win || win.isDestroyed() || !pane.view) return;
   const size = win.getContentBounds();
-  pane.view.setBounds(paneBounds(isUsable(reported) ? reported : null, size));
+  const device = reported === null ? null : toDeviceRect(reported, appZoom());
+  pane.view.setBounds(paneBounds(isUsable(device) ? device : null, size));
 }
 
 /**
@@ -457,8 +491,9 @@ export function hidePane(): void {
  *
  * @param appPage the app window's own webContents, wired once per window
  */
-export function wirePaneLifecycle(appPage: Electron.WebContents): void {
-  appPage.on("did-navigate", () => hidePane());
+export function wirePaneLifecycle(page: Electron.WebContents): void {
+  appPage = page;
+  page.on("did-navigate", () => hidePane());
 }
 
 /**
