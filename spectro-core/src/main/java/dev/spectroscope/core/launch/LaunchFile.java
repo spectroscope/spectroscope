@@ -28,6 +28,14 @@ import java.util.Set;
  * the product somewhere of its own to put a file it has authored. {@link
  * #LOCATIONS} is that order, and it is the single place it is written down.
  *
+ * <p><b>"One parser" is a claim about the product, and the repository has one
+ * other reader.</b> {@code cockpit/serve.py} reads this format for the developer
+ * dashboard, which is a standalone Python page with no JVM to call into; it
+ * follows the same order and {@code cockpit/test_serve.py} pins that it does.
+ * Both are listed by
+ * {@code ClaudeFolderStaysTheirsDriftTest#everySourceInTheRepositoryThatReadsTheLaunchFormatIsOneOfThese},
+ * so a third reader is a decision rather than an accident.
+ *
  * <p><b>The first location that EXISTS answers, whole.</b> Not the first that
  * parses, and not a merge of the two. Falling through from a broken file of ours
  * to a working file of theirs would hand an operator somebody else's

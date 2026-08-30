@@ -33,26 +33,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class SpectroDirDriftTest {
 
-    /** The shapes that spell a PROJECT-relative .spectro path by hand. */
-    private static final List<String> HAND_SPELLINGS = List.of(
-            "\".spectro/",
-            "\"user.dir\"), \".spectro\"");
+    /**
+     * Every literal spelling of the folder name, whatever shape it is written in.
+     *
+     * <p>This is the whole vocabulary the rule below works from, and that is
+     * deliberate. The first version of this test listed the SHAPES it expected a
+     * hand-spelling to take — {@code ".spectro/"}, and a receiver-plus-{@code
+     * resolve} regex — and a review wrote a shape that was on neither list
+     * ({@code Path.of(System.getProperty("user.dir")).resolve(".spectro")
+     * .resolve("launch.json")}, whose receiver is a call rather than an
+     * identifier). All three tests stayed green. A list of anticipated shapes
+     * cannot see the shape nobody anticipated, so the default is now the other
+     * way round: <b>every occurrence is an offender until its own statement
+     * proves it is the home-level folder.</b>
+     */
+    private static final java.util.regex.Pattern SPELLED =
+            java.util.regex.Pattern.compile("\"\\.spectro");
 
     /**
-     * {@code <something>.resolve(".spectro")}, with the receiver captured.
+     * What makes an occurrence the HOME-level folder rather than a project one.
      *
-     * <p>The receiver is what tells the two folders apart: {@code userHome()}
-     * resolving {@code .spectro} is the home-level folder this rule does not
-     * govern, and matching it cost a first version of this test three false
-     * offenders in {@code DoctorCommand}. A home-ish receiver is skipped by
-     * {@link #HOME_RECEIVER} below.
+     * <p>Home-level {@code ~/.spectro} is a different decision that happens to
+     * share a name — this machine's private state rather than something that
+     * travels with a repository — and folding it in would have made one look
+     * like the other. Every one of those sites reaches the home directory in the
+     * same statement, so the statement is what is searched: measured on
+     * 2026-08-31, this admits 32 sites and no others.
      */
-    private static final java.util.regex.Pattern RESOLVED =
-            java.util.regex.Pattern.compile("(\\w+(?:\\(\\))?)\\.resolve\\(\"\\.spectro\"");
+    private static final java.util.regex.Pattern REACHES_HOME =
+            java.util.regex.Pattern.compile("(?i)user\\.home|userhome|homedir");
 
-    /** A receiver that is the operator's home rather than a project. */
-    private static final java.util.regex.Pattern HOME_RECEIVER =
-            java.util.regex.Pattern.compile("(?i).*home.*");
+    /**
+     * Measured on 2026-08-31 with the walk below: 32 home-level sites.
+     *
+     * <p>A floor rather than the number itself, because sites come and go and a
+     * count in a test is a number that goes stale. What it is here for is the
+     * vacuum case: a stripper that ate the file, or a walk that found the wrong
+     * tree, would report zero offenders out of zero occurrences and look exactly
+     * like success.
+     */
+    private static final int HOME_LEVEL_SITES_FLOOR = 20;
 
     /** Every project-level constant is the folder plus a name. */
     @Test
@@ -81,26 +101,50 @@ class SpectroDirDriftTest {
     @Test
     void nobodyElseSpellsTheProjectFolderByHand() throws IOException {
         List<String> offenders = new ArrayList<>();
+        int homeLevel = 0;
         for (Path source : mainSources()) {
             if (source.getFileName().toString().equals("SpectroDir.java")) {
                 continue;
             }
             String code = stripComments(Files.readString(source, StandardCharsets.UTF_8));
-            for (String shape : HAND_SPELLINGS) {
-                if (code.contains(shape)) {
-                    offenders.add(repoRoot().relativize(source) + " spells " + shape);
-                }
-            }
-            java.util.regex.Matcher resolved = RESOLVED.matcher(code);
-            while (resolved.find()) {
-                if (!HOME_RECEIVER.matcher(resolved.group(1)).matches()) {
-                    offenders.add(repoRoot().relativize(source) + " spells "
-                            + resolved.group(0));
+            java.util.regex.Matcher spelled = SPELLED.matcher(code);
+            while (spelled.find()) {
+                String statement = statementEndingAt(code, spelled.start());
+                if (REACHES_HOME.matcher(statement).find()) {
+                    homeLevel++;
+                } else {
+                    offenders.add(repoRoot().relativize(source) + " spells it in: "
+                            + statement.strip().replaceAll("\\s+", " "));
                 }
             }
         }
         assertEquals(List.of(), offenders,
-                "the project folder is SpectroDir.NAME, everywhere: " + offenders);
+                "the project folder is SpectroDir.NAME, everywhere. A site that really is"
+                        + " the home-level folder reaches the home directory in the same"
+                        + " statement; one that does not is this: " + offenders);
+        assertTrue(homeLevel >= HOME_LEVEL_SITES_FLOOR,
+                "only " + homeLevel + " home-level sites were seen — the walk or the"
+                        + " comment stripper is looking at the wrong thing, and zero"
+                        + " occurrences would pass this test for the wrong reason");
+    }
+
+    /**
+     * The statement one occurrence sits in.
+     *
+     * <p>Everything back to the nearest {@code ;}, {@code &#123;} or {@code &#125;},
+     * so a home-level site three lines above cannot vouch for a project-level one
+     * below it.
+     *
+     * @param code  the source with its comments already stripped
+     * @param index where the occurrence starts
+     * @return the text of the statement up to that point
+     */
+    private static String statementEndingAt(String code, int index) {
+        int start = -1;
+        for (char boundary : new char[] {';', '{', '}'}) {
+            start = Math.max(start, code.lastIndexOf(boundary, index));
+        }
+        return code.substring(start + 1, index);
     }
 
     /** Every main-source java file in the repository. */

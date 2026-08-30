@@ -458,20 +458,30 @@ public class BrowserViewSocket extends TextWebSocketHandler {
     /** The play's slow half — everything after the guards, off the socket thread. */
     private void runPlay(WebSocketSession socket, String sessionId, String name,
             SessionBrowserBridge.Live live, java.nio.file.Path project) {
-        dev.spectroscope.core.launch.LaunchEntry entry;
+        java.util.Optional<dev.spectroscope.core.launch.LaunchFile> read;
         try {
-            java.util.Optional<dev.spectroscope.core.launch.LaunchFile> read =
-                    dev.spectroscope.core.launch.LaunchFile.readFrom(project);
-            entry = read.flatMap(file -> file.find(name)).orElse(null);
+            read = dev.spectroscope.core.launch.LaunchFile.readFrom(project);
         } catch (IllegalArgumentException unreadable) {
             send(socket, played(sessionId, name, false, false, null,
                     unreadable.getMessage()));
             return;
         }
-        if (entry == null) {
+        if (read.isEmpty()) {
+            // No file anywhere: there is no location to have missed a name in, so
+            // the sentence names the two places one may go instead.
             send(socket, played(sessionId, name, false, false, null,
-                    "no configuration of that name in "
+                    "this project carries no launch file at "
                             + dev.spectroscope.core.launch.LaunchFile.LOCATIONS_SENTENCE));
+            return;
+        }
+        dev.spectroscope.core.launch.LaunchFile file = read.get();
+        dev.spectroscope.core.launch.LaunchEntry entry = file.find(name).orElse(null);
+        if (entry == null) {
+            // Card 350: one file answered, and it is the one whose location() we
+            // hold. Naming both would send the operator to open a file his name
+            // was never looked up in.
+            send(socket, played(sessionId, name, false, false, null,
+                    "no configuration of that name in " + file.location()));
             return;
         }
         dev.spectroscope.core.launch.LaunchSupervisor.Outcome outcome = live.launches()

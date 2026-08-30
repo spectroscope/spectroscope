@@ -60,12 +60,20 @@ import java.util.Set;
  * refuses what the read path has to defuse: this product does not author a file
  * its own reader would have to make safe.
  *
- * <p>The other three refusals are integrity rather than safety — an entry with
- * no name cannot be addressed, an entry with neither a command nor a url is a
- * configuration for nothing, and two entries of one name make
- * {@link LaunchFile#find(String)} a coin toss. All four refuse the WHOLE write:
- * a half-written launch file is worse than none, because the reader would load
- * it.
+ * <p>The other refusals are integrity rather than safety — an entry with no
+ * name cannot be addressed, an entry with neither a command nor an
+ * {@link LaunchEntry#address()} is a configuration for nothing, a port outside
+ * 1–{@value #MAX_PORT} is not one anything can bind, and two entries of one name
+ * make {@link LaunchFile#find(String)} a coin toss. Every one of them refuses
+ * the WHOLE write: a half-written launch file is worse than none, because the
+ * reader would load it.
+ *
+ * <p><b>The line for "can it be reached" is {@link LaunchEntry#address()}, not
+ * {@code url}.</b> A port-only attach entry — no command, no url, just a port —
+ * is one the reader parses, {@code address()} turns into
+ * {@code http://localhost:<port>/} and {@link LaunchSupervisor} waits on.
+ * Refusing it here would have forked the format by accident: spectroscope would
+ * decline to author a file it reads without complaint.
  */
 public final class LaunchWriter {
 
@@ -157,13 +165,19 @@ public final class LaunchWriter {
             throw new IllegalArgumentException("two launch configurations are both called \""
                     + name + "\"; a name has to reach one entry");
         }
-        if (entry.attaches() && (entry.url() == null || entry.url().isBlank())) {
-            throw new IllegalArgumentException("\"" + name + "\" names neither a"
-                    + " runtimeExecutable to start nor a url to attach to");
-        }
         if (entry.port() != null && (entry.port() < 1 || entry.port() > MAX_PORT)) {
             throw new IllegalArgumentException("\"" + name + "\" carries port " + entry.port()
                     + ", which is not a port anything can bind (1–" + MAX_PORT + ")");
+        }
+        // The line is address(), not url. A port-only entry attaches — the reader
+        // turns it into http://localhost:<port>/ and LaunchSupervisor waits on
+        // that — so refusing it here would fork the format: the product would
+        // decline to author a file it reads without complaint. What is refused is
+        // an entry with no command AND no address, which names nothing at all.
+        if (entry.attaches() && entry.address() == null) {
+            throw new IllegalArgumentException("\"" + name + "\" names neither a"
+                    + " runtimeExecutable to start nor an address — a url or a port —"
+                    + " to attach to");
         }
         refuseControls(name, "the name of \"" + name + "\"");
         refuseControls(entry.runtimeExecutable(), "the runtimeExecutable of \"" + name + "\"");

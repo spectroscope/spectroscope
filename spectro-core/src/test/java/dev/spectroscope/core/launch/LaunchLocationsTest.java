@@ -97,6 +97,24 @@ class LaunchLocationsTest {
                 "the sentence has to read in the same order the reader looks: " + said);
     }
 
+    /**
+     * A sentence that says "neither" has to say "nor".
+     *
+     * <p>{@link LaunchFile#LOCATIONS_SENTENCE} folds the list with {@code " or "},
+     * which reads correctly on its own ("carries no configuration in A or B") and
+     * ungrammatically the moment a caller puts "neither" in front of it. This
+     * pins the pair rather than the wording of either half: change the joiner to
+     * {@code " nor "} and the callers may say "neither", but they cannot say one
+     * without the other.
+     */
+    @Test
+    void everySentenceBuiltOnTheLocationListAgreesWithItsJoiner() {
+        for (String said : List.of(LaunchTools.NO_FILE, LaunchFile.LOCATIONS_SENTENCE)) {
+            assertEquals(said.contains("neither "), said.contains(" nor "),
+                    "\"neither\" needs \"nor\" and \"nor\" needs \"neither\": " + said);
+        }
+    }
+
     /** A project with neither file is still empty rather than an error. */
     @Test
     void neitherFileIsStillEmpty(@TempDir Path project) {

@@ -8,7 +8,8 @@ facts, gathered server-side where no CORS fence stands in the way:
 
   GET  /api/estate   stacks (from ./spectro-env's own registry, parsed at
                      runtime so it cannot drift), launch configs (the nearest
-                     .claude/launch.json up the tree), spectro servers
+                     .spectro/launch.json or .claude/launch.json up the tree),
+                     spectro servers
                      (discovered by probing java-held listening ports for
                      /api/health), their fleet hubs and nodes (/api/fleet),
                      and every port claimed twice.
@@ -65,14 +66,25 @@ def parse_stacks(text):
     return stacks
 
 
+# Card 350 split reading from writing: .spectro/launch.json is ours and is read
+# first, .claude/launch.json is Claude Code's and is read when we have none. The
+# order is the product's, and this page has to follow it — a repository set up
+# the new way would otherwise read as EMPTY here while the app shows its configs.
+LAUNCH_FOLDERS = (".spectro", ".claude")
+
+
 def find_launch_file(start, stop=None):
-    """The nearest .claude/launch.json at or above start; None when no ancestor
-    has one. `stop` bounds the walk (tests); the filesystem root bounds it anyway."""
+    """The nearest launch file at or above start; None when no ancestor has one.
+
+    Up the tree first, the two folders second: the nearest DIRECTORY that carries
+    either file wins, and within one directory ours beats theirs. `stop` bounds
+    the walk (tests); the filesystem root bounds it anyway."""
     d = os.path.abspath(start)
     while True:
-        candidate = os.path.join(d, ".claude", "launch.json")
-        if os.path.isfile(candidate):
-            return candidate
+        for folder in LAUNCH_FOLDERS:
+            candidate = os.path.join(d, folder, "launch.json")
+            if os.path.isfile(candidate):
+                return candidate
         if d == stop or os.path.dirname(d) == d:
             return None
         d = os.path.dirname(d)

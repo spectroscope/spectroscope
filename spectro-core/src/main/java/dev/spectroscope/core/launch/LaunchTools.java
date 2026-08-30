@@ -93,7 +93,7 @@ public final class LaunchTools {
     static final int DEFAULT_LOG_LINES = 80;
 
     /** What every tool here says when the project carries no launch file. */
-    static final String NO_FILE = "this project carries no launch file — neither "
+    static final String NO_FILE = "this project carries no launch file at "
             + LaunchFile.LOCATIONS_SENTENCE
             + ". Both are the same format: a top-level \"version\" beside a"
             + " \"configurations\" array, and per entry a \"name\", a \"port\", and either a"

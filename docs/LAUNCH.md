@@ -29,6 +29,17 @@ on 2026-08-31 is only that the product now has somewhere of its own to put a
 file it has authored, because another vendor's folder is theirs — spectroscope
 reads `.claude`, and never writes it.
 
+### One parser, and the one other reader
+
+The product reads this format in exactly one place, `LaunchFile`, and writes it
+in exactly one place, `LaunchWriter`. The repository holds one more reader and
+it is named rather than overlooked: `cockpit/serve.py`, the developer
+dashboard, is a standalone Python page with no JVM to call into, so it carries
+its own reader. It follows the same order — ours, then theirs — and
+`cockpit/test_serve.py` pins that it does. Until 2026-08-31 it looked only in
+`.claude`, which meant a repository configured the new way showed its
+configurations in the app and read as empty on that page.
+
 ### When both files exist
 
 **The first location that exists answers, whole.** `.spectro/launch.json` wins

@@ -526,6 +526,71 @@ class BrowserViewSocketTest {
     }
 
     @Test
+    void launchPlayMissNamesTheFileThatAnsweredRatherThanBoth(@TempDir Path base)
+            throws Exception {
+        // Card 350: the reader already knows which of the two files answered, and
+        // location() is in hand at this point. Naming both sends the operator to
+        // open a file that is not the one his name was looked up in.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project.resolve(".claude"));
+        java.nio.file.Files.writeString(project.resolve(".claude/launch.json"), """
+                {"version":"0.0.1","configurations":[{"name":"api","port":9999}]}
+                """);
+        SessionBrowserBridge bridge = new SessionBrowserBridge();
+        bridge.register(SESSION, new SessionBrowserBridge.Live(
+                dev.spectroscope.core.wire.BrowserWireTap.none(),
+                new dev.spectroscope.core.launch.LaunchSupervisor((host, port) -> true),
+                () -> project));
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"nope\"}");
+        JsonNode played = awaitType(viewer, "launch_played");
+
+        assertFalse(played.path("ok").asBoolean(), played.toString());
+        String sentence = played.path("sentence").asText();
+        assertTrue(sentence.contains(".claude/launch.json"),
+                "the file that actually answered: " + sentence);
+        assertFalse(sentence.contains(".spectro/launch.json"),
+                "this project has no file of ours; sending him there is a wrong turn: "
+                        + sentence);
+    }
+
+    @Test
+    void launchPlayInAProjectWithNoLaunchFileSaysThatRatherThanNamingAMiss(@TempDir Path base)
+            throws Exception {
+        // The other half of the same branch: with NO file at all there is no
+        // location to name, so the sentence has to be the "carries none" one and
+        // it has to name both places a file may go.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project);
+        SessionBrowserBridge bridge = new SessionBrowserBridge();
+        bridge.register(SESSION, new SessionBrowserBridge.Live(
+                dev.spectroscope.core.wire.BrowserWireTap.none(),
+                new dev.spectroscope.core.launch.LaunchSupervisor((host, port) -> true),
+                () -> project));
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"nope\"}");
+        JsonNode played = awaitType(viewer, "launch_played");
+
+        assertFalse(played.path("ok").asBoolean(), played.toString());
+        String sentence = played.path("sentence").asText();
+        assertTrue(sentence.contains(".spectro/launch.json")
+                && sentence.contains(".claude/launch.json"),
+                "with no file at all, both places have to be named: " + sentence);
+        assertFalse(sentence.contains("no configuration of that name"),
+                "there is no file to have missed a name in: " + sentence);
+    }
+
+    @Test
     void launchPlayWithTheFenceClosedStartsTheServerAndKeepsTheBrowserAway(@TempDir Path base)
             throws Exception {
         // Card 202's split, held for the play button too: the server comes up,

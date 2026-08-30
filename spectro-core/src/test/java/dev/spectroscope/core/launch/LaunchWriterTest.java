@@ -95,6 +95,34 @@ class LaunchWriterTest {
                 List.of("run"), "http://x/\r\nHost: y", List.of()), "control");
     }
 
+    /**
+     * The writer must not refuse a shape its own reader takes.
+     *
+     * <p>A port-only attach entry — no {@code runtimeExecutable}, no {@code url},
+     * just a port — is one {@link LaunchFile} parses, {@link LaunchEntry#address()}
+     * turns into a loopback address, and {@code LaunchSupervisor} attaches to.
+     * A write path that refuses it forks the format by accident: the product
+     * would decline to author a file it will happily read from an editor five
+     * seconds later. Measured on 2026-08-31 on the entry below —
+     * {@code attaches()} is true and {@code address()} is
+     * {@code http://localhost:4173/}.
+     */
+    @Test
+    void itWritesThePortOnlyAttachEntryItsOwnReaderTakes(@TempDir Path project)
+            throws Exception {
+        LaunchEntry portOnly = new LaunchEntry("preview", 4173, null, List.of(), null,
+                List.of());
+        assertTrue(portOnly.attaches(), "the premise: this entry starts nothing");
+        assertEquals("http://localhost:4173/", portOnly.address(),
+                "the premise: the reader gives it an address anyway");
+
+        LaunchWriter.write(project, List.of(portOnly));
+
+        LaunchFile back = LaunchFile.readFrom(project).orElseThrow();
+        assertEquals(portOnly, back.find("preview").orElseThrow(),
+                "what the writer refuses, the reader takes — that is a format fork");
+    }
+
     /** An entry with no name cannot be addressed, so it is not written. */
     @Test
     void itRefusesAnEntryWithNoName(@TempDir Path project) {
@@ -102,7 +130,14 @@ class LaunchWriterTest {
                 List.of()), "name");
     }
 
-    /** An entry that neither runs nor attaches is a configuration for nothing. */
+    /**
+     * An entry with no address at all is a configuration for nothing.
+     *
+     * <p>The line is {@link LaunchEntry#address()}, not {@code url}: an attach
+     * entry is one the reader can point a browser at, and a port is an address
+     * as much as a url is. What is left over here — no command, no url, no port
+     * — names nothing to run and nowhere to look.
+     */
     @Test
     void itRefusesAnEntryThatCanNeitherRunNorBeReached(@TempDir Path project) {
         assertRefused(project, new LaunchEntry("dev", null, null, List.of(), null,
