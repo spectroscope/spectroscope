@@ -20,6 +20,7 @@ import { detectAndLoad } from "../import/detect";
 import {
   groupPickedFiles,
   importClaudeCodeRun,
+  runSummary,
   type ImportedRunSummary,
   type RunStateText,
   type SidecarText,
@@ -309,12 +310,10 @@ export function ImportDialog(props: {
       }
       const run = importClaudeCodeRun({ sessionText, sidecars, runStates });
       setNote(run.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
-      props.onLoad(run.events, session.name, run.kind, run.source, run.subagent, undefined, {
-        workspace: run.workspace,
-        childrenMerged: run.childrenMerged,
-        childrenSkipped: run.childrenSkipped,
-        childrenUnrecorded: run.childrenUnrecorded,
-      });
+      // The summary is built by the importer's own `runSummary`, never by a
+      // literal here. A literal is where a measured field goes missing without
+      // anything turning red — `declared` did exactly that (card 315).
+      props.onLoad(run.events, session.name, run.kind, run.source, run.subagent, undefined, runSummary(run));
     };
     void readRun().catch((err) => {
       setError(err instanceof Error ? err.message : String(err));

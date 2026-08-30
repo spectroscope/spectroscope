@@ -149,7 +149,7 @@ import { attachSources, sourceStats } from "./state/traceSource";
 import { traceProvenance } from "./components/traceDetail";
 import { childrenNote, shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
-import type { WorkflowDeclaration } from "./lab/workflowGraph";
+import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
 import { useImageRequest } from "./state/imageViewer";
 import { ImageLightbox } from "./components/ImageLightbox";
@@ -1208,9 +1208,7 @@ export function App() {
     );
     // Card 302: and the run's declared columns, or nothing — an import with
     // no state file must clear the previous one rather than inherit it.
-    setImportedPhases(
-      run?.declared !== undefined && run.declared.size > 0 ? { sessionId, declared: run.declared } : null,
-    );
+    setImportedPhases(importedPhasesOf(sessionId, run?.declared));
     if (storePath !== undefined) void loadSidecarAgents(storePath).then(setSidecars);
     setReplay({
       id: sessionId,
@@ -1287,8 +1285,7 @@ export function App() {
     // Card 302: a workflow-shaped scenario declares its columns the way a real
     // run's state file does, so the demo shows the DECLARED picture rather
     // than a guess at it. Every other scenario clears the field.
-    const declared = declarationOf(dsl, lang);
-    setImportedPhases(declared === undefined ? null : { sessionId, declared });
+    setImportedPhases(importedPhasesOf(sessionId, declarationOf(dsl, lang)));
     // Loading a CHAT scenario must LEAVE an entered fleet — otherwise the
     // header shows the scenario while every tab (the lab included) still
     // renders the fleet's events. Owner-found: dialog-load after a fleet.

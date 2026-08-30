@@ -117,6 +117,29 @@ export interface RunPhases {
  *  id the receipt came back on. */
 export type WorkflowDeclaration = ReadonlyMap<string, RunPhases>;
 
+/**
+ * The declaration a session on screen is allowed to draw, stamped with that
+ * session — or nothing.
+ *
+ * ONE gate, on purpose. The rule it enforces has two halves and both of them
+ * have already been paid for elsewhere: a declaration belongs to the run it
+ * came out of (a stamp, so one run's phases can never be drawn over another
+ * run's agents), and an EMPTY map is not a declaration (a run that declared
+ * nothing must not arrive looking declared — the importer already refuses to
+ * put a phase-less run in the map, and this refuses to hand an empty map on).
+ * Written twice, one copy could go soft without a test turning red.
+ *
+ * @param sessionId the session the declaration belongs to
+ * @param declared what the source computed, or undefined when it computed none
+ * @return the stamped declaration, or null when there is nothing to draw
+ */
+export function importedPhasesOf(
+  sessionId: string,
+  declared: WorkflowDeclaration | undefined,
+): { sessionId: string; declared: WorkflowDeclaration } | null {
+  return declared !== undefined && declared.size > 0 ? { sessionId, declared } : null;
+}
+
 /** The picture, ready for `layoutStateGraph` and `lifecycleAt`. */
 export interface WorkflowGraph {
   topo: Topology;
