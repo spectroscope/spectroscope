@@ -18,6 +18,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { WebFaceView, type WebFaceViewProps } from "./BrowserSegment";
+import { fenceNote } from "./fenceNote";
 import { t } from "../i18n/i18n";
 import { currentLang, setLang } from "../state/lang";
 
@@ -45,6 +46,9 @@ function view(overrides: Partial<WebFaceViewProps>): string {
     playing: null,
     canGoBack: null,
     canGoForward: null,
+    // Card 355: the ship default, and the state the footer note used to
+    // describe unconditionally. These suites are about other things.
+    allowLocalhost: false,
     send: () => {},
     onDraft: () => {},
     onPlay: () => {},
@@ -165,8 +169,40 @@ describe("a refusal is shown where the address was typed", () => {
 
 describe("the fence note stays on every mode", () => {
   it("is present in web and none alike", () => {
-    expect(view({ mode: "web" })).toContain(esc(t(en, "browser.fenceNote")));
-    expect(view({ mode: "none" })).toContain(esc(t(en, "browser.fenceNote")));
+    // Card 355 turned the note from one frozen string into a composition over
+    // the process's own fence state; it still stands under every mode, because
+    // whether it should stop being permanent is the owner's call.
+    expect(view({ mode: "web" })).toContain(esc(fenceNote(en, false)));
+    expect(view({ mode: "none" })).toContain(esc(fenceNote(en, false)));
+  });
+
+  it("follows the fence rather than reciting it", () => {
+    expect(view({ mode: "web", allowLocalhost: true })).toContain(esc(fenceNote(en, true)));
+    expect(view({ mode: "web", allowLocalhost: true })).not.toContain(
+      esc(t(en, "browser.fence.loopbackOff")),
+    );
+  });
+});
+
+// Card 355 criterion 4. The footer doubles as the explanation when the fence
+// refuses something, so trimming the footer must not cost a refusal its words.
+// It does not, and the reason is structural rather than lucky: the refusal is
+// composed by NetFence and arrives as its own frame's sentence, while the
+// footer is composed here. This pins that the two do not share a source — with
+// the opt-in ON, and the footer therefore silent about the opt-in, the refusal
+// still names the rule AND the setting that would lift it.
+describe("a refusal keeps its own words when the footer sheds a clause", () => {
+  // NetFence#refusalFor, verbatim: "refused <what>: <why> (rule: <name>)."
+  const refusal =
+    "refused http://localhost:8746/: it is this machine, and the local verify loop is not opted in " +
+    "(set allowLocalhost in the settings to reach it on purpose) (rule: loopback).";
+
+  it("names the rule and the opt-in, with the footer no longer mentioning either", () => {
+    const markup = view({ mode: "web", allowLocalhost: true, notice: refusal });
+    expect(markup).toContain('role="alert"');
+    expect(markup, "the refusal lost words on the way to the screen").toContain(esc(refusal));
+    expect(markup).toContain("rule: loopback");
+    expect(esc(fenceNote(en, true)), "the footer is the wrong source for this").not.toContain("rule:");
   });
 });
 

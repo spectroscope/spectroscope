@@ -81,9 +81,30 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Öffne die Desktop-App, dann fährt der Agent die Seite dort — und für localhost muss allowLocalhost in den Einstellungen an sein.",
     en: "Open the desktop app and the agent drives the page there — and reaching localhost needs allowLocalhost turned on in the settings.",
   },
-  "browser.fenceNote": {
-    de: "Netz-Zaun an: private Adressen, Tailnet und file:// bleiben auf jedem Redirect-Hop abgelehnt; localhost braucht allowLocalhost. Nicht gefangen: eine DNS-Antwort, die sich nach der Prüfung ändert.",
-    en: "Net fence on: private addresses, the tailnet and file:// stay refused on every redirect hop; localhost needs allowLocalhost. Not caught: a DNS answer that changes after the check.",
+  // Card 355 — the fence note, in the pieces it is composed from
+  // (browser/fenceNote.ts). One frozen sentence told every operator "localhost
+  // needs allowLocalhost", including the one whose settings already grant it.
+  // The rules and the limit hold whatever the settings say; only the loopback
+  // clause depends on this process, so only it has two spellings — and a third
+  // state, "nobody has said", which gets no clause at all.
+  "browser.fence.rules": {
+    de: "Netz-Zaun an: private Adressen, Tailnet und file:// bleiben bei Redirects abgelehnt",
+    en: "Net fence on: private addresses, the tailnet and file:// stay refused on every redirect hop",
+  },
+  "browser.fence.loopbackOff": {
+    de: "localhost auch, bis allowLocalhost an ist",
+    en: "localhost too, until allowLocalhost is on",
+  },
+  "browser.fence.loopbackOn": {
+    de: "localhost erreichbar, allowLocalhost ist an",
+    en: "localhost is reachable, allowLocalhost is on",
+  },
+  // The honest half. No fence catches a resolver that answers differently the
+  // second time, and card 355 criterion 3 keeps this in every variant of the
+  // note rather than trading it away for brevity.
+  "browser.fence.dns": {
+    de: "Nicht gefangen: eine DNS-Antwort, die sich nach der Prüfung ändert.",
+    en: "Not caught: a DNS answer that changes after the check.",
   },
   // Card 219 — the dock's browser panel under the shell's minimum pane size.
   "browser.floorNote": {
