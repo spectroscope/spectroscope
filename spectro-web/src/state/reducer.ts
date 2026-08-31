@@ -1048,7 +1048,51 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     // Card 285. The key and the hint ride as vars so a German operator reads a
     // German sentence around the server's own English hint, which names paths
     // and env vars and is not ours to translate.
+    // Card 354. The owner opened a fresh session and this was the only thing in
+    // it, and he asked why. The answer is structural rather than editorial: on
+    // an empty chat a turn is not one line among many, it is the whole screen —
+    // so the seat he looks at first for his agent's first word was spent on an
+    // observation about a settings file.
+    //
+    // The reading behind `inForce` is about the whole FILE, not only about the
+    // key that tripped the refusal, and it has to be: the loader leaves on the
+    // first forbidden key and abandons the whole scope, so every other setting
+    // in that file is dropped with it. ForgeDemo's file is the case in point.
+    // It asks for allowLocalhost, which ~/.spectro grants anyway, AND for
+    // permissionMode "auto", which nothing else sets. Priced per key that
+    // refusal reads as free and this line stays away while he loses his
+    // permission mode, which is the louder of the two defects. So silence here
+    // means the file cost him nothing at all.
+    //
+    // Nothing is suppressed even then: the event still rides the wire and is
+    // still written to the record, the text feed marks it and the CLI prints
+    // it. It simply is not conversation.
+    //
+    // The other case keeps its turn, deliberately: an operator who is LOSING a
+    // setting is worth interrupting, and swallowing that would be the worse
+    // defect of the two. Where the free notice goes instead (a dismissible
+    // strip, the settings screen, a doctor line) is placement, and placement is
+    // the owner's call. He has not made it, so this card does not pick one.
     case "settings_ignored":
+      if (event.inForce === true) {
+        return state;
+      }
+      if (event.inForce === false) {
+        return addTurn(state, {
+          kind: "info",
+          text:
+            `"${event.key}" was ignored: a workspace folder may not set it, so the whole ` +
+            `file is dropped. Some of what that file asked for is not set anywhere else. ` +
+            `${event.hint}`,
+          infoKey: "info.settingsIgnoredNotAllInForce",
+          infoVars: { key: event.key, hint: event.hint },
+          tone: "warn",
+        });
+      }
+      // No reading at all: a session recorded before card 354, replaying. It
+      // gets card 285's sentence back unchanged rather than a verdict about
+      // force that nobody took, and it keeps its turn — a notice the harness
+      // cannot price is not one to swallow.
       return addTurn(state, {
         kind: "info",
         text: `"${event.key}" was ignored: a workspace folder may not set it. ${event.hint}`,

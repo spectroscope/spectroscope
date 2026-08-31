@@ -166,14 +166,45 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * in the record: a reader opening the session later sees a successful write
      * and, without this, no hint that its contents were dropped.</p>
      *
-     * @param key   the setting the scope was not allowed to name
-     * @param file  the settings file it was read from
-     * @param hint  where the setting does belong, kept because it is the half
-     *              that was already right
-     * @param ts    epoch millis of emission
+     * <p>Card 354 adds what the refusal COSTS. The owner met this line as the
+     * only thing in a fresh session and asked why it had the whole screen; the
+     * measurement behind the card is that the two cases read identically:
+     * "ignored, and in force anyway" and "ignored, and now not in force" are
+     * different pieces of news. So the reading rides along and each surface can
+     * decide what a free one is worth interrupting for.</p>
+     *
+     * @param key         the setting the scope was not allowed to name
+     * @param file        the settings file it was read from
+     * @param hint        where the setting does belong, kept because it is the
+     *                    half that was already right
+     * @param inForce     whether the refusal costs nothing: every key that FILE
+     *                    set is already carried, at the same value, by a scope
+     *                    allowed to carry it. About the file rather than about
+     *                    {@code key}, because the refusal leaves on the first
+     *                    forbidden key and abandons the whole scope. ABSENT from
+     *                    the wire on a line recorded before card 354, which took
+     *                    no reading — absent is not the same as {@code false}
+     *                    and a reader that flattens the two states puts a
+     *                    sentence nobody measured into an old session
+     * @param inForceFrom the allowed layer carrying {@code key} ({@code "env"},
+     *                    {@code "user"}, {@code "launch-dir"}, {@code "flags"});
+     *                    present exactly when {@code inForce} is true
+     * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record SettingsIgnored(String key, String file, String hint, long ts) implements RunEvent {}
+    record SettingsIgnored(String key, String file, String hint,
+            Boolean inForce, String inForceFrom, long ts) implements RunEvent {
+
+        /** The pre-354 shape: a refusal with no reading of its cost, on the wire
+         *  byte-for-byte as it was before this card.
+         *  @param key  the setting the scope was not allowed to name
+         *  @param file the settings file it was read from
+         *  @param hint where the setting does belong
+         *  @param ts   epoch millis of emission */
+        public SettingsIgnored(String key, String file, String hint, long ts) {
+            this(key, file, hint, null, null, ts);
+        }
+    }
 
     /**
      * One provider round-trip begins; the loop's turn brake caps how many a run may take.

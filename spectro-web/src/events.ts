@@ -229,6 +229,25 @@ export type RunEvent =
       file: string;
       /** Where the setting does belong. The half that was already right. */
       hint: string;
+      /**
+       * Card 354: whether the refusal costs the operator nothing, meaning every
+       * key that FILE set is already carried at the same value by a scope that
+       * is allowed to carry it.
+       *
+       * About the file rather than about `key`, because the refusal is: the
+       * loader leaves on the first forbidden key and abandons the whole scope,
+       * so an ordinary setting beside it goes down unmentioned.
+       *
+       * ABSENT on a line recorded before card 354, which took no reading.
+       * Absent is NOT the same as `false`, and a reader that flattens the two
+       * puts a sentence nobody measured into an old session's chat.
+       */
+      inForce?: boolean;
+      /**
+       * The allowed layer carrying `key` ("env", "user", "launch-dir",
+       * "flags"). Present exactly when `inForce` is true.
+       */
+      inForceFrom?: string;
       ts: number;
     }
   // Cards 262, 266 and 267 built three self-reports; card 281 and 282 give them

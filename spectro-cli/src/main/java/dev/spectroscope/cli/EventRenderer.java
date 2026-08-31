@@ -264,10 +264,30 @@ final class EventRenderer {
             // plan this is the line a reader is meant to stop at.
             // Card 285: a refusal by design, not a crash. Amber rather than the
             // red an error wears, and it names where the setting does belong.
+            // Card 354: and whether losing that file cost the reader anything.
+            // The clause is appended rather than replacing the hint — the hint
+            // is where the key BELONGS, this is whether it is already there.
+            // Absent on a line recorded before card 354: no reading was taken,
+            // so the terminal says neither half of a verdict it does not have.
+            //
+            // Both clauses speak about the FILE, because that is what a refusal
+            // takes: the loader leaves on the first forbidden key and abandons
+            // the whole scope. Saying "so nothing changed" off a reading of one
+            // key would be a claim about the neighbours nobody measured, and
+            // saying "nothing else sets it" is false outright whenever an
+            // allowed layer sets the key the other way.
             case RunEvent.SettingsIgnored refused -> {
                 spinner.stop();
+                String cost = "";
+                if (Boolean.TRUE.equals(refused.inForce())) {
+                    cost = " " + ansi.dim("(still in force from " + refused.inForceFrom()
+                            + " settings, and the rest of that file is set elsewhere too)");
+                } else if (Boolean.FALSE.equals(refused.inForce())) {
+                    cost = " " + ansi.coral(
+                            "(the whole file is dropped, and some of it is not set anywhere else)");
+                }
                 System.out.println("\n" + ansi.coral("◈ settings ignored · " + refused.key())
-                        + " " + refused.file() + " — " + refused.hint());
+                        + " " + refused.file() + " — " + refused.hint() + cost);
             }
             case RunEvent.NoProgress stalled -> {
                 spinner.stop();
