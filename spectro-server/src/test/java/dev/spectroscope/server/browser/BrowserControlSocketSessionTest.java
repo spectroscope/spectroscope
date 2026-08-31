@@ -112,6 +112,29 @@ class BrowserControlSocketSessionTest {
     }
 
     @Test
+    void aClosedPageForgetsItsAddressWithoutClosingTheSession() throws Exception {
+        // Card 346, the half that is NOT optional. This cache is written from a
+        // reply's `pageUrl` and only when that field is non-null (see send), so
+        // the shell has no way to report "there is no page now" through a
+        // reply. Without forgetPage the closed address survives forever: the
+        // toolbar goes on offering it, and the start page — whose only
+        // condition is url == null — never comes back.
+        FakeSocket shell = attachedShell();
+        BrowserControlSocket control = attach(shell);
+        drive(control, shell, A, "{}", "http://localhost:5173/a");
+        drive(control, shell, B, "{}", "http://localhost:5173/b");
+
+        control.forgetPage(A);
+
+        assertNull(control.forSession(A).pageUrl(), "the closed page left its address behind");
+        assertEquals("http://localhost:5173/b", control.forSession(B).pageUrl(),
+                "and it took the neighbour's with it");
+        assertFalse(shell.textJoined().contains("close_session"),
+                "forgetting a page must never become closing a session — the cookies "
+                        + "are the owner's call and they stay: " + shell.textJoined());
+    }
+
+    @Test
     void anAddressFiledByAReplacedShellDoesNotSurviveTheReplacement() throws Exception {
         // Measured in review: /ws/browser authenticates nothing and the newest
         // connection wins, which is in policy — but a client that took the

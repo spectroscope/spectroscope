@@ -68,6 +68,25 @@ public interface BrowserFaces {
     void closeSession(String sessionId);
 
     /**
+     * Forgets the address a session's browser was showing, because its page was
+     * closed (card 346) — WITHOUT closing the session or touching its cookies.
+     *
+     * <p>Its own method because a reply cannot carry the fact. A directory that
+     * caches addresses writes that cache from a reply's {@code pageUrl}, and a
+     * cache written only from non-null values can never be told "there is no
+     * page now" — so a closed page's address would be served forever, the
+     * toolbar would keep offering it and the start page would never come back.
+     *
+     * <p>The default is empty: a directory whose faces answer
+     * {@link BrowserFace#pageUrl()} from the engine itself has nothing to
+     * forget, because the engine already forgot.
+     *
+     * @param sessionId the session whose page was closed
+     */
+    default void forgetPage(String sessionId) {
+    }
+
+    /**
      * The directory a {@code spectro web} reader has: one that hands every
      * session the same honest {@link BrowserFace#none()}.
      *

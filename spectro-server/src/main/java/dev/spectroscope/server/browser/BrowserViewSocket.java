@@ -38,6 +38,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * {"type":"unwatch"}                 stop watching
  * {"type":"navigate","sessionId":s,"url":u}
  * {"type":"back","sessionId":s}      {"type":"forward","sessionId":s}
+ * {"type":"reload","sessionId":s}     card 344: a RELOAD, carrying no address
+ * {"type":"close_page","sessionId":s} card 346: drop the page, keep the cookies
  * {"type":"screenshot","sessionId":s}
  * {"type":"input","sessionId":s, ...browser_computer's own argument names}
  *                                    action, coordinate, ref, text,
@@ -50,7 +52,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <pre>
  * {"type":"state","sessionId":s,"live":"desktop"|"web"|"none",
- *  "url":string|null,"attached":bool}
+ *  "url":string|null,"attached":bool,
+ *  "canGoBack":bool|null,"canGoForward":bool|null}   null = this face cannot
+ *                                    say freshly; a null never disables (344)
  * {"type":"frame","sessionId":s,"format":"jpeg","dataBase64":...,
  *  "deviceWidth":n,"deviceHeight":n,"ts":n}
  * {"type":"verb","verb":...,"ok":bool,"error"?,"url"?,"title"?,"detail"?}
@@ -65,8 +69,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h2>Who may drive, per face (card 227)</h2>
  *
- * <p>NAVIGATION verbs — {@code navigate}, {@code back}, {@code forward}, the
- * play button — run on whichever face is live, desktop pane included: the
+ * <p>NAVIGATION verbs — {@code navigate}, {@code back}, {@code forward},
+ * {@code reload}, {@code close_page}, the play button — run on whichever face
+ * is live, desktop pane included: the
  * desktop face's control row is React above the native hole, and its verbs
  * travel this channel to the SAME per-session browser the agent drives.
  * {@code input} stays web-face-only: on the desktop face the operator's hand
@@ -79,6 +84,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * one terse {@code refused} sentence instead of interleaving; between calls
  * the operator drives freely. Screenshot, watching and the launch listing pass
  * — they race nothing.
+ *
+ * <p><b>What the toolbar is told, and what it is not (card 344).</b> The state
+ * frame grew {@code canGoBack} and {@code canGoForward}, and they are BOXED:
+ * {@code null} means "this face cannot answer freshly" and never disables a
+ * control. Only the web face answers — its engine reports every main-frame
+ * navigation back up this channel, so a sixth state frame is pushed whenever
+ * the page moves by itself and the two booleans are exactly as fresh as the
+ * address beside them. The desktop shell pushes nothing, so its answer is
+ * {@code null} rather than a cache that goes stale the moment the operator
+ * clicks a link on the real pane: a stale {@code false} is a dead button over
+ * a working page, which is worse than the error sentence it would replace.
  *
  * <p><b>What is recorded (criterion 4):</b> every operator NAVIGATION records
  * through the session's own {@code .browser.jsonl} recorder — same file, same
@@ -161,6 +177,8 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             case "unwatch" -> unwatch(socket);
             case "navigate" -> navigate(socket, sessionId, frame.path("url").asText(""));
             case "back", "forward" -> history(socket, sessionId, type);
+            case "reload" -> reload(socket, sessionId);
+            case "close_page" -> closePage(socket, sessionId);
             case "screenshot" -> screenshot(socket, sessionId);
             case "input" -> input(socket, sessionId, frame);
             case "launch_list" -> launchList(socket, sessionId);
@@ -235,6 +253,67 @@ public class BrowserViewSocket extends TextWebSocketHandler {
         startCastIfLive(socket, sessionId);
     }
 
+    /**
+     * The reload control (card 344, criterion 2).
+     *
+     * <p>Its own verb, and the absence of an argument is the fix: the control
+     * used to send a {@code navigate} naming the remembered address, which
+     * loses form state and re-posts — the objection the desktop shell states in
+     * writing for back/forward one file away, and which nobody carried across.
+     * Both engines answer it with their own reload.
+     */
+    private void reload(WebSocketSession socket, String sessionId) {
+        if (sessionId.isBlank()) {
+            send(socket, error("reload needs a sessionId"));
+            return;
+        }
+        if (refuseWhenNoEngine(socket, "reload") || refuseWhileAgentDrives(socket, sessionId)) {
+            return;
+        }
+        recorded(sessionId, "reload", JSON.createObjectNode(),
+                () -> faces.forSession(sessionId).send("reload", JSON.createObjectNode()),
+                reply -> answerVerb(socket, "reload", reply));
+        send(socket, state(sessionId));
+        startCastIfLive(socket, sessionId);
+    }
+
+    /**
+     * Closing the page, keeping the login (card 346).
+     *
+     * <p>The owner answered the card's blocking question on 2026-08-30 — "ja
+     * cookies behalten". The Chromium partition, its storage and its cache are
+     * untouched, so a navigate afterwards walks back into the same sessions,
+     * the way closing a tab in a real browser behaves. What goes is the view.
+     *
+     * <p>The address cache is cleared HERE and not by the reply: a reply
+     * carries an address through {@code pageUrl}, and
+     * {@code BrowserControlSocket.send} only writes that field when it is
+     * non-null — so the shell CANNOT report "no page" through it, and without
+     * this call the desktop face would serve the closed address forever.
+     *
+     * <p>Guarded like a navigation and recorded like one: taking the page away
+     * under an agent call in flight is exactly the race the fight rule exists
+     * for, and a replay must not read a human's close as the model's.
+     */
+    private void closePage(WebSocketSession socket, String sessionId) {
+        if (sessionId.isBlank()) {
+            send(socket, error("close_page needs a sessionId"));
+            return;
+        }
+        if (refuseWhenNoEngine(socket, "close_page") || refuseWhileAgentDrives(socket, sessionId)) {
+            return;
+        }
+        recorded(sessionId, "close_page", JSON.createObjectNode(),
+                () -> faces.forSession(sessionId).send("close_page", JSON.createObjectNode()),
+                reply -> {
+                    if (reply.ok()) {
+                        faces.forgetPage(sessionId);
+                    }
+                    answerVerb(socket, "close_page", reply);
+                });
+        send(socket, state(sessionId));
+    }
+
     /** The screenshot control: read-only, so no fight gate and no record. */
     private void screenshot(WebSocketSession socket, String sessionId) {
         if (sessionId.isBlank()) {
@@ -303,6 +382,42 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             reply.value().fields().forEachRemaining(field ->
                     answer.set(field.getKey(), field.getValue()));
         }
+        // CARD 344 (d), AND WHAT DOES NOT CARRY IT. A back-fill from
+        // reply.pageUrl() stood here — `if (ok && !answer.has("url") &&
+        // pageUrl != null)` — and it was taken out because it could not close
+        // the case for `input`: an input reply's value has one key, `detail`,
+        // and its pageUrl is by CONSTRUCTION the address before the click.
+        // Input.dispatchMouseEvent returns as soon as the event is dispatched;
+        // the navigation follows. So it named the page the click left, not the
+        // page the click reached, and because the client applies any verb url
+        // it receives, it could UNDO the state frame that does follow the page
+        // (see watchNavigations, the sixth occasion).
+        //
+        // IT REACHED A SECOND VERB, and the note that stood here said it did
+        // not. `screenshot` answers with mediaType/dataBase64/width/height and
+        // no url, on a page whose address pageUrl() knows — both conditions,
+        // so a screenshot answer used to carry one and no longer does. That is
+        // a behaviour change, and it is written down here and in the two tests
+        // that measure it (HeadlessBrowserFaceTest's screenshot case for why
+        // it fired, BrowserViewSocketTest's desktop row for the answer this
+        // method now builds).
+        //
+        // WHAT THAT COSTS, as far as it was traced. On the web face nothing:
+        // its address follows the page on state frames, which are fresher than
+        // any answer. On the DESKTOP face a screenshot was one occasion that
+        // refreshed the segment's address line — the client applies a verb url
+        // into its state, and that line reads `view?.url ?? status?.url`, so a
+        // state url it already has masks the status poll behind it. Losing the
+        // occasion is a slower address line on that face, not a wrong one; the
+        // poll reads the same cache this reply would have quoted. Restoring a
+        // refresh for it is a card, not a back-fill for every verb.
+        //
+        // The remaining verbs are untouched — navigate, back, forward and
+        // reload put their landing url in the value themselves, and close_page
+        // answers with a null pageUrl, so the back-fill never fired for it.
+        //
+        // The address is the state frame's to say. Every verb that moves it
+        // pushes one immediately behind its answer on this same socket.
         send(socket, answer);
     }
 
@@ -528,6 +643,7 @@ public class BrowserViewSocket extends TextWebSocketHandler {
         if (face == null || !face.hasPage()) {
             return;
         }
+        watchNavigations(face, sessionId);
         try {
             face.startScreencast(params -> relay(sessionId, params),
                     MAX_FRAME_WIDTH, MAX_FRAME_HEIGHT);
@@ -548,8 +664,32 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             HeadlessBrowserFace face = faces.webFace(sessionId);
             if (face != null) {
                 face.stopScreencast();
+                face.onNavigated(null);
             }
         }
+    }
+
+    /**
+     * The SIXTH occasion a state frame is pushed (card 344, criterion 4).
+     *
+     * <p>The other five are all things the operator or the shell did. A page
+     * that follows a link by itself is none of them, so the address bar kept
+     * the address the page had before the click — the defect the card measured.
+     *
+     * <p>The frame is built on a virtual thread and not on the caller's. The
+     * caller here is the engine's own CDP reader thread, and {@link #state}
+     * asks the face a question that travels back down that same endpoint;
+     * answering it inline would be a call into the channel that is delivering
+     * the event. Every later event on that channel — the navigation fence's own
+     * included — rides the same thread.
+     */
+    private void watchNavigations(HeadlessBrowserFace face, String sessionId) {
+        face.onNavigated(() -> Thread.startVirtualThread(() -> {
+            WebSocketSession viewer = viewers.get(sessionId);
+            if (viewer != null && viewer.isOpen()) {
+                send(viewer, state(sessionId));
+            }
+        }));
     }
 
     /** One screencast frame to the session's viewer — already acked by the face. */
@@ -577,11 +717,28 @@ public class BrowserViewSocket extends TextWebSocketHandler {
         state.put("sessionId", sessionId);
         state.put("live", faces.live());
         state.put("attached", faces.attached());
-        String url = faces.forSession(sessionId).pageUrl();
+        BrowserFace face = faces.forSession(sessionId);
+        String url = face.pageUrl();
         if (url == null) {
             state.putNull("url");
         } else {
             state.put("url", url);
+        }
+        // Card 344 (c). Three states on the wire, not two: true, false, and
+        // null for "this face cannot say freshly". Null is what the desktop
+        // face answers, because its shell pushes no navigation and a cached
+        // boolean would be a dead button over a working page; the UI leaves the
+        // control alone on a null and the operator keeps today's behaviour.
+        BrowserFace.History walk = face.history();
+        if (walk.back() == null) {
+            state.putNull("canGoBack");
+        } else {
+            state.put("canGoBack", walk.back());
+        }
+        if (walk.forward() == null) {
+            state.putNull("canGoForward");
+        } else {
+            state.put("canGoForward", walk.forward());
         }
         return state;
     }

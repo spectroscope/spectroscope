@@ -205,4 +205,17 @@ public class PrecedenceBrowserFaces implements BrowserFaces {
         desktop.closeSession(sessionId);
         web.closeSession(sessionId);
     }
+
+    /**
+     * Forgets one session's page on BOTH faces (card 346), for the same reason
+     * closing is not routed by precedence: the page may have been opened on
+     * either engine, and forgetting what was never remembered is free.
+     *
+     * @param sessionId the session whose page was closed
+     */
+    @Override
+    public void forgetPage(String sessionId) {
+        desktop.forgetPage(sessionId);
+        web.forgetPage(sessionId);
+    }
 }

@@ -122,6 +122,21 @@
   font-family: var(--font-mono, monospace);
 }
 
+/* CARD 344 (a): the sentence standing where the control row would be, while the
+   desktop pane drives. Prose and not an address, so it keeps the bar's own
+   family rather than the mono one, and it is dimmer than the address beside it
+   — the address is the fact, this is the reason for it. `min-width: 0` because
+   a nowrap flex item defaults to min-content and would push the row wider
+   instead of ellipsising (card 319's measured cause, one bar over). */
+.browser-row-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+
 /* The hole. Its rectangle is measured and posted to the shell, which puts the
    real page exactly here — so it must keep its size even while empty. */
 .browser-hole {

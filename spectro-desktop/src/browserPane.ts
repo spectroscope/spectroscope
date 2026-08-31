@@ -731,6 +731,56 @@ export async function runVerb(
         return ok({ url: wc.getURL(), title: wc.getTitle() }, pane);
       }
 
+      case "reload": {
+        // Card 344 (b). Chromium's OWN reload, never a fresh load of the
+        // remembered address — the same objection this file already states for
+        // back/forward, three cases up: re-loading an address loses what was
+        // typed into a form and re-posts what was posted, and neither is what
+        // a reload button does.
+        if (!pane.view) return failed(noPage(pane), pane);
+        requestVisible(pane);
+        ensureView(pane).webContents.reload();
+        return ok({ url: paneUrl(pane.id) }, pane);
+      }
+
+      case "close_page": {
+        // Card 346. The page goes; the LOGIN stays. The owner answered the
+        // card's blocking question on 2026-08-30 — "ja cookies behalten" —
+        // and closing a tab in a real browser does not sign you out, so
+        // retire() is deliberately NOT reachable from here: the pane record and
+        // its partition survive, and the next navigate walks back into the same
+        // jar. closeSession() is the destructive neighbour and stays that way.
+        //
+        // Dropped, not hidden: a hidden page keeps its timers and its
+        // websockets running behind a word that says it is gone.
+        if (!pane.view) return failed(noPage(pane), pane);
+        const closing = pane.view;
+        pane.view = null;
+        pane.visible = false;
+        pane.lines.length = 0;
+        pane.refusals = [];
+        const owner = windowSource();
+        if (pane.inWindow && owner && !owner.isDestroyed()) {
+          try {
+            owner.contentView.removeChildView(closing);
+          } catch {
+            // The window may be tearing down around us; the view dies with it.
+          }
+        }
+        pane.inWindow = false;
+        try {
+          if (!closing.webContents.isDestroyed()) closing.webContents.close();
+        } catch {
+          // A page that is already gone needs no second closing.
+        }
+        // Explicitly null rather than ok()'s computed one — the two agree here,
+        // so this is a statement and not a mechanism. The mechanism is on the
+        // server: BrowserControlSocket keys its address cache off
+        // `hasNonNull("pageUrl")`, so a reply CANNOT report "no page" through
+        // this field at all, and that socket clears the entry itself.
+        return { ok: true, value: { closed: pane.id }, pageUrl: null };
+      }
+
       case "eval": {
         if (!pane.view) return failed(noPage(pane), pane);
         requestVisible(pane);

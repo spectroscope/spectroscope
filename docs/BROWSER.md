@@ -217,6 +217,8 @@ names are `browser_computer`'s own so UI and tools speak one dialect):
 {"type":"unwatch"}                  stop watching
 {"type":"navigate","sessionId":s,"url":u}
 {"type":"back","sessionId":s}       {"type":"forward","sessionId":s}
+{"type":"reload","sessionId":s}     card 344: a RELOAD, carrying no address
+{"type":"close_page","sessionId":s} card 346: drop the page, keep the cookies
 {"type":"screenshot","sessionId":s}
 {"type":"input","sessionId":s,"action":a,"coordinate":[x,y],"ref":r,
  "text":t,"scroll_direction":d,"scroll_amount":n,"duration":sec}
@@ -228,7 +230,8 @@ Server → client:
 
 ```
 {"type":"state","sessionId":s,"live":"desktop"|"web"|"none",
- "url":string|null,"attached":bool}
+ "url":string|null,"attached":bool,
+ "canGoBack":bool|null,"canGoForward":bool|null}
 {"type":"frame","sessionId":s,"format":"jpeg","dataBase64":...,
  "deviceWidth":n,"deviceHeight":n,"ts":n}
 {"type":"verb","verb":...,"ok":bool,"error"?,"url"?,"title"?,"detail"?,...}
@@ -249,11 +252,66 @@ session — the newest wins, the shell rule again. An agent-driven navigation
 mid-watch is announced to the UI by the session's own `browser_action`
 RunEvents; re-issuing `watch` restarts the cast on the new page.
 
+**What the toolbar is told, and what it is not (card 344).** `reload` is a
+reload: it carries no address, and both engines answer it with Chromium's own
+reload rather than a fresh load of the remembered one — re-loading an address
+loses what was typed into a form and re-posts what was posted, the objection
+the desktop shell already states in writing for back/forward.
+
+`canGoBack` and `canGoForward` are BOXED on this wire, and the third state is
+the design. `null` means "this face cannot answer freshly" and never disables
+a control. Only the web face answers: its engine reports every main-frame
+navigation back up this channel, so a SIXTH state frame is pushed whenever the
+page moves by itself, and the two booleans are exactly as fresh as the address
+beside them. The desktop shell pushes no navigation, so its answer is `null`
+rather than a cache that goes stale the moment the operator clicks a link on
+the real pane — a stale `false` is a dead button over a working page, which is
+worse than the error sentence it would replace.
+
+**Which frame carries the address.** The state frame, and only it. A verb's
+answer names an address exactly when the verb itself knows where it landed —
+`navigate`, `back`, `forward` and `reload` each put it in their value. A
+back-fill from the reply's own `pageUrl` filled that field in for any answer
+that had none, and it was taken out because it could not close the case for
+`input`, whose value has one key, `detail`: `Input.dispatchMouseEvent` returns
+as soon as the event is dispatched and the navigation follows, so that address
+is the page the click LEFT, not the page it reached. Worse, the client applies
+any verb url it receives, so a stale one could undo the sixth state frame that
+does follow the page. A click that moves the page is answered by that state
+frame, not by the click.
+
+The back-fill reached a second verb, and an earlier draft of this paragraph
+said it reached only `input`. `screenshot` answers with an image and no url on
+a page whose address the face knows, so both of the back-fill's conditions held
+for it too: **a screenshot answer used to name an address and no longer does.**
+On the web face that costs nothing — its address follows the page on state
+frames. On the desktop face a screenshot was one of the occasions that
+refreshed the segment's address line, because the client applies a verb url
+into its state and that line prefers a state url over the status poll behind
+it; what is lost is the occasion, not the address, since the poll reads the
+same server-side cache the reply would have quoted. `close_page` answers with a
+null `pageUrl`, so the back-fill never fired for it.
+
+**Closing a page keeps the login (card 346).** `close_page` drops the view and
+leaves the Chromium partition, its storage and its cache alone — the owner's
+call, 2026-08-30: closing a tab in a real browser does not sign you out. A
+navigate afterwards walks back into the same sessions. `close_session` is the
+destructive neighbour and is unchanged. Two things this verb needs that a
+reply cannot carry: the page is DROPPED rather than hidden (a hidden page keeps
+its timers and its websockets behind a word that says it is gone), and the
+server clears its own per-session address cache explicitly, because
+`BrowserControlSocket` writes that cache from a reply's `pageUrl` and only when
+that field is non-null — so the shell has no way to say "there is no page now".
+With `url` back to null, both faces render the start page again, which is the
+other half of what the owner asked for.
+
 **The fight rule (card 227).** While an AGENT browser call is in flight for a
 session — counted on the recording seam itself, from `open` to `end` — every
 operator driving verb (`navigate`, `back`, `forward`, `input`, play) answers
 one terse `refused` sentence instead of interleaving; between calls the
-operator drives freely. `screenshot`, watching and `launch_list` pass — they
+operator drives freely — and `reload` and `close_page` are driving verbs, so
+they are gated too: one moves the page, the other takes it away from under a
+call that is mid-flight. `screenshot`, watching and `launch_list` pass — they
 race nothing. Every operator NAVIGATION is recorded through the session's own
 `.browser.jsonl` recorder (same file, same epoch as the agent's calls) with
 the additive `actor:"operator"` field; operator `input` is deliberately not

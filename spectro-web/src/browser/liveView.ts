@@ -22,6 +22,24 @@ export interface ViewState {
   live: FaceLive;
   url: string | null;
   attached: boolean;
+  /**
+   * Whether the live engine has anywhere to go back to — and `null` for "it
+   * did not say" (card 344, criterion 3).
+   *
+   * THREE states, deliberately, and the third one is the whole design. Only
+   * the web face can answer this freshly: its engine reports every main-frame
+   * navigation up this channel, so its answer is exactly as fresh as the
+   * address beside it. The desktop shell pushes nothing — its address and its
+   * history are both a cache the server refreshes when a verb runs — so a
+   * boolean from that face would go stale the moment the operator clicks a
+   * link on the real pane, and a stale `false` here is a button that is dead
+   * while the thing it does would work.
+   *
+   * So an unknown answer NEVER disables. The desktop face keeps the behaviour
+   * it has today: press it, and read the sentence if there was nothing there.
+   */
+  canGoBack: boolean | null;
+  canGoForward: boolean | null;
 }
 
 /** One screencast frame, ready to draw: bytes as a data URL, size in device
@@ -127,6 +145,8 @@ export function parseViewMessage(data: unknown): ViewMessage | null {
           live,
           url: typeof frame.url === "string" ? frame.url : null,
           attached: frame.attached === true,
+          canGoBack: typeof frame.canGoBack === "boolean" ? frame.canGoBack : null,
+          canGoForward: typeof frame.canGoForward === "boolean" ? frame.canGoForward : null,
         },
       };
     }
@@ -197,6 +217,28 @@ export function parseViewMessage(data: unknown): ViewMessage | null {
     default:
       return null;
   }
+}
+
+/**
+ * Whether a picture already on screen is still a picture of something, given
+ * the state frame that just arrived (card 346, criterion 5).
+ *
+ * <p>THE DEFECT IT CLOSES. The component dropped a held frame only on a face
+ * flip, and closing the page does not flip the face — the web engine stays
+ * live with no page in it. So the last frame of the CLOSED page stayed on
+ * screen, and because that frame is an interactive element, a click on it
+ * still went out as an `input` verb naming a coordinate on a page that is
+ * gone.
+ *
+ * <p>The rule is one sentence and it covers both cases: a frame is a picture
+ * OF a page, on the face that produced it. Another face's picture is not this
+ * one's, and where there is no page there is nothing the frame could be of.
+ *
+ * @param state the state frame that just arrived
+ * @return whether the held picture may stay
+ */
+export function heldPictureSurvives(state: ViewState): boolean {
+  return state.live === "web" && state.url !== null;
 }
 
 /** What the segment renders: connecting until the first state frame answers,
@@ -355,6 +397,34 @@ export function navigateFrame(sessionId: string, url: string): Record<string, un
 /** @return the back/forward frame — these two verbs exist only on this face */
 export function historyFrame(sessionId: string, direction: "back" | "forward"): Record<string, unknown> {
   return { type: direction, sessionId };
+}
+
+/**
+ * The reload verb (card 344, criterion 2).
+ *
+ * It carries NO address, and that absence is the fix. The control used to send
+ * a navigate frame naming the remembered address, which throws away what was
+ * typed into a form and re-posts what was posted — the behaviour the desktop
+ * shell refuses in writing for back/forward one file away (`browserPane.ts`,
+ * the back/forward case). The engine reloads the document it is holding.
+ *
+ * @return the reload frame
+ */
+export function reloadFrame(sessionId: string): Record<string, unknown> {
+  return { type: "reload", sessionId };
+}
+
+/**
+ * The close verb (card 346): drop the page, keep the login.
+ *
+ * The Chromium partition, its cookies and its cache are deliberately NOT
+ * touched — the owner's call: closing a tab in a real browser does not sign
+ * you out. What goes is the view.
+ *
+ * @return the close_page frame
+ */
+export function closePageFrame(sessionId: string): Record<string, unknown> {
+  return { type: "close_page", sessionId };
 }
 
 /** @return a left click at a device point, as browser_computer would say it */

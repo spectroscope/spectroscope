@@ -10,8 +10,10 @@
 import { describe, expect, it } from "vitest";
 import {
   clickFrame,
+  closePageFrame,
   frameDataUrl,
   historyFrame,
+  reloadFrame,
   keyFrame,
   keyName,
   launchListFrame,
@@ -26,9 +28,11 @@ import {
   unwatchFrame,
   viewSocketUrl,
   watchFrame,
+  heldPictureSurvives,
   webFaceMode,
   faceLabelKey,
   wheelStep,
+  type ViewState,
 } from "./liveView";
 
 describe("the socket address", () => {
@@ -54,13 +58,86 @@ describe("parsing what the server sends", () => {
           attached: true,
         }),
       ),
-    ).toEqual({ kind: "state", state: { live: "web", url: "https://a.test/", attached: true } });
+    ).toEqual({
+      kind: "state",
+      state: {
+        live: "web",
+        url: "https://a.test/",
+        attached: true,
+        canGoBack: null,
+        canGoForward: null,
+      },
+    });
     // Forward compatibility errs toward the floor: a face this build does not
     // know must not paint pictures or accept input as if it did.
     const odd = parseViewMessage(
       JSON.stringify({ type: "state", sessionId: "s1", live: "hologram", url: null, attached: false }),
     );
-    expect(odd).toEqual({ kind: "state", state: { live: "none", url: null, attached: false } });
+    expect(odd).toEqual({
+      kind: "state",
+      state: { live: "none", url: null, attached: false, canGoBack: null, canGoForward: null },
+    });
+  });
+
+  it("reads the two history booleans, and keeps 'not said' apart from 'no' — card 344 (c)", () => {
+    // Three states, not two. A face that cannot answer must not be read as a
+    // face that answered "there is nothing there": the first leaves the button
+    // alone, the second kills it, and collapsing them ships a wrong disabled.
+    const said = parseViewMessage(
+      JSON.stringify({
+        type: "state",
+        sessionId: "s1",
+        live: "web",
+        url: "https://a.test/",
+        attached: true,
+        canGoBack: true,
+        canGoForward: false,
+      }),
+    );
+    expect(said).toEqual({
+      kind: "state",
+      state: {
+        live: "web",
+        url: "https://a.test/",
+        attached: true,
+        canGoBack: true,
+        canGoForward: false,
+      },
+    });
+
+    const silent = parseViewMessage(
+      JSON.stringify({
+        type: "state",
+        sessionId: "s1",
+        live: "desktop",
+        url: null,
+        attached: true,
+        canGoBack: null,
+        canGoForward: null,
+      }),
+    );
+    expect(silent).toEqual({
+      kind: "state",
+      state: { live: "desktop", url: null, attached: true, canGoBack: null, canGoForward: null },
+    });
+
+    // Anything that is not a boolean is "not said" — the same floor the face
+    // value takes, for the same reason.
+    const nonsense = parseViewMessage(
+      JSON.stringify({
+        type: "state",
+        sessionId: "s1",
+        live: "web",
+        url: null,
+        attached: true,
+        canGoBack: "yes",
+        canGoForward: 1,
+      }),
+    );
+    expect(nonsense).toEqual({
+      kind: "state",
+      state: { live: "web", url: null, attached: true, canGoBack: null, canGoForward: null },
+    });
   });
 
   it("reads a picture frame into a data URL and its device size", () => {
@@ -227,9 +304,10 @@ describe("the start page's frames (card 227)", () => {
 describe("the mode the segment renders from", () => {
   it("is connecting before the first state frame, then the state's own face", () => {
     expect(webFaceMode(null)).toBe("connecting");
-    expect(webFaceMode({ live: "web", url: null, attached: true })).toBe("web");
-    expect(webFaceMode({ live: "desktop", url: null, attached: true })).toBe("desktop");
-    expect(webFaceMode({ live: "none", url: null, attached: false })).toBe("none");
+    const nav = { canGoBack: null, canGoForward: null };
+    expect(webFaceMode({ live: "web", url: null, attached: true, ...nav })).toBe("web");
+    expect(webFaceMode({ live: "desktop", url: null, attached: true, ...nav })).toBe("desktop");
+    expect(webFaceMode({ live: "none", url: null, attached: false, ...nav })).toBe("none");
   });
 
   it("names each face for the reader — criterion 5's honesty", () => {
@@ -321,6 +399,18 @@ describe("the frames the client sends — browser_computer's own argument names"
     expect(historyFrame("s1", "forward")).toEqual({ type: "forward", sessionId: "s1" });
   });
 
+  it("builds a reload frame that carries no address — card 344 (b)", () => {
+    // The whole point of the verb: nothing here names a page, so nothing here
+    // can re-post a form or throw away what was typed into one. The engine
+    // reloads what it is already showing.
+    expect(reloadFrame("s1")).toEqual({ type: "reload", sessionId: "s1" });
+    expect(Object.keys(reloadFrame("s1"))).not.toContain("url");
+  });
+
+  it("builds a close_page frame — card 346", () => {
+    expect(closePageFrame("s1")).toEqual({ type: "close_page", sessionId: "s1" });
+  });
+
   it("builds input frames the face can run unchanged", () => {
     expect(clickFrame("s1", [200, 100])).toEqual({
       type: "input",
@@ -361,5 +451,36 @@ describe("the screenshot control", () => {
     expect(screenshotFilename(Date.UTC(2026, 7, 14, 12, 34, 56), "image/jpeg")).toBe(
       "spectro-browser-20260814-123456.jpeg",
     );
+  });
+});
+
+describe("a held picture and what a state frame does to it — card 346, criterion 5", () => {
+  // THE DEFECT. The component dropped the held frame only on a face flip
+  // (`state.live !== "web"`), and a close_page leaves the web face live: the
+  // last frame of the CLOSED page stayed on screen, and it stayed clickable,
+  // so a click on a page that is gone still went out as an `input` verb.
+  //
+  // The rule the picture obeys is one sentence: a frame is of a page, and
+  // where the state frame says there is no page there is nothing the frame
+  // could be of.
+  const web = (url: string | null): ViewState => ({
+    live: "web",
+    url,
+    attached: true,
+    canGoBack: null,
+    canGoForward: null,
+  });
+
+  it("keeps the picture while the web face is live and a page is open", () => {
+    expect(heldPictureSurvives(web("https://example.test/"))).toBe(true);
+  });
+
+  it("drops it when the page was closed — the web face is still live", () => {
+    expect(heldPictureSurvives(web(null))).toBe(false);
+  });
+
+  it("drops it on a face flip, which is what it did before", () => {
+    expect(heldPictureSurvives({ ...web("https://example.test/"), live: "desktop" })).toBe(false);
+    expect(heldPictureSurvives({ ...web("https://example.test/"), live: "none" })).toBe(false);
   });
 });
