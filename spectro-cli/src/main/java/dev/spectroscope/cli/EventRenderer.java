@@ -264,10 +264,22 @@ final class EventRenderer {
             // plan this is the line a reader is meant to stop at.
             // Card 285: a refusal by design, not a crash. Amber rather than the
             // red an error wears, and it names where the setting does belong.
+            // Card 354: and whether losing that file cost the reader anything.
+            // The clause is appended rather than replacing the hint — the hint
+            // is where the key BELONGS, this is whether it is already there.
+            // Absent on a line recorded before card 354: no reading was taken,
+            // so the terminal says neither half of a verdict it does not have.
             case RunEvent.SettingsIgnored refused -> {
                 spinner.stop();
+                String cost = "";
+                if (Boolean.TRUE.equals(refused.inForce())) {
+                    cost = " " + ansi.dim("(still in force from " + refused.inForceFrom()
+                            + " settings, so nothing changed)");
+                } else if (Boolean.FALSE.equals(refused.inForce())) {
+                    cost = " " + ansi.coral("(not in force: nothing else sets it)");
+                }
                 System.out.println("\n" + ansi.coral("◈ settings ignored · " + refused.key())
-                        + " " + refused.file() + " — " + refused.hint());
+                        + " " + refused.file() + " — " + refused.hint() + cost);
             }
             case RunEvent.NoProgress stalled -> {
                 spinner.stop();

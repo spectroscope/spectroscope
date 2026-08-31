@@ -2893,6 +2893,20 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: '"{key}" wurde ignoriert: Ein Workspace-Ordner darf das nicht setzen. {hint}',
     en: '"{key}" was ignored: a workspace folder may not set it. {hint}',
   },
+  // Card 354: the same refusal, priced. The line above stays for sessions
+  // recorded before the harness took the reading; this one is the case that is
+  // worth the operator's attention, because the setting he asked for is gone.
+  // The refusal that costs nothing gets no chat turn at all, so it needs no
+  // sentence here. As in card 285, the server's own hint rides in as a variable
+  // and is not translated: it names paths and environment variables.
+  "info.settingsIgnoredNotInForce": {
+    de:
+      '"{key}" wurde ignoriert: Ein Workspace-Ordner darf das nicht setzen. Sonst ' +
+      "setzt es niemand, es gilt also nicht. {hint}",
+    en:
+      '"{key}" was ignored: a workspace folder may not set it. Nothing else sets it, ' +
+      "so it is not in force. {hint}",
+  },
 
   // Cards 281 and 282: the run's three self-reports, one sentence per value.
   //

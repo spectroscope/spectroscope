@@ -229,6 +229,20 @@ export type RunEvent =
       file: string;
       /** Where the setting does belong. The half that was already right. */
       hint: string;
+      /**
+       * Card 354: whether an allowed scope carries this key at the value the
+       * refused folder asked for, so the refusal costs the operator nothing.
+       *
+       * ABSENT on a line recorded before card 354, which took no reading —
+       * absent is NOT the same as `false`, and a reader that flattens the two
+       * puts a sentence nobody measured into an old session's chat.
+       */
+      inForce?: boolean;
+      /**
+       * The allowed layer carrying it ("env", "user", "launch-dir", "flags").
+       * Present exactly when `inForce` is true.
+       */
+      inForceFrom?: string;
       ts: number;
     }
   // Cards 262, 266 and 267 built three self-reports; card 281 and 282 give them
