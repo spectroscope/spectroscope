@@ -61,6 +61,23 @@ are bumped in steps 8b to 9: the Homebrew cask (macOS), the apt repository
   `dev.spectroscope` is verified. Details in [`RELEASING.md`](../RELEASING.md).
 - A full **JDK** (for `jlink`) and **Node + npm** (for the web bundle + Electron).
 - `gh` authenticated to `github.com/spectroscope/spectroscope`.
+  **Check WHICH account, every time — `gh auth status`.** Two are logged in on
+  this machine and `gh` reverts to the wrong one between sessions. Measured
+  2026-08-31: the `spectroscope` account holds `admin:public_key, gist, read:org,
+  repo`; the Valtech account holds `gist, read:org, repo, workflow` and cannot
+  push (`repos/.../spectroscope` comes back with `push: false`, and every
+  non-public repo 404s). So the token that can publish is *not* the token
+  carrying `workflow`. The dispatch in step 8c was run under the `spectroscope`
+  token in this form, and it was accepted:
+
+  ```bash
+  gh api repos/spectroscope/spectroscope/actions/workflows/linux-kit.yml/dispatches \
+    --method POST -f ref=main -f 'inputs[ref]=v<v>'
+  ```
+
+  (`ref` is the branch the workflow FILE is read from; `inputs[ref]` is the tag
+  it builds and attaches to. They are different things and the attach step will
+  refuse if the second one is not a real tag.)
 
 ---
 
@@ -272,6 +289,53 @@ ran `brew style --fix` in `/opt/homebrew` instead of in the tap repo).
 
 Never edit the tapped clone. It is Homebrew's working copy, `brew update` will
 collide with anything left there, and a fix made in it reaches no user.
+
+**The audit runs AFTER the push, and that is a hole this playbook shipped
+through.** Everything above is true and the order is forced — but it means a
+cask that fails the audit fails it *while already live*. On 2026-08-31 that hole
+finally cost something: `brew audit --cask --online` on the 0.11.0 bump came back
+red with
+
+```
+Artifact defined :monterey as the minimum macOS version but the cask
+declared a depends_on stanza with a minimum macOS version of :big_sur
+```
+
+The app bundle declares `LSMinimumSystemVersion 12.0`. Measured on the 0.10.0
+DMG as well, so `brew install --cask` had been offering Big Sur users an app that
+cannot launch for at least one release. The provenance is exact and is the
+lesson: `depends_on macos: :big_sur` entered on 2026-08-04 in tap commit
+`f4fbb41`, *"the cask says which macOS it needs, and brew style has nothing left
+to say"* — added to silence `brew style`, whose complaint was that the stanza was
+MISSING. **`brew style` never checks the value.** Only `brew audit --online`
+does, because only it downloads the artifact and reads its plist. So a stanza
+added to satisfy the linter carried an unverified claim past four releases.
+
+**Close the hole by auditing before the push, and restore the clone in a
+`trap`:**
+
+```bash
+TAPDIR="$(brew --repository)/Library/Taps/spectroscope/homebrew-tap"
+trap 'git -C "$TAPDIR" checkout -- Casks/spectroscope.rb' EXIT   # not optional
+cp Casks/spectroscope.rb "$TAPDIR/Casks/spectroscope.rb"
+brew audit --cask --online spectroscope/tap/spectroscope          # exit 0 or stop
+```
+
+This does not contradict the paragraph above — the clone is still not a place to
+WORK. It is staged and restored within one command, never committed, and the
+`trap` is what keeps a dead shell from leaving it dirty for the next
+`brew update`. Push only after this is green, then `brew update` and run the
+audit again against the real thing; the second run is what proves the pushed
+file is the audited one.
+
+**And read the artifact yourself when the cask claims something about it.** The
+plist is one command, and it is the difference between a stanza that is present
+and a stanza that is true:
+
+```bash
+/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' \
+  spectro-desktop/release/mac-arm64/spectroscope.app/Contents/Info.plist
+```
 
 ### 8c. Build and attach the Linux kit
 
