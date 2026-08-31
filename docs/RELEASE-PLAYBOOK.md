@@ -51,8 +51,11 @@ the server jar and the desktop kits instead; and `spectro-desktop` is an npm
 module that can never go to Maven Central.
 
 Beyond the release itself, three surfaces carry the same artifacts onward and
-are bumped in steps 8b to 9: the Homebrew cask (macOS), the apt repository
-(Debian/Ubuntu), and the install snippets on both websites.
+are bumped in steps 8b to 9: the Homebrew cask (macOS, **8b**), the apt
+repository (Debian/Ubuntu, **8d**), and the install snippets on both websites
+(**9**). The section numbers are named here on purpose: this sentence promised
+three surfaces for months while only two had a step, and the one without a step
+is the one that fell four releases behind.
 
 ## Prerequisites (one-time, owner)
 
@@ -356,6 +359,69 @@ branch called `v0.4.2` cannot ferry bytes onto a release.
 
 Development builds off `main` are stamped `<next>-dev.<sha>` and are for the
 apt repository, never for a release.
+
+### 8d. Publish the deb to the apt repository
+
+**This step did not exist until 2026-08-31, and its absence is measurable.**
+The intro above has promised three surfaces since the file was written; only
+two were ever written down. `apt.spectroscope.dev` therefore stood on 0.7.0
+from 2026-08-05 until today — 0.8.0, 0.10.0 and 0.11.0 all missed it — while
+the landing page went on advertising `sudo apt install spectroscope`. Nothing
+was broken; nothing told anyone to come here.
+
+Run it from `~/Spectroscope/apt-repo` after step 8c has attached the deb:
+
+```bash
+gh release download v<v> -p 'spectroscope_<v>_amd64.deb' -D /tmp
+scripts/update-repo.sh \
+  --url https://github.com/spectroscope/spectroscope/releases/download/v<v>/spectroscope_<v>_amd64.deb \
+  /tmp/spectroscope_<v>_amd64.deb
+```
+
+`--url` is mandatory and it is the point of the whole design: **the deb never
+enters this repo.** `pool/` is gitignored (GitHub refuses anything over 100 MB),
+the bytes stay at the release asset, and `pool-map.json` is the only thing
+`src/worker.js` will redirect by — a filename missing from that map is a 404 at
+the worker rather than a guessed URL. A publish is therefore seven index and
+signature files, not two hundred megabytes.
+
+The script needs **docker** and the signing key home (`~/.spectroscope-apt-key`,
+never in the repo). It checks the key *before* the deb touches `pool/`, so a
+refused run leaves the tree exactly as it was, and it re-verifies InRelease and
+Release.gpg with `gpgv` afterwards.
+
+**Verify before pushing, in a clean client, on the right architecture:**
+
+```bash
+docker run --rm --platform linux/amd64 -v "$PWD":/srv/apt:ro debian:12 \
+  sh /srv/apt/scripts/verify-client.sh
+```
+
+`--platform linux/amd64` is not optional on an Apple-silicon Mac. Without it the
+container comes up arm64, there is no arm64 Linux build to be a candidate, and
+the run fails at `apt-cache policy` — a failure that looks like a broken tree and
+is a wrong question. The script drives the documented two-line install, asserts
+`apt-get update` fetches InRelease with no signature warnings, installs the
+package, confirms `~/.spectro` survives a remove, and finishes with a negative
+control: a tampered `Packages.gz` must fail with a hash mismatch. Ending in
+`CLIENT OK` is the whole check.
+
+Then `git add dists pool-map.json && git commit && git push` — push publishes.
+The indexes go out over GitHub Pages and the worker over Workers Builds, which
+are **two deploys at two speeds**: measured 2026-08-31, the index needed about a
+minute while the worker was already current.
+
+**Verify live with a GET, never a HEAD.** `curl -I` on a pool path follows the
+302 to GitHub's asset host, which answers a HEAD there with 404 — indistinguishable
+from the failure this layer exists to prevent. Ask for bytes instead:
+
+```bash
+curl -s "https://apt.spectroscope.dev/dists/stable/main/binary-amd64/Packages" \
+  | grep '^Version:' | sort -V | tail -1
+curl -sL -r 0-131 -o /tmp/head.bin -w '%{http_code}\n' \
+  https://apt.spectroscope.dev/pool/main/s/spectroscope/spectroscope_<v>_amd64.deb
+head -c 8 /tmp/head.bin        # !<arch> — a real deb, fetched through the redirect
+```
 
 ### 9. Flip install snippets (only after step 6 resolves)
 - **Landing** (`design/website/index.html`): "on Maven Central", enable the
