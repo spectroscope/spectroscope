@@ -39,13 +39,22 @@ const twoConfigs: LaunchList = {
   ok: true,
   sentence: null,
   skipped: 0,
+  location: ".claude/launch.json",
+  shadowed: [],
   configs: [
     { name: "web", address: "http://localhost:5173/", attaches: false, up: true, exitCode: null },
     { name: "api", address: "http://localhost:9999/", attaches: true, up: false, exitCode: 137 },
   ],
 };
 
-const noConfigs: LaunchList = { ok: true, sentence: null, skipped: 0, configs: [] };
+const noConfigs: LaunchList = {
+  ok: true,
+  sentence: null,
+  skipped: 0,
+  location: null,
+  shadowed: [],
+  configs: [],
+};
 
 function start(launch: LaunchList | null, playing: string | null = null): string {
   return renderToStaticMarkup(<StartPage launch={launch} playing={playing} onPlay={() => {}} />);
@@ -133,6 +142,8 @@ describe("the start page with nothing to list — criterion 2's other half", () 
       ok: false,
       sentence: "this session is not open on this server",
       skipped: 0,
+      location: null,
+      shadowed: [],
       configs: [],
     });
     expect(markup).toContain("this session is not open on this server");

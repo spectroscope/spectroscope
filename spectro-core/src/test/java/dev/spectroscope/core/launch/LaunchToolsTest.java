@@ -121,8 +121,10 @@ class LaunchToolsTest {
     }
 
     private static void writeLaunchFile(Path project, String json) throws IOException {
+        // Deliberately THEIRS: these drive the whole tool family against a
+        // Claude Code repository, which is card 202's promise end to end.
         Files.createDirectories(project.resolve(".claude"));
-        Files.writeString(project.resolve(LaunchFile.LOCATION), json);
+        Files.writeString(project.resolve(LaunchFile.THEIRS), json);
     }
 
     /** Whether a pid is gone within ten seconds. */
@@ -317,6 +319,7 @@ class LaunchToolsTest {
                 .execute(JSON.createObjectNode(), context(project));
         assertTrue(said.startsWith("ERROR:"), said);
         assertTrue(said.contains(".claude/launch.json"), said);
+        assertTrue(said.contains(".spectro/launch.json"), said);
         assertTrue(said.contains("runtimeExecutable"), said);
         supervisor.close();
     }

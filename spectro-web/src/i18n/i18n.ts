@@ -142,8 +142,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   // is open. The list itself is StartPage's; this names the door.
   "browser.launchMenu": { de: "Launch-Konfigurationen", en: "Launch configurations" },
   "browser.start.none": {
-    de: "Keine Launch-Konfigurationen. Lege .claude/launch.json im Projektordner an — ein Eintrag pro App, mit Port.",
-    en: "No launch configurations. Add .claude/launch.json to the project folder — one entry per app, with its port.",
+    de: "Keine Launch-Konfigurationen. Lege .spectro/launch.json im Projektordner an — ein Eintrag pro App, mit Port. Ein vorhandenes .claude/launch.json wird ebenfalls gelesen.",
+    en: "No launch configurations. Add .spectro/launch.json to the project folder — one entry per app, with its port. An existing .claude/launch.json is read too.",
+  },
+  // CARD 350: two locations, so the page has to say which one it read — and,
+  // when both exist, which one it passed over. A precedence nobody can see is
+  // the silent disagreement the card exists to prevent.
+  "browser.start.source": { de: "gelesen aus {file}", en: "read from {file}" },
+  "browser.start.shadowed": {
+    de: "{file} wird dabei übergangen — .spectro/launch.json hat Vorrang.",
+    en: "{file} is passed over — .spectro/launch.json takes precedence.",
   },
   "browser.start.skipped": {
     de: "{n} Einträge übersprungen — nicht als Konfiguration lesbar",

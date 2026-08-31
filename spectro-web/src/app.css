@@ -262,6 +262,21 @@
   color: var(--text-faint);
 }
 
+/* CARD 350: which launch file answered, and the one it passed over. The source
+   line is a footnote; the shadow line is not, because it is the only place an
+   operator learns that the file he just edited is not the one being read. */
+.browser-start-source {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.browser-start-shadowed {
+  margin: 0.25rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
 .browser-start-list {
   margin: 0;
   padding: 0;

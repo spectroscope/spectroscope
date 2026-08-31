@@ -38,6 +38,8 @@ const list = (n: number): LaunchList => ({
   ok: true,
   sentence: null,
   skipped: 0,
+  location: ".claude/launch.json",
+  shadowed: [],
   configs: Array.from({ length: n }, (_, i) => ({
     name: `app-${i}`,
     address: `http://localhost:${8080 + i}/`,
@@ -84,7 +86,14 @@ describe("the launch configurations are reachable with a page open", () => {
   it("says the same thing as the start page when there are none", () => {
     // The empty state is the sentence the owner is reading right now. One
     // source, or the menu grows its own wording the next time someone edits it.
-    const empty: LaunchList = { ok: true, sentence: null, skipped: 0, configs: [] };
+    const empty: LaunchList = {
+      ok: true,
+      sentence: null,
+      skipped: 0,
+      location: null,
+      shadowed: [],
+      configs: [],
+    };
     expect(menu(empty)).toContain(t(lang, "browser.start.none"));
   });
 

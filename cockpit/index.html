@@ -457,7 +457,7 @@
     if (!launch) return '';
     if (!launch.found) {
       return `<h2>launch configs</h2><div class="rows launch">
-        <div class="empty">no .claude/launch.json above this repository</div></div>`;
+        <div class="empty">no .spectro/launch.json or .claude/launch.json above this repository</div></div>`;
     }
     const rows = launch.configs.map((c) => `
       <div class="row${c.listening ? '' : ' dim'}">

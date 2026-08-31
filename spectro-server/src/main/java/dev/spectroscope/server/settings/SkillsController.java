@@ -53,7 +53,8 @@ public class SkillsController {
     /** Spring wiring — the same roots SkillLibrary.defaultRoots resolves. */
     public SkillsController() {
         this(Path.of(System.getProperty("user.home"), ".spectro", "skills"),
-                Path.of(System.getProperty("user.dir"), ".spectro", "skills"));
+                dev.spectroscope.core.config.SpectroDir
+                        .in(Path.of(System.getProperty("user.dir"))).resolve("skills"));
     }
 
     public SkillsController(Path userRoot, Path projectRoot) {

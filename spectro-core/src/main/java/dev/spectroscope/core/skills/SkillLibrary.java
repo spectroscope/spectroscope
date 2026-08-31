@@ -66,7 +66,7 @@ public final class SkillLibrary {
     public static List<Path> defaultRoots(Path cwd) {
         return List.of(
                 Path.of(System.getProperty("user.home"), ".spectro", "skills"),
-                cwd.resolve(".spectro").resolve("skills"));
+                dev.spectroscope.core.config.SpectroDir.in(cwd).resolve("skills"));
     }
 
     /** Separates a pack from the skill it holds, in the name the model reads. */

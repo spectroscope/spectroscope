@@ -174,12 +174,12 @@ class LaunchFileTest {
         assertEquals(Optional.empty(), LaunchFile.readFrom(project));
     }
 
-    /** The file is read from Claude Code's own location, not one of ours. */
+    /** Claude Code's own location is still read, unedited (card 202). */
     @Test
     void readsFromTheClaudeCodeLocation(@TempDir Path project) throws Exception {
-        assertEquals(".claude/launch.json", LaunchFile.LOCATION);
+        assertEquals(".claude/launch.json", LaunchFile.THEIRS);
         Files.createDirectories(project.resolve(".claude"));
-        Files.writeString(project.resolve(LaunchFile.LOCATION), """
+        Files.writeString(project.resolve(LaunchFile.THEIRS), """
                 { "version": "0.0.1", "configurations": [
                   { "name": "docs", "runtimeExecutable": "python3",
                     "runtimeArgs": ["-m", "http.server", "8000"], "port": 8000 } ] }

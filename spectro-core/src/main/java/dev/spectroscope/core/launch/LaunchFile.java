@@ -2,6 +2,7 @@ package dev.spectroscope.core.launch;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.SpectroDir;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -10,12 +11,42 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 /**
- * A {@code .claude/launch.json} as this product reads it — Claude Code's file,
- * unedited (card 202).
+ * A launch file as this product reads it — {@code .spectro/launch.json} when the
+ * project carries one, otherwise Claude Code's own {@code .claude/launch.json},
+ * unedited (cards 202 and 350).
+ *
+ * <h2>Two locations, one parser, and a precedence that is stated</h2>
+ *
+ * <p>The owner separated reading from writing on 2026-08-31: read theirs, write
+ * ours. That does not reverse card 202 — a repository set up for Claude Code
+ * still just works, with no second config file and no dialect — it only gives
+ * the product somewhere of its own to put a file it has authored. {@link
+ * #LOCATIONS} is that order, and it is the single place it is written down.
+ *
+ * <p><b>"One parser" is a claim about the product, and the repository has one
+ * other reader.</b> {@code cockpit/serve.py} reads this format for the developer
+ * dashboard, which is a standalone Python page with no JVM to call into; it
+ * follows the same order and {@code cockpit/test_serve.py} pins that it does.
+ * Both are listed by the repository-wide scan in {@code
+ * ClaudeFolderStaysTheirsDriftTest}, so a third reader is a decision rather than
+ * an accident. That scan finds the quoted key {@code "configurations"} rather
+ * than readers as such, and says so in its own name: a reader that builds the
+ * key at runtime or spells it in single quotes is not one it can see.
+ *
+ * <p><b>The first location that EXISTS answers, whole.</b> Not the first that
+ * parses, and not a merge of the two. Falling through from a broken file of ours
+ * to a working file of theirs would hand an operator somebody else's
+ * configurations under his own filename, which is the worst of the three
+ * available behaviours: he edited one file and played another. Merging is worse
+ * still — two entries called {@code dev} are two answers to one question, and a
+ * merge has to pick one per key while looking like it picked neither. So one
+ * file wins and {@link #shadowed()} names the ones it passed over, because the
+ * failure this card was cut to prevent is two files disagreeing in silence.
  *
  * <p><b>The format was measured, not remembered.</b> Every readable
  * {@code .claude/launch.json} under the operator's home was parsed on
@@ -39,25 +70,60 @@ import java.util.Set;
  * file, and {@link #skipped()} counts the drops so a listing can say so instead
  * of quietly showing fewer configurations than the file holds.
  *
- * @param version the file's own {@code version} value, verbatim and unjudged, or
- *                null when it carries none
- * @param entries the configurations, in file order
- * @param skipped how many entries were dropped for carrying no addressable name
+ * @param version  the file's own {@code version} value, verbatim and unjudged, or
+ *                 null when it carries none
+ * @param entries  the configurations, in file order
+ * @param skipped  how many entries were dropped for carrying no addressable name
+ * @param location which of {@link #LOCATIONS} this was read from, or null when it
+ *                 came from {@link #parse(String)} and belongs to no project
+ * @param shadowed the locations that also carry a file and were passed over,
+ *                 in {@link #LOCATIONS} order — empty in every ordinary project
  */
-public record LaunchFile(String version, List<LaunchEntry> entries, int skipped) {
+public record LaunchFile(String version, List<LaunchEntry> entries, int skipped,
+                        String location, List<String> shadowed) {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** Where the file lives, relative to the project root — Claude Code's location. */
-    public static final String LOCATION = ".claude/launch.json";
+    /** Where the product writes, and the first place it looks. Card 350. */
+    public static final String OURS = SpectroDir.project("launch.json");
+
+    /** Claude Code's location, read unedited and never written (card 202). */
+    public static final String THEIRS = ".claude/launch.json";
+
+    /**
+     * Every location a launch file is read from, in the order it is looked for.
+     * The first that exists answers; see the class documentation for why that is
+     * not "the first that parses" and not a merge.
+     */
+    public static final List<String> LOCATIONS = List.of(OURS, THEIRS);
+
+    /** Whose each location is, for the sentence below. */
+    private static final Map<String, String> WHOSE = Map.of(
+            OURS, "spectroscope's own",
+            THEIRS, "Claude Code's, read unedited");
+
+    /**
+     * The locations as a sentence, for the messages a reader gets when a project
+     * carries none of them.
+     *
+     * <p>Folded over {@link #LOCATIONS} rather than typed out, and in that
+     * order: the sentence tells an operator where to put a file, so a sentence
+     * that named them in a different order from the one the reader searches
+     * would be worse than no sentence. Reversing the list turns three tests red,
+     * this one included — which is the point of folding rather than typing.
+     */
+    public static final String LOCATIONS_SENTENCE = LOCATIONS.stream()
+            .map(location -> location + " (" + WHOSE.get(location) + ")")
+            .collect(java.util.stream.Collectors.joining(" or "));
 
     /** The keys this reader uses; everything else in an entry is recorded and ignored. */
     private static final Set<String> KNOWN_KEYS =
             Set.of("name", "port", "runtimeExecutable", "runtimeArgs", "url");
 
-    /** Defensive copy of the entry list. */
+    /** Defensive copies, so a caller cannot mutate a file after it was read. */
     public LaunchFile {
         entries = entries == null ? List.of() : List.copyOf(entries);
+        shadowed = shadowed == null ? List.of() : List.copyOf(shadowed);
     }
 
     /**
@@ -68,10 +134,22 @@ public record LaunchFile(String version, List<LaunchEntry> entries, int skipped)
      * @throws IllegalArgumentException when the file exists but is not this format
      */
     public static Optional<LaunchFile> readFrom(Path projectRoot) {
-        Path path = projectRoot.resolve(LOCATION);
-        if (!Files.isRegularFile(path)) {
+        String found = null;
+        List<String> shadowed = new ArrayList<>();
+        for (String location : LOCATIONS) {
+            if (!Files.isRegularFile(projectRoot.resolve(location))) {
+                continue;
+            }
+            if (found == null) {
+                found = location;
+            } else {
+                shadowed.add(location);
+            }
+        }
+        if (found == null) {
             return Optional.empty();
         }
+        Path path = projectRoot.resolve(found);
         String text;
         try {
             text = Files.readString(path, StandardCharsets.UTF_8);
@@ -79,7 +157,18 @@ public record LaunchFile(String version, List<LaunchEntry> entries, int skipped)
             throw new IllegalArgumentException(
                     path + " could not be read: " + unreadable.getMessage());
         }
-        return Optional.of(parse(text));
+        LaunchFile parsed;
+        try {
+            parsed = parse(text);
+        } catch (IllegalArgumentException notALaunchFile) {
+            // The location has to be in the sentence. With two of them, "it is
+            // not JSON" alone leaves the reader guessing which file to open —
+            // and the one that failed is not necessarily the one he last edited.
+            throw new IllegalArgumentException(
+                    found + " could not be read: " + notALaunchFile.getMessage());
+        }
+        return Optional.of(new LaunchFile(parsed.version(), parsed.entries(), parsed.skipped(),
+                found, List.copyOf(shadowed)));
     }
 
     /**
@@ -120,7 +209,9 @@ public record LaunchFile(String version, List<LaunchEntry> entries, int skipped)
                 entries.add(entry);
             }
         }
-        return new LaunchFile(version, entries, skipped);
+        // parse() answers about TEXT, so it knows no location and shadows nothing;
+        // readFrom() is what turns the answer into one about a project.
+        return new LaunchFile(version, entries, skipped, null, List.of());
     }
 
     /** One entry, or null when it carries no name to address it by. */

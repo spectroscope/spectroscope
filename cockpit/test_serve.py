@@ -65,6 +65,45 @@ class FindLaunchFileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as top:
             self.assertIsNone(serve.find_launch_file(top, stop=top))
 
+    def test_prefers_our_spectro_launch_json_over_theirs(self):
+        # Card 350 split reading from writing: .spectro/launch.json is ours and
+        # wins, .claude/launch.json is Claude Code's and is read when we have
+        # none. This page reads the same format, so it follows the same order —
+        # otherwise a repository configured the new way reads as EMPTY here.
+        with tempfile.TemporaryDirectory() as top:
+            for folder in (".spectro", ".claude"):
+                os.makedirs(os.path.join(top, folder))
+                with open(os.path.join(top, folder, "launch.json"), "w",
+                          encoding="utf-8") as f:
+                    f.write("{}")
+            self.assertEqual(os.path.join(top, ".spectro", "launch.json"),
+                             serve.find_launch_file(top, stop=top))
+
+    def test_finds_our_launch_json_when_theirs_is_absent(self):
+        with tempfile.TemporaryDirectory() as top:
+            os.makedirs(os.path.join(top, ".spectro"))
+            ours = os.path.join(top, ".spectro", "launch.json")
+            with open(ours, "w", encoding="utf-8") as f:
+                f.write("{}")
+            deep = os.path.join(top, "a", "b")
+            os.makedirs(deep)
+            self.assertEqual(ours, serve.find_launch_file(deep))
+
+    def test_the_nearer_directory_wins_whichever_file_it_carries(self):
+        # The walk is up the tree first, the two folders second: a .claude file
+        # in the repository beats a .spectro file three levels above it.
+        with tempfile.TemporaryDirectory() as top:
+            os.makedirs(os.path.join(top, ".spectro"))
+            with open(os.path.join(top, ".spectro", "launch.json"), "w",
+                      encoding="utf-8") as f:
+                f.write("{}")
+            deep = os.path.join(top, "a", "b")
+            os.makedirs(os.path.join(deep, ".claude"))
+            nearer = os.path.join(deep, ".claude", "launch.json")
+            with open(nearer, "w", encoding="utf-8") as f:
+                f.write("{}")
+            self.assertEqual(nearer, serve.find_launch_file(deep))
+
 
 class ParseLaunchTest(unittest.TestCase):
     def test_reads_name_port_and_runner(self):
