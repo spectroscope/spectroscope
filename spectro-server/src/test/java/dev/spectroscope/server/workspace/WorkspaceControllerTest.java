@@ -146,6 +146,85 @@ class WorkspaceControllerTest {
         assertThat(res.truncated()).isTrue();
     }
 
+    @Test
+    void siblingsAtOneLevelShareTheBudgetInTurn() throws Exception {
+        // The OTHER half of the starvation fix, and the half nothing measured.
+        // Going level by level saves the operator's TOP level on its own: in
+        // aHugeCacheDirectoryCannotStarveTheOperatorsOwnFiles the cache's 2500
+        // files sit one level below the cursor that competes with src, so a walk
+        // that drained each directory in turn instead of taking turns passes
+        // that test unchanged. Measured before this test existed, not reasoned
+        // about: with the round robin replaced by a drain, the whole
+        // spectro-server module stayed green — 118 classes, 875 tests, 0
+        // failures, the same counts as the unmutated run beside it. The commit
+        // message of 87d7dad2 recorded that mutation as "2 red, incl. the cap
+        // test", and it was not: the guard was missing, and this is it.
+        //
+        // Here the cache is the small folder's own SIBLING, so only the turn
+        // taking can save it. One entry per open directory per round means the
+        // four files arrive in the first four rounds, whatever the neighbour
+        // holds.
+        Files.createDirectories(root.resolve("aaa-cache"));
+        for (int i = 0; i < 2500; i++) {
+            Files.writeString(root.resolve("aaa-cache/m" + i + ".py"), "x");
+        }
+        Files.createDirectories(root.resolve("zzz-src"));
+        for (String f : new String[] {"Main.java", "Other.java", "Third.java", "Fourth.java"}) {
+            Files.writeString(root.resolve("zzz-src").resolve(f), "class X {}");
+        }
+
+        WorkspaceController.FilesResponse res =
+                (WorkspaceController.FilesResponse) controller().files(session, null, local()).getBody();
+
+        WorkspaceController.FileNode small = res.entries().stream()
+                .filter(n -> n.name().equals("zzz-src")).findFirst().orElseThrow();
+        assertThat(small.children()).extracting(WorkspaceController.FileNode::name)
+                .containsExactly("Fourth.java", "Main.java", "Other.java", "Third.java");
+        assertThat(res.truncated())
+                .as("the budget really is under pressure, or this measures nothing")
+                .isTrue();
+    }
+
+    @Test
+    void aDirectoryCutShortByTheCursorBoundNeverPassesAsWhole(@TempDir Path outside) throws Exception {
+        // The bound CURSOR_KEEP cuts the sorted child list in openInto, BEFORE
+        // Cursor#peek runs the escaped-symlink filter over what survived, and
+        // that filter has no bound at all. Its arithmetic only ever accounted
+        // for PRUNED_NAMES. So a directory whose head is links out of the
+        // workspace can have the whole of its kept head thrown away, its real
+        // files past the cut never looked at, and the budget never touched —
+        // which is the one shape a listing must not have: short, and claiming
+        // to be whole.
+        //
+        // The counts come off the constants, not out of this comment: one more
+        // escaping link than the bound's slack (CURSOR_KEEP - MAX_ENTRIES), so
+        // what is kept can no longer fill the budget and the cursor runs dry
+        // with budget to spare.
+        int escapes = WorkspaceController.CURSOR_KEEP - WorkspaceController.MAX_ENTRIES + 1;
+        for (int i = 0; i < escapes; i++) {
+            // "aaa" sorts ahead of the real files, and a link to a directory
+            // sorts with the directories, i.e. first of all.
+            Files.createSymbolicLink(root.resolve(String.format("aaa%03d", i)), outside);
+        }
+        int real = WorkspaceController.CURSOR_KEEP + 100;
+        for (int i = 0; i < real; i++) {
+            Files.writeString(root.resolve(String.format("z%05d.txt", i)), "x");
+        }
+
+        WorkspaceController.FilesResponse res =
+                (WorkspaceController.FilesResponse) controller().files(session, null, local()).getBody();
+
+        assertThat(res.entries()).extracting(WorkspaceController.FileNode::name)
+                .as("a link out of the workspace is not part of the workspace")
+                .noneMatch(n -> n.startsWith("aaa"));
+        assertThat(res.entries().size())
+                .as("entries were dropped: the head was cut and then filtered away")
+                .isLessThan(real);
+        assertThat(res.truncated())
+                .as("and the response has to say so")
+                .isTrue();
+    }
+
     private static int countNodes(List<WorkspaceController.FileNode> nodes) {
         int n = 0;
         for (WorkspaceController.FileNode node : nodes) {

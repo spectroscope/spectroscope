@@ -91,7 +91,9 @@ public class WorkspaceController {
      * The tree plus its honesty flag — a capped listing says so.
      *
      * @param root the display name of the workspace root directory
-     * @param truncated {@code true} when the entry budget ran out — the tree is incomplete
+     * @param truncated {@code true} when the listing is not known to be whole —
+     *                  the entry budget ran out, or a directory held more than a
+     *                  cursor keeps and what was kept ran out, see {@link #walk}
      * @param entries the top-level nodes, directories first, names case-insensitive
      */
     public record FilesResponse(String root, boolean truncated, List<FileNode> entries) {}
@@ -115,19 +117,41 @@ public class WorkspaceController {
             ".venv", ".next", ".tox", ".gradle", ".mypy_cache", ".pytest_cache",
             ".DS_Store");
     private static final int MAX_DEPTH = 8;
-    private static final int MAX_ENTRIES = 2000;
+    static final int MAX_ENTRIES = 2000;
     /**
      * How much of one directory a {@link Cursor} keeps hold of. The fair walk
      * has a whole LEVEL of directories open at once where the old recursion had
      * one per depth, so without a bound a workspace with a few 50k-entry
-     * folders would retain far more than it ever lists. Nothing is lost: a
-     * single directory can contribute at most {@link #MAX_ENTRIES} nodes
-     * because that is the whole budget, at most {@link #PRUNED_NAMES}{@code
-     * .size()} of the kept entries can be thrown away by the filter (names are
-     * unique inside a directory), and the one on top is what lets
-     * {@code truncated} still see that something was left standing.
+     * folders would retain far more than it ever lists.
+     *
+     * <p>Against {@link #PRUNED_NAMES} the bound costs the listing nothing, and
+     * two of its three terms carry that: a single directory can contribute at
+     * most {@link #MAX_ENTRIES} nodes because that is the whole budget, and at
+     * most {@link #PRUNED_NAMES}{@code .size()} of the kept entries can be
+     * thrown away by that filter (names are unique inside a directory). Both
+     * were bitten in the run that wrote this line — cutting either one turns
+     * {@code theBoundOnWhatOneDirectoryHoldsCostsTheListingNothing} red.</p>
+     *
+     * <p>The {@code + 1} is slack, and nothing measures it any more. It was put
+     * here so a cut directory that could fill the budget still had one real
+     * entry left over for {@code truncated} to trip on; {@link #walk} now
+     * records the cut itself, so dropping the {@code + 1} leaves the whole
+     * workspace suite green — measured in this run, not remembered. It stays as
+     * headroom, and this paragraph is the limit of what can be claimed for it.</p>
+     *
+     * <p>The paragraph above used to read "nothing is lost", full stop, and
+     * that reached past its evidence. {@link #PRUNED_NAMES} is not the only
+     * filter running after the cut: {@link Cursor#peek} also drops a symlink
+     * that leaves the workspace, and THAT one has no bound — a directory whose
+     * head is nothing but links out can have every kept entry thrown away while
+     * the real files past the cut are never looked at and the budget is never
+     * touched. Where the bound is not free, {@link #walk} says so instead of
+     * serving a short listing as a whole one.</p>
+     *
+     * <p>Package-private because {@code WorkspaceControllerTest} builds its
+     * fixture off these two numbers instead of typing them out again.</p>
      */
-    private static final int CURSOR_KEEP = MAX_ENTRIES + PRUNED_NAMES.size() + 1;
+    static final int CURSOR_KEEP = MAX_ENTRIES + PRUNED_NAMES.size() + 1;
     private static final long MAX_TEXT_BYTES = 2L * 1024 * 1024;
     private static final long MAX_IMAGE_BYTES = 25L * 1024 * 1024;
     /** Every preview document renders in an opaque origin; scripts run isolated. */
@@ -307,9 +331,11 @@ public class WorkspaceController {
      * The finished tree plus the honest verdict on whether anything was cut.
      *
      * @param entries the top-level nodes
-     * @param truncated {@code true} only when a real entry was left out for want
-     *                  of budget — a listing that exactly fills the budget is
-     *                  complete and says so
+     * @param truncated {@code true} when the walk knows it left something out:
+     *                  a real entry that had no budget left, or a directory
+     *                  whose kept head ran dry after {@link #CURSOR_KEEP} had
+     *                  cut it. A listing that exactly fills the budget with
+     *                  nothing more to show is complete and says so
      */
     private record Walk(List<FileNode> entries, boolean truncated) {}
 
@@ -339,14 +365,17 @@ public class WorkspaceController {
         private final int depth;
         private final Draft parent;
         private final List<Path> children;
+        /** Whether {@link #CURSOR_KEEP} kept only the head of this directory. */
+        private final boolean cut;
         private int at;
         private Path ready;
 
-        private Cursor(String relPrefix, int depth, Draft parent, List<Path> children) {
+        private Cursor(String relPrefix, int depth, Draft parent, List<Path> children, boolean cut) {
             this.relPrefix = relPrefix;
             this.depth = depth;
             this.parent = parent;
             this.children = children;
+            this.cut = cut;
         }
 
         /** The next entry that belongs in the listing, without spending it. */
@@ -392,31 +421,50 @@ public class WorkspaceController {
      * costs it at the bottom of the tree rather than at the operator's own top
      * level. {@code truncated} still says so.</p>
      *
+     * <p>The two halves need separate measuring, because they save different
+     * things. Level-by-level saves the operator's TOP level, and
+     * {@code aHugeCacheDirectoryCannotStarveTheOperatorsOwnFiles} holds it. The
+     * turn-taking saves a small folder from the big folder BESIDE it, and only
+     * {@code siblingsAtOneLevelShareTheBudgetInTurn} holds that: replacing the
+     * round robin with a drain leaves the starvation test above green, measured
+     * on the whole module in the run that added the second test.</p>
+     *
      * @param base the workspace root to list
      * @param realBase the canonical workspace root, so a link out of the tree is
      *                 left out of the listing instead of naming files the
      *                 content endpoint then refuses
-     * @return the top-level nodes and whether the budget cut anything
+     * @return the top-level nodes, and whether anything was left out — for want
+     *         of budget, or because {@link #CURSOR_KEEP} had cut a directory
+     *         whose kept head then ran dry
      */
     private Walk walk(Path base, Path realBase) {
         Draft root = new Draft("", "", true, 0);
         List<Cursor> level = new ArrayList<>();
         openInto(base, "", 0, root, level);
         int budget = MAX_ENTRIES;
-        boolean truncated = false;
+        boolean truncated = false; // what the response admits
+        boolean spent = false;     // what stops the walk: the budget, nothing else
 
-        while (!level.isEmpty() && !truncated) {
+        while (!level.isEmpty() && !spent) {
             List<Cursor> deeper = new ArrayList<>();
             boolean served = true;
-            while (served && !truncated) {
+            while (served && !spent) {
                 served = false;
                 for (Cursor cursor : level) {
                     Path child = cursor.peek(realBase);
                     if (child == null) {
+                        if (cursor.cut) {
+                            // Only the head of this directory was kept, and the
+                            // filters in peek have now emptied it: what sat past
+                            // the cut was never looked at. Budget or no budget,
+                            // this listing is short and must not pass as whole.
+                            truncated = true;
+                        }
                         continue;
                     }
                     if (budget <= 0) {
                         truncated = true; // something real is left standing
+                        spent = true;
                         break;
                     }
                     budget--;
@@ -451,6 +499,10 @@ public class WorkspaceController {
      * case-insensitive — and adds a cursor over it to {@code level}. An
      * unreadable directory degrades to no cursor, i.e. to an empty folder.
      *
+     * <p>Only the first {@link #CURSOR_KEEP} entries are held, and the cursor
+     * is told when that happened, because a cut head that later empties is the
+     * one way this walk can be short without the budget noticing.</p>
+     *
      * @param dir the directory to open
      * @param relPrefix the root-relative path of {@code dir} ("" at the root)
      * @param depth the depth of {@code dir} itself
@@ -467,11 +519,12 @@ public class WorkspaceController {
         children.sort(Comparator
                 .comparing((Path p) -> !Files.isDirectory(p))
                 .thenComparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER));
-        if (children.size() > CURSOR_KEEP) {
+        boolean cut = children.size() > CURSOR_KEEP;
+        if (cut) {
             children = new ArrayList<>(children.subList(0, CURSOR_KEEP)); // copied, not a view
         }
         if (!children.isEmpty()) {
-            level.add(new Cursor(relPrefix, depth, parent, children));
+            level.add(new Cursor(relPrefix, depth, parent, children, cut));
         }
     }
 
