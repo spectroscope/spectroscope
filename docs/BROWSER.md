@@ -271,13 +271,26 @@ worse than the error sentence it would replace.
 **Which frame carries the address.** The state frame, and only it. A verb's
 answer names an address exactly when the verb itself knows where it landed —
 `navigate`, `back`, `forward` and `reload` each put it in their value. A
-back-fill from the reply's own `pageUrl` stood here for the `input` verb, whose
-value has one key, `detail`, and it was measured not to close the case:
-`Input.dispatchMouseEvent` returns as soon as the event is dispatched and the
-navigation follows, so that address is the page the click LEFT, not the page it
-reached. Worse, the client applies any verb url it receives, so a stale one
-could undo the sixth state frame that does follow the page. A click that moves
-the page is answered by that state frame, not by the click.
+back-fill from the reply's own `pageUrl` filled that field in for any answer
+that had none, and it was taken out because it could not close the case for
+`input`, whose value has one key, `detail`: `Input.dispatchMouseEvent` returns
+as soon as the event is dispatched and the navigation follows, so that address
+is the page the click LEFT, not the page it reached. Worse, the client applies
+any verb url it receives, so a stale one could undo the sixth state frame that
+does follow the page. A click that moves the page is answered by that state
+frame, not by the click.
+
+The back-fill reached a second verb, and an earlier draft of this paragraph
+said it reached only `input`. `screenshot` answers with an image and no url on
+a page whose address the face knows, so both of the back-fill's conditions held
+for it too: **a screenshot answer used to name an address and no longer does.**
+On the web face that costs nothing — its address follows the page on state
+frames. On the desktop face a screenshot was one of the occasions that
+refreshed the segment's address line, because the client applies a verb url
+into its state and that line prefers a state url over the status poll behind
+it; what is lost is the occasion, not the address, since the poll reads the
+same server-side cache the reply would have quoted. `close_page` answers with a
+null `pageUrl`, so the back-fill never fired for it.
 
 **Closing a page keeps the login (card 346).** `close_page` drops the view and
 leaves the Chromium partition, its storage and its cache alone — the owner's

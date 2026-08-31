@@ -249,4 +249,21 @@ describe("346 (5): a closed page is gone from the hole, and cannot be driven", (
   it("still shows the picture while a page IS open", () => {
     expect(webView({ ...closed, url: "https://example.test/" })).toContain("view-live");
   });
+
+  // THE THIRD THING, and neither pin above can see it: the WIRING.
+  // heldPictureSurvives is a pure function and liveView.test.ts proves what it
+  // answers; the component still has to ASK it. Put the old face comparison
+  // back in the socket's state arm and both other pins stay green — the
+  // function answers correctly, the face renders correctly, and the closed
+  // page is held on screen again.
+  //
+  // WHAT THIS READS IS THE SOURCE, not the behaviour. The effect that owns the
+  // call runs only in a mounted component and these tests render to a string,
+  // so this is a pin on the call site's shape and reaches no further than that.
+  it("asks heldPictureSurvives in the socket's state arm, not the face a second time", () => {
+    const source = readFileSync(path.join(__dirname, "BrowserSegment.tsx"), "utf8");
+    const arm = source.slice(source.indexOf('case "state":'), source.indexOf('case "frame":'));
+    expect(arm).toMatch(/if\s*\(\s*!heldPictureSurvives\(msg\.state\)\s*\)\s*setPicture\(null\)/);
+    expect(arm, "a face comparison here is the defect, not the guard").not.toMatch(/\.live\s*[!=]==/);
+  });
 });

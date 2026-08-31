@@ -272,13 +272,21 @@ export function BrowserSegment(props: {
             if (msg.ok) {
               setNotice(null);
               const url = msg.url;
-              // Applied unconditionally, which is only safe because no verb
-              // answers with an address it is not on: navigate, back, forward
-              // and reload each name where they LANDED, and the one verb whose
-              // reply carried a pre-click address — input — no longer sends
-              // one (BrowserViewSocket.answerVerb, and the test named
-              // aClickThatMovesThePage… on the server side). A verb url that
-              // could be older than the state frame beside it would undo it.
+              // Applied unconditionally: a verb url that could be older than
+              // the state frame beside it would undo it, so this line rests on
+              // the server never sending an address the page is not on.
+              //
+              // WHAT IS PINNED, AND WHAT IS ONLY REASONED. Pinned: `input`
+              // answers with no address at all — one of the seven verbs whose
+              // answer reaches this arm, held by
+              // aClickThatMovesThePageIsFollowedByAStateFrameAndTheAnswerNamesNoAddress,
+              // and it is the verb that broke this rule. Pinned the same way:
+              // `screenshot` names none either. The rest is reading the
+              // engines, not a check — navigate, back, forward and reload each
+              // put their landing url in the value, close_page answers with
+              // none. No test on either side says that of those five, so a
+              // verb that started answering with a stale address would arrive
+              // here unannounced.
               if (url !== null) setView((v) => (v === null ? v : { ...v, url }));
               // The desktop row's screenshot: no client-side picture exists on
               // that face, so the shot rides the answer and is saved here.

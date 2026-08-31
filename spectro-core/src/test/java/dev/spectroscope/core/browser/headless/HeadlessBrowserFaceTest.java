@@ -261,6 +261,17 @@ class HeadlessBrowserFaceTest {
                 "the dimensions must be measured from the PNG, not assumed");
         assertEquals(200, reply.value().path("height").asInt());
         assertFalse(reply.value().path("dataBase64").asText().isBlank());
+        // CARD 344 (d), MEASURED HERE BECAUSE THIS IS WHERE THE ANSWER IS
+        // BUILT. The view socket used to back-fill a verb answer's address
+        // from reply.pageUrl() whenever the value carried none, and the note
+        // it left behind said the only verb that reached was `input`. Both of
+        // that back-fill's conditions hold for a screenshot as well: the value
+        // has no url, and pageUrl names the page the shot was taken on. These
+        // two assertions are the measurement, so the claim cannot drift back.
+        assertFalse(reply.value().has("url"),
+                "a screenshot's value answers with an image, never an address: " + reply.value());
+        assertEquals("http://dev.example.com/", reply.pageUrl(),
+                "and it does carry a pageUrl, which is the half that made the back-fill fire");
     }
 
     // ---- input -------------------------------------------------------------

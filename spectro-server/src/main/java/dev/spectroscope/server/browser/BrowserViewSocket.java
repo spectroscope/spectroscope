@@ -383,15 +383,38 @@ public class BrowserViewSocket extends TextWebSocketHandler {
                     answer.set(field.getKey(), field.getValue()));
         }
         // CARD 344 (d), AND WHAT DOES NOT CARRY IT. A back-fill from
-        // reply.pageUrl() stood here, and it was measured not to close the
-        // case: the only verb it reached was `input` — navigate, back, forward
-        // and reload all answer with their own landing url inside value — and
-        // an input reply's pageUrl is by CONSTRUCTION the address before the
-        // click. Input.dispatchMouseEvent returns as soon as the event is
-        // dispatched; the navigation follows. So it named the page the click
-        // left, not the page the click reached, and because the client applies
-        // any verb url it receives, it could UNDO the state frame that does
-        // follow the page (see watchNavigations, the sixth occasion).
+        // reply.pageUrl() stood here — `if (ok && !answer.has("url") &&
+        // pageUrl != null)` — and it was taken out because it could not close
+        // the case for `input`: an input reply's value has one key, `detail`,
+        // and its pageUrl is by CONSTRUCTION the address before the click.
+        // Input.dispatchMouseEvent returns as soon as the event is dispatched;
+        // the navigation follows. So it named the page the click left, not the
+        // page the click reached, and because the client applies any verb url
+        // it receives, it could UNDO the state frame that does follow the page
+        // (see watchNavigations, the sixth occasion).
+        //
+        // IT REACHED A SECOND VERB, and the note that stood here said it did
+        // not. `screenshot` answers with mediaType/dataBase64/width/height and
+        // no url, on a page whose address pageUrl() knows — both conditions,
+        // so a screenshot answer used to carry one and no longer does. That is
+        // a behaviour change, and it is written down here and in the two tests
+        // that measure it (HeadlessBrowserFaceTest's screenshot case for why
+        // it fired, BrowserViewSocketTest's desktop row for the answer this
+        // method now builds).
+        //
+        // WHAT THAT COSTS, as far as it was traced. On the web face nothing:
+        // its address follows the page on state frames, which are fresher than
+        // any answer. On the DESKTOP face a screenshot was one occasion that
+        // refreshed the segment's address line — the client applies a verb url
+        // into its state, and that line reads `view?.url ?? status?.url`, so a
+        // state url it already has masks the status poll behind it. Losing the
+        // occasion is a slower address line on that face, not a wrong one; the
+        // poll reads the same cache this reply would have quoted. Restoring a
+        // refresh for it is a card, not a back-fill for every verb.
+        //
+        // The remaining verbs are untouched — navigate, back, forward and
+        // reload put their landing url in the value themselves, and close_page
+        // answers with a null pageUrl, so the back-fill never fired for it.
         //
         // The address is the state frame's to say. Every verb that moves it
         // pushes one immediately behind its answer on this same socket.

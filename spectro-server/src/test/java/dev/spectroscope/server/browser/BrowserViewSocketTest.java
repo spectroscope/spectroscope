@@ -350,6 +350,17 @@ class BrowserViewSocketTest {
         assertEquals("screenshot", verb.path("verb").asText());
         assertEquals("cGln", verb.path("dataBase64").asText(),
                 "the shot travels back to the control row");
+        // CARD 344 (d), THE PART THAT WAS WRITTEN DOWN WRONG. The back-fill
+        // that answerVerb used to run was said to have reached only `input`.
+        // It reached this verb too, and for the same two reasons: a screenshot
+        // value carries mediaType/dataBase64/width/height and no `url`, while
+        // pageUrl() names the page it was taken on. So dropping the back-fill
+        // changed this answer as well — a screenshot no longer names an
+        // address — and this is where that change is recorded rather than
+        // left to be rediscovered. Nothing reads it: the address is the state
+        // frame's to say, and on this face the status poll's besides.
+        assertFalse(verb.has("url"),
+                "a screenshot answers with an image, not with an address: " + verb);
     }
 
     @Test
@@ -835,7 +846,6 @@ class BrowserViewSocketTest {
         return found;
     }
 
-    /** Waits for a state frame carrying the given address — the push is async. */
     /** Fires Page.frameNavigated on this session's engine, the way a real
      *  Chromium reports a main-frame navigation. */
     private void navigated(String url) {
@@ -845,6 +855,7 @@ class BrowserViewSocketTest {
                                 JSON.createObjectNode().put("url", url))));
     }
 
+    /** Waits for a state frame carrying the given address — the push is async. */
     private static JsonNode awaitState(FakeSocket viewer, String url) throws Exception {
         long deadline = System.currentTimeMillis() + 5_000;
         while (System.currentTimeMillis() < deadline) {
