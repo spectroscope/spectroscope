@@ -230,17 +230,22 @@ export type RunEvent =
       /** Where the setting does belong. The half that was already right. */
       hint: string;
       /**
-       * Card 354: whether an allowed scope carries this key at the value the
-       * refused folder asked for, so the refusal costs the operator nothing.
+       * Card 354: whether the refusal costs the operator nothing, meaning every
+       * key that FILE set is already carried at the same value by a scope that
+       * is allowed to carry it.
        *
-       * ABSENT on a line recorded before card 354, which took no reading —
-       * absent is NOT the same as `false`, and a reader that flattens the two
+       * About the file rather than about `key`, because the refusal is: the
+       * loader leaves on the first forbidden key and abandons the whole scope,
+       * so an ordinary setting beside it goes down unmentioned.
+       *
+       * ABSENT on a line recorded before card 354, which took no reading.
+       * Absent is NOT the same as `false`, and a reader that flattens the two
        * puts a sentence nobody measured into an old session's chat.
        */
       inForce?: boolean;
       /**
-       * The allowed layer carrying it ("env", "user", "launch-dir", "flags").
-       * Present exactly when `inForce` is true.
+       * The allowed layer carrying `key` ("env", "user", "launch-dir",
+       * "flags"). Present exactly when `inForce` is true.
        */
       inForceFrom?: string;
       ts: number;

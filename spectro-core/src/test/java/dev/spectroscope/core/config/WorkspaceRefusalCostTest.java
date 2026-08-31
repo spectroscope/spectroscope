@@ -25,12 +25,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * anything.
  *
  * <p>The refusal itself is correct and untouched (card 199, card 222). What it
- * could not say is whether the key it dropped is carried anyway from a scope
- * that IS allowed to carry it. On the owner's machine it is: {@code ForgeDemo}'s
- * workspace scope sets {@code allowLocalhost} and is refused, while
- * {@code ~/.spectro/settings.json} already sets the same key at the scope where
- * it counts. The refusal was therefore a true sentence with no consequence,
- * occupying the first line of an empty session.</p>
+ * could not say is whether anything it dropped is carried anyway from a scope
+ * that IS allowed to carry it.</p>
+ *
+ * <p><b>The question is about the FILE, not about the key that tripped it.</b>
+ * The loader leaves on the first forbidden key and abandons the whole workspace
+ * scope, so every other setting in that file is dropped too. The owner's
+ * {@code ForgeDemo} scope is the case that settles it: it asks for
+ * {@code allowLocalhost}, which {@code ~/.spectro/settings.json} carries anyway,
+ * and for {@code permissionMode "auto"}, which nothing else sets. Priced per key
+ * that refusal reads as free, and a surface that keeps a free notice off the
+ * screen then says nothing while he loses his permission mode.</p>
  *
  * <p><b>In force means the same VALUE, not merely the same key.</b> A user scope
  * that sets {@code allowLocalhost: false} while the workspace asks for
@@ -119,6 +124,75 @@ class WorkspaceRefusalCostTest {
 
         assertEquals(Boolean.FALSE, refused.inForce(),
                 "the user scope carries the key at the OTHER value — that is a loss, not a free pass");
+        assertNull(refused.inForceFrom());
+    }
+
+    @Test
+    void aFileThatAlsoSetsSomethingElseIsNotFree(@TempDir Path projectDir, @TempDir Path ws)
+            throws IOException {
+        // The refusal throws on the FIRST forbidden key and abandons the WHOLE
+        // scope, so every other setting in that file goes with it. This IS the
+        // owner's ForgeDemo file, read on 2026-08-31: it asks for allowLocalhost,
+        // which ~/.spectro carries anyway, and for permissionMode "auto", which
+        // nothing else sets. A reading that answered only about the key that
+        // tripped the refusal calls this free and lets the chat stay silent while
+        // he loses his permission mode.
+        writeUserSettings("""
+                { "allowLocalhost": true }
+                """);
+        writeWorkspaceSettings(ws, """
+                { "permissionMode": "auto", "allowLocalhost": true }
+                """);
+
+        SpectroConfig.WorkspaceScopeRefused refused = refusalFrom(projectDir, ws, Map.of());
+
+        assertEquals("allowLocalhost", refused.key());
+        assertEquals(Boolean.FALSE, refused.inForce(),
+                "permissionMode goes down with the file and nothing else sets it, so the"
+                        + " refusal is not free even though the key it named is carried");
+        assertNull(refused.inForceFrom(),
+                "and naming the layer that carries allowLocalhost would answer a question"
+                        + " nobody asked while the loss stays unmentioned");
+    }
+
+    @Test
+    void aFileWhoseEveryKeyIsCarriedAnywayIsFree(@TempDir Path projectDir, @TempDir Path ws)
+            throws IOException {
+        // The other half of the same widening: covering the whole file must not
+        // collapse into "a file with more than one key is never free". Both keys
+        // are carried at the same value, so dropping this file changes nothing.
+        writeUserSettings("""
+                { "allowLocalhost": true, "permissionMode": "auto" }
+                """);
+        writeWorkspaceSettings(ws, """
+                { "permissionMode": "auto", "allowLocalhost": true }
+                """);
+
+        SpectroConfig.WorkspaceScopeRefused refused = refusalFrom(projectDir, ws, Map.of());
+
+        assertEquals(Boolean.TRUE, refused.inForce(),
+                "every key this file sets is in force from the user scope already");
+        assertEquals("user", refused.inForceFrom());
+    }
+
+    @Test
+    void aNeighbourKeyCarriedAtTheOTHERValueIsALossToo(@TempDir Path projectDir, @TempDir Path ws)
+            throws IOException {
+        // The value comparison has to hold for the keys that did NOT trip the
+        // refusal as well. A whole-file walk asking only "is this key named
+        // somewhere allowed" is green here and wrong: permissionMode is named in
+        // ~/.spectro in order to set it to something else.
+        writeUserSettings("""
+                { "allowLocalhost": true, "permissionMode": "plan" }
+                """);
+        writeWorkspaceSettings(ws, """
+                { "permissionMode": "auto", "allowLocalhost": true }
+                """);
+
+        SpectroConfig.WorkspaceScopeRefused refused = refusalFrom(projectDir, ws, Map.of());
+
+        assertEquals(Boolean.FALSE, refused.inForce(),
+                "the file asked for permissionMode auto and auto is not what applies");
         assertNull(refused.inForceFrom());
     }
 
@@ -300,27 +374,30 @@ class WorkspaceRefusalCostTest {
     }
 
     @Test
-    void theListedKeysAreDistinctAndTheReadingIsPerKey(@TempDir Path projectDir, @TempDir Path ws)
-            throws IOException {
-        // Two forbidden keys in one file: the refusal names the first one
-        // checked, and the reading belongs to THAT key and not to its neighbour.
-        // A reading wired to the wrong probe is green whenever both keys happen
-        // to agree, which the loop above cannot see.
+    void theCarrierNamedIsTheOneCarryingTheKEYThatWasRefused(
+            @TempDir Path projectDir, @TempDir Path ws) throws IOException {
+        // Two forbidden keys in one file, carried by two DIFFERENT layers. The
+        // refusal names the first key on the list, so the layer it names has to
+        // be that key's carrier: a carrier read off the neighbour's probe is
+        // green whenever one layer happens to carry both, which every other test
+        // in this file arranges by accident.
         writeUserSettings("""
-                { "allowLocalhost": true }
+                { "logLevel": "debug" }
                 """);
         Map<String, Object> both = new LinkedHashMap<>();
         both.put("logLevel", "debug");
         both.put("allowLocalhost", true);
         writeWorkspaceSettings(ws, JSON.writeValueAsString(both));
 
-        SpectroConfig.WorkspaceScopeRefused refused = refusalFrom(projectDir, ws, Map.of());
+        SpectroConfig.WorkspaceScopeRefused refused =
+                refusalFrom(projectDir, ws, Map.of("SPECTRO_ALLOW_LOCALHOST", "true"));
 
         assertEquals("logLevel", refused.key(), "the list is checked in order and logLevel comes first");
-        assertEquals(Boolean.FALSE, refused.inForce(),
-                "the reading answers for logLevel, which nothing else sets — not for its"
-                        + " neighbour allowLocalhost, which the user scope does set");
-        assertNull(refused.inForceFrom());
+        assertEquals(Boolean.TRUE, refused.inForce(),
+                "both of this file's keys are carried at the same value, so it costs nothing");
+        assertEquals("user", refused.inForceFrom(),
+                "logLevel is the refused key and the user scope is what carries it — \"env\""
+                        + " would be the answer to the neighbour's question");
     }
 
     @Test

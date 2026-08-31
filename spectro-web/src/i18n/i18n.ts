@@ -2895,17 +2895,24 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   // Card 354: the same refusal, priced. The line above stays for sessions
   // recorded before the harness took the reading; this one is the case that is
-  // worth the operator's attention, because the setting he asked for is gone.
+  // worth the operator's attention, because something he asked for is gone.
   // The refusal that costs nothing gets no chat turn at all, so it needs no
   // sentence here. As in card 285, the server's own hint rides in as a variable
   // and is not translated: it names paths and environment variables.
-  "info.settingsIgnoredNotInForce": {
+  //
+  // It talks about the FILE and not only about {key}, because that is what the
+  // refusal takes. The loader leaves on the first forbidden key and abandons the
+  // whole scope, so the operator's other settings in that file go with it. An
+  // earlier draft of this line read "Nothing else sets it", which is plainly
+  // false whenever an allowed layer sets the key the other way, and that is a
+  // state this branch's own tests construct.
+  "info.settingsIgnoredNotAllInForce": {
     de:
-      '"{key}" wurde ignoriert: Ein Workspace-Ordner darf das nicht setzen. Sonst ' +
-      "setzt es niemand, es gilt also nicht. {hint}",
+      '"{key}" wurde ignoriert: Ein Workspace-Ordner darf das nicht setzen, also ' +
+      "fällt die ganze Datei weg. Ein Teil davon ist nirgendwo sonst gesetzt. {hint}",
     en:
-      '"{key}" was ignored: a workspace folder may not set it. Nothing else sets it, ' +
-      "so it is not in force. {hint}",
+      '"{key}" was ignored: a workspace folder may not set it, so the whole file is ' +
+      "dropped. Some of what that file asked for is not set anywhere else. {hint}",
   },
 
   // Cards 281 and 282: the run's three self-reports, one sentence per value.

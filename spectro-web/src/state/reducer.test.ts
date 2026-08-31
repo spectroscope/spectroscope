@@ -652,11 +652,16 @@ describe("reduce — settings ignored (card 285)", () => {
 
 describe("reduce — what a refused settings key COSTS (card 354)", () => {
   // The owner opened a fresh session and the only thing in it was this notice.
-  // On his machine it was free: ForgeDemo's workspace scope asks for
-  // allowLocalhost and is refused, and ~/.spectro already grants it. A chat turn
-  // on an empty session is not one line among many, it is the whole screen — so
-  // the free case is not news and does not get one. The event still rides the
-  // wire and still goes into the record; only the CHAT stays out of it.
+  // A chat turn on an empty session is not one line among many, it is the whole
+  // screen — so a refusal that cost him nothing is not news and does not get
+  // one. The event still rides the wire and still goes into the record; only the
+  // CHAT stays out of it.
+  //
+  // "Cost him nothing" is a reading of the whole FILE, taken in the loader,
+  // because that is what a refusal takes: it leaves on the first forbidden key
+  // and abandons the whole scope. His own ForgeDemo file is why. It asks for
+  // allowLocalhost, which ~/.spectro grants anyway, AND for permissionMode
+  // "auto", which nothing else sets, so it is not free at all.
   //
   // Where the free notice goes instead is the owner's call and he has not made
   // it. This is the honest minimum until he does, and it is deliberately the
@@ -680,21 +685,36 @@ describe("reduce — what a refused settings key COSTS (card 354)", () => {
     expect(state.trace.map((t) => t.type)).toEqual(["settings_ignored"]);
   });
 
-  it("keeps the turn, and says it is not in force, when nothing else sets it", () => {
+  it("keeps the turn, and prices the whole file, when something is lost", () => {
     const state = reduce(initialState, { ...refusal, inForce: false });
 
     expect(state.turns[0]).toEqual({
       kind: "info",
       text:
-        '"allowLocalhost" was ignored: a workspace folder may not set it. Nothing ' +
-        "else sets it, so it is not in force. the opt-in belongs in ~/.spectro/settings.json",
+        '"allowLocalhost" was ignored: a workspace folder may not set it, so the whole ' +
+        "file is dropped. Some of what that file asked for is not set anywhere else. " +
+        "the opt-in belongs in ~/.spectro/settings.json",
       tone: "warn",
-      infoKey: "info.settingsIgnoredNotInForce",
+      infoKey: "info.settingsIgnoredNotAllInForce",
       infoVars: {
         key: "allowLocalhost",
         hint: "the opt-in belongs in ~/.spectro/settings.json",
       },
     });
+  });
+
+  it("never claims nothing else sets the key, in either language", () => {
+    // The sentence this replaced said "Nothing else sets it", and that is false
+    // in a state SpectroConfig's own tests construct: an allowed layer that sets
+    // the key in order to set it the OTHER way is a loss, not an absence, and
+    // the notice would send the operator looking for a setting nobody made.
+    const turn = reduce(initialState, { ...refusal, inForce: false }).turns[0];
+    const entry = dict[turn.kind === "info" ? (turn.infoKey ?? "") : ""];
+
+    expect(entry).toBeDefined();
+    expect(entry.en.toLowerCase()).not.toContain("nothing else sets");
+    expect(entry.de.toLowerCase()).not.toContain("setzt es niemand");
+    expect(turn.kind === "info" ? turn.text.toLowerCase() : "").not.toContain("nothing else sets");
   });
 
   it("says neither half of a verdict for a line recorded before this card", () => {
@@ -712,7 +732,7 @@ describe("reduce — what a refused settings key COSTS (card 354)", () => {
 
   it("names a key both languages actually have", () => {
     // The reducer writes these keys as plain strings, so a typo type-checks and
-    // ships — and the chat would print "info.settingsIgnoredNotInForce" at the
+    // ships — and the chat would print "info.settingsIgnoredNotAllInForce" at the
     // one moment the operator has to read it. Looked up through the reducer's
     // own output rather than from a list beside it.
     const turn = reduce(initialState, { ...refusal, inForce: false }).turns[0];
@@ -720,8 +740,8 @@ describe("reduce — what a refused settings key COSTS (card 354)", () => {
     const entry = dict[key ?? ""];
 
     expect(entry, key).toBeDefined();
-    expect(entry.de).toContain("es gilt also nicht");
-    expect(entry.en).toContain("not in force");
+    expect(entry.de).toContain("die ganze Datei weg");
+    expect(entry.en).toContain("the whole file is dropped");
     // Card 285's decision, kept: the server's hint names paths and env vars and
     // is not ours to translate, so it rides in as a variable in both languages.
     expect(entry.de).toContain("{hint}");

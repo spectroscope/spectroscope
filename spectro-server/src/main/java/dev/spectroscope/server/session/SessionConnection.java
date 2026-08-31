@@ -1554,9 +1554,11 @@ public final class SessionConnection {
         if (unreadable instanceof SpectroConfig.WorkspaceScopeRefused refused) {
             // Card 354: the reading rides along. It is taken by the loader,
             // inside the same read that refused, because that is the only place
-            // that holds the allowed scopes AND the value the folder asked for
+            // that holds the allowed scopes AND everything the folder asked for
             // at the same moment — re-deriving it here would mean a second read
-            // of four files and an answer about a slightly later moment.
+            // of four files and an answer about a slightly later moment. It
+            // prices the whole FILE, which is what the javadoc above says a
+            // refusal drops, and not merely the key that tripped it.
             RunEvent.SettingsIgnored event = new RunEvent.SettingsIgnored(
                     refused.key(), refused.file(), refused.hint(),
                     refused.inForce(), refused.inForceFrom(), System.currentTimeMillis());

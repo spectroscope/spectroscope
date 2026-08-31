@@ -1023,8 +1023,19 @@ public record SpectroConfig(
      *  to carry these keys have just been read a few lines above, so the
      *  question is answered from the same reading that refused — a catch site
      *  asking later would re-read the files and could answer about a different
-     *  moment. The reading uses the forbidden key's OWN probe, so a key added
-     *  to the list above is read correctly with nothing else to remember.</p>
+     *  moment.</p>
+     *
+     *  <p><b>The reading is about the FILE, not about the key that tripped it.</b>
+     *  The throw below leaves on the first forbidden key and abandons the whole
+     *  scope, so a settings file's OTHER keys are dropped with it and never
+     *  reach the fold. A per-key reading therefore prices the wrong thing: the
+     *  owner's own ForgeDemo scope asks for {@code allowLocalhost}, which his
+     *  user scope carries anyway, AND for {@code permissionMode}, which nothing
+     *  else sets — priced per key that refusal reads as free and its notice is
+     *  worth suppressing, while he silently loses his permission mode. So
+     *  {@link #nothingIsLost} walks every field the refused scope set, each one
+     *  through its own {@link #FIELD_PROBES} probe, and {@code inForce} is true
+     *  only when dropping this file changes nothing at all.</p>
      *
      *  @param scope   the parsed workspace-scope layer (project or local)
      *  @param file    the file it was read from, named in the thrown message
@@ -1035,35 +1046,64 @@ public record SpectroConfig(
         for (ProcessGlobal forbidden : WORKSPACE_SCOPE_FORBIDDEN) {
             Object wanted = forbidden.get().apply(scope);
             if (wanted != null) {
-                String carrier = carrierOf(forbidden, wanted, allowed);
+                boolean free = nothingIsLost(scope, allowed);
+                String carrier = carrierOf(forbidden.get(), wanted, allowed);
                 throw new WorkspaceScopeRefused(forbidden.key(), file.toString(),
-                        forbidden.hint(), carrier != null, carrier,
+                        forbidden.hint(), free, free ? carrier : null,
                         "\"" + forbidden.key() + "\" " + forbidden.rule()
                                 + " (" + file + ") — " + forbidden.hint());
             }
         }
     }
 
-    /** The allowed layer that already carries {@code wanted} for this key, or
-     *  {@code null} when the refusal really does cost the operator the setting.
+    /** Whether dropping the refused scope costs the operator nothing: every
+     *  field it set is already carried, at the SAME value, by a layer that is
+     *  allowed to carry it.
+     *
+     *  <p>Every field, not only the forbidden one that tripped the refusal,
+     *  because the throw takes the whole scope with it. A file that asks for a
+     *  refused key its user scope grants anyway AND for one ordinary key nobody
+     *  else sets is a real loss, and pricing it per key reports it as free.</p>
+     *
+     *  <p>{@link #FIELD_PROBES} rather than a list written here: it is the same
+     *  list the fold's provenance walk uses and it is held to the record's
+     *  components by {@code KnownKeysDriftTest}, so a settings key added to the
+     *  shape is priced without anyone remembering to come back.</p>
+     *
+     *  @param refused the parsed workspace scope that is about to be thrown away
+     *  @param allowed the allowed layers, ascending
+     *  @return true when nothing this scope asked for is being lost */
+    private static boolean nothingIsLost(PartialConfig refused, List<Scope> allowed) {
+        for (FieldProbe probe : FIELD_PROBES) {
+            Object wanted = probe.get().apply(refused);
+            if (wanted != null && carrierOf(probe.get(), wanted, allowed) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The allowed layer that already carries {@code wanted} for one field, or
+     *  {@code null} when that field is really being lost.
      *
      *  <p>Ascending, so the last hit is the winner of the fold — the same
      *  direction {@link #loadResolved} walks for provenance, over the very same
      *  {@link Scope} objects. Unlike that walk it also compares the VALUE, and
      *  that is the whole difference between a useful answer and a wrong one: a
-     *  layer setting the key the OTHER way clears the answer rather than
+     *  layer setting the field the OTHER way clears the answer rather than
      *  keeping an earlier agreement, because that layer wins the fold and the
      *  workspace's request is therefore not in force no matter who agreed with
      *  it further down.</p>
      *
-     *  @param forbidden the refused key, carrying its own per-scope probe
-     *  @param wanted    the value the refused workspace scope asked for
-     *  @param allowed   the allowed layers, ascending
+     *  @param probe   reads the field off one layer; {@code null} means unset
+     *  @param wanted  the value the refused workspace scope asked for
+     *  @param allowed the allowed layers, ascending
      *  @return the winning layer's name when it carries {@code wanted}, else null */
-    private static String carrierOf(ProcessGlobal forbidden, Object wanted, List<Scope> allowed) {
+    private static String carrierOf(Function<PartialConfig, Object> probe, Object wanted,
+            List<Scope> allowed) {
         String carrier = null;
         for (Scope scope : allowed) {
-            Object value = forbidden.get().apply(scope.partial());
+            Object value = probe.apply(scope.partial());
             if (value != null) {
                 carrier = wanted.equals(value) ? scope.name() : null;
             }
@@ -1110,11 +1150,13 @@ public record SpectroConfig(
          * @param key         the setting the scope was not allowed to name
          * @param file        the settings file it was read from
          * @param hint        where the setting does belong
-         * @param inForce     whether an allowed scope carries this key at the
-         *                    value the refused scope asked for; {@code null}
+         * @param inForce     whether nothing this scope asked for is being
+         *                    lost — every field it set is already carried, at
+         *                    the same value, by an allowed layer; {@code null}
          *                    when no reading was taken
-         * @param inForceFrom the allowed layer that carries it — non-null
-         *                    exactly when {@code inForce} is {@code TRUE}
+         * @param inForceFrom the allowed layer that carries the refused KEY —
+         *                    non-null exactly when {@code inForce} is
+         *                    {@code TRUE}
          * @param message     the whole sentence, unchanged from before card 285
          */
         public WorkspaceScopeRefused(String key, String file, String hint,
@@ -1145,13 +1187,19 @@ public record SpectroConfig(
         /**
          * Whether the refusal costs the operator anything.
          *
-         * <p>Card 354. {@code TRUE} means an allowed scope carries this key at
-         * the SAME value the refused scope asked for, so the setting applies and
-         * dropping the file changed nothing about it. {@code FALSE} means it
-         * does not apply — including the case where an allowed scope names the
-         * key in order to set it the other way, which is a loss and not a free
-         * pass. {@code null} means no reading was taken, which is only ever true
-         * of a refusal recorded before this card.</p>
+         * <p>Card 354. {@code TRUE} means dropping this file changes nothing:
+         * every field it set — the refused key and its neighbours alike — is
+         * already carried at the SAME value by a layer allowed to carry it. It
+         * is a statement about the FILE because the refusal is: the throw leaves
+         * on the first forbidden key and abandons the whole scope, so a reading
+         * that answered only about that key would call a file free while an
+         * ordinary setting beside it goes down unmentioned.</p>
+         *
+         * <p>{@code FALSE} means something in it is being lost — including the
+         * case where an allowed layer names a key in order to set it the other
+         * way, which is a loss and not a free pass. {@code null} means no
+         * reading was taken, which is only ever true of a refusal recorded
+         * before this card.</p>
          *
          * @return the reading, or {@code null} when none was taken
          */
@@ -1159,12 +1207,13 @@ public record SpectroConfig(
             return inForce;
         }
 
-        /** The allowed layer that carries the key — one of the {@link Origin}
-         *  layer names ({@code "env"}, {@code "user"}, {@code "launch-dir"},
-         *  {@code "flags"}). Non-null exactly when {@link #inForce()} is
-         *  {@code TRUE}: with nothing carrying it there is no scope to name, and
-         *  naming the layer that carries the OTHER value would send the operator
-         *  to edit a file that is already doing what it says.
+        /** The allowed layer that carries the refused KEY — one of the
+         *  {@link Origin} layer names ({@code "env"}, {@code "user"},
+         *  {@code "launch-dir"}, {@code "flags"}). Non-null exactly when
+         *  {@link #inForce()} is {@code TRUE}: with something in the file being
+         *  lost there is no free pass to explain, and naming the layer that
+         *  carries the OTHER value would send the operator to edit a file that
+         *  is already doing what it says.
          *  @return the carrying layer, or {@code null} */
         public String inForceFrom() {
             return inForceFrom;

@@ -21,8 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * needs is the second half of the sentence, so "ignored" stops reading like
  * "lost" when nothing was lost.</p>
  *
- * <p>Pinned on the KEY and the carrying layer, never on the whole sentence: the
- * prose is written for a person, the facts are not.</p>
+ * <p>Pinned on the KEY, the carrying layer and the FILE, never on the whole
+ * sentence: the prose is written for a person, the facts are not. The file is
+ * pinned because a refusal abandons the whole workspace scope, so a clause that
+ * accounts only for the key it named leaves the reader's other settings out of
+ * a sentence that is supposed to price the loss.</p>
  */
 class EventRendererSettingsIgnoredTest {
 
@@ -58,17 +61,24 @@ class EventRendererSettingsIgnoredTest {
         assertTrue(out.contains("in force"),
                 "the line has to say the setting still applies. Got: " + out);
         assertTrue(out.contains("user"), "and name the layer that carries it. Got: " + out);
+        assertTrue(out.contains("rest of that file"),
+                "a refusal takes the whole scope, so a free one has to account for the whole"
+                        + " scope and not only for the key it named. Got: " + out);
     }
 
     @Test
-    void anExpensiveRefusalSaysTheSettingIsNotInForce() {
+    void anExpensiveRefusalSaysTheWholeFileGoesAndNotAllOfItComesBack() {
         String out = rendered(new RunEvent.SettingsIgnored("searxngUrl",
                 "/w/.spectro/settings.json", "belongs in ~/.spectro/settings.json.",
                 false, null, 1000L));
 
         assertTrue(out.contains("searxngUrl"), out);
-        assertTrue(out.contains("not in force"),
-                "this is the case worth stopping at. Got: " + out);
+        assertTrue(out.contains("the whole file is dropped"),
+                "this is the case worth stopping at, and what is lost is the file. Got: " + out);
+        assertFalse(out.contains("nothing else sets it"),
+                "an allowed layer may well set this key, in order to set it the OTHER way."
+                        + " That is a state SpectroConfig's own tests construct, and the"
+                        + " sentence would be false in it. Got: " + out);
     }
 
     @Test
@@ -81,5 +91,7 @@ class EventRendererSettingsIgnoredTest {
         assertTrue(out.contains("allowLocalhost"), out);
         assertFalse(out.contains("in force"),
                 "no reading was taken, so no verdict may be printed. Got: " + out);
+        assertFalse(out.contains("whole file"),
+                "and neither half of the verdict, not just the free one. Got: " + out);
     }
 }
