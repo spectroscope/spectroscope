@@ -34,7 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SpectroDirDriftTest {
 
     /**
-     * Every literal spelling of the folder name, whatever shape it is written in.
+     * A string literal that BEGINS with the folder name, in whatever expression
+     * it is written.
      *
      * <p>This is the whole vocabulary the rule below works from, and that is
      * deliberate. The first version of this test listed the SHAPES it expected a
@@ -44,8 +45,18 @@ class SpectroDirDriftTest {
      * .resolve("launch.json")}, whose receiver is a call rather than an
      * identifier). All three tests stayed green. A list of anticipated shapes
      * cannot see the shape nobody anticipated, so the default is now the other
-     * way round: <b>every occurrence is an offender until its own statement
-     * proves it is the home-level folder.</b>
+     * way round: <b>every occurrence this pattern sees is an offender until its
+     * own expression proves it is the home-level folder.</b>
+     *
+     * <p><b>What it sees is narrower than "every occurrence", so the heading says
+     * which.</b> The opening quote is load-bearing: a literal that carries the
+     * folder name further in — {@code "~/.spectro/settings.json"} and the other
+     * twenty-nine message strings that tell an operator where a file lives — is
+     * invisible here. Dropping the quote was measured on 2026-08-31 and turned
+     * thirty prose sentences into offenders, not one of which builds a path.
+     * Telling a path from a sentence that quotes one takes more than a regex, so
+     * this stays where a hand-spelled CONSTANT is written, and the limit is
+     * stated instead of hidden.
      */
     private static final java.util.regex.Pattern SPELLED =
             java.util.regex.Pattern.compile("\"\\.spectro");
@@ -57,8 +68,10 @@ class SpectroDirDriftTest {
      * share a name — this machine's private state rather than something that
      * travels with a repository — and folding it in would have made one look
      * like the other. Every one of those sites reaches the home directory in the
-     * same statement, so the statement is what is searched: measured on
-     * 2026-08-31, this admits 32 sites and no others.
+     * same EXPRESSION — as a sibling argument, or as the receiver the call hangs
+     * off — so that expression is what is searched, and not the whole statement
+     * around it. Measured on 2026-08-31 with {@link #expressionEndingAt}: 32
+     * sites admitted, no offenders.
      */
     private static final java.util.regex.Pattern REACHES_HOME =
             java.util.regex.Pattern.compile("(?i)user\\.home|userhome|homedir");
@@ -109,19 +122,20 @@ class SpectroDirDriftTest {
             String code = stripComments(Files.readString(source, StandardCharsets.UTF_8));
             java.util.regex.Matcher spelled = SPELLED.matcher(code);
             while (spelled.find()) {
-                String statement = statementEndingAt(code, spelled.start());
-                if (REACHES_HOME.matcher(statement).find()) {
+                String expression = expressionEndingAt(code, spelled.start());
+                if (REACHES_HOME.matcher(expression).find()) {
                     homeLevel++;
                 } else {
                     offenders.add(repoRoot().relativize(source) + " spells it in: "
-                            + statement.strip().replaceAll("\\s+", " "));
+                            + expression.strip().replaceAll("\\s+", " "));
                 }
             }
         }
         assertEquals(List.of(), offenders,
                 "the project folder is SpectroDir.NAME, everywhere. A site that really is"
                         + " the home-level folder reaches the home directory in the same"
-                        + " statement; one that does not is this: " + offenders);
+                        + " expression — a sibling argument, or the receiver; one that does"
+                        + " not is this: " + offenders);
         assertTrue(homeLevel >= HOME_LEVEL_SITES_FLOOR,
                 "only " + homeLevel + " home-level sites were seen — the walk or the"
                         + " comment stripper is looking at the wrong thing, and zero"
@@ -129,22 +143,131 @@ class SpectroDirDriftTest {
     }
 
     /**
-     * The statement one occurrence sits in.
+     * The expression one occurrence sits in — the call that receives it, plus
+     * whatever that call hangs off.
      *
-     * <p>Everything back to the nearest {@code ;}, {@code &#123;} or {@code &#125;},
-     * so a home-level site three lines above cannot vouch for a project-level one
-     * below it.
+     * <p><b>It used to be the whole statement, and the sentence over it reached
+     * further than it did.</b> The old walk went back to the nearest {@code ;},
+     * {@code &#123;} or {@code &#125;} and claimed a home-level site three lines
+     * above could not vouch for a project-level one below it. Inside one
+     * multi-line expression it could, and did: both sites card 350 rewrote live
+     * in one — a {@code List.of(…)} and a {@code this(…)} whose FIRST argument
+     * reaches {@code user.home} and whose second was the hand-spelled project
+     * path. Reverting either left this test <b>green</b>, so the guard was not
+     * guarding the work it was cut for. Widened and measured on 2026-08-31: each
+     * of the four rewritten sites now fails it on its own.
+     *
+     * <p>The scope is the innermost {@code (} still open at the occurrence,
+     * extended backwards over the receiver chain in front of it. That is enough
+     * for {@code Path.of(System.getProperty("user.home"), ".spectro", …)} to
+     * vouch for itself through a sibling argument and for {@code
+     * userHome().resolve(".spectro")} to do it through its receiver, while
+     * {@code cwd.resolve(".spectro")} and {@code
+     * Path.of(System.getProperty("user.dir"), ".spectro", …)} cannot. On this
+     * tree it admits the same 32 home-level sites and reports no offenders.
      *
      * @param code  the source with its comments already stripped
      * @param index where the occurrence starts
-     * @return the text of the statement up to that point
+     * @return the text of that expression up to the occurrence
      */
-    private static String statementEndingAt(String code, int index) {
-        int start = -1;
+    private static String expressionEndingAt(String code, int index) {
+        int statement = -1;
         for (char boundary : new char[] {';', '{', '}'}) {
-            start = Math.max(start, code.lastIndexOf(boundary, index));
+            statement = Math.max(statement, code.lastIndexOf(boundary, index));
         }
-        return code.substring(start + 1, index);
+        int open = openParenBefore(code, index, statement);
+        if (open < 0) {
+            return code.substring(statement + 1, index);
+        }
+        return code.substring(receiverChainBefore(code, open, statement), index);
+    }
+
+    /**
+     * The innermost {@code (} still open at one point.
+     *
+     * @param code      the source
+     * @param index     where the occurrence starts
+     * @param statement where the enclosing statement begins, as a floor
+     * @return its offset, or -1 when the occurrence is not inside a call
+     */
+    private static int openParenBefore(String code, int index, int statement) {
+        int depth = 0;
+        for (int at = index - 1; at > statement; at--) {
+            char c = code.charAt(at);
+            if (c == ')') {
+                depth++;
+            } else if (c == '(') {
+                if (depth == 0) {
+                    return at;
+                }
+                depth--;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Where the receiver chain in front of one {@code (} begins.
+     *
+     * <p>Backwards over {@code name}, {@code .} and a balanced {@code (…)} of a
+     * call's own arguments, for as long as they alternate — so {@code
+     * userHome().resolve(} yields all of it and not only {@code resolve}.
+     *
+     * @param code      the source
+     * @param open      the offset of the opening parenthesis
+     * @param statement where the enclosing statement begins, as a floor
+     * @return the offset the chain starts at
+     */
+    private static int receiverChainBefore(String code, int open, int statement) {
+        int at = open;
+        while (true) {
+            at = skipSpaceBack(code, at, statement);
+            if (at > statement + 1 && code.charAt(at - 1) == ')') {
+                int depth = 0;
+                while (at > statement + 1) {
+                    at--;
+                    if (code.charAt(at) == ')') {
+                        depth++;
+                    } else if (code.charAt(at) == '(' && --depth == 0) {
+                        break;
+                    }
+                }
+                at = skipSpaceBack(code, at, statement);
+            }
+            if (at > statement + 1 && isIdentifierChar(code.charAt(at - 1))) {
+                while (at > statement + 1 && isIdentifierChar(code.charAt(at - 1))) {
+                    at--;
+                }
+            } else {
+                break;
+            }
+            at = skipSpaceBack(code, at, statement);
+            if (at > statement + 1 && code.charAt(at - 1) == '.') {
+                at--;
+            } else {
+                break;
+            }
+        }
+        return at;
+    }
+
+    /** Backwards over whitespace, never past the statement.
+     *  @param code the source
+     *  @param at where to start
+     *  @param statement the floor
+     *  @return the first non-space offset */
+    private static int skipSpaceBack(String code, int at, int statement) {
+        while (at > statement + 1 && Character.isWhitespace(code.charAt(at - 1))) {
+            at--;
+        }
+        return at;
+    }
+
+    /** Whether one character can appear in a java identifier.
+     *  @param c the character
+     *  @return true when it can */
+    private static boolean isIdentifierChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == '$';
     }
 
     /** Every main-source java file in the repository. */

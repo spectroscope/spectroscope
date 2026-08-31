@@ -32,9 +32,11 @@ import java.util.Set;
  * other reader.</b> {@code cockpit/serve.py} reads this format for the developer
  * dashboard, which is a standalone Python page with no JVM to call into; it
  * follows the same order and {@code cockpit/test_serve.py} pins that it does.
- * Both are listed by
- * {@code ClaudeFolderStaysTheirsDriftTest#everySourceInTheRepositoryThatReadsTheLaunchFormatIsOneOfThese},
- * so a third reader is a decision rather than an accident.
+ * Both are listed by the repository-wide scan in {@code
+ * ClaudeFolderStaysTheirsDriftTest}, so a third reader is a decision rather than
+ * an accident. That scan finds the quoted key {@code "configurations"} rather
+ * than readers as such, and says so in its own name: a reader that builds the
+ * key at runtime or spells it in single quotes is not one it can see.
  *
  * <p><b>The first location that EXISTS answers, whole.</b> Not the first that
  * parses, and not a merge of the two. Falling through from a broken file of ours

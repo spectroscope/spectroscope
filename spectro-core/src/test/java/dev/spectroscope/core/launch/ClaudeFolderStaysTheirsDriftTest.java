@@ -30,16 +30,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <ol>
  *   <li><b>Nothing writes into {@code .claude}.</b> Not "nothing does today" —
- *       no source that can write a file may even name the folder. The owner's
+ *       no source that can write a file may even name the folder, <b>nor reach
+ *       it through the product's own public constant for it</b>. The owner's
  *       rule is that another vendor's folder is theirs, and a convention that
  *       lives only in a card survives exactly as long as everyone remembers
  *       reading it.</li>
  *   <li><b>The parser exists once.</b> The owner said a second reader of the
  *       same shape would be nonsense, and card 350 made that harder to keep by
  *       adding a location. So the reading is pinned to one file.</li>
- *   <li><b>No tool reaches {@link LaunchWriter}.</b> Whether an AGENT may
- *       author a launch file is an open owner call, and an open question is a
- *       shut door until it is answered.</li>
+ *   <li><b>Nothing reachable from a source that spells the tool interface
+ *       touches {@link LaunchWriter}.</b> Whether an AGENT may author a launch
+ *       file is an open owner call, and an open question is a shut door until it
+ *       is answered. The hops are walked transitively; the SEED is three
+ *       hand-typed spellings, and that limit is on the test.</li>
  * </ol>
  *
  * <p>Comments are stripped everywhere first, so this class's own prose about
@@ -56,7 +59,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ClaudeFolderStaysTheirsDriftTest {
 
     /**
-     * The only file-system calls a source that names another vendor's folder may
+     * The only file-system calls a source that reaches another vendor's folder may
      * make — an ALLOWLIST, and that is the whole of the fix.
      *
      * <p>This test used to carry the opposite: eleven hand-typed spellings of
@@ -104,6 +107,42 @@ class ClaudeFolderStaysTheirsDriftTest {
     /** Any java identifier, for the class-reference walk in the reachability test. */
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
 
+    /**
+     * The product's own public names for their folder, so a source can be under
+     * this rule without ever spelling {@code .claude}.
+     *
+     * <p><b>This is the hole a review found on 2026-08-31, and it was the
+     * product's own doing.</b> Everything below keyed off the LITERAL, so a new
+     * main source with {@code projectRoot.resolve(LaunchFile.THEIRS)} and a
+     * {@code Files.writeString} beside it never entered the scan at all — it
+     * wrote into their folder and every guard here stayed <b>green</b>. Naming
+     * the folder is not what makes a source dangerous; reaching it is, and this
+     * product publishes a public constant that does the reaching.
+     *
+     * <p>Derived, not typed: every public static field of {@link LaunchFile}
+     * whose VALUE names the folder as a path is an alias, which today is {@code
+     * THEIRS} and the {@code LOCATIONS} list that carries it. A field whose value
+     * merely mentions the folder in prose — {@code LOCATIONS_SENTENCE}, which
+     * exists to tell an operator where to put a file — is not one: it carries
+     * whitespace, cannot be resolved into a path, and treating it as an alias
+     * would drag two message-formatting sources under a write rule they have
+     * nothing to do with.
+     *
+     * <p><b>The limit, stated rather than papered over:</b> only {@link
+     * LaunchFile} is inspected, because it is the one class in {@link
+     * #MAY_NAME_IT} that this module's test classpath can load. If the server
+     * module's transcripts controller ever publishes a public path constant of
+     * its own, an alias of THAT would not be seen here.
+     */
+    private static final Set<String> FOLDER_ALIASES = folderAliases();
+
+    /** The alias names as whole-word patterns, so {@code LOCATIONS_SENTENCE} is not
+     *  mistaken for {@code LOCATIONS}. */
+    private static final List<Pattern> ALIAS_WORDS = FOLDER_ALIASES.stream()
+            .map(alias -> Pattern.compile("(?<![A-Za-z0-9_$])" + Pattern.quote(alias)
+                    + "(?![A-Za-z0-9_$])"))
+            .toList();
+
     /** {@code Files.<something>}, as a source spells it. */
     private static final Pattern FILES_CALL = Pattern.compile("\\bFiles\\.(\\w+)");
 
@@ -115,14 +154,17 @@ class ClaudeFolderStaysTheirsDriftTest {
             "spectro-server/src/main/java/dev/spectroscope/server/transcripts/"
                     + "ClaudeTranscriptsController.java");
 
-    /** Nothing that can write a file may so much as name another vendor's folder. */
+    /**
+     * Nothing that can write a file may so much as reach another vendor's folder
+     * — by naming it, or through {@link #FOLDER_ALIASES}.
+     */
     @Test
-    void nothingThatWritesEvenNamesTheClaudeFolder() throws IOException {
+    void nothingThatWritesEvenReachesTheClaudeFolder() throws IOException {
         List<String> offenders = new ArrayList<>();
         int reads = 0;
         for (Path source : mainSources()) {
             String code = stripComments(Files.readString(source, StandardCharsets.UTF_8));
-            if (!code.contains(".claude")) {
+            if (!reachesTheirFolder(code)) {
                 continue;
             }
             Matcher call = FILES_CALL.matcher(code);
@@ -140,12 +182,60 @@ class ClaudeFolderStaysTheirsDriftTest {
         }
         assertEquals(List.of(), offenders,
                 "the owner's rule: we read their folder, we never write it. A source that"
-                        + " names .claude may only make the reads in READ_ONLY_FILES_CALLS,"
-                        + " and may not name java.io.File or a stream that writes: "
-                        + offenders);
-        assertTrue(reads > 0, "no file-system call at all was seen in a source that names"
+                        + " reaches .claude — by name or through " + FOLDER_ALIASES
+                        + " — may only make the reads in READ_ONLY_FILES_CALLS, and may not"
+                        + " name java.io.File or a stream that writes: " + offenders);
+        assertTrue(reads > 0, "no file-system call at all was seen in a source that reaches"
                 + " .claude — the walk or the comment stripper is looking at the wrong"
                 + " thing, and nothing would ever fail this test");
+    }
+
+    /**
+     * The aliases were derived from something, so the widening above is not a
+     * no-op.
+     *
+     * <p>An empty set makes {@link #reachesTheirFolder(String)} exactly the
+     * literal scan it replaced, and nothing would ever say so.
+     */
+    @Test
+    void theProductsOwnNamesForTheirFolderWereFound() {
+        assertFalse(FOLDER_ALIASES.isEmpty(),
+                "no public constant of LaunchFile was found to carry .claude as a path, so"
+                        + " a source reaching the folder through one would not be scanned at"
+                        + " all — the derivation is looking at the wrong class");
+        List<String> theirs = LaunchFile.LOCATIONS.stream()
+                .filter(location -> location.contains(".claude")).toList();
+        assertFalse(theirs.isEmpty(), "the reader searches no location of theirs at all,"
+                + " so this whole class is guarding a rule about nothing");
+        for (String location : theirs) {
+            assertTrue(FOLDER_ALIASES.stream().anyMatch(alias ->
+                            location.equals(constant(alias))),
+                    "the reader resolves " + location + ", and no public constant of that"
+                            + " value is in " + FOLDER_ALIASES + " — a source could reach"
+                            + " their folder through a name this scan does not know");
+        }
+        for (String alias : FOLDER_ALIASES) {
+            assertTrue(reachesTheirFolder("Path p = projectRoot.resolve(LaunchFile."
+                            + alias + ");"),
+                    "a source reaching the folder through " + alias + " is not seen as"
+                            + " reaching it — the whole-word pattern does not match its own"
+                            + " alias");
+        }
+    }
+
+    /**
+     * One public constant of {@link LaunchFile} by name, when it is a string.
+     *
+     * @param name the field name
+     * @return its value, or null when it is not a public static string
+     */
+    private static String constant(String name) {
+        try {
+            Object value = LaunchFile.class.getField(name).get(null);
+            return value instanceof String text ? text : null;
+        } catch (ReflectiveOperationException notThere) {
+            return null;
+        }
     }
 
     /** The allowlist is made of methods that exist, so it cannot drift into fiction. */
@@ -205,13 +295,19 @@ class ClaudeFolderStaysTheirsDriftTest {
         return found;
     }
 
-    /** And the ones that name it are the two that were decided, not a growing set. */
+    /**
+     * And the ones that reach it are the two that were decided, not a growing set.
+     *
+     * <p>Reaching, not spelling: a source that resolves {@code LaunchFile.THEIRS}
+     * has reached into their folder as surely as one that types the name, so it
+     * belongs on this list too or it belongs nowhere.
+     */
     @Test
-    void onlyTheTwoDecidedSourcesNameTheClaudeFolder() throws IOException {
+    void onlyTheTwoDecidedSourcesReachTheClaudeFolder() throws IOException {
         List<String> naming = new ArrayList<>();
         for (Path source : mainSources()) {
-            if (stripComments(Files.readString(source, StandardCharsets.UTF_8))
-                    .contains(".claude")) {
+            if (reachesTheirFolder(
+                    stripComments(Files.readString(source, StandardCharsets.UTF_8)))) {
                 naming.add(relative(source));
             }
         }
@@ -220,9 +316,20 @@ class ClaudeFolderStaysTheirsDriftTest {
                         + " refactor — take it deliberately and add it here: " + naming);
     }
 
-    /** One parser in the product, as the owner asked: a second Java reader is nonsense. */
+    /**
+     * One parser in the product, as the owner asked: a second Java reader is
+     * nonsense.
+     *
+     * <p><b>What it actually looks for is the quoted key {@code
+     * "configurations"}</b>, not "reads the format" — the name says so because
+     * the two are not the same claim. A source that builds the key at runtime,
+     * spells it with escaped quotes, or reaches the format through a schema or a
+     * generated binding is a reader this scan does not see. It is the cheap check
+     * that catches the way a second parser actually gets written — somebody
+     * copies the first one — and it is not a proof that no other exists.
+     */
     @Test
-    void exactlyOneSourceReadsTheLaunchFormat() throws IOException {
+    void exactlyOneSourceSpellsTheQuotedConfigurationsKey() throws IOException {
         List<String> parsers = new ArrayList<>();
         for (Path source : mainSources()) {
             if (stripComments(Files.readString(source, StandardCharsets.UTF_8))
@@ -255,9 +362,19 @@ class ClaudeFolderStaysTheirsDriftTest {
      * page served by a Python script with no JVM anywhere near it, so "call the
      * one parser" is not available to it. The rule it does have to keep is the
      * order, and {@code cockpit/test_serve.py} pins that.
+     *
+     * <p><b>The limit is in the name: it finds the quoted key, not readers.</b>
+     * The scan is {@code contains("\"configurations\"")} over the file's text, so
+     * three shapes walk past it — a key built at runtime, a key spelled with
+     * escaped quotes (a Java string holding this JSON does exactly that), and, in
+     * the Python and JavaScript files this walk also reads, a key in single
+     * quotes. Widening it to those would need a per-language scan of string
+     * literals, which is a mechanism and not a regex; until somebody builds one,
+     * this is a guard against the copy-paste second parser and not against a
+     * determined one.
      */
     @Test
-    void everySourceInTheRepositoryThatReadsTheLaunchFormatIsOneOfThese()
+    void everySourceInTheRepositoryThatSpellsTheQuotedConfigurationsKeyIsOneOfThese()
             throws IOException {
         List<String> readers = new ArrayList<>();
         int scanned = 0;
@@ -335,9 +452,22 @@ class ClaudeFolderStaysTheirsDriftTest {
      * follows. That is the safe direction for a door that is supposed to be shut
      * — a false red sends somebody to look, a false green ships the decision the
      * owner has not made.
+     *
+     * <p><b>The SEED is not over-approximated, and that is the limit in the
+     * name.</b> The walk starts at the sources {@link #spellsTheToolInterface}
+     * recognises, which is three hand-typed spellings — {@code Tool.ToolContext},
+     * {@code implements Tool}, {@code extends Tool}. It is a hand-list, with all
+     * that means: a tool that is registered by annotation, produced by a factory,
+     * or declared in a resource names none of the three, is not in the frontier,
+     * and everything it reaches is invisible to this test no matter how many hops
+     * the walk takes. Deriving the seed from the real implementors of {@code
+     * Tool} needs the type on this classpath and a walk of the class file rather
+     * than the text, which is a mechanism nobody has built yet. The floor below
+     * catches an EMPTY frontier; it cannot catch a seed that is merely short.
      */
     @Test
-    void noAgentToolCanReachTheWriter() throws IOException {
+    void nothingReachableFromASourceThatSpellsTheToolInterfaceTouchesTheWriter()
+            throws IOException {
         Map<String, String> code = new LinkedHashMap<>();
         for (Path source : mainSources()) {
             String name = source.getFileName().toString().replace(".java", "");
@@ -347,7 +477,7 @@ class ClaudeFolderStaysTheirsDriftTest {
         Map<String, String> reachedBy = new LinkedHashMap<>();
         List<String> frontier = new ArrayList<>();
         for (Map.Entry<String, String> source : code.entrySet()) {
-            if (buildsTools(source.getValue())) {
+            if (spellsTheToolInterface(source.getValue())) {
                 reachedBy.put(source.getKey(), source.getKey());
                 frontier.add(source.getKey());
             }
@@ -376,8 +506,14 @@ class ClaudeFolderStaysTheirsDriftTest {
                         + " classes are reachable from a tool at all)");
     }
 
-    /** Whether one source is somewhere a tool is defined. */
-    private static boolean buildsTools(String code) {
+    /**
+     * Whether one source spells the tool interface — the SEED of the walk above,
+     * and a hand-list of three spellings rather than a fact about the type.
+     *
+     * @param code the source with its comments already stripped
+     * @return true when it names the interface in one of the three shapes
+     */
+    private static boolean spellsTheToolInterface(String code) {
         return code.contains("Tool.ToolContext") || code.contains("implements Tool")
                 || code.contains("extends Tool");
     }
@@ -424,6 +560,70 @@ class ClaudeFolderStaysTheirsDriftTest {
     /** The path as this test reports it. */
     private static String relative(Path source) {
         return repoRoot().relativize(source).toString();
+    }
+
+    /**
+     * Every public static field of {@link LaunchFile} that carries their folder
+     * as a path, by name.
+     *
+     * @return the alias names, derived from the real values
+     */
+    private static Set<String> folderAliases() {
+        Set<String> names = new java.util.LinkedHashSet<>();
+        for (java.lang.reflect.Field field : LaunchFile.class.getFields()) {
+            if (!Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            try {
+                if (isTheirFolderAsAPath(field.get(null))) {
+                    names.add(field.getName());
+                }
+            } catch (IllegalAccessException notPublicAfterAll) {
+                // getFields() only returns public members, so this cannot happen;
+                // a field that somehow refuses to be read is simply not an alias.
+                continue;
+            }
+        }
+        return names;
+    }
+
+    /**
+     * Whether one constant's value is a PATH into their folder rather than prose
+     * that mentions it.
+     *
+     * @param value the field's value
+     * @return true when it, or something it holds, is a whitespace-free path
+     *         naming the folder
+     */
+    private static boolean isTheirFolderAsAPath(Object value) {
+        if (value instanceof String text) {
+            return text.contains(".claude")
+                    && text.chars().noneMatch(Character::isWhitespace);
+        }
+        if (value instanceof java.util.Collection<?> many) {
+            return many.stream().anyMatch(ClaudeFolderStaysTheirsDriftTest
+                    ::isTheirFolderAsAPath);
+        }
+        return false;
+    }
+
+    /**
+     * Whether one source reaches their folder at all — by spelling it, or through
+     * one of the product's own constants for it.
+     *
+     * @param code the source with its comments already stripped
+     * @return true when the source is under the rule
+     */
+    private static boolean reachesTheirFolder(String code) {
+        if (code.contains(".claude")) {
+            return true;
+        }
+        for (Pattern alias : ALIAS_WORDS) {
+            if (alias.matcher(code).find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Removes block and line comments so prose cannot stand in for code. */
