@@ -44,3 +44,34 @@ export function formatBytes(bytes: number): string {
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} kB`;
   return `${bytes} B`;
 }
+
+/**
+ * Whether the server's hide rule is what refused this path.
+ *
+ * The check is per SEGMENT and on the prefix, not on "contains a dot": almost
+ * every file has a dot in its name, and the tree hands out paths whose hidden
+ * segment is a parent (`.claude/launch.json`).
+ */
+function hiddenSegment(path: string): boolean {
+  return path.split("/").some((segment) => segment.startsWith("."));
+}
+
+/**
+ * The note a failed preview shows, as a dict key.
+ *
+ * Card 351 split the server's one predicate in two: the tree lists dot-entries
+ * and the content endpoint still refuses their bytes. That leaves the operator
+ * clicking a name he can see and getting a 404 — which is the same 404 a
+ * deleted file gives, so without this the pane would explain a deliberate
+ * refusal as a missing file. Only a 404 reads as the hide rule; a dead fetch
+ * arrives as 0 and stays what it is.
+ *
+ * @param status the HTTP status the fetch rejected with, or 0 for a throw
+ * @param path the workspace-relative path that was asked for
+ */
+export function previewNoteKey(status: number, path: string): string {
+  if (status === 415) return "ws.binary";
+  if (status === 413) return "ws.tooBig";
+  if (status === 404 && hiddenSegment(path)) return "ws.hidden";
+  return "ws.loadError";
+}

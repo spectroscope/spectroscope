@@ -10,7 +10,7 @@ import { Markdown } from "../components/Markdown";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { hlLangForPath, tokenize } from "./highlight";
-import { fileUrl, formatBytes, previewKind } from "./preview";
+import { fileUrl, formatBytes, previewKind, previewNoteKey } from "./preview";
 import {
   closeAllFiles,
   closeFile,
@@ -166,15 +166,7 @@ function Preview({
     );
   }
   if (error !== null) {
-    return (
-      <p className="ws-note">
-        {error === 415
-          ? t(lang, "ws.binary")
-          : error === 413
-            ? t(lang, "ws.tooBig")
-            : t(lang, "ws.loadError")}
-      </p>
-    );
+    return <p className="ws-note">{t(lang, previewNoteKey(error, path))}</p>;
   }
   if (text === null) {
     return <p className="ws-note">{t(lang, "ws.loading")}</p>;
@@ -222,15 +214,7 @@ function SourcePane({
   }, [path, sessionId, prospective]);
 
   if (error !== null) {
-    return (
-      <p className="ws-note">
-        {error === 415
-          ? t(lang, "ws.binary")
-          : error === 413
-            ? t(lang, "ws.tooBig")
-            : t(lang, "ws.loadError")}
-      </p>
-    );
+    return <p className="ws-note">{t(lang, previewNoteKey(error, path))}</p>;
   }
   if (text === null) return <p className="ws-note">{t(lang, "ws.loading")}</p>;
   return <SourceView path={path} text={text} />;

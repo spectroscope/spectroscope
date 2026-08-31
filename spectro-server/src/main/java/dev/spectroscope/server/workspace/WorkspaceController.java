@@ -24,8 +24,8 @@ import java.util.function.Supplier;
 /**
  * Phase 5: the workspace panel's backend — a read-only, sandboxed view of the
  * agent's working directory. {@code GET /api/files} returns the tree of the
- * requesting SESSION's workspace (hidden files and build/dependency
- * directories skipped, capped); {@code GET /api/file} serves one file for the
+ * requesting SESSION's workspace (build output, dependency caches and Finder's
+ * droppings pruned, capped); {@code GET /api/file} serves one file for the
  * preview pane. Both require a session that has actually resolved a workspace
  * and answer 409 otherwise, see {@link #rootFor}.
  *
@@ -91,15 +91,67 @@ public class WorkspaceController {
      * The tree plus its honesty flag — a capped listing says so.
      *
      * @param root the display name of the workspace root directory
-     * @param truncated {@code true} when the entry budget ran out — the tree is incomplete
+     * @param truncated {@code true} when the listing is not known to be whole —
+     *                  the entry budget ran out, or a directory held more than a
+     *                  cursor keeps and what was kept ran out, see {@link #walk}
      * @param entries the top-level nodes, directories first, names case-insensitive
      */
     public record FilesResponse(String root, boolean truncated, List<FileNode> entries) {}
 
-    private static final Set<String> IGNORED_DIRS =
-            Set.of(".git", "build", "node_modules", "target", "dist", "out");
+    /**
+     * Build outputs, dependency caches and one platform dropping: the names the
+     * tree never shows and the content endpoint never serves. Since card 351
+     * split the two questions this is the tree's ONLY filter, so it is not
+     * private — {@code WorkspaceControllerPrunedNamesTest} reads it and demands
+     * that every name in here is measured through the real controller. A name
+     * added below and nowhere else turns that guard red on purpose.
+     *
+     * <p>{@code .DS_Store} is a file, not a directory, and it is on the list
+     * deliberately: Finder writes one into every folder it has ever displayed,
+     * so it is noise in every directory at once and it costs a budget entry in
+     * each of them. The constant is named for what it does rather than for what
+     * its members are.</p>
+     */
+    static final Set<String> PRUNED_NAMES = Set.of(
+            ".git", "build", "node_modules", "target", "dist", "out",
+            ".venv", ".next", ".tox", ".gradle", ".mypy_cache", ".pytest_cache",
+            ".DS_Store");
     private static final int MAX_DEPTH = 8;
-    private static final int MAX_ENTRIES = 2000;
+    static final int MAX_ENTRIES = 2000;
+    /**
+     * How much of one directory a {@link Cursor} keeps hold of. The fair walk
+     * has a whole LEVEL of directories open at once where the old recursion had
+     * one per depth, so without a bound a workspace with a few 50k-entry
+     * folders would retain far more than it ever lists.
+     *
+     * <p>Against {@link #PRUNED_NAMES} the bound costs the listing nothing, and
+     * two of its three terms carry that: a single directory can contribute at
+     * most {@link #MAX_ENTRIES} nodes because that is the whole budget, and at
+     * most {@link #PRUNED_NAMES}{@code .size()} of the kept entries can be
+     * thrown away by that filter (names are unique inside a directory). Both
+     * were bitten in the run that wrote this line — cutting either one turns
+     * {@code theBoundOnWhatOneDirectoryHoldsCostsTheListingNothing} red.</p>
+     *
+     * <p>The {@code + 1} is slack, and nothing measures it any more. It was put
+     * here so a cut directory that could fill the budget still had one real
+     * entry left over for {@code truncated} to trip on; {@link #walk} now
+     * records the cut itself, so dropping the {@code + 1} leaves the whole
+     * workspace suite green — measured in this run, not remembered. It stays as
+     * headroom, and this paragraph is the limit of what can be claimed for it.</p>
+     *
+     * <p>The paragraph above used to read "nothing is lost", full stop, and
+     * that reached past its evidence. {@link #PRUNED_NAMES} is not the only
+     * filter running after the cut: {@link Cursor#peek} also drops a symlink
+     * that leaves the workspace, and THAT one has no bound — a directory whose
+     * head is nothing but links out can have every kept entry thrown away while
+     * the real files past the cut are never looked at and the budget is never
+     * touched. Where the bound is not free, {@link #walk} says so instead of
+     * serving a short listing as a whole one.</p>
+     *
+     * <p>Package-private because {@code WorkspaceControllerTest} builds its
+     * fixture off these two numbers instead of typing them out again.</p>
+     */
+    static final int CURSOR_KEEP = MAX_ENTRIES + PRUNED_NAMES.size() + 1;
     private static final long MAX_TEXT_BYTES = 2L * 1024 * 1024;
     private static final long MAX_IMAGE_BYTES = 25L * 1024 * 1024;
     /** Every preview document renders in an opaque origin; scripts run isolated. */
@@ -160,8 +212,11 @@ public class WorkspaceController {
     }
 
     /**
-     * {@code GET /api/files}: the whole workspace tree in one response — hidden
-     * and ignored directories skipped, capped by depth and entry budget.
+     * {@code GET /api/files}: the whole workspace tree in one response —
+     * {@link #PRUNED_NAMES} left out, capped by depth and by an entry budget the
+     * directories share in turn, see {@link #walk}. Dot-entries are listed and
+     * their contents are still refused, see {@link #omittedFromTree} against
+     * {@link #refusedForReading}.
      *
      * @param session the session whose workspace is asked for; ignored entirely
      *                under {@code scope=prospective}
@@ -201,11 +256,10 @@ public class WorkspaceController {
         } catch (IOException gone) {
             return ResponseEntity.notFound().build();
         }
-        int[] budget = {MAX_ENTRIES};
-        List<FileNode> entries = list(base, "", 0, budget, realBase);
+        Walk walk = walk(base, realBase);
         return ResponseEntity.ok(new FilesResponse(
                 base.getFileName() == null ? base.toString() : base.getFileName().toString(),
-                budget[0] <= 0, entries));
+                walk.truncated(), walk.entries()));
     }
 
     /**
@@ -274,69 +328,265 @@ public class WorkspaceController {
     }
 
     /**
-     * Depth-first directory walk under the shared entry budget — directories
-     * first, names case-insensitive, unreadable directories degrade to empty.
+     * The finished tree plus the honest verdict on whether anything was cut.
      *
-     * @param dir the directory to list
-     * @param relPrefix the root-relative path of {@code dir} ("" at the root)
-     * @param depth current recursion depth — beyond MAX_DEPTH the walk stops
-     * @param budget single-element countdown shared across the whole walk — once
-     *               spent, every remaining branch is cut
+     * @param entries the top-level nodes
+     * @param truncated {@code true} when the walk knows it left something out:
+     *                  a real entry that had no budget left, or a directory
+     *                  whose kept head ran dry after {@link #CURSOR_KEEP} had
+     *                  cut it. A listing that exactly fills the budget with
+     *                  nothing more to show is complete and says so
+     */
+    private record Walk(List<FileNode> entries, boolean truncated) {}
+
+    /** A mutable node while the walk runs; {@link #freeze} turns it into the record. */
+    private static final class Draft {
+        private final String name;
+        private final String rel;
+        private final boolean dir;
+        private final long size;
+        private final List<Draft> children = new ArrayList<>();
+
+        private Draft(String name, String rel, boolean dir, long size) {
+            this.name = name;
+            this.rel = rel;
+            this.dir = dir;
+            this.size = size;
+        }
+    }
+
+    /**
+     * One directory part-way through the walk: its children already sorted, a
+     * one-entry lookahead so the budget is checked BEFORE an entry is consumed,
+     * and the draft node the children hang under.
+     */
+    private static final class Cursor {
+        private final String relPrefix;
+        private final int depth;
+        private final Draft parent;
+        private final List<Path> children;
+        /** Whether {@link #CURSOR_KEEP} kept only the head of this directory. */
+        private final boolean cut;
+        private int at;
+        private Path ready;
+
+        private Cursor(String relPrefix, int depth, Draft parent, List<Path> children, boolean cut) {
+            this.relPrefix = relPrefix;
+            this.depth = depth;
+            this.parent = parent;
+            this.children = children;
+            this.cut = cut;
+        }
+
+        /** The next entry that belongs in the listing, without spending it. */
+        private Path peek(Path realBase) {
+            while (ready == null && at < children.size()) {
+                Path candidate = children.get(at++);
+                if (omittedFromTree(candidate.getFileName().toString())) {
+                    continue;
+                }
+                if (Files.isSymbolicLink(candidate) && !insideRealBase(candidate, realBase)) {
+                    continue; // a link out of the workspace is not part of the workspace
+                }
+                ready = candidate;
+            }
+            return ready;
+        }
+
+        private Path take() {
+            Path taken = ready;
+            ready = null;
+            return taken;
+        }
+    }
+
+    /**
+     * The workspace tree under one shared entry budget, spent SHALLOWEST FIRST
+     * and in turn.
+     *
+     * <p>It walked depth-first until card 351's re-review, and that only worked
+     * while dot-entries were invisible. A dot name sorts ahead of every letter
+     * ('.' is 0x2E), so the moment they were listed a dependency cache sitting
+     * beside the operator's source moved to the head of the walk and drank the
+     * whole budget before his own files were reached: measured on a fixture of
+     * one 2500-file cache next to a four-file {@code src}, the top level came
+     * back as ONE truncated entry. That is the opposite of what the card was
+     * for, and no addition to {@link #PRUNED_NAMES} fixes it, because the cache
+     * that starves the tree is always the one nobody has listed yet.</p>
+     *
+     * <p>So the budget is shared fairly instead of first-come. The walk goes
+     * level by level, and inside a level every open directory takes ONE entry
+     * per round. A directory can therefore only ever outgrow its siblings by
+     * one entry per round, and depth is spent last: whatever the cut costs, it
+     * costs it at the bottom of the tree rather than at the operator's own top
+     * level. {@code truncated} still says so.</p>
+     *
+     * <p>The two halves need separate measuring, because they save different
+     * things. Level-by-level saves the operator's TOP level, and
+     * {@code aHugeCacheDirectoryCannotStarveTheOperatorsOwnFiles} holds it. The
+     * turn-taking saves a small folder from the big folder BESIDE it, and only
+     * {@code siblingsAtOneLevelShareTheBudgetInTurn} holds that: replacing the
+     * round robin with a drain leaves the starvation test above green, measured
+     * on the whole module in the run that added the second test.</p>
+     *
+     * @param base the workspace root to list
      * @param realBase the canonical workspace root, so a link out of the tree is
      *                 left out of the listing instead of naming files the
      *                 content endpoint then refuses
-     * @return the child nodes of {@code dir}, possibly cut short by the caps
+     * @return the top-level nodes, and whether anything was left out — for want
+     *         of budget, or because {@link #CURSOR_KEEP} had cut a directory
+     *         whose kept head then ran dry
      */
-    private List<FileNode> list(Path dir, String relPrefix, int depth, int[] budget, Path realBase) {
-        if (depth > MAX_DEPTH || budget[0] <= 0) {
-            return List.of();
+    private Walk walk(Path base, Path realBase) {
+        Draft root = new Draft("", "", true, 0);
+        List<Cursor> level = new ArrayList<>();
+        openInto(base, "", 0, root, level);
+        int budget = MAX_ENTRIES;
+        boolean truncated = false; // what the response admits
+        boolean spent = false;     // what stops the walk: the budget, nothing else
+
+        while (!level.isEmpty() && !spent) {
+            List<Cursor> deeper = new ArrayList<>();
+            boolean served = true;
+            while (served && !spent) {
+                served = false;
+                for (Cursor cursor : level) {
+                    Path child = cursor.peek(realBase);
+                    if (child == null) {
+                        if (cursor.cut) {
+                            // Only the head of this directory was kept, and the
+                            // filters in peek have now emptied it: what sat past
+                            // the cut was never looked at. Budget or no budget,
+                            // this listing is short and must not pass as whole.
+                            truncated = true;
+                        }
+                        continue;
+                    }
+                    if (budget <= 0) {
+                        truncated = true; // something real is left standing
+                        spent = true;
+                        break;
+                    }
+                    budget--;
+                    served = true;
+                    cursor.take();
+                    String name = child.getFileName().toString();
+                    String rel = cursor.relPrefix.isEmpty() ? name : cursor.relPrefix + "/" + name;
+                    if (Files.isDirectory(child)) {
+                        Draft node = new Draft(name, rel, true, 0);
+                        cursor.parent.children.add(node);
+                        if (cursor.depth + 1 <= MAX_DEPTH) {
+                            openInto(child, rel, cursor.depth + 1, node, deeper);
+                        }
+                    } else {
+                        long size;
+                        try {
+                            size = Files.size(child);
+                        } catch (IOException gone) {
+                            size = 0;
+                        }
+                        cursor.parent.children.add(new Draft(name, rel, false, size));
+                    }
+                }
+            }
+            level = deeper;
         }
+        return new Walk(freeze(root.children), truncated);
+    }
+
+    /**
+     * Reads one directory in listing order — directories first, names
+     * case-insensitive — and adds a cursor over it to {@code level}. An
+     * unreadable directory degrades to no cursor, i.e. to an empty folder.
+     *
+     * <p>Only the first {@link #CURSOR_KEEP} entries are held, and the cursor
+     * is told when that happened, because a cut head that later empties is the
+     * one way this walk can be short without the budget noticing.</p>
+     *
+     * @param dir the directory to open
+     * @param relPrefix the root-relative path of {@code dir} ("" at the root)
+     * @param depth the depth of {@code dir} itself
+     * @param parent the draft node the entries hang under
+     * @param level the cursor list for this level, appended to
+     */
+    private static void openInto(Path dir, String relPrefix, int depth, Draft parent, List<Cursor> level) {
         List<Path> children;
         try (var stream = Files.list(dir)) {
             children = new ArrayList<>(stream.toList());
         } catch (IOException unreadable) {
-            return List.of();
+            return;
         }
         children.sort(Comparator
                 .comparing((Path p) -> !Files.isDirectory(p))
                 .thenComparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER));
-        List<FileNode> out = new ArrayList<>();
-        for (Path child : children) {
-            String name = child.getFileName().toString();
-            if (skipped(name)) {
-                continue;
-            }
-            if (Files.isSymbolicLink(child) && !insideRealBase(child, realBase)) {
-                continue; // a link out of the workspace is not part of the workspace
-            }
-            if (budget[0]-- <= 0) {
-                break;
-            }
-            String rel = relPrefix.isEmpty() ? name : relPrefix + "/" + name;
-            if (Files.isDirectory(child)) {
-                out.add(new FileNode(name, rel, true, 0, list(child, rel, depth + 1, budget, realBase)));
-            } else {
-                long size;
-                try {
-                    size = Files.size(child);
-                } catch (IOException gone) {
-                    size = 0;
-                }
-                out.add(new FileNode(name, rel, false, size, List.of()));
-            }
+        boolean cut = children.size() > CURSOR_KEEP;
+        if (cut) {
+            children = new ArrayList<>(children.subList(0, CURSOR_KEEP)); // copied, not a view
         }
-        return out;
+        if (!children.isEmpty()) {
+            level.add(new Cursor(relPrefix, depth, parent, children, cut));
+        }
+    }
+
+    /** Turns the finished drafts into the immutable records the response carries. */
+    private static List<FileNode> freeze(List<Draft> drafts) {
+        List<FileNode> out = new ArrayList<>(drafts.size());
+        for (Draft draft : drafts) {
+            out.add(new FileNode(draft.name, draft.rel, draft.dir, draft.size, freeze(draft.children)));
+        }
+        return List.copyOf(out);
     }
 
     /**
-     * The hide rule shared by tree AND content: dot-files and build/dependency
-     * directories never leave the server (the .env with the API key answers 404).
+     * What the TREE leaves out: {@link #PRUNED_NAMES} and nothing else.
+     * {@code .git} is on that list by name, so the split below does not hand
+     * the operator thousands of loose objects.
+     *
+     * <p>Dot-entries are listed (card 351). One predicate used to answer both
+     * questions this class asks — may the operator SEE this name, and may he
+     * READ these bytes — and the answer to the first was collateral damage from
+     * the second. He could not tell whether a folder held a
+     * {@code .claude/launch.json}, so an empty file view read as a regression
+     * rather than as an empty folder, while the agent beside him carries no
+     * dot-file rule at all and reads that file whenever it likes.</p>
+     *
+     * <p>Always on, with no preference behind it: a switch would buy persisted
+     * state for a difference the operator takes in at a glance, and if some
+     * folder's dot-noise does matter the answer is a name on
+     * {@link #PRUNED_NAMES}. Three counts stood here — the growth on the
+     * owner's folder, and this repository's listing before and after — and the
+     * re-review was right to strike them. Two of the three were off by the time
+     * anyone re-ran them, and the argument they carried ("the cost is only a
+     * different cut point") is now made structurally instead: {@link #walk}
+     * spends the budget shallowest-first and one entry per directory per round,
+     * so the cut lands at the bottom of the tree whatever the counts are, and
+     * {@code WorkspaceControllerTest} measures that rather than asserting it.</p>
      *
      * @param name one bare path segment to test
-     * @return {@code true} when the segment must not be exposed
+     * @return {@code true} when the segment does not belong in the listing
      */
-    private static boolean skipped(String name) {
-        return name.startsWith(".") || IGNORED_DIRS.contains(name);
+    private static boolean omittedFromTree(String name) {
+        return PRUNED_NAMES.contains(name);
+    }
+
+    /**
+     * What the CONTENT endpoint refuses: every dot segment on top of the
+     * ignored directories, so the {@code .env} with the API key still answers
+     * 404 whether or not its name is now visible.
+     *
+     * <p>This deliberately makes the tree list names the preview will not open,
+     * which is the shape {@link #scopeOf} calls half an answer for the two
+     * roots. The difference is that there it was a drift nobody chose; here it
+     * is the smallest of the three shapes card 351 puts to the owner, and
+     * whether any dot-file becomes readable is his call and not this change's.
+     * The preview says which of the two it is hitting rather than reporting a
+     * missing file, see {@code previewNoteKey} in the web pane.</p>
+     *
+     * @param name one bare path segment to test
+     * @return {@code true} when the segment's bytes must not leave the server
+     */
+    private static boolean refusedForReading(String name) {
+        return name.startsWith(".") || PRUNED_NAMES.contains(name);
     }
 
     // ---- one file for the preview ----------------------------------------------
@@ -385,9 +635,11 @@ public class WorkspaceController {
         } catch (IOException outside) {
             return ResponseEntity.notFound().build();
         }
-        // Defense in depth: what the tree hides, the content endpoint refuses.
+        // The refusal the tree no longer makes on the operator's behalf: every
+        // segment, not just the last, so a readable name under a hidden folder
+        // stays shut. The tree hands out exactly such paths now.
         for (Path segment : realBase.relativize(requested)) {
-            if (skipped(segment.toString())) {
+            if (refusedForReading(segment.toString())) {
                 return ResponseEntity.notFound().build();
             }
         }

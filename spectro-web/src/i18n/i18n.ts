@@ -1018,6 +1018,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "ws.binary": { de: "Binärdatei — keine Vorschau.", en: "Binary file — no preview." },
   "ws.tooBig": { de: "Zu groß für die Vorschau.", en: "Too large for the preview." },
   "ws.loadError": { de: "Datei nicht ladbar.", en: "Could not load the file." },
+  // Card 351: the tree lists dot-entries whose contents the server still keeps.
+  // Without this the refusal wears the missing-file wording, which explains a
+  // rule the operator could act on as a file that is not there.
+  "ws.hidden": {
+    de: "Versteckte Datei — der Server gibt ihren Inhalt nicht heraus.",
+    en: "Hidden file — the server does not serve its contents.",
+  },
   "ws.unreachable": {
     de: "Server nicht erreichbar — kein Dateibaum.",
     en: "Server unreachable — no file tree.",
