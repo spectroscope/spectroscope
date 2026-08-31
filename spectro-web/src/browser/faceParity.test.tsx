@@ -25,6 +25,7 @@ import {
   type DesktopFaceViewProps,
   type WebFaceViewProps,
 } from "./BrowserSegment";
+import { fenceNote, type LoopbackGate } from "./fenceNote";
 
 /** Equivalent states: one page open, both faces live and driving it. */
 const URL = "https://example.test/";
@@ -44,6 +45,7 @@ const webProps: WebFaceViewProps = {
   playing: null,
   canGoBack: true,
   canGoForward: true,
+  allowLocalhost: false,
   send: () => {},
   onDraft: () => {},
   onPlay: () => {},
@@ -60,6 +62,7 @@ const desktopProps: DesktopFaceViewProps = {
   playing: null,
   canGoBack: true,
   canGoForward: true,
+  allowLocalhost: false,
   send: () => {},
   onDraft: () => {},
   onPlay: () => {},
@@ -129,5 +132,65 @@ describe("the two faces carry the same control row — compared, not listed", ()
     expect(sharedRowLabels.length, "NavControls declares no labels — the parse missed").toBeGreaterThan(0);
     expect(web).toEqual(expect.arrayContaining(sharedRowLabels));
     expect(desktop).toEqual(expect.arrayContaining(sharedRowLabels));
+  });
+});
+
+/**
+ * The fence note as ONE face renders it, read out of the markup.
+ *
+ * <p>Not the string the note module composes — that would compare the module
+ * with itself. This reads what the reader would read, so a face that stopped
+ * passing its own fence state down, or rendered a second hand-typed sentence,
+ * is caught here.
+ */
+function footer(markup: string): string {
+  const match = /<p class="browser-fence">([\s\S]*?)<\/p>/.exec(markup);
+  expect(match, "the face renders no fence note at all").not.toBeNull();
+  return (match as RegExpExecArray)[1];
+}
+
+// Card 355 criterion 5. The note is rendered at two sites, one per face, and
+// card 344 measured on this very file what two hand-typed lists are worth: a
+// control on one face and not the other stayed green in both suites. So the
+// faces are COMPARED. Bitten in the direction that matters: pinning one face's
+// call to a literal gate leaves it identical for that gate and red for the
+// others, which is exactly the drift a pair of lists would have missed.
+describe("both faces say the same thing about the fence — compared, not listed", () => {
+  const gates: LoopbackGate[] = [true, false, null];
+
+  it("renders one identical note per fence state, whichever face is live", () => {
+    for (const gate of gates) {
+      const web = footer(renderToStaticMarkup(<WebFaceView {...webProps} allowLocalhost={gate} />));
+      const desktop = footer(
+        renderToStaticMarkup(<DesktopFaceView {...desktopProps} allowLocalhost={gate} />),
+      );
+      expect(web, `the faces disagree with allowLocalhost ${String(gate)}`).toEqual(desktop);
+    }
+  });
+
+  it("carries the composed note and not a sentence of its own", () => {
+    // Two faces both rendering an empty paragraph would satisfy the comparison
+    // above — the same slack card 344 found here and closed. The floor is
+    // derived from the composer both faces call.
+    const lang = currentLang();
+    for (const gate of gates) {
+      const web = footer(renderToStaticMarkup(<WebFaceView {...webProps} allowLocalhost={gate} />));
+      expect(web.length, `the note is empty with allowLocalhost ${String(gate)}`).toBeGreaterThan(80);
+      expect(web).toContain(fenceNote(lang, gate).slice(0, 40));
+    }
+  });
+
+  it("changes with the fence state on both faces, so neither is pinned to a literal", () => {
+    // The parity above is satisfied by two faces that BOTH ignore the gate —
+    // which is the defect card 355 was written about, wearing parity's name.
+    for (const face of [
+      (gate: LoopbackGate) =>
+        footer(renderToStaticMarkup(<WebFaceView {...webProps} allowLocalhost={gate} />)),
+      (gate: LoopbackGate) =>
+        footer(renderToStaticMarkup(<DesktopFaceView {...desktopProps} allowLocalhost={gate} />)),
+    ]) {
+      const seen = new Set(gates.map((g) => face(g)));
+      expect(seen.size, "the face reads the same in all three fence states").toBe(3);
+    }
   });
 });

@@ -61,6 +61,7 @@ import {
   type ViewState,
   type WebFaceMode,
 } from "./liveView";
+import { fenceNote, useLoopbackGate, type LoopbackGate } from "./fenceNote";
 import {
   isDesktopShell,
   panelNoteKey,
@@ -132,6 +133,10 @@ export function BrowserSegment(props: {
   const [playing, setPlaying] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const cue = useBrowserActionCue();
+  // What the footer needs to be true about THIS process rather than about
+  // browsers in general (card 355). Read here, once, and handed to whichever
+  // face renders — the note is one sentence and must not become two.
+  const loopback = useLoopbackGate();
 
   // The rectangle (desktop face). Measured from the hole itself rather than
   // computed from the layout, because the layout is the sidebar's width plus
@@ -388,6 +393,7 @@ export function BrowserSegment(props: {
         notice={notice}
         launch={launch}
         playing={playing}
+        allowLocalhost={loopback}
         send={send}
         onDraft={setDraft}
         onPlay={onPlay}
@@ -410,6 +416,7 @@ export function BrowserSegment(props: {
       notice={notice}
       launch={launch}
       playing={playing}
+      allowLocalhost={loopback}
       holeRef={hole}
       send={send}
       onDraft={setDraft}
@@ -451,6 +458,9 @@ export interface WebFaceViewProps {
    *  say" — card 344 (c). A null never disables; see ViewState. */
   canGoBack: boolean | null;
   canGoForward: boolean | null;
+  /** The fence's loopback opt-in, for the footer note (card 355) — null while
+   *  the settings read is in flight or after it failed. */
+  allowLocalhost: LoopbackGate;
   send(frame: Record<string, unknown>): void;
   onDraft(next: string | null): void;
   onPlay(name: string): void;
@@ -655,7 +665,10 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
           {notice}
         </p>
       )}
-      <p className="browser-fence">{t(lang, "browser.fenceNote")}</p>
+      {/* Card 355: composed for THIS process, not recited. Both faces render
+          this same call — faceParity.test.tsx compares them rather than
+          listing them twice. */}
+      <p className="browser-fence">{fenceNote(lang, props.allowLocalhost)}</p>
     </section>
   );
 }
@@ -991,6 +1004,9 @@ export interface DesktopFaceViewProps {
    *  say" — card 344 (c). A null never disables; see ViewState. */
   canGoBack: boolean | null;
   canGoForward: boolean | null;
+  /** The fence's loopback opt-in, for the footer note (card 355) — null while
+   *  the settings read is in flight or after it failed. */
+  allowLocalhost: LoopbackGate;
   /** Where BrowserSegment measures the pane's rectangle from. */
   holeRef?: React.Ref<HTMLDivElement>;
   send(frame: Record<string, unknown>): void;
@@ -1086,8 +1102,11 @@ export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element 
       {/* What the fence promises, where the OPERATOR can read it. A review on
           2026-08-13 found the settings text promising a fence that a redirect
           walked around; the hole is closed, and what is still outside anybody's
-          reach is said here rather than only in a source comment. */}
-      <p className="browser-fence">{t(lang, "browser.fenceNote")}</p>
+          reach is said here rather than only in a source comment. Card 355
+          made the loopback half of it true for this process instead of true in
+          general; the line still stands here permanently, because whether it
+          should is the owner's call and he has not made it. */}
+      <p className="browser-fence">{fenceNote(lang, props.allowLocalhost)}</p>
     </section>
   );
 }

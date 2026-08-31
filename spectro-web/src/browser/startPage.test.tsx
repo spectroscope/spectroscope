@@ -72,6 +72,9 @@ function webView(overrides: Partial<WebFaceViewProps>): string {
     playing: null,
     canGoBack: null,
     canGoForward: null,
+    // Card 355: the ship default, and the state the footer note used to
+    // describe unconditionally. These suites are about other things.
+    allowLocalhost: false,
     send: () => {},
     onDraft: () => {},
     onPlay: () => {},
@@ -92,6 +95,9 @@ function desktopView(overrides: Partial<DesktopFaceViewProps>): string {
     playing: null,
     canGoBack: null,
     canGoForward: null,
+    // Card 355: the ship default, and the state the footer note used to
+    // describe unconditionally. These suites are about other things.
+    allowLocalhost: false,
     send: () => {},
     onDraft: () => {},
     onPlay: () => {},

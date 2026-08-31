@@ -516,18 +516,23 @@ describe("the settings page says when a change reaches the run", () => {
 // itself PWNED. The hole is closed; what is still outside anybody's reach has to
 // be where the OPERATOR reads it, not only in a source comment.
 describe("the browser segment states the fence, and its limit", () => {
-  it("names the opt-in and the redirect hop, in both languages", () => {
+  // Card 355 split the one frozen string into the pieces the note is composed
+  // from, because the whole of it was said to every operator forever — opt-in
+  // clause included, to the one whose settings already grant it. What the
+  // COMPOSED sentence must say lives with the composer, in
+  // browser/fenceNote.test.ts; what stays true of the vocabulary is here.
+  it("names the opt-in where it is needed, and the rules in both languages", () => {
     for (const lang of ["de", "en"] as const) {
-      const note = dict["browser.fenceNote"][lang];
-      expect(note, `${lang} names the opt-in`).toContain("allowLocalhost");
-      expect(note, `${lang} names file://`).toContain("file://");
-      expect(note.length, `${lang} says something`).toBeGreaterThan(80);
+      expect(dict["browser.fence.loopbackOff"][lang], `${lang} names the opt-in`).toContain("allowLocalhost");
+      expect(dict["browser.fence.loopbackOn"][lang], `${lang} names the opt-in`).toContain("allowLocalhost");
+      expect(dict["browser.fence.rules"][lang], `${lang} names file://`).toContain("file://");
+      expect(dict["browser.fence.rules"][lang].length, `${lang} says something`).toBeGreaterThan(60);
     }
   });
 
   it("admits what no fence catches rather than only what it blocks", () => {
-    expect(dict["browser.fenceNote"].en).toMatch(/DNS answer that changes/);
-    expect(dict["browser.fenceNote"].de).toMatch(/DNS-Antwort, die sich/);
+    expect(dict["browser.fence.dns"].en).toMatch(/DNS answer that changes/);
+    expect(dict["browser.fence.dns"].de).toMatch(/DNS-Antwort, die sich/);
   });
 });
 
@@ -689,7 +694,19 @@ describe("t", () => {
 describe("the empty-state register stays terse (card 228)", () => {
   // Footer and hint-bar keys that do not match the name pattern but carry
   // the same register duty — the sweep's named specimens live here.
-  const footnotes = ["browser.fenceNote", "browser.replay.note", "sg.claim", "sg.empty.pair"];
+  const footnotes = [
+    // Card 355: the fence note is four fragments now. Each is measured here;
+    // the sentence they COMPOSE is measured in browser/fenceNote.test.ts,
+    // because four short keys can add up to a long footer and this guard
+    // would never see it.
+    "browser.fence.rules",
+    "browser.fence.loopbackOff",
+    "browser.fence.loopbackOn",
+    "browser.fence.dns",
+    "browser.replay.note",
+    "sg.claim",
+    "sg.empty.pair",
+  ];
   const exempt: Record<string, string> = {
     // none today — an entry here names the card that allowed it
   };
