@@ -362,9 +362,23 @@ apt repository, never for a release.
   GitHub + Maven Central footer links → `python3 tools/sync_website_repo.py`,
   commit + push `spectroscope-website` (Cloudflare auto-deploys).
 - **Portal** (`spectroscope-dev/public/index.html`): status "v<v> is out";
-  regenerate docs `python3 tools/build_dev_docs.py`; commit + push
-  `spectroscope-dev`.
-- Push = deploy (~1 min). Verify the live copy before calling it done.
+  regenerate docs `python3 spectroscope-dev/tools/build_dev_docs.py` — the
+  script lives in that repo, not in the umbrella's `tools/`. It reads the
+  version from the harness's release TAGS, so it needs no argument and cannot
+  drift; it also stamps the harness tree hash it read.
+- Push = deploy (~1 min). **Verify the live copies, and know their hostnames:**
+  the landing page is `spectroscope.ai`, the portal is **`spectroscope.dev`** —
+  *not* `dev.spectroscope.ai`, which does not resolve at all (measured
+  2026-08-31: HTTP 000). A verification aimed at the wrong host returns an
+  empty result that looks exactly like a failed deploy.
+
+  ```bash
+  curl -s "https://spectroscope.ai/?cb=$RANDOM"  | grep -c '<v>'
+  curl -s "https://spectroscope.dev/?cb=$RANDOM" | grep -c '<v>'
+  ```
+
+  The cache-buster is not decoration — read `cf-cache-status` before suspecting
+  the repo, because both pages have served a stale version after a good deploy.
 
 ---
 
