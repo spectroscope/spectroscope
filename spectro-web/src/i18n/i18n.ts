@@ -3037,6 +3037,22 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "How often the harness carries on a run that stopped with its plan still open. 0 switches the leash off.",
   },
 
+  "set.questionsPerRun": { de: "Fragen pro Lauf", en: "Questions per run" },
+  "set.questionsPerRunNote": {
+    de: "Wie oft ein Lauf dich um eine Entscheidung bitten darf, bevor er mit dem weitermacht, was er hat. 0 heißt: nie fragen.",
+    en: "How often a run may put a decision to you before it carries on with what it has. 0 means never ask.",
+  },
+  "set.maxQuestionOptions": { de: "Antwortmöglichkeiten je Frage", en: "Choices per question" },
+  "set.maxQuestionOptionsNote": {
+    de: "Wie viele Möglichkeiten eine Frage anbieten darf. Die Leiste zeichnet sie nebeneinander, mehr wird schmal.",
+    en: "How many choices one question may offer. The bar draws them in a row, so more get narrow.",
+  },
+  "set.maxQuestionChars": { de: "Zeichen je Frage", en: "Characters per question" },
+  "set.maxQuestionCharsNote": {
+    de: "Wie lang eine Frage sein darf. Sie wird unter Zeitdruck gelesen.",
+    en: "How long one question may be. It is read under time pressure.",
+  },
+
   "info.noProgress.identical_writes": {
     de: "Kein Fortschritt: dieselben Bytes stehen schon unter {n} früheren Pfaden. {evidence}",
     en: "No progress: these same bytes already sit under {n} earlier paths. {evidence}",

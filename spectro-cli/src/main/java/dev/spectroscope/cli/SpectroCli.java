@@ -644,8 +644,10 @@ public final class SpectroCli implements Runnable {
         // never saw. Card 270 measured the belt before card 265 existed, so this
         // withholding is a decision made at the merge, not one it carried.
         if (askQuestionOnTerminal != null) {
+            // Card 356: the same caps the browser face reads, from the same config.
             registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(
-                    askQuestionOnTerminal));
+                    askQuestionOnTerminal, config.questionsPerRun(),
+                    config.maxQuestionOptions(), config.maxQuestionChars()));
         }
         if (!skills.skills().isEmpty()) {
             shared.add(skills.useSkillTool());

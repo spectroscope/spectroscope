@@ -71,7 +71,9 @@ public final class SettingsWriter {
             // Card 266: how many times one run may be restarted; zero is off.
             "continuationBudget",
             // Card 282: the run's turn ceiling, finishing card 266's owner call 4.
-            "maxTurns");
+            "maxTurns",
+            // Card 356: the three ask caps, finishing card 265's open call O3.
+            "questionsPerRun", "maxQuestionOptions", "maxQuestionChars");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is

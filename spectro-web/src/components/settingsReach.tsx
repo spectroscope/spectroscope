@@ -124,6 +124,13 @@ export const SETTING_REACH = {
   // raising the cap mid-run would move a boundary the run has already counted
   // against.
   maxTurns: "next-session",
+  // Card 356: the three ask caps. Measured, not assumed — SessionConnection
+  // registers AskUserQuestionTool inside buildAgentOnce() (the name is the
+  // claim, and line 1105 is its only call), and the tool holds its caps as
+  // final fields, so nothing re-reads them for the session already open.
+  questionsPerRun: "next-session",
+  maxQuestionOptions: "next-session",
+  maxQuestionChars: "next-session",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

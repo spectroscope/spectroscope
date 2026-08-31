@@ -1219,7 +1219,11 @@ public final class SessionConnection {
         // cannot reach a face where nobody could answer. Not in childBase either:
         // a child's question would park the CHILD's loop behind a bar the
         // operator's own run does not own.
-        registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(asker));
+        // Card 356: the caps come from the ACTIVE config, so the operator's
+        // setting reaches both the counter and every number the model reads.
+        registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(
+                asker, active.questionsPerRun(), active.maxQuestionOptions(),
+                active.maxQuestionChars()));
         if (!skills.skills().isEmpty()) {
             registry.register(skills.useSkillTool());
         }

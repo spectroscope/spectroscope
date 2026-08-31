@@ -180,6 +180,13 @@ import java.util.function.Function;
  *                            the weak local models this guard was cut for keep
  *                            none. Built, tested, and off until an operator
  *                            turns it on
+ * @param questionsPerRun     how many questions ONE run may ask the person, card
+ *                            356 finishing card 265's own O3: that card called
+ *                            all three ask caps "stated guesses … want a word"
+ *                            and shipped them as constants nobody could reach.
+ *                            Zero never asks
+ * @param maxQuestionOptions  how many choices one question may offer
+ * @param maxQuestionChars    how long one question may be
  * @param maxTurns            the runaway-loop brake: how many turns ONE run may
  *                            take before the harness ends it with
  *                            {@code stopReason: "max_turns"}. Card 282 finished
@@ -234,7 +241,10 @@ public record SpectroConfig(
         int progressGuardPlanTurns,
         int continuationBudget,
         int maxTurns,
-        String llamacppBaseUrl) {
+        String llamacppBaseUrl,
+        int questionsPerRun,
+        int maxQuestionOptions,
+        int maxQuestionChars) {
 
     /**
      * Compat: the pre-card-312 arity, which knew no llama.cpp address. Every
@@ -291,7 +301,75 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
                 searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
-                continuationBudget, maxTurns, null);
+                continuationBudget, maxTurns, null,
+                DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
+                DEFAULT_MAX_QUESTION_CHARS);
+    }
+
+    /**
+     * Compat: the pre-card-356 arity, which knew no ask caps. Every caller that
+     * built a config positionally — including the tests that pin the layer
+     * merge — keeps compiling and gets the shipped three.
+     *
+     * <p>Added rather than migrating those callers, on the canon's rule for
+     * this record: one canonical constructor and compatibility constructors
+     * beside it, each differing in ARITY. A test that had to be rewritten to
+     * accommodate a new field would be a test whose subject moved under it.</p>
+     *
+     * @param provider            the backend id
+     * @param model               the model id
+     * @param baseUrl             the provider endpoint override
+     * @param compactionThreshold the token count that triggers compaction
+     * @param permissionMode      ask / auto / readonly
+     * @param autoApprove         tool names that skip the gate
+     * @param imageProvider       which backend draws
+     * @param thinking            whether reasoning is on
+     * @param mcpServers          the configured MCP servers
+     * @param maxRetries          provider retry count
+     * @param promptCaching       whether the provider caches prompts
+     * @param hooks               the configured hooks
+     * @param workspace           the pinned workspace, or null
+     * @param logLevel            the root log level
+     * @param imageModel          the image model id
+     * @param sttModel            the speech model id
+     * @param sttProvider         which backend transcribes
+     * @param sttLanguage         the dictation language
+     * @param chromeBinary        an explicit Chrome path
+     * @param otlpEndpoint        the OTLP collector
+     * @param otlpBasicAuth       its credentials
+     * @param ollamaBaseUrl       the ollama endpoint
+     * @param lmstudioBaseUrl     the LM Studio endpoint
+     * @param searxngUrl          the SearXNG instance
+     * @param allowLocalhost      whether the net fence allows loopback
+     * @param headlessMcp         whether an unattended run mounts MCP servers
+     * @param progressGuardWrites detector 1's count
+     * @param progressGuardFailures detector 2's count
+     * @param progressGuardPlanTurns detector 3's count
+     * @param continuationBudget  how often one run may be restarted
+     * @param maxTurns            the per-run turn ceiling
+     * @param llamacppBaseUrl     the llama.cpp endpoint
+     */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
+                continuationBudget, maxTurns, llamacppBaseUrl,
+                DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
+                DEFAULT_MAX_QUESTION_CHARS);
     }
 
     /**
@@ -341,7 +419,9 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
                 searxngUrl, allowLocalhost, headlessMcp,
                 DEFAULT_PROGRESS_WRITES, DEFAULT_PROGRESS_FAILURES, DEFAULT_PROGRESS_PLAN_TURNS,
-                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null);
+                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null,
+                DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
+                DEFAULT_MAX_QUESTION_CHARS);
     }
 
     /**
@@ -396,7 +476,9 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
                 searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
-                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null);
+                DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null,
+                DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
+                DEFAULT_MAX_QUESTION_CHARS);
     }
 
     /** The shipped {@code progressGuardWrites}: the same bytes under a third new
@@ -415,6 +497,16 @@ public record SpectroConfig(
      *  this number is an addition to the house language rather than a recovery
      *  of it — card 266 owner call 2, decided while building. */
     public static final int DEFAULT_CONTINUATION_BUDGET = 3;
+
+    /** The shipped {@code questionsPerRun}: card 265's number, now a default
+     *  rather than a wall. Its own criterion 4 always called it a default. */
+    public static final int DEFAULT_QUESTIONS_PER_RUN = 3;
+
+    /** The shipped {@code maxQuestionOptions}: the bar renders them in a row. */
+    public static final int DEFAULT_MAX_QUESTION_OPTIONS = 4;
+
+    /** The shipped {@code maxQuestionChars}: a question is read under time pressure. */
+    public static final int DEFAULT_MAX_QUESTION_CHARS = 500;
 
     /** The shipped {@code maxTurns}: the runaway-loop brake, in turns per run.
      *  Card 266 owner call 4 said this becomes an option and 15 stays the value;
@@ -839,7 +931,9 @@ public record SpectroConfig(
                         base.allowLocalhost(), base.headlessMcp(),
                         base.progressGuardWrites(), base.progressGuardFailures(),
                         base.progressGuardPlanTurns(), base.continuationBudget(),
-                        base.maxTurns(), base.llamacppBaseUrl());
+                        base.maxTurns(), base.llamacppBaseUrl(),
+                        base.questionsPerRun(), base.maxQuestionOptions(),
+                        base.maxQuestionChars());
             }
         }
         return base;
@@ -898,7 +992,14 @@ public record SpectroConfig(
             // Card 312 — LAST, because the probe list is pinned to the record's
             // component ORDER and llamacppBaseUrl was appended rather than
             // slotted beside its siblings.
-            new FieldProbe("llamacppBaseUrl", p -> p.llamacppBaseUrl));
+            new FieldProbe("llamacppBaseUrl", p -> p.llamacppBaseUrl),
+            // Card 356 — after llamacppBaseUrl, because that is where the record
+            // puts them. The note above is not decoration: this list was first
+            // written with these three slotted beside maxTurns, where they READ
+            // better and where the drift guard immediately said no.
+            new FieldProbe("questionsPerRun", p -> p.questionsPerRun),
+            new FieldProbe("maxQuestionOptions", p -> p.maxQuestionOptions),
+            new FieldProbe("maxQuestionChars", p -> p.maxQuestionChars));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -1235,7 +1336,8 @@ public record SpectroConfig(
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
                 ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
-                continuationBudget, maxTurns, llamacppBaseUrl);
+                continuationBudget, maxTurns, llamacppBaseUrl,
+                questionsPerRun, maxQuestionOptions, maxQuestionChars);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2063,6 +2165,10 @@ public record SpectroConfig(
         public Integer continuationBudget;
         // Card 282: the runaway-loop brake, in turns per run.
         public Integer maxTurns;
+        // Card 356: the three ask caps card 265 shipped as constants.
+        public Integer questionsPerRun;
+        public Integer maxQuestionOptions;
+        public Integer maxQuestionChars;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -2112,6 +2218,12 @@ public record SpectroConfig(
             out.continuationBudget =
                     Optional.ofNullable(higher.continuationBudget).orElse(continuationBudget);
             out.maxTurns = Optional.ofNullable(higher.maxTurns).orElse(maxTurns);
+            out.questionsPerRun =
+                    Optional.ofNullable(higher.questionsPerRun).orElse(questionsPerRun);
+            out.maxQuestionOptions =
+                    Optional.ofNullable(higher.maxQuestionOptions).orElse(maxQuestionOptions);
+            out.maxQuestionChars =
+                    Optional.ofNullable(higher.maxQuestionChars).orElse(maxQuestionChars);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -2160,7 +2272,10 @@ public record SpectroConfig(
                     Optional.ofNullable(progressGuardPlanTurns).orElse(DEFAULTS.progressGuardPlanTurns()),
                     Optional.ofNullable(continuationBudget).orElse(DEFAULTS.continuationBudget()),
                     Optional.ofNullable(maxTurns).orElse(DEFAULTS.maxTurns()),
-                    Optional.ofNullable(llamacppBaseUrl).orElse(DEFAULTS.llamacppBaseUrl()));
+                    Optional.ofNullable(llamacppBaseUrl).orElse(DEFAULTS.llamacppBaseUrl()),
+                    Optional.ofNullable(questionsPerRun).orElse(DEFAULTS.questionsPerRun()),
+                    Optional.ofNullable(maxQuestionOptions).orElse(DEFAULTS.maxQuestionOptions()),
+                    Optional.ofNullable(maxQuestionChars).orElse(DEFAULTS.maxQuestionChars()));
         }
 
         /**

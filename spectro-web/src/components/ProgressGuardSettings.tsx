@@ -174,6 +174,37 @@ export function ProgressGuardSettings({
           </label>
         </div>
       </ReachBlock>
+      {/* Card 356: the ask caps. Their own block because they are their own
+        subject, not because their reach differs — all three are next-session,
+        the same as maxTurns two blocks up. */}
+      <ReachBlock lang={lang} fields={["questionsPerRun", "maxQuestionOptions", "maxQuestionChars"]}>
+        <div className="settings-grid">
+          {(
+            [
+              ["questionsPerRun", 0],
+              ["maxQuestionOptions", 1],
+              ["maxQuestionChars", 1],
+            ] as const
+          ).map(([field, floor]) => (
+            <label
+              key={field}
+              className="settings-field"
+              data-progress-state={armedState(count(view, field))}
+              data-progress-field={field}
+            >
+              <span>{t(lang, `set.${field}`)}</span>
+              <input
+                type="number"
+                min={floor}
+                value={count(view, field)}
+                onChange={(e) => onSave({ [field]: Number(e.target.value) })}
+              />
+              <p className="settings-note">{t(lang, `set.${field}Note`)}</p>
+              <OriginRow view={view} field={field} lang={lang} onReset={() => onSave({ [field]: null })} />
+            </label>
+          ))}
+        </div>
+      </ReachBlock>
     </>
   );
 }

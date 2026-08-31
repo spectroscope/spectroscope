@@ -47,6 +47,38 @@ The PDF is rendered from the finished HTML with headless Chrome:
       --virtual-time-budget=20000 \
       --print-to-pdf=../USER-GUIDE.pdf ../USER-GUIDE.html
 
+  ⚠️ THAT COMMAND DOES NOT EXIT. Wait for the FILE, never for the process.
+    The canon records one of these hanging for 10 h 46 min on a 20-second
+    budget, burning 26 CPU-seconds in the whole time: --virtual-time-budget
+    caps the PAGE's clock, not the process's lifetime, and Chrome's updater
+    IPC keeps the process alive after the print is finished. Reproduced
+    2026-08-31, twice, at 90 s and 100 s of patience — and then the artefact
+    was inspected mid-hang and was ALREADY COMPLETE: %PDF-1.4, %%EOF, 175
+    pages, 23.5 MB.
+
+    So the work takes about six seconds and the waiting is for nothing. Poll
+    the output until it ends with %%EOF, then kill the process:
+
+        "$CHROME" --headless=new --no-sandbox --disable-gpu \
+          --no-pdf-header-footer --user-data-dir="$PROF" --no-first-run \
+          --disable-component-update --disable-background-networking \
+          --virtual-time-budget=20000 --print-to-pdf="$OUT" "$SRC" &
+        pid=$!
+        until python3 -c "import sys;sys.exit(0 if open('$OUT','rb') \
+              .read().rstrip().endswith(b'%%EOF') else 1)" 2>/dev/null; do
+          sleep 3
+        done
+        kill -9 $pid
+
+    Two traps beside it, both hit on 2026-08-31:
+      · `timeout` DOES NOT EXIST on this Mac — no timeout, no gtimeout. The
+        first attempt with it returned exit 127, Chrome never ran, and the
+        old PDFs sat there looking like a successful reprint. Read the exit
+        code, or use the shell loop above.
+      · --user-data-dir in a mktemp dir with a trap that removes it. Without
+        one, a killed print leaves the profile behind; the canon measured
+        103 MB of them.
+
 Both blockers of the 2026-08-03 "known lag" note are gone, measured 2026-08-14
   The wire correction and the leveling reshoot that once made a rebuild unwise
   have both landed: `grep -c "64 MB cap" ../USER-GUIDE.html` answers 0 and

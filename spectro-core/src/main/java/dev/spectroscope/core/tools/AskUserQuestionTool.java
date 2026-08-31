@@ -52,10 +52,20 @@ public final class AskUserQuestionTool implements Tool {
      */
     public static final int QUESTIONS_PER_RUN = 3;
 
-    /** The importer's own input shape, verbatim (toolViews.ts reads exactly this),
-     *  so a native question renders identically to one read out of a foreign
-     *  transcript — and the finished card came for free. */
-    private static final JsonNode SCHEMA = parseSchema("""
+    /**
+     * The importer's own input shape, verbatim (toolViews.ts reads exactly this),
+     * so a native question renders identically to one read out of a foreign
+     * transcript — and the finished card came for free.
+     *
+     * <p><b>Card 356 made the numbers holes.</b> This was a constant whose text
+     * typed "max 500 characters" and "One to four choices" while the caps were
+     * about to become settings. The schema is the ONLY instruction the model
+     * has about what a well-formed call looks like, so a literal here is not a
+     * stale comment — it is an operator's raised cap contradicted at the one
+     * place the model reads. Formatted per instance instead, from the same
+     * fields the validation reads.</p>
+     */
+    private static final String SCHEMA_TEMPLATE = """
             { "type": "object", "required": ["questions"],
               "properties": {
                 "questions": {
@@ -66,35 +76,97 @@ public final class AskUserQuestionTool implements Tool {
                     "required": ["question", "options"],
                     "properties": {
                       "question":    { "type": "string",
-                                       "description": "The question, in plain text, max 500 characters" },
+                                       "description": "The question, in plain text, max %1$d characters" },
                       "header":      { "type": "string",
                                        "description": "A short label above it, e.g. \\"Storage\\"" },
                       "multiSelect": { "type": "boolean",
                                        "description": "Whether more than one option may be chosen" },
                       "options": {
                         "type": "array",
-                        "description": "One to four choices",
+                        "description": "Between 1 and %2$d choices",
                         "items": {
                           "type": "object",
                           "required": ["label"],
                           "properties": {
                             "label":       { "type": "string",
-                                             "description": "The choice, max 100 characters" },
+                                             "description": "The choice, max %3$d characters" },
                             "description": { "type": "string",
                                              "description": "One line of help for this choice" } } } } } } } } }
-            """);
+            """;
 
     private final Asker asker;
+    private final int questionsPerRun;
+    private final int maxOptions;
+    private final int maxQuestionChars;
+    private final JsonNode schema;
 
     /**
      * The seam by constructor at registration, exactly as {@code WebFetchTool}
      * takes its fetcher — nothing about the ask reaches {@code AgentOptions},
      * the {@code Agent} builder or the frozen facade.
      *
+     * <p>The compatibility seam: the shipped caps, so the three registration
+     * sites keep compiling untouched. It differs in ARITY from the canonical
+     * constructor rather than in the type of one argument — the canon's
+     * parallel-build rule bans two functional parameters at one position, and a
+     * later reader tidying these into an ambiguous pair is exactly the defect
+     * it names.</p>
+     *
      * @param asker who is asked; {@link Asker#none()} where nobody is attached
      */
     public AskUserQuestionTool(Asker asker) {
+        this(asker, QUESTIONS_PER_RUN, MAX_OPTIONS, MAX_QUESTION_CHARS);
+    }
+
+    /**
+     * The canonical constructor: the caps are this run's, not the compiler's.
+     *
+     * <p>Card 265 specified a per-run budget "whose default is stated on this
+     * card" and flagged all three caps as "stated guesses … want a word"; what
+     * shipped was a constant nobody could reach. These parameters are that
+     * word, and every number the model reads is formatted from them, so a
+     * raised cap cannot be contradicted by the schema that describes it.</p>
+     *
+     * @param asker            who is asked; {@link Asker#none()} where nobody is attached
+     * @param questionsPerRun  how many questions one run may ask; {@code 0} never asks
+     * @param maxOptions       how many choices one question may offer
+     * @param maxQuestionChars how long one question may be
+     */
+    public AskUserQuestionTool(Asker asker, int questionsPerRun, int maxOptions,
+                               int maxQuestionChars) {
         this.asker = asker;
+        this.questionsPerRun = Math.max(0, questionsPerRun);
+        this.maxOptions = Math.max(1, maxOptions);
+        this.maxQuestionChars = Math.max(1, maxQuestionChars);
+        this.schema = parseSchema(SCHEMA_TEMPLATE.formatted(
+                this.maxQuestionChars, this.maxOptions, MAX_OPTION_CHARS));
+    }
+
+    /**
+     * How many questions this tool lets one run ask.
+     *
+     * @return the configured per-run budget; {@code 0} never asks
+     */
+    public int questionsPerRun() {
+        return questionsPerRun;
+    }
+
+    /**
+     * How many choices one of its questions may offer.
+     *
+     * @return the configured option cap, which the schema announces too
+     */
+    public int maxOptions() {
+        return maxOptions;
+    }
+
+    /**
+     * How long one of its questions may be.
+     *
+     * @return the configured question-length cap, in characters
+     */
+    public int maxQuestionChars() {
+        return maxQuestionChars;
     }
 
     /**
@@ -120,8 +192,8 @@ public final class AskUserQuestionTool implements Tool {
         return "Asks the person watching this run one multiple-choice question and waits for "
                 + "the answer. Use it for a decision only they can make — which of two designs, "
                 + "which environment, whether a destructive step is really wanted — instead of "
-                + "guessing and building the wrong thing. One question per call, up to four "
-                + "options, and they may also answer in their own words. If the reply says "
+                + "guessing and building the wrong thing. One question per call, up to "
+                + maxOptions + " options, and they may also answer in their own words. If the reply says "
                 + "\"unanswered\", nobody was there: say which assumption you are proceeding "
                 + "with and carry on, do not call again for the same thing. Never ask for a "
                 + "credential, key or password — the answer is written into this session's "
@@ -131,7 +203,7 @@ public final class AskUserQuestionTool implements Tool {
     /** Requires a {@code questions} array holding exactly one question. */
     @Override
     public JsonNode inputSchema() {
-        return SCHEMA;
+        return schema;
     }
 
     /** Permission-free: a question has no side effect, and gating it would be two
@@ -167,17 +239,17 @@ public final class AskUserQuestionTool implements Tool {
         if (text.isBlank()) {
             return "ERROR: the question needs non-empty text.";
         }
-        if (text.length() > MAX_QUESTION_CHARS) {
+        if (text.length() > maxQuestionChars) {
             return "ERROR: the question is " + text.length() + " characters; the limit is "
-                    + MAX_QUESTION_CHARS + ". Ask a shorter one — it is read under time pressure.";
+                    + maxQuestionChars + ". Ask a shorter one — it is read under time pressure.";
         }
         JsonNode optionNodes = entry.path("options");
         if (!optionNodes.isArray() || optionNodes.isEmpty()) {
-            return "ERROR: offer between 1 and " + MAX_OPTIONS + " options — a question with "
+            return "ERROR: offer between 1 and " + maxOptions + " options — a question with "
                     + "nothing to pick is a message, not a question.";
         }
-        if (optionNodes.size() > MAX_OPTIONS) {
-            return "ERROR: " + optionNodes.size() + " options; the limit is " + MAX_OPTIONS + ".";
+        if (optionNodes.size() > maxOptions) {
+            return "ERROR: " + optionNodes.size() + " options; the limit is " + maxOptions + ".";
         }
         List<RunEvent.QuestionOption> options = new ArrayList<>();
         for (JsonNode optionNode : optionNodes) {
@@ -195,7 +267,7 @@ public final class AskUserQuestionTool implements Tool {
         // Spent AFTER the bounds, so a malformed call costs nothing: the model
         // gets a refusal it can correct, and the person is still owed a question.
         if (!spendOneQuestion(context.signal())) {
-            return "ERROR: question budget spent for this run (" + QUESTIONS_PER_RUN
+            return "ERROR: question budget spent for this run (" + questionsPerRun
                     + " questions). Decide with what you have and say what you assumed.";
         }
 
@@ -274,7 +346,7 @@ public final class AskUserQuestionTool implements Tool {
             askedThisRun = 0;
         }
         askedThisRun++;
-        return askedThisRun <= QUESTIONS_PER_RUN;
+        return askedThisRun <= questionsPerRun;
     }
 
     /**

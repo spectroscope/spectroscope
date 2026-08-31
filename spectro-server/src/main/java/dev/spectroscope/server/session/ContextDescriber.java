@@ -70,7 +70,7 @@ final class ContextDescriber {
         // endpoint to describe different belts, which is the exact drift
         // criterion 3 exists to close.
         List<Tool> settingsBelt = SettingsToolBelt.assemble(SettingsToolBelt.describeSeams(config)).tools();
-        return new ContextInfo(systemPrompt, mainAgentTools(settingsBelt, standardTools, skills), skillCatalog,
+        return new ContextInfo(systemPrompt, mainAgentTools(settingsBelt, standardTools, skills, config), skillCatalog,
                 mcpServerNames, config.thinking(), config.provider(), config.model(),
                 RoleCatalog.roleProfiles(childBaseToolNames(settingsBelt, standardTools, skills)));
     }
@@ -102,10 +102,11 @@ final class ContextDescriber {
      *               a second load of the hierarchy
      * @param standardTools the shared standard set, loaded once by the caller
      * @param skills the installed skill library — decides whether use_skill appears
+     * @param config the effective config, for the ask caps card 356 made settable
      * @return name/description/needsPermission triples in exact registration order
      */
     private static List<ContextInfo.ToolInfo> mainAgentTools(List<Tool> settingsBelt,
-            List<Tool> standardTools, SkillLibrary skills) {
+            List<Tool> standardTools, SkillLibrary skills, SpectroConfig config) {
         List<Tool> extras = new ArrayList<>(settingsBelt);
         extras.add(new UpdatePlanTool());
         // Card 265: registered right beside the plan tool in
@@ -113,7 +114,12 @@ final class ContextDescriber {
         // neither. Asker.none() is an honest describe-time stand-in — this
         // endpoint is stateless and has no session, therefore nobody to ask;
         // describing a tool is not driving one, and nothing here can act.
-        extras.add(new AskUserQuestionTool(Asker.none()));
+        // Card 356: with the caps configurable, describing the tool means
+        // describing THIS config's tool. Built from the shipped defaults, this
+        // endpoint would report "up to four options" to an operator who set six —
+        // the same lie the card removes from the schema, one endpoint later.
+        extras.add(new AskUserQuestionTool(Asker.none(), config.questionsPerRun(),
+                config.maxQuestionOptions(), config.maxQuestionChars()));
         Stream<Tool> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()
                 : Stream.of(skills.useSkillTool());
