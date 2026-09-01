@@ -488,7 +488,10 @@ class SkillLibraryTest {
 
         assertTrue(library.systemPromptSection().contains("- superpowers:tdd: Red then green."));
         Tool tool = library.useSkillTool();
-        assertEquals("Write the failing test first.", tool.execute(nameInput("superpowers:tdd"), context()));
+        // Card 358 put an address in front of the body, so the body is now the
+        // TAIL of the result rather than the whole of it. Still exact on the body.
+        assertTrue(tool.execute(nameInput("superpowers:tdd"), context())
+                .endsWith("Write the failing test first."));
         assertEquals("ERROR: unknown skill 'tdd'. Available: superpowers:tdd",
                 tool.execute(nameInput("tdd"), context()));
     }
@@ -512,8 +515,57 @@ class SkillLibraryTest {
         assertEquals("use_skill", tool.name());
         assertFalse(tool.needsPermission());
         String result = tool.execute(nameInput("tdd"), context());
-        assertTrue(result.startsWith("# TDD"));
-        assertTrue(result.contains("Write the failing test first."));
+        // The body arrives WHOLE and verbatim, and it is the tail of the result —
+        // a stronger pin than the old startsWith, which the card-358 address broke.
+        assertTrue(result.endsWith("# TDD\n\nWrite the failing test first."),
+                "the full body, byte for byte, at the end of the result: " + result);
+    }
+
+    // ---- card 358: the address travels with the body, never with the catalogue ----------
+
+    @Test
+    void useSkillNamesTheDirectoryTheSkillWasLoadedFrom() throws IOException {
+        // Criterion 1. The measured failure: the model announced a skill and then
+        // ran `find ~ -maxdepth 8 -type d -name "<skill>"`, which timed out. It had
+        // the body and no address — Skill.source() was loaded and never handed over.
+        Path root = tempDir.resolve("skills");
+        skillIn(root, "systematic-debugging", """
+                ---
+                name: systematic-debugging
+                description: Find the cause.
+                ---
+                Read references/root-cause-tracing.md.
+                """);
+        Path skillDir = root.resolve("systematic-debugging");
+        Tool tool = SkillLibrary.load(List.of(root)).useSkillTool();
+
+        String result = tool.execute(nameInput("systematic-debugging"), context());
+
+        assertTrue(result.contains(skillDir.toString()),
+                "the RESULT must carry the directory itself, not a description of one: " + result);
+        assertTrue(result.contains("read_skill_file"),
+                "and name the tool that can open what lives there: " + result);
+    }
+
+    @Test
+    void theCatalogueInTheSystemPromptCarriesNoSkillPaths() throws IOException {
+        // Criterion 2, the other half, pinned so a later reader cannot "helpfully"
+        // move the address up into the always-on list. Progressive disclosure is
+        // the whole design: 40 skills times a path is context spent before anyone asks.
+        Path root = tempDir.resolve("skills");
+        skillIn(root, "alpha", "---\nname: alpha\ndescription: a\n---\nbody");
+        skillIn(root, "zeta", "---\nname: zeta\ndescription: z\n---\nbody");
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        String section = library.systemPromptSection();
+
+        assertFalse(section.contains(root.toString()),
+                "no skill root belongs in the always-on catalogue: " + section);
+        assertFalse(section.contains("read_skill_file"),
+                "nor the on-demand reader's name: " + section);
+        assertEquals(List.of("- alpha: a", "- zeta: z"),
+                section.lines().filter(line -> line.startsWith("- ")).toList(),
+                "one cheap bullet per skill, name and description and nothing else");
     }
 
     @Test

@@ -1226,6 +1226,8 @@ public final class SessionConnection {
                 active.maxQuestionChars()));
         if (!skills.skills().isEmpty()) {
             registry.register(skills.useSkillTool());
+            // Card 358: the sibling reader travels with use_skill, always.
+            registry.register(skills.readSkillFileTool());
         }
         // MCP tools register alongside the standard ones, exactly like the
         // CLI — the model calls mcp__<server>__<tool> and the events flow unchanged.
@@ -1262,6 +1264,7 @@ public final class SessionConnection {
         childBase.addAll(mcp.tools());
         if (!skills.skills().isEmpty()) {
             childBase.add(skills.useSkillTool());
+            childBase.add(skills.readSkillFileTool()); // card 358, same instance rule
         }
         // Config-only pre/post_tool_use shell hooks — from the SESSION-scoped config
         // (the workspace's own settings, resolved above), like mcpServers just above.

@@ -32,9 +32,13 @@ public final class RoleCatalog {
      * plus use_skill, because the role's whole point is carrying the
      * {@code spectroscope:research} skill in its belly. No write tool, no
      * run_command — a research child reads and reaches the web, nothing else.
+     *
+     * <p>Card 358 added {@code read_skill_file} for the same reason use_skill is
+     * here: without it the child receives that skill's body and cannot open a
+     * single file the body names.</p>
      */
     static final Set<String> RESEARCH_BASE_TOOL_NAMES =
-            Set.of("list_dir", "read_file", "glob", "grep", "use_skill");
+            Set.of("list_dir", "read_file", "glob", "grep", "use_skill", "read_skill_file");
 
     /**
      * The web grant of the research role, in the card's order. These names are

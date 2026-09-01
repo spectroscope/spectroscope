@@ -126,6 +126,32 @@ class RoleCatalogTest {
     }
 
     @Test
+    void aResearchChildKeepsBothSkillToolsOrItGetsABodyWithoutItsFiles(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws java.io.IOException {
+        // Card 358. The names are DERIVED from the library that builds the tools,
+        // not typed here — a keep-list typed twice is two copies of the same lie.
+        java.nio.file.Path root = dir.resolve("skills").resolve("s");
+        java.nio.file.Files.createDirectories(root);
+        java.nio.file.Files.writeString(root.resolve("SKILL.md"),
+                "---\nname: s\ndescription: d\n---\nbody");
+        dev.spectroscope.core.skills.SkillLibrary library =
+                dev.spectroscope.core.skills.SkillLibrary.load(List.of(dir.resolve("skills")));
+        String useSkill = library.useSkillTool().name();
+        String readSkillFile = library.readSkillFileTool().name();
+
+        List<String> belt = new ArrayList<>(WIDE_BELT);
+        belt.add(readSkillFile);
+        RoleCatalog.RoleProfile research = RoleCatalog.roleProfiles(belt).stream()
+                .filter(profile -> profile.type().equals("research")).findFirst().orElseThrow();
+
+        assertTrue(research.tools().contains(useSkill), research.tools().toString());
+        assertTrue(research.tools().contains(readSkillFile),
+                "the role carries spectroscope:research in its belly; without the sibling "
+                        + "reader the child gets that body and none of the files it names: "
+                        + research.tools());
+    }
+
+    @Test
     void researchStillReadsAndReachesTheWebAndNothingElse() {
         RoleCatalog.RoleProfile research = RoleCatalog.roleProfiles(WIDE_BELT).stream()
                 .filter(profile -> profile.type().equals("research")).findFirst().orElseThrow();
