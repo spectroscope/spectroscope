@@ -1,5 +1,45 @@
 /* ---------- Tool card ---------- */
 
+/* HOW TALL A BODY MAY GET (card 363; owner 2026-09-01: "dann mache es SEHR
+   viel höher wenn eben mehr text da ist").
+
+   Every body box on this card is a max-height and never a height, so a
+   two-line output is two lines tall and only a long one grows. What this card
+   changed is where the growing stops.
+
+   It stopped at 260px, and 260px is a number about nothing. Measured over 411
+   transcript files (every 19th of the 7,796 under ~/.claude/projects):
+   18,746 tool results, 2,016 of them from Read. At this line-height a 260px
+   box shows 13 lines and holds 27.6% of those file bodies whole; 780px shows
+   41 and holds 37.6%; 900px shows 48 and holds 40.9%. No pixel number turns
+   "most bodies fit" true, so the ceiling cannot be an argument about content
+   at all.
+
+   It is an argument about the WINDOW. A box taller than the window takes the
+   card's own head, its sibling regions and the next card off-screen while the
+   reader is inside it, and the wheel has to cross the whole box before the
+   page moves on. So the ceiling is a fraction of the window and nothing else:
+   70vh leaves the card's head and the start of the next region in view, and a
+   workflow script — the whole point of its card, with no sibling region worth
+   keeping in sight — gets 88vh. The script one may never be the smaller of the
+   two; toolBodyCeiling.drift.test.ts holds that, and holds every bounded box
+   in this sheet to reading one of these two tokens rather than carrying a
+   number of its own.
+
+   COMPLETENESS IS ANSWERED SOMEWHERE ELSE, and has to be: the box is a
+   viewport, never the limit. The json face is capped by nothing (pinned), and
+   the clip that used to cut a file body at 4,000 characters before it reached
+   either face is lifted in ToolViewBody.tsx. A taller box over truncated text
+   would have been the worse lie.
+
+   On :root rather than on .tool-card, because ToolViewBody is mounted from
+   three places (the chat card, the trace detail, the lab's tool panel) and an
+   unresolved custom property is not an error — it is a silently missing cap. */
+:root {
+  --tv-body-max: 70vh;
+  --tv-script-max: 88vh;
+}
+
 /* Card 94 (owner: "filigraner"): the card is a HAIRLINE and a left rule, not a
    raised box — no gradient, no card shadow, no full border. The left rule keeps
    carrying the status/agent color; everything else recedes so the content is
@@ -281,7 +321,7 @@
   border-radius: var(--radius-chip);
   font-size: var(--fs-12);
   line-height: 1.55;
-  max-height: 260px;
+  max-height: var(--tv-body-max);
   /* No overscroll-behavior here, deliberately. A bounded well may consume the
      wheel while it can scroll itself; at its edges — and when it has nothing
      to scroll — the gesture must chain to the page scroller. `contain` cut
@@ -293,14 +333,19 @@
 }
 .tv-well--error { color: var(--error); }
 /* Some wells hold a whole program rather than a value: a workflow script, a
-   lifted code field. At 260px those show the opening lines and hide the work,
-   and the text is there to be scrolled to — a workflow script and a re-printed
-   arguments payload both keep 48,000 characters (card 322: over the longest of
-   the 592 measured, and past the five payloads whose raw face is cut at 4,000
-   too), a lifted field the ordinary 4,000. The box is a viewport, never the
-   limit. One height for both, because two arbitrary heights for the same kind
-   of thing is a decision nobody can defend later. */
-.tv-well--script { max-height: 780px; }
+   lifted code field. A workflow script and a re-printed arguments payload both
+   keep 48,000 characters (card 322: over the longest of the 592 measured, and
+   past the five payloads whose raw face is cut at 4,000 too), a lifted field
+   the ordinary 4,000. The box is a viewport, never the limit. One height for
+   both, because two arbitrary heights for the same kind of thing is a decision
+   nobody can defend later.
+
+   The height itself was 780px until card 363, and that number had outlived its
+   reason twice over: it was chosen because the ordinary well stood at 260px and
+   a program deserved more, and on any window shorter than 1114px it was taller
+   than the window it had to fit in. Both ends are now stated against the
+   window, up at the top of this sheet. */
+.tv-well--script { max-height: var(--tv-script-max); }
 
 /* A command reads like a command. */
 /* pre-wrap, since the chain breaker gives every `&&` its own line: without it
@@ -316,7 +361,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 260px;
+  max-height: var(--tv-body-max);
   overflow: auto;
   font-size: var(--fs-12);
 }
@@ -497,7 +542,7 @@
   background: var(--shade);
   border-radius: var(--radius-chip);
   font-size: var(--fs-12);
-  max-height: 260px;
+  max-height: var(--tv-body-max);
   overflow: auto;
 }
 .tv-md .md h1 { font-size: var(--fs-16); }
