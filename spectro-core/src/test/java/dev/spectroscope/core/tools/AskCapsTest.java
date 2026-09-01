@@ -154,13 +154,25 @@ class AskCapsTest {
     // ---- and the shipped behaviour is unchanged ---------------------------------------
 
     @Test
+    void theToolsOwnDefaultAndTheConfigsAgreeOnOneNumber() {
+        // Two shipped defaults for one setting is a disagreement an operator can
+        // only find by hitting it. Card 365 moved the config's to nine; this pins
+        // the tool's fallback to the same figure rather than trusting that
+        // whoever moves one remembers the other.
+        assertEquals(dev.spectroscope.core.config.SpectroConfig.DEFAULT_QUESTIONS_PER_RUN,
+                AskUserQuestionTool.QUESTIONS_PER_RUN,
+                "the tool's fallback and the config's default are one number");
+        assertEquals(9, AskUserQuestionTool.QUESTIONS_PER_RUN);
+    }
+
+    @Test
     void theOneArgumentConstructorKeepsExactlyTheShippedDefaults() {
         // The compatibility seam. Different arity from the canonical constructor
         // on purpose — the canon's parallel-build rule forbids two functional
         // parameters at the same position, and this keeps the three call sites
         // (SessionConnection, SpectroCli, ContextDescriber) compiling untouched.
         AskUserQuestionTool shipped = new AskUserQuestionTool(Asker.none());
-        assertEquals(3, shipped.questionsPerRun());
+        assertEquals(9, shipped.questionsPerRun());
         assertEquals(4, shipped.maxOptions());
         assertEquals(500, shipped.maxQuestionChars());
         assertEquals(AskUserQuestionTool.QUESTIONS_PER_RUN, shipped.questionsPerRun());

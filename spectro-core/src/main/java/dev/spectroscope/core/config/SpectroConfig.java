@@ -208,6 +208,28 @@ import java.util.function.Function;
  *                            inserted mid-record would let a stale positional
  *                            call compile with the arguments shifted. Env
  *                            {@code SPECTRO_LLAMACPP_BASE_URL}
+ * @param commandTimeoutSeconds the wall-clock budget ONE {@code run_command}
+ *                            call gets before the child is killed (card 359).
+ *                            Default <b>10</b> — the value that was already
+ *                            shipping, private and unreachable, when a
+ *                            {@code find} over a home directory died under it.
+ *                            <b>No ceiling</b>, deliberately: the operator who
+ *                            types a number here is the same person the gate
+ *                            asks before every shell call, and a cap chosen
+ *                            without a measurement would be exactly the
+ *                            accidental limit this key exists to remove. Bound
+ *                            when the belt is built
+ * @param chatReserveWidth    how many pixels of the chat row the dock may never
+ *                            take (card 361), in CSS pixels. Default
+ *                            <b>360</b>, the value {@code App.tsx} has been
+ *                            reserving as a module constant
+ * @param dockMaxWidth        the widest the right dock may be dragged, in CSS
+ *                            pixels. Default <b>1200</b>, raised from 720 on
+ *                            2026-08-14 by card 228 and unreachable ever since.
+ *                            Which of the two binds depends on the window: below
+ *                            a chat row of roughly 1560 px the reserve decides,
+ *                            at or above it this ceiling does — which is why the
+ *                            owner made BOTH settings rather than relaxing one
  */
 public record SpectroConfig(
         String provider,
@@ -244,7 +266,15 @@ public record SpectroConfig(
         String llamacppBaseUrl,
         int questionsPerRun,
         int maxQuestionOptions,
-        int maxQuestionChars) {
+        int maxQuestionChars,
+        // Cards 359 and 361, APPENDED rather than slotted beside the neighbours
+        // they read best next to. FIELD_PROBES is pinned to this list's ORDER
+        // and every existing positional caller counts from the front, so a
+        // component inserted mid-record moves both. Same reason llamacppBaseUrl
+        // sits where it does, one line up.
+        int commandTimeoutSeconds,
+        int chatReserveWidth,
+        int dockMaxWidth) {
 
     /**
      * Compat: the pre-card-312 arity, which knew no llama.cpp address. Every
@@ -303,13 +333,23 @@ public record SpectroConfig(
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
                 continuationBudget, maxTurns, null,
                 DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
-                DEFAULT_MAX_QUESTION_CHARS);
+                DEFAULT_MAX_QUESTION_CHARS,
+                DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH,
+                DEFAULT_DOCK_MAX_WIDTH);
     }
 
     /**
-     * Compat: the pre-card-356 arity, which knew no ask caps. Every caller that
-     * built a config positionally — including the tests that pin the layer
-     * merge — keeps compiling and gets the shipped three.
+     * Compat: the pre-cards-356/359/361 arity, which knew neither the ask caps
+     * nor the shell budget nor the two dock widths. Every caller that built a
+     * config positionally — including the tests that pin the layer merge —
+     * keeps compiling and gets all six shipped values.
+     *
+     * <p>THE MERGE THAT PRODUCED THIS. Two branches each added a compat
+     * constructor at exactly this arity, each filling only its own three
+     * defaults, and the merge left both — one duplicate signature and, worse,
+     * two half-answers. Neither branch's tests could see it: the compiler was
+     * the judge, which is this house's rule for a textually clean merge that is
+     * semantically broken.</p>
      *
      * <p>Added rather than migrating those callers, on the canon's rule for
      * this record: one canonical constructor and compatibility constructors
@@ -369,7 +409,9 @@ public record SpectroConfig(
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
                 continuationBudget, maxTurns, llamacppBaseUrl,
                 DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
-                DEFAULT_MAX_QUESTION_CHARS);
+                DEFAULT_MAX_QUESTION_CHARS,
+                DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH,
+                DEFAULT_DOCK_MAX_WIDTH);
     }
 
     /**
@@ -421,7 +463,9 @@ public record SpectroConfig(
                 DEFAULT_PROGRESS_WRITES, DEFAULT_PROGRESS_FAILURES, DEFAULT_PROGRESS_PLAN_TURNS,
                 DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null,
                 DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
-                DEFAULT_MAX_QUESTION_CHARS);
+                DEFAULT_MAX_QUESTION_CHARS,
+                DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH,
+                DEFAULT_DOCK_MAX_WIDTH);
     }
 
     /**
@@ -478,7 +522,9 @@ public record SpectroConfig(
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
                 DEFAULT_CONTINUATION_BUDGET, DEFAULT_MAX_TURNS, null,
                 DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
-                DEFAULT_MAX_QUESTION_CHARS);
+                DEFAULT_MAX_QUESTION_CHARS,
+                DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH,
+                DEFAULT_DOCK_MAX_WIDTH);
     }
 
     /** The shipped {@code progressGuardWrites}: the same bytes under a third new
@@ -498,9 +544,24 @@ public record SpectroConfig(
      *  of it — card 266 owner call 2, decided while building. */
     public static final int DEFAULT_CONTINUATION_BUDGET = 3;
 
-    /** The shipped {@code questionsPerRun}: card 265's number, now a default
-     *  rather than a wall. Its own criterion 4 always called it a default. */
-    public static final int DEFAULT_QUESTIONS_PER_RUN = 3;
+    /**
+     * The shipped {@code questionsPerRun}: <b>nine</b>.
+     *
+     * <p>Card 265 shipped three, called it "the concept's number" and listed all
+     * three ask caps among its open owner calls as "stated GUESSES … want a
+     * word". Card 356 made it settable; card 365 set it, from the owner's word
+     * after a census rather than from taste.</p>
+     *
+     * <p>THE MEASUREMENT, a dated snapshot and not a property — it comes from
+     * outside this repo and cannot be re-derived by a test. Over <b>7,139</b>
+     * real Claude Code sessions on the owner's machine (2026-09-01), only 127
+     * (1.8 %) use the ask tool at all — but of those, <b>16.5 % ask more than
+     * three times</b>, p90 is 5 and the largest asked 12. A budget of three
+     * therefore failed one asking session in six, and the owner's own run of
+     * 2026-08-31 asked four times: it was in that sixth, and the refusal cost it
+     * a turn it then ran out of.</p>
+     */
+    public static final int DEFAULT_QUESTIONS_PER_RUN = 9;
 
     /** The shipped {@code maxQuestionOptions}: the bar renders them in a row. */
     public static final int DEFAULT_MAX_QUESTION_OPTIONS = 4;
@@ -518,8 +579,69 @@ public record SpectroConfig(
      *  than an import: {@code Agent} reads this package, and the house answer to
      *  a restated number is a test that goes and looks. {@code MaxTurnsSettingTest}
      *  pins the two together, the same way {@code ProgressGuardSettingsTest} pins
-     *  the guard's three against {@code ProgressSettings.defaults()}.</p> */
-    public static final int DEFAULT_MAX_TURNS = 15;
+     *  the guard's three against {@code ProgressSettings.defaults()}.</p>
+     *
+     *  <p><b>Card 365 moved it from 15 to 150</b>, and the 15 had never been
+     *  measured against anything. DATED SNAPSHOT, 2026-09-01, n = 7,139 real
+     *  Claude Code sessions on the owner's machine (7,785 transcript files;
+     *  646 were under 2 KB or carried no assistant response). A turn is one
+     *  provider round-trip, counted as a unique {@code message.id} — an
+     *  assistant LINE is not a turn, there are 2.53 lines per response:</p>
+     *
+     *  <pre>turns   median 14 · p75 40 · p90 88 · p95 129 · p99 288 · max 1441
+     *human inputs   median 1 · p90 2 · p95 4</pre>
+     *
+     *  <p><b>48.0 % of those sessions exceed 15 turns</b>, so the shipped
+     *  ceiling was ending half of all real work in the middle — which is
+     *  literally what happened to the owner's run on 2026-08-31, {@code
+     *  stopReason: "max_turns"} at step 5 of an 8-step plan. 150 is his number:
+     *  above p95 and comfortably above the hundred he asked for.</p>
+     *
+     *  <p>It stays PROSE and does not become a test, on the canon's own rule:
+     *  these figures are not derivable from this repo, so nothing here could
+     *  re-derive them and a test would only restate them. They are therefore
+     *  stamped with a date and an n rather than presented as a property of the
+     *  thing — the census was of Claude Code on a million-token model, not of
+     *  spectroscope on an arbitrary backend, and only the shape of the work
+     *  transfers. What IS pinned is the decision: {@code MaxTurnsSettingTest}
+     *  holds this constant to 150 and to {@code Agent.DEFAULT_MAX_TURNS}.</p> */
+    public static final int DEFAULT_MAX_TURNS = 150;
+
+    /** The shipped {@code commandTimeoutSeconds}: ten seconds per shell call —
+     *  card 359 makes the number reachable and does not move it.
+     *
+     *  <p>{@code StandardTools} reads THIS rather than keeping a second copy,
+     *  because its own copy is where the defect was: the constant was private,
+     *  and one line under it {@code run_command}'s model-facing description
+     *  typed the same ten as a literal over a parameter its javadoc already
+     *  said tests shrink.</p>
+     *
+     *  <p>No upper bound is enforced, and that is a decision rather than an
+     *  oversight (card 359, criterion 3). Every {@code run_command} call passes
+     *  the permission gate, so the person who typed a large number here is the
+     *  same person approving the call it applies to; a ceiling picked without a
+     *  measurement would be a second accidental limit of exactly the kind this
+     *  key exists to remove. A non-positive value is not special-cased either —
+     *  {@code Process.waitFor} treats it as "do not wait", which fails fast and
+     *  visibly rather than hanging.</p> */
+    public static final int DEFAULT_COMMAND_TIMEOUT_SECONDS = 10;
+
+    /** The shipped {@code chatReserveWidth}: 360 CSS pixels of the chat row the
+     *  right dock may never take. Card 242 introduced the reserve because the
+     *  proportional cap before it left the chat at 356 px on a 1150 px window;
+     *  card 361 makes the number the operator's. */
+    public static final int DEFAULT_CHAT_RESERVE_WIDTH = 360;
+
+    /** The shipped {@code dockMaxWidth}: 1200 CSS pixels, the ceiling card 228
+     *  raised from 720 on 2026-08-14 and which has been unreachable since.
+     *
+     *  <p>It is a separate key from the reserve above because they bind on
+     *  different screens: below a chat row of roughly 1560 px the reserve
+     *  decides the dock's limit and this ceiling is irrelevant, at or above it
+     *  the ceiling decides and the reserve is. Raising only one of them was the
+     *  premise card 361 was nearly scoped on, and it would have changed nothing
+     *  on the owner's own monitor.</p> */
+    public static final int DEFAULT_DOCK_MAX_WIDTH = 1200;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -598,10 +720,24 @@ public record SpectroConfig(
             // Card 266: three continuations per run, on the attended faces only —
             // the WIRING is the fence, exactly as it is for the guard above.
             3,
-            // Card 282: fifteen turns per run, the value card 266's owner call 4
-            // kept. Until this card nothing outside the two fleet-node paths ever
-            // passed it, so this default WAS the ceiling, everywhere.
-            DEFAULT_MAX_TURNS);
+            // Card 282 named this key; card 365 set its number. ONE HUNDRED AND
+            // FIFTY, not the fifteen this comment claimed until the merge — the
+            // owner's figure after a census of 7,139 real sessions on his own
+            // machine, where the median run takes 14 turns, p90 is 88, and
+            // **48.0 % exceed fifteen**. The old default ended half of real work
+            // mid-run. Card 364 is what makes this number reach more than the
+            // browser session: `.maxTurns(` has one call site today.
+            DEFAULT_MAX_TURNS,
+            null, // llamacppBaseUrl: unset — the legacy baseUrl chain decides
+            // Card 356 with card 365's number: nine questions per run. Card 265
+            // called all three caps guesses awaiting the owner's word; he gave it
+            // after a census of 7,139 real sessions, of which 16.5 % of the ones
+            // that ask at all ask more than three times.
+            DEFAULT_QUESTIONS_PER_RUN, DEFAULT_MAX_QUESTION_OPTIONS,
+            DEFAULT_MAX_QUESTION_CHARS,
+            // Cards 359 and 361: the shell budget and the two dock widths, each
+            // shipping the value it already had as an unreachable literal.
+            DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH, DEFAULT_DOCK_MAX_WIDTH);
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -933,7 +1069,9 @@ public record SpectroConfig(
                         base.progressGuardPlanTurns(), base.continuationBudget(),
                         base.maxTurns(), base.llamacppBaseUrl(),
                         base.questionsPerRun(), base.maxQuestionOptions(),
-                        base.maxQuestionChars());
+                        base.maxQuestionChars(),
+                        base.commandTimeoutSeconds(), base.chatReserveWidth(),
+                        base.dockMaxWidth());
             }
         }
         return base;
@@ -999,7 +1137,14 @@ public record SpectroConfig(
             // better and where the drift guard immediately said no.
             new FieldProbe("questionsPerRun", p -> p.questionsPerRun),
             new FieldProbe("maxQuestionOptions", p -> p.maxQuestionOptions),
-            new FieldProbe("maxQuestionChars", p -> p.maxQuestionChars));
+            new FieldProbe("maxQuestionChars", p -> p.maxQuestionChars),
+            // Cards 359 and 361 — after llamacppBaseUrl, for the same reason it
+            // sits last: this list is pinned to the record's component ORDER,
+            // and these three were appended to the record rather than slotted
+            // beside the fields they read best next to.
+            new FieldProbe("commandTimeoutSeconds", p -> p.commandTimeoutSeconds),
+            new FieldProbe("chatReserveWidth", p -> p.chatReserveWidth),
+            new FieldProbe("dockMaxWidth", p -> p.dockMaxWidth));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -1337,7 +1482,8 @@ public record SpectroConfig(
                 ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp,
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
                 continuationBudget, maxTurns, llamacppBaseUrl,
-                questionsPerRun, maxQuestionOptions, maxQuestionChars);
+                questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2169,6 +2315,11 @@ public record SpectroConfig(
         public Integer questionsPerRun;
         public Integer maxQuestionOptions;
         public Integer maxQuestionChars;
+        // Card 359: the wall-clock budget one run_command call gets.
+        public Integer commandTimeoutSeconds;
+        // Card 361: the two dock widths, in CSS pixels.
+        public Integer chatReserveWidth;
+        public Integer dockMaxWidth;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -2224,6 +2375,11 @@ public record SpectroConfig(
                     Optional.ofNullable(higher.maxQuestionOptions).orElse(maxQuestionOptions);
             out.maxQuestionChars =
                     Optional.ofNullable(higher.maxQuestionChars).orElse(maxQuestionChars);
+            out.commandTimeoutSeconds = Optional.ofNullable(higher.commandTimeoutSeconds)
+                    .orElse(commandTimeoutSeconds);
+            out.chatReserveWidth =
+                    Optional.ofNullable(higher.chatReserveWidth).orElse(chatReserveWidth);
+            out.dockMaxWidth = Optional.ofNullable(higher.dockMaxWidth).orElse(dockMaxWidth);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -2275,7 +2431,11 @@ public record SpectroConfig(
                     Optional.ofNullable(llamacppBaseUrl).orElse(DEFAULTS.llamacppBaseUrl()),
                     Optional.ofNullable(questionsPerRun).orElse(DEFAULTS.questionsPerRun()),
                     Optional.ofNullable(maxQuestionOptions).orElse(DEFAULTS.maxQuestionOptions()),
-                    Optional.ofNullable(maxQuestionChars).orElse(DEFAULTS.maxQuestionChars()));
+                    Optional.ofNullable(maxQuestionChars).orElse(DEFAULTS.maxQuestionChars()),
+                    Optional.ofNullable(commandTimeoutSeconds)
+                            .orElse(DEFAULTS.commandTimeoutSeconds()),
+                    Optional.ofNullable(chatReserveWidth).orElse(DEFAULTS.chatReserveWidth()),
+                    Optional.ofNullable(dockMaxWidth).orElse(DEFAULTS.dockMaxWidth()));
         }
 
         /**

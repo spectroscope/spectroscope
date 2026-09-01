@@ -23,8 +23,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>The owner met it as a run that ended with a green tool result and no
  * closing word: fifteen turns, then {@code run_end} with
  * {@code stopReason: "max_turns"}.</p>
+ *
+ * <p><b>Card 365</b> moved the value. The 15 was never measured against
+ * anything; a census of 7,139 real Claude Code sessions on the owner's machine
+ * (2026-09-01) put the median run at 14 turns and p95 at 129, with 48.0 % of
+ * sessions going past 15 — so the shipped ceiling was cutting half of all real
+ * work off mid-task. The owner's number is 150. The census itself is a dated
+ * snapshot in {@link SpectroConfig#DEFAULT_MAX_TURNS}'s javadoc, because it is
+ * not derivable from this repo and so cannot be re-derived by a test; the
+ * DECISION is pinned below, where an accidental revert goes red.</p>
  */
 class MaxTurnsSettingTest {
+
+    @Test
+    void theShippedCeilingIsTheNumberTheOwnerChoseFromTheCensus() {
+        // A decision, not a derivation — so it is pinned as a literal and the
+        // measurement that produced it is stamped with its date and its n in
+        // the constant's own javadoc. Card 365, criteria 1 and 4.
+        assertEquals(150, SpectroConfig.DEFAULT_MAX_TURNS,
+                "the shipped turn ceiling is not the owner's 150 — the census that"
+                        + " produced it is in the constant's javadoc, and a run that ends"
+                        + " at 15 ends 48 % of real sessions in the middle");
+        assertEquals(SpectroConfig.DEFAULT_MAX_TURNS, Agent.DEFAULT_MAX_TURNS,
+                "the harness's own fallback still carries the old ceiling — every face"
+                        + " that never passes maxTurns reads Agent's copy, so a settings"
+                        + " default moved alone moves nothing for spectro run, cron or a"
+                        + " child agent");
+    }
 
     @Test
     void theShippedValueIsTheOneTheHarnessFallsBackTo(@TempDir Path dir) {

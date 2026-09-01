@@ -69,8 +69,17 @@ public final class Agent {
      *  Was a private constant until card 266; a continuation effectively raises
      *  the ceiling, and a ceiling that is the product of two numbers — only one
      *  of them visible — is not a ceiling anybody can reason about. It joins
-     *  {@code maxTokens} and {@code compactionThreshold} in {@link AgentOptions}. */
-    public static final int DEFAULT_MAX_TURNS = 15;
+     *  {@code maxTokens} and {@code compactionThreshold} in {@link AgentOptions}.
+     *
+     *  <p>Card 365 moved it from 15 to 150. This copy has to move WITH the
+     *  settings default and not after it: every face that never passes
+     *  {@code maxTurns} — {@code spectro run}, a cron fire, a fleet node, every
+     *  child agent — reads this constant and nothing else, so a settings
+     *  default raised alone would have raised nothing for any of them. The
+     *  census behind the number, with its date and its n, is a snapshot in
+     *  {@link dev.spectroscope.core.config.SpectroConfig#DEFAULT_MAX_TURNS};
+     *  {@code MaxTurnsSettingTest} holds the two together. */
+    public static final int DEFAULT_MAX_TURNS = 150;
 
     /**
      * The turn ceiling this run actually stops at — the configured value, or

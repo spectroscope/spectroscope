@@ -147,6 +147,34 @@ export function ProgressGuardSettings({
           </label>
         </div>
       </ReachBlock>
+      {/* Card 359's shell clock. Its own block although it shares maxTurns'
+        reach, because the two bound different things: one is the ceiling on a
+        whole run, the other the ceiling on a single shell call, and one
+        sentence over both would read as one limit. The reach itself was
+        measured at the call site — SessionConnection.buildAgentOnce() calls
+        StandardTools.all() (SessionConnection.java:1202) and runCommand closes
+        over its budget there, with no setter anywhere — and the reasoning is
+        written down beside the entry in settingsReach.tsx. */}
+      <ReachBlock lang={lang} fields={["commandTimeoutSeconds"]}>
+        <div className="settings-grid">
+          <label className="settings-field" data-progress-field="commandTimeoutSeconds">
+            <span>{t(lang, "set.commandTimeoutSeconds")}</span>
+            <input
+              type="number"
+              min={1}
+              value={count(view, "commandTimeoutSeconds")}
+              onChange={(e) => onSave({ commandTimeoutSeconds: Number(e.target.value) })}
+            />
+            <p className="settings-note">{t(lang, "set.commandTimeoutSecondsNote")}</p>
+            <OriginRow
+              view={view}
+              field="commandTimeoutSeconds"
+              lang={lang}
+              onReset={() => onSave({ commandTimeoutSeconds: null })}
+            />
+          </label>
+        </div>
+      </ReachBlock>
       {/* A block of its own because its REACH differs: SessionConnection calls
         setBudget on the live agent once per prompt. reachOf() would throw if
         this shared a block with maxTurns, which is the guard doing its job. */}

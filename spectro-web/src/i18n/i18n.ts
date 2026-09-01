@@ -3028,8 +3028,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "set.maxTurns": { de: "Züge pro Lauf", en: "Turns per run" },
   "set.maxTurnsNote": {
-    de: "Danach endet der Lauf mit „Zug-Limit erreicht“, auch mitten in der Arbeit. Ab Werk 15. Eine Fortsetzung setzt diese Zahl NICHT zurück.",
-    en: "After this the run ends on \"turn limit reached\", even mid-task. Ships at 15. A continuation does NOT reset it.",
+    de: "Danach endet der Lauf mit „Zug-Limit erreicht“, auch mitten in der Arbeit. Eine Fortsetzung setzt diese Zahl NICHT zurück. Ab Werk hoch genug, dass ein echter Lauf sie selten sieht.",
+    en: "After this the run ends on \"turn limit reached\", even mid-task. A continuation does NOT reset it. Ships high enough that a real run rarely meets it.",
+  },
+  "set.commandTimeoutSeconds": { de: "Zeit pro Shell-Befehl", en: "Time per shell command" },
+  "set.commandTimeoutSecondsNote": {
+    de: "Nach so vielen Sekunden wird ein laufender Befehl abgebrochen und das Modell bekommt einen Fehler. Höher setzen für langsame Builds oder eine Suche über viele Dateien; nach oben gibt es keine Grenze, denn jeder Befehl wird ohnehin einzeln freigegeben.",
+    en: "A running command is killed after this many seconds and the model is handed an error. Raise it for slow builds or a search across many files; there is no upper limit, because every command passes the permission gate anyway.",
   },
   "set.continuationBudget": { de: "Fortsetzungen pro Lauf", en: "Continuations per run" },
   "set.continuationBudgetNote": {

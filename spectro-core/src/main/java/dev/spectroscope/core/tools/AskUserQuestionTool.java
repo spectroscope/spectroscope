@@ -46,11 +46,21 @@ public final class AskUserQuestionTool implements Tool {
     /** How long one option label may be. */
     public static final int MAX_OPTION_CHARS = 100;
     /**
-     * How many questions one run may ask. A model that discovers it can stall a
-     * run by asking must not be able to loop, and three is the concept's number:
-     * enough for a genuine fork in the work, far short of a conversation.
+     * How many questions one run may ask when nobody configured it — the value
+     * the one-argument constructor hands over.
+     *
+     * <p>A model that discovers it can stall a run by asking must not be able to
+     * loop, and that argument carries a BOUND, not an unreachable one; card 356
+     * made this settable and card 365 chose the number from a census rather than
+     * from the concept's original guess of three.</p>
+     *
+     * <p><b>It must equal {@code SpectroConfig.DEFAULT_QUESTIONS_PER_RUN}</b>, and
+     * a test pins that. Two shipped defaults for one setting is a disagreement
+     * the operator can only find by hitting it: the configured path would allow
+     * nine while a tool built without config allowed three, and both would call
+     * themselves the default.</p>
      */
-    public static final int QUESTIONS_PER_RUN = 3;
+    public static final int QUESTIONS_PER_RUN = 9;
 
     /**
      * The importer's own input shape, verbatim (toolViews.ts reads exactly this),

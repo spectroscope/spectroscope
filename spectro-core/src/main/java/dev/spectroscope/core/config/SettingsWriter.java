@@ -73,7 +73,11 @@ public final class SettingsWriter {
             // Card 282: the run's turn ceiling, finishing card 266's owner call 4.
             "maxTurns",
             // Card 356: the three ask caps, finishing card 265's open call O3.
-            "questionsPerRun", "maxQuestionOptions", "maxQuestionChars");
+            "questionsPerRun", "maxQuestionOptions", "maxQuestionChars",
+            // Card 359: the wall-clock budget one run_command call gets.
+            "commandTimeoutSeconds",
+            // Card 361: the two dock widths, which bind on different screens.
+            "chatReserveWidth", "dockMaxWidth");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is

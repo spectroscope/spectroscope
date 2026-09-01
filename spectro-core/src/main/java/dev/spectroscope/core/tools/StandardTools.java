@@ -34,7 +34,12 @@ public final class StandardTools {
     private static final long MAX_FILE_BYTES = 50_000;
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
     private static final int MAX_GLOB_RESULTS = 200;
-    private static final long COMMAND_TIMEOUT_SECONDS = 10;
+    /** {@code run_command}'s shipped wall-clock budget, READ from the settings
+     *  record rather than kept as a second copy of the same ten (card 359).
+     *  A private literal here is what made the number unreachable, and the
+     *  description one screen down typed it a second time. */
+    private static final long COMMAND_TIMEOUT_SECONDS =
+            dev.spectroscope.core.config.SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS;
 
     /** Directories skipped by grep/glob tree walks — build noise, never source. */
     private static final Set<String> IGNORED_DIRS = Set.of(".git", "build", "node_modules", "target");
@@ -497,8 +502,17 @@ public final class StandardTools {
         return new Tool() {
             /** Wire name: {@code run_command}. */
             public String name() { return "run_command"; }
-            /** The model-facing one-liner — announces timeout and truncation. */
-            public String description() { return "Runs a shell command in the working directory (10 s timeout, output truncated)."; }
+            /** The model-facing one-liner — announces the budget THIS tool was
+             *  built with, and truncation. Card 359: it used to type the ten as
+             *  a literal, one line under a parameter whose javadoc says tests
+             *  shrink it, so the sentence was already false in every test that
+             *  did. {@code CommandTimeoutSettingTest} compares two budgets
+             *  rather than looking for a digit — an assertion that "10" appears
+             *  is green on the literal it exists to kill. */
+            public String description() {
+                return "Runs a shell command in the working directory ("
+                        + timeoutSeconds + " s timeout, output truncated).";
+            }
             /** One required string: {@code command}. */
             public JsonNode inputSchema() { return schemaWithRequired("command"); }
             /** Guarded — arbitrary shell execution always passes the permission gate. */
