@@ -170,7 +170,11 @@ export interface ContextSnapshot {
   threshold: number;
   /** Where `threshold` came from, when the frame said (card 300). Absent =
    *  the frame stated nothing, which is not the same as "fallback". */
-  thresholdSource?: "override" | "window" | "fallback";
+  thresholdSource?: "override" | "window" | "model" | "fallback";
+  /** The window `threshold` was measured against, when the frame said (card
+   *  366). Absent = the run learned no window; the gauge then names none
+   *  rather than guessing one. */
+  contextWindow?: number;
   parts: { label: string; chars: number; estTokens: number; text?: string }[];
 }
 
@@ -1322,6 +1326,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           // Spread rather than assign: a frame that stated no provenance must
           // leave the KEY absent, not present-and-undefined.
           ...(event.thresholdSource === undefined ? {} : { thresholdSource: event.thresholdSource }),
+          ...(event.contextWindow === undefined ? {} : { contextWindow: event.contextWindow }),
           parts: event.parts,
         },
       };

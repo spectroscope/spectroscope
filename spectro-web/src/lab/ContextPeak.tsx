@@ -93,7 +93,8 @@ export function ContextPeak(props: { applied: RunEvent[]; embedded?: boolean }) 
   const limit =
     root?.denominator === undefined || root.denominator === null ? "" : formatTokens(root.denominator.value);
   // Only ever the recorded run's own model. The `published` note is the one
-  // that names it, and it is raised only when that model produced the divisor.
+  // that names it, and since card 366 it is raised on the harness's own word
+  // (thresholdSource "model") rather than on a table the web used to keep.
   const noteModel = root?.model ?? "—";
 
   // The body, which is all of it. Card 301 put the panel inside a tabbed dock

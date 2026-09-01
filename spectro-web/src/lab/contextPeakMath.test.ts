@@ -4,7 +4,6 @@
 import { describe, expect, it } from "vitest";
 import { contextPeaks } from "./contextPeakMath";
 import { contextDenominator } from "../components/contextRingMath";
-import { contextWindowFor } from "../components/contextWindow";
 import { agentDirectory } from "./agentDirectory";
 import { deriveDetail } from "./flowmap/sceneToFlow";
 import type { RunEvent } from "../events";
@@ -96,10 +95,11 @@ describe("HONESTY 1 — a child never gets a percentage", () => {
   });
 
   it("a child's own model does not become a divisor either", () => {
-    // kid-a's run_start named claude-haiku-4-5, and the published table has a
-    // row for it. Reading that row would be inventing a per-child window the
-    // harness never measured: children are built without introspection and
-    // emit no context_info at all (SubagentConfig's own javadoc).
+    // kid-a's run_start named claude-haiku-4-5, and Java's ModelWindows has a
+    // row for it. Reaching for that row would be inventing a per-child window
+    // the harness never measured: children are built without introspection and
+    // emit no context_info at all (SubagentConfig's own javadoc), so nothing on
+    // the wire says what a child was measured against.
     const t = table([...CHILDREN, usage("main", 1_000), usage("kid-a", 30_000)]);
     expect(t.rows[1].model).toBe("claude-haiku-4-5");
     expect(t.rows[1].denominator).toBeNull();
@@ -170,26 +170,50 @@ describe("HONESTY 2 — a measured threshold wins over the published table", () 
 });
 
 describe("HONESTY 3 — a published divisor says it is published", () => {
-  it("with no reported threshold the model table is used and named as such", () => {
-    const t = table([start("main", "gpt-4o"), usage("main", 64_000)]);
-    expect(t.rows[0].denominator).toEqual({ value: 128_000, of: "window" });
+  // CARD 366 CHANGED WHERE "published" COMES FROM, not what it means. The panel
+  // used to reach it by reading a vendor prefix table in the web for the root's
+  // model name; the harness now says it itself, because the SAME table decides
+  // the threshold in Java and the provenance rides the wire beside it.
+  it("a threshold derived from the model's published window is named as published", () => {
+    // A cloud run: no loaded instance to measure, a published 1,000,000, and a
+    // threshold of 700,000 that is 600,000 tokens above the old constant.
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 350_000)], {
+      threshold: 700_000,
+      source: "model",
+    });
+    expect(t.rows[0].denominator).toEqual({ value: 700_000, of: "compaction" });
     expect(t.rows[0].pct).toBe(50);
     expect(t.notes).toContain("published");
     expect(t.notes).not.toContain("measured");
+    expect(t.notes).not.toContain("fellBack");
   });
 
-  it("a model the table does not know falls to the constant, and says THAT", () => {
-    const t = table([start("main", "deepseek-v4-flash"), usage("main", 25_000)]);
-    expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
-    expect(t.notes).toContain("unknown");
+  it("a run whose backend MEASURED its window is not called published", () => {
+    // The two are one keystroke apart on the wire and must never blur: a
+    // loaded instance is a measurement of a running server, a published window
+    // is a promise about a model.
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 100_000)], {
+      threshold: 175_257,
+      source: "window",
+    });
+    expect(t.notes).toContain("measured");
     expect(t.notes).not.toContain("published");
-    expect(t.notes).not.toContain("measured");
   });
 
-  it("a run that never named a model at all falls to the constant too", () => {
-    const t = table([start("main"), usage("main", 25_000)]);
-    expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
-    expect(t.notes).toContain("unknown");
+  it("a run that reported nothing falls to the constant, whatever its model is called", () => {
+    // The web has no table to consult any more, and that is the point: a
+    // transcript recorded before card 366 carries no window, and the panel says
+    // "unknown" instead of dividing by a guess that looks measured. The model
+    // name changes nothing here — it used to change everything.
+    const known = table([start("main", "gpt-4o"), usage("main", 64_000)]);
+    const local = table([start("main", "deepseek-v4-flash"), usage("main", 25_000)]);
+    const unnamed = table([start("main"), usage("main", 25_000)]);
+    for (const t of [known, local, unnamed]) {
+      expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
+      expect(t.notes).toContain("unknown");
+      expect(t.notes).not.toContain("published");
+      expect(t.notes).not.toContain("measured");
+    }
   });
 });
 
@@ -198,15 +222,23 @@ describe("the lab and the header ring divide by the same number", () => {
   // header ring cannot disagree". Same function is not enough — it has to be
   // the same ARGUMENT, or the guarantee is defeated in exactly the case the
   // provenance field was added for.
-  it("the shape every Anthropic run has divides identically on both surfaces", () => {
-    const model = "claude-opus-4-6";
+  it("the shape every Anthropic run had divides identically on both surfaces", () => {
     const reported = { threshold: 100_000, source: "fallback" as const };
-    const lab = table([start("main", model), usage("main", 76_608)], reported);
+    const lab = table([start("main", "claude-opus-4-6"), usage("main", 76_608)], reported);
     // what components/ContextRing.tsx computes, in its own words:
-    // contextDenominator(context?.threshold, modelWindow)
-    const ring = contextDenominator(reported.threshold, contextWindowFor(model));
+    // contextDenominator(context?.threshold, context?.contextWindow ?? null)
+    const ring = contextDenominator(reported.threshold, null);
     expect(lab.rows[0].denominator).toEqual(ring);
     expect(lab.rows[0].pct).toBe(77);
+  });
+
+  it("and so does the cloud run that shape has become", () => {
+    // The same run after card 366: 1M published, 700k threshold, and both
+    // surfaces divide by the number the harness will actually compact at.
+    const reported = { threshold: 700_000, source: "model" as const };
+    const lab = table([start("main", "claude-opus-4-6"), usage("main", 350_000)], reported);
+    expect(lab.rows[0].denominator).toEqual(contextDenominator(700_000, 1_000_000));
+    expect(lab.rows[0].pct).toBe(50);
   });
 
   it("and so does a run whose threshold the operator typed", () => {
@@ -214,12 +246,12 @@ describe("the lab and the header ring divide by the same number", () => {
       threshold: 5_000,
       source: "override",
     });
-    expect(lab.rows[0].denominator).toEqual(contextDenominator(5_000, contextWindowFor("gpt-4o")));
+    expect(lab.rows[0].denominator).toEqual(contextDenominator(5_000, 128_000));
   });
 
   it("and so does a run that reported no threshold at all", () => {
     const lab = table([start("main", "gpt-4o"), usage("main", 64_000)]);
-    expect(lab.rows[0].denominator).toEqual(contextDenominator(undefined, contextWindowFor("gpt-4o")));
+    expect(lab.rows[0].denominator).toEqual(contextDenominator(undefined, null));
   });
 });
 
@@ -234,12 +266,15 @@ describe("the divisor comes from the RECORDED run, never from what is selected n
     expect(t.notes).toContain("unknown");
   });
 
-  it("the root's model is read from the recorded run_start, and from nowhere else", () => {
+  it("the root's model is still read from the recorded run_start, and shown", () => {
+    // The model no longer decides the divisor — card 366 took that job away
+    // from the name and gave it to the run's own frame — but the row still
+    // NAMES the model, and it may only name the one the transcript carries.
     const named = table([start("main", "gpt-4o"), usage("main", 64_000)]);
     const unnamed = table([start("main"), usage("main", 64_000)]);
-    expect(named.rows[0].denominator).toEqual({ value: 128_000, of: "window" });
-    expect(unnamed.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
+    expect(named.rows[0].model).toBe("gpt-4o");
     expect(unnamed.rows[0].model).toBeUndefined();
+    expect(named.rows[0].denominator).toEqual(unnamed.rows[0].denominator);
   });
 });
 

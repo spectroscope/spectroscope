@@ -103,7 +103,8 @@ public final class SpectroCli implements Runnable {
 
     @Option(names = "--compaction-threshold",
             description = "Compaction threshold in input tokens "
-                    + "(default: derived from the model's loaded context window).")
+                    + "(default: derived from the window the backend loaded, "
+                    + "else the model's published window).")
     Integer compactionThresholdFlag;
 
     @Option(names = "--workspace",

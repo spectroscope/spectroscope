@@ -432,7 +432,7 @@ export interface Detail {
     /** Which fact produced `threshold` (card 300). Absent when the frame said
      *  nothing — which is not the same as "fallback", and the difference is
      *  exactly what a percentage may honestly be built on. */
-    thresholdSource?: "override" | "window" | "fallback";
+    thresholdSource?: "override" | "window" | "model" | "fallback";
   } | null;
   /**
    * in-flight tool per agent (set on tool_call, cleared on tool_result).

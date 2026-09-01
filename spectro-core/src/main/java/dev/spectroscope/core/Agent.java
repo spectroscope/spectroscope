@@ -273,7 +273,8 @@ public final class Agent {
         // The TRIGGER is forced, the BUDGET is not: /compact on a model loaded
         // with 8,192 must not ask the summarizer for 32,000 tokens either.
         CompactionThreshold.Derived compaction = CompactionThreshold.derive(
-                options.compactionThreshold(), () -> options.provider().contextWindow());
+                options.compactionThreshold(), () -> options.provider().contextWindow(),
+                options.provider().modelName());
         Compaction.Result result = Compaction.maybeCompact(
                 options.provider(), List.copyOf(messages),
                 Integer.MAX_VALUE, 1, // force: pretend the context is over any threshold
@@ -342,7 +343,8 @@ public final class Agent {
         // it away — 330 ms against api.openai.com, 2,001 ms against a host that
         // black-holes the connection, all of it before run_start is emitted.
         CompactionThreshold.Derived compaction = CompactionThreshold.derive(
-                options.compactionThreshold(), () -> options.provider().contextWindow());
+                options.compactionThreshold(), () -> options.provider().contextWindow(),
+                options.provider().modelName());
         int compactionThreshold = compaction.tokens();
         int summaryBudget = CompactionThreshold.summaryBudget(compaction);
         // Card 262: the harness's own eye on a run that is going nowhere. Null
@@ -1270,7 +1272,11 @@ public final class Agent {
         int estimatedTokens = parts.stream().mapToInt(ContextPart::estTokens).sum();
         return new ContextInfo(options.agentId(), turn, messages.size(),
                 estimatedTokens, compaction.tokens(), parts, now(),
-                compaction.source().wireName());
+                compaction.source().wireName(),
+                // Card 366: 0 is "nothing was learned", and the wire says that
+                // by leaving the key out rather than by sending a zero — a zero
+                // in a window field is a claim about the room available.
+                compaction.window() > 0 ? compaction.window() : null);
     }
 
     /** Context-part texts are capped for the wire — a whole conversation can be

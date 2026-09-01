@@ -854,14 +854,41 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param thresholdSource which fact produced the threshold (additive, card
      *                        263): {@code override} when an explicit setting won,
      *                        {@code window} when the backend stated the window
-     *                        the loaded instance serves, {@code fallback} when
-     *                        nothing could be learned. Null in pre-263 sessions,
-     *                        and dropped from the wire when null
+     *                        the loaded instance serves, {@code model} when the
+     *                        model's published window decided (additive, card
+     *                        366), {@code fallback} when nothing could be
+     *                        learned. Null in pre-263 sessions, and dropped from
+     *                        the wire when null
+     * @param contextWindow   the window that threshold was measured against
+     *                        (additive, card 366), so a gauge can name its own
+     *                        denominator's origin instead of showing a number
+     *                        from nowhere. Null when the run learned no window
+     *                        at all — which is not the same as zero, and is why
+     *                        this is an {@code Integer}: a 0 would be a claim
+     *                        about the room available. Dropped from the wire
+     *                        when null, so every pre-366 session replays
+     *                        byte-identical
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ContextInfo(String agentId, int turn, int messages, int estimatedTokens,
                        int threshold, List<ContextPart> parts, long ts,
-                       String thresholdSource) implements RunEvent {
+                       String thresholdSource, Integer contextWindow) implements RunEvent {
+
+        /** Pre-card-366 shape: a provenance with no window beside it.
+         *  @param agentId        the agent the estimate belongs to
+         *  @param turn           the turn the estimate precedes (1-based)
+         *  @param messages       how many history entries ride along
+         *  @param estimatedTokens the chars/4 sum of the parts
+         *  @param threshold      the compaction trigger's level
+         *  @param parts          the labeled slices behind the estimate
+         *  @param ts             epoch millis of emission
+         *  @param thresholdSource which fact produced the threshold */
+        public ContextInfo(String agentId, int turn, int messages, int estimatedTokens,
+                           int threshold, List<ContextPart> parts, long ts,
+                           String thresholdSource) {
+            this(agentId, turn, messages, estimatedTokens, threshold, parts, ts,
+                    thresholdSource, null);
+        }
 
         /** Pre-card-263 shape: a threshold with no stated provenance.
          *  @param agentId        the agent the estimate belongs to
@@ -873,7 +900,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          *  @param ts             epoch millis of emission */
         public ContextInfo(String agentId, int turn, int messages, int estimatedTokens,
                            int threshold, List<ContextPart> parts, long ts) {
-            this(agentId, turn, messages, estimatedTokens, threshold, parts, ts, null);
+            this(agentId, turn, messages, estimatedTokens, threshold, parts, ts, null, null);
         }
     }
 
