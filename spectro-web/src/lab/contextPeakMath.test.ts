@@ -200,20 +200,89 @@ describe("HONESTY 3 — a published divisor says it is published", () => {
     expect(t.notes).not.toContain("published");
   });
 
-  it("a run that reported nothing falls to the constant, whatever its model is called", () => {
+  it("a run that reported nothing gets NO divisor, whatever its model is called", () => {
     // The web has no table to consult any more, and that is the point: a
     // transcript recorded before card 366 carries no window, and the panel says
-    // "unknown" instead of dividing by a guess that looks measured. The model
-    // name changes nothing here — it used to change everything.
+    // so instead of dividing by a guess that looks measured. The model name
+    // changes nothing here — it used to change everything.
+    //
+    // REPLACED, not loosened. This case asserted `{value: 100_000, of:
+    // "fallback"}` and a percentage against it. Its own comment already said
+    // the panel "says unknown INSTEAD of dividing", and the code divided; the
+    // three spends chosen for it (64k, 25k, 25k) were all under the stand-in,
+    // so the arithmetic looked plausible in every one. See the case below for
+    // what it looks like when it does not.
     const known = table([start("main", "gpt-4o"), usage("main", 64_000)]);
     const local = table([start("main", "deepseek-v4-flash"), usage("main", 25_000)]);
     const unnamed = table([start("main"), usage("main", 25_000)]);
     for (const t of [known, local, unnamed]) {
-      expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
+      expect(t.rows[0].denominator).toBeNull();
+      expect(t.rows[0].pct).toBeNull();
+      expect(t.rows[0].frac).toBeNull();
       expect(t.notes).toContain("unknown");
       expect(t.notes).not.toContain("published");
       expect(t.notes).not.toContain("measured");
+      // …and the row still has a bar, because relFrac is a share of a
+      // measurement rather than of a number nobody stated.
+      expect(t.rows[0].relFrac).toBe(1);
     }
+  });
+});
+
+describe("HONESTY 4 — the constant stand-in is not a divisor on this panel", () => {
+  // THE REGRESSION THIS DESCRIBE EXISTS FOR, in the reviewer's own arithmetic.
+  // Card 366's first cut took the vendor table away and left the division
+  // standing, so the root fell to contextDenominator's third tier. Every
+  // pre-card-263 session and every imported foreign JSONL reaches this panel
+  // with no context_info at all, which is what the panel is FOR.
+  it("a replayed 859k run against a hosted model prints no percentage, not 859 %", () => {
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 859_000)]);
+
+    expect(t.rows[0].peak).toBe(859_000);
+    expect(t.rows[0].denominator).toBeNull();
+    expect(t.rows[0].pct).toBeNull();
+    // The two numbers this case has ever printed, both refused: 859 against the
+    // 100,000 stand-in (card 366's first cut) and 86 against the 1,000,000 the
+    // web's own table used to guess for this prefix (everything before it).
+    expect(t.rows[0].pct).not.toBe(859);
+    expect(t.rows[0].pct).not.toBe(86);
+    expect(t.notes).toEqual(["unknown"]);
+  });
+
+  it("a spend far over the stand-in is refused as loudly as one under it", () => {
+    // The old shape's tell was that it only looked wrong above 100,000. Both
+    // sides of the constant now answer the same way, which is what makes the
+    // rule a rule and not a range check.
+    const under = table([start("main", "claude-opus-4-6"), usage("main", 12_000)]);
+    const over = table([start("main", "claude-opus-4-6"), usage("main", 2_400_000)]);
+    expect(under.rows[0].denominator).toBeNull();
+    expect(over.rows[0].denominator).toBeNull();
+    expect(over.rows[0].frac).toBeNull();
+  });
+
+  it("but a threshold the harness FELL BACK to is still a divisor, stand-in value and all", () => {
+    // The distinction rule 3 bought, and rule 4 must not eat: 100,000 arriving
+    // ON THE WIRE is where this run will really compact, and the panel divides
+    // by it. 100,000 arriving from contextRingMath because nobody said anything
+    // is not a fact about the run at all.
+    const said = table([start("main", "claude-opus-4-6"), usage("main", 859_000)], {
+      threshold: 100_000,
+      source: "fallback",
+    });
+    const silent = table([start("main", "claude-opus-4-6"), usage("main", 859_000)]);
+    expect(said.rows[0].denominator).toEqual({ value: 100_000, of: "compaction" });
+    expect(said.rows[0].pct).toBe(859);
+    expect(said.notes).toEqual(["fellBack"]);
+    expect(silent.rows[0].denominator).toBeNull();
+  });
+
+  it("a zero threshold on the wire is silence, not a divisor of nothing", () => {
+    // contextDenominator already reads a 0 as absent; this pins that the panel
+    // lands on rule 4 rather than on a division by zero.
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 50_000)], { threshold: 0 });
+    expect(t.rows[0].denominator).toBeNull();
+    expect(t.rows[0].pct).toBeNull();
+    expect(t.notes).toEqual(["unknown"]);
   });
 });
 
@@ -249,20 +318,31 @@ describe("the lab and the header ring divide by the same number", () => {
     expect(lab.rows[0].denominator).toEqual(contextDenominator(5_000, 128_000));
   });
 
-  it("and so does a run that reported no threshold at all", () => {
+  it("…and where the ring has nothing to divide by, the lab prints nothing", () => {
+    // THE CLAIM IS NARROWED TO WHAT THE CODE DOES, on purpose. The case that
+    // stood here asserted the lab equals `contextDenominator(undefined, null)`
+    // — the 100,000 constant — and that is exactly the tier rule 4 refuses.
+    //
+    // The guarantee that mattered is the one above: whenever a run states a
+    // threshold, both surfaces divide by the SAME number, which is every live
+    // session, the only situation in which both are on screen at once. The ring
+    // is a live gauge with a running harness behind it and keeps the stand-in;
+    // this panel replays transcripts that will never state anything, and prints
+    // no percentage there instead.
     const lab = table([start("main", "gpt-4o"), usage("main", 64_000)]);
-    expect(lab.rows[0].denominator).toEqual(contextDenominator(undefined, null));
+    expect(contextDenominator(undefined, null)).toEqual({ value: 100_000, of: "fallback" });
+    expect(lab.rows[0].denominator).toBeNull();
   });
 });
 
 describe("the divisor comes from the RECORDED run, never from what is selected now", () => {
-  it("a transcript that named no model gets the stand-in, not the operator's current pick", () => {
+  it("a transcript that named no model gets no divisor, not the operator's current pick", () => {
     // The lab's primary mode is replay and import. Dividing an imported
     // transcript by whatever model happens to be selected in the app would
     // print "a published limit for {model}" naming a model that never appears
     // anywhere in the events on screen.
     const t = table([start("main"), usage("main", 25_000)]);
-    expect(t.rows[0].denominator).toEqual({ value: 100_000, of: "fallback" });
+    expect(t.rows[0].denominator).toBeNull();
     expect(t.notes).toContain("unknown");
   });
 

@@ -4373,9 +4373,15 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Bezugsgröße: {limit} — abgeleitet aus dem veröffentlichten Fenster von {model}. Gemessen hat dieses Backend nichts: eine gehostete Instanz gibt es nicht.",
     en: "Divisor: {limit} — derived from the window {model} publishes. This backend measured nothing: a hosted model has no loaded instance to measure.",
   },
+  /* No {limit} in this one on purpose: when it is raised there is no divisor
+     on the panel, and the sentence would have been naming the stand-in it
+     exists to say the panel refused. Its EN said "nothing on screen to divide
+     by" one line under a row reading "859k of 100k (859%)"; the DE next to it
+     kept the "ehrlich" that made the claim true, and the sibling key below
+     says it correctly in both. Now all three agree, and so does the panel. */
   "lab.ctx.note.unknown": {
-    de: "Bezugsgröße: {limit} — ein Platzhalter. Dieser Lauf hat keine Schwelle gemeldet, es gibt also nichts, wodurch sich ehrlich teilen ließe.",
-    en: "Divisor: {limit} — a stand-in. This run reported no threshold, so there is nothing on screen to divide by.",
+    de: "Kein Prozentwert für den Wurzel-Agenten: dieser Lauf hat keine Schwelle gemeldet, also gibt es nichts, wodurch sich ehrlich teilen ließe.",
+    en: "No percentage for the root: this run reported no threshold, so there is nothing to divide by honestly.",
   },
   "lab.ctx.note.childrenNoWindow": {
     de: "Kind-Agenten zeigen keinen Prozentwert: sie laufen ohne Introspektion und melden keine Schwelle, also gibt es nichts, wodurch man ehrlich teilen könnte.",

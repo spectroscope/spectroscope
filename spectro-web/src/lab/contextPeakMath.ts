@@ -32,10 +32,19 @@
 //    moves the threshold instead of only colouring a gauge.
 //
 //    THE COST, SAID OUT LOUD: a transcript recorded before card 366 that
-//    carries no context_info at all has no window on it, and the panel now
-//    calls that "unknown" where it used to divide by a table row. That is the
-//    same trade rule 3 already made — a guess that looks measured is worse than
-//    a stand-in that says it is one.
+//    carries no context_info at all has no window on it, and no threshold
+//    either — so this panel now prints its root's peak with NO percentage,
+//    exactly the way a child is printed, and says which in one line.
+//
+//    THE FIRST CUT OF THIS CARD GOT THAT LAST STEP WRONG, and it is the
+//    reason rule 4 below exists: it took the table away and left the DIVISION
+//    standing, so the root fell to contextDenominator's third tier — the
+//    100,000 stand-in — and a replayed 859k-token run printed 859 % where the
+//    same run had read 86 %. A reviewer measured it:
+//    contextPeakOf([run_start(model:"claude-opus-4-6"), usage("main", 859_000)])
+//    answered {denominator:{value:100000,of:"fallback"}, pct:859}. That is the
+//    exact arithmetic contextRingMath's own header names as the bug it exists
+//    to prevent.
 //
 // 3. A THRESHOLD THE HARNESS FELL BACK TO IS NOT A MEASUREMENT — AND IS STILL
 //    THE DIVISOR. This is what thresholdSource buys: the number 100000 arrives
@@ -59,6 +68,23 @@
 //    the `fellBack` note instead: the run compacts here, and nobody measured
 //    it. An absent provenance is NOT `fallback` — a pre-card-263 frame stated
 //    nothing, and its threshold is taken at its word the way it always was.
+//
+// 4. THE CONSTANT STAND-IN IS NOT A DIVISOR ON THIS PANEL. contextDenominator's
+//    third tier answers 100,000 when it knows nothing, and the header ring
+//    divides by it happily — the ring is a LIVE gauge with a running harness
+//    behind it, so "the run reported nothing" there means a provider that emits
+//    no context_info, on a session whose next turn may still bring one. This
+//    panel replays and imports for a living: every pre-card-263 session and
+//    every foreign JSONL reaches it with nothing at all, and there the stand-in
+//    is not a weak measurement but a number no part of the run ever claimed.
+//    A share of it is a percentage of a fiction, and it renders three digits
+//    wide beside a peak that is real.
+//
+//    So the root falls to the same shape a child already has — `denominator:
+//    null`, no pct, no frac, the relative bar, and `lab.ctx.shareNoLimit`. The
+//    two surfaces still divide by the same number whenever there IS one, which
+//    is the guarantee the shared function was imported for; where there is
+//    none they now differ on purpose, and this paragraph is that purpose.
 //
 // AND THE WHOLE DIVISOR COMES FROM THE RECORDED RUN. The root's model is read
 // from the transcript's own run_start, never from what the operator has
@@ -90,7 +116,8 @@ export interface ContextPeakRow {
   /** The model this agent's OWN run_start named. Absent = the run never said. */
   model?: string;
   /** What the peak is a share of, and where that came from. Null for every
-   *  child — see rule 1 above. */
+   *  child (rule 1), and null for a root whose run reported no threshold —
+   *  there is no second tier behind it any more (rule 4). */
   denominator: ContextDenominator | null;
   /** The share as whole percent, or null when there is no honest divisor. */
   pct: number | null;
@@ -116,7 +143,10 @@ export interface ContextPeakRow {
  *                       card 366), which is the shape every cloud run has: no
  *                       loaded instance to ask about, and a window that is a
  *                       fixed property of the model id
- * - `unknown`           neither: a constant stand-in
+ * - `unknown`           neither — and so there is nothing to divide by at all.
+ *                       The root prints its peak with no percent sign, exactly
+ *                       as a child does; the panel does NOT fall to the 100,000
+ *                       stand-in the header ring uses (rule 4)
  * - `childrenNoWindow`  a child is on the panel and prints no percentage
  */
 export type ContextPeakNote = "measured" | "fellBack" | "published" | "unknown" | "childrenNoWindow";
@@ -181,7 +211,16 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
   // ignored would be plumbing that looks like a decision. What the window does
   // decide on this panel is the WORDS — `published` below — and that reads the
   // provenance, which is the part that is not implied by the threshold.
-  const rootWindow = null;
+  //
+  // …and because there is no second tier, there is no third one either: rule 4.
+  // The shared function still decides the number — same function, same argument
+  // as ContextRing.tsx — and this line only refuses its LAST answer, the
+  // constant nobody measured. `fallback` is the one `of` that means "I know
+  // nothing", so it is the one that becomes "nothing to divide by" here.
+  const rootDenominator: ContextDenominator | null = (() => {
+    const d = contextDenominator(reportedThreshold, null);
+    return d.of === "fallback" ? null : d;
+  })();
 
   const spent: { id: string; tag: string; name: string; model?: string; peak: number; turns: number }[] = [];
   for (const [id, handle] of directory) {
@@ -207,8 +246,9 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
 
   const rows: ContextPeakRow[] = spent.map((r) => {
     const isRoot = r.id === rootId;
-    // Rule 1: only the root has anything a percentage could honestly divide by.
-    const denominator = isRoot ? contextDenominator(reportedThreshold, rootWindow) : null;
+    // Rule 1: only the root can have anything a percentage could honestly
+    // divide by — and rule 4: it does not always have one.
+    const denominator = isRoot ? rootDenominator : null;
     const share = denominator === null ? null : r.peak / denominator.value;
     return {
       agentId: r.id,
@@ -232,17 +272,15 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
   const published = reported !== null && reported.source === "model";
   const notes: ContextPeakNote[] = [];
   const rootRow = rows.find((r) => r.root);
-  if (rootRow !== undefined && rootRow.denominator !== null) {
+  if (rootRow !== undefined) {
+    // TWO shapes, and the third one that stood here is gone with the table it
+    // read. `of: "window"` could only ever have come from a lookup this module
+    // no longer does, so that arm was unreachable and pinned by nothing — a
+    // reviewer swapped its answer for "fellBack" and the whole web suite stayed
+    // green. Leaving it would have told the next reader the panel still has a
+    // window tier, eight lines under the comment explaining why it must not.
     notes.push(
-      rootRow.denominator.of === "compaction"
-        ? fellBack
-          ? "fellBack"
-          : published
-            ? "published"
-            : "measured"
-        : rootRow.denominator.of === "window"
-          ? "published"
-          : "unknown",
+      rootRow.denominator === null ? "unknown" : fellBack ? "fellBack" : published ? "published" : "measured",
     );
   }
   if (rows.some((r) => !r.root)) notes.push("childrenNoWindow");

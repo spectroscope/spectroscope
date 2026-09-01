@@ -95,16 +95,19 @@ cheap, and introspection shows you both at work.</p>
 <ul>
   <li><strong>Trigger:</strong> the last turn's context size vs.
       <code>compactionThreshold</code> — checked at the start of each turn. The
-      threshold is <strong>derived</strong> when nobody sets one: three quarters
+      threshold is <strong>derived</strong> when nobody sets one: seven tenths
       of the window the backend says it loaded (LM Studio answers
       <code>loaded_instances[].config.context_length</code> on its own
       <code>/api/v1/models</code>, ollama answers <code>context_length</code> on
       <code>/api/ps</code>, and a llama.cpp server — <code>llamacpp</code> or the
       built-in runtime, which is one — answers <code>n_ctx</code> on
-      <code>GET /props</code>), asked once per run. The last quarter is kept back
-      because the very next call after the trip is the summarizer, which re-sends
+      <code>GET /props</code>), asked once per run. The last three tenths are kept
+      back because the very next call after the trip is the summarizer, which re-sends
       the history <em>and</em> asks for a completion on top. A backend that states
-      no window — anthropic, any OpenAI-compatible server of unknown make — keeps
+      no loaded window may still be running a model whose vendor <em>publishes</em>
+      one — anthropic and every hosted id an OpenAI-compatible gateway is really
+      serving — and then the threshold is seven tenths of that published figure.
+      Only a backend that states no window <em>and</em> publishes none keeps
       the old 100&thinsp;000, and a server that answers "no such endpoint" is not asked
       again for the rest of the session. An explicit setting always wins — and
       costs no round trip at all, because there is nothing the backend could say
@@ -114,8 +117,8 @@ cheap, and introspection shows you both at work.</p>
       occupy the window even though the provider bills them separately.</li>
   <li><strong>Mechanism:</strong> everything except the last four messages is summarized by
       the same provider (note-taker system prompt, summary-only instruction, no tools,
-      and a completion budget sized to the quarter of the window that was kept back —
-      on a model loaded with 8&thinsp;192 tokens it asks for 2&thinsp;048, not 32&thinsp;000);
+      and a completion budget sized to the room the threshold actually left —
+      on a model loaded with 8&thinsp;192 tokens it asks for 2&thinsp;458, not 32&thinsp;000);
       the new history is one summary message plus the recent four, with a cut repair so no
       tool result loses its call. A failed summary is an <code>error</code> event and an
       unchanged history — never a broken run.</li>

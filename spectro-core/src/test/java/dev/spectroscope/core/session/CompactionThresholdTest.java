@@ -277,6 +277,55 @@ class CompactionThresholdTest {
     }
 
     @Test
+    void anOverrideNamesTheLoadedWindowWhenTheCALLERAlreadyHasOne() {
+        // FOUND BY A BITE THAT CAME BACK GREEN. `int known = reportedWindow > 0
+        // ? reportedWindow : published;` had its first arm pinned by nothing: a
+        // reviewer replaced the whole expression with `published` and the full
+        // java gate stayed green, because the only production callers reach the
+        // LAZY form, whose override path never asks the probe and therefore
+        // always arrives here with a 0.
+        //
+        // The direction chosen was to keep the expression and cover it, not to
+        // delete it: a caller holding BOTH a measured loaded window and an
+        // explicit threshold should name the measurement, which is the better
+        // fact and cost nothing. The lazy form now routes through this same
+        // branch with a 0, so there is one expression instead of two.
+        Derived named = CompactionThreshold.derive(50_000, 204_288, "claude-opus-4-6");
+        assertEquals(50_000, named.tokens());
+        assertEquals(Source.OVERRIDE, named.source());
+        assertEquals(204_288, named.window(),
+                "a loaded window in hand outranks the published ceiling, override or not");
+
+        // …and with no model id at all there is nothing else it could be.
+        assertEquals(204_288, CompactionThreshold.derive(50_000, 204_288, null).window());
+    }
+
+    @Test
+    void theLazyFormsOverrideCanOnlyEverNameThePublishedWindow() {
+        // The other half of the same expression, bitten separately: the arm
+        // production actually takes. The probe is not run under an override, so
+        // the loaded window is never learned and the published ceiling is the
+        // best figure the run can carry — 1,000,000 here, and 0 for a local id
+        // no table knows. This is what the record's javadoc used to illustrate
+        // with the owner's loaded 250,368, the one number this path cannot
+        // produce.
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+        Derived hosted = CompactionThreshold.derive(50_000, () -> {
+            asked.incrementAndGet();
+            return 204_288;
+        }, "claude-opus-4-6");
+        assertEquals(1_000_000, hosted.window());
+        assertNotEquals(204_288, hosted.window(),
+                "the probe was never run, so its answer may not appear on the frame");
+        assertEquals(0, asked.get());
+
+        Derived local = CompactionThreshold.derive(50_000, () -> 250_368, "deepseek-v4-flash-0731@iq1_m");
+        assertEquals(0, local.window(),
+                "no vendor row and no probe: the frame states no window at all, and the gauge names none");
+    }
+
+    @Test
     void theWholeOrderOfPrecedenceInOneRun() {
         // AC 4 stated as one sequence rather than four separate cases: setting,
         // then loaded instance, then published window, then the constant. Each

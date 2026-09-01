@@ -28,12 +28,15 @@ import java.util.function.IntSupplier;
  * ceiling, and the ceiling outranks knowing nothing.</p>
  *
  * <p>Card 366 added the third rung. Before it, {@code LlmProvider
- * .contextWindow()} answered 0 for every hosted model — anthropic has no
- * capability endpoint and the OpenAI wire has none either — and a run on a
- * 1,000,000-token model compacted at 100,000, a tenth of the window the
- * operator was paying for. The interface said such a provider "cannot ask", and
- * that word was carrying "cannot know": a hosted model has nothing to ask
- * BECAUSE its window is a published, fixed property of the model id.</p>
+ * .contextWindow()} answered 0 for every hosted model — nothing on the
+ * anthropic or OpenAI wire states what the instance serving the next request
+ * holds, because there is no such instance — and a run on a 1,000,000-token
+ * model compacted at 100,000, a tenth of the window the operator was paying
+ * for. The interface said such a provider "cannot ask", and that word was
+ * carrying "cannot know": a hosted model has nothing to ask about a LOADED
+ * window because its window is a published, fixed property of the model id.
+ * That is not the same as "no endpoint publishes it" — one does, and
+ * {@link ModelWindows} names it and says why this table is not it.</p>
  *
  * <h2>The reserve, and why it is 30 %</h2>
  *
@@ -119,21 +122,24 @@ public final class CompactionThreshold {
      * @param window the window the threshold was measured against, or 0 when
      *               none is known. It is NOT redundant with {@code source}: an
      *               OVERRIDE still names a window when one is known, which is
-     *               what lets the gauge say "of a 250k window" under a
-     *               threshold the operator typed. A local backend under an
-     *               explicit threshold reports 0 here on purpose — the probe is
-     *               not paid for when the override already decides (card 263),
-     *               so nothing about the loaded instance was learned
+     *               what lets the gauge print "window · 1M" under a 50,000 the
+     *               operator typed on {@code claude-opus-4-6}.
+     *               <b>Under an OVERRIDE that window is the PUBLISHED one and
+     *               never a loaded instance</b>, on every path a run takes: the
+     *               probe is not paid for when the override already decides
+     *               (card 263), so nothing about the loaded instance is ever
+     *               learned there. A local backend under an explicit threshold
+     *               therefore reports 0 here — its id is in no vendor table and
+     *               its server was never asked. The illustration that stood in
+     *               this sentence was the owner's loaded 250,368, which is the
+     *               one figure this field cannot carry under an OVERRIDE; the
+     *               next sentence conceded it while the example kept promising
+     *               it. A caller that already HAS a loaded window and an
+     *               override — only {@link #derive(Integer, int, String)}, the
+     *               eager form — gets the loaded one, because it is the better
+     *               fact and it cost nothing
      */
-    public record Derived(int tokens, Source source, int window) {
-
-        /** A derivation that states no window — the pre-366 shape.
-         *  @param tokens the input-token level at which compaction runs
-         *  @param source which fact produced it */
-        public Derived(int tokens, Source source) {
-            this(tokens, source, 0);
-        }
-    }
+    public record Derived(int tokens, Source source, int window) {}
 
     /** Static utility — never instantiated. */
     private CompactionThreshold() {}
@@ -164,7 +170,11 @@ public final class CompactionThreshold {
         int published = ModelWindows.windowFor(model);
         // The best window KNOWN, whichever rung the threshold ends up on: an
         // override decides the number, and the gauge still gets to name what
-        // that number sits inside.
+        // that number sits inside. THIS IS THE ONLY PLACE an OVERRIDE's window
+        // is chosen — the lazy form below routes its own override case through
+        // here rather than repeating the choice, because the copy it used to
+        // keep answered only half of this expression and the other half was
+        // reachable from no caller in the tree.
         int known = reportedWindow > 0 ? reportedWindow : published;
         if (isSet(override)) {
             return new Derived(override, Source.OVERRIDE, known);
@@ -206,6 +216,11 @@ public final class CompactionThreshold {
      * the loaded instance, so a run on a model this house knows still asks the
      * backend first, and still asks it exactly once.</p>
      *
+     * <p>The override case hands 0 to {@link #derive(Integer, int, String)}
+     * rather than deciding a second time. It is the same answer the copy that
+     * stood here gave, and now there is one branch to bite instead of two —
+     * one of which no caller could reach.</p>
+     *
      * <p>The zero-is-unset rule is not repeated here on purpose: it lives once,
      * in {@link #isSet}, so the probe cannot be skipped by a value the
      * derivation then refuses.</p>
@@ -219,7 +234,10 @@ public final class CompactionThreshold {
      */
     public static Derived derive(Integer override, IntSupplier reportedWindow, String model) {
         if (isSet(override)) {
-            return new Derived(override, Source.OVERRIDE, ModelWindows.windowFor(model));
+            // 0 for the loaded window, and that zero is the whole point: the
+            // probe is not run, so nothing about the instance is known and the
+            // published ceiling is the best this run can name.
+            return derive(override, 0, model);
         }
         return derive(null, reportedWindow.getAsInt(), model);
     }
