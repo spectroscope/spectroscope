@@ -775,6 +775,11 @@ public record SpectroConfig(
      * sessions over 50 KB (2026-09-01), median 355 output tokens, p99 15,408,
      * and only <b>0.21 %</b> exceed 32,000.</p>
      */
+     *  and the older Anthropic models — the ones that take a reasoning budget
+     *  as a number rather than the adaptive shape — derive that budget to stay
+     *  strictly below whatever this number is. A second cap invented here would
+     *  be a limit no provider asked for, which is the shape card 364 exists to
+     *  remove.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "maxTokens")
     public static final int DEFAULT_MAX_TOKENS = 32_000;
 

@@ -67,8 +67,17 @@ import java.util.List;
  *                      card 263 carries the threshold: an operator who turned
  *                      reasoning ON meant it for the tree, and a child's events
  *                      are merged into the very stream they would show up in.
- *                      Read at the parent's build, the same grain the parent's
- *                      own value is read at (nullable → the provider's default)
+ *                      Read ONCE, when the session's tool belt is built — a
+ *                      grain coarser than the parent's, and this card's review
+ *                      measured the gap rather than assuming it away. The
+ *                      parent has a live setter ({@code Agent#setThinking});
+ *                      the web header toggle and the REPL's {@code /think}
+ *                      reach it and stop there, so a mid-session toggle moves
+ *                      the parent alone and the children of that session go on
+ *                      asking for what this field was built with until the next
+ *                      one. {@code SubagentReachTest.aLiveThinkingToggleMoves
+ *                      TheParentAloneUntilTheNextSession} holds that measured
+ *                      (nullable → the provider's default)
  */
 public record SubagentConfig(
         LlmProvider provider,

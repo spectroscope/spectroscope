@@ -197,7 +197,7 @@
     "kind" : "SETTABLE",
     "unit" : "TOKENS",
     "key" : "maxTokens",
-    "explanation" : "The completion budget one provider call may spend, in output tokens.\n\nSETTABLE rather than LOOKS_SETTABLE because card 364 made it reachable: .maxTokens( went from zero shipped call sites to wired on every agent-building path. Before that the builder method existed, was public, and no caller ever passed anything but this number.\n\nCard 365 measured it and left it alone — the one default of four that survived the census unchanged. Of 33,810 real responses across 900 sessions over 50 KB (2026-09-01), median 355 output tokens, p99 15,408, and only 0.21 % exceed 32,000."
+    "explanation" : "The shipped maxTokens: 32,000 output tokens per provider call — card 364 makes the number reachable and does not move it.\n\nA second copy of Agent.DEFAULT_MAX_TOKENS rather than an import, for the reason DEFAULT_MAX_TURNS carries one: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTokensSettingTest pins the two together.\n\nNo ceiling here, and that is deliberate in the same way DEFAULT_COMMAND_TIMEOUT_SECONDS carries none. The ceilings that exist belong to the BACKENDS and are enforced where they are known: the OpenAI-compatible provider clamps every request to its own hard 16,000, and the older Anthropic models — the ones that take a reasoning budget as a number rather than the adaptive shape — derive that budget to stay strictly below whatever this number is. A second cap invented here would be a limit no provider asked for, which is the shape card 364 exists to remove."
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
@@ -704,10 +704,10 @@
     "field" : "MAX_SKILL_FILE_BYTES",
     "value" : "50000",
     "expression" : "50_000",
-    "kind" : "FIXED",
+    "kind" : "ALIAS",
     "unit" : "BYTES",
     "key" : "",
-    "explanation" : "The most one sibling file of a skill may hand back, in bytes.\n\nFIXED, and deliberately the same figure as StandardTools.MAX_FILE_BYTES: a skill's own file is read under the same bound as any other file, so an operator cannot learn one ceiling and meet another. Moving one without the other would be the shape card 365 found in the two question-budget defaults and card 331 found in the queue's two counts — one truth kept in two places, disagreeing quietly."
+    "explanation" : "The ceiling on ONE sibling read, the same 50 kB read_file allows. Not a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",
