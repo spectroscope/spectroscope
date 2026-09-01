@@ -75,6 +75,29 @@
   color: var(--text);
 }
 
+/* Card 339 — a seat the layout brought back, holding a shell nobody has used
+   yet. Dashed rather than solid, because the seat is real and its history is
+   not; the mark clears on the first keystroke into that tab. The sentence
+   above the panes is what actually SAYS this, so nothing here is load-bearing
+   for a reader who cannot tell a dashed border from a solid one. */
+.term-tab--restored {
+  border-style: dashed;
+  border-color: var(--border);
+}
+.term-tab--restored .term-tab-pick {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.term-restored-note {
+  flex: 0 0 auto;
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: var(--fs-11);
+  line-height: 1.4;
+}
+
 .term-tab-close {
   padding: 2px 6px 2px 0;
   border: none;

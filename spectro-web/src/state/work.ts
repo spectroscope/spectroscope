@@ -22,7 +22,45 @@
 
 import type { RunEvent } from "../events";
 
-export type WorkKind = "spawn" | "trigger" | "launched";
+/**
+ * Every kind this fold can produce, in the order the panel names them.
+ *
+ * <p>An ARRAY first and a union second, because card 338 asks the empty state
+ * to name what the fold can actually produce and a hand-typed list of three
+ * words beside a hand-typed union is two copies of one lie (card 312). The
+ * panel maps this array to its copy and the drift test walks it, so a fourth
+ * kind added here has nowhere to hide: it renders as a bare i18n key and the
+ * guard goes red.</p>
+ */
+export const WORK_KINDS = ["spawn", "trigger", "launched"] as const;
+
+export type WorkKind = (typeof WORK_KINDS)[number];
+
+/**
+ * The kinds a LIVE desktop session can produce out of its own events.
+ *
+ * <p>One of the three, and that is the whole of card 338: the empty state used
+ * to name all three as though they were on their way, and the owner waited a
+ * test session for a launch to appear in a panel that was never able to show
+ * one. The other two are real and reachable — they just do not come from this
+ * window:</p>
+ *
+ * <ul>
+ *   <li><b>trigger</b> needs a {@code run_start} carrying a trigger stamp, and
+ *       exactly one place in the Java tree writes one — {@code HeadlessRunner},
+ *       the headless and fleet path. The interactive session connection does
+ *       not.</li>
+ *   <li><b>launched</b> needs a tool result whose first line is a task receipt
+ *       (see {@code readReceipt} below), and NO spectroscope tool writes one:
+ *       the shape arrives only inside an imported Claude Code transcript.</li>
+ * </ul>
+ *
+ * <p>Both halves are measurements, not recollection, and both are pinned
+ * against the Java sources by {@code components/workEmptyPromise.drift.test.tsx}
+ * — the day either becomes false, that guard goes red and this copy has to
+ * change with it.</p>
+ */
+export const LIVE_KINDS: readonly WorkKind[] = ["spawn"];
 
 /** Same vocabulary as AgentInfo.state — a work item is read like a lane. */
 export type WorkState = "submitted" | "working" | "completed" | "failed";

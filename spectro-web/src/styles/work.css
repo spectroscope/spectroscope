@@ -126,6 +126,34 @@
   line-height: 1.5;
 }
 
+/* Card 338 — the kinds this panel can produce, one line each, rendered from
+   state/work.ts's own WORK_KINDS. The list is the copy that replaced a
+   sentence naming three kinds as though all three were on their way. */
+.work-empty-lead {
+  margin-top: 0.7rem;
+  color: var(--text-faint);
+  font-size: 0.74rem;
+}
+
+.work-empty-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1rem;
+  list-style: disc;
+}
+
+.work-empty-kind {
+  margin-top: 0.25rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+/* A kind THIS window cannot produce. The line itself says where it comes from,
+   so the ink only agrees with the words; a reader who cannot see the
+   difference in weight still reads the sentence. */
+.work-empty-kind--elsewhere {
+  color: var(--text-faint);
+}
+
 /* The honest note: said in faint ink, never hidden. */
 .work-empty-note {
   margin-top: 0.7rem;
