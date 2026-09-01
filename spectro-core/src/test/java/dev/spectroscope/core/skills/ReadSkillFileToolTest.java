@@ -153,6 +153,39 @@ class ReadSkillFileToolTest {
     }
 
     @Test
+    void aSiblingWhoseNameStartsWithTheSkillsNameIsStillOutside() throws IOException {
+        // ⚠️ THE ONE BRANCH THIRTEEN BITES DID NOT REACH, found by the reviewer of
+        // this card and reproduced here before the case was written.
+        //
+        // The containment rule is `real.startsWith(realBase)` — Path.startsWith
+        // compares NAME ELEMENTS, and that is what makes it correct. Nothing
+        // pinned it. The three cases above put the target in `other/`, in the
+        // temp root, and behind a symlink; none of those names shares a string
+        // prefix with `tdd`, so every one of them is refused by a TEXTUAL
+        // comparison too. Swap the line for
+        // `real.toString().startsWith(realBase.toString())` and the whole skills
+        // package stays green — measured: 13/13, 31/31, 1/1, 6/6, zero failures —
+        // while `read_skill_file(skill="tdd", path="../tdd-extra/secret.md")`
+        // returns the neighbour's file.
+        //
+        // `tdd-extra` is the fixture that tells the two apart: its absolute path
+        // has the skill's absolute path as a STRING prefix and not as a PATH
+        // prefix. This is the card's whole stated security property — a
+        // model-supplied string may choose a location WITHIN a root, never WHICH
+        // root — so it is the one case that must exist.
+        Path root = tempDir.resolve("skills");
+        skillIn(root, "tdd", "body");
+        skillIn(root, "tdd-extra", "body");
+        Files.writeString(root.resolve("tdd-extra").resolve("secret.md"), "the neighbour's file");
+        Tool tool = SkillLibrary.load(List.of(root)).readSkillFileTool();
+
+        String result = tool.execute(input("tdd", "../tdd-extra/secret.md"), context());
+
+        assertTrue(result.startsWith("ERROR: path is outside the skill directory"), result);
+        assertFalse(result.contains("the neighbour's file"), result);
+    }
+
+    @Test
     void anAbsolutePathCannotChooseTheRoot() throws IOException {
         Path root = tempDir.resolve("skills");
         skillIn(root, "tdd", "body");
