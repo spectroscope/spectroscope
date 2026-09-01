@@ -284,7 +284,9 @@ type FieldsOf<T extends RunEvent["type"]> = {
  *    - `agent_message.label` LabTrace.tsx:55, drawn as " (check)"
  *    - `tool_result.output`  LabTrace.tsx:38-39
  *    - the provider          flowmap/nodes.tsx:674,676, the map's LLM card
- *    - context part labels   components/ContextRing.tsx:142
+ *    - context part labels   components/ContextRing.tsx:147, the <span
+ *                              className="context-part-label"> — :142 named the
+ *                              <Fragment> wrapping it, one line short
  *  The rest of each entry was read off the FOUR renderers this table cites
  *  while writing it down. Four, counted over the values below and not
  *  remembered: LabTrace.tsx, flowmap/nodes.tsx, flowmap/ToolCallPanel.tsx and
@@ -372,10 +374,14 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     estimatedTokens: "LabTrace.tsx:52-53",
     // Card 366 moved the popover into its own component in the same file, so
     // these three line numbers moved with it; the window line below is new.
-    parts: "components/ContextRing.tsx:136-146",
-    messages: "components/ContextRing.tsx:148-150",
-    turn: "components/ContextRing.tsx:148-150",
-    contextWindow: "components/ContextRing.tsx:128-132",
+    // RE-COUNTED, not carried: the ranges below were off by one at each end —
+    // the parts range opened on the `<>` above the map and stopped a line short
+    // of its own `))}`. They are the `context.parts.map` block, the
+    // `context-meta` paragraph, and the `named !== null` window line.
+    parts: "components/ContextRing.tsx:145-151",
+    messages: "components/ContextRing.tsx:153-155",
+    turn: "components/ContextRing.tsx:153-155",
+    contextWindow: "components/ContextRing.tsx:133-139",
     agentId: null,
     threshold: null,
     thresholdSource: null,

@@ -52,9 +52,17 @@ describe("the context popover names its own window (card 366)", () => {
   });
 
   it("states the window with no origin when the operator typed the threshold", () => {
-    const html = render(snapshot({ threshold: 50_000, contextWindow: 250_368, thresholdSource: "override" }));
+    // The FRAME here is one the harness can really emit, which the first
+    // version of this case was not: it paired an override with the owner's
+    // LOADED 250,368, and under an override the probe is never run
+    // (CompactionThreshold.derive, the IntSupplier form), so a loaded figure
+    // can never ride an "override" frame. What can is the published ceiling —
+    // 1,000,000 for claude-opus under a 50,000 somebody typed.
+    const html = render(
+      snapshot({ threshold: 50_000, contextWindow: 1_000_000, thresholdSource: "override" }),
+    );
 
-    expect(html).toContain("window · 250k");
+    expect(html).toContain("window · 1M");
     expect(html).not.toContain("loaded window");
     expect(html).not.toContain("model window");
   });

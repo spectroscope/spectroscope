@@ -102,14 +102,17 @@ public interface LlmProvider {
      * actually holds, which is the one direction worse than the constant.</p>
      *
      * <p><b>A provider that cannot ask answers 0, and since card 366 that is no
-     * longer the end of the question.</b> anthropic has no such endpoint and the
-     * OpenAI wire has none either — but a hosted model has nothing to ask
-     * BECAUSE it has no loaded instance: its window is a published property of
-     * the model id, and {@link dev.spectroscope.core.session.ModelWindows} is
-     * the rung below this one. The sentence here used to end "and lands on the
-     * documented fallback", which read "cannot ask" as "cannot know" and left a
-     * 1,000,000-token model compacting at 100,000. Only a backend that states no
-     * window AND publishes none reaches the constant now.</p>
+     * longer the end of the question.</b> Neither the anthropic wire nor the
+     * OpenAI one states a LOADED window — a hosted model has no loaded instance
+     * for such an endpoint to describe. Its window is a published property of
+     * the model id instead, and {@link dev.spectroscope.core.session.ModelWindows}
+     * is the rung below this one. (That class names the live endpoint which does
+     * publish the ceiling, and why the harness reads a table instead — the
+     * distinction being that a ceiling is not what this method asks for.) The
+     * sentence here used to end "and lands on the documented fallback", which
+     * read "cannot ask" as "cannot know" and left a 1,000,000-token model
+     * compacting at 100,000. Only a backend that states no window AND publishes
+     * none reaches the constant now.</p>
      *
      * @return the usable context window in tokens, or 0 when nothing is known
      */

@@ -14,8 +14,8 @@ import java.util.Locale;
  * such instance and nothing to overrun: its window is a published, fixed
  * property of the model id. The interface's own note said a provider that
  * "cannot ask" lands on the fallback, and that word was doing too much work —
- * anthropic cannot ask because there is nothing to ask, not because the number
- * is unknown. A run on a 1,000,000-token model compacted at
+ * anthropic has no LOADED window to be asked about, which is not the same as
+ * the number being unknown. A run on a 1,000,000-token model compacted at
  * {@link CompactionThreshold#FALLBACK_THRESHOLD}, 10 % of its window.</p>
  *
  * <h2>Where this table came from, and where it used to live</h2>
@@ -37,7 +37,7 @@ import java.util.Locale;
  *       (ai.google.dev/gemini-api/docs/long-context)</li>
  * </ul>
  *
- * <h2>Two things this table is honest about</h2>
+ * <h2>Three things this table is honest about</h2>
  *
  * <p><b>It is a guess by prefix and it has been wrong.</b> {@code claude-fable-5}
  * starts with {@code claude} but with neither {@code claude-opus} nor
@@ -55,6 +55,24 @@ import java.util.Locale;
  * ({@link CompactionThreshold#derive(Integer, int, String)}). The alternative —
  * keying on the provider label — would blind every gateway that speaks the
  * OpenAI wire for a real hosted model, which is the commoner case.</p>
+ *
+ * <p><b>A LIVE source exists for part of it, and this is not it.</b> The note
+ * saying so was written next to the web table this class replaced, and it was
+ * deleted with the table rather than moved — so the reason for a hand-typed
+ * list read, for one review, as "nothing publishes this". Something does: the
+ * Anthropic Models API answers {@code max_input_tokens} per model on
+ * {@code GET /v1/models/{id}}, and the server ALREADY calls that exact endpoint
+ * with the operator's key — {@code ModelCapabilityController.anthropicCapability}
+ * reads the {@code capabilities} node of that same body and drops the rest.
+ * openrouter publishes a window through its model API too, and the two backends
+ * that are really a llama.cpp server answer {@code GET /props} with the
+ * {@code n_ctx} the loaded model is running at (that one is already read, one
+ * rung above this table, by {@code OpenAiCompatProvider.loadedWindowFromProps}).
+ * Serving the published figure live would cost a field on the capability record
+ * or a sibling endpoint, an async fetch keyed on (provider, model), and a
+ * null-until-known state. Whatever publishes nothing keeps this table as its
+ * fallback. Deliberately NOT built here — a table costs no key, no latency and
+ * no network, and it works offline, which is where this house tests.</p>
  */
 public final class ModelWindows {
 

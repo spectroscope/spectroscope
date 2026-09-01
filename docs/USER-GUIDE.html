@@ -4996,16 +4996,19 @@ cheap, and introspection shows you both at work.</p>
 <ul>
   <li><strong>Trigger:</strong> the last turn's context size vs.
       <code>compactionThreshold</code> — checked at the start of each turn. The
-      threshold is <strong>derived</strong> when nobody sets one: three quarters
+      threshold is <strong>derived</strong> when nobody sets one: seven tenths
       of the window the backend says it loaded (LM Studio answers
       <code>loaded_instances[].config.context_length</code> on its own
       <code>/api/v1/models</code>, ollama answers <code>context_length</code> on
       <code>/api/ps</code>, and a llama.cpp server — <code>llamacpp</code> or the
       built-in runtime, which is one — answers <code>n_ctx</code> on
-      <code>GET /props</code>), asked once per run. The last quarter is kept back
-      because the very next call after the trip is the summarizer, which re-sends
+      <code>GET /props</code>), asked once per run. The last three tenths are kept
+      back because the very next call after the trip is the summarizer, which re-sends
       the history <em>and</em> asks for a completion on top. A backend that states
-      no window — anthropic, any OpenAI-compatible server of unknown make — keeps
+      no loaded window may still be running a model whose vendor <em>publishes</em>
+      one — anthropic and every hosted id an OpenAI-compatible gateway is really
+      serving — and then the threshold is seven tenths of that published figure.
+      Only a backend that states no window <em>and</em> publishes none keeps
       the old 100&thinsp;000, and a server that answers "no such endpoint" is not asked
       again for the rest of the session. An explicit setting always wins — and
       costs no round trip at all, because there is nothing the backend could say
@@ -5015,8 +5018,8 @@ cheap, and introspection shows you both at work.</p>
       occupy the window even though the provider bills them separately.</li>
   <li><strong>Mechanism:</strong> everything except the last four messages is summarized by
       the same provider (note-taker system prompt, summary-only instruction, no tools,
-      and a completion budget sized to the quarter of the window that was kept back —
-      on a model loaded with 8&thinsp;192 tokens it asks for 2&thinsp;048, not 32&thinsp;000);
+      and a completion budget sized to the room the threshold actually left —
+      on a model loaded with 8&thinsp;192 tokens it asks for 2&thinsp;458, not 32&thinsp;000);
       the new history is one summary message plus the recent four, with a cut repair so no
       tool result loses its call. A failed summary is an <code>error</code> event and an
       unchanged history — never a broken run.</li>
@@ -5264,7 +5267,7 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>ollamaBaseUrl</code></td><td>URL · <em>unset</em> (preset <code>http://localhost:11434</code>)</td><td><code>SPECTRO_OLLAMA_BASE_URL</code></td><td>where ollama lives — the address the run, the live model list, the reachability probe and the doctor line all dial. Set it to put ollama on another machine (<code>http://gpu-box:11434</code>) without moving any other provider. No sentinel: only unset or blank means "not configured"</td></tr>
   <tr><td><code>lmstudioBaseUrl</code></td><td>URL · <em>unset</em> (preset <code>http://localhost:1234</code>)</td><td><code>SPECTRO_LMSTUDIO_BASE_URL</code></td><td>the same for LM Studio, kept apart from ollama's — one address per provider was the point: before this, pointing the shared field at LM Studio's port moved ollama there too, wrong port and all</td></tr>
   <tr><td><code>llamacppBaseUrl</code></td><td>URL · <em>unset</em> (preset <code>http://localhost:8080</code>)</td><td><code>SPECTRO_LLAMACPP_BASE_URL</code></td><td>where your own <code>llama-server</code> lives. The preset is llama.cpp's documented default port. A llama-server is not LM Studio wearing a different hat: it serves exactly the one model it was started with and ignores the model field in a request, and it answers <code>GET /props</code> with the context size that model is actually loaded at — so the harness reads the window instead of guessing it from a table. Pointing <code>lmstudio</code> at a llama-server works on the wire and loses both of those</td></tr>
-  <tr><td><code>compactionThreshold</code></td><td>int · <em>unset</em> (derived; <code>100000</code> when nothing is known)</td><td>— (flag only)</td><td>compaction trigger in input tokens. Unset is not 100&thinsp;000 any more: the harness asks the backend what window the loaded instance serves and compacts at three quarters of it, so a model loaded with 204&thinsp;288 tokens is no longer summarized away at 100&thinsp;000. Set it and your number wins outright. Reaches every way a run starts &mdash; the browser session, the REPL, <code>spectro run</code>, a cron fire, a fleet node and every child agent. Two places build an agent and do <b>not</b> read it, because neither is a face of the app: the <b>embedded library</b> facade (<code>Spectro.agent()</code>, used by a JVM program that took spectroscope as a dependency) and a lane of a <b>fleet panel</b> declared by that same program (<code>Spectro.panel()</code>). Both take their numbers from the code that declares them, never from a settings file on whatever machine they happen to run on</td></tr>
+  <tr><td><code>compactionThreshold</code></td><td>int · <em>unset</em> (derived; <code>100000</code> when nothing is known)</td><td>— (flag only)</td><td>compaction trigger in input tokens. Unset is not 100&thinsp;000 any more: the harness asks the backend what window the loaded instance serves and compacts at seven tenths of it, so a model loaded with 204&thinsp;288 tokens is no longer summarized away at 100&thinsp;000 &mdash; and where no instance answers but the model&rsquo;s vendor publishes a window, it is seven tenths of that. Set it and your number wins outright. Reaches every way a run starts &mdash; the browser session, the REPL, <code>spectro run</code>, a cron fire, a fleet node and every child agent. Two places build an agent and do <b>not</b> read it, because neither is a face of the app: the <b>embedded library</b> facade (<code>Spectro.agent()</code>, used by a JVM program that took spectroscope as a dependency) and a lane of a <b>fleet panel</b> declared by that same program (<code>Spectro.panel()</code>). Both take their numbers from the code that declares them, never from a settings file on whatever machine they happen to run on</td></tr>
   <tr><td><code>permissionMode</code></td><td><code>ask</code> | <code>auto</code> | <code>readonly</code> · <code>ask</code></td><td>—</td><td>chapter 13; headless <code>run</code> has its own <code>--permissions</code>; live via the composer gear's <code>set_permission_mode</code></td></tr>
   <tr><td><code>workspace</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_WORKSPACE</code> / <code>--workspace</code></td><td>the agent's working directory (file tools, glob/grep, run_command); unset = a per-session folder <code>&lt;tmpdir&gt;/spectroscope-ws/&lt;session-id&gt;</code> — a resume finds its files again, and the project you started spectroscope in stays clean; process-global — a workspace scope may not set this (a folder must not repoint the agent)</td></tr>
   <tr><td><code>autoApprove</code></td><td>string[] · <code>[]</code></td><td>—</td><td>allowlist rules: <code>tool#tier</code>, <code>tool#tier:prefix*</code> or <code>family*#tier</code> (chapter 13) — whole-block; lives in the workspace project file once one is pinned</td></tr>

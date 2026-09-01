@@ -155,13 +155,24 @@ describe("the panel says what its divisor is", () => {
     expect(html).not.toContain(t(lang, "lab.ctx.note.measured", { limit: "89.6k" }));
   });
 
-  it("a stand-in divisor says it is a stand-in", () => {
-    // And a run that reported NOTHING lands here whatever its model is called:
-    // the web no longer keeps a window table to fill the silence with.
+  it("a run that reported nothing prints no percentage AND says so", () => {
+    // The panel's own words are checked against what the row beside them shows.
+    // The rewritten case that stood here asserted only the note, on spends of
+    // 25,000 — and the note's EN then read "there is nothing on screen to
+    // divide by" directly under a row that WAS dividing. The reviewer's own
+    // arithmetic is the case now: 859k against a hosted model, which printed
+    // "859k of 100k · 859%" under that sentence.
     const local = panel([rootStart("some-local-build"), usage("main", 25_000)]);
-    const hosted = panel([rootStart("gpt-4o"), usage("main", 25_000)]);
-    expect(local).toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
-    expect(hosted).toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
+    const hosted = panel([rootStart("claude-opus-4-6"), usage("main", 859_000)]);
+    for (const html of [local, hosted]) {
+      expect(html).toContain(t(lang, "lab.ctx.note.unknown"));
+    }
+    expect(hosted).toContain(t(lang, "lab.ctx.shareNoLimit", { peak: "859k" }));
+    expect(hosted).not.toContain("859%");
+    expect(hosted).not.toContain(t(lang, "lab.ctx.share", { peak: "859k", limit: "100k", pct: 859 }));
+    expect(local).toContain(t(lang, "lab.ctx.shareNoLimit", { peak: "25.0k" }));
+    // and the bar is the relative one, with the reason on its title
+    expect(hosted).toContain(t(lang, "lab.ctx.barRelTitle"));
   });
 
   it("a fallen-back threshold is named as one, and the percentage is the ring's", () => {
@@ -182,7 +193,7 @@ describe("the panel says what its divisor is", () => {
     // limit is on file for this model." The run reported one: 100,000.
     const html = panel([rootStart("some-local-build"), ctxInfo(100_000, "fallback"), usage("main", 25_000)]);
     expect(html).toContain(t(lang, "lab.ctx.note.fellBack", { limit: "100k" }));
-    expect(html).not.toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
+    expect(html).not.toContain(t(lang, "lab.ctx.note.unknown"));
   });
 });
 

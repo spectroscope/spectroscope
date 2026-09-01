@@ -118,7 +118,11 @@ export function ContextPopover(props: {
   shownPct: number;
 }) {
   const { lastInputTokens, context, denominator, shownPct } = props;
-  const window = namedWindow(context?.contextWindow, context?.thresholdSource, denominator);
+  // NOT called `window`: this is a browser component, and a local binding of
+  // that name shadows the global inside the whole function. It compiles and
+  // lints today only because nothing here touches the DOM — the next line that
+  // reaches for `window.matchMedia` would silently get a `NamedWindow | null`.
+  const named = namedWindow(context?.contextWindow, context?.thresholdSource, denominator);
   return (
     <div className="context-pop" role="dialog" aria-label="Context usage">
       <span className="eyebrow">Context</span>
@@ -126,10 +130,10 @@ export function ContextPopover(props: {
         {formatTokens(lastInputTokens)} of {formatTokens(denominator.value)}{" "}
         {denominator.of === "compaction" ? "before compaction" : "of the model window"} ({shownPct}%)
       </p>
-      {window !== null && (
+      {named !== null && (
         <p className="context-window tabular">
-          {window.of === "loaded" ? "loaded " : window.of === "published" ? "model " : ""}window ·{" "}
-          {formatWindow(window.tokens)}
+          {named.of === "loaded" ? "loaded " : named.of === "published" ? "model " : ""}window ·{" "}
+          {formatWindow(named.tokens)}
         </p>
       )}
       {context !== null ? (
