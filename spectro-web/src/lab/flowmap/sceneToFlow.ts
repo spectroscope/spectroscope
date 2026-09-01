@@ -13,7 +13,7 @@ import type { RunEvent } from "../../events";
 import type { AgentDirectory } from "../agentDirectory";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
-import { outboundHop } from "./addresses";
+import { modelLocation, outboundHop } from "./addresses";
 import { stationOccupants, type Station, type StationOccupant } from "./stationUsers";
 import {
   SEAT_ROWS_COMPACT,
@@ -537,6 +537,25 @@ export interface Detail {
   reached: string[];
   /** CARD 330: the last browser call this run recorded, or null. */
   page: BrowserPageRecord | null;
+  /**
+   * CARD 333 — the address of the LAST `llm_exchange` this run recorded.
+   *
+   * The LLM card is handed a provider NAME (`opts.provider`), which is not
+   * evidence of a place, and it printed "remote" over it unconditionally. This
+   * is the fact that replaces the literal, and it is carried RAW — in whatever
+   * shape it arrived, redaction marker included — because {@link modelLocation}
+   * owns the reading of it and a fold that pre-decided would be the second
+   * spelling card 329 exists to prevent.
+   *
+   * The LAST and not the first: the card names the model serving now, so it
+   * names the backend that served the latest exchange. Whatever kind that
+   * exchange was — chat, compaction, image or stt all ride this event and all
+   * went to a real backend.
+   *
+   * Null before any exchange, which is the ordinary case and not a corner: 36
+   * of this machine's 486 session files carry an address at all.
+   */
+  llmUrl: string | null;
   /** How many recorded addresses were a redaction marker (card 329). The run
    *  reached SOMETHING and the record deliberately does not say where; that is
    *  a fact of its own and never a host. */
@@ -634,6 +653,7 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     redactedHops: 0,
     crossingNow: false,
     page: null,
+    llmUrl: null,
   };
   /** CARD 330: store paths by content hash, so a browser_action's hash can find
    *  the path the `image_generated` for the same shot already announced. */
@@ -696,6 +716,10 @@ export function deriveDetail(applied: RunEvent[]): Detail {
           d.reached = [];
           d.redactedHops = 0;
           d.page = null;
+          // CARD 333: the same scope. Which backend the LAST run reached is
+          // not a fact about this one, and a stale address on the LLM card is
+          // the same shipped falsehood the literal was.
+          d.llmUrl = null;
         }
         d.think[e.agentId] = "";
         d.answer[e.agentId] = "";
@@ -732,6 +756,10 @@ export function deriveDetail(applied: RunEvent[]): Detail {
       // included, so the Net node drew a router glyph and measured nothing.
       case "llm_exchange":
         d.crossingNow = reach(d, e.url);
+        // CARD 333: what the LLM card says instead of the word "remote". Kept
+        // raw — `reach` above has already thrown loopback away, on purpose,
+        // and loopback is exactly the case this one has to be able to name.
+        d.llmUrl = e.url;
         break;
       case "browser_action": {
         // `url` is ABSENT on 3 of the 4 real browser_action events on this
@@ -2289,6 +2317,10 @@ export function sceneToFlow(
   const llmView = llmLanes(scene, detail);
   N("llm", "llm", {
     active: llmBusy,
+    // CARD 333: where the model IS, decided from the recorded address. The
+    // provider below is its NAME, and the card used to print "remote" over it
+    // with nothing deciding that word.
+    loc: modelLocation(detail.llmUrl),
     provider: opts.provider,
     model: opts.model,
     lanes: llmView.lanes,

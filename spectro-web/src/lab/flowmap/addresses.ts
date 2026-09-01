@@ -64,15 +64,70 @@ export function isRedactionMarker(url: unknown): boolean {
  */
 export function outboundHop(url: unknown): Hop {
   if (isRedactionMarker(url)) return { kind: "redacted" };
-  if (typeof url !== "string" || url === "") return { kind: "none" };
+  const host = parsedHost(url);
+  if (host === null || isLoopbackAddress(host)) return { kind: "none" };
+  return { kind: "host", host };
+}
+
+/**
+ * The `host` a recorded address parses to, or null when it is not one.
+ *
+ * PARSING only, and deliberately no locality: this exists so that
+ * {@link modelLocation} can tell "nothing parseable was recorded" apart from
+ * "loopback" without spelling the parse — or the loopback rule — a second time.
+ * `URL.host` and not `URL.hostname`, so a port stays on the host: it is what a
+ * reader needs to find the box again.
+ *
+ * @param url the recorded address, in whatever shape it arrived
+ * @return the host, or null when there is not one
+ */
+function parsedHost(url: unknown): string | null {
+  if (typeof url !== "string" || url === "") return null;
   let host: string;
   try {
     host = new URL(url).host;
   } catch {
-    return { kind: "none" };
+    return null;
   }
-  if (host === "" || isLoopbackAddress(host)) return { kind: "none" };
-  return { kind: "host", host };
+  return host === "" ? null : host;
+}
+
+/** Where the backend that served a run turned out to be (card 333). */
+export type ModelLocation =
+  /** The address is this machine's own loopback. */
+  | { kind: "local" }
+  /** The call left this machine, for this host. */
+  | { kind: "host"; host: string }
+  /** A credential shape fired: the record deliberately does not say where. */
+  | { kind: "redacted" }
+  /** No address was recorded — 92.6 % of this machine's session files. */
+  | { kind: "unknown" };
+
+/**
+ * Where the model was, for the one card whose job is to name the model.
+ *
+ * The card printed the literal word "remote" with nothing deciding it, so it
+ * was wrong for every local backend this project tests against. This is the
+ * decision that replaces it, and it is a CONSUMER of card 329's classifier —
+ * the locality question is answered by {@link outboundHop} and by nothing here.
+ *
+ * <p>What it adds is the two states `outboundHop` folds together. That fold is
+ * right for the network node, which only ever had to decide whether to draw a
+ * hop; it is wrong here, because "the loopback backend on this machine" and
+ * "no address was recorded" are not the same fact and only one of them may be
+ * called local. So the order is: a redaction stays a redaction before any
+ * locality question; an address that does not parse is unknown, never local —
+ * a provider NAME is not evidence of a place; and only then does `outboundHop`
+ * decide, whose remaining `none` can be nothing but loopback.
+ *
+ * @param url the recorded address, in whatever shape it arrived
+ * @return where the backend was, as far as the record says
+ */
+export function modelLocation(url: unknown): ModelLocation {
+  if (isRedactionMarker(url)) return { kind: "redacted" };
+  if (parsedHost(url) === null) return { kind: "unknown" };
+  const hop = outboundHop(url);
+  return hop.kind === "host" ? { kind: "host", host: hop.host } : { kind: "local" };
 }
 
 /** The three things a recorded page address can be. */

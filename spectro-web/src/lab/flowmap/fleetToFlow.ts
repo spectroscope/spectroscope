@@ -20,6 +20,7 @@ import type { Edge, Node } from "@xyflow/react";
 import type { Lang } from "../../i18n/i18n";
 import { t } from "../../i18n/i18n";
 import type { FleetLabNode, FleetLabScene } from "../fleetLabScene";
+import { modelLocation } from "./addresses";
 import {
   EXPANDED_CARD,
   LANE_CAP,
@@ -296,6 +297,10 @@ export function fleetToFlow(
     position: { x: llmX, y: llmY },
     data: {
       active: cards.some((c) => c.focus === "llm"),
+      // CARD 333, criterion 6: the SAME decision the single-run map draws, off
+      // the same fold. A card wired into one producer ships half a feature —
+      // card 320's shell station and card 327's lanes were both exactly that.
+      loc: modelLocation(detail.llmUrl),
       provider: providerLabel(withProvider),
       model: "",
       ...lanesOf(cards),
