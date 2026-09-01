@@ -406,6 +406,32 @@ export function typedAddress(typed: string): string | null {
   return /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+/**
+ * What the tab strip writes on its one tab (card 353).
+ *
+ * The HOST, which is what a tab in any browser shows and what tells two open
+ * launch configurations apart — `URL.host` and not `URL.hostname`, because on
+ * this machine they differ by the port and by nothing else.
+ *
+ * An address the parser refuses falls back to ITSELF rather than to an empty
+ * tab: `about:blank` is a real thing to have open, and half a parse is not a
+ * reason to show nothing. There is no slicing here — the width is a CSS
+ * concern (`max-width` plus `text-overflow`), measured in a real browser at a
+ * 260 px panel, and a label cut in JavaScript would be a second answer to a
+ * question the stylesheet already answers.
+ *
+ * @param url the address the page is on
+ * @return the label for the tab
+ */
+export function tabLabel(url: string): string {
+  try {
+    const host = new URL(url).host;
+    return host === "" ? url : host;
+  } catch {
+    return url;
+  }
+}
+
 /** @return the subscribe frame for one session's picture */
 export function watchFrame(sessionId: string): Record<string, unknown> {
   return { type: "watch", sessionId };

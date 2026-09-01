@@ -49,6 +49,7 @@ import {
   screenshotFilename,
   screenshotVerbFrame,
   scrollFrame,
+  tabLabel,
   toDevicePoint,
   typedAddress,
   unwatchFrame,
@@ -613,6 +614,10 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
 
   return (
     <section className="browser-segment" aria-label={t(lang, "browser.title")}>
+      {/* CARD 353. Above the row, the way the terminal's strip and the owner's
+          own mock both put it — and mounted in the SAME condition the control
+          row is: a tab whose × the reader cannot press would be a promise. */}
+      {live && <PageTabStrip sessionId={sessionId} url={url} send={send} />}
       <header className="browser-bar">
         <span
           className="browser-dot"
@@ -837,6 +842,59 @@ function NavControls(props: {
         />
       </form>
     </>
+  );
+}
+
+/**
+ * The tab strip, with a roster of ONE (card 353).
+ *
+ * The owner asked to "close the current window with an x so I get back to the
+ * default launch config page". The verb for that is card 346's `close_page`,
+ * which the control row already carries; what this adds is the SHAPE he asked
+ * for — the open page named on a tab, with its × on the tab, above the row.
+ *
+ * <p>A ROSTER OF ONE, derived from the page that is open, and that is the
+ * whole of the state. There is no tab identity anywhere in here: no `tabId` on
+ * a frame, no "current tab", nothing card 347 would have to undo when it makes
+ * the second view real. `tabStrip.test.tsx` holds that by asking the frame
+ * itself rather than by promising it here.
+ *
+ * <p>NO "+". A strip with one tab and a "+" is a promise, and a control that
+ * looks like it opens a tab and does nothing is worse than no control. The
+ * terminal's own strip ships one and this copy leaves it out — which, measured
+ * in a real browser with the fonts loaded, is also 2.80 px of the terminal's
+ * 31.80: this strip stands at 29.00.
+ *
+ * @param props.sessionId whose browser the × closes
+ * @param props.url       the page on the tab, or null for no strip at all
+ * @param props.send      the view channel
+ */
+function PageTabStrip(props: {
+  sessionId: string;
+  url: string | null;
+  send(frame: Record<string, unknown>): void;
+}): React.JSX.Element | null {
+  const lang = useLang();
+  const { sessionId, url, send } = props;
+  // Criterion 2: no tab, no strip. An empty tab is chrome for its own sake,
+  // and the panel below it is already the start page.
+  if (url === null) return null;
+  return (
+    <div className="browser-tabs" role="tablist" aria-label={t(lang, "browser.tabs.label")}>
+      <div className="browser-tab browser-tab--active" role="tab" aria-selected="true">
+        <span className="browser-tab-pick" title={url}>
+          {tabLabel(url)}
+        </span>
+        <button
+          type="button"
+          className="browser-tab-close"
+          aria-label={t(lang, "browser.tab.close")}
+          onClick={() => send(closePageFrame(sessionId))}
+        >
+          ×
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1201,6 +1259,9 @@ export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element 
   const attached = state === "attached" && sessionId !== null;
   return (
     <section className="browser-segment" aria-label={t(lang, "browser.title")}>
+      {/* CARD 353, the same strip and the same condition as the web face's —
+          `attached` is what puts NavControls on this face. */}
+      {attached && <PageTabStrip sessionId={sessionId} url={url} send={props.send} />}
       <header className="browser-bar">
         <span className="browser-dot" data-attached={state === "attached"} aria-hidden="true" />
         {attached ? (

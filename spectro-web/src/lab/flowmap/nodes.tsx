@@ -19,10 +19,10 @@ import { blockLang } from "../../components/toolViews";
 import { breakShellChain } from "../../components/shellChain";
 import { highlight } from "../../components/Highlighted";
 import { WorkflowBoxNode } from "./WorkflowBoxNode";
-import { recordedUrlState, redactionRule } from "./addresses";
+import { recordedUrlState, redactionRule, type ModelLocation } from "./addresses";
 import { screenshotUrl } from "../../wire/browserWire";
 import { formatDuration } from "../../format";
-import { t } from "../../i18n/i18n";
+import { t, type Lang } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 
 function Disclosure({
@@ -927,11 +927,39 @@ export function OsNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 // LLM
 // ---------------------------------------------------------------------------
+/**
+ * What the LLM card says about where the model is (card 333).
+ *
+ * A HOST is returned verbatim and never translated — it is a fact, and the
+ * same string in either language. The other three are copy and go through the
+ * dict, which is also where the decision becomes visible to a translator: the
+ * word this replaces was the literal "remote" in both languages, so nobody
+ * downstream ever saw that there was one.
+ *
+ * @param lang the chrome language
+ * @param loc  where the recorded address says the backend was
+ * @return the word or sentence to print
+ */
+export function modelLocationLabel(lang: Lang, loc: ModelLocation): string {
+  switch (loc.kind) {
+    case "host":
+      return loc.host;
+    case "local":
+      return t(lang, "map.llm.loc.local");
+    case "redacted":
+      return t(lang, "map.llm.loc.redacted");
+    default:
+      return t(lang, "map.llm.loc.none");
+  }
+}
+
 export function LlmNode({ data }: NodeProps) {
   const d = data as {
     active: boolean;
     provider: string;
     model: string;
+    /** CARD 333: where the RECORDED address says the model was. */
+    loc: ModelLocation;
     /** CARD 327: one entry per agent on screen, both halves together. */
     lanes: AgentLane[];
     /** Agents past the cap, reported rather than drawn. */
@@ -946,8 +974,12 @@ export function LlmNode({ data }: NodeProps) {
       </div>
       <div className="pf-llm__name">LLM</div>
       <div className="pf-llm__model">{d.model || d.provider}</div>
-      <div className="pf-llm__loc">
-        <b>{t(lang, "map.remote")}</b> · {d.provider}
+      <div className="pf-llm__loc" data-loc={d.loc.kind}>
+        {/* CARD 333. What stood here was `<b>{t(lang, "map.remote")}</b>` —
+            a literal with nothing deciding it, on the one card whose job is to
+            name the model, and wrong for all three backends this project tests
+            against. The provider beside it is a NAME and stays a name. */}
+        <b>{modelLocationLabel(lang, d.loc)}</b> · {d.provider}
       </div>
       {d.lanes.length > 0 && (
         <Disclosure label={t(lang, "map.llm.reasoning")}>

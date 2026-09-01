@@ -138,6 +138,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Seite schließen (Anmeldungen bleiben)",
     en: "Close the page (logins are kept)",
   },
+  // CARD 353 — the strip with one tab in it. The close says WHICH page it
+  // closes, because the control row already carries a ✕ for the same verb and
+  // two controls with one name is a screen-reader riddle. What survives is
+  // said once, on the row's, and not repeated on every tab.
+  "browser.tabs.label": { de: "Offene Seite", en: "The open page" },
+  "browser.tab.close": { de: "Diese Seite schließen", en: "Close this page" },
   "browser.view.addressHint": { de: "Adresse eintippen und Enter drücken", en: "type an address and press enter" },
   "browser.view.idleNote": {
     de: "Noch keine Seite offen. Tippe oben eine Adresse ein oder lass den Agenten navigieren — das Bild erscheint hier.",
@@ -1653,7 +1659,6 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "die ersten {shown} von {all} Zeichen — die ganze Antwort steht in der JSONL-Zeile",
     en: "the first {shown} of {all} characters — the whole answer is on the JSONL row",
   },
-  "map.remote": { de: "remote", en: "remote" },
   "map.more": { de: "+{n} weitere", en: "+{n} more" },
   "map.aria": {
     de: "System-Map: das Agentensystem und die externen Dienste",
@@ -1728,6 +1733,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   // an untranslated literal in a component.
   "map.llm.thinking": { de: "Reasoning", en: "Thinking" },
   "map.llm.lane.empty": { de: "noch nichts", en: "nothing yet" },
+  // CARD 333 — where the model IS. `map.remote` used to stand here as the
+  // literal "remote" in BOTH languages, printed over every backend including
+  // the three this project tests against, all of them local. A host is a FACT
+  // and has no entry: it is the same string in either language.
+  "map.llm.loc.local": { de: "lokal", en: "local" },
+  // Not "unknown": on 92.6 % of recorded sessions no address was written at
+  // all, so the sentence says what did not happen rather than shrugging.
+  "map.llm.loc.none": { de: "Adresse nicht aufgezeichnet", en: "address not recorded" },
+  "map.llm.loc.redacted": { de: "Adresse geschwärzt", en: "address redacted" },
   "map.llm.more": { de: "{n} weitere Agenten", en: "{n} more agents" },
   "map.sub.disc": { de: "Task & Verlauf", en: "Task & history" },
   "map.sub.order": { de: "Auftrag", en: "Task" },

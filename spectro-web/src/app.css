@@ -137,6 +137,83 @@
   color: var(--text-faint);
 }
 
+/* ---- the tab strip (card 353) ---------------------------------------------
+   THE HOUSE'S STRIP, copied declaration for declaration from .term-tabs and
+   friends in styles/terminal.css and held there by tabStrip.test.tsx — the
+   owner said "so ungefähr" about a Chrome screenshot, which is a resemblance
+   and not a spec, and a literal Chrome strip would break house rules a copy of
+   the terminal's does not. Tokens only, colour on the hairline, no shadow.
+
+   A copy and not a shared class: the terminal's strip is a control (its tabs
+   select) and this one is a label with a close on it, so one file changing
+   would have to answer for the other. The drift test is what keeps them equal
+   while they are meant to be.
+
+   No "+", and no :hover on the tab. There is one tab and nothing to select, so
+   a hover state would say a click does something. Measured in a real browser
+   with the fonts loaded, two readings byte for byte: this strip is 29.00 px
+   against the terminal's 31.80 — the 2.80 is its "+" — and it costs zero width
+   at 420, 320 and 260 px alike, because its own overflow-x absorbs a long
+   host instead of pushing the row. */
+.browser-tabs {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.browser-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.browser-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  background: transparent;
+}
+
+.browser-tab--active {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+
+/* The terminal's pick is a BUTTON, because clicking it selects that tab; with
+   a roster of one there is nothing to select, so this is a span. Its rule is
+   the terminal's minus the four resets only a button needs (border, background,
+   cursor, colour — a span inherits) plus the line-height a button gets for
+   free. Without that line-height the span stands 21.05 px against the button's
+   18.00 and the whole strip grows to 32.05; measured, not reasoned. */
+.browser-tab-pick {
+  max-width: 160px;
+  padding: 2px var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: normal;
+}
+
+.browser-tab-close {
+  padding: 2px 6px 2px 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: var(--fs-12);
+  line-height: 1;
+  cursor: pointer;
+}
+.browser-tab-close:hover {
+  color: var(--error);
+}
+
 /* The hole. Its rectangle is measured and posted to the shell, which puts the
    real page exactly here — so it must keep its size even while empty. */
 .browser-hole {
