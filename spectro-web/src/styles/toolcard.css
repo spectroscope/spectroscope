@@ -3,9 +3,17 @@
 /* HOW TALL A BODY MAY GET (card 363; owner 2026-09-01: "dann mache es SEHR
    viel höher wenn eben mehr text da ist").
 
-   Every body box on this card is a max-height and never a height, so a
-   two-line output is two lines tall and only a long one grows. What this card
-   changed is where the growing stops.
+   Every body box that reads one of the two ceilings below is a max-height and
+   never a height, so a two-line output is two lines tall and only a long one
+   grows. What this card changed is where the growing stops.
+
+   "Every body box that reads a ceiling", not "every body box on this card":
+   the guard is derived from THIS sheet by the tokens, so it governs a fifth
+   box the moment that box reads one — and it says nothing about a box that
+   invents its own number, which the bounded-box case one paragraph down is
+   what covers. The sentence used to be the wider one while the guard behind it
+   typed three selectors by hand and missed .tv-well--script (review
+   2026-09-01).
 
    It stopped at 260px, and 260px is a number about nothing. Measured over 411
    transcript files (every 19th of the 7,796 under ~/.claude/projects):
