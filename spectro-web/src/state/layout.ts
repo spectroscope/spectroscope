@@ -18,7 +18,14 @@ import {
 } from "../panels/columnModel";
 // Runtime edge layout → dockModel only: dockModel's own imports from this
 // file are type-only and erase, so the order has ONE home and no cycle.
-import { DOCK_ORDER } from "../panels/dockModel";
+import { DOCK_ORDER, panelFills } from "../panels/dockModel";
+import {
+  IMAGES_MAX_PX,
+  IMAGES_MIN_PX,
+  RIGHT_PANEL_MIN_PX,
+  SHIPPED_DOCK_WIDTHS,
+  type DockWidths,
+} from "./rowWidths";
 
 /** Which tab the Chat tab's right-docked panel shows — the Claude-Code
  *  right-sidebar pattern. "files" is the Phase 5 workspace panel; "work" is the
@@ -139,6 +146,50 @@ export function clampW(w: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.round(w)));
 }
 
+/**
+ * The two dock widths the settings own (card 361): the chat's reserved floor
+ * and the dock's ceiling. They live beside the state rather than inside it
+ * because they are SETTINGS, not a browser preference — persisting them into
+ * this store's localStorage key would give the same two numbers two homes and
+ * let the stale one win on the next load.
+ *
+ * <p>The layout runs on the shipped pair until `/api/settings` answers, which
+ * has one consequence worth saying out loud: a blob written under a RAISED
+ * ceiling meets the shipped ceiling at hydration, because the store's first
+ * read happens before the fetch. The width comes back at 1200 and one drag
+ * restores it. The alternative is a second, looser safety band for the same
+ * field — two tables for one truth, which is exactly what criterion 3 forbids.
+ */
+let bounds: DockWidths = SHIPPED_DOCK_WIDTHS;
+
+/** The widths the layout is running with right now. */
+export function getDockBounds(): DockWidths {
+  return bounds;
+}
+
+/**
+ * Adopts the resolved settings. Re-clamps the stored dock width against the
+ * new ceiling, so lowering `dockMaxWidth` narrows a dock that is already wider
+ * — a ceiling nobody enforces until the next drag is not a ceiling.
+ *
+ * @param next the widths from `readDockWidths`, already healed
+ */
+export function setDockBounds(next: DockWidths): void {
+  if (next.reserve === bounds.reserve && next.max === bounds.max) return;
+  bounds = { reserve: next.reserve, max: next.max };
+  const w = clampW(state.rightPanelW, RIGHT_PANEL_MIN_PX, bounds.max);
+  if (w !== state.rightPanelW) {
+    state = { ...state, rightPanelW: w };
+    persist();
+  }
+  for (const l of listeners) l();
+}
+
+/** The hook behind the `--chat-reserve` custom property and the drag clamp. */
+export function useDockBounds(): DockWidths {
+  return useSyncExternalStore(subscribe, getDockBounds, getDockBounds);
+}
+
 const DOCK_FIELDS = [
   "dockWork",
   "dockAgents",
@@ -176,7 +227,7 @@ function normalizeMode(v: unknown): DockPanelMode {
 function columnsAgreeingWithModes(state: LayoutState, stored: unknown): string {
   const openIds = DOCK_ORDER.filter((id) => state[DOCK_FIELD[id]] !== "closed");
   const parsed = typeof stored === "string" ? parseColumns(stored, DOCK_ORDER) : [];
-  return serializeColumns(reconcileColumns(parsed, openIds));
+  return serializeColumns(reconcileColumns(parsed, openIds, panelFills));
 }
 
 /**
@@ -206,6 +257,13 @@ function columnsAgreeingWithModes(state: LayoutState, stored: unknown): string {
 export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): LayoutState {
   const blob = typeof parsed === "object" && parsed !== null ? (parsed as Partial<LayoutState>) : {};
   const state: LayoutState = { ...DEFAULT_LAYOUT, ...blob };
+  // Card 361: the widths are clamped HERE, on the way in. Before this the
+  // spread above was the whole of it and a hand-edited `rightPanelW: 5000`
+  // reached the stylesheet untouched.
+  for (const [field, min, max] of WIDTH_FIELDS) {
+    const raw = state[field];
+    state[field] = Number.isFinite(raw) ? clampW(raw, min, widthCeiling(max)) : DEFAULT_LAYOUT[field];
+  }
   // Card 242: the launch rule, same for every era (see the javadoc above).
   state.dockReturn = typeof blob.dockReturn === "boolean" ? blob.dockReturn : blob.rightPanelOpen === true;
   state.rightPanelOpen = false;
@@ -229,10 +287,29 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   return state;
 }
 
-/** The widths a blob must carry as FINITE NUMBERS to be trusted: a stored
- *  `rightPanelW: "abc"` would ride the merge into a CSS custom property and
- *  wedge the layout on every load, with nothing left for a reload to heal. */
-const WIDTH_FIELDS = ["sidebarW", "chatW", "traceW", "ctxW", "rightPanelW", "imagesW"] as const;
+/** The widths a blob must carry as FINITE NUMBERS to be trusted, each with the
+ *  band its own setter holds: a stored `rightPanelW: "abc"` would ride the
+ *  merge into a CSS custom property and wedge the layout on every load, with
+ *  nothing left for a reload to heal — and card 361 measured that a merely
+ *  FINITE `rightPanelW: 5000` rode just as far, because hydration was a bare
+ *  spread and nothing clamped on the way in.
+ *
+ *  One table, not two: the ceiling is read through {@link getDockBounds} so the
+ *  read path and the write path cannot drift apart. `null` means "ask the
+ *  settings", which is a function call and not a second copy of the number. */
+const WIDTH_FIELDS = [
+  ["sidebarW", 180, 560],
+  ["chatW", 200, 1200],
+  ["traceW", 200, 1200],
+  ["ctxW", 200, 1200],
+  ["rightPanelW", RIGHT_PANEL_MIN_PX, null],
+  ["imagesW", IMAGES_MIN_PX, IMAGES_MAX_PX],
+] as const;
+
+/** One width field's ceiling, now — the dock's comes from the settings. */
+function widthCeiling(max: number | null): number {
+  return max === null ? bounds.max : max;
+}
 /** The flags a blob must carry as booleans, same argument. */
 const FLAG_FIELDS = ["chatOpen", "traceOpen", "ctxOpen", "rightPanelOpen"] as const;
 
@@ -267,7 +344,7 @@ export function readLayoutBlob(
     return { state: { ...DEFAULT_LAYOUT }, recovered: true };
   }
   const blob = parsed as Record<string, unknown>;
-  for (const field of WIDTH_FIELDS) {
+  for (const [field] of WIDTH_FIELDS) {
     if (field in blob && !Number.isFinite(blob[field])) {
       return { state: { ...DEFAULT_LAYOUT }, recovered: true };
     }
@@ -398,16 +475,18 @@ export function toggleCtx(): void {
 export function setRightPanelW(w: number): void {
   // The ceiling went 720 → 1200 with the grid (card 228): three 240px columns
   // plus gaps never fit under the old cap, so the third column was
-  // unreachable by construction. The live clamp against the chat's reserve
-  // stays in App's resize handler.
-  set({ rightPanelW: clampW(w, 260, 1200) });
+  // unreachable by construction. Since card 361 it is a SETTING and this clamp
+  // reads it, because a store that pinned the literal would silently defeat a
+  // raised `dockMaxWidth` — the third of the three caps the card found running
+  // in series. The allocation against the chat's reserve is `fitRowPanel`'s.
+  set({ rightPanelW: clampW(w, RIGHT_PANEL_MIN_PX, bounds.max) });
 }
 // The image gallery holds generated images the user wants to actually SEE, so
 // its width goes as wide as the chat can spare (the resize handler already
 // reserves CHAT_RESERVED_MIN_WIDTH_PX for the chat) — a 1200px ceiling like the
 // chat pane, not the old 720 that capped image viewing well below the viewport.
 export function setImagesW(w: number): void {
-  set({ imagesW: clampW(w, 240, 1200) });
+  set({ imagesW: clampW(w, IMAGES_MIN_PX, IMAGES_MAX_PX) });
 }
 /** The user's own show/hide (header toggle, the dock's ✕) — the ONE gesture
  *  pair that writes the return memory in both directions (card 242). */
@@ -444,7 +523,7 @@ export function toggleDockPanel(id: DockPanelId): void {
   const cols = parseColumns(state.dockColumns, DOCK_ORDER);
   set({
     [field]: closing ? "closed" : "open",
-    dockColumns: serializeColumns(closing ? closeInColumns(cols, id) : openInColumns(cols, id)),
+    dockColumns: serializeColumns(closing ? closeInColumns(cols, id) : openInColumns(cols, id, panelFills)),
   });
 }
 
@@ -465,7 +544,7 @@ export function openDockPanel(id: DockPanelId): void {
   if (state[field] === "open") return;
   set({
     [field]: "open",
-    dockColumns: serializeColumns(openInColumns(parseColumns(state.dockColumns, DOCK_ORDER), id)),
+    dockColumns: serializeColumns(openInColumns(parseColumns(state.dockColumns, DOCK_ORDER), id, panelFills)),
   });
 }
 
@@ -515,5 +594,6 @@ export function __getState(): LayoutState {
 }
 export function __resetForTests(): void {
   state = { ...DEFAULT_LAYOUT };
+  bounds = SHIPPED_DOCK_WIDTHS;
   listeners.clear();
 }

@@ -19,7 +19,7 @@
 
 /* ---------- Resizer handles (drag = resize, click = collapse) ---------- */
 .lab-resizer {
-  flex: 0 0 8px;
+  flex: 0 0 var(--row-resizer);
   align-self: stretch;
   position: relative;
   display: flex;

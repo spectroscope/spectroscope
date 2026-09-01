@@ -5,12 +5,14 @@ import {
   applyDockReturn,
   clampW,
   DEFAULT_LAYOUT,
+  getDockBounds,
   hydrateLayout,
   readLayoutBlob,
   openDockPanel,
   openRightPanel,
   setActiveRightTab,
   setChatW,
+  setDockBounds,
   setDockColumnShare,
   setDockColumnSplit,
   setDockWeights,
@@ -156,38 +158,60 @@ describe("the column arrangement travels with the modes (card 236)", () => {
   });
 
   it("open and close walk the fill rule: full height → split → new column", () => {
-    toggleDockPanel("files");
-    expect(__getState().dockColumns).toBe("agents,files~1~0.5");
-    toggleDockPanel("terminal");
-    expect(__getState().dockColumns).toBe("agents,files~1~0.5|terminal~1~0.5");
-    toggleDockPanel("files"); // close — agents keeps its column, terminal stays put
-    expect(__getState().dockColumns).toBe("agents~1~0.5|terminal~1~0.5");
-    toggleDockPanel("terminal"); // close — the emptied column collapses
+    // CARD 362 MOVED ONE HALF OF THIS PIN, and the half is named rather than
+    // re-typed. What moved: the WHO — `files` and `terminal` both fill, so they
+    // no longer share a column with the roster or with each other. What did NOT
+    // move: the shape (full height → split → new column), the cap of two, and
+    // the closing behaviour (a partner stays put, an emptied column collapses).
+    // The walk below therefore uses PROSE panels, and the filling panels get
+    // their own case underneath.
+    toggleDockPanel("plan");
+    expect(__getState().dockColumns).toBe("agents,plan~1~0.5");
+    toggleDockPanel("context");
+    expect(__getState().dockColumns).toBe("agents,plan~1~0.5|context~1~0.5");
+    toggleDockPanel("plan"); // close — agents keeps its column, context stays put
+    expect(__getState().dockColumns).toBe("agents~1~0.5|context~1~0.5");
+    toggleDockPanel("context"); // close — the emptied column collapses
     expect(__getState().dockColumns).toBe("agents~1~0.5");
   });
 
+  it("a panel that fills takes a column of its own (card 362)", () => {
+    // The owner's own gesture and the shipped default: the dock opens on the
+    // roster, he presses Files. This used to serialize as `agents,files~1~0.5`.
+    toggleDockPanel("files");
+    expect(__getState().dockColumns).toBe("agents~1~0.5|files~1~0.5");
+    toggleDockPanel("terminal");
+    expect(__getState().dockColumns).toBe("agents~1~0.5|files~1~0.5|terminal~1~0.5");
+    toggleDockPanel("files");
+    expect(__getState().dockColumns).toBe("agents~1~0.5|terminal~1~0.5");
+  });
+
   it("openDockPanel maintains the arrangement too, idempotently", () => {
+    // The browser fills, so it opens a column of its own (card 362). What this
+    // case is about is unchanged: a repeat open moves nothing and emits nothing.
     openDockPanel("browser");
-    expect(__getState().dockColumns).toBe("agents,browser~1~0.5");
+    expect(__getState().dockColumns).toBe("agents~1~0.5|browser~1~0.5");
     const before = __getState();
     openDockPanel("browser");
     expect(__getState()).toBe(before);
   });
 
   it("folding a panel moves nothing — collapse is geometry, not assignment", () => {
-    toggleDockPanel("files");
+    toggleDockPanel("plan");
     const arrangement = __getState().dockColumns;
-    toggleDockCollapse("files");
+    toggleDockCollapse("plan");
     expect(__getState().dockColumns).toBe(arrangement);
   });
 
   it("the split drag persists per column and the width drag re-cuts a pair", () => {
-    toggleDockPanel("files");
-    toggleDockPanel("terminal");
+    // Prose panels since card 362: a SPLIT needs a column of two, and a filling
+    // panel no longer makes one. The drags themselves are untouched.
+    toggleDockPanel("plan");
+    toggleDockPanel("context");
     setDockColumnSplit(0, 0.3);
-    expect(__getState().dockColumns).toBe("agents,files~1~0.3|terminal~1~0.5");
+    expect(__getState().dockColumns).toBe("agents,plan~1~0.3|context~1~0.5");
     setDockColumnShare(0, 0.25);
-    expect(__getState().dockColumns).toBe("agents,files~0.5~0.3|terminal~1.5~0.5");
+    expect(__getState().dockColumns).toBe("agents,plan~0.5~0.3|context~1.5~0.5");
     // Junk never lands in storage.
     const before = __getState();
     setDockColumnSplit(9, 0.5);
@@ -242,21 +266,46 @@ describe("hydrating pre-236 blobs (card 236 migration)", () => {
     // The 228 shape: dock modes exist, no dockColumns. Open panels enter the
     // fill rule in DOCK_ORDER (work, agents, plan, context, files, terminal,
     // browser) — deterministic, said out loud on the card.
+    // Card 362: the ORDER is untouched, the seating is not. Files and terminal
+    // both fill, so each takes a column instead of pairing with the roster.
     const state = hydrateLayout(
       { dockAgents: "open", dockFiles: "collapsed", dockTerminal: "open", dockBrowser: "closed" },
       null,
     );
-    expect(state.dockColumns).toBe("agents,files~1~0.5|terminal~1~0.5");
+    expect(state.dockColumns).toBe("agents~1~0.5|files~1~0.5|terminal~1~0.5");
     // A collapsed panel keeps its column seat — fold is geometry, not closed.
     expect(state.dockFiles).toBe("collapsed");
   });
 
   it("hydrates a pre-219 blob all the way: one tab plus the legacy terminal key", () => {
     const state = hydrateLayout({ activeRightTab: "files" }, "1");
-    expect(state.dockColumns).toBe("files,terminal~1~0.5");
+    // Two filling panels, two columns since card 362 — the MIGRATION is what
+    // this case is about (the tab plus the legacy key both survive), and both
+    // panels are still here.
+    expect(state.dockColumns).toBe("files~1~0.5|terminal~1~0.5");
   });
 
   it("takes a stored 236 arrangement at its word, ratios included", () => {
+    // Prose panels, so the arrangement survives untouched — which is what "at
+    // its word" means and what card 362 must not break.
+    const state = hydrateLayout(
+      {
+        dockAgents: "open",
+        dockPlan: "open",
+        dockContext: "open",
+        dockColumns: "agents,plan~2~0.3|context~1~0.5",
+      },
+      null,
+    );
+    expect(state.dockColumns).toBe("agents,plan~2~0.3|context~1~0.5");
+  });
+
+  it("separates a stored column that seats a filling panel under a neighbour (card 362)", () => {
+    // Criterion 4: every reader who pressed Files before this card has exactly
+    // this string in localStorage. It must open, and it must lose nobody. The
+    // pair's TOTAL width is kept — 2 becomes 1 + 1 — so the column beside them
+    // is as wide as it was. Their SPLIT is gone, because there is no longer a
+    // shared column to split, and that is the change itself and not a loss.
     const state = hydrateLayout(
       {
         dockAgents: "open",
@@ -266,13 +315,16 @@ describe("hydrating pre-236 blobs (card 236 migration)", () => {
       },
       null,
     );
-    expect(state.dockColumns).toBe("agents,files~2~0.3|terminal~1~0.5");
+    expect(state.dockColumns).toBe("agents~1~0.5|files~1~0.5|terminal~1~0.5");
+    expect(state.dockFiles).toBe("open");
   });
 
   it("reconciles a stored arrangement that disagrees with the modes", () => {
     // The columns say files; the modes say files is closed and browser is
-    // open. Modes win membership; the browser re-enters by the fill rule,
-    // joining the column that has room.
+    // open. Modes win membership; the browser re-enters by the fill rule —
+    // which since card 362 gives it a column of its own rather than the seat
+    // files vacated. Agents keeps the stored weight it had; a new column opens
+    // at weight 1, as it always has.
     const state = hydrateLayout(
       {
         dockAgents: "open",
@@ -281,7 +333,7 @@ describe("hydrating pre-236 blobs (card 236 migration)", () => {
       },
       null,
     );
-    expect(state.dockColumns).toBe("agents,browser~2~0.3");
+    expect(state.dockColumns).toBe("agents~2~0.3|browser~1~0.5");
   });
 
   it("reads a corrupt dockColumns as absent and re-derives from the modes", () => {
@@ -416,5 +468,75 @@ describe("a broken blob heals itself (card 241 recovery)", () => {
     expect(state.dockAgents).toBe("open");
     expect(state.dockFiles).toBe("closed");
     expect(recovered).toBe(false);
+  });
+});
+
+describe("the dock's two widths are settings, and they reach the store (card 361)", () => {
+  it("runs on the shipped pair until the settings answer", () => {
+    expect(getDockBounds()).toEqual({ reserve: 360, max: 1200 });
+  });
+
+  it("a raised ceiling lets the drag store a width the old literal refused", () => {
+    setRightPanelW(2000);
+    expect(__getState().rightPanelW).toBe(1200); // the shipped ceiling
+    setDockBounds({ reserve: 360, max: 2400 });
+    setRightPanelW(2000);
+    expect(__getState().rightPanelW).toBe(2000);
+  });
+
+  it("a lowered ceiling pulls a stored width down with it, once", () => {
+    setDockBounds({ reserve: 360, max: 2400 });
+    setRightPanelW(2000);
+    setDockBounds({ reserve: 360, max: 800 });
+    expect(__getState().rightPanelW).toBe(800);
+  });
+
+  it("is identity-stable when the settings say what it already runs on", () => {
+    const before = getDockBounds();
+    setDockBounds({ reserve: 360, max: 1200 });
+    expect(getDockBounds()).toBe(before);
+  });
+});
+
+describe("a stored width is clamped on READ, not only on write (card 361)", () => {
+  // Measured 2026-09-01: hydrateLayout was a bare {...DEFAULT_LAYOUT, ...blob}
+  // and readLayoutBlob only rejected non-finite numbers, so a hand-edited
+  // rightPanelW rode straight into a CSS custom property.
+  it("a hand-edited width above the ceiling does not survive hydration", () => {
+    expect(hydrateLayout({ rightPanelW: 5000 }, null).rightPanelW).toBe(1200);
+  });
+
+  it("clamps every width the store owns, by the bounds its own setter holds", () => {
+    const state = hydrateLayout(
+      { sidebarW: 9000, chatW: 1, traceW: 9000, ctxW: 1, rightPanelW: 9000, imagesW: 1 },
+      null,
+    );
+    expect({
+      sidebarW: state.sidebarW,
+      chatW: state.chatW,
+      traceW: state.traceW,
+      ctxW: state.ctxW,
+      rightPanelW: state.rightPanelW,
+      imagesW: state.imagesW,
+    }).toEqual({
+      sidebarW: 560,
+      chatW: 200,
+      traceW: 1200,
+      ctxW: 200,
+      rightPanelW: 1200,
+      imagesW: 240,
+    });
+  });
+
+  it("leaves a width inside its bounds exactly as stored", () => {
+    expect(hydrateLayout({ rightPanelW: 620, sidebarW: 300 }, null)).toMatchObject({
+      rightPanelW: 620,
+      sidebarW: 300,
+    });
+  });
+
+  it("reads a stored width against the ceiling the settings are running with", () => {
+    setDockBounds({ reserve: 360, max: 2400 });
+    expect(hydrateLayout({ rightPanelW: 2000 }, null).rightPanelW).toBe(2000);
   });
 });

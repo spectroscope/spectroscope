@@ -23,7 +23,7 @@ import {
   type FileTabsState,
 } from "./fileTabs";
 import { SourceView } from "./SourceView";
-import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit } from "./wsSplit";
+import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit, splitPctFromPointer } from "./wsSplit";
 import type { WorkspaceInfo } from "../state/reducer";
 import { listableBeforeTheFirstRun, paneState, recordedWorkspace } from "./paneState";
 import type { FetchOutcome } from "./paneState";
@@ -267,14 +267,18 @@ export function WorkspaceTab({
       /* storage blocked — the split just resets on the next load */
     }
   }, [split]);
+  // Card 362: the divisor is the CONTAINER's inner height, which is what a
+  // percentage flex-basis resolves against — head and gaps included. It used to
+  // be the distance from the tree's top to the container's bottom, a smaller
+  // number, so the tree grew by more than the pointer had moved and the divider
+  // ran ahead of the cursor. clientHeight and not a rect: the rect is the
+  // border box, and the basis resolves against the content box.
   const applySplitFromClientY = (clientY: number): void => {
     const tree = treeRef.current;
     const cont = containerRef.current;
     if (tree === null || cont === null) return;
-    const top = tree.getBoundingClientRect().top;
-    const height = cont.getBoundingClientRect().bottom - top;
-    if (height <= 0) return;
-    setSplit(clampSplitPct(((clientY - top) / height) * 100));
+    const next = splitPctFromPointer(clientY, tree.getBoundingClientRect().top, cont.clientHeight);
+    if (next !== null) setSplit(next);
   };
   const onDividerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     dragging.current = true;

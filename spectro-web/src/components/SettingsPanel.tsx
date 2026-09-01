@@ -61,6 +61,9 @@ import { AllowlistSettings } from "./AllowlistSettings";
 import { HooksSettings } from "./HooksSettings";
 import type { Leveling } from "../state/useLeveling";
 import { fetchSettings, putSettings, textFieldPatch, type SettingsView } from "../state/serverSettings";
+import { setDockBounds } from "../state/layout";
+import { readDockWidths } from "../state/rowWidths";
+import { DockWidthSettings } from "./DockWidthSettings";
 import { CopyButton } from "./CopyButton";
 import { ReachBlock } from "./settingsReach";
 import { OriginRow } from "./settingsOrigin";
@@ -260,7 +263,17 @@ export function SettingsPanel({
   const { prefs } = useDesignPrefs();
   const lang = useLang();
   const [savedFlash, setSavedFlash] = useState(false);
-  const [view, setView] = useState<SettingsView | null>(null);
+  const [resolved, setResolved] = useState<SettingsView | null>(null);
+  const view = resolved;
+  /** Card 361: every fresh view goes through here, and the two dock widths are
+   *  adopted on the way past. This wrapper is what makes their reach LIVE and
+   *  not a hope — the alternative was to remember to apply them at each of the
+   *  five `setView` call sites below, and the fifth one added later would be
+   *  the one that forgot. */
+  const setView = (fresh: SettingsView | null): void => {
+    if (fresh !== null) setDockBounds(readDockWidths(fresh.effective));
+    setResolved(fresh);
+  };
   const [loadFailed, setLoadFailed] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // One-shot graduation offer: a browser that still carries the retired
@@ -693,6 +706,13 @@ export function SettingsPanel({
                 <p className="settings-note">{t(lang, "set.noSignature")}</p>
               )}
             </div>
+
+            {/* ---- The dock's two widths (card 361) — server settings, and the
+              only ones in this room. They stand beside Design because the
+              question they answer is the same one: what the app looks like.
+              Rendered only once the view has landed, like every other
+              server-backed block on this page. ---- */}
+            {view && <DockWidthSettings view={view} lang={lang} onSave={saveUser} />}
 
             {/* ---- Language ---- */}
             <div className="settings-label" id={sectionAnchorId("language")}>

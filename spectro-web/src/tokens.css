@@ -116,11 +116,21 @@
   --sidebar-w: 280px;
   --content-max: 860px; /* reading width of the chat history */
   --content-max-wide: 1118px; /* the "wide" setting: 30% more room (owner) */
-  /* Card 242: the chat's reserved floor beside the dock. The same 360 lives
-     in App.tsx as CHAT_RESERVED_MIN_WIDTH_PX (the drag clamp); this token is
-     the RENDER-time half — the old min(…, 60%) cap was proportional and let a
-     1150px window squeeze the chat to 356px (measured 2026-08-15). */
+  /* Card 242: the chat's reserved floor beside the dock — the RENDER-time half
+     of it. The old min(…, 60%) cap was proportional and let a 1150px window
+     squeeze the chat to 356px (measured 2026-08-15).
+     Card 361 made the floor a setting (chatReserveWidth). This value is what
+     the row runs on until /api/settings answers; App.tsx then writes the
+     resolved one over it as an inline custom property on .chat-row, so the
+     number here must stay equal to DEFAULT_CHAT_RESERVE_PX in
+     state/rowWidths.ts — dockNarrow.drift.test.ts is what keeps it there. */
   --chat-reserve: 360px;
+  /* One resizer handle. Card 361, criterion 4: the drag clamp used to ignore
+     this width while the render-time cap subtracted it, so the two disagreed
+     by exactly a handle and the chat came out 352px against a 360px floor.
+     .lab-resizer's flex-basis, .right-panel's cap and ROW_RESIZER_PX in
+     state/rowWidths.ts are the three readers, and they read one number. */
+  --row-resizer: 8px;
   --z-sticky: 10;
   --z-dropdown: 100;
   --z-modal: 1000;

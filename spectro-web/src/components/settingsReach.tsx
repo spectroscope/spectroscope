@@ -139,15 +139,6 @@ export const SETTING_REACH = {
   // There is no setter on the tool and nothing re-reads the config per call, so
   // a save reaches the next session and not this one. Same answer for the CLI
   // and the headless runner, which build their belts the same way.
-  //
-  // Not classified here, deliberately: chatReserveWidth and dockMaxWidth. They
-  // are record components as of this edit and NOTHING reads them yet — measured
-  // 2026-09-01, the reserve is a module constant at App.tsx:187 and the ceiling
-  // is an argument to clampW at layout.ts:403, and neither consults the
-  // settings view. Every value of Reach is a promise about when a save lands,
-  // and there is no true one to make for a setting with no reader. Card 361
-  // wires them and classifies them in the same edit, which is the only way the
-  // sentence and the code can arrive together.
   commandTimeoutSeconds: "next-session",
   // Card 364: the completion budget one provider call may spend. Measured the
   // same way maxTurns was, and it lands in the same place — Agent reads
@@ -156,6 +147,22 @@ export const SETTING_REACH = {
   // with the card is not WHEN it lands but WHETHER: the builder method had zero
   // callers anywhere, so the number was unreachable from every face at once.
   maxTokens: "next-session",
+  // Card 361: the dock's two widths. LIVE, and measured rather than hoped —
+  // the panel's own setView applies every fresh view through
+  // state/rowWidths.readDockWidths into layout.setDockBounds, which writes the
+  // --chat-reserve custom property, re-clamps a dock already wider than a
+  // lowered ceiling, and notifies the store's subscribers. Nothing here waits
+  // for a session: no agent reads these two, they never enter a system prompt,
+  // and the only readers are a stylesheet and a drag handler in this same tab.
+  //
+  // The entry that stood here until this card said the opposite — "not
+  // classified, nothing reads them yet" — and it was true when it was written:
+  // the keys landed one card before their reader. That sentence and this one
+  // are the same rule seen from both sides. Reach is a promise about when a
+  // save lands, so a setting with no reader gets no promise, and a setting
+  // that gains one gets its promise in the SAME edit.
+  chatReserveWidth: "live",
+  dockMaxWidth: "live",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to
@@ -179,6 +186,10 @@ export const NOTE_REACH: Record<string, Reach> = {
   "set.alApplies": "next-session",
   "set.wsApplies": "next-session",
   "set.logApplies": "live",
+  // Card 361: live, but not through a tool call — the generic live sentence
+  // promises "from its next tool call" and no tool reads these two. The dock
+  // is redrawn where it stands.
+  "set.dockWidthApplies": "live",
 };
 
 /** The generic sentence for a reach, when a block does not bring its own. */

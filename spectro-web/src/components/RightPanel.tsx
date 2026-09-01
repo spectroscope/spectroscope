@@ -51,7 +51,7 @@ import { WorkspaceTab } from "../workspace/WorkspaceTab";
 import { TerminalPanel } from "../panels/TerminalPanel";
 import { BrowserSegment } from "../browser/BrowserSegment";
 import { BrowserReplay } from "../browser/BrowserReplay";
-import { DOCK_ORDER, dockLabelKey, dockModes } from "../panels/dockModel";
+import { DOCK_ORDER, dockLabelKey, dockModes, panelFills } from "../panels/dockModel";
 import type { WorkspaceInfo } from "../state/reducer";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -335,9 +335,10 @@ export function RightPanel({
     }
   };
 
-  /** The panels whose body owns its layout (tree, PTY, hole) rather than
-   *  scrolling as prose. */
-  const fills = (id: DockPanelId): boolean => id === "files" || id === "terminal" || id === "browser";
+  // The predicate that used to stand here as a local closure moved to
+  // panels/dockModel.panelFills with card 362: the SEATING reads it now, and a
+  // second copy of the list beside the fill rule is the defect that card names
+  // by number. The fill class below is one of its two readers.
 
   // Ratios are stored to 4 decimals (columnModel's round4); the complements
   // rendered here go through the same rounding so the two grows always sum
@@ -445,7 +446,7 @@ export function RightPanel({
           </button>
         </header>
         <div
-          className={`dock-panel-body${fills(id) ? " dock-panel-body--fill" : ""}`}
+          className={`dock-panel-body${panelFills(id) ? " dock-panel-body--fill" : ""}`}
           style={collapsed ? { display: "none" } : undefined}
         >
           {bodyFor(id)}
