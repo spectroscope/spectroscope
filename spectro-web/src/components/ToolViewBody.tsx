@@ -28,15 +28,29 @@ import { statusLabel } from "./PlanTab";
 import { useLang } from "../state/lang";
 import type { Lang } from "../i18n/i18n";
 
-/** Visible clip for long bodies — the full payload lives in raw/json. */
+/**
+ * The visible clip for a body that HAS a face reaching further.
+ *
+ * The line here read "the full payload lives in raw/json", and over the store
+ * that was false twice. The raw face cuts with this same constant, so it
+ * reaches exactly as far; and the json face only reaches further when the
+ * output PARSES — for text it fell back to a `pre` cut at 4,000 too, under a
+ * note promising the output "shown verbatim". For a plain file body past 4,000
+ * characters, no face of the card reached the end, and 982 of the store's
+ * 2,016 measured `Read` results are longer than that (card 363).
+ *
+ * What is true is narrower, and is what this constant now claims: a value that
+ * parses is complete in the json tree, and a body with no such second face
+ * uses FULL_CHARS below.
+ */
 const CLIP_CHARS = 4000;
 
 /**
- * The clip for the two workflow bodies with no second face.
+ * The clip for a body that no other face of the card reaches past.
  *
- * Every other clipped body is a slice of the tool's own input or output, so a
- * reader who wants the rest switches to the raw face and reads it there. Two on
- * this card are not:
+ * Most clipped bodies are a slice of the tool's own input or output, and a
+ * reader who wants the rest switches to the raw face and reads it there. These
+ * are not:
  *
  *   THE SCRIPT recovered from the run's state file (card 322). The call carried
  *   a path, and raw/json show the CALL — so at 4,000 characters the card hands
@@ -49,14 +63,30 @@ const CLIP_CHARS = 4000;
  *   neither reached the end. The fallback the script's reserve was argued from
  *   is not there for these.
  *
+ *   A FILE BODY, in either face of the body chip (card 363). The owner asked
+ *   why the preview stops while the json view runs to the end; half the answer
+ *   was this clip rather than the box. The raw face carries the same body
+ *   through the same `CLIP_CHARS` and the json face has no tree to offer for a
+ *   file, so past 4,000 characters the card had no complete reading of it at
+ *   all — and that is not a corner: over 411 transcript files sampled
+ *   2026-09-01 (every 19th of 7,796 under ~/.claude/projects), 982 of 2,016
+ *   `Read` results — 48.71% — are longer than 4,000.
+ *
+ *   THE JSON FACE'S TEXT FALLBACK, for the same reason and in the same breath:
+ *   it is drawn under a line calling the output verbatim, which a cut at 4,000
+ *   made untrue.
+ *
  * 48,000 because the store's longest script is 44,380 characters and the median
- * 9,417 — so no real body is cut, and the number is still a bound rather than a
- * promise to render anything. Both figures measured 2026-08-30 over the 592
- * files matched by
+ * 9,417 — so no real script is cut, and the number is still a bound rather than
+ * a promise to render anything. It is not a promise for file bodies either: 45
+ * of those 2,016 reads (2.23%) run past it and the longest tool result in the
+ * sample is 75,076 characters, so `cut()`'s "... (truncated)" line still has to
+ * appear, and toolBodyClip.test.tsx pins that it does. The script figures were
+ * measured 2026-08-30 over the 592 files matched by
  *
  *   find ~/.claude/projects -path '*\/workflows/wf_*.json'
  */
-const WELL_CHARS = 48000;
+const FULL_CHARS = 48000;
 
 const cut = (s: string, max = CLIP_CHARS): string =>
   s.length > max ? `${s.slice(0, max)}\n... (truncated)` : s;
@@ -159,8 +189,9 @@ function Body(props: { label: string; path: string; text: string; lang: Lang }) 
   const [manual, setManual] = useState<boolean | null>(null);
   // Both faces are clipped at the same place, so the "(truncated)" line is the
   // last thing the rendered one shows too — and the probes run on the clip, not
-  // on a body no reader will see.
-  const text = cut(props.text);
+  // on a body no reader will see. That place is `FULL_CHARS`, not the ordinary
+  // clip: this body has no third face that reaches past it (card 363).
+  const text = cut(props.text, FULL_CHARS);
   const face = useMemo(() => bodyFace(props.path, text), [props.path, text]);
   // The disclosure pattern: a hand-made pick outlives the default, because a
   // reader who switched this card meant this card. It cannot outlive the FILE,
@@ -741,13 +772,13 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
           {view.script !== null && (
             <Region label={t(lang, "tv.script")}>
               <pre className="tv-well tv-well--script mono">
-                {highlight(cut(view.script, WELL_CHARS), "javascript")}
+                {highlight(cut(view.script, FULL_CHARS), "javascript")}
               </pre>
             </Region>
           )}
           {/* Card 322: the payload arrives as a STRING every time, and a string
               is not read the same way twice. JSON becomes JSON — indented, one
-              key per line, on `WELL_CHARS` because the raw face is cut at the
+              key per line, on `FULL_CHARS` because the raw face is cut at the
               same 4,000 this well would be. Anything else is shown as ITSELF,
               in the prose well, because the seven payloads that are not JSON
               are prompts somebody wrote and unescaping them by hand would eat
@@ -759,9 +790,9 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
             ) : (
               <Region label={t(lang, "tv.args")}>
                 {view.args.kind === "json" ? (
-                  <pre className="tv-well mono">{highlight(cut(view.args.text, WELL_CHARS), "json")}</pre>
+                  <pre className="tv-well mono">{highlight(cut(view.args.text, FULL_CHARS), "json")}</pre>
                 ) : (
-                  <pre className="tv-well">{cut(view.args.text, WELL_CHARS)}</pre>
+                  <pre className="tv-well">{cut(view.args.text, FULL_CHARS)}</pre>
                 )}
               </Region>
             ))}
@@ -870,7 +901,10 @@ export function ToolViewBody(props: {
               /* Honest: a text output is not JSON — say so rather than fake a tree. */
               <>
                 <p className="tv-note">{t(lang, "tv.notJson")}</p>
-                <pre className="tv-well mono">{cut(props.output)}</pre>
+                {/* `FULL_CHARS`, because the note above this well says the
+                    output is shown verbatim and the json face is the one the
+                    card offers as complete. */}
+                <pre className="tv-well mono">{cut(props.output, FULL_CHARS)}</pre>
               </>
             )}
           </Region>
