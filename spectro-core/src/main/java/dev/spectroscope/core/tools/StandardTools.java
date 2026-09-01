@@ -400,7 +400,29 @@ public final class StandardTools {
      * @return the refusal a model reads, or null when this is an ordinary file
      */
     private static String refuseLaunchFile(Path cwd, Path file, String tool) {
-        String location = LaunchFile.locationOf(cwd, file);
+        // ⚠️ THE ROOT IS CANONICALISED, and the merge is what made that necessary.
+        //
+        // Card 352 wrote this guard against a LEXICAL `file`, because that is what
+        // `resolveInside` returned. Card 367 then made both sandbox rules answer
+        // in REAL paths — the whole point of that card — and on macOS a temp root
+        // is `/var/folders/…` lexically and `/private/var/folders/…` really. So
+        // `LaunchFile.locationOf`, which compares two lexical strings, stopped
+        // matching and the refusal silently stopped firing: five of this guard's
+        // seven tests went red on the merged tree and NEITHER branch could see it
+        // alone, because each was green against its own half.
+        //
+        // Canonicalising the root here rather than inside `locationOf` on purpose:
+        // that method is also asked about paths that do not exist yet, where
+        // `toRealPath` throws, and a guard that threw would be worse than one that
+        // missed. A root that cannot be canonicalised falls back to the lexical
+        // form, which is exactly what card 352 shipped.
+        Path root = cwd;
+        try {
+            root = cwd.toAbsolutePath().normalize().toRealPath();
+        } catch (IOException cwdDoesNotResolve) {
+            root = cwd;
+        }
+        String location = LaunchFile.locationOf(root, file);
         if (location == null) {
             return null;
         }
