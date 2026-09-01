@@ -2463,3 +2463,52 @@
   letter-spacing: 0;
   color: var(--text-faint);
 }
+
+/* CARD 331: the backlog above the main agent. It shares the station look —
+   colour on the line only, never a fill — because it is a station like the
+   others and not an alert. */
+.pf-queue {
+  width: 250px;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+}
+.pf-queue__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.pf-queue__title {
+  font-size: var(--fs-11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.pf-queue__depth {
+  font-size: var(--fs-16);
+  font-variant-numeric: tabular-nums;
+}
+.pf-queue__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pf-queue__row {
+  font-size: var(--fs-11);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.pf-queue__unnamed,
+.pf-queue__retired {
+  margin: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}

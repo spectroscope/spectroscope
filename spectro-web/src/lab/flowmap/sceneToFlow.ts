@@ -5,6 +5,7 @@
 // renders whatever this returns. Positions are hand-authored per layout so the
 // local/remote flip literally re-places the LLM inside vs. outside "Dein Mac".
 
+import { viewOf } from "./queueDepth";
 import type { Edge, Node } from "@xyflow/react";
 import { isMcpTool, prettyMcp, ROOT_AGENT } from "../labScene";
 import type { DiskState, Focus, GateState, Scene, SubagentInfo } from "../labScene";
@@ -1558,9 +1559,21 @@ function reportSeatCollisions(nodes: readonly SeatNode[]): void {
   }
 }
 
+/** How far above the agent the queue sits, and how tall it may be.
+ *  Card 331: the owner asked for the backlog "über der LLM oder eben da, wo der
+ *  connector vom agenten andockt". `agent` is the topmost seat on this map —
+ *  the next is `user` at y380 — so the space above it is free. */
+const QUEUE_H = 96;
+const QUEUE_GAP = 34;
+
 const COMMON: Record<string, XY> = {
   user: { x: 40, y: 380 },
   agent: { x: 250, y: 150 },
+  // CARD 331, DERIVED rather than transcribed: a literal here would be a number
+  // nobody could re-derive when the agent moves, which is a shape this map has
+  // been burned by. It shares the agent's column so the edge drops straight onto
+  // the `t` handle handles.tsx already declares.
+  queue: { x: 250, y: 150 - QUEUE_H - QUEUE_GAP },
   // OS band, left→right, equal 26px gaps, matched to the per-kind widths in
   // prototype.css (disk 152 · shell 200 wide · mcp 190 · net 104 — just a globe),
   // and dropped to y748 so the row sits in the vertical middle of the band.
@@ -2129,6 +2142,20 @@ export function sceneToFlow(
   // ----- user -----
   N("user", "user", { active: scene.focus === "user", prompt: detail.prompt });
 
+  // ----- the queue above the main agent (card 331) -----
+  // Import-only: `queue_operation` never reaches a written spectroscope session
+  // (wire/nonWire.ts), so a native run simply has NO node here rather than an
+  // empty one that would read as broken.
+  const queue = viewOf(scene.queue);
+  if (queue.everQueued) {
+    N("queue", "queue", {
+      depth: queue.depth,
+      named: queue.named,
+      unnamed: queue.unnamed,
+      retired: queue.retired,
+    });
+  }
+
   // ----- agent hub -----
   const mainAct = activity(
     scene.focus,
@@ -2505,6 +2532,15 @@ export function sceneToFlow(
 
   const mainLit = FOCUS_NODE[scene.focus];
   const litUserAgent = scene.focus === "agent" || scene.focus === "gate" || scene.focus === "user";
+  // Card 331: the backlog drops onto the agent's TOP handle — the owner asked
+  // for "ein neuen connector punkt oben statt links an der seite". No new handle
+  // is added: handles.tsx already declares ["t", Position.Top] on every card,
+  // and this is an edge nobody had drawn. Lit while anything is still waiting,
+  // because a queue at zero is a fact worth showing and not a pressure.
+  if (queue.everQueued) {
+    E("e-queue-agent", "queue", "agent", "bs", "t", queue.depth > 0);
+  }
+
   E("e-user-agent", "user", "agent", "rs", "lt", litUserAgent, {
     err: scene.isError && scene.focus === "user",
   });
