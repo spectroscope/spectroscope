@@ -124,6 +124,24 @@ export const SETTING_REACH = {
   // raising the cap mid-run would move a boundary the run has already counted
   // against.
   maxTurns: "next-session",
+  // Card 359: the wall-clock budget one run_command call gets. MEASURED at the
+  // call site rather than inferred from the neighbours it sits with on the
+  // page: SessionConnection.buildAgentOnce() calls StandardTools.all()
+  // (SessionConnection.java:1202) and registers what it returns, and
+  // StandardTools.runCommand CLOSES OVER the budget when it builds the tool.
+  // There is no setter on the tool and nothing re-reads the config per call, so
+  // a save reaches the next session and not this one. Same answer for the CLI
+  // and the headless runner, which build their belts the same way.
+  //
+  // Not classified here, deliberately: chatReserveWidth and dockMaxWidth. They
+  // are record components as of this edit and NOTHING reads them yet — measured
+  // 2026-09-01, the reserve is a module constant at App.tsx:187 and the ceiling
+  // is an argument to clampW at layout.ts:403, and neither consults the
+  // settings view. Every value of Reach is a promise about when a save lands,
+  // and there is no true one to make for a setting with no reader. Card 361
+  // wires them and classifies them in the same edit, which is the only way the
+  // sentence and the code can arrive together.
+  commandTimeoutSeconds: "next-session",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

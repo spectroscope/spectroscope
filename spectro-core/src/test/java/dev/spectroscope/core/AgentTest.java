@@ -765,7 +765,43 @@ class AgentTest {
 
         assertEquals("max_turns", ((RunEvent.RunEnd) events.getLast()).stopReason());
         long turnCount = events.stream().filter(RunEvent.TurnStart.class::isInstance).count();
-        assertEquals(15, turnCount, "the loop must stop exactly at the turn brake");
+        // Against the CONSTANT, not against a literal. This assertion said 15,
+        // and card 365 moved the shipped ceiling to 150 after a census found
+        // 48 % of real sessions going past the old one — so a test naming the
+        // number was a second copy of it, and it went red for a reason that
+        // had nothing to do with the brake. Its subject is that the loop stops
+        // exactly AT the brake, whatever the brake is.
+        assertEquals(Agent.DEFAULT_MAX_TURNS, turnCount,
+                "the loop must stop exactly at the turn brake");
+    }
+
+    @Test
+    void anExplicitCeilingOutranksTheShippedOne() {
+        // The other half, and the reason the assertion above may derive its
+        // number without becoming untestable: read against the constant alone,
+        // a brake that IGNORED the option would still look right. This one is
+        // wrong for every value of the default.
+        JsonNode input = JSON.createObjectNode().put("value", "again");
+        LlmProvider relentless = request -> List.of(
+                new LlmProvider.PToolCall("c" + request.messages().size(), "echo", input),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE));
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool(false));
+        Agent capped = new Agent(AgentOptions.builder()
+                .provider(relentless)
+                .systemPrompt("test")
+                .registry(registry)
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .maxTurns(4)
+                .build());
+
+        List<RunEvent> events = collect(capped);
+
+        assertEquals("max_turns", ((RunEvent.RunEnd) events.getLast()).stopReason());
+        assertEquals(4, events.stream().filter(RunEvent.TurnStart.class::isInstance).count(),
+                "a configured ceiling has to beat the shipped one, or the settings key"
+                        + " resolves perfectly and steers nothing");
     }
 
     // --------------------------------------------------------- introspection
