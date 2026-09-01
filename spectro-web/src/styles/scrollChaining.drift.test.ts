@@ -21,7 +21,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { blankBlockComments as code } from "../testkit/source";
+import { rules } from "../testkit/source";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
@@ -36,22 +36,7 @@ function walk(dir: string): string[] {
   return out;
 }
 
-type Rule = { rel: string; selector: string; body: string; line: number };
 
-/**
- * Every `selector { declarations }` pair in the sheet. Nested at-rules are no
- * trap for this shape: in `@media x { .a { … } }` the inner `.a { … }` is what
- * matches, and the at-rule prelude never pairs with a body of its own.
- */
-function rules(rel: string, css: string): Rule[] {
-  const clean = code(css);
-  const out: Rule[] = [];
-  for (const m of clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const line = clean.slice(0, m.index).split("\n").length;
-    out.push({ rel, selector: m[1].trim(), body: m[2], line });
-  }
-  return out;
-}
 
 const isBoundedWell = (body: string): boolean =>
   /max-height\s*:/.test(body) && /overflow(?:-y|-x)?\s*:\s*[^;]*(auto|scroll)/.test(body);

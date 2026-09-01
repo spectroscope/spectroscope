@@ -22,15 +22,9 @@
 // lab's chat column goes to 220px), so they are pinned here as before.
 
 import { describe, expect, it } from "vitest";
+import { blockOf } from "../testkit/source";
 import { blankBlockComments as code, read } from "../testkit/source";
 
-/** The declarations of the FIRST block whose selector line contains `sel`. */
-function blockOf(css: string, sel: string): string {
-  const at = css.indexOf(sel);
-  expect(at, `selector ${sel} exists`).toBeGreaterThan(-1);
-  const open = css.indexOf("{", at);
-  return css.slice(open + 1, css.indexOf("}", open));
-}
 
 /**
  * The stylesheet with every at-rule BLOCK removed, so what is left is what
