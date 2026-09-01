@@ -3,8 +3,8 @@
 Runnable, self-contained examples against the **published** artifacts:
 
 ```
-dev.spectroscope:spectro-core:0.4.1
-dev.spectroscope:spectro-orchestrator:0.4.1
+dev.spectroscope:spectro-core:0.12.0
+dev.spectroscope:spectro-orchestrator:0.12.0
 ```
 
 Two ground rules:

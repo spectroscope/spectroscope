@@ -43,7 +43,7 @@ Start the web cockpit — the server jar from the GitHub release, or
 `spectro web` from a source checkout:
 
 ```bash
-java -XX:MaxRAMPercentage=33 -jar spectro-server-0.4.1.jar   # cockpit on http://localhost:8080
+java -XX:MaxRAMPercentage=33 -jar spectro-server-0.12.0.jar   # cockpit on http://localhost:8080
 ```
 
 Every launcher we ship passes that flag; a bare `java -jar` is the one path no

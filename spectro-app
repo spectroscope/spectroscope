@@ -238,7 +238,13 @@ case "$task" in
         if pgrep -f "spectro-desktop/node_modules/electron" >/dev/null 2>&1; then
             printf '%sStopping a running spectro-desktop for a clean start ...%s\n' "$DIM" "$RESET"
             pkill -f "spectro-desktop/node_modules/electron" 2>/dev/null || true
-            pkill -f "spectro-server-0.0.1.jar" 2>/dev/null || true
+            # DERIVED, never pinned. This line read "spectro-server-0.0.1.jar" through
+            # every release up to 0.11.0 -- a jar name that has never existed in this
+            # tree -- so the clean start killed nothing and the next launch handed off
+            # to the server that was already running. Its sibling ./spectro-serve has
+            # read the version out of the build file all along; this is that same read.
+            pkill -f "spectro-server-$(sed -nE 's/^version = "([^"]+)".*/\1/p' \
+                spectro-server/build.gradle.kts | head -1).jar" 2>/dev/null || true
             sleep 1
         fi
         # Desktop face: build the boot jar the Electron shell spawns, then run it.

@@ -501,7 +501,7 @@ pre.tree .hl { color: var(--sand); }
   </div>
   <div class="cover-foot">
     <span>spectroscope — the agent orchestrator you can watch</span>
-    <span>2026-07-22 · v0.1.0</span>
+    <span>2026-09-02 · v0.12.0</span>
   </div>
 </div>
 
@@ -5481,8 +5481,8 @@ Maven Central instead. On a machine without a full JDK/Node for the Electron ste
 <p>The two headless modules are published under the <strong>verified namespace</strong>
 <code>dev.spectroscope</code>. Depend on the orchestrator and you get the core transitively:</p>
 <pre>dependencies {
-  implementation("dev.spectroscope:spectro-core:0.1.0")
-  implementation("dev.spectroscope:spectro-orchestrator:0.1.0")  // POM pins spectro-core at 0.1.0
+  implementation("dev.spectroscope:spectro-core:0.12.0")
+  implementation("dev.spectroscope:spectro-orchestrator:0.12.0")  // POM pins spectro-core at 0.12.0
 }</pre>
 <p><code>v0.1.0</code> is the first published version. <strong>Maven Central is
 append-only</strong>: a published version cannot be pulled or overwritten, only superseded,
@@ -5663,7 +5663,11 @@ is reproducible from the repository.</p>
   <dt>Terminal captures</dt><dd>real output of <code>./spectro-app</code> and <code>./spectro-app doctor</code> on 2026-07-16, ANSI stripped at build time.</dd>
   <dt>Assembly</dt><dd><code>python3 docs/guide-assets/build_user_guide.py</code> — inlines the fonts (from the server's static assets), all images as data URIs, and the content parts from <code>docs/guide-assets/parts/</code> into the self-contained <code>docs/USER-GUIDE.html</code>.</dd>
   <dt>PDF</dt><dd>headless Chrome: <code>--headless --no-pdf-header-footer --print-to-pdf=docs/USER-GUIDE.pdf docs/USER-GUIDE.html</code>. Dark pages incl. margins come from the thead/tfoot page-spacer technique with <code>@page margin 0</code>.</dd>
-  <dt>Source of truth</dt><dd>all facts verified against the v0.1.0 source tree; gate: 678 JUnit + 383 vitest, 0 failures.</dd>
+  <dt>Source of truth</dt><dd>the prose and the figures were verified against the
+    <strong>v0.1.0</strong> source tree; gate at that time: 678 JUnit + 383 vitest, 0 failures.
+    The cover carries the edition date, not a re-verification: this edition ships with
+    <strong>v0.12.0</strong> and its content has not been re-checked against that tree.
+    Where the guide and the product disagree, the product is right.</dd>
 </div>
 
 <!-- ============================== CREDITS ============================== -->

@@ -12,11 +12,20 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 > Publish *only* after a full green gate, and the next release is always a bump
 > (0.1.0 → 0.1.1 → …), never a re-publish of an existing version.
 >
-> **Version counter — bump this line with every cut.** Published so far:
-> **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27), **0.5.0** (2026-07-31),
-> **0.6.0** and **0.6.1** (both 2026-08-04), **0.7.0** (2026-08-07),
-> **0.8.0** (2026-08-12), **0.9.0** (2026-08-14). Those numbers are burned
-> forever; the next release MUST be **0.9.1 or higher**.
+> **Version counter — do not read this line, run the command.** It was three cuts
+> behind on 2026-09-02 (it stopped at 0.9.0 and demanded "0.9.1 or higher" while
+> 0.10.0 and 0.11.0 were already published), and it listed 0.9.0 as published when
+> 0.9.0 was CUT but never reached Central. A counter maintained by hand is a
+> counter that lies; the registry cannot:
+>
+> ```bash
+> curl -s https://repo1.maven.org/maven2/dev/spectroscope/spectro-core/maven-metadata.xml
+> ```
+>
+> As a dated snapshot only, measured 2026-09-02: Central holds 0.1.0, 0.2.0, 0.3.0,
+> 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.6.1, 0.7.0, 0.8.0, 0.10.0, 0.11.0 — **0.9.0 is
+> missing and the hole is permanent**, which is the standing proof that "cut" and
+> "published" are two different states. Those numbers are burned forever.
 > Do not trust this line over the measurement: `git tag --list 'v*'` plus
 > central.sonatype.com is the state, this counter is the reminder — it once
 > missed a release for five days. Pick the number by what is in
@@ -155,7 +164,8 @@ Move together:
 ### 3. Full gate — must be green before anything irreversible
 ```bash
 ./gradlew test --rerun-tasks --no-build-cache \
-  :spectro-core:javadoc :spectro-orchestrator:javadoc   # JUnit + javadoc (warnings ok, errors abort)
+  :spectro-core:javadoc :spectro-orchestrator:javadoc \
+  :spectro-server:javadoc :spectro-cli:javadoc :spectro-mcp-notes:javadoc
 ( cd spectro-web && npm ci && npm run gate )             # tsc, eslint, prettier, vitest, vite build
 ```
 **`--rerun-tasks --no-build-cache` is not optional.** On a warm tree a plain
@@ -168,8 +178,16 @@ Baseline at v0.6.0: **JUnit 1275**, **vitest 2387** across 161 files (the
 live-Opus contract check self-skips without a key). A new release should never
 gate below the last one.
 The javadoc leg is not decoration: at the 0.4.0 cut it caught three doc
-comments orphaned from their methods by a mid-wave insertion — the only gate
-that runs javadoc is this one.
+comments orphaned from their methods by a mid-wave insertion.
+
+**All FIVE modules, and this line used to name two.** CI runs javadoc for
+`spectro-core`, `spectro-orchestrator`, `spectro-server`, `spectro-cli` and
+`spectro-mcp-notes` (`gate.yml:63-64` and `tag.yml:235-236`), and a broken
+`{@link}` is an ERROR there rather than a warning. Following the two-module
+version of this step leaves three modules unchecked — exactly the CI-only red
+that turned three runs red on 2026-08-13 while the local gate was green.
+The claim that "the only gate that runs javadoc is this one" was false when it
+was written and is the reason the scope drifted.
 
 ### 4. Dry-run the publish (no portal)
 ```bash

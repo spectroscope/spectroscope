@@ -168,9 +168,27 @@ jobs:
           # sentence "carried 0.4.1 straight through the 0.5.0 cut". Only
           # lines that OPEN with a comment marker are dropped, so
           # `val v = "0.5.0" // the version` is still code and still caught.
-          hits="$(git grep -n "${old_re}" -- '*.ts' '*.kts' '*.json' '*.cff' \
-              ':(exclude)*package-lock.json' ':(exclude)*.test.ts' \
-            | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+          # *.md and *.html joined this list on 2026-09-02, and here is the
+          # measurement that put them there: run against OLD_VERSION=0.11.0, the
+          # widened grep found EIGHT stale coordinates in README.md alone — both
+          # Maven lines, the DMG name, the AppImage, the CLI zip, the server jar —
+          # on the front page of a public repo. samples/README.md had sat at 0.4.1
+          # through SEVEN cuts while the build.gradle.kts beside it was bumped by
+          # the step directly above. Neither could ever fail this guard, because
+          # the include list named no prose format.
+          #
+          # '*.tsx' joined for a smaller reason of the same kind: '*.ts' does not
+          # match .tsx, so React sources were unscanned rather than exempted, and
+          # ':(exclude)*.test.ts' likewise missed .test.tsx.
+          #
+          # The two excluded paths are MEASURED, not assumed. With prose in scope,
+          # exactly two files legitimately name the version being left behind: the
+          # release notes for it (each file documents the release it names) and the
+          # playbook's dated findings. Everything else that matched was a straggler.
+          hits="$(git grep -n "${old_re}" -- '*.ts' '*.tsx' '*.kts' '*.json' '*.cff' '*.md' '*.html' \
+              ':(exclude)*package-lock.json' ':(exclude)*.test.ts' ':(exclude)*.test.tsx' \
+              ':(exclude)release-notes/*' ':(exclude)docs/RELEASE-PLAYBOOK.md' \
+            | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|<!--)' || true)"
           if [ -n "$hits" ]; then
             echo "$hits"
             echo "::error::${OLD_VERSION} is still referenced outside build files, lockfiles and test fixtures — fix the stragglers before cutting"

@@ -23,8 +23,8 @@ The implementation lives in `spectro-orchestrator`; `Spectro.panel()` finds
 it through a ServiceLoader hook, so the dependency block is the only wiring:
 
 ```kotlin
-implementation("dev.spectroscope:spectro-core:0.4.1")
-implementation("dev.spectroscope:spectro-orchestrator:0.4.1")
+implementation("dev.spectroscope:spectro-core:0.12.0")
+implementation("dev.spectroscope:spectro-orchestrator:0.12.0")
 ```
 
 ## Build and run (offline)

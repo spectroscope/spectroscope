@@ -75,7 +75,7 @@ The macOS disk image and the app inside it are Developer ID signed and
 notarized:
 
 ```
-spctl -a -t open --context context:primary-signature -v spectroscope-0.4.1-arm64.dmg
+spctl -a -t open --context context:primary-signature -v spectroscope-0.12.0-arm64.dmg
 # accepted, source=Notarized Developer ID
 spctl -a -vv /Volumes/spectroscope/spectroscope.app
 # accepted, source=Notarized Developer ID
@@ -84,5 +84,5 @@ spctl -a -vv /Volumes/spectroscope/spectroscope.app
 Maven Central publishes `.asc` signatures next to every jar and pom:
 
 ```
-curl -fsO https://repo1.maven.org/maven2/dev/spectroscope/spectro-core/0.4.1/spectro-core-0.4.1.jar.asc
+curl -fsO https://repo1.maven.org/maven2/dev/spectroscope/spectro-core/0.12.0/spectro-core-0.12.0.jar.asc
 ```

@@ -67,8 +67,8 @@ agents on a shared bus and hands you one merged event stream. Both artifacts
 are on Maven Central:
 
 ```kotlin
-implementation("dev.spectroscope:spectro-core:0.11.0")
-implementation("dev.spectroscope:spectro-orchestrator:0.11.0")   // fleets
+implementation("dev.spectroscope:spectro-core:0.12.0")
+implementation("dev.spectroscope:spectro-orchestrator:0.12.0")   // fleets
 ```
 
 ## the tour
@@ -155,7 +155,7 @@ More in the [gallery](https://gallery.spectroscope.ai) and the
 
 ## install
 
-Four routes to 0.11.0, each with the platform it covers. Every asset is on the
+Four routes to 0.12.0, each with the platform it covers. Every asset is on the
 [release page](https://github.com/spectroscope/spectroscope/releases/latest),
 where `SHA256SUMS.linux` covers the two Linux kits.
 
@@ -170,7 +170,7 @@ own `llama-server`. Uninstalling leaves `~/.spectro` alone: that is where your
 sessions live, and the CLI and the server jar share it. Apple silicon only,
 there is no Intel build.
 
-**The disk image — macOS on Apple silicon.** `spectroscope-0.11.0-arm64.dmg`
+**The disk image — macOS on Apple silicon.** `spectroscope-0.12.0-arm64.dmg`
 from the release page is the same kit without the tap.
 
 **apt — Debian 12 and Ubuntu 24.04, x86_64.**
@@ -207,7 +207,7 @@ and chroots are the ones that strip it.
 The index is GPG-signed and pinned to that one key with `signed-by`; there is no
 `trusted=yes` and no allow-insecure switch. x86_64 only, so on arm64 apt takes
 the source and then finds nothing to install. For x86_64 distributions that do
-not use apt, `spectroscope-0.11.0-x86_64.AppImage` is the same kit as one file.
+not use apt, `spectroscope-0.12.0-x86_64.AppImage` is the same kit as one file.
 Neither Linux kit is signed, because Linux has no equivalent gate to pass. Both
 are covered by `SHA256SUMS.linux` on the release page, so the check to run on a
 download is:
@@ -219,14 +219,14 @@ sha256sum -c SHA256SUMS.linux --ignore-missing
 **From source.** Clone this repository and use the `./spectro-app` launcher below.
 
 **Everywhere else — arm64 Linux, Windows, anything with a JVM.** There is no
-desktop kit, and no macOS route will help. Take `spectro-0.11.0.zip` (the CLI) or
-`spectro-server-0.11.0.jar` and run them on a JDK 21; that is the smallest way
+desktop kit, and no macOS route will help. Take `spectro-0.12.0.zip` (the CLI) or
+`spectro-server-0.12.0.jar` and run them on a JDK 21; that is the smallest way
 in, and the only way onto a platform with no kit. Two things the kits carry are
 missing there: a bundled `llama-server` for the built-in models, which you
 supply yourself (`brew install llama.cpp`, or your package manager), and the
 `spectro-pty` helper the Files tab terminal needs, which is POSIX-only either
 way. The bundled example MCP server ships separately as
-`spectro-mcp-notes-0.11.0.zip`.
+`spectro-mcp-notes-0.12.0.zip`.
 
 ## run it
 
