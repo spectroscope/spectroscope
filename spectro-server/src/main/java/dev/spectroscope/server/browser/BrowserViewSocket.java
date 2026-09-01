@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.browser.BrowserFace;
 import dev.spectroscope.core.browser.headless.HeadlessBrowserFace;
+import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.net.NetFence;
+import dev.spectroscope.core.wire.BrowserWireRecorder;
 import dev.spectroscope.core.wire.BrowserWireTap;
 
 import org.slf4j.Logger;
@@ -46,6 +48,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *                                    scroll_direction, scroll_amount, duration
  * {"type":"launch_list","sessionId":s}          the start page's data (card 227)
  * {"type":"launch_play","sessionId":s,"name":n} start a configuration and open it
+ * {"type":"launch_save","sessionId":s,"entry":{name,runtimeExecutable?,
+ *  runtimeArgs,port?,url?}}               card 352: add one configuration
  * </pre>
  *
  * <h2>The wire, server to client</h2>
@@ -66,6 +70,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *  "location"?,"shadowed"?:[...]}   which launch file answered, card 350
  * {"type":"launch_played","sessionId":s,"name":n,"ok":bool,"up":bool,
  *  "url"?,"sentence"?}
+ * {"type":"launch_saved","sessionId":s,"ok":bool,"location"?,"sentence"?}
+ *                                     card 352: where it went, or why not
  * </pre>
  *
  * <h2>Who may drive, per face (card 227)</h2>
@@ -184,6 +190,7 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             case "input" -> input(socket, sessionId, frame);
             case "launch_list" -> launchList(socket, sessionId);
             case "launch_play" -> launchPlay(socket, sessionId, frame.path("name").asText(""));
+            case "launch_save" -> launchSave(socket, sessionId, frame.path("entry"));
             default -> send(socket, error("this channel does not know the frame type \""
                     + type.substring(0, Math.min(40, type.length())) + "\""));
         }
@@ -538,6 +545,157 @@ public class BrowserViewSocket extends TextWebSocketHandler {
     }
 
     /**
+     * Adding a launch configuration from the app (card 352, criterion 2).
+     *
+     * <h2>Who holds the pen</h2>
+     *
+     * <p>The writer has existed since card 350 and had <b>no production caller
+     * at all</b> — measured on 2026-09-01, {@code LaunchWriter} was named by
+     * tests and by javadoc and by nothing else, so "the product can write a
+     * launch file" was true of the machinery and false of the product. This is
+     * the caller, and it is the OPERATOR's: it hangs off the view socket, which
+     * carries the operator's own hand, and no tool reaches it — {@code
+     * ClaudeFolderStaysTheirsDriftTest} keeps that true transitively, because
+     * whether an AGENT may author one is criterion 1 and the owner has not
+     * answered it. The agent's generic file tools now refuse the path by name
+     * rather than by omission ({@code StandardTools.refuseLaunchFile}).
+     *
+     * <h2>The composition is the server's, and why</h2>
+     *
+     * <p>{@link LaunchWriter#write} replaces the whole file, so a save carrying
+     * one entry would delete every other configuration the project has. The
+     * entries already in the file are read here and the new one appended, so the
+     * client sends what it is ADDING and cannot lose what it never saw.
+     *
+     * <h2>⛔ The one refusal that is not a validation</h2>
+     *
+     * <p>A project whose configurations come from {@code .claude/launch.json} is
+     * the trap. Ours takes precedence, so writing it would make every existing
+     * configuration vanish from the list without touching the file the operator
+     * would think to look in. The two ways out are both worse: copying theirs
+     * into ours hands him somebody else's configurations under his own filename,
+     * which {@link dev.spectroscope.core.launch.LaunchFile}'s own documentation
+     * calls the worst of the available behaviours; writing ours anyway hides
+     * them. So the save is refused, and the sentence names the file and the
+     * configurations that are in the way. Moving them is the operator's
+     * decision, and after this card he can see both files to make it (card 351).
+     *
+     * @param socket    where the operator is
+     * @param sessionId whose project folder
+     * @param entry     the configuration to add, in the launch file's own field
+     *                  names — {@code name}, {@code runtimeExecutable},
+     *                  {@code runtimeArgs}, {@code port}, {@code url}
+     */
+    private void launchSave(WebSocketSession socket, String sessionId, JsonNode entry) {
+        if (sessionId.isBlank() || !entry.isObject()) {
+            send(socket, error("launch_save needs a sessionId and an entry object"));
+            return;
+        }
+        SessionBrowserBridge.Live live = bridge.live(sessionId);
+        if (live == null) {
+            send(socket, saved(sessionId, false, null, "this session is not open on this server"));
+            return;
+        }
+        if (bridge.agentDriving(sessionId)) {
+            // The fight rule reaches here too: a save changes what the next play
+            // runs, and the agent holding the browser is the one about to press.
+            send(socket, saved(sessionId, false, null, AGENT_DRIVING));
+            return;
+        }
+        java.nio.file.Path project = live.projectDir().get();
+        if (project == null) {
+            send(socket, saved(sessionId, false, null, "this session has no project folder yet"));
+            return;
+        }
+        java.util.List<dev.spectroscope.core.launch.LaunchEntry> entries = new java.util.ArrayList<>();
+        try {
+            dev.spectroscope.core.launch.LaunchFile existing =
+                    dev.spectroscope.core.launch.LaunchFile.readFrom(project).orElse(null);
+            if (existing != null
+                    && !dev.spectroscope.core.launch.LaunchFile.OURS.equals(existing.location())) {
+                send(socket, saved(sessionId, false, null,
+                        "this project's launch configurations come from " + existing.location()
+                                + ", which spectroscope reads and never writes. Writing "
+                                + dev.spectroscope.core.launch.LaunchFile.OURS
+                                + " would take precedence over it and hide "
+                                + String.join(", ", existing.names())
+                                + ". Move them across yourself, or add the entry there."));
+                return;
+            }
+            if (existing != null) {
+                entries.addAll(existing.entries());
+            }
+        } catch (IllegalArgumentException unreadable) {
+            // Overwriting a file nobody could parse would be destroying an edit
+            // the operator is in the middle of making.
+            send(socket, saved(sessionId, false, null, unreadable.getMessage()));
+            return;
+        }
+        entries.add(readEntry(entry));
+        try {
+            java.nio.file.Path written = dev.spectroscope.core.launch.LaunchWriter
+                    .write(project, entries);
+            LOG.info("launch configuration written to {}", written);
+            send(socket, saved(sessionId, true,
+                    dev.spectroscope.core.launch.LaunchFile.OURS, null));
+        } catch (IllegalArgumentException refused) {
+            // The write-time guards, in the operator's own words. Criterion 4:
+            // a validation that only logs is a silent no-op with a spinner.
+            send(socket, saved(sessionId, false, null, refused.getMessage()));
+        } catch (IOException | RuntimeException unwritable) {
+            send(socket, saved(sessionId, false, null,
+                    "the launch file could not be written: " + unwritable.getMessage()));
+        }
+    }
+
+    /**
+     * One entry out of the operator's form, in the launch file's own field names.
+     *
+     * <p>Nothing is validated here on purpose. {@link LaunchWriter} owns what
+     * this product will and will not author, and a second opinion at the socket
+     * is the two-hand-lists arrangement this repository has been bitten by: the
+     * refusals would drift, and the one the operator met would depend on which
+     * road he came in by.
+     *
+     * @param entry the form's fields
+     * @return the entry, unjudged
+     */
+    private static dev.spectroscope.core.launch.LaunchEntry readEntry(JsonNode entry) {
+        java.util.List<String> args = new java.util.ArrayList<>();
+        JsonNode given = entry.path("runtimeArgs");
+        if (given.isArray()) {
+            given.forEach(argument -> args.add(argument.asText()));
+        }
+        return new dev.spectroscope.core.launch.LaunchEntry(
+                entry.path("name").asText(""),
+                entry.path("port").isInt() ? entry.path("port").asInt() : null,
+                text(entry, "runtimeExecutable"), args, text(entry, "url"),
+                java.util.List.of());
+    }
+
+    /** One optional text field of the form, blank-as-absent. */
+    private static String text(JsonNode entry, String field) {
+        String value = entry.path(field).isTextual() ? entry.path(field).asText().strip() : "";
+        return value.isEmpty() ? null : value;
+    }
+
+    /** One launch_saved frame. */
+    private static ObjectNode saved(String sessionId, boolean ok, String location,
+            String sentence) {
+        ObjectNode frame = JSON.createObjectNode();
+        frame.put("type", "launch_saved");
+        frame.put("sessionId", sessionId);
+        frame.put("ok", ok);
+        if (location != null) {
+            frame.put("location", location);
+        }
+        if (sentence != null) {
+            frame.put("sentence", sentence);
+        }
+        return frame;
+    }
+
+    /**
      * The play button: bring one configuration up through the SESSION's own
      * supervisor (its lifetime stays the session's, card 202), then point the
      * session's browser at it — fenced, recorded as the operator's navigation.
@@ -553,40 +711,48 @@ public class BrowserViewSocket extends TextWebSocketHandler {
         }
         SessionBrowserBridge.Live live = bridge.live(sessionId);
         if (live == null) {
+            // The one outcome with nowhere to be recorded, and it says so
+            // rather than pretending: there is no session here to hold it.
             send(socket, played(sessionId, name, false, false, null,
                     "this session is not open on this server"));
             return;
         }
+        // Card 337: the record is opened HERE, before any guard has answered,
+        // for the reason the wire tap's own javadoc gives — the call that never
+        // returns is exactly the one a replay is wanted for. Every exit below
+        // goes through answer(), which closes it.
+        Play play = new Play(socket, live, tapFor(sessionId).open("launch_play", null, null,
+                JSON.createObjectNode().put("name", name),
+                faces.forSession(sessionId).pageUrl(), BrowserWireTap.OPERATOR),
+                sessionId, name, System.currentTimeMillis());
         if (bridge.agentDriving(sessionId)) {
-            send(socket, played(sessionId, name, false, false, null, AGENT_DRIVING));
+            answer(play, false, false, null, AGENT_DRIVING);
             return;
         }
         java.nio.file.Path project = live.projectDir().get();
         if (project == null) {
-            send(socket, played(sessionId, name, false, false, null,
-                    "this session has no project folder yet"));
+            answer(play, false, false, null, "this session has no project folder yet");
             return;
         }
-        Thread.startVirtualThread(() -> runPlay(socket, sessionId, name, live, project));
+        Thread.startVirtualThread(() -> runPlay(play, project));
     }
 
     /** The play's slow half — everything after the guards, off the socket thread. */
-    private void runPlay(WebSocketSession socket, String sessionId, String name,
-            SessionBrowserBridge.Live live, java.nio.file.Path project) {
+    private void runPlay(Play play, java.nio.file.Path project) {
+        String sessionId = play.sessionId();
+        String name = play.name();
         java.util.Optional<dev.spectroscope.core.launch.LaunchFile> read;
         try {
             read = dev.spectroscope.core.launch.LaunchFile.readFrom(project);
         } catch (IllegalArgumentException unreadable) {
-            send(socket, played(sessionId, name, false, false, null,
-                    unreadable.getMessage()));
+            answer(play, false, false, null, unreadable.getMessage());
             return;
         }
         if (read.isEmpty()) {
             // No file anywhere: there is no location to have missed a name in, so
             // the sentence names the two places one may go instead.
-            send(socket, played(sessionId, name, false, false, null,
-                    "this project carries no launch file at "
-                            + dev.spectroscope.core.launch.LaunchFile.LOCATIONS_SENTENCE));
+            answer(play, false, false, null, "this project carries no launch file at "
+                    + dev.spectroscope.core.launch.LaunchFile.LOCATIONS_SENTENCE);
             return;
         }
         dev.spectroscope.core.launch.LaunchFile file = read.get();
@@ -595,14 +761,14 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             // Card 350: one file answered, and it is the one whose location() we
             // hold. Naming both would send the operator to open a file his name
             // was never looked up in.
-            send(socket, played(sessionId, name, false, false, null,
-                    "no configuration of that name in " + file.location()));
+            answer(play, false, false, null,
+                    "no configuration of that name in " + file.location());
             return;
         }
-        dev.spectroscope.core.launch.LaunchSupervisor.Outcome outcome = live.launches()
+        dev.spectroscope.core.launch.LaunchSupervisor.Outcome outcome = play.live().launches()
                 .start(entry, project, dev.spectroscope.core.launch.LaunchSupervisor.DEFAULT_BUDGET);
         if (!outcome.ok()) {
-            send(socket, played(sessionId, name, false, false, null, outcome.problem()));
+            answer(play, false, false, null, outcome.problem());
             return;
         }
         String address = outcome.running().address();
@@ -611,27 +777,108 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             // Card 202's split, held here too: the server is UP, the browser
             // stays away, and the sentence is the fence's own — it names the
             // one setting between the operator and the page.
-            send(socket, played(sessionId, name, false, true, null, refusal.sentence()));
+            answer(play, false, true, null, refusal.sentence());
             return;
         }
         if ("none".equals(faces.live())) {
-            send(socket, played(sessionId, name, false, true, null,
+            answer(play, false, true, null,
                     "the configuration is up, and no browser engine can open it: no desktop "
-                            + "pane is attached and no Chrome/Chromium was found on the server"));
+                            + "pane is attached and no Chrome/Chromium was found on the server");
             return;
         }
         recorded(sessionId, "navigate", JSON.createObjectNode().put("url", address),
                 () -> faces.forSession(sessionId).send("navigate",
                         JSON.createObjectNode().put("url", address)),
-                reply -> send(socket, played(sessionId, name, reply.ok(), true,
+                reply -> answer(play, reply.ok(), true,
                         reply.ok() ? (reply.pageUrl() == null ? address : reply.pageUrl()) : null,
-                        reply.ok() ? null : reply.error())));
-        send(socket, state(sessionId));
+                        reply.ok() ? null : reply.error()));
+        send(play.socket(), state(sessionId));
         WebSocketSession viewer = viewers.get(sessionId);
         if (viewer != null) {
             send(viewer, state(sessionId));
             startCastIfLive(viewer, sessionId);
         }
+    }
+
+    /**
+     * One press of the play button, from the moment it has a session to record
+     * against (card 337).
+     *
+     * <p>A record rather than six more parameters. The canon's rule about
+     * seven-component seams applies to method signatures too, and every exit of
+     * {@link #runPlay} needs the same five things to say what happened.
+     *
+     * @param socket    where the operator is watching
+     * @param live      the session's collaborators, including where an event goes
+     * @param record    the open {@code .browser.jsonl} line, closed by {@link
+     *                  #answer}
+     * @param sessionId whose session
+     * @param name      the configuration the operator pressed
+     * @param started   when the press began, for the event's duration
+     */
+    private record Play(WebSocketSession socket, SessionBrowserBridge.Live live,
+                        BrowserWireTap.Call record, String sessionId, String name, long started) {}
+
+    /**
+     * The ONE exit of a play, and card 337's whole fix.
+     *
+     * <p>Before this, each of the nine outcomes of a press called {@code
+     * send(socket, played(…))} and nothing else, so a failure existed only as a
+     * frame on {@code /ws/browser-view} — it never became a {@link RunEvent},
+     * never reached the session file, never reached the sidecar, and died in a
+     * React {@code useState} on the next click. The owner met that as "wenn ein
+     * fehler kommt, dann sollte der fehler auch im work panel mit einer task
+     * dastehen mit fehler oder?".
+     *
+     * <p><b>Every outcome, not only the failures.</b> A record that carries only
+     * what went wrong teaches its reader that silence means nothing happened,
+     * which is the same lie in the other direction.
+     *
+     * <p><b>One line in this class still builds a frame without coming here</b>,
+     * and it is the only one that may: the {@code live == null} branch of {@link
+     * #launchPlay}, where the session is not open on this server at all — no
+     * store, no sidecar, no {@code emit}, so there is nothing to record against
+     * and the frame is the only place the sentence can go. {@code
+     * BrowserViewSocketSourceTest} pins that there are exactly those two, because
+     * a tenth branch written beside the nine is exactly how this defect came to
+     * exist the first time.
+     *
+     * <p>Three destinations, in the order that survives a dead socket: the
+     * operator's frame, the sidecar line, then the run event — which itself
+     * takes the file-then-socket road inside {@code SessionConnection}.
+     *
+     * @param play     the press
+     * @param ok       whether it did what it promised
+     * @param up       whether the configuration is up regardless
+     * @param url      where the browser landed, or null
+     * @param sentence what the operator reads, or null when nothing went wrong
+     */
+    private void answer(Play play, boolean ok, boolean up, String url, String sentence) {
+        send(play.socket(), played(play.sessionId(), play.name(), ok, up, url, sentence));
+        play.record().end(ok, sentence != null ? sentence : (url == null ? "" : url), url);
+        play.live().emit().accept(new RunEvent.LaunchOutcome(play.name(), ok, up,
+                recordable(url), recordable(sentence),
+                System.currentTimeMillis() - play.started(), System.currentTimeMillis()));
+    }
+
+    /**
+     * The whole-string redaction a {@code launch_outcome} field gets on the way
+     * to the record (card 337, criterion 6).
+     *
+     * <p>It delegates rather than re-deriving the rules: two spellings of one
+     * rule table is precisely how {@code nonWire.ts} drifted into missing three
+     * of its own entries. <b>The helper it delegates to is named for a url and
+     * this passes it a sentence</b>, which is worth saying out loud rather than
+     * leaving for the next reader to wonder about — its body is {@code
+     * Redaction.firstRule} over any string, the launch sentence carries an
+     * address ("… and http://…:8080/ was already answering before it started"),
+     * so it is the same question asked of the same table.
+     *
+     * @param value the field as it reaches the operator, or null
+     * @return the same string, or the marker naming the rule that fired
+     */
+    private static String recordable(String value) {
+        return BrowserWireRecorder.recordableUrl(value);
     }
 
     /** One launch_played frame. */

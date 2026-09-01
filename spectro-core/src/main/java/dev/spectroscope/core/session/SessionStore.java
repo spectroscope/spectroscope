@@ -862,6 +862,10 @@ public final class SessionStore {
             // Card 267: the check grades ONE agent's run, so its verdict
             // belongs to that agent — the same reason the two above do.
             case RunEvent.GoalCheck e -> e.agentId();
+            // Card 337: a human's hand on the play button. There is no agent to
+            // attribute it to, and inventing one would put an operator's action
+            // on some model's rail.
+            case RunEvent.LaunchOutcome e -> null;
             case RunEvent.PermissionDecision e -> null;
             // Card 265: the answer joins its question by callId, exactly as a
             // permission_decision joins its request — neither carries an agent.

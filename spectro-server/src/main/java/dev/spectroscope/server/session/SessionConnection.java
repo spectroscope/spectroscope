@@ -1063,10 +1063,14 @@ public final class SessionConnection {
         // socket's operator verbs can reach both — same recorder, so a human's
         // navigation lands in the same file under the same epoch as the
         // agent's, and the launch supervisor whose lifetime IS the session's.
+        // Card 337: and the fourth thing the view socket needs is somewhere to
+        // put a fact. A launch that failed used to travel that socket alone and
+        // end in a React useState; it takes the ordinary file-then-socket road
+        // now, like every other additive event.
         if (browserBridge != null) {
             browserBridge.register(store.id(),
                     new dev.spectroscope.server.browser.SessionBrowserBridge.Live(
-                            browserWire, launches, this::launchProjectDir));
+                            browserWire, launches, this::launchProjectDir, this::recordAndMirror));
         }
     }
 
@@ -1577,14 +1581,7 @@ public final class SessionConnection {
             RunEvent.SettingsIgnored event = new RunEvent.SettingsIgnored(
                     refused.key(), refused.file(), refused.hint(),
                     refused.inForce(), refused.inForceFrom(), System.currentTimeMillis());
-            if (store != null) {
-                try {
-                    store.append(event);
-                } catch (RuntimeException unwritable) {
-                    // Losing the record line is not worth losing the session.
-                }
-            }
-            send(event);
+            recordAndMirror(event);
             return;
         }
         // A scope that is not merely refused but UNPARSEABLE is a different
@@ -1818,6 +1815,34 @@ public final class SessionConnection {
     private synchronized void send(RunEvent event) {
         // A dead socket is not a run failure — the JSONL file already has it.
         sendFrame(event);
+    }
+
+    /**
+     * The ordinary road for an additive event this class mints itself: the FILE
+     * first, the socket second.
+     *
+     * <p>The order is the whole point and it is not a preference. A session whose
+     * socket died has to be able to say what happened to it, so the record must
+     * never wait on a live viewer; and a write that throws must not cost the run,
+     * so the failure to append is swallowed and the mirror still goes out.
+     *
+     * <p>Gathered here because the same append-then-send triple stood written out
+     * three times in this file by card 337's turn — the shape the 2026-08-14
+     * review found ten copies of, one line of transport at a time. An event that
+     * reaches the socket without reaching the file is exactly the defect card 337
+     * exists to end, so there is one place that gets that order right.
+     *
+     * @param event the event to record and mirror
+     */
+    private synchronized void recordAndMirror(RunEvent event) {
+        if (store != null) {
+            try {
+                store.append(event);
+            } catch (RuntimeException unwritable) {
+                // Losing the record line is not worth losing the session.
+            }
+        }
+        send(event);
     }
 
     /**
@@ -2356,16 +2381,9 @@ public final class SessionConnection {
                 meta.responseLines(), meta.aborted(), meta.fidelity(),
                 meta.durationMs(), meta.ts());
         // The file first. A session whose socket died mid-run still has to be
-        // able to say what it spent.
-        if (store != null) {
-            try {
-                store.append(event);
-            } catch (RuntimeException unwritable) {
-                // The sidecar still holds the exchange; losing the mirror line is
-                // not worth losing the run.
-            }
-        }
-        send(event);
+        // able to say what it spent. The sidecar still holds the exchange, so
+        // losing the mirror line would not be worth losing the run either.
+        recordAndMirror(event);
     }
 
     /** The span names of an OTLP batch, bounded — the over-cap frame's summary. */

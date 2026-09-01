@@ -62,13 +62,32 @@ Two things this deliberately is not:
 
 ### Can spectroscope write one?
 
-Into `.spectro/launch.json`, and nowhere else — the machinery takes a project
-folder, not a path, so there is no call that can aim it at `.claude`. **No agent
-tool reaches it.** Whether a model may author a launch entry is an open owner
-call (card 352): a launch file names a program to run with arguments to run it
-with, so an agent that can write one can arrange for arbitrary code to run under
-your account on the next play. Until that question is answered, the file is
-written by hand or not at all, exactly as it is for Claude Code.
+**You can, from inside the app; a model cannot.** The start page's "add a
+configuration" form hands one entry to the server, which appends it to whatever
+the file already holds and writes `.spectro/launch.json` — nowhere else, because
+the machinery takes a project folder rather than a path, so there is no call
+that can aim it at `.claude`. The entries already in the file are read first:
+the writer replaces the whole file, so a save carrying one entry alone would
+delete every other configuration you have.
+
+**One save is refused rather than done.** If your configurations come from
+`.claude/launch.json`, writing ours would take precedence over it and every one
+of them would vanish from the list without a file you would think to open having
+changed. Copying them into ours is worse — it hands you somebody else's
+configurations under your own filename. So the save says which file is in the
+way and which entries it holds, and moving them is your decision.
+
+**No agent tool reaches any of this.** Whether a model may author a launch entry
+is an open owner call (card 352): a launch file names a program to run with
+arguments to run it with, so an agent that can write one can arrange for
+arbitrary code to run under your account on the next play. The door is shut in
+two ways rather than one — no tool reaches the writer, pinned transitively by
+`ClaudeFolderStaysTheirsDriftTest`, and the agent's generic `write_file` and
+`edit_file` refuse either launch-file path by name. That second half was
+measured missing on 2026-09-01: `write_file` answered *"Wrote:
+.spectro/launch.json (123 bytes) — created"* and `edit_file` turned an entry's
+`npm` into `/bin/sh`, so the refusal was by omission and the bolt was on a door
+beside a hole.
 
 ```json
 {
@@ -317,15 +336,17 @@ transcript through `launch_list`, which is tier read and never prompts.
 
 ## What is not here
 
-- **A way to write a launch file.** The machinery exists and refuses four
+- **A way for an AGENT to write a launch file.** The machinery refuses four
   things — an entry with no name, an entry that can neither run nor be reached,
   two entries of one name, and any string carrying a control character that the
-  reader would otherwise have to flatten. What is missing is a door: no tool and
-  no screen calls it, so in practice the file is still authored by hand. See
-  "Can spectroscope write one?" above.
+  reader would otherwise have to flatten — and every one of those refusals now
+  reaches the operator as its own sentence. The door that stays shut is the
+  model's. See "Can spectroscope write one?" above.
 - **A spectroscope dialect.** Unknown fields are tolerated, not adopted.
 - **The CLI.** The five tools are registered on the server session beside the
   browser family, because the browser this card opens is the desktop pane's.
   `spectro run` does not carry them.
-- **A launch surface in the web UI.** The card's acceptance criteria are all
-  agent-facing; nothing here adds a panel, a button or a string.
+- ~~**A launch surface in the web UI.**~~ Card 202's criteria were all
+  agent-facing and it added no panel, button or string. Card 227 gave the
+  browser's empty state a list with a play button, card 345 made it reachable
+  while a page is open, and card 352 gave it a form.

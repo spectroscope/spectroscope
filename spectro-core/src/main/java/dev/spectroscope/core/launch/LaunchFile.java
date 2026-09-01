@@ -244,6 +244,54 @@ public record LaunchFile(String version, List<LaunchEntry> entries, int skipped,
     }
 
     /**
+     * Which of {@link #LOCATIONS} a path IS, if any — card 352, criterion 1.
+     *
+     * <p><b>What it is for.</b> The agent's own {@code write_file} and {@code
+     * edit_file} take a free path, and a launch file sits inside the working
+     * directory, so the sandbox waved it through: measured on 2026-09-01, {@code
+     * write_file} answered "Wrote: .spectro/launch.json (123 bytes) — created"
+     * and {@code edit_file} turned an entry's {@code npm} into {@code /bin/sh}.
+     * The product's own guard against an agent authoring one — the reachability
+     * pin over {@link LaunchWriter} — was a bolt on a door beside a hole in the
+     * wall. This is what the write tools ask before they write.
+     *
+     * <p><b>It lives here</b> because this class already owns where a launch file
+     * is looked for, and a second list of the same two places is precisely the
+     * arrangement this repository has been bitten by twice. A caller gets the
+     * answer without spelling either location, which also keeps it out of the
+     * scan that says nothing writing may so much as reach another vendor's
+     * folder.
+     *
+     * <p><b>The case-insensitive comparison is deliberate over-reach.</b> APFS
+     * and NTFS are case-insensitive by default, so {@code .spectro/Launch.json}
+     * IS this file on the machines this product ships to, and an exact match
+     * alone would be a guard anybody defeats with a capital letter. On a
+     * case-sensitive file system that makes this refuse a path which would have
+     * been a different file — an over-refusal of a name nobody legitimately
+     * writes, and the safe direction for a door that is meant to be shut.
+     *
+     * @param projectRoot the folder a relative path is resolved against
+     * @param candidate   the path being written, already resolved by its caller's
+     *                    sandbox — asking about the raw argument would be
+     *                    defeated by {@code docs/../.spectro/launch.json}
+     * @return the location as {@link #LOCATIONS} spells it, or null when this
+     *         path is not a launch file
+     */
+    public static String locationOf(Path projectRoot, Path candidate) {
+        if (projectRoot == null || candidate == null) {
+            return null;
+        }
+        Path root = projectRoot.toAbsolutePath().normalize();
+        String asked = candidate.toAbsolutePath().normalize().toString();
+        for (String location : LOCATIONS) {
+            if (asked.equalsIgnoreCase(root.resolve(location).normalize().toString())) {
+                return location;
+            }
+        }
+        return null;
+    }
+
+    /**
      * The entry of that name.
      *
      * @param name the configuration name, as the file spells it

@@ -63,7 +63,8 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.ProgressIntervention.class, name = "progress_intervention"), // additive (card 281)
     @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation"),     // additive (card 266)
     @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check"),       // additive (card 267)
-    @JsonSubTypes.Type(value = RunEvent.SettingsIgnored.class,    name = "settings_ignored")  // additive (card 285)
+    @JsonSubTypes.Type(value = RunEvent.SettingsIgnored.class,    name = "settings_ignored"), // additive (card 285)
+    @JsonSubTypes.Type(value = RunEvent.LaunchOutcome.class,      name = "launch_outcome")    // additive (card 337)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -74,7 +75,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
         RunEvent.NoProgress, RunEvent.ProgressIntervention,
         RunEvent.Continuation, RunEvent.GoalCheck,
-        RunEvent.SettingsIgnored {
+        RunEvent.SettingsIgnored, RunEvent.LaunchOutcome {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -955,6 +956,51 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      *                enforced at the write boundary */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record PlanStep(String text, String status) {}
+
+    /**
+     * Additive (card 337): the operator pressed play on a launch configuration,
+     * and this is what came of it.
+     *
+     * <p><b>Why it had to exist.</b> A launch that failed used to travel one
+     * socket ({@code /ws/browser-view}) that no other thing in a session travels,
+     * end in a {@code useState} inside the browser panel, and disappear on the
+     * next click. It was not merely unrouted — it was off the wire entirely, so
+     * nothing downstream could show it: not the work panel, not the trace, not
+     * the export, not the session's own record. The owner met that as "wenn ein
+     * fehler kommt, dann sollte der fehler auch im work panel mit einer task
+     * dastehen mit fehler oder?", and he was reading an observability product
+     * losing an observation.
+     *
+     * <p><b>A success emits one too</b>, and that is not symmetry for its own
+     * sake: a record that carries only failures teaches its reader that silence
+     * means nothing happened, which is the same lie in the other direction.
+     * {@link #ok} and {@link #up} are two facts and not one — card 202's split
+     * has a case where the configuration is UP and the browser deliberately
+     * stayed away, and a single boolean would report that as a dead server.
+     *
+     * <p><b>No agent owns it.</b> Every field here comes from a human's hand on
+     * the play button, so there is no {@code agentId} to carry; the sidecar line
+     * beside it says {@code actor: operator} for the same reason.
+     *
+     * <p>{@link #url} and {@link #problem} arrive REDACTED by {@code Redaction}'s
+     * rules, whole-string, exactly as {@code browser_action}'s url does. Both can
+     * carry an address the operator typed into a launch file, and a session file
+     * is what people export and paste.
+     *
+     * @param name       the configuration name, as the launch file spells it
+     * @param ok         whether the whole press succeeded — the configuration
+     *                   came up AND the browser was pointed at it
+     * @param up         whether the configuration itself is up, which is true in
+     *                   two cases where {@link #ok} is false: the net fence kept
+     *                   the browser away, and no engine was there to open it
+     * @param url        where the browser landed, or null when it did not go
+     * @param problem    the sentence the operator reads, or null on a clean play
+     * @param durationMs how long the press took, entry to answer
+     * @param ts         epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record LaunchOutcome(String name, boolean ok, boolean up, String url, String problem,
+                         long durationMs, long ts) implements RunEvent {}
 
     /** Present from day one so the wire format never changes later.
      *  @param kind      the attachment kind — {@code "image"} today

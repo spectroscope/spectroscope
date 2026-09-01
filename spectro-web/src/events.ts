@@ -258,6 +258,38 @@ export type RunEvent =
       inForceFrom?: string;
       ts: number;
     }
+  // Card 337: the operator pressed play on a launch configuration, and this is
+  // what came of it. Before this card the answer lived on `/ws/browser-view`
+  // and nowhere else — a socket no other thing in a session travels — so a
+  // launch that failed reached a `<p className="view-notice">` and vanished on
+  // the next click. The owner: "wenn ein fehler kommt, dann sollte der fehler
+  // auch im work panel mit einer task dastehen mit fehler oder?"
+  //
+  // DECLARED HERE, FOLDED NOWHERE YET. Card 337 stops at getting the fact onto
+  // the wire; what the work panel does with it is card 338's, which is also
+  // where the panel's empty state is answered for. The reducer's catch-all
+  // ignores what it does not know, so the line rides, is written to the file
+  // and is exported, without a surface inventing a rendering for it.
+  | {
+      type: "launch_outcome";
+      /** The configuration name, as the launch file spells it. */
+      name: string;
+      /** Whether the press did what it promised: up AND opened. */
+      ok: boolean;
+      /** Whether the configuration itself is up. Two facts, not one — card
+       *  202's split has the server up and the browser deliberately away, and a
+       *  single boolean reports that as a dead server. */
+      up: boolean;
+      /** Where the browser landed. Absent when it did not go, and redacted
+       *  whole by `Redaction` when it carries a credential shape. */
+      url?: string;
+      /** What the operator read. Absent on a clean play; redacted like `url`,
+       *  because every failure sentence on this path names the address it was
+       *  waiting on. */
+      problem?: string;
+      durationMs: number;
+      ts: number;
+    }
   // Cards 262, 266 and 267 built three self-reports; card 281 and 282 give them
   // a face. All three printed side by side in the CLI and all three fell into
   // the reducer's catch-all, so the web drew none of them. The fields are the

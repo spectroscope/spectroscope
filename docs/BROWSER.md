@@ -224,6 +224,8 @@ names are `browser_computer`'s own so UI and tools speak one dialect):
  "text":t,"scroll_direction":d,"scroll_amount":n,"duration":sec}
 {"type":"launch_list","sessionId":s}           the start page's data (card 227)
 {"type":"launch_play","sessionId":s,"name":n}  start a configuration, open it
+{"type":"launch_save","sessionId":s,"entry":{"name","runtimeExecutable"?,
+ "runtimeArgs","port"?,"url"?}}                card 352: add a configuration
 ```
 
 Server → client:
@@ -242,6 +244,7 @@ Server → client:
  "configs":[{"name","address","attaches","up","exitCode"?}],"skipped":n}
 {"type":"launch_played","sessionId":s,"name":n,"ok":bool,"up":bool,
  "url"?,"sentence"?}
+{"type":"launch_saved","sessionId":s,"ok":bool,"location"?,"sentence"?}
 ```
 
 Watching an idle session never spawns a Chrome (`hasPage()` is asked first);
@@ -327,6 +330,33 @@ browser at its address, fenced and recorded as the operator's navigation.
 Card 202's split holds here too: a fence refusal answers `up:true, ok:false`
 with the fence's own sentence, because the server came up and only the page
 stayed away.
+
+**Every press is on the record (card 337).** A launch that failed used to be a
+`launch_played` frame and nothing else — it never became a `RunEvent`, so the
+work panel, the trace, the export and the session's own file all learned
+nothing, and the sentence died in a React `useState` on the next click. Every
+outcome of the play button now also emits a `launch_outcome` event down the
+ordinary file-then-socket road and closes a `launch_play` call in
+`.browser.jsonl` as the operator's. A SUCCESS emits one too: a record carrying
+only failures teaches its reader that silence means nothing happened. `url` and
+`problem` are redacted whole by `Redaction`'s rules, like `browser_action`'s
+url — every failure sentence on this path names the address it was waiting on.
+
+**Writing one (card 352).** `launch_save` adds a configuration through
+`LaunchWriter`, always to `.spectro/launch.json` — read theirs, write ours.
+The entries already in the file are read here and the new one appended, because
+the writer replaces the whole file and a save carrying one entry would delete
+every other configuration the project has. Two refusals are worth naming: a
+project whose configurations come from `.claude/launch.json` is refused with a
+sentence naming that file and its entries, because writing ours would take
+precedence and hide them while copying theirs into ours would hand the operator
+somebody else's configurations under his own filename; and every write-time
+guard of `LaunchWriter` arrives as the operator's own sentence rather than a
+log line. The pen is the OPERATOR's — whether an AGENT may author one is card
+352's criterion 1 and the owner has not answered, so no tool reaches this road
+(`ClaudeFolderStaysTheirsDriftTest` pins it transitively) and the agent's
+generic `write_file`/`edit_file` refuse either launch-file path by name rather
+than by omission.
 
 **What `/ws/browser-view` trusts** is exactly what `/ws` and `/ws/browser`
 trust: loopback plus an accepted Origin, nothing more. Input carries no

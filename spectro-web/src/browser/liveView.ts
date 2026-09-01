@@ -14,6 +14,8 @@
 // dialect, so the face runs an operator's click through the same switch as the
 // agent's.
 
+import type { NewLaunchEntry } from "./launchDraft";
+
 /** Which engine would serve a browser verb right now — the server's answer. */
 export type FaceLive = "desktop" | "web" | "none";
 
@@ -113,7 +115,11 @@ export type ViewMessage =
       up: boolean;
       url: string | null;
       sentence: string | null;
-    };
+    }
+  /** Card 352: the answer to a save. `location` names the file that was
+   *  written, so the page can say where the entry went rather than leaving the
+   *  operator to guess between two places he cannot see. */
+  | { kind: "launchSaved"; ok: boolean; location: string | null; sentence: string | null };
 
 /** The channel's address on the page's own origin — the same trust as /ws. */
 export function viewSocketUrl(location: { protocol: string; host: string }): string {
@@ -220,6 +226,13 @@ export function parseViewMessage(data: unknown): ViewMessage | null {
         configs: rows,
       };
     }
+    case "launch_saved":
+      return {
+        kind: "launchSaved",
+        ok: frame.ok === true,
+        location: typeof frame.location === "string" ? frame.location : null,
+        sentence: typeof frame.sentence === "string" ? frame.sentence : null,
+      };
     case "launch_played":
       return {
         kind: "launchPlayed",
@@ -477,6 +490,28 @@ export function launchListFrame(sessionId: string): Record<string, unknown> {
 /** @return the play button: start one configuration and open the browser on it */
 export function launchPlayFrame(sessionId: string, name: string): Record<string, unknown> {
   return { type: "launch_play", sessionId, name };
+}
+
+/**
+ * The save (card 352): add one configuration to this project's launch file.
+ *
+ * The entry is spelled in the FILE's own field names rather than the form's,
+ * so nothing between here and `LaunchWriter` translates a dialect — card 202's
+ * compatibility rule reaching all the way out to the client. What the operator
+ * left empty is left OUT: the writer's refusals are written against an absent
+ * field, and a `""` executable would make an attach entry look like a broken
+ * command entry.
+ *
+ * @param sessionId whose project folder
+ * @param entry     the configuration being added
+ * @returns the frame the view socket answers with `launch_saved`
+ */
+export function launchSaveFrame(sessionId: string, entry: NewLaunchEntry): Record<string, unknown> {
+  const fields: Record<string, unknown> = { name: entry.name, runtimeArgs: entry.runtimeArgs };
+  if (entry.runtimeExecutable !== null) fields.runtimeExecutable = entry.runtimeExecutable;
+  if (entry.port !== null) fields.port = entry.port;
+  if (entry.url !== null) fields.url = entry.url;
+  return { type: "launch_save", sessionId, entry: fields };
 }
 
 /** @return the screenshot ask for a face with no client-side picture to save —

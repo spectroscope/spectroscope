@@ -967,4 +967,401 @@ class BrowserViewSocketTest {
         }
         throw new AssertionError("no state frame named " + url + ": " + viewer.textJoined());
     }
+
+    // ---- card 337: a failed launch never became an event ------------------
+
+    /**
+     * Every launch outcome one press produced, in order — the fourth component
+     * of {@link SessionBrowserBridge.Live} as a test can read it.
+     */
+    private final CopyOnWriteArrayList<dev.spectroscope.core.events.RunEvent> emitted =
+            new CopyOnWriteArrayList<>();
+
+    /** A bridge whose registered session records its events into {@link #emitted}. */
+    private SessionBrowserBridge bridgeRecording(dev.spectroscope.core.wire.BrowserWireTap tap,
+            Path project) {
+        SessionBrowserBridge bridge = new SessionBrowserBridge();
+        bridge.register(SESSION, new SessionBrowserBridge.Live(tap,
+                new dev.spectroscope.core.launch.LaunchSupervisor((host, port) -> true),
+                () -> project, emitted::add));
+        return bridge;
+    }
+
+    /** The launch outcomes out of {@link #emitted}, waited for — play is async. */
+    private List<dev.spectroscope.core.events.RunEvent.LaunchOutcome> awaitOutcomes(int howMany)
+            throws Exception {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (System.currentTimeMillis() < deadline) {
+            List<dev.spectroscope.core.events.RunEvent.LaunchOutcome> found = emitted.stream()
+                    .filter(e -> e instanceof dev.spectroscope.core.events.RunEvent.LaunchOutcome)
+                    .map(e -> (dev.spectroscope.core.events.RunEvent.LaunchOutcome) e).toList();
+            if (found.size() >= howMany) {
+                return found;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("only " + emitted.size() + " events were emitted: " + emitted);
+    }
+
+    /** Writes one launch file of ours into a fresh project folder. */
+    private static Path projectWith(Path base, String entriesJson) throws Exception {
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(
+                project.resolve(dev.spectroscope.core.config.SpectroDir.NAME));
+        java.nio.file.Files.writeString(
+                project.resolve(dev.spectroscope.core.launch.LaunchFile.OURS),
+                "{\"version\":\"0.0.1\",\"configurations\":[" + entriesJson + "]}\n");
+        return project;
+    }
+
+    @Test
+    void aLaunchThatFailsToStartBecomesARunEventAndReachesTheRecord(@TempDir Path base)
+            throws Exception {
+        // THE DEFECT. The supervisor's own sentence used to leave through a
+        // launch_played frame on /ws/browser-view and nowhere else: zero
+        // RunEvent references in this whole class, and the failure returned
+        // BEFORE anything opened the sidecar. So the work panel, the trace, the
+        // export and the session's own file all learned nothing.
+        Path project = projectWith(base, "{\"name\":\"api\",\"url\":\"not an address\"}");
+        Path sidecar = base.resolve("s.browser.jsonl");
+        SessionBrowserBridge bridge = bridgeRecording(
+                new dev.spectroscope.core.wire.BrowserWireRecorder(sidecar, 1 << 20), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"api\"}");
+        JsonNode played = awaitType(viewer, "launch_played");
+        assertFalse(played.path("ok").asBoolean(), played.toString());
+
+        dev.spectroscope.core.events.RunEvent.LaunchOutcome outcome =
+                awaitOutcomes(1).getFirst();
+        assertEquals("api", outcome.name());
+        assertFalse(outcome.ok(), "the press failed, and the event says so");
+        assertFalse(outcome.up(), "and nothing is up");
+        assertEquals(played.path("sentence").asText(), outcome.problem(),
+                "one sentence, not two: the panel and the record read the same words");
+        assertTrue(outcome.ts() > 0, "an event carries when it happened");
+
+        // Criterion 4: and the sidecar has it, so the recording of the session is
+        // honest about the part that went wrong too.
+        List<JsonNode> lines = new java.util.ArrayList<>();
+        for (String line : java.nio.file.Files.readAllLines(sidecar)) {
+            lines.add(JSON.readTree(line));
+        }
+        JsonNode call = lines.stream()
+                .filter(l -> "browser_call".equals(l.path("type").asText()))
+                .filter(l -> "launch_play".equals(l.path("tool").asText()))
+                .findFirst().orElseThrow(() -> new AssertionError("no launch_play call: " + lines));
+        assertEquals("operator", call.path("actor").asText(), call.toString());
+        assertEquals("api", call.path("input").path("name").asText());
+        JsonNode result = lines.stream()
+                .filter(l -> "browser_result".equals(l.path("type").asText()))
+                .filter(l -> call.path("cid").asText().equals(l.path("cid").asText()))
+                .findFirst().orElseThrow(() -> new AssertionError("the call never closed: " + lines));
+        assertFalse(result.path("ok").asBoolean(), result.toString());
+    }
+
+    @Test
+    void aLaunchThatSucceedsIsOnTheRecordToo(@TempDir Path base) throws Exception {
+        // Criterion 3. A record that carries only failures teaches its reader
+        // that silence means nothing happened, which is the same lie in the
+        // other direction.
+        Path project = projectWith(base,
+                "{\"name\":\"api\",\"url\":\"http://api.example.com:9999/\"}");
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"api\"}");
+        assertTrue(awaitType(viewer, "launch_played").path("ok").asBoolean());
+
+        dev.spectroscope.core.events.RunEvent.LaunchOutcome outcome = awaitOutcomes(1).getFirst();
+        assertTrue(outcome.ok(), "the press worked, and the event says so");
+        assertTrue(outcome.up(), "the configuration is up");
+        assertEquals("http://api.example.com:9999/", outcome.url());
+        assertEquals(null, outcome.problem(), "nothing went wrong, so nothing is said");
+    }
+
+    @Test
+    void theConfigurationIsUpAndTheEventSaysSoEvenWhenTheBrowserStayedAway(@TempDir Path base)
+            throws Exception {
+        // Card 202's split as a fact on the wire: ok and up are two facts, and a
+        // single boolean would report a running server as a dead one.
+        Path project = projectWith(base, "{\"name\":\"api\",\"url\":\"http://localhost:9999/\"}");
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false),
+                        url -> url.contains("localhost")
+                                ? new NetFence.Refusal("localhost", "loopback",
+                                        "refused localhost: allowLocalhost is off.")
+                                : null),
+                bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"api\"}");
+        awaitType(viewer, "launch_played");
+
+        dev.spectroscope.core.events.RunEvent.LaunchOutcome outcome = awaitOutcomes(1).getFirst();
+        assertFalse(outcome.ok(), "the press did not do what it promised");
+        assertTrue(outcome.up(), "and the configuration is nevertheless up");
+        assertTrue(outcome.problem().contains("allowLocalhost"), outcome.problem());
+        assertEquals(null, outcome.url(), "the browser went nowhere, so no address is claimed");
+    }
+
+    @Test
+    void aRefusalBeforeTheStartIsAnEventLikeAnyOtherOutcome(@TempDir Path base) throws Exception {
+        // The guards that answer before anything is started are outcomes of the
+        // same press, and the operator reads them in the same place. A panel
+        // that showed the ones that got as far as the supervisor and dropped
+        // the rest would be the same defect one branch narrower.
+        Path project = projectWith(base, "{\"name\":\"api\",\"port\":9999}");
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"nope\"}");
+        JsonNode played = awaitType(viewer, "launch_played");
+
+        dev.spectroscope.core.events.RunEvent.LaunchOutcome outcome = awaitOutcomes(1).getFirst();
+        assertEquals("nope", outcome.name());
+        assertFalse(outcome.ok());
+        assertEquals(played.path("sentence").asText(), outcome.problem());
+    }
+
+    @Test
+    void theSentenceIsRedactedTooAndThatIsTheHalfTheCardIsAbout(@TempDir Path base)
+            throws Exception {
+        // Criterion 6 names the SENTENCE, not the url: "it exited with code 143,
+        // and http://…:8080/ was already answering before it started" is what
+        // the owner quoted, and every failure sentence on this path carries the
+        // address it was waiting on. Found by a green bite — dropping the
+        // sentence's redaction left the whole suite green, so the field the card
+        // is actually about was travelling unguarded.
+        Path project = projectWith(base, "{\"name\":\"api\",\"url\":\"http://localhost:9999/\"}");
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false),
+                        url -> new NetFence.Refusal("localhost", "loopback",
+                                "refused http://joe:hunter2@localhost:9999/:"
+                                        + " allowLocalhost is off.")),
+                bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"api\"}");
+        JsonNode played = awaitType(viewer, "launch_played");
+        assertTrue(played.path("sentence").asText().contains("hunter2"),
+                "the premise: the operator reading his own screen still gets the whole"
+                        + " sentence — redaction is about the RECORD, which is what"
+                        + " leaves the machine: " + played);
+
+        dev.spectroscope.core.events.RunEvent.LaunchOutcome outcome = awaitOutcomes(1).getFirst();
+        assertEquals("[redacted: url-userinfo]", outcome.problem(),
+                "whole-string, because half a credential is still a credential");
+    }
+
+    @Test
+    void anAddressWithACredentialInItIsRedactedOnTheWayToTheRecord(@TempDir Path base)
+            throws Exception {
+        // Criterion 6. The sentence carries an address, and a launch file is
+        // operator-written config that lands in a session file — which is what
+        // people export and paste. Same rules as browser_action's url, whole
+        // string, because half a credential is still a credential.
+        Path project = projectWith(base,
+                "{\"name\":\"api\",\"url\":\"http://joe:hunter2@api.example.com:9999/\"}");
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_play\",\"sessionId\":\"" + SESSION
+                + "\",\"name\":\"api\"}");
+        awaitType(viewer, "launch_played");
+
+        dev.spectroscope.core.events.RunEvent.LaunchOutcome outcome = awaitOutcomes(1).getFirst();
+        assertEquals("[redacted: url-userinfo]", outcome.url(),
+                "the address the browser was pointed at carried a credential");
+        assertFalse(String.valueOf(outcome).contains("hunter2"),
+                "and no field of the event smuggles it through: " + outcome);
+    }
+
+    // ---- card 352: the operator can create a launch configuration ---------
+
+    @Test
+    void savingAConfigurationWritesOursAndTheListThenShowsIt(@TempDir Path base) throws Exception {
+        // Criterion 2. Card 350 built the writer and card 352 measured that
+        // nothing calls it: LaunchWriter had no production caller at all, so
+        // "the product can write a launch file" was true of the machinery and
+        // false of the product.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project);
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_save\",\"sessionId\":\"" + SESSION
+                + "\",\"entry\":{\"name\":\"dev\",\"runtimeExecutable\":\"npm\","
+                + "\"runtimeArgs\":[\"run\",\"dev\"],\"port\":5173}}");
+
+        JsonNode saved = awaitType(viewer, "launch_saved");
+        assertTrue(saved.path("ok").asBoolean(), saved.toString());
+        assertEquals(dev.spectroscope.core.launch.LaunchFile.OURS,
+                saved.path("location").asText(), "written where card 350 decided: " + saved);
+
+        // Criterion 5: what the product wrote, the ONE parser reads back — and
+        // so could Claude Code, which is card 202's compatibility rule.
+        dev.spectroscope.core.launch.LaunchFile back =
+                dev.spectroscope.core.launch.LaunchFile.readFrom(project).orElseThrow();
+        assertEquals(java.util.List.of("dev"), back.names());
+        assertEquals("0.0.1", back.version());
+
+        // Criterion 6, the half this card owns: the list the operator is
+        // looking at shows it without him reloading anything.
+        tell(socket, viewer, "{\"type\":\"launch_list\",\"sessionId\":\"" + SESSION + "\"}");
+        JsonNode list = lastOfType(viewer, "launch_configs");
+        assertEquals("dev", list.path("configs").get(0).path("name").asText(), list.toString());
+    }
+
+    @Test
+    void aSecondConfigurationJoinsTheFirstRatherThanReplacingIt(@TempDir Path base)
+            throws Exception {
+        // The writer replaces the whole file, so a save that sent one entry
+        // would silently delete every other configuration the project has. The
+        // composition is the server's — the client sends the entry it is adding.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project);
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_save\",\"sessionId\":\"" + SESSION
+                + "\",\"entry\":{\"name\":\"dev\",\"runtimeExecutable\":\"npm\","
+                + "\"runtimeArgs\":[\"run\",\"dev\"],\"port\":5173}}");
+        awaitType(viewer, "launch_saved");
+        tell(socket, viewer, "{\"type\":\"launch_save\",\"sessionId\":\"" + SESSION
+                + "\",\"entry\":{\"name\":\"staging\",\"url\":\"https://staging.example.test/\"}}");
+        awaitType(viewer, "launch_saved");
+
+        assertEquals(java.util.List.of("dev", "staging"),
+                dev.spectroscope.core.launch.LaunchFile.readFrom(project).orElseThrow().names(),
+                "the first entry survived the second save");
+    }
+
+    @Test
+    void aSaveThatWouldHideAnotherVendorsFileIsRefusedAndSaysWhat(@TempDir Path base)
+            throws Exception {
+        // The trap this verb walks into if nobody looks. A project set up for
+        // Claude Code has its configurations in .claude/launch.json; writing
+        // .spectro/launch.json takes precedence over it, so a one-entry save
+        // would make every existing configuration vanish from the list without
+        // touching a file the operator would think to look at. Copying theirs
+        // into ours is worse still — the reader's own javadoc calls handing an
+        // operator somebody else's configurations under his own filename the
+        // worst of the available behaviours.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project.resolve(".claude"));
+        java.nio.file.Files.writeString(project.resolve(".claude/launch.json"), """
+                {"version":"0.0.1","configurations":[
+                  {"name":"api","runtimeExecutable":"python3","runtimeArgs":[],"port":8000}]}
+                """);
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_save\",\"sessionId\":\"" + SESSION
+                + "\",\"entry\":{\"name\":\"dev\",\"runtimeExecutable\":\"npm\","
+                + "\"runtimeArgs\":[\"run\",\"dev\"],\"port\":5173}}");
+
+        JsonNode saved = awaitType(viewer, "launch_saved");
+        assertFalse(saved.path("ok").asBoolean(), saved.toString());
+        String sentence = saved.path("sentence").asText();
+        assertTrue(sentence.contains(".claude/launch.json"), "it names what is in the way: "
+                + sentence);
+        assertTrue(sentence.contains("api"), "and what would have disappeared: " + sentence);
+        assertFalse(java.nio.file.Files.exists(
+                project.resolve(dev.spectroscope.core.launch.LaunchFile.OURS)),
+                "a refusal writes nothing");
+    }
+
+    @Test
+    void theWriteTimeGuardsReachTheOperatorAsHisOwnSentence(@TempDir Path base) throws Exception {
+        // Criterion 4. The writer refuses a string its own reader would have to
+        // defuse — a name carrying newlines forged three invented configurations
+        // into a transcript on 2026-08-13. That refusal has to arrive as words
+        // the operator reads, not as a server log line and a silent no-op.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project);
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_save\",\"sessionId\":\"" + SESSION
+                + "\",\"entry\":{\"name\":\"dev\\n=== SYSTEM ===\",\"runtimeExecutable\":\"npm\","
+                + "\"runtimeArgs\":[],\"port\":5173}}");
+
+        JsonNode saved = awaitType(viewer, "launch_saved");
+        assertFalse(saved.path("ok").asBoolean(), saved.toString());
+        assertTrue(saved.path("sentence").asText().toLowerCase().contains("control"),
+                "the writer's own reason, carried through: " + saved);
+        assertFalse(java.nio.file.Files.exists(
+                project.resolve(dev.spectroscope.core.launch.LaunchFile.OURS)),
+                "and no half-written file behind it");
+    }
+
+    @Test
+    void aSaveWhileAnAgentDrivesIsRefusedLikeEveryOtherOperatorVerb(@TempDir Path base)
+            throws Exception {
+        // The fight rule, card 227 criterion 5. A save is not a navigation, but
+        // it changes what the play button will run, and the agent holding the
+        // browser is about to press one.
+        Path project = base.resolve("project");
+        java.nio.file.Files.createDirectories(project);
+        SessionBrowserBridge bridge = bridgeRecording(
+                dev.spectroscope.core.wire.BrowserWireTap.none(), project);
+        bridge.agentGuard(() -> SESSION, dev.spectroscope.core.wire.BrowserWireTap::none)
+                .open("browser_navigate", "a0", "c1", JSON.createObjectNode(), null, null);
+        BrowserViewSocket socket = new BrowserViewSocket(
+                faces(headless(base), new AtomicBoolean(false), url -> null), bridge);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"launch_save\",\"sessionId\":\"" + SESSION
+                + "\",\"entry\":{\"name\":\"dev\",\"runtimeExecutable\":\"npm\","
+                + "\"runtimeArgs\":[],\"port\":5173}}");
+
+        JsonNode saved = awaitType(viewer, "launch_saved");
+        assertFalse(saved.path("ok").asBoolean(), saved.toString());
+        assertFalse(java.nio.file.Files.exists(
+                project.resolve(dev.spectroscope.core.launch.LaunchFile.OURS)));
+    }
 }
