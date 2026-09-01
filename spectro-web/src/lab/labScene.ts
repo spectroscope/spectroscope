@@ -11,6 +11,7 @@
 // agentId, so they fold into that child's loop — the map can then draw each
 // subagent as its own little agent loop, with its own packet, next to the main.
 
+import { emptyQueue, foldQueue, type QueueState } from "./flowmap/queueDepth";
 import type { RunEvent } from "../events";
 
 /** The element an agent's packet currently sits on / that is active. */
@@ -52,6 +53,9 @@ export interface SubagentInfo extends Loop {
 }
 
 export interface Scene extends Loop {
+  /** Card 331: what the run has been asked for and has not reached. Import-only
+   *  — `queue_operation` never reaches a written spectroscope session. */
+  queue: QueueState;
   /** Subagent loops in spawn order — empty means the map renders like before. */
   subagents: SubagentInfo[];
   /** The child whose event arrived last — lets the owning loop pulse. */
@@ -139,6 +143,7 @@ export function initialScene(): Scene {
     activeChild: null,
     rootRunId: null,
     gateOwners: {},
+    queue: emptyQueue(),
   };
 }
 
@@ -318,6 +323,15 @@ function foldChild(cards: SubagentInfo[], id: string, event: RunEvent): Subagent
 
 /** Fold one event onto the whole scene (the main loop + the subagents). Never mutates. */
 export function advanceScene(scene: Scene, event: RunEvent): Scene {
+  // Card 331: the queue is folded FIRST and returns early, because a queue
+  // operation is not a loop event — it carries no agentId, moves no focus, and
+  // must not fall through to the child guard below and be attributed to whoever
+  // happens to be active.
+  const queued = foldQueue(scene.queue, event);
+  if (queued !== scene.queue) {
+    return { ...scene, queue: queued };
+  }
+
   // Parent-level A2A card meta — handled before the child guard even though the
   // ids name children; they never move a loop.
   if (event.type === "agent_spawn") {

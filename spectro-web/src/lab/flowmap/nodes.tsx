@@ -7,6 +7,7 @@
 import { useContext, useState, type CSSProperties, type ReactNode } from "react";
 import { type NodeProps } from "@xyflow/react";
 import { Handles } from "./handles";
+import { QueueNode } from "./QueueNode";
 import { ExpandAllContext } from "./expandContext";
 import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
@@ -1358,4 +1359,6 @@ export const nodeTypes = {
   llm: LlmNode,
   ext: ExtNode,
   subagent: SubagentNode,
+  // Card 331: the backlog above the main agent.
+  queue: QueueNode,
 };

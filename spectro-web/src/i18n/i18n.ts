@@ -3147,6 +3147,15 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The dock stops here however far you drag. On a large monitor this is the number that stops you, not the reserve above.",
   },
 
+  "lab.queue.title": { de: "Warteschlange", en: "Queue" },
+  "lab.queue.unnamed": {
+    de: "{n} ohne Text — die Aufzeichnung nennt sie nicht",
+    en: "{n} with no text — the recording does not name them",
+  },
+  "lab.queue.retired": {
+    de: "{n} bereits abgearbeitet — welche, sagt die Aufzeichnung nicht",
+    en: "{n} already taken — the recording does not say which",
+  },
   "set.questionsPerRun": { de: "Fragen pro Lauf", en: "Questions per run" },
   "set.questionsPerRunNote": {
     de: "Wie oft ein Lauf dich um eine Entscheidung bitten darf, bevor er mit dem weitermacht, was er hat. 0 heißt: nie fragen.",
