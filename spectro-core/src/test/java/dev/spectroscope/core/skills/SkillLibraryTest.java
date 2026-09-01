@@ -3,6 +3,7 @@ package dev.spectroscope.core.skills;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.Tool.ToolContext;
 import org.junit.jupiter.api.Test;
@@ -545,6 +546,78 @@ class SkillLibraryTest {
                 "the RESULT must carry the directory itself, not a description of one: " + result);
         assertTrue(result.contains("read_skill_file"),
                 "and name the tool that can open what lives there: " + result);
+    }
+
+    @Test
+    void theAddressDoesNotClaimReadFileIsBlockedWhenTheSkillRootIsUnderTheWorkspace()
+            throws IOException {
+        // ⚠️ REVIEW FINDING, card 358. The address line ended, unconditionally,
+        // "read_file cannot: the directory is outside the working directory" —
+        // false whenever the skill root sits UNDER the sandbox root, which is
+        // what an operator who points the workspace at a project gets. This very
+        // repo ships a tracked .spectro/skills/spectroscope/research, the skill
+        // the RoleCatalog half of this card exists for. Reproduced before the
+        // fix with cwd = the project dir: the sentence said "read_file cannot"
+        // while read_file returned the sibling by BOTH absolute and relative
+        // path. Telling the model a false thing about its own sandbox is the
+        // class of error that produced the `find ~` sweep this card removes.
+        //
+        // The assertion does not restate my own predicate: it takes the path OUT
+        // of the sentence and hands it to read_file. If the claim is wrong, the
+        // tool says so.
+        Path project = Files.createDirectories(tempDir.resolve("repo"));
+        Path root = project.resolve(".spectro").resolve("skills");
+        skillIn(root, "research", "---\nname: research\ndescription: r\n---\nsee references/x.md");
+        Files.createDirectories(root.resolve("research").resolve("references"));
+        Files.writeString(root.resolve("research").resolve("references").resolve("x.md"),
+                "SIBLING CONTENT");
+        ToolContext inProject = new ToolContext(project, new CancelSignal());
+        Tool tool = SkillLibrary.load(List.of(root)).useSkillTool();
+
+        String result = tool.execute(nameInput("research"), inProject);
+
+        assertFalse(result.contains("read_file cannot"),
+                "the skill root is under the working directory here: " + result);
+        String clue = "read_file reaches it too, at ";
+        assertTrue(result.contains(clue), "and the address must say where: " + result);
+        String tail = result.substring(result.indexOf(clue) + clue.length());
+        String relativeDir = tail.substring(0, tail.indexOf("/."));
+
+        assertEquals("SIBLING CONTENT", readFile().execute(
+                        JSON.createObjectNode().put("path", relativeDir + "/references/x.md"),
+                        inProject),
+                "the address named a read_file path that read_file does not honour");
+    }
+
+    @Test
+    void theAddressStillSaysReadFileCannotWhenTheSkillRootIsOutsideTheWorkspace()
+            throws IOException {
+        // The other direction of the same sentence — the unconfigured session,
+        // whose workspace is a per-session temp dir with no skills under it.
+        // Checked against read_file too, so neither half is a restatement.
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Path root = tempDir.resolve("elsewhere");
+        skillIn(root, "research", "---\nname: research\ndescription: r\n---\nsee references/x.md");
+        Files.createDirectories(root.resolve("research").resolve("references"));
+        Path sibling = root.resolve("research").resolve("references").resolve("x.md");
+        Files.writeString(sibling, "SIBLING CONTENT");
+        ToolContext outside = new ToolContext(workspace, new CancelSignal());
+        Tool tool = SkillLibrary.load(List.of(root)).useSkillTool();
+
+        String result = tool.execute(nameInput("research"), outside);
+
+        assertTrue(result.contains("read_file cannot: the directory is outside the working directory"),
+                "the skill root is outside the working directory here: " + result);
+        assertTrue(readFile().execute(
+                        JSON.createObjectNode().put("path", sibling.toString()), outside)
+                        .startsWith("ERROR: path is outside the working directory"),
+                "and read_file must actually refuse it, or the sentence is the wrong one");
+    }
+
+    /** The shipped read_file, so the address line is checked against the tool it names. */
+    private static Tool readFile() {
+        return StandardTools.all().stream().filter(t -> t.name().equals("read_file"))
+                .findFirst().orElseThrow();
     }
 
     @Test
