@@ -201,9 +201,13 @@ class ReadSkillFileToolTest {
 
     @Test
     void aSymlinkPlantedInsideTheSkillDirectoryCannotLeaveIt() throws IOException {
-        // THIS is what the canonical form buys over the lexical one, and it is the
-        // hole StandardTools.resolveInside still has (card 367): a link's LEXICAL
-        // path is inside the root, and every read below follows it.
+        // THIS is what the canonical form buys over the lexical one: a link's
+        // LEXICAL path is inside the root, and every read below follows it.
+        // StandardTools.resolveInside carried that hole until card 367 closed it
+        // — the escape was demonstrated there against the shipped tools, and it
+        // was not only a read escape: write_file and edit_file CHANGED the file
+        // outside while answering with the name inside. Its own pins live in
+        // StandardToolsTest; this one guards the skill root.
         Path root = tempDir.resolve("skills");
         Path skill = skillIn(root, "tdd", "body");
         Path outside = tempDir.resolve("secret.txt");

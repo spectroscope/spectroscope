@@ -31,10 +31,12 @@ Every model-supplied path passes the sandbox. Every mutation passes the gate.</p
 <div class="card">
   <h4>The path sandbox</h4>
   <p>Every file tool resolves paths relative to the working directory and refuses anything
-  that normalizes outside it (<code>ERROR: path is outside the working directory</code>).
-  Tree-walking tools additionally verify each hit's <em>real</em> path (symlink-escape
-  guard) and never enter <code>.git</code>, <code>build</code>, <code>node_modules</code>,
-  <code>target</code>.</p>
+  that leaves it (<code>ERROR: path is outside the working directory</code>). The check
+  compares <em>real</em> paths, so a symlink sitting inside the working directory cannot be
+  read or written <em>through</em> to a file outside it &mdash; a link that stays inside
+  still works, because the rule is about leaving and not about links. Tree-walking tools
+  apply the same test to every hit and never enter <code>.git</code>, <code>build</code>,
+  <code>node_modules</code>, <code>target</code>.</p>
 </div>
 <div class="card">
   <h4>The caps</h4>

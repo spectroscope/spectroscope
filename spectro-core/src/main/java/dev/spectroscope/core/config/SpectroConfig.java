@@ -876,6 +876,28 @@ public record SpectroConfig(
             // Card 364: the number the harness has always spent, now reachable.
             DEFAULT_MAX_TOKENS);
 
+    /**
+     * The shipped defaults themselves — every value the layer chain falls back
+     * to when nothing above it spoke.
+     *
+     * <p>Exists for the doc guard, card 368. The published config reference
+     * prints a default beside each of its keys under the header "Every key", and
+     * until that guard not one of those numbers was checked against anything:
+     * the row count was guarded, the chapter lead was guarded, both HTML
+     * editions and both PDFs were guarded, and a row reading {@code int · 15}
+     * beside a {@code maxTurns} of 150 shipped through a full green gate. Handing
+     * out the record rather than the individual {@code DEFAULT_*} constants is
+     * what lets that guard DERIVE its expectation — the constants do not cover
+     * the fields that have no constant ({@code thinking}, {@code promptCaching},
+     * {@code allowLocalhost} and the addresses), and a guard that reads only the
+     * documented half of a table is the shape this one exists to end.</p>
+     *
+     * @return the defaults record; its accessors are the values the app ships
+     */
+    static SpectroConfig shippedDefaults() {
+        return DEFAULTS;
+    }
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**

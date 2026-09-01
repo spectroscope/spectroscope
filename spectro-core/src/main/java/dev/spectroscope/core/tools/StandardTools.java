@@ -7,11 +7,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.Tool.ToolContext;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
@@ -231,19 +231,136 @@ public final class StandardTools {
 
     /**
      * The path sandbox: resolves a model-supplied relative path and rejects any
-     * result outside cwd with an IOException — ".." traversal must not escape.
+     * result outside cwd with an IOException — neither ".." traversal nor a
+     * symlink may escape.
+     *
+     * <p><b>Card 367.</b> This used to be {@code normalize()} plus a
+     * {@code startsWith}, which is purely LEXICAL: {@code normalize} resolves
+     * {@code ..} in the TEXT and asks the filesystem nothing, while every read
+     * and write below follows links. A file named {@code notes.txt} pointing at
+     * {@code ../outside.txt} was therefore inside cwd lexically and outside it
+     * really, and the check could not tell — measured against the shipped tools,
+     * {@code read_file} returned the file outside, {@code write_file} and
+     * {@code edit_file} CHANGED it, {@code list_dir} listed a directory outside
+     * and {@code view_file}/{@code view_image} attached what they found, each of
+     * them answering with the harmless name the model had sent. Only the tree
+     * walk canonicalized ({@link #isInside}), and the server-side twin
+     * {@code WorkspaceController.resolveInside} has named this exact escape in
+     * its javadoc since it was fixed there.</p>
+     *
+     * <p>Both tests run, in this order and for different reasons. The LEXICAL
+     * one first, so a {@code ../..} that lands on nothing still answers "outside
+     * the working directory" instead of "no such file" — the traversal is
+     * refused for what it is. The CANONICAL one second, which is what a link
+     * cannot lie to. Both sides of the canonical comparison are real, because
+     * the root itself is often a link: a macOS temp folder lives under
+     * {@code /var}, which is a link to {@code /private/var}, so real against
+     * normalized would refuse every ordinary read.</p>
+     *
+     * <p>A path that does not resolve throws {@link NoSuchFileException}, and
+     * that deliberately does NOT collapse into the escape message: an operator
+     * told "outside the working directory" about their own typo goes looking for
+     * a fence that is not there.</p>
      *
      * @param cwd      the sandbox root (the agent's working directory)
      * @param relative the path string exactly as the model sent it
-     * @return the normalized absolute path, guaranteed inside cwd
+     * @return the canonical absolute path, proven inside cwd
+     * @throws IOException when it escapes, does not exist, or cannot be resolved
      */
     private static Path resolveInside(Path cwd, String relative) throws IOException {
+        return resolveInside(cwd, relative, false);
+    }
+
+    /**
+     * The same rule for a path that is allowed not to exist yet — the write path.
+     *
+     * <p>This is the one place where copying {@code WorkspaceController}
+     * verbatim would be wrong: it only ever reads, so {@code toRealPath()}
+     * throwing is always its answer. {@code write_file} creates files, and
+     * creates the directories above them, so what has to be proven inside cwd is
+     * the DIRECTORY the write will land in.</p>
+     *
+     * @param cwd      the sandbox root (the agent's working directory)
+     * @param relative the path string exactly as the model sent it
+     * @return the canonical absolute path of an existing file, or the planned
+     *         path of a new one, either way proven inside cwd
+     * @throws IOException when it escapes or cannot be placed
+     */
+    private static Path resolveInsideForWrite(Path cwd, String relative) throws IOException {
+        return resolveInside(cwd, relative, true);
+    }
+
+    /**
+     * The shared body of both sandbox rules.
+     *
+     * @param cwd          the sandbox root (the agent's working directory)
+     * @param relative     the path string exactly as the model sent it
+     * @param mayBeCreated true for the write path, where a path that does not
+     *                     resolve is a file about to be made rather than a miss
+     * @return the path, proven inside cwd by REAL paths on both sides
+     * @throws IOException when it escapes, does not exist, or cannot be resolved
+     */
+    private static Path resolveInside(Path cwd, String relative, boolean mayBeCreated)
+            throws IOException {
         Path base = cwd.toAbsolutePath().normalize();
-        Path resolved = base.resolve(relative).normalize();
-        if (!resolved.equals(base) && !resolved.startsWith(base + File.separator)) {
-            throw new IOException("path is outside the working directory: " + relative);
+        Path lexical = base.resolve(relative).normalize();
+        if (!lexical.equals(base) && !lexical.startsWith(base)) {
+            throw outsideTheSandbox(relative);
         }
-        return resolved;
+        Path realBase = base.toRealPath();
+        Path real;
+        try {
+            real = lexical.toRealPath();
+        } catch (NoSuchFileException doesNotResolve) {
+            if (!mayBeCreated) {
+                throw doesNotResolve; // a missing file is a missing file
+            }
+            real = plannedPlaceOf(lexical, doesNotResolve);
+        }
+        if (!real.equals(realBase) && !real.startsWith(realBase)) {
+            throw outsideTheSandbox(relative);
+        }
+        return real;
+    }
+
+    /**
+     * Where a write would really land for a path that does not resolve yet: the
+     * canonical form of the deepest directory that DOES exist, plus the names
+     * still to be created under it.
+     *
+     * <p>A dangling link is refused outright rather than planned around. It is
+     * the write escape without a file to escape to — {@code Files.write} follows
+     * a broken link and CREATES its target, so a link inside cwd pointing at a
+     * path outside it that does not exist yet would plant one there. Nothing can
+     * prove where an unresolvable link lands, and {@link #isInside} denies by
+     * default for the same reason.</p>
+     *
+     * @param lexical the normalized path, already proven lexically inside cwd
+     * @param missing the resolution failure, rethrown when nothing above exists
+     * @return the planned absolute path, canonical as far as the disk goes
+     * @throws IOException for a dangling link, or when no ancestor exists
+     */
+    private static Path plannedPlaceOf(Path lexical, NoSuchFileException missing)
+            throws IOException {
+        if (Files.isSymbolicLink(lexical)) {
+            throw new IOException("path is a link that resolves to nothing: " + lexical);
+        }
+        Path existing = lexical.getParent();
+        while (existing != null && !Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            throw missing;
+        }
+        return existing.toRealPath().resolve(existing.relativize(lexical));
+    }
+
+    /** The one refusal both sandbox rules give for a path that leaves cwd.
+     *  @param relative the path exactly as the model sent it — never the resolved
+     *                  form, which would hand back an absolute path it never had
+     *  @return the exception to throw */
+    private static IOException outsideTheSandbox(String relative) {
+        return new IOException("path is outside the working directory: " + relative);
     }
 
     /**
@@ -491,7 +608,7 @@ public final class StandardTools {
                 try {
                     String relative = input.path("path").asText();
                     String content = input.path("content").asText();
-                    Path file = resolveInside(context.cwd(), relative); // path sandbox
+                    Path file = resolveInsideForWrite(context.cwd(), relative); // path sandbox
                     byte[] next = content.getBytes(StandardCharsets.UTF_8);
                     // Card 269: look at what is there ONCE, before writing over
                     // it, against the bytes already in hand.

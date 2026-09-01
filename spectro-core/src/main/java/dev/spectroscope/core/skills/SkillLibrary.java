@@ -306,11 +306,19 @@ public final class SkillLibrary {
      * The second half of the address line: what {@code read_file} can do with the
      * same directory, decided by the same rule {@code read_file} itself applies.
      *
-     * <p>It mirrors {@code StandardTools.resolveInside} deliberately — absolute,
-     * lexically normalized, compared by NAME ELEMENTS — because the sentence is a
-     * claim about that tool and not about the filesystem. A canonical comparison
-     * here would say "reaches" for a workspace whose {@code cwd} is a symlink to
-     * the skill root's parent, where the lexical tool refuses.</p>
+     * <p>It mirrors {@code StandardTools.resolveInside} deliberately, because the
+     * sentence is a claim about that tool and not about the filesystem — so when
+     * that rule moved, this one moved with it. <b>Card 367</b> made the tool's
+     * containment check CANONICAL (a lexical one let a link planted inside cwd be
+     * read, written and edited THROUGH), and this javadoc used to argue for the
+     * lexical form on the strength of the one case where the two disagree: "a
+     * canonical comparison here would say reaches for a workspace whose cwd is a
+     * symlink to the skill root's parent, where the lexical tool refuses". The
+     * lexical tool no longer refuses there, so from card 367 on it is the lexical
+     * answer that is false. That exact case is the subject of
+     * {@code SkillLibraryTest#theAddressSentenceFollowsReadFileThroughASymlinkedWorkspace},
+     * which takes the path out of the sentence and hands it to {@code read_file}
+     * rather than restating the predicate.</p>
      *
      * <p>With no {@code cwd} to compare against, it claims NOTHING and closes the
      * sentence with a full stop: an unknown sandbox is not evidence of an
@@ -325,8 +333,8 @@ public final class SkillLibrary {
         if (cwd == null) {
             return ".";
         }
-        Path base = cwd.toAbsolutePath().normalize();
-        Path target = dir.toAbsolutePath().normalize();
+        Path base = canonical(cwd);
+        Path target = canonical(dir);
         if (target.equals(base)) {
             return "; read_file reaches it too — it is the working directory itself.";
         }
@@ -334,6 +342,28 @@ public final class SkillLibrary {
             return "; read_file reaches it too, at " + base.relativize(target) + "/.";
         }
         return " — read_file cannot: the directory is outside the working directory.";
+    }
+
+    /**
+     * A path in the form {@code StandardTools.resolveInside} compares: absolute,
+     * normalized, and canonical as far as the disk can say.
+     *
+     * <p>A path that does not resolve keeps its lexical form rather than
+     * disappearing — the sentence above still has to end somewhere, and the
+     * tool's own first pass is lexical too. Both arguments here normally exist:
+     * {@code dir} is a directory a skill was just loaded from, and {@code cwd} is
+     * the sandbox root the run is already using.</p>
+     *
+     * @param path the directory to canonicalize
+     * @return the real path, or the absolute normalized one when it does not resolve
+     */
+    private static Path canonical(Path path) {
+        Path absolute = path.toAbsolutePath().normalize();
+        try {
+            return absolute.toRealPath();
+        } catch (IOException unresolved) {
+            return absolute;
+        }
     }
 
     /** The one refusal both skill tools give for a name nothing is installed under.

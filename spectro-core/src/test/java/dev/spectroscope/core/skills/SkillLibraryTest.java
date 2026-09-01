@@ -614,6 +614,49 @@ class SkillLibraryTest {
                 "and read_file must actually refuse it, or the sentence is the wrong one");
     }
 
+    @Test
+    void theAddressSentenceFollowsReadFileThroughASymlinkedWorkspace() throws IOException {
+        // Card 367. This sentence is a claim about read_file, so it has to move
+        // when read_file's rule moves — and it just did: the containment check is
+        // canonical now, both sides resolved, because a lexical one let a link
+        // planted inside cwd read and WRITE outside it.
+        //
+        // readFileReach's javadoc argued for the lexical mirror in exactly this
+        // case: "a canonical comparison here would say reaches for a workspace
+        // whose cwd is a symlink to the skill root's parent, where the lexical
+        // tool refuses". The lexical tool no longer refuses, so from card 367 on
+        // it is the LEXICAL answer that lies — this test is the case that
+        // sentence named, run against the tool instead of argued about.
+        //
+        // Same design as the two tests above: the path is taken OUT of the
+        // sentence and handed to read_file, so neither half restates the other.
+        Path project = Files.createDirectories(tempDir.resolve("real-project"));
+        Path root = project.resolve(".spectro").resolve("skills");
+        skillIn(root, "research", "---\nname: research\ndescription: r\n---\nsee references/x.md");
+        Files.createDirectories(root.resolve("research").resolve("references"));
+        Files.writeString(root.resolve("research").resolve("references").resolve("x.md"),
+                "SIBLING CONTENT");
+        Path linked = tempDir.resolve("linked-project");
+        Files.createSymbolicLink(linked, project);
+        ToolContext throughTheLink = new ToolContext(linked, new CancelSignal());
+        Tool tool = SkillLibrary.load(List.of(root)).useSkillTool();
+
+        String result = tool.execute(nameInput("research"), throughTheLink);
+
+        assertFalse(result.contains("read_file cannot"),
+                "cwd is a link to the directory the skill root lives under, and read_file"
+                        + " follows it: " + result);
+        String clue = "read_file reaches it too, at ";
+        assertTrue(result.contains(clue), "and the address must say where: " + result);
+        String tail = result.substring(result.indexOf(clue) + clue.length());
+        String relativeDir = tail.substring(0, tail.indexOf("/."));
+
+        assertEquals("SIBLING CONTENT", readFile().execute(
+                        JSON.createObjectNode().put("path", relativeDir + "/references/x.md"),
+                        throughTheLink),
+                "the address named a read_file path that read_file does not honour");
+    }
+
     /** The shipped read_file, so the address line is checked against the tool it names. */
     private static Tool readFile() {
         return StandardTools.all().stream().filter(t -> t.name().equals("read_file"))

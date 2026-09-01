@@ -338,6 +338,241 @@ class StandardToolsTest {
         assertTrue(read.startsWith("ERROR: "));
     }
 
+    // ------------------------------------- the sandbox is REAL, not lexical (card 367)
+
+    /**
+     * The escape, measured before the fix. {@code resolveInside} was
+     * {@code base.resolve(relative).normalize()} plus a {@code startsWith} —
+     * {@code normalize} resolves {@code ..} in the TEXT and asks the filesystem
+     * nothing, while every read and write below follows links. So a link planted
+     * inside cwd was inside it lexically and outside it really, and the check
+     * could not tell. Each route gets its own test: one test that dies with its
+     * neighbours pins nothing.
+     *
+     * @param tempDir the parent of both the sandbox and the file outside it
+     * @return the working directory, with {@code notes.txt} linked to
+     *         {@code ../outside.txt} and that file holding {@code content}
+     */
+    private static Path sandboxWithALinkOut(Path tempDir, String content) throws IOException {
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path outside = tempDir.resolve("outside.txt");
+        Files.writeString(outside, content);
+        Files.createSymbolicLink(cwd.resolve("notes.txt"), outside);
+        return cwd;
+    }
+
+    @Test
+    void aSymlinkPlantedInsideTheSandboxCannotBeReadThrough(@TempDir Path tempDir)
+            throws IOException {
+        Path cwd = sandboxWithALinkOut(tempDir, "SECRET-OUTSIDE-THE-SANDBOX");
+
+        String read = tools(10).get("read_file")
+                .execute(input("path", "notes.txt"), contextIn(cwd));
+
+        assertTrue(read.startsWith("ERROR: path is outside the working directory"), read);
+        assertFalse(read.contains("SECRET-OUTSIDE-THE-SANDBOX"), read);
+    }
+
+    @Test
+    void aSymlinkPlantedInsideTheSandboxCannotBePagedThrough(@TempDir Path tempDir)
+            throws IOException {
+        // The paging branch takes the same resolved path and streams lines from
+        // it, so it is the same escape with a different reader.
+        Path cwd = sandboxWithALinkOut(tempDir, "SECRET-OUTSIDE-THE-SANDBOX");
+        ObjectNode paged = JSON.createObjectNode();
+        paged.put("path", "notes.txt");
+        paged.put("offset", 1);
+        paged.put("limit", 10);
+
+        String read = tools(10).get("read_file").execute(paged, contextIn(cwd));
+
+        assertTrue(read.startsWith("ERROR: path is outside the working directory"), read);
+        assertFalse(read.contains("SECRET-OUTSIDE-THE-SANDBOX"), read);
+    }
+
+    @Test
+    void aSymlinkPlantedInsideTheSandboxCannotBeWrittenThrough(@TempDir Path tempDir)
+            throws IOException {
+        // The half that is not a read escape: the tool answered "Wrote: notes.txt"
+        // and the file OUTSIDE held the new bytes, so nothing in the transcript
+        // named the file that moved.
+        Path cwd = sandboxWithALinkOut(tempDir, "ORIGINAL");
+        ObjectNode write = JSON.createObjectNode();
+        write.put("path", "notes.txt");
+        write.put("content", "OVERWRITTEN");
+
+        String result = tools(10).get("write_file").execute(write, contextIn(cwd));
+
+        assertTrue(result.startsWith("ERROR: path is outside the working directory"), result);
+        assertEquals("ORIGINAL", Files.readString(tempDir.resolve("outside.txt")),
+                "the file outside the sandbox was overwritten through the link");
+    }
+
+    @Test
+    void aSymlinkPlantedInsideTheSandboxCannotBeEditedThrough(@TempDir Path tempDir)
+            throws IOException {
+        Path cwd = sandboxWithALinkOut(tempDir, "ORIGINAL");
+        ObjectNode edit = JSON.createObjectNode();
+        edit.put("path", "notes.txt");
+        edit.put("old_string", "ORIGINAL");
+        edit.put("new_string", "EDITED-OUTSIDE-THE-SANDBOX");
+
+        String result = tools(10).get("edit_file").execute(edit, contextIn(cwd));
+
+        assertTrue(result.startsWith("ERROR: path is outside the working directory"), result);
+        assertEquals("ORIGINAL", Files.readString(tempDir.resolve("outside.txt")),
+                "the file outside the sandbox was edited through the link");
+    }
+
+    @Test
+    void aSymlinkToADirectoryOutsideTheSandboxCannotBeListed(@TempDir Path tempDir)
+            throws IOException {
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path elsewhere = Files.createDirectory(tempDir.resolve("elsewhere"));
+        Files.writeString(elsewhere.resolve("leak.md"), "not for the model");
+        Files.createSymbolicLink(cwd.resolve("linked"), elsewhere);
+
+        String listing = tools(10).get("list_dir").execute(input("path", "linked"), contextIn(cwd));
+
+        assertTrue(listing.startsWith("ERROR: path is outside the working directory"), listing);
+        assertFalse(listing.contains("leak.md"), listing);
+    }
+
+    @Test
+    void aSymlinkPlantedInsideTheSandboxCannotBeAttachedAsADocument(@TempDir Path tempDir)
+            throws IOException {
+        // view_file resolves through the same call site; it needs a .pdf name to
+        // get as far as reading, and never validates the bytes.
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path outside = tempDir.resolve("outside.pdf");
+        Files.writeString(outside, "%PDF-1.4 SECRET-OUTSIDE-THE-SANDBOX");
+        Files.createSymbolicLink(cwd.resolve("notes.pdf"), outside);
+        List<Tool.AttachedDocument> attached = new ArrayList<>();
+
+        String result = tools(10).get("view_file")
+                .execute(input("path", "notes.pdf"), documentContext(cwd, attached));
+
+        assertTrue(result.startsWith("ERROR: path is outside the working directory"), result);
+        assertTrue(attached.isEmpty(), "a refused call must attach nothing");
+    }
+
+    @Test
+    void aSymlinkPlantedInsideTheSandboxCannotBeAttachedAsAnImage(@TempDir Path tempDir)
+            throws IOException {
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path outside = tempDir.resolve("outside.png");
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(
+                2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", outside.toFile());
+        Files.createSymbolicLink(cwd.resolve("notes.png"), outside);
+        List<Tool.AttachedImage> attached = new ArrayList<>();
+
+        String result = tools(10).get("view_image")
+                .execute(input("path", "notes.png"), attachingContext(cwd, attached));
+
+        assertTrue(result.startsWith("ERROR: path is outside the working directory"), result);
+        assertTrue(attached.isEmpty(), "a refused call must attach nothing");
+    }
+
+    @Test
+    void aSymlinkedWalkRootIsRefusedInsteadOfSearchedSilently(@TempDir Path tempDir)
+            throws IOException {
+        // glob and grep already canonicalized every CANDIDATE, so the escape came
+        // back as "(no matches)" — an empty answer that reads like an empty
+        // directory. Through the shared rule the root itself is refused, and the
+        // model is told which fence it hit.
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path elsewhere = Files.createDirectory(tempDir.resolve("elsewhere"));
+        Files.writeString(elsewhere.resolve("leak.md"), "not for the model");
+        Files.createSymbolicLink(cwd.resolve("linked"), elsewhere);
+
+        ObjectNode globbed = JSON.createObjectNode();
+        globbed.put("pattern", "**/*.md");
+        globbed.put("path", "linked");
+        String matches = tools(10).get("glob").execute(globbed, contextIn(cwd));
+        assertTrue(matches.startsWith("ERROR: path is outside the working directory"), matches);
+
+        ObjectNode grepped = JSON.createObjectNode();
+        grepped.put("pattern", "model");
+        grepped.put("path", "linked");
+        String hits = tools(10).get("grep").execute(grepped, contextIn(cwd));
+        assertTrue(hits.startsWith("ERROR: path is outside the working directory"), hits);
+        assertFalse(hits.contains("not for the model"), hits);
+    }
+
+    @Test
+    void aDanglingLinkCannotBeUsedToCREATEAFileOutsideTheSandbox(@TempDir Path tempDir)
+            throws IOException {
+        // The write escape without a file to escape to: the link resolves to
+        // nothing, so nothing can prove where it lands — and Files.write would
+        // follow it and create the target.
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path never = tempDir.resolve("planted.txt");
+        Files.createSymbolicLink(cwd.resolve("notes.txt"), never);
+        ObjectNode write = JSON.createObjectNode();
+        write.put("path", "notes.txt");
+        write.put("content", "PLANTED");
+
+        String result = tools(10).get("write_file").execute(write, contextIn(cwd));
+
+        assertTrue(result.startsWith("ERROR: "), result);
+        assertFalse(result.startsWith("Wrote:"), result);
+        assertFalse(Files.exists(never),
+                "a dangling link outside the sandbox was followed and the target created");
+    }
+
+    @Test
+    void aSymlinkThatStaysInsideTheSandboxStillWorks(@TempDir Path tempDir) throws IOException {
+        // The rule is about LEAVING, not about links. A guard that refused every
+        // symlink would be a different and wrong rule, and would break ordinary
+        // checkouts — node_modules links, worktrees, a linked config.
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path real = Files.createDirectory(cwd.resolve("real"));
+        Files.writeString(real.resolve("target.txt"), "inside");
+        Files.createSymbolicLink(cwd.resolve("alias.txt"), real.resolve("target.txt"));
+        Files.createSymbolicLink(cwd.resolve("aliasdir"), real);
+
+        assertEquals("inside", tools(10).get("read_file")
+                .execute(input("path", "alias.txt"), contextIn(cwd)));
+        assertEquals("target.txt", tools(10).get("list_dir")
+                .execute(input("path", "aliasdir"), contextIn(cwd)));
+
+        ObjectNode write = JSON.createObjectNode();
+        write.put("path", "alias.txt");
+        write.put("content", "written through the link");
+        assertTrue(tools(10).get("write_file").execute(write, contextIn(cwd))
+                .startsWith("Wrote: alias.txt"));
+        assertEquals("written through the link", Files.readString(real.resolve("target.txt")));
+    }
+
+    @Test
+    void aMissingFileIsStillAMissingFileAndNotAnEscape(@TempDir Path cwd) {
+        // toRealPath() throws for a missing file and for a link that leaves, and
+        // the two must not collapse into one message: an operator told "outside
+        // the working directory" about their own typo looks for a fence that is
+        // not there.
+        String read = tools(10).get("read_file")
+                .execute(input("path", "nope.txt"), contextIn(cwd));
+
+        assertTrue(read.startsWith("ERROR: "), read);
+        assertTrue(read.contains("nope.txt"), read);
+        assertFalse(read.contains("outside the working directory"), read);
+    }
+
+    @Test
+    void writeFileStillCreatesAFileAndTheDirectoriesAboveIt(@TempDir Path cwd) throws IOException {
+        // The one real behaviour change the canonical form forces: toRealPath()
+        // throws for a path that does not exist yet, so the write path proves
+        // the DIRECTORY it will land in instead of the file.
+        ObjectNode write = JSON.createObjectNode();
+        write.put("path", "fresh/deeper/new.txt");
+        write.put("content", "hello");
+
+        String result = tools(10).get("write_file").execute(write, contextIn(cwd));
+
+        assertTrue(result.startsWith("Wrote: fresh/deeper/new.txt"), result);
+        assertEquals("hello", Files.readString(cwd.resolve("fresh/deeper/new.txt")));
+    }
+
     @Test
     void listDirSortsAndMarksDirectories(@TempDir Path cwd) throws IOException {
         Files.createDirectory(cwd.resolve("src"));

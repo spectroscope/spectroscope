@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.RecordComponent;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -315,6 +316,139 @@ class ConfigDocDriftTest {
                             + " provider nor anything defaultModelFor returns — a row"
                             + " completed from memory is the defect this test exists for");
         }
+    }
+
+
+    /**
+     * Card 368. Every row's stated default against the value the code ships.
+     *
+     * <p>Eleven facts about this chapter were guarded and the numbers were not.
+     * Merging three branches on 2026-09-01 duplicated two rows, and when the
+     * duplicate was resolved the surviving {@code maxTurns} row said
+     * {@code int · 15} while the constant said 150 — a documentation row that
+     * lied about a default, committed and shipped through a full green gate,
+     * found afterwards by reading the row against the constant rather than by
+     * any test. Writing this guard found a SECOND one still in the tree:
+     * {@code questionsPerRun} read {@code int · 3} against a shipped 9. Card 365
+     * moved both numbers; only one row followed.</p>
+     *
+     * <p>Derived, not typed: the expectation is the accessor's own answer on
+     * {@link SpectroConfig#shippedDefaults()}, so a key added to the record
+     * arrives here with its number already under guard. It walks the PART and
+     * both assembled editions, because the part is not what anybody reads — the
+     * measured failure this file records twice already is a corrected part over
+     * two shipped editions that still carry the old text.</p>
+     *
+     * <p><b>What it deliberately cannot check</b> is derived too. A row prints
+     * the JSON shape of a collection ({@code {}} for the server map,
+     * {@code []} for the two lists) and a Java {@code toString} is not that
+     * shape, so those three sit out — and the set is asserted, not assumed, so a
+     * fourth such component joins it visibly rather than silently. Everything
+     * else is checkable including the nulls: an unset default has one printed
+     * form in this table, {@code <em>unset</em>}, and twelve rows use it.</p>
+     */
+    @Test
+    void everyRowsStatedDefaultIsTheDefaultTheCodeShips() throws Exception {
+        assumeTrue(source() != null, "not running from a source checkout");
+        Path root = repoRoot();
+
+        List<String> unchecked = new ArrayList<>();
+        for (RecordComponent component : SpectroConfig.class.getRecordComponents()) {
+            if (printedForm(component.getAccessor().invoke(SpectroConfig.shippedDefaults())) == null) {
+                unchecked.add(component.getName());
+            }
+        }
+        assertEquals(List.of("autoApprove", "hooks", "mcpServers"),
+                unchecked.stream().sorted().toList(),
+                "the set of key rows whose default this guard cannot read has changed. A"
+                        + " collection prints as a JSON shape in the table and as a Java"
+                        + " toString here, which is why those three sit out — anything else"
+                        + " arriving in this list is a row nobody is checking, and it has to"
+                        + " be looked at rather than accepted");
+
+        for (String carrier : List.of(REFERENCE.toString(),
+                "docs/USER-GUIDE.html", "docs/USER-GUIDE-LIGHT.html")) {
+            Map<String, String> cells = defaultCells(Files.readString(root.resolve(carrier)));
+            for (RecordComponent component : SpectroConfig.class.getRecordComponents()) {
+                String key = component.getName();
+                String expected =
+                        printedForm(component.getAccessor().invoke(SpectroConfig.shippedDefaults()));
+                if (expected == null) {
+                    continue;
+                }
+                String cell = cells.get(key);
+                assertNotNull(cell, "the \"Every key\" table in " + carrier + " has no row for \""
+                        + key + "\" — KnownKeysDriftTest holds the key set, this holds the"
+                        + " numbers, and neither can work on a row that is not there");
+                int separator = cell.lastIndexOf('·');
+                assertTrue(separator > 0, "the \"" + key + "\" row in " + carrier + " does not"
+                        + " print its cell as \"type · default\", so there is nothing here to"
+                        + " read as the default. Cell: " + cell);
+                String stated = cell.substring(separator + 1);
+                assertTrue(stated.contains(expected),
+                        "the config reference in " + carrier + " tells the reader that \"" + key
+                                + "\" defaults to " + stated.strip() + ", and the shipped value is "
+                                + expected + ". The one table that promises completeness is the"
+                                + " worst place for a wrong number, because its reader has no"
+                                + " source open. Fix the part, then rebuild both editions and"
+                                + " reprint the PDFs (docs/guide-assets/build_user_guide.py)");
+            }
+        }
+    }
+
+    /**
+     * How a shipped default is written in the key table, or null when this guard
+     * cannot say.
+     *
+     * <p>The nulls are checkable and are the largest group: an unset default has
+     * exactly one printed form here. A collection is not — the row prints the
+     * shape the settings FILE uses ({@code {}}, {@code []}) and the Java value's
+     * {@code toString} is a different alphabet. An empty string would render as
+     * an empty {@code <code>} element, which is not a claim anyone can read, so
+     * it sits out too rather than being matched against nothing.</p>
+     *
+     * @param shipped the value the record's accessor returned
+     * @return the exact markup the default cell must carry, or null when the
+     *         value has no single printed form in this table
+     */
+    private static String printedForm(Object shipped) {
+        if (shipped == null) {
+            return "<em>unset</em>";
+        }
+        if (shipped instanceof String text && text.isEmpty()) {
+            return null;
+        }
+        if (shipped instanceof Boolean || shipped instanceof Number || shipped instanceof String) {
+            return "<code>" + shipped + "</code>";
+        }
+        return null; // a collection: the row prints its JSON shape, not this
+    }
+
+    /**
+     * The "Every key" table as key → the second cell of its row, the one that
+     * reads "type · default".
+     *
+     * <p>Anchored on each row's OPENING marker rather than searched for by key
+     * name: {@code rowStartingWith} takes the first cell anywhere in the table
+     * that contains its marker, which is right for the four hand-picked rows
+     * that use it and wrong for a sweep of all forty, where one row's prose
+     * naming another row's key would silently redirect the read.</p>
+     *
+     * @param html a carrier of the chapter — the part or an assembled edition
+     * @return every documented key with its default cell, {@code &middot;}
+     *         normalized so the two spellings of the separator read alike
+     */
+    private static Map<String, String> defaultCells(String html) {
+        int table = html.indexOf("id=\"ch-config-keys\"");
+        assertTrue(table > 0, "the \"Every key\" table has moved or lost its anchor");
+        String keyTable = html.substring(table, html.indexOf("</table>", table));
+        Map<String, String> cells = new java.util.LinkedHashMap<>();
+        Matcher row = Pattern.compile("(?s)<tr><td><code>([^<]+)</code></td><td>(.*?)</td>")
+                .matcher(keyTable);
+        while (row.find()) {
+            cells.put(row.group(1), row.group(2).replace("&middot;", "·"));
+        }
+        return cells;
     }
 
     @Test

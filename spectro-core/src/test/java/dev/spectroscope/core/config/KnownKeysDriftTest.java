@@ -119,10 +119,29 @@ class KnownKeysDriftTest {
         String keyTable = reference.substring(table, reference.indexOf("</table>", table));
 
         Set<String> documented = new LinkedHashSet<>();
+        int rows = 0;
         Matcher row = Pattern.compile("<tr><td><code>([^<]+)</code>").matcher(keyTable);
         while (row.find()) {
             documented.add(row.group(1));
+            rows++;
         }
+
+        // Card 368, criterion 4. A SET dedupes itself, so the comparison below
+        // is blind to a duplicated row by construction — and that is not
+        // hypothetical: on 2026-09-01 a merge took an overlapping region twice
+        // and put a second maxTurns and a second maxRetries in the table. This
+        // test said nothing; only ConfigDocDriftTest's row COUNT spoke, in
+        // another file, about another fact. Deduping by hand then kept the wrong
+        // one of the two maxTurns rows — int · 15 against a shipped 150 — and it
+        // shipped through a full green gate. Counting here costs one int and
+        // means the only guard that reads this table's CONTENTS can no longer be
+        // fooled by the same row twice.
+        assertEquals(documented.size(), rows,
+                "the \"Every key\" table has " + rows + " rows for " + documented.size()
+                        + " distinct keys, so at least one key has two rows. The set"
+                        + " comparison below cannot see that — a set dedupes itself — and a"
+                        + " duplicate is how a wrong default survived a green gate once"
+                        + " already (card 368). Which key: " + duplicatesIn(keyTable));
 
         Set<String> documentedComponents = new LinkedHashSet<>(documented);
         documentedComponents.removeAll(DOC_ONLY_KEYS);
@@ -131,6 +150,25 @@ class KnownKeysDriftTest {
                         + " components (the CLI-side " + DOC_ONLY_KEYS + " row is the one"
                         + " allowed foreigner) — a key shipped without a row is a refusal"
                         + " or a setting the reader cannot look up");
+    }
+
+    /** The keys the table lists more than once — for the failure message only,
+     *  so a duplicate names itself instead of leaving a count to be diffed.
+     *  @param keyTable the "Every key" table's markup
+     *  @return the repeated keys, in the order they first appear */
+    private static List<String> duplicatesIn(String keyTable) {
+        List<String> seen = new java.util.ArrayList<>();
+        List<String> twice = new java.util.ArrayList<>();
+        Matcher row = Pattern.compile("<tr><td><code>([^<]+)</code>").matcher(keyTable);
+        while (row.find()) {
+            String key = row.group(1);
+            if (!seen.add(key) || java.util.Collections.frequency(seen, key) > 1) {
+                if (!twice.contains(key)) {
+                    twice.add(key);
+                }
+            }
+        }
+        return twice;
     }
 
     private static Path source() {
