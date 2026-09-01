@@ -219,7 +219,18 @@ class SearxngSearcherTest {
         assertTrue(message.contains(baseUrl), "names the address it tried, got: " + message);
         assertTrue(message.toLowerCase(Locale.ROOT).contains("html"),
                 "says what came back instead, got: " + message);
-        assertFalse(message.contains("403"), "this is not the 403 sentence, got: " + message);
+        // ⚠️ THIS ASSERTION WAS FLAKY BY CONSTRUCTION and it fired on 2026-09-01.
+        // It read `message.contains("403")`, and the message names the address it
+        // tried — `http://127.0.0.1:52403/search?…`. The ephemeral port the OS
+        // handed out contained the three digits, so the test failed for a reason
+        // that had nothing to do with the code: a negative pin matching a
+        // substring of something unrelated, the same family as
+        // `assertFalse(text.contains("changed ("))` being green for "unchanged (".
+        //
+        // Pinned on the 403 sentence's OWN wording instead — `SearxngSearcher`
+        // writes "(HTTP 403). Stock SearXNG serves HTML only" — which no port
+        // number can imitate.
+        assertFalse(message.contains("HTTP 403"), "this is not the 403 sentence, got: " + message);
     }
 
     @Test
