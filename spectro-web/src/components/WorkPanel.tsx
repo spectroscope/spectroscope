@@ -15,6 +15,8 @@ import { useState } from "react";
 import type { CSSProperties } from "react";
 import type { RunEvent } from "../events";
 import type { WorkItem } from "../state/work";
+import { LIVE_KINDS, WORK_KINDS } from "../state/work";
+import { kindLineKey } from "./workEmptyCopy";
 import { absences, besideReading, elapsedLabel, tokenLabel, workGroups } from "./workLevels";
 import type { SidecarAgent, SidecarIndex } from "../import/sidecarAgents";
 import { NO_SIDECARS } from "../import/sidecarAgents";
@@ -352,10 +354,32 @@ export function WorkPanel({
     return (
       <div className="work-empty">
         <p>{t(lang, liveView ? "work.emptyLive" : "work.empty")}</p>
-        {/* The absence that matters most, said out loud rather than left as a
-            blank panel: detached work exists on the wire and not in any file
-            this prototype can open. */}
-        <p className="work-empty-note">{t(lang, "work.triggerNone")}</p>
+        {/* Card 338: the panel names what it can produce, out of the fold's own
+            list. Nothing here is a hand-typed vocabulary — a fourth WorkKind
+            arrives with a line of copy or it renders as its own i18n key and
+            workEmptyPromise.drift.test.tsx goes red.
+
+            The `--elsewhere` mark is the LIVE reading only: it answers "can
+            this window make one", and a stored session is a file that already
+            carries whatever it carries. */}
+        <p className="work-empty-lead">{t(lang, "work.emptyKinds")}</p>
+        <ul className="work-empty-list">
+          {WORK_KINDS.map((kind) => (
+            <li
+              key={kind}
+              className={`work-empty-kind${
+                liveView && !LIVE_KINDS.includes(kind) ? " work-empty-kind--elsewhere" : ""
+              }`}
+            >
+              {t(lang, kindLineKey(kind))}
+            </li>
+          ))}
+        </ul>
+        {liveView && (
+          <p className="work-empty-note">
+            {t(lang, "work.emptyNotLaunch", { p: t(lang, "browser.start.heading") })}
+          </p>
+        )}
       </div>
     );
   }

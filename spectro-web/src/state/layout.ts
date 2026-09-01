@@ -95,6 +95,19 @@ export interface LayoutState {
    *  fill rule) and the two divider drags write it, which is what makes a
    *  resize scale the pixels without re-seating a single panel. */
   dockColumns: string;
+  /**
+   * Card 339: the terminal panel's tab strip, serialized (`"1,2,3~2"` — see
+   * workspace/shellTabs.serializeTabs). Ids and the focused one; no titles.
+   *
+   * <p>Closing the terminal panel unmounts it, which closes every socket,
+   * which reaps every PTY — the owner's "alle tabs weg und state auch". The
+   * shells cannot come back without changing the server's guarantee that a
+   * shell dies with its client, so what comes back is the SEATING: reopening
+   * finds the strip it left, and every tab in it is a new shell that says so.
+   * Same road as {@link LayoutState.dockColumns}: one string field, so set()'s
+   * hand-written equality check stays one line.</p>
+   */
+  dockTermTabs: string;
   /** Card 242: the dock visibility the USER last chose — what entering a
    *  session returns to (applyDockReturn). A launch never reads
    *  `rightPanelOpen` from storage any more: the greeting starts clean and
@@ -131,6 +144,9 @@ export const DEFAULT_LAYOUT: LayoutState = {
   dockWeights: "",
   // The roster alone in one column — the serialized form of the default face.
   dockColumns: "agents~1~0.5",
+  // No terminal seated, so no strip to bring back: a first visit opens the
+  // pane on one fresh tab exactly as it always did (restoreTabs).
+  dockTermTabs: "",
   dockReturn: false,
 };
 
@@ -264,6 +280,11 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
     const raw = state[field];
     state[field] = Number.isFinite(raw) ? clampField(field, raw) : DEFAULT_LAYOUT[field];
   }
+  // Card 339: the stored tab strip is a string or it is nothing. A blob from
+  // a build that never wrote the field lands on the default; junk in it heals
+  // to the default rather than reaching restoreTabs, which would drop it
+  // anyway — two floors, because a non-string here also rides into persist().
+  if (typeof state.dockTermTabs !== "string") state.dockTermTabs = "";
   // Card 242: the launch rule, same for every era (see the javadoc above).
   state.dockReturn = typeof blob.dockReturn === "boolean" ? blob.dockReturn : blob.rightPanelOpen === true;
   state.rightPanelOpen = false;
@@ -475,6 +496,7 @@ function set(patch: Partial<LayoutState>): void {
     next.dockBrowser === state.dockBrowser &&
     next.dockWeights === state.dockWeights &&
     next.dockColumns === state.dockColumns &&
+    next.dockTermTabs === state.dockTermTabs &&
     next.dockReturn === state.dockReturn
   ) {
     return; // no change — no emit
@@ -582,6 +604,19 @@ export function openDockPanel(id: DockPanelId): void {
   });
 }
 
+/**
+ * Stores the terminal panel's serialized tab strip (card 339).
+ *
+ * <p>Written by the pane on every strip change and read once when it mounts.
+ * The store never parses it: the vocabulary belongs to workspace/shellTabs,
+ * which validates on the way back in.</p>
+ *
+ * @param serialized what {@code serializeTabs} produced
+ */
+export function setDockTermTabs(serialized: string): void {
+  set({ dockTermTabs: serialized });
+}
+
 /** Stores the serialized panel weights. Card 228's grid reads no weights any
  *  more — the field and this setter stay for blob compatibility in both
  *  directions: a pre-grid build loading a post-grid blob still finds the
@@ -614,8 +649,22 @@ function subscribe(cb: () => void): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);
 }
-function getSnapshot(): LayoutState {
+/**
+ * The layout right now, WITHOUT subscribing to it.
+ *
+ * <p>For a reader that wants the stored value once and then owns its own copy
+ * — {@code TerminalPane} mounting its tab strip out of {@code dockTermTabs}
+ * (card 339). A {@link useLayout} there would re-seat the strip on every
+ * unrelated layout change, including the one the pane itself just wrote.</p>
+ *
+ * @return the current layout
+ */
+export function getLayout(): LayoutState {
   return state;
+}
+
+function getSnapshot(): LayoutState {
+  return getLayout();
 }
 
 export function useLayout(): LayoutState {

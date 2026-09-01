@@ -1007,6 +1007,17 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Dieser Build hat keinen Terminal-Helfer. Das Terminal kommt mit der Desktop-App.",
     en: "This build has no terminal helper — the terminal ships with the desktop app.",
   },
+  // Card 339: closing the panel reaps every PTY, so reopening it can bring the
+  // SEATS back and nothing else. Both sentences exist so the strip cannot come
+  // back looking like the one that left.
+  "term.restoredNote": {
+    de: "Diese Tabs kamen mit dem Layout zurück. Ihre Shells sind neu, die Scrollback-Historie von vorher ist weg.",
+    en: "These tabs came back with your layout. Their shells are new, so the scrollback from before is gone.",
+  },
+  "term.restoredTab": {
+    de: "Ein neues Terminal auf dem Platz, den dieser Tab hatte. Nichts von vorher steht darin.",
+    en: "A new terminal in the seat this tab had. Nothing from before is in it.",
+  },
 
   // workspace tab (phase 5)
   "ws.rootTitle": {
@@ -2213,9 +2224,38 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Keine nebenläufige Arbeit in dieser Session. Jeder Turn lief auf dem Haupt-Agenten — die Spalte links ist die ganze Geschichte.",
     en: "No concurrent work in this session. Every turn ran on the main agent, so the column on the left is the whole story.",
   },
+  // Card 338: this sentence used to read "Subagents, triggered node runs and
+  // launched background tasks appear here once there are any." Two of the
+  // three cannot arrive in a live desktop session, and `launched` is the word
+  // the browser start page uses for launch configurations — so the owner
+  // pressed play, read this, and waited a test session for a row that was
+  // never coming. The list below is rendered from state/work.ts's own
+  // WORK_KINDS, and every line says where its kind comes FROM.
   "work.emptyLive": {
-    de: "Noch nichts. Subagenten, getriggerte Node-Läufe und gestartete Hintergrund-Tasks erscheinen hier, sobald es welche gibt.",
-    en: "Nothing yet. Subagents, triggered node runs and launched background tasks appear here once there are any.",
+    de: "Noch nichts. Eine Live-Session füllt dieses Panel aus ihren eigenen Fan-outs. Die übrigen Arten erreichen es von woanders.",
+    en: "Nothing yet. A live session fills this panel from its own fan-outs. The other kinds reach it from somewhere else.",
+  },
+  "work.emptyKinds": {
+    de: "Was dieses Panel aus dem Strom faltet:",
+    en: "What this panel folds out of the stream:",
+  },
+  "work.kindLine.spawn": {
+    de: "Fan-out: ein Subagent, den diese Session gestartet hat. Das ist die Art, die ein Live-Lauf erzeugt.",
+    en: "fan-out: a subagent this session started. This is the kind a live run produces.",
+  },
+  "work.kindLine.trigger": {
+    de: "Getriggert: ein Lauf, den ein wartender Node geweckt hat (Karte 72). Er kommt mit einem Headless- oder Fleet-Lauf, nie aus diesem Fenster.",
+    en: "triggered: a run woken by a lingering node (card 72). It arrives with a headless or fleet run, never from this window.",
+  },
+  "work.kindLine.launched": {
+    de: "Hintergrund: ein Task, der mit einer Quittung samt eigener Id geantwortet hat. Nur ein importiertes Claude-Code-Transkript trägt so eine, denn kein spectroscope-Werkzeug schreibt sie.",
+    en: "background: a task that answered with a receipt naming its own id. Only an imported Claude Code transcript carries one, because no spectroscope tool writes one.",
+  },
+  // The word with two owners, settled in writing: {p} IS browser.start.heading,
+  // interpolated rather than retyped, so the two surfaces cannot drift.
+  "work.emptyNotLaunch": {
+    de: "Nichts davon: {p}. Das Browser-Panel startet sie, und ein Start schreibt nichts, was dieses Panel faltet.",
+    en: "Not one of these: {p}. The browser panel starts those, and a start writes nothing this panel folds.",
   },
   "work.kind.spawn": { de: "Fan-out", en: "fan-out" },
   "work.kind.trigger": { de: "Getriggert", en: "triggered" },

@@ -12,8 +12,23 @@ import type { Terminal } from "@xterm/xterm";
 import { useLang } from "../state/lang";
 import { loadXterm } from "./xtermLoader";
 import { decodeStatus, encodeKeyBytes, encodeKeys, encodeResize, shellSocketUrl } from "./shellWire";
-import { SHELL_MAX_TABS, closeTab, emptyTabs, openTab, retitleTab, selectTab, tabLabel } from "./shellTabs";
+import {
+  SHELL_MAX_TABS,
+  closeTab,
+  openTab,
+  restoreTabs,
+  retitleTab,
+  selectTab,
+  serializeTabs,
+  tabLabel,
+  touchTab,
+} from "./shellTabs";
 import type { ShellTabsState } from "./shellTabs";
+import { getLayout, setDockTermTabs } from "../state/layout";
+// The two card-339 sentences go through the dictionary rather than through
+// this file's inline `lang === "de" ? … : …` idiom: those ternaries are the
+// debt card 64 exists to repay, and adding to them deepens it.
+import { t } from "../i18n/i18n";
 
 /** Fallback window if the host has no layout yet; the server clamps anyway. */
 const FALLBACK_ROWS = 24;
@@ -37,11 +52,16 @@ function TerminalView({
   sessionId,
   active,
   onTitle,
+  onUsed,
 }: {
   tabId: number;
   sessionId: string;
   active: boolean;
   onTitle: (id: number, title: string) => void;
+  /** The operator typed in here — a restored seat becomes a shell they drive
+   *  (card 339). Fires per keystroke; the reducer behind it is a no-op after
+   *  the first, by object identity. */
+  onUsed: (id: number) => void;
 }) {
   const lang = useLang();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -109,7 +129,10 @@ function TerminalView({
           for (const one of frames) socket.send(one.slice().buffer);
         };
 
-        term.onData((data) => send(encodeKeys(data)));
+        term.onData((data) => {
+          send(encodeKeys(data));
+          onUsed(tabId);
+        });
         term.onBinary((raw) => {
           const bytes = new Uint8Array(raw.length);
           for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i) & 0xff;
@@ -171,7 +194,7 @@ function TerminalView({
       termRef.current = null;
       term?.dispose();
     };
-  }, [tabId, sessionId, onTitle]);
+  }, [tabId, sessionId, onTitle, onUsed]);
 
   // A hidden host measures zero, so a tab that was resized while in the
   // background has to refit and re-announce its size on the way back.
@@ -222,11 +245,26 @@ function TerminalView({
 
 export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const lang = useLang();
-  const [state, setState] = useState<ShellTabsState>(() => openTab(emptyTabs()));
+  // Card 339: the strip is SEATING and seating belongs to the layout, not to
+  // this component's lifetime. Closing the panel unmounts it — that is card
+  // 219's design and it is what reaps the PTYs — so the tab list has to live
+  // somewhere the unmount cannot reach. Read once, deliberately: a useLayout
+  // here would re-seat the strip on every unrelated layout change, including
+  // the write on the next line.
+  const [state, setState] = useState<ShellTabsState>(() => restoreTabs(getLayout().dockTermTabs));
+  useEffect(() => {
+    setDockTermTabs(serializeTabs(state));
+  }, [state]);
 
   const retitle = useCallback((id: number, title: string) => {
     setState((current) => retitleTab(current, id, title));
   }, []);
+
+  const markUsed = useCallback((id: number) => {
+    setState((current) => touchTab(current, id));
+  }, []);
+
+  const restoredSeats = state.tabs.some((tab) => tab.restored === true);
 
   const atCap = state.tabs.length >= SHELL_MAX_TABS;
 
@@ -246,14 +284,19 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
     <div className="term">
       <div className="term-tabs" role="tablist" aria-label="terminals">
         {state.tabs.map((tab, index) => (
-          <span key={tab.id} className={`term-tab${state.active === tab.id ? " term-tab--active" : ""}`}>
+          <span
+            key={tab.id}
+            className={`term-tab${state.active === tab.id ? " term-tab--active" : ""}${
+              tab.restored === true ? " term-tab--restored" : ""
+            }`}
+          >
             <button
               type="button"
               className="term-tab-pick"
               role="tab"
               aria-selected={state.active === tab.id}
               aria-controls={`term-panel-${tab.id}`}
-              title={tab.title ?? ""}
+              title={tab.restored === true ? t(lang, "term.restoredTab") : (tab.title ?? "")}
               onClick={() => setState((current) => selectTab(current, tab.id))}
             >
               {tabLabel(tab, index)}
@@ -286,6 +329,10 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
           +
         </button>
       </div>
+      {/* Said once, above the panes: the seats are back and the shells are
+          not. Without this the strip would come back looking exactly like the
+          one that left, which is the defect card 303 names. */}
+      {restoredSeats && <p className="term-restored-note">{t(lang, "term.restoredNote")}</p>}
       <div className="term-body">
         {state.tabs.length === 0 ? (
           <p className="term-empty">{lang === "de" ? "kein terminal offen." : "no terminal open."}</p>
@@ -297,6 +344,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
               sessionId={sessionId}
               active={state.active === tab.id}
               onTitle={retitle}
+              onUsed={markUsed}
             />
           ))
         )}
