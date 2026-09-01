@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.wire.LlmWireTap;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
@@ -44,7 +45,13 @@ public final class OpenAiImageProvider implements ImageProvider {
     /** Image renders are SLOW (30–90 s is normal for gpt-image) — the read
      *  timeout must outlast them; the auto-detected client cut at ~60 s and
      *  failed real generations (found live 2026-07-17). */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     private static final java.time.Duration CONNECT_TIMEOUT = java.time.Duration.ofSeconds(10);
+
+    /** The read half of the pair above: 120 s, chosen to outlast the 30–90 s a
+     *  gpt-image render normally takes. The auto-detected client cut at ~60 s
+     *  and failed real generations (found live 2026-07-17). */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     private static final java.time.Duration READ_TIMEOUT = java.time.Duration.ofSeconds(120);
 
     public OpenAiImageProvider(OpenAiImageOptions options) {

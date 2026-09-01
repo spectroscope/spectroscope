@@ -3,12 +3,13 @@
 // erläuterung" — make all these secret settings visible, with an explanation.
 //
 // The card was written believing those numbers were unexamined guesses. A
-// measurer refuted that before a line was built: of the 76 constants with no
-// override path, 58 carry a written reason and 5 cite a measurement, and only
-// ONE says in its own words that nobody measured it. THE GAP WAS NEVER
-// THOUGHT, IT WAS REACH — the reasoning existed, carefully, inside a .java
-// file, and not one of the 76 stated its value anywhere in the 650 KB of
-// published guide.
+// measurer refuted that before a line was built. Census of 2026-09-01, a
+// snapshot of that day and not a property of the tree: of the 76 constants
+// with no override path, 58 carried a written reason and 5 cited a
+// measurement, and only ONE said in its own words that nobody measured it.
+// THE GAP WAS NEVER THOUGHT, IT WAS REACH — the reasoning existed, carefully,
+// inside a .java file, and not one of them stated its value anywhere in the
+// 650 KB of published guide.
 //
 // So this block writes no explanations. Every word under every number is the
 // javadoc that already stands above the constant, lifted by the scan and

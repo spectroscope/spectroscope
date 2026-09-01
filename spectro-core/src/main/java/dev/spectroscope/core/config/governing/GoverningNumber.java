@@ -8,7 +8,7 @@ package dev.spectroscope.core.config.governing;
  * {@link Governs} annotation and the live value off the field itself, and
  * lifts {@code explanation} from the javadoc that already stands above the
  * constant. Nothing on this record was typed for the page, which is the whole
- * engineering content of card 357: a hand table of 76 constants would rot
+ * engineering content of card 357: a hand table of the constants would rot
  * before the next release, and this house has found that exact defect — a
  * hand-list guarded by a test that types the same hand-list — three times in
  * one card.</p>

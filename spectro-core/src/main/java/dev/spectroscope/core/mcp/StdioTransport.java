@@ -2,6 +2,7 @@ package dev.spectroscope.core.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +46,7 @@ public final class StdioTransport implements McpTransport {
      * detail: a test pins it so the sentence in the guide and the value here cannot
      * drift apart the way a remembered number always does.
      */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.SECONDS)
     public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofSeconds(20);
 
     /**
@@ -53,6 +55,7 @@ public final class StdioTransport implements McpTransport {
      * {@code SIGTERM}, {@code SIGKILL}); a server that exits on EOF is normally gone in
      * milliseconds and never sees the rest.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     public static final Duration EXIT_AFTER_EOF_GRACE = Duration.ofSeconds(1);
 
     /**
@@ -60,6 +63,7 @@ public final class StdioTransport implements McpTransport {
      * {@code StandardTools.runCommand} uses. Bounded for the tree as a whole, not per
      * process.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     public static final Duration DESTROY_ESCALATION_GRACE = Duration.ofSeconds(2);
 
     /**
@@ -70,6 +74,7 @@ public final class StdioTransport implements McpTransport {
      * returns with it; this is what a <i>pathological</i> server can spend — one that
      * ignores end-of-stream and {@code SIGTERM} both.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     public static final Duration TEARDOWN_TAIL =
             EXIT_AFTER_EOF_GRACE.plus(DESTROY_ESCALATION_GRACE).plus(JsonRpcChannel.READER_EXIT_GRACE);
 
@@ -81,6 +86,7 @@ public final class StdioTransport implements McpTransport {
      * TERM-ignoring server measured 22.4 s against it; a documented bound that the code
      * can exceed is the exact failure that card exists to stop.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     public static final Duration WRITE_OFF_BUDGET = DEFAULT_READ_TIMEOUT.plus(TEARDOWN_TAIL);
 
     private final JsonRpcChannel channel;

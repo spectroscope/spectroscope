@@ -91,6 +91,7 @@ public final class LaunchSupervisor implements AutoCloseable {
     };
 
     /** How long a start waits for the address to answer, unless the caller says otherwise. */
+    @Governs(kind = Governs.Kind.MODEL_CHOICE, unit = Governs.Unit.SECONDS)
     public static final Duration DEFAULT_BUDGET = Duration.ofSeconds(45);
 
     /** How many lines of a launched process's output are kept. */

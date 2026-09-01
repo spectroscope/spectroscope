@@ -2,6 +2,7 @@ package dev.spectroscope.core.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,6 +69,7 @@ public final class JsonRpcChannel implements AutoCloseable {
      * terms in the write-off budget the user guide prints — see
      * {@link StdioTransport#WRITE_OFF_BUDGET}.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     public static final Duration READER_EXIT_GRACE = Duration.ofSeconds(2);
 
     /**

@@ -1,6 +1,7 @@
 package dev.spectroscope.core.web;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import dev.spectroscope.core.config.governing.Governs;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.client.RestClient;
@@ -31,6 +32,10 @@ public final class BraveSearcher implements WebSearcher {
     /** The env var this tier's key lives in. */
     static final String KEY_ENV = "BRAVE_API_KEY";
 
+    /** How long a single Brave query may take before this tier is treated as
+     *  dead and the next one is tried. Short on purpose: the tiers fall through
+     *  in order, so a slow tier costs every tier behind it. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
 
     private final BraveApi api;

@@ -3,6 +3,7 @@ package dev.spectroscope.core.browser.headless;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.spectroscope.core.config.governing.Governs;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -39,6 +40,7 @@ public final class HeadlessChrome {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** How long Chrome gets to write its DevToolsActivePort file. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     static final Duration STARTUP_BUDGET = Duration.ofSeconds(20);
 
     private final Process process;

@@ -31,6 +31,11 @@ import java.time.Duration;
  */
 public final class DefaultHttpFetcher implements HttpFetcher {
 
+    /** How long one fetch may spend on connect and on read before the tool
+     *  answers with a failure instead of a page. The same 15 s the four search
+     *  tiers use, and for the same reason: a model waiting on a dead host is
+     *  spending the turn a person is watching. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
 
     /** Plenty of raw HTML to yield the tool's 10k-char text; a hard ceiling on memory. */

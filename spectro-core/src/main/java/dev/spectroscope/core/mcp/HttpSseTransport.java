@@ -2,6 +2,7 @@ package dev.spectroscope.core.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -32,6 +33,17 @@ public final class HttpSseTransport implements McpTransport {
     private static final Logger LOG = LoggerFactory.getLogger(HttpSseTransport.class);
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * The bound on one HTTP/SSE request to a remote MCP server, matching the
+     * stdio transport's read timeout so the two kinds of server fail on the
+     * same clock.
+     *
+     * <p><b>It looks settable and is not.</b> The two-argument constructor
+     * takes a timeout and no shipped call site passes one — {@code
+     * McpTransports} builds this transport with the server config alone.</p>
+     */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.SECONDS)
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(20);
 
     private final RestClient http;

@@ -25,6 +25,7 @@ import {
   governingKindWhyKey,
   governingUnitLabelKey,
   governs,
+  type GoverningKind,
   type GoverningNumber,
 } from "../state/governingNumbers";
 import { dict } from "../i18n/i18n";
@@ -48,6 +49,17 @@ function decode(html: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+/** The inverse of {@link decode} for the five characters React escapes — used
+ *  to read a value back out of the cell it was rendered into. */
+function escapeText(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 }
 
 /** The constants of one enum nested in Governs.java, in declaration order. */
@@ -131,27 +143,68 @@ describe("the room draws the registry", () => {
     expect(registry.filter((n) => governs(n.kind)).length).toBeGreaterThanOrEqual(80);
   });
 
-  it("shows every constant the build carries, with its value and its reason", () => {
-    const text = decode(renderToStaticMarkup(<GoverningNumbersList numbers={registry} lang="en" />));
+  it("shows every constant the build carries, with its value and EVERY paragraph of its reason", () => {
+    // Review finding F2. This used to render the whole list once and ask
+    // `toContain` three questions of a 21 000-character page, which is far
+    // weaker than it reads:
+    //
+    //   - the value: 37 of the entries have a value one or two characters
+    //     long, and `4` is a substring of `16_384` two rows up, so the check
+    //     passed for reasons that had nothing to do with the row;
+    //   - the reason: it asserted the first five words of the FIRST paragraph,
+    //     and 14 entries have more than one — 7 872 of 21 783 explanation
+    //     characters sit below the first. Changing the row to render
+    //     `.slice(0, 1)` of the paragraphs left the suite green.
+    //
+    // So each entry is now rendered ALONE (the list is a pure function, so
+    // this costs nothing) and each field is read out of its own element:
+    // the value out of its own cell, the reason paragraph for paragraph,
+    // compared to the registry's text in full rather than by containment.
     for (const number of registry) {
-      expect(text, `${number.field} is not on the page`).toContain(number.field);
-      expect(text, `${number.field} shows no value`).toContain(number.value);
-      // The opening of the code's own words, against markup with its entities
-      // put back — React escapes an apostrophe to &#x27;, and searching the raw
-      // markup would have quietly excused every javadoc that contains one.
-      // First PARAGRAPH, not first words: a javadoc's paragraphs are separate
-      // <p>s on the page, and a phrase spanning two of them could never match.
-      const firstWords = (number.explanation.split("\n\n")[0] as string).split(/\s+/).slice(0, 5).join(" ");
-      expect(text, `${number.field} lost its explanation`).toContain(firstWords);
+      const html = renderToStaticMarkup(<GoverningNumbersList numbers={[number]} lang="en" />);
+      expect(decode(html), `${number.field} is not on the page`).toContain(number.field);
+
+      const cell = html.indexOf('<span class="gn-value"');
+      expect(cell, `${number.field} has no value cell`).toBeGreaterThan(-1);
+      const opens = html.indexOf(">", cell) + 1;
+      const escaped = escapeText(number.value);
+      expect(html.slice(opens, opens + escaped.length), `${number.field} shows the wrong value`).toBe(
+        escaped,
+      );
+
+      // Entities put back first — React escapes an apostrophe to &#x27;, and
+      // reading the raw markup would quietly excuse every javadoc with one.
+      const paragraphs = [...html.matchAll(/<p class="gn-why">([\s\S]*?)<\/p>/g)].map((match) =>
+        decode(match[1] as string),
+      );
+      expect(paragraphs, `${number.field} lost part of its reason`).toEqual(number.explanation.split("\n\n"));
     }
   });
 
   it("draws one group per kind the registry actually uses, and none it does not", () => {
-    const html = renderToStaticMarkup(<GoverningNumbersList numbers={registry} lang="en" />);
-    const used = new Set(registry.map((n) => n.kind));
-    for (const kind of GOVERNING_KINDS) {
-      const label = dict[governingKindLabelKey(kind)]?.en as string;
-      expect(html.includes(label), `${kind} heading present: ${used.has(kind)}`).toBe(used.has(kind));
+    // Review finding F5: all eight kinds are in use in the shipped registry,
+    // so `used.has(kind)` was true on every iteration and the second half of
+    // this name had never run. The list is a pure function, so the absent
+    // direction costs one more render — of the registry with one kind taken
+    // out. WHICH kind is derived from the data rather than typed, so it stays
+    // a real case as the classifications move.
+    const heading = (kind: GoverningKind) =>
+      `<h4 class="gn-kind">${dict[governingKindLabelKey(kind)]?.en as string}<`;
+    const used = [...new Set(registry.map((n) => n.kind))];
+    expect(used.length, "the registry uses one kind or none — drop-one proves nothing").toBeGreaterThan(1);
+    const absent = used[used.length - 1] as GoverningKind;
+
+    for (const [numbers, missing] of [
+      [registry, null],
+      [registry.filter((n) => n.kind !== absent), absent],
+    ] as const) {
+      const html = renderToStaticMarkup(<GoverningNumbersList numbers={numbers} lang="en" />);
+      for (const kind of GOVERNING_KINDS) {
+        const shown = numbers.some((n) => n.kind === kind);
+        expect(html.includes(heading(kind)), `${kind} heading present: ${shown} (dropped ${missing})`).toBe(
+          shown,
+        );
+      }
     }
   });
 

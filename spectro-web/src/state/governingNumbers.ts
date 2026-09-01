@@ -4,7 +4,7 @@
 // name, value, unit or reason is written here — the whole list arrives from
 // `GET /api/governing-numbers`, which answers a registry generated from
 // `spectro-core`'s source tree and held to it by GoverningNumbersDriftTest. A
-// table of 76 constants typed in TypeScript would rot before the next release,
+// table of the constants typed in TypeScript would rot before the next release,
 // and this house found that exact defect — a hand-list guarded by a test that
 // types the same hand-list — three times in one card (312) and again in 314.
 //

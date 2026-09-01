@@ -12,7 +12,11 @@ import java.lang.annotation.Target;
  *
  * <p><b>Card 357.</b> A census of {@code spectro-core/src/main/java} on
  * 2026-09-01 found 121 numeric {@code static final}s, of which 76 had no
- * override path of any kind. The card was written believing they were
+ * override path of any kind. (That census counted the four common primitives
+ * only — it is a snapshot of a day, and the shape has been wider since a
+ * reviewer found the {@code Duration} timeouts outside it. The live figures
+ * are the registry's own length, which is why no total is written down
+ * here.) The card was written believing they were
  * unexamined guesses; the measurement refuted that — 58 of the 76 carry a
  * written reason and 5 cite a measurement. <b>The gap was never thought, it
  * was reach:</b> the reasoning existed, carefully, inside a {@code .java} file
@@ -29,14 +33,27 @@ import java.lang.annotation.Target;
  * explanation written for the page — the very defect the card names.</p>
  *
  * <p><b>Every numeric {@code static final} in {@code spectro-core}'s main
- * sources must carry this annotation</b>, including the ones that govern
- * nothing: {@link Kind#PLUMBING} and {@link Kind#ALIAS} are how a constant
- * says "not a governing number", with the javadoc above it saying why. That
- * is criterion 6 of the card — what counts as governing has exactly one
- * definition, declared at the constant rather than inferred from its name by
- * a list somebody has to remember to update. {@code GoverningNumbersDriftTest}
- * walks the source for the shape and fails on the first unannotated one, so a
- * 77th constant cannot ship unclassified.</p>
+ * sources must carry this annotation</b> — where "numeric" is the seven
+ * primitives, an array of them, and {@link java.time.Duration}, which is the
+ * list {@code GoverningScan.NUMERIC_TYPE} enforces and the only place it is
+ * written. That includes the ones that govern nothing: {@link Kind#PLUMBING}
+ * and {@link Kind#ALIAS} are how a constant says "not a governing number",
+ * with the javadoc above it saying why. That is criterion 6 of the card — what
+ * counts as governing has exactly one definition, declared at the constant
+ * rather than inferred from its name by a list somebody has to remember to
+ * update. {@code GoverningNumbersDriftTest} walks the source for the shape and
+ * fails on the first unannotated one, so a further constant cannot ship
+ * unclassified.</p>
+ *
+ * <p><b>The shape's reach is itself guarded</b>, because the first version of
+ * it was not. It matched the four common primitives only, and 19 {@code
+ * Duration} timeouts — the MCP transports, the headless browser, the four
+ * search tiers — sat outside a registry whose javadoc said this sentence. A
+ * reviewer proved it by adding a governing {@code Duration}, an {@code int[]}
+ * and a {@code short} to the source and watching the drift test stay green.
+ * The test {@code theShapeSeesEveryNumericConstantTheTreeDeclares} now derives
+ * the EXCLUDED type names from the source, so the next family cannot be
+ * invisible the way that one was.</p>
  *
  * @see GoverningNumbers
  */

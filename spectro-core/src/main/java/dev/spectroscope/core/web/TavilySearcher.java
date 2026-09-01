@@ -2,6 +2,7 @@ package dev.spectroscope.core.web;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import dev.spectroscope.core.config.governing.Governs;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.client.RestClient;
@@ -26,6 +27,10 @@ public final class TavilySearcher implements WebSearcher {
     /** Tavily's production endpoint; tests point the second constructor at a mock. */
     static final String DEFAULT_BASE_URL = "https://api.tavily.com";
 
+    /** How long a single Tavily query may take before this tier is treated as
+     *  dead and the next one is tried. Short on purpose: the tiers fall through
+     *  in order, so a slow tier costs every tier behind it. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
 
     private final TavilyApi api;

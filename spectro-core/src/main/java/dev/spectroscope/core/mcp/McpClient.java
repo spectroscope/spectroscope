@@ -2,6 +2,7 @@ package dev.spectroscope.core.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import dev.spectroscope.core.config.governing.Governs;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -32,6 +33,16 @@ import java.util.function.Supplier;
  */
 public final class McpClient {
 
+    /**
+     * The bound on a single {@code tools/call} before the transport is poisoned
+     * and the call degrades to a readable {@code "ERROR: ..."}.
+     *
+     * <p><b>It looks settable and is not.</b> There is a three-argument
+     * constructor taking the timeout, and only the tests ever use it: the one
+     * shipped call site is {@code McpServerRegistry}'s two-argument form. An
+     * operator whose MCP server needs 40 seconds has nowhere to say so.</p>
+     */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.SECONDS)
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(20);
 
     private final McpServerConfig config;

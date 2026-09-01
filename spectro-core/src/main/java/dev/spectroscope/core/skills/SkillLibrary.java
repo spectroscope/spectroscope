@@ -68,6 +68,7 @@ public final class SkillLibrary {
      */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.BYTES)
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     private static final long MAX_SKILL_FILE_BYTES = 50_000;
 
     /** Insertion order is load order; later roots already replaced earlier entries. */
