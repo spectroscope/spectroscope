@@ -762,6 +762,20 @@ public record SpectroConfig(
      *  and Anthropic's reasoning budget is derived to stay strictly below
      *  whatever this number is. A second cap invented here would be a limit no
      *  provider asked for, which is the shape card 364 exists to remove.</p> */
+    /**
+     * The completion budget one provider call may spend, in output tokens.
+     *
+     * <p>SETTABLE rather than LOOKS_SETTABLE because card 364 made it reachable:
+     * {@code .maxTokens(} went from zero shipped call sites to wired on every
+     * agent-building path. Before that the builder method existed, was public,
+     * and no caller ever passed anything but this number.</p>
+     *
+     * <p>Card 365 measured it and left it alone — the one default of four that
+     * survived the census unchanged. Of 33,810 real responses across 900
+     * sessions over 50 KB (2026-09-01), median 355 output tokens, p99 15,408,
+     * and only <b>0.21 %</b> exceed 32,000.</p>
+     */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "maxTokens")
     public static final int DEFAULT_MAX_TOKENS = 32_000;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */

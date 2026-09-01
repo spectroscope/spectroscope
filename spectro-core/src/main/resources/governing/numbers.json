@@ -191,6 +191,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_MAX_TOKENS",
+    "value" : "32000",
+    "expression" : "32_000",
+    "kind" : "SETTABLE",
+    "unit" : "TOKENS",
+    "key" : "maxTokens",
+    "explanation" : "The completion budget one provider call may spend, in output tokens.\n\nSETTABLE rather than LOOKS_SETTABLE because card 364 made it reachable: .maxTokens( went from zero shipped call sites to wired on every agent-building path. Before that the builder method existed, was public, and no caller ever passed anything but this number.\n\nCard 365 measured it and left it alone — the one default of four that survived the census unchanged. Of 33,810 real responses across 900 sessions over 50 KB (2026-09-01), median 355 output tokens, p99 15,408, and only 0.21 % exceed 32,000."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_MAX_TURNS",
     "value" : "150",
     "expression" : "150",
@@ -642,8 +652,8 @@
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
     "field" : "CONVERSATION_SHARE",
-    "value" : "3",
-    "expression" : "3",
+    "value" : "7",
+    "expression" : "7",
     "kind" : "FIXED",
     "unit" : "RATIO",
     "key" : "",
@@ -657,7 +667,7 @@
     "kind" : "SETTABLE",
     "unit" : "TOKENS",
     "key" : "compactionThreshold",
-    "explanation" : "The threshold used when nothing can be learned — today's constant, kept exactly. Anthropic has no capability endpoint, the OpenAI wire has none, and a backend that is down teaches nothing either; all of them land here. The web gauge names the same figure (contextRingMath.ts), for the same reason and in the same words."
+    "explanation" : "The threshold used when nothing can be learned — today's constant, kept exactly. A custom or unrecognised backend that states no loaded window and publishes no ceiling lands here; since card 366 that no longer includes anthropic, openai or gemini, whose windows ModelWindows knows. The web gauge names the same figure (contextRingMath.ts), for the same reason and in the same words."
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
@@ -672,12 +682,12 @@
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
     "field" : "WINDOW_SHARE",
-    "value" : "4",
-    "expression" : "4",
+    "value" : "10",
+    "expression" : "10",
     "kind" : "FIXED",
     "unit" : "RATIO",
     "key" : "",
-    "explanation" : "…out of this many. See the class note for why the reserve is a quarter."
+    "explanation" : "…out of this many. See the class note for why the reserve is 30 %."
   },
   {
     "owner" : "dev.spectroscope.core.skills.SkillLibrary",
@@ -688,6 +698,16 @@
     "unit" : "CHARACTERS",
     "key" : "",
     "explanation" : "How much of a SKILL.md's first body line becomes the description when the frontmatter names none, in characters. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.skills.SkillLibrary",
+    "field" : "MAX_SKILL_FILE_BYTES",
+    "value" : "50000",
+    "expression" : "50_000",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The most one sibling file of a skill may hand back, in bytes.\n\nFIXED, and deliberately the same figure as StandardTools.MAX_FILE_BYTES: a skill's own file is read under the same bound as any other file, so an operator cannot learn one ceiling and meet another. Moving one without the other would be the shape card 365 found in the two question-budget defaults and card 331 found in the queue's two counts — one truth kept in two places, disagreeing quietly."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",

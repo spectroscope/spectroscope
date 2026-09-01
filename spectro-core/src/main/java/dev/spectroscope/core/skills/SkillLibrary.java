@@ -56,6 +56,17 @@ public final class SkillLibrary {
      * 5.8 MB over 98 files, and one of them poured into the context would cost
      * more than the whole body it belongs to.
      */
+    /**
+     * The most one sibling file of a skill may hand back, in bytes.
+     *
+     * <p>FIXED, and deliberately the same figure as
+     * {@code StandardTools.MAX_FILE_BYTES}: a skill's own file is read under the
+     * same bound as any other file, so an operator cannot learn one ceiling and
+     * meet another. Moving one without the other would be the shape card 365
+     * found in the two question-budget defaults and card 331 found in the
+     * queue's two counts — one truth kept in two places, disagreeing quietly.</p>
+     */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     private static final long MAX_SKILL_FILE_BYTES = 50_000;
 
     /** Insertion order is load order; later roots already replaced earlier entries. */
