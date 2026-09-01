@@ -65,6 +65,7 @@ import { setDockBounds } from "../state/layout";
 import { readDockWidths } from "../state/rowWidths";
 import { DockWidthSettings } from "./DockWidthSettings";
 import { CopyButton } from "./CopyButton";
+import { GoverningNumbersBlock } from "./GoverningNumbersBlock";
 import { ReachBlock } from "./settingsReach";
 import { OriginRow } from "./settingsOrigin";
 import { ProgressGuardSettings } from "./ProgressGuardSettings";
@@ -1301,6 +1302,16 @@ export function SettingsPanel({
                   </label>
                   <p className="settings-note">{t(lang, "set.logHint")}</p>
                 </ReachBlock>
+                {/* ---- The numbers that govern a run — read only (card 357) ----
+                  No ReachBlock: nothing here is saveable, so a sentence about
+                  when a save lands would be a promise about a control that
+                  does not exist. The block reads /api/governing-numbers and
+                  draws what it is handed; every explanation on it is the
+                  javadoc standing above the constant. */}
+                <div className="settings-label" id={sectionAnchorId("limits")}>
+                  {t(lang, "set.secLimits")}
+                </div>
+                <GoverningNumbersBlock lang={lang} />
               </>
             )}
           </SettingsTabPage>

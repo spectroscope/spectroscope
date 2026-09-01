@@ -1,5 +1,7 @@
 package dev.spectroscope.core.config;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.lang.management.ManagementFactory;
 import java.util.Locale;
 import java.util.Optional;
@@ -56,6 +58,7 @@ public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBy
      * 8 GiB one, 1.3 on a 4 GiB box. Every one of those is more than the 25% the
      * same machine gets today, which is the property a literal cannot have.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.PERCENT)
     public static final int MAX_RAM_PERCENT = 33;
 
     /** The exact flag. {@code HeapFlagDriftTest} holds the launch paths to it. */
@@ -71,6 +74,7 @@ public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBy
      * The mirror is not on trust: {@code HeapFlagDriftTest} reads the
      * controller's source and fails when the two drift apart.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     public static final long TRANSCRIPT_IMPORT_CAP_BYTES = 128L * 1024 * 1024;
 
     /**
@@ -92,9 +96,16 @@ public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBy
      * path alone and a real server also holds sessions, sockets and the fleet
      * aggregator.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     private static final long FLOOR_BYTES = 256L * 1024 * 1024;
 
+    /** A mebibyte. A unit conversion and not a limit: the value is
+     *  arithmetic, so changing it does not change what a run may do. */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     private static final long MIB = 1L << 20;
+
+    /** A gibibyte. A unit conversion and not a limit, like {@link #MIB}. */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     private static final long GIB = 1L << 30;
 
     /**

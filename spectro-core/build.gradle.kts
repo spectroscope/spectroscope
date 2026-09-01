@@ -94,6 +94,11 @@ tasks.test {
     // because a Test JVM inherits none of Gradle's own -D flags.
     System.getProperty("proof.out")?.let { systemProperty("proof.out", it) }
     System.getProperty("demos.out")?.let { systemProperty("demos.out", it) }
+    // Card 357: GoverningNumbersDriftTest regenerates the governing-numbers
+    // registry from the source tree under this flag and then fails on purpose,
+    // so it cannot be left on in a green build. Same reason as the two above —
+    // a Test JVM inherits none of Gradle's own -D flags.
+    System.getProperty("governing.rewrite")?.let { systemProperty("governing.rewrite", it) }
 }
 
 // Maven Central (card 23): this library publishes through the Central

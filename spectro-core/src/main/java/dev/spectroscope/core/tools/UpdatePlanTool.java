@@ -3,6 +3,7 @@ package dev.spectroscope.core.tools;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 
 import java.util.ArrayList;
@@ -20,13 +21,22 @@ import java.util.Set;
 public final class UpdatePlanTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
     /** The schema's enum is advisory to the model; execute() enforces it — the wire
      *  contract (JSONL, cross-edition) allows exactly these English values. */
     private static final Set<String> STATUSES = Set.of("pending", "in_progress", "completed");
+
     /** A rejection is quoted back into the model's context, and every key in it is
      *  model-supplied: without these bounds one confused step could carry a megabyte
      *  of prose as a key name and the tool result would carry it right back. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     private static final int MAX_NAMED_KEYS = 4;
+
+    /** …and how long one of those keys may be. The reason for the pair stands
+     *  on {@link #MAX_NAMED_KEYS} above: both exist because a rejection quotes
+     *  model-supplied text straight back into the context. Twenty-four
+     *  characters is a plan key, not a sentence. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_KEY_CHARS = 24;
     private static final JsonNode SCHEMA = parseSchema("""
             { "type": "object", "required": ["steps"],

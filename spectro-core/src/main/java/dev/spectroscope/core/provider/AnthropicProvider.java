@@ -29,6 +29,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.provider.LlmProvider.PStop.StopReason;
 import dev.spectroscope.core.wire.LlmWireTap;
 
@@ -340,6 +341,7 @@ public final class AnthropicProvider implements LlmProvider {
     }
 
     /** A modest reasoning budget, capped so maxTokens always stays strictly larger. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
     static final int THINKING_BUDGET = 2048;
 
     /**

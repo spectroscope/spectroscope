@@ -1,5 +1,6 @@
 package dev.spectroscope.core.goal;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.ToolOutput;
 
 /**
@@ -48,6 +49,7 @@ public record GoalVerdict(Outcome outcome, String command, Integer exitCode, Str
     /** How much of the check's output is kept. Enough to see a failing
      *  assertion, small enough that a chatty test suite cannot eat the window
      *  the goal is trying to protect. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     public static final int MAX_OUTPUT_CHARS = 4_000;
 
     /** The three ways a check can come back. */

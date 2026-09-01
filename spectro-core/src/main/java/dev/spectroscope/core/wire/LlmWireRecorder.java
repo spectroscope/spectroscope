@@ -2,6 +2,7 @@ package dev.spectroscope.core.wire;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.wire.LlmWireTap.WireOutcome;
 import dev.spectroscope.core.wire.LlmWireTap.WireRequest;
 
@@ -51,6 +52,7 @@ public final class LlmWireRecorder implements AutoCloseable {
             "x-goog-api-key", "cookie", "set-cookie");
 
     /** The default per-session byte ceiling: generous, but not unbounded. */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.BYTES)
     public static final long DEFAULT_CEILING_BYTES = 256L * 1024 * 1024;
 
     private final Path file;

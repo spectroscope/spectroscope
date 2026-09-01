@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.Tool.ToolContext;
 
 import java.io.File;
@@ -31,13 +32,28 @@ import java.util.stream.Stream;
 public final class StandardTools {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** How much of a file one read may take, in bytes. Beyond it the tool
+     *  refuses and names the limit rather than truncating in silence. No
+     *  argument for this particular value is recorded here. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.BYTES)
     private static final long MAX_FILE_BYTES = 50_000;
+
+    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
+     *  kept as a second copy of the same number. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
+
+    /** How many paths one {@code glob} answer carries. No argument for this
+     *  particular value is recorded here. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     private static final int MAX_GLOB_RESULTS = 200;
+
     /** {@code run_command}'s shipped wall-clock budget, READ from the settings
      *  record rather than kept as a second copy of the same ten (card 359).
      *  A private literal here is what made the number unreachable, and the
      *  description one screen down typed it a second time. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.SECONDS)
     private static final long COMMAND_TIMEOUT_SECONDS =
             dev.spectroscope.core.config.SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS;
 
@@ -72,6 +88,7 @@ public final class StandardTools {
 
     /** The providers' practical per-document limit — Anthropic's request cap is ~32 MB
      *  total and base64 inflates by a third, so 10 MB source keeps requests healthy. */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.BYTES)
     private static final long MAX_DOCUMENT_BYTES = 10L * 1024 * 1024;
 
     /**
@@ -135,10 +152,12 @@ public final class StandardTools {
     /** The providers' per-image wire limit — the ladder itself moved to the
      *  shared {@link dev.spectroscope.core.image.ImageDownscaler} (file_upload: the
      *  composer attachment path applies the same policy). */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.BYTES)
     private static final long WIRE_IMAGE_LIMIT_BYTES =
             dev.spectroscope.core.image.ImageDownscaler.WIRE_IMAGE_LIMIT_BYTES;
 
     /** Sanity cap on the SOURCE file — beyond this, even downscaling is refused. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     private static final long MAX_SOURCE_IMAGE_BYTES = 50L * 1024 * 1024;
 
     /**

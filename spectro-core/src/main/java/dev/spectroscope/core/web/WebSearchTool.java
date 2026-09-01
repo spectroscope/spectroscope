@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolOutput;
 
@@ -33,12 +34,18 @@ import java.util.function.Supplier;
 public final class WebSearchTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
+     *  kept as a second copy of the same number. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
 
     /** Hits per search when the model does not ask for a count. */
+    @Governs(kind = Governs.Kind.MODEL_CHOICE, unit = Governs.Unit.COUNT)
     static final int DEFAULT_MAX_RESULTS = 5;
 
     /** Hard ceiling on hits per search — more is noise in the context window. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     static final int MAX_MAX_RESULTS = 10;
 
     private final Supplier<WebSearcher> searcher;

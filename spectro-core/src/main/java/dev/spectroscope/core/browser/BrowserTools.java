@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.image.ImageStore;
 import dev.spectroscope.core.net.NetFence;
@@ -113,6 +114,7 @@ public final class BrowserTools {
      * A pane screenshot measured 10.8 KB at 1100x760 in the card 200 spike, so
      * this is a guard rather than a routine cost.
      */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.BYTES)
     static final long MAX_SCREENSHOT_BYTES = 5L * 1024 * 1024;
 
     private final Supplier<BrowserFace> face;
@@ -548,6 +550,7 @@ public final class BrowserTools {
     // ---- browser_resize ------------------------------------------------------
 
     /** The three presets, and the width below which the pane emulates a phone. */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.PIXELS)
     private static final int MOBILE_WIDTH = 375;
 
     /**

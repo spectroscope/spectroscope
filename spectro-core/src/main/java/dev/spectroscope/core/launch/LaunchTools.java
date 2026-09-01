@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.browser.BrowserFace;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.net.NetFence;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolOutput;
@@ -84,12 +85,15 @@ public final class LaunchTools {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** How long a start waits by default, in seconds, as the schema advertises it. */
+    @Governs(kind = Governs.Kind.MODEL_CHOICE, unit = Governs.Unit.SECONDS)
     static final int DEFAULT_WAIT_SECONDS = (int) LaunchSupervisor.DEFAULT_BUDGET.toSeconds();
 
     /** The longest wait a caller may ask for. A dev server that takes longer is broken. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     static final int MAX_WAIT_SECONDS = 180;
 
     /** How many log lines {@code launch_logs} returns unless asked otherwise. */
+    @Governs(kind = Governs.Kind.MODEL_CHOICE, unit = Governs.Unit.LINES)
     static final int DEFAULT_LOG_LINES = 80;
 
     /** What every tool here says when the project carries no launch file. */

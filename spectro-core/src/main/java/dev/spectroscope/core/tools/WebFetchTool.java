@@ -3,6 +3,7 @@ package dev.spectroscope.core.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.net.NetFence;
 import dev.spectroscope.core.tools.Tool.ToolContext;
 import dev.spectroscope.core.web.HtmlText;
@@ -37,10 +38,15 @@ import dev.spectroscope.core.web.HtmlText;
 public final class WebFetchTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
+     *  kept as a second copy of the same number. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
 
     /** How many redirects one call may take before it gives up. Every one of
      *  them is fenced, so the budget is about loops and latency, not safety. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     public static final int MAX_REDIRECTS = 5;
 
     private final HttpFetcher fetcher;

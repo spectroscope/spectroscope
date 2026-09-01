@@ -1,5 +1,6 @@
 package dev.spectroscope.core.subagents;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.provider.ExchangeLatency;
 
 import java.util.OptionalLong;
@@ -81,11 +82,13 @@ public final class ChildBudget {
      * 3 × the owner's measured p50 works out to — so on that backend the floor
      * is what actually governs.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     public static final long FLOOR_MS = 300_000L;
 
     /** How many median exchanges a child may spend once it has started
      *  producing: three. A child that has had three median turns and is still
      *  going is not waiting, it is lost. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     public static final int P50_MULTIPLE = 3;
 
     /**
@@ -97,11 +100,13 @@ public final class ChildBudget {
      * sequence — see {@link #worstCaseMs()} for what a child can actually hold
      * its requester for, which is more than this number.</p>
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     public static final long CEILING_MS = 1_800_000L;
 
     /** The hard stop on the queue grace: 45 min — the run ceiling plus one
      *  full wave of the same. Like {@link #CEILING_MS} it bounds its own clock
      *  only; {@link #worstCaseMs()} composes them. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     public static final long GRACE_CEILING_MS = 2_700_000L;
 
     /** {@code run_end} stop reason of a child whose run budget ran out AFTER it

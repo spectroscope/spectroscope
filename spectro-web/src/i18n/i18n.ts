@@ -2316,6 +2316,86 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.secSession": { de: "Session-Standards", en: "Session defaults" },
   "set.secWorkspace": { de: "Standard-Workspace", en: "Default workspace" },
   "set.secLogging": { de: "Operator-Logging", en: "Operator logging" },
+
+  // ---- Card 357: the numbers that govern a run --------------------------------
+  // The list itself is generated from spectro-core's source tree and arrives
+  // over /api/governing-numbers; every EXPLANATION under a number is the
+  // javadoc that already stands above it. What lives here is only the
+  // vocabulary: the name of each kind and what that kind MEANS. Held to the
+  // Java enums by governingNumbers.drift.test.ts, so a ninth kind cannot ship
+  // with the room drawing a bare enum name at somebody.
+  "set.secLimits": {
+    de: "Die Zahlen, die einen Lauf steuern",
+    en: "The numbers that govern a run",
+  },
+  "set.gnNote": {
+    de: "{governing} Zahlen entscheiden in diesem Build, was ein Lauf darf, wie lange er dauern darf und wie viel er erzeugen darf ({all} klassifiziert insgesamt). Der Text unter jeder Zahl ist der Kommentar aus dem Quelltext selbst — nichts davon wurde für diese Seite geschrieben.",
+    en: "{governing} numbers decide what a run may do, how long it may take and how much it may produce in this build ({all} classified in total). The text under each number is the comment from the source itself — none of it was written for this page.",
+  },
+  "set.gnFilter": { de: "Suchen", en: "Filter" },
+  "set.gnFilterHint": {
+    de: "Name, Klasse oder ein Wort aus der Begründung",
+    en: "a name, a class, or a word from the reason",
+  },
+  "set.gnNoMatch": { de: "Keine Zahl passt dazu.", en: "No number matches that." },
+  "set.gnLoading": { de: "Wird geladen …", en: "Loading …" },
+  "set.gnFailed": {
+    de: "Die Liste ist nicht erreichbar — dieser Server kennt den Endpunkt nicht.",
+    en: "The list is unreachable — this server does not carry the endpoint.",
+  },
+  "set.gnKey": { de: "Einstellung", en: "settings key" },
+  "set.gnKind.SETTABLE": { de: "Änderbar", en: "You can change it" },
+  "set.gnWhy.SETTABLE": {
+    de: "Eine Einstellung, ein CLI-Flag oder ein Hook-Eintrag erreicht diese Zahl wirklich — der Schlüssel steht daneben.",
+    en: "A setting, a CLI flag or a hook entry actually reaches this number — the key stands beside it.",
+  },
+  "set.gnKind.MODEL_CHOICE": { de: "Das Modell wählt", en: "The model chooses" },
+  "set.gnWhy.MODEL_CHOICE": {
+    de: "Das Modell übergibt den Wert pro Aufruf; hier steht, was es bekommt, wenn es keinen nennt. Für dich nicht erreichbar.",
+    en: "The model passes this per call; the value here is what it gets when it names none. Not reachable by you.",
+  },
+  "set.gnKind.LOOKS_SETTABLE": { de: "Sieht änderbar aus, ist es nicht", en: "Looks settable, is not" },
+  "set.gnWhy.LOOKS_SETTABLE": {
+    de: "Ein DEFAULT_-Name über einem Parameter, den keine ausgelieferte Aufrufstelle je anders belegt. Eine Prüfung, die nur fragt „ist das parametrisiert?“, hält diese Zahlen für erreichbar — sie sind es nicht.",
+    en: "A DEFAULT_-shaped name over a parameter that no shipped call site ever passes anything else to. An audit that only asks \"is it parameterised?\" scores these as reachable; they are not.",
+  },
+  "set.gnKind.UNEXAMINED": { de: "Offen", en: "Open question" },
+  "set.gnWhy.UNEXAMINED": {
+    de: "Festgelegt, und der Quelltext nennt keinen Grund für genau diesen Wert — entweder sagt er das selbst, oder er sagt zum Wert gar nichts. Das ist der Rückstand, sichtbar gemacht.",
+    en: "Fixed, and the source records no argument for this particular value — either it says so itself, or it says nothing about the value at all. This is the backlog, rendered.",
+  },
+  "set.gnKind.FOREIGN_CONTRACT": { de: "Von außen festgelegt", en: "Fixed from outside" },
+  "set.gnWhy.FOREIGN_CONTRACT": {
+    de: "Ein fremder Server, eine fremde Bibliothek oder ein Protokoll setzt die Grenze. Sie hier zu ändern, ändert nichts an dem, was sie durchsetzt.",
+    en: "A foreign server, a foreign library or a protocol sets the limit. Changing it here would not change the thing that enforces it.",
+  },
+  "set.gnKind.FIXED": { de: "Festgelegt", en: "Fixed here" },
+  "set.gnWhy.FIXED": {
+    de: "Kein Weg führt daran vorbei, und der Kommentar darunter ist alles, was der Code zu dem Wert zu sagen hat. Ob das reicht, entscheidest du beim Lesen.",
+    en: "Nothing overrides it, and the comment below is everything the code has to say about the value. Whether that is enough is yours to judge while reading.",
+  },
+  "set.gnKind.ALIAS": { de: "Nur eine Wiederholung", en: "Only a restatement" },
+  "set.gnWhy.ALIAS": {
+    de: "Keine eigene Zahl: sie wiederholt eine andere Konstante, damit keine zweite Kopie davonlaufen kann.",
+    en: "Not a number of its own: it restates another constant so a second copy cannot drift from the first.",
+  },
+  "set.gnKind.PLUMBING": { de: "Keine steuernde Zahl", en: "Not a governing number" },
+  "set.gnWhy.PLUMBING": {
+    de: "Eine Umrechnung, ein Platzhalter für „kein Wert“ oder eine Protokollgrenze. Sie zu ändern ändert nicht, was ein Lauf darf — es macht den Code kaputt.",
+    en: "A unit conversion, a stand-in for \"no value\", or a protocol maximum. Changing it does not change what a run may do; it breaks the code.",
+  },
+  "set.gnUnit.TURNS": { de: "Turns", en: "turns" },
+  "set.gnUnit.TOKENS": { de: "Tokens", en: "tokens" },
+  "set.gnUnit.CHARACTERS": { de: "Zeichen", en: "characters" },
+  "set.gnUnit.BYTES": { de: "Bytes", en: "bytes" },
+  "set.gnUnit.MILLISECONDS": { de: "Millisekunden", en: "milliseconds" },
+  "set.gnUnit.SECONDS": { de: "Sekunden", en: "seconds" },
+  "set.gnUnit.COUNT": { de: "Stück", en: "count" },
+  "set.gnUnit.PERCENT": { de: "Prozent", en: "per cent" },
+  "set.gnUnit.PIXELS": { de: "CSS-Pixel", en: "CSS pixels" },
+  "set.gnUnit.LINES": { de: "Zeilen", en: "lines" },
+  "set.gnUnit.RATIO": { de: "Faktor", en: "factor" },
+  "set.gnUnit.NONE": { de: "ohne Einheit", en: "no unit" },
   "set.sessionHint": {
     de: "Landet in ~/.spectro/settings.json und gilt ab der nächsten neuen Session. Zurücksetzen fällt auf die darunterliegende Ebene zurück (z. B. env).",
     en: "Lands in ~/.spectro/settings.json and applies from the next new session. Resetting falls back to the layer below (e.g. env).",

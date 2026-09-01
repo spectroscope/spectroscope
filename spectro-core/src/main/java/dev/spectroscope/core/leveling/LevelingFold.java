@@ -1,5 +1,6 @@
 package dev.spectroscope.core.leveling;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ public final class LevelingFold {
      * session, dropped entirely once no join needs them; the cap only bounds
      * the pathological case of a home that never opens a trace.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     public static final int MAX_TRACKED_SESSIONS = 200;
 
     /**

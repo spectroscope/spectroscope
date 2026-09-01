@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.Asker;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 
 import java.util.ArrayList;
@@ -40,10 +41,15 @@ public final class AskUserQuestionTool implements Tool {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** How long one question may be. A question is read under time pressure. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.CHARACTERS, key = "maxQuestionChars")
     public static final int MAX_QUESTION_CHARS = 500;
+
     /** How many choices one question may offer — the bar renders them in a row. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "maxQuestionOptions")
     public static final int MAX_OPTIONS = 4;
+
     /** How long one option label may be. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     public static final int MAX_OPTION_CHARS = 100;
     /**
      * How many questions one run may ask when nobody configured it — the value
@@ -60,6 +66,7 @@ public final class AskUserQuestionTool implements Tool {
      * nine while a tool built without config allowed three, and both would call
      * themselves the default.</p>
      */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "questionsPerRun")
     public static final int QUESTIONS_PER_RUN = 9;
 
     /**

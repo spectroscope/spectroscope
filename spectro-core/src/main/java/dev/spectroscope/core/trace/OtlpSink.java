@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,8 +58,17 @@ public final class OtlpSink implements TracingPort {
 
     private static final Logger log = LoggerFactory.getLogger(OtlpSink.class);
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final int MAX_BUFFER = 20_000;   // events; beyond = warn once, stop buffering
-    private static final int CUT = 4000;            // attribute payload bound
+
+    /** How many events are held while nothing has drained them. Beyond it the
+     *  sink warns once and stops buffering rather than growing without a bound.
+     *  No argument for this particular value is recorded here. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
+    private static final int MAX_BUFFER = 20_000;
+
+    /** The bound on one attribute's payload, in characters. No argument for
+     *  this particular value is recorded here. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.CHARACTERS)
+    private static final int CUT = 4000;
 
     /** The HTTP leg as a seam — tests inject a capture, production posts. */
     interface Poster {
@@ -664,6 +674,7 @@ public final class OtlpSink implements TracingPort {
 
     /** What a zero-length span is widened to, so it can be seen at all. One
      *  millisecond: too small to read as a measurement, big enough to click. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final long ZERO_SPAN_FLOOR_MS = 1;
 
     private void span(ArrayNode spans, String traceId, String spanId, String parent, String name,

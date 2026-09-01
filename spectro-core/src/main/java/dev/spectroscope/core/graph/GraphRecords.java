@@ -1,5 +1,7 @@
 package dev.spectroscope.core.graph;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +32,7 @@ public final class GraphRecords {
      * document is the measured shape, and this file is the one people attach to
      * bug reports.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     static final int MESSAGE_LIMIT = 1000;
 
     private GraphRecords() {

@@ -1,5 +1,7 @@
 package dev.spectroscope.core.launch;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -92,12 +94,15 @@ public final class LaunchSupervisor implements AutoCloseable {
     public static final Duration DEFAULT_BUDGET = Duration.ofSeconds(45);
 
     /** How many lines of a launched process's output are kept. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.LINES)
     static final int LOG_LINES = 400;
 
     /** How long a stop waits for a signalled tree before it stops being polite. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final long STOP_GRACE_MS = 3_000;
 
     /** How often the address is probed while a start waits. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final long PROBE_INTERVAL_MS = 150;
 
     /**

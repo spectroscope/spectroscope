@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.graph.Redaction;
 
 import java.io.IOException;
@@ -79,6 +80,7 @@ public final class BrowserWireRecorder implements AutoCloseable, BrowserWireTap 
      * owner's own transcripts); at a few kilobytes per call that is single-digit
      * megabytes.
      */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.BYTES)
     public static final long DEFAULT_CEILING_BYTES = 64L * 1024 * 1024;
 
     private final Path file;

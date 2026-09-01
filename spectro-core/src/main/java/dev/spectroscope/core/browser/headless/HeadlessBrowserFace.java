@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.browser.BrowserFace;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.net.NetFence;
 
 import java.time.Duration;
@@ -58,6 +59,7 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
     static final Duration LOAD_BUDGET = Duration.ofSeconds(30);
 
     /** How many console lines one page may accumulate — the pane's own cap. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.LINES)
     private static final int CONSOLE_CAP = 500;
 
     /**
@@ -765,6 +767,7 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
     // ---- resize ------------------------------------------------------------
 
     /** The pane's own breakpoint: below this width, a phone is emulated. */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.PIXELS)
     private static final int MOBILE_BREAKPOINT = 768;
 
     private Reply resize(JsonNode args) {

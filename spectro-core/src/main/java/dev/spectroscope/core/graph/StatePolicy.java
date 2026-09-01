@@ -1,5 +1,7 @@
 package dev.spectroscope.core.graph;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -76,6 +78,7 @@ public final class StatePolicy {
     }
 
     /** The ceiling on a whole record, envelope included. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     public static final int RECORD_CAP = 8192;
 
     /**

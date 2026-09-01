@@ -3,6 +3,7 @@ package dev.spectroscope.core.mcp;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.Tool;
 
 /**
@@ -31,6 +32,7 @@ public final class McpTool implements Tool {
      * decoded — a hostile server must not be able to make the harness allocate a
      * decoded copy of an arbitrarily large payload.
      */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.BYTES)
     public static final long MAX_IMAGE_BYTES =
             dev.spectroscope.core.image.ImageDownscaler.WIRE_IMAGE_LIMIT_BYTES;
 

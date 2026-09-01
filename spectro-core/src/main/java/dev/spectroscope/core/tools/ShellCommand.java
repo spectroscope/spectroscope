@@ -1,6 +1,7 @@
 package dev.spectroscope.core.tools;
 
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.governing.Governs;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,11 +26,13 @@ import java.util.concurrent.TimeUnit;
 public final class ShellCommand {
 
     /** Exit code stand-in when the process never produced one (timeout/failure). */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     public static final int NO_EXIT = -1;
 
     /** How long after child exit we wait for the drain to finish. Normally the
      *  exit closes the pipe instantly; a background grandchild holding the fd
      *  open must not hang the tool, so we take the partial snapshot instead. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final long DRAIN_GRACE_MS = 1_000;
 
     /**

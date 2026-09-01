@@ -1,6 +1,7 @@
 package dev.spectroscope.core.session;
 
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
@@ -38,6 +39,10 @@ public final class Compaction {
                     + "State explicitly: open tasks, decisions made, important file paths and values, "
                     + "and the current state. Answer with the summary only.";
 
+    /** How many of the most recent messages survive a compaction untouched.
+     *  Nothing passes another value — {@code maybeCompact} reads this constant
+     *  directly — and no argument for the four is recorded here. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     private static final int DEFAULT_KEEP_MESSAGES = 4;
 
     /**

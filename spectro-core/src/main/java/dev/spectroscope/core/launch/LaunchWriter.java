@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.config.SpectroDir;
+import dev.spectroscope.core.config.governing.Governs;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -81,6 +82,7 @@ public final class LaunchWriter {
     public static final String VERSION = "0.0.1";
 
     /** The largest port a socket can hold. */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     private static final int MAX_PORT = 65535;
 
     private static final ObjectMapper JSON = new ObjectMapper();

@@ -1,5 +1,7 @@
 package dev.spectroscope.core.graph;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
@@ -30,6 +32,7 @@ import java.util.Set;
 final class StateClipper {
 
     /** Deep enough for any real state, shallow enough that a cycle cannot outrun it. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     private static final int MAX_DEPTH = 32;
 
     private final StatePolicy policy;

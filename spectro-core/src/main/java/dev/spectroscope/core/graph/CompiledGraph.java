@@ -1,5 +1,6 @@
 package dev.spectroscope.core.graph;
 
+import dev.spectroscope.core.config.governing.Governs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,6 +75,7 @@ public final class CompiledGraph {
     private static final Logger LOG = LoggerFactory.getLogger(CompiledGraph.class);
 
     /** How many hex characters name a run. Long enough to tell two turns apart. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int RUN_ID_LENGTH = 12;
 
     /**
@@ -86,6 +88,7 @@ public final class CompiledGraph {
      * needs 27 supersteps, so at 25 an operator got a working system on LangGraph
      * and a recursion failure here.</p>
      */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.COUNT)
     public static final int DEFAULT_RECURSION_LIMIT = 10007;
 
     /**
@@ -93,6 +96,7 @@ public final class CompiledGraph {
      * ceiling of ten thousand must not quietly turn into ten thousand retained
      * frontiers.
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     private static final int RETAINED_FRONTIERS = 16;
 
     private final GraphSpec spec;

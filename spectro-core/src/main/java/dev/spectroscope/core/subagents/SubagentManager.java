@@ -8,6 +8,7 @@ import dev.spectroscope.core.AgentOptions;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.EventStream;
 import dev.spectroscope.core.RunOptions;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
@@ -47,6 +48,7 @@ public final class SubagentManager {
      * {@code konzept/ORCHESTRATION.md} §7 leaves the width an open owner call
      * until someone does. It moves when a number says so, with the number.</p>
      */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     public static final int MAX_PARALLEL_CHILDREN = 4;
 
     private static final ObjectMapper JSON = new ObjectMapper();

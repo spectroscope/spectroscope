@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.wire.LlmWireTap;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -1085,6 +1086,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * smallest cap among current chat models is gpt-4o-mini's 16384, so 16000
      * is the safe ceiling for everything the picker offers.
      */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.TOKENS)
     static final int MAX_TOKENS_CAP = 16_000;
 
     /**

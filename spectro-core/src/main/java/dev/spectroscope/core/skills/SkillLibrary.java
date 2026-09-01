@@ -3,6 +3,7 @@ package dev.spectroscope.core.skills;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.Tool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +43,11 @@ public final class SkillLibrary {
     private static final Logger LOG = LoggerFactory.getLogger(SkillLibrary.class);
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** How much of a SKILL.md's first body line becomes the description when
+     *  the frontmatter names none, in characters. No argument for this
+     *  particular value is recorded here. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.CHARACTERS)
     private static final int DESCRIPTION_FALLBACK_LIMIT = 120;
 
     /**
