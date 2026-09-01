@@ -141,7 +141,11 @@ describe("fitRowPanel is the one owner", () => {
     expect(fitRowPanel({ ...opts, desired: 640.4 })).toBe(640);
   });
 
-  it("a row it cannot measure changes nothing — junk in, floor out", () => {
+  // "the ask out", not "floor out": an unmeasurable row leaves `desired` ALONE
+  // rather than snapping to DOCK_MIN, which is what `fitRowPanel`'s own javadoc
+  // promises. The name said floor and the assertion said 700; a reader scanning
+  // names would have believed the opposite of the code (review 2026-09-01).
+  it("a row it cannot measure changes nothing — junk in, the ask out", () => {
     const dock = fitRowPanel({
       row: Number.NaN,
       desired: 700,

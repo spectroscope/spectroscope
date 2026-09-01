@@ -102,8 +102,20 @@ export function openInColumns(cols: readonly PanelColumn[], id: string, fills: F
  *
  * <p>Every reader who pressed Files before card 362 has `agents,files~1~0.5` in
  * localStorage, and criterion 4 asks that it still open and lose nobody. The
- * pair's TOTAL width is conserved — the parent's weight is divided among the
- * panels leaving it, so the split costs every other column nothing.</p>
+ * pair's total width is conserved ABOVE THE WEIGHT FLOOR — the parent's weight
+ * is divided among the panels leaving it, so the split costs every other
+ * column nothing.</p>
+ *
+ * <p>Below the floor it does not, and the sentence used to say otherwise
+ * (review 2026-09-01). A stored column under `2 × WEIGHT_FLOOR` splits into
+ * two columns of `WEIGHT_FLOOR` each, which is MORE than it had, so every
+ * other column narrows by renormalization — and that band is reachable, not
+ * theoretical: `setColumnPairShare` with its 0.05 ratio floor over a pair
+ * summing 2 lands on exactly 0.1, which one divider drag before card 362 could
+ * store as `agents,files~0.1~0.5`. The floor wins on purpose, because a column
+ * at weight 0 is a column nobody can find again;
+ * `columnModel.test.ts` pins the case by name ("never lets a split weight fall
+ * through the sanity floor").</p>
  *
  * @param cols  the arrangement
  * @param fills whether a panel's body owns its own layout

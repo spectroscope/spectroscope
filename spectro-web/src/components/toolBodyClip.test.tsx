@@ -115,11 +115,35 @@ describe("a long file body reaches the end of the card it is drawn on", () => {
     expect(reach(card("json", "notes.json", payload))).toBe("- tail -");
   });
 
-  it("leaves the raw face where it was, at 4,000", () => {
+  it("leaves the raw face where it was, at 4,000 — the boundary, not just 'below 20,000'", () => {
     // Said out loud because the comment over CLIP_CHARS used to claim the
     // opposite. The raw face is a second reading of the SAME payload the
     // structured face now carries whole, so it is not the face that has to
     // reach the end — and this test is the sentence narrowed to the coverage.
     expect(reach(card("raw", "notes.txt", LONG))).toBe("head - cut");
+    // THE NUMBER IN THE NAME IS THE NUMBER PINNED. A 20,000-character body
+    // proves only "the raw face cuts somewhere below 20,000": moving the raw
+    // clip to 12,000 left this green (review 2026-09-01) while the commit
+    // message and the card both stated the 4,000 as an asserted fact. One
+    // character over cuts, one under does not, and nothing in between is left
+    // for a later widening to slip through.
+    expect(card("raw", "notes.txt", "x".repeat(4001))).toContain("(truncated)");
+    expect(card("raw", "notes.txt", "x".repeat(4000))).not.toContain("(truncated)");
+  });
+
+  it("says so on the json face too when a text output outruns the lifted clip", () => {
+    // The md face's residual is pinned above; this is the json face's, which
+    // was not (review 2026-09-01, note 7). It matters more here, because this
+    // is the face drawn under `tv.notJson` — "shown verbatim". The note stays
+    // honest only while the box itself announces the cut, so that is asserted
+    // rather than assumed: the reader sees the promise and the truncation line
+    // in the same region.
+    const markup = card("json", "notes.txt", body(60000));
+    expect(markup, "the json face admits a text output is not JSON").toContain("not JSON");
+    expect(reach(markup)).toBe("head - cut");
+    // And the boundary, so the 48,000 in the prose above is a pinned number
+    // and not a remembered one.
+    expect(card("json", "notes.txt", "x".repeat(48001))).toContain("(truncated)");
+    expect(card("json", "notes.txt", "x".repeat(48000))).not.toContain("(truncated)");
   });
 });

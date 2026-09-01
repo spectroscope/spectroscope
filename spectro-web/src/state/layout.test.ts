@@ -3,6 +3,7 @@ import {
   __getState,
   __resetForTests,
   applyDockReturn,
+  clampField,
   clampW,
   DEFAULT_LAYOUT,
   getDockBounds,
@@ -12,10 +13,12 @@ import {
   openRightPanel,
   setActiveRightTab,
   setChatW,
+  setCtxW,
   setDockBounds,
   setDockColumnShare,
   setDockColumnSplit,
   setDockWeights,
+  setImagesW,
   setRightPanelW,
   setSidebarW,
   setTraceW,
@@ -24,7 +27,9 @@ import {
   toggleDockPanel,
   toggleRightPanel,
   toggleTrace,
+  WIDTH_FIELDS,
 } from "./layout";
+import type { LayoutState, WidthField } from "./layout";
 
 beforeEach(() => __resetForTests());
 
@@ -46,6 +51,57 @@ describe("layout store", () => {
     expect(__getState().chatW).toBe(1200);
     setTraceW(260);
     expect(__getState().traceW).toBe(260);
+  });
+
+  // The write path against the read path, field by field, DERIVED from the
+  // table both are supposed to read (review 2026-09-01, finding 1).
+  //
+  // The defect this replaces was invisible from either side alone: four of the
+  // six setters typed their own band, nothing outside them pinned it, and
+  // moving `setSidebarW`'s ceiling from 560 to 900 left 6,492 tests green. A
+  // reader would then drag the sidebar to 900, and hydration — reading the
+  // table — would hand back 560 on the next load, forever, with nothing on
+  // screen to explain it.
+  //
+  // `Record<WidthField, …>` is what makes this derived rather than a hand list
+  // with a loop around it: a seventh row in WIDTH_FIELDS fails `tsc` until its
+  // setter is named here, and the cases below then walk it without being
+  // touched.
+  const SETTERS: Record<WidthField, (w: number) => void> = {
+    sidebarW: setSidebarW,
+    chatW: setChatW,
+    traceW: setTraceW,
+    ctxW: setCtxW,
+    rightPanelW: setRightPanelW,
+    imagesW: setImagesW,
+  };
+
+  for (const [field] of WIDTH_FIELDS) {
+    it(`${field}: the setter clamps into the same band hydration does`, () => {
+      for (const ask of [-99999, 1, 99999]) {
+        SETTERS[field](ask);
+        const stored: LayoutState = __getState();
+        expect(stored[field], `${field} asked for ${ask}`).toBe(hydrateLayout({ [field]: ask }, null)[field]);
+      }
+    });
+  }
+
+  it("a field with no row in the table is loud, not silently unclamped", () => {
+    // The tail of `clampField`. Unreachable through the type and reachable
+    // from JavaScript, so it is covered rather than left as dead code: a width
+    // that came back unclamped would show up nowhere until the next reload.
+    expect(() => clampField("nope" as WidthField, 400)).toThrow(/no width band/);
+  });
+
+  it("the raised dock ceiling reaches the setter, not just hydration", () => {
+    // `rightPanelW` is the row whose ceiling is `null` — "ask the settings".
+    // The loop above would pass on a setter that had hard-coded 1200, because
+    // hydration and the setter would agree on the SHIPPED number; only a
+    // raised ceiling tells the two apart.
+    setDockBounds({ reserve: 360, max: 2400 });
+    setRightPanelW(99999);
+    expect(__getState().rightPanelW).toBe(2400);
+    expect(hydrateLayout({ rightPanelW: 99999 }, null).rightPanelW).toBe(2400);
   });
 
   it("the Lab panes start collapsed and toggles flip them", () => {

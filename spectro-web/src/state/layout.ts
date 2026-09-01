@@ -260,9 +260,9 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   // Card 361: the widths are clamped HERE, on the way in. Before this the
   // spread above was the whole of it and a hand-edited `rightPanelW: 5000`
   // reached the stylesheet untouched.
-  for (const [field, min, max] of WIDTH_FIELDS) {
+  for (const [field] of WIDTH_FIELDS) {
     const raw = state[field];
-    state[field] = Number.isFinite(raw) ? clampW(raw, min, widthCeiling(max)) : DEFAULT_LAYOUT[field];
+    state[field] = Number.isFinite(raw) ? clampField(field, raw) : DEFAULT_LAYOUT[field];
   }
   // Card 242: the launch rule, same for every era (see the javadoc above).
   state.dockReturn = typeof blob.dockReturn === "boolean" ? blob.dockReturn : blob.rightPanelOpen === true;
@@ -294,10 +294,15 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
  *  FINITE `rightPanelW: 5000` rode just as far, because hydration was a bare
  *  spread and nothing clamped on the way in.
  *
- *  One table, not two: the ceiling is read through {@link getDockBounds} so the
- *  read path and the write path cannot drift apart. `null` means "ask the
- *  settings", which is a function call and not a second copy of the number. */
-const WIDTH_FIELDS = [
+ *  One table, not two, and it is the WRITE path's table as well: every setter
+ *  below clamps through {@link clampField}, which reads this row and nothing
+ *  else. That sentence stood here before the review of 2026-09-01 while four
+ *  of the six bands were typed a second time in the setters — `setSidebarW`'s
+ *  ceiling could be moved to 900 with the whole suite green, and a drag would
+ *  then store 900 that hydration silently pulled back to 560 on the next load.
+ *  `null` means "ask the settings", which is a function call and not a second
+ *  copy of the number. */
+export const WIDTH_FIELDS = [
   ["sidebarW", 180, 560],
   ["chatW", 200, 1200],
   ["traceW", 200, 1200],
@@ -309,6 +314,35 @@ const WIDTH_FIELDS = [
 /** One width field's ceiling, now — the dock's comes from the settings. */
 function widthCeiling(max: number | null): number {
   return max === null ? bounds.max : max;
+}
+
+/** A layout field that carries a width. */
+export type WidthField = (typeof WIDTH_FIELDS)[number][0];
+
+/**
+ * Clamps one width into ITS band — the single place a width's limits are
+ * spelled, for the setters and for hydration alike.
+ *
+ * <p>A setter that typed its own two numbers was the shape the review of
+ * 2026-09-01 caught: nothing outside the table pinned them, so the two paths
+ * could disagree and the disagreement showed up only as a panel that shrinks
+ * on every reload. `layout.test.ts` walks the table against the setters, so a
+ * seventh width cannot arrive with a band of its own either.</p>
+ *
+ * @param field which width
+ * @param w     the asked-for width
+ * @return the width the store will hold
+ */
+export function clampField(field: WidthField, w: number): number {
+  const row = WIDTH_FIELDS.find(([f]) => f === field);
+  if (row === undefined) {
+    // Unreachable through the type — `WidthField` IS the table — and reachable
+    // from plain JavaScript. Loud rather than a silent pass-through, because a
+    // width that came back unclamped is exactly the defect this function
+    // exists to end, and it would show up nowhere until a reload.
+    throw new Error(`no width band for ${String(field)}`);
+  }
+  return clampW(w, row[1], widthCeiling(row[2]));
 }
 /** The flags a blob must carry as booleans, same argument. */
 const FLAG_FIELDS = ["chatOpen", "traceOpen", "ctxOpen", "rightPanelOpen"] as const;
@@ -451,13 +485,13 @@ function set(patch: Partial<LayoutState>): void {
 }
 
 export function setSidebarW(w: number): void {
-  set({ sidebarW: clampW(w, 180, 560) });
+  set({ sidebarW: clampField("sidebarW", w) });
 }
 export function setChatW(w: number): void {
-  set({ chatW: clampW(w, 200, 1200) });
+  set({ chatW: clampField("chatW", w) });
 }
 export function setTraceW(w: number): void {
-  set({ traceW: clampW(w, 200, 1200) });
+  set({ traceW: clampField("traceW", w) });
 }
 export function toggleChat(): void {
   set({ chatOpen: !state.chatOpen });
@@ -467,7 +501,7 @@ export function toggleTrace(): void {
 }
 /** The lab's context dock: same bounds as the JSONL strip beside it. */
 export function setCtxW(w: number): void {
-  set({ ctxW: clampW(w, 200, 1200) });
+  set({ ctxW: clampField("ctxW", w) });
 }
 export function toggleCtx(): void {
   set({ ctxOpen: !state.ctxOpen });
@@ -479,14 +513,14 @@ export function setRightPanelW(w: number): void {
   // reads it, because a store that pinned the literal would silently defeat a
   // raised `dockMaxWidth` — the third of the three caps the card found running
   // in series. The allocation against the chat's reserve is `fitRowPanel`'s.
-  set({ rightPanelW: clampW(w, RIGHT_PANEL_MIN_PX, bounds.max) });
+  set({ rightPanelW: clampField("rightPanelW", w) });
 }
 // The image gallery holds generated images the user wants to actually SEE, so
 // its width goes as wide as the chat can spare (the resize handler already
 // reserves CHAT_RESERVED_MIN_WIDTH_PX for the chat) — a 1200px ceiling like the
 // chat pane, not the old 720 that capped image viewing well below the viewport.
 export function setImagesW(w: number): void {
-  set({ imagesW: clampW(w, IMAGES_MIN_PX, IMAGES_MAX_PX) });
+  set({ imagesW: clampField("imagesW", w) });
 }
 /** The user's own show/hide (header toggle, the dock's ✕) — the ONE gesture
  *  pair that writes the return memory in both directions (card 242). */

@@ -12,39 +12,63 @@
 // business, and the tree scrolls. A guard rather than a comment, because a
 // pixel floor is exactly the kind of well-meant line that comes back.
 //
-// The locator is card 360's parsed one. `.ws-tree` also appears under an
-// ancestor in this sheet's neighbourhood; a substring search would have
-// answered with whichever rule stood first.
+// The locator is card 360's parsed one, and the reason is forward-looking
+// rather than measured: `grep -rn ws-tree src --include='*.css'` returns
+// exactly ONE line today (panels.css:59) and there is no scoped rule anywhere
+// in the tree. The sentence here used to claim one already existed, which was
+// simply untrue (review 2026-09-01). What the parsed locator buys is that a
+// `.ws--narrow .ws-tree { min-height: … }` added later cannot be read as the
+// unscoped rule — which is exactly what a substring search would do, and the
+// second case below is the half that catches it.
 
 import { describe, expect, it } from "vitest";
 import { blockOf, read, rules, stripComments } from "../testkit/source";
 
 const css = read("../styles/panels.css", import.meta.url);
 
-/** A CSS length in px, or null when the declaration is absent or not px. */
-function pxOf(decls: string, prop: string): number | null {
+/** The raw value a rule declares for `prop`, or null when it declares none. */
+function declared(decls: string, prop: string): string | null {
   const m = decls.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`));
-  if (!m) return null;
-  const px = m[1].trim().match(/^(-?[\d.]+)px$/);
-  return px ? Number(px[1]) : null;
+  return m ? m[1].trim() : null;
 }
 
+/**
+ * Whether a `min-height` value can outrank a percentage flex basis.
+ *
+ * ANY UNIT, not px. The first cut of this guard parsed `^-?[\d.]+px$` and read
+ * everything else as "absent", so `min-height: 6rem` reintroduced the exact
+ * inertness card 362 measured and passed green (review 2026-09-01). The header
+ * above calls a pixel floor "the kind of well-meant line that comes back" — it
+ * comes back in `rem` as readily as in `px`, and in `%` and `em` too.
+ *
+ * Absent and a zero of any unit are both "the basis decides". `auto` is
+ * allowed as well and that is not a hole: for a flex item it resolves to the
+ * automatic minimum size, which the tree's own `overflow-y: auto` — pinned by
+ * the third case below — collapses to zero. Anything else is a height the
+ * divider cannot go under, silently.
+ */
+const noFloor = (value: string | null): boolean =>
+  value === null || value === "auto" || /^0(?:[a-z]+|%)?$/i.test(value);
+
 describe("the tree's height is the split's to decide (card 362)", () => {
-  it("declares no pixel floor that could outrank the stored split", () => {
-    const floor = pxOf(blockOf(css, ".ws-tree"), "min-height");
-    // null (absent) or 0 both mean "the basis decides"; anything else is a
-    // height the divider cannot go under, silently.
-    expect(floor === null || floor === 0, `.ws-tree min-height is ${String(floor)}px`).toBe(true);
+  it("declares no floor of any unit that could outrank the stored split", () => {
+    const floor = declared(blockOf(css, ".ws-tree"), "min-height");
+    expect(noFloor(floor), `.ws-tree min-height is ${String(floor)}`).toBe(true);
   });
 
   it("no scoped .ws-tree rule reintroduces one either", () => {
     // The parsed locator above answers for the UNSCOPED rule only. A floor
     // under an ancestor would be just as inert-making and would not show up
     // there, which is the shape card 360 was written about.
-    for (const rule of rules("panels.css", css)) {
-      if (rule.subject !== ".ws-tree") continue;
-      const floor = pxOf(rule.body, "min-height");
-      expect(floor === null || floor === 0, `${rule.selector} (line ${rule.line})`).toBe(true);
+    const seen = rules("panels.css", css).filter((r) => r.subject === ".ws-tree");
+    // An empty violation list is not a broken parser: the sheet really does
+    // carry the rule this file is about.
+    expect(seen.map((r) => r.selector)).toContain(".ws-tree");
+    for (const rule of seen) {
+      const floor = declared(rule.body, "min-height");
+      expect(noFloor(floor), `${rule.selector} (line ${rule.line}) min-height is ${String(floor)}`).toBe(
+        true,
+      );
     }
   });
 

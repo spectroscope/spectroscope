@@ -489,6 +489,23 @@ export function App() {
   // store is what the other allocator will ask for next, and a rendered width
   // that the stylesheet has already shrunk would let the pair creep wider on
   // every drag.
+  //
+  // ONE DISCLOSED EXCEPTION (review 2026-09-01). Below a 900px viewport
+  // `panels.css` takes the gallery out of flow (`.image-panel { position:
+  // absolute; inset: 0 0 0 auto }`), so there it costs the chat row nothing —
+  // and `occupied` charges the dock for it anyway. The band where that changes
+  // an answer is a row of roughly 628-936px: at a 900px row with the gallery
+  // at its default 300, the ceiling computes to 900 - 360 - 308 - 8 = 224 and
+  // `fitRowPanel` returns the 260 floor, where charging nothing would have
+  // allowed up to 540. So on a narrow window with the gallery open, the dock
+  // drag stops at its floor earlier than it has to.
+  //
+  // Left as it is on purpose, and said out loud rather than left to be
+  // rediscovered: gating the term would put the stylesheet's 900px breakpoint
+  // into TypeScript as a second copy of a number the sheet owns, which is the
+  // very shape card 361's criterion 3 exists to forbid and which the same
+  // review caught one file over in `layout.ts`. Over-reserving is also the
+  // safe direction — the pair never computes wider than the row.
 
   // The right-docked panel (agents + system context) is resized from its left
   // edge: width = distance from the pointer to the row's right edge.
