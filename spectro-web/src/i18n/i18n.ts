@@ -3042,6 +3042,26 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "How often the harness carries on a run that stopped with its plan still open. 0 switches the leash off.",
   },
 
+  "set.secDockWidth": { de: "Breite der rechten Leiste", en: "Width of the right dock" },
+  "set.dockWidthHint": {
+    de: "Zwei Zahlen, und welche greift, hängt vom Fenster ab: auf einer schmalen Zeile stoppt der Freiraum des Chats das Ziehen, auf einer breiten die Obergrenze.",
+    en: "Two numbers, and which one stops you depends on the window: on a narrow row it is the chat's reserved room, on a wide one the ceiling.",
+  },
+  "set.dockWidthApplies": {
+    de: "Gilt sofort — die Leiste wird dort neu gezeichnet, wo sie steht.",
+    en: "Applies immediately — the dock is redrawn where it stands.",
+  },
+  "set.chatReserveWidth": { de: "Freiraum für den Chat", en: "Room kept for the chat" },
+  "set.chatReserveWidthNote": {
+    de: "So viele Pixel der Zeile bekommt die rechte Leiste nie, egal wie weit du ziehst. Kleiner setzen, wenn die Leiste wichtiger ist als der Chat.",
+    en: "This many pixels of the row stay with the chat, however far you drag. Lower it when the dock matters more than the chat.",
+  },
+  "set.dockMaxWidth": { de: "Breiteste Leiste", en: "Widest the dock may be" },
+  "set.dockMaxWidthNote": {
+    de: "So breit lässt sich die Leiste höchstens ziehen. Auf einem großen Monitor ist das die Zahl, die dich stoppt — nicht der Freiraum darüber.",
+    en: "The dock stops here however far you drag. On a large monitor this is the number that stops you, not the reserve above.",
+  },
+
   "set.questionsPerRun": { de: "Fragen pro Lauf", en: "Questions per run" },
   "set.questionsPerRunNote": {
     de: "Wie oft ein Lauf dich um eine Entscheidung bitten darf, bevor er mit dem weitermacht, was er hat. 0 heißt: nie fragen.",

@@ -26,6 +26,7 @@ import {
   RATIO_CEIL,
   RATIO_FLOOR,
   reconcileColumns,
+  separateFills,
   serializeColumns,
   setColumnPairShare,
   setColumnSplit,
@@ -40,24 +41,40 @@ const col = (panels: string[], weight = 1, split = DEFAULT_SPLIT): PanelColumn =
   split,
 });
 
+/**
+ * Card 362 gave the fill rule a predicate: a panel whose body owns its layout
+ * gets a column to itself. This module stayed id-agnostic, so these cases hand
+ * over their own answer rather than importing the app's.
+ *
+ * NONE is "nothing fills" — the cases below it are about how MANY panels may
+ * share a column, which is what they were about before the card too, and the
+ * ids in them (files, terminal) are stand-ins for "some panel". What the app's
+ * own predicate makes true is pinned next door in fillSeating.test.ts, against
+ * panels/dockModel.panelFills, because that is where a second copy of the list
+ * would have to be caught.
+ */
+const NONE = (): boolean => false;
+/** …and its opposite, for the cases about the rule itself. */
+const ALL = (): boolean => true;
+
 describe("the fill rule, exactly as the owner said it", () => {
   it("one open panel takes one column — the full height is the projection's job", () => {
-    expect(openInColumns([], "agents")).toEqual([col(["agents"])]);
+    expect(openInColumns([], "agents", NONE)).toEqual([col(["agents"])]);
   });
 
   it("a second panel splits the first column", () => {
-    const one = openInColumns([], "agents");
-    expect(openInColumns(one, "files")).toEqual([col(["agents", "files"])]);
+    const one = openInColumns([], "agents", NONE);
+    expect(openInColumns(one, "files", NONE)).toEqual([col(["agents", "files"])]);
   });
 
   it("a third opens a NEW column to the right, alone at full height", () => {
-    const two = openInColumns(openInColumns([], "agents"), "files");
-    expect(openInColumns(two, "terminal")).toEqual([col(["agents", "files"]), col(["terminal"])]);
+    const two = openInColumns(openInColumns([], "agents", NONE), "files", NONE);
+    expect(openInColumns(two, "terminal", NONE)).toEqual([col(["agents", "files"]), col(["terminal"])]);
   });
 
   it("a fourth splits that new column — the pattern continues", () => {
     let cols: PanelColumn[] = [];
-    for (const id of ["agents", "files", "terminal", "browser"]) cols = openInColumns(cols, id);
+    for (const id of ["agents", "files", "terminal", "browser"]) cols = openInColumns(cols, id, NONE);
     expect(cols).toEqual([col(["agents", "files"]), col(["terminal", "browser"])]);
   });
 
@@ -65,12 +82,53 @@ describe("the fill rule, exactly as the owner said it", () => {
     // [agents,files],[terminal] — closing files then opening browser must not
     // wedge browser into agents' column: it appends to the LAST column.
     const cols = [col(["agents"]), col(["terminal"])];
-    expect(openInColumns(cols, "browser")).toEqual([col(["agents"]), col(["terminal", "browser"])]);
+    expect(openInColumns(cols, "browser", NONE)).toEqual([col(["agents"]), col(["terminal", "browser"])]);
   });
 
   it("is idempotent — an already-open panel moves nothing", () => {
     const cols = [col(["agents", "files"])];
-    expect(openInColumns(cols, "agents")).toBe(cols);
+    expect(openInColumns(cols, "agents", NONE)).toBe(cols);
+  });
+});
+
+describe("the fill rule takes the predicate it is handed (card 362)", () => {
+  // The MODEL's half: it asks, and it obeys whatever it is told. WHICH panels
+  // answer yes is dockModel's business and is pinned in fillSeating.test.ts.
+  const fillsFiles = (id: string): boolean => id === "files";
+
+  it("opens a new column for a panel the predicate names", () => {
+    expect(openInColumns([col(["agents"])], "files", fillsFiles)).toEqual([col(["agents"]), col(["files"])]);
+  });
+
+  it("refuses to seat anything under one, in the other direction", () => {
+    expect(openInColumns([col(["files"])], "agents", fillsFiles)).toEqual([col(["files"]), col(["agents"])]);
+  });
+
+  it("with everything filling, every panel gets a column and the cap never binds", () => {
+    let cols: PanelColumn[] = [];
+    for (const id of ["agents", "files", "terminal"]) cols = openInColumns(cols, id, ALL);
+    expect(cols).toEqual([col(["agents"]), col(["files"]), col(["terminal"])]);
+  });
+
+  it("separateFills splits a mixed column and conserves its width", () => {
+    expect(separateFills([col(["agents", "files"], 2)], fillsFiles)).toEqual([
+      col(["agents"], 1),
+      col(["files"], 1),
+    ]);
+  });
+
+  it("separateFills is identity-stable when no column mixes", () => {
+    const cols = [col(["agents", "plan"], 1.4, 0.3), col(["files"])];
+    expect(separateFills(cols, fillsFiles)).toBe(cols);
+  });
+
+  it("separateFills never lets a split weight fall through the sanity floor", () => {
+    // WEIGHT_FLOOR is 0.1; halving a column already at the floor would put both
+    // halves under it and parseColumns would clamp them back on the next load,
+    // silently widening the pair.
+    expect(separateFills([col(["agents", "files"], 0.1)], fillsFiles).map((c) => c.weight)).toEqual([
+      0.1, 0.1,
+    ]);
   });
 });
 
@@ -166,7 +224,7 @@ describe("reconcile: the stored arrangement meets the stored modes", () => {
   it("drops panels the modes call closed, and fills panels the columns miss, in the order given", () => {
     // A 228-era blob has modes but no columns: everything open hydrates
     // through the fill rule in the caller's order (DOCK_ORDER).
-    expect(reconcileColumns([], ["agents", "files", "terminal"])).toEqual([
+    expect(reconcileColumns([], ["agents", "files", "terminal"], NONE)).toEqual([
       col(["agents", "files"]),
       col(["terminal"]),
     ]);
@@ -174,12 +232,14 @@ describe("reconcile: the stored arrangement meets the stored modes", () => {
     // that panel; the open one it misses re-enters by the fill rule, which
     // joins the last column while it has room.
     const stored = [col(["agents", "files"], 2, 0.3)];
-    expect(reconcileColumns(stored, ["agents", "browser"])).toEqual([col(["agents", "browser"], 2, 0.3)]);
+    expect(reconcileColumns(stored, ["agents", "browser"], NONE)).toEqual([
+      col(["agents", "browser"], 2, 0.3),
+    ]);
   });
 
   it("returns the same array when nothing diverges", () => {
     const stored = [col(["agents", "files"], 2, 0.3)];
-    expect(reconcileColumns(stored, ["agents", "files"])).toBe(stored);
+    expect(reconcileColumns(stored, ["agents", "files"], NONE)).toBe(stored);
   });
 
   it("flattens column-major for the invariant checks", () => {

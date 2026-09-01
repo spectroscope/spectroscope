@@ -9,10 +9,16 @@
      The card-228 cap said the same intent but proportionally (60%), which at
      a 1150px window left the chat 356px — under the very reserve the drag
      clamp holds. Now the cap IS the reserve: the panel may take everything
-     but the chat's floor and the 8px resizer between them (.lab-resizer's
-     flex-basis — without it the handle eats the floor: measured 352px), and
-     a narrow window shrinks the panel first. */
-  width: min(var(--right-panel-w, 360px), calc(100% - var(--chat-reserve) - 8px));
+     but the chat's floor and the one resizer between them (--row-resizer,
+     .lab-resizer's flex-basis — without it the handle eats the floor:
+     measured 352px), and a narrow window shrinks the panel first.
+     WHAT THIS CAP CANNOT SEE, said out loud because card 361 measured it: the
+     percentage resolves against the whole row, so with the gallery ALSO open
+     this rule leaves the chat its floor minus the gallery. Sharing the row
+     between two panels is fitRowPanel's job (state/rowWidths.ts) and it runs
+     on every drag; this rule is the last-resort guard for a window that
+     shrinks with nobody dragging anything. */
+  width: min(var(--right-panel-w, 360px), calc(100% - var(--chat-reserve) - var(--row-resizer)));
   min-width: 0;
   min-height: 0;
   background-color: var(--surface);
@@ -51,8 +57,15 @@
 .ws-refresh:hover, .ws-pick:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .ws-pick:disabled { opacity: 0.45; cursor: not-allowed; }
 .ws-tree {
+  /* The inline style overrides this basis with the stored split; the shorthand
+     here is what a reader without one gets. Card 362 took the 90px min-height
+     out: a pixel floor outranks a percentage basis, so below 100 × 90 / split
+     pixels of column the divider moved nothing at all — 600px of column at the
+     band's own floor of 15%, which is most of the range a person drags through.
+     The floor belongs to the split's band (wsSplit.ts: 15–85), not here, and
+     the tree scrolls at every size it can reach. */
   flex: 0 1 40%;
-  min-height: 90px;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--border);

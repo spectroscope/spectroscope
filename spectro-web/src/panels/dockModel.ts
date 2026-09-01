@@ -21,6 +21,33 @@ export const DOCK_ORDER: readonly DockPanelId[] = [
   "browser",
 ];
 
+/**
+ * The panels whose body OWNS its layout — a tree with a preview under it, a
+ * PTY, a rectangle a native view is laid over — rather than scrolling as prose.
+ *
+ * <p>One list, two readers, which is the whole of card 362's criterion 2. It
+ * decides the fill class RightPanel puts on the body, and since this card it
+ * also decides the SEATING: a panel that fills gets a column to itself, because
+ * a neighbour above it halves the only thing it has. Before the card these were
+ * two questions with one answer written down once; now they are one question,
+ * and adding a fourth id here moves both without anybody editing columnModel.</p>
+ */
+export const FILLING_PANELS: readonly DockPanelId[] = ["files", "terminal", "browser"];
+
+/**
+ * Whether this panel fills.
+ *
+ * <p>Takes a plain string rather than a {@link DockPanelId}: the column model
+ * is deliberately id-agnostic (it validates against the vocabulary its caller
+ * hands over), so this crosses that seam as a predicate and not as a type.</p>
+ *
+ * @param id a panel id
+ * @return true when its body owns its own layout
+ */
+export function panelFills(id: string): boolean {
+  return (FILLING_PANELS as readonly string[]).includes(id);
+}
+
 /** The i18n key for one panel's name in the strip and its header. */
 export function dockLabelKey(id: DockPanelId): string {
   return `rp.${id}`;

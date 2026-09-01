@@ -54,21 +54,74 @@ const clampRatio = (r: number): number => Math.min(RATIO_CEIL, Math.max(RATIO_FL
 const round4 = (n: number): number => Math.round(n * 10000) / 10000;
 
 /**
+ * Whether a panel's body owns its own layout. Handed in rather than known here:
+ * this module is deliberately id-agnostic, and card 362's whole point is that
+ * the answer has ONE home (panels/dockModel.panelFills) and is not retyped
+ * beside every rule that needs it.
+ */
+export type FillsPanel = (id: string) => boolean;
+
+/**
  * The fill rule, exactly as the owner said it: a panel joins the LAST column
  * while that column has room, and opens a new column to the right otherwise.
  * One panel → one column (the projection gives it the full height); a second
  * → splits that column; a third → a new column at full height; and so on.
  *
+ * <p>Card 362 adds the owner's second sentence, on being shown that his Files
+ * panel already filled its card and the thing above it was a NEIGHBOUR: a panel
+ * that fills gets a column to itself. That is one rule read in both directions
+ * — a filling panel never joins an occupied column, and nothing joins a column
+ * a filling panel is in — and it is a rule about WHO may share, not about how
+ * many may: {@link COLUMN_CAP} is untouched and two prose panels still pair.</p>
+ *
+ * <p>The predicate is a REQUIRED parameter and not a defaulted one. A default
+ * of "nothing fills" would let a call site that forgot it fall silently back to
+ * the pre-card behaviour, which is the failure mode the card names by number.</p>
+ *
+ * @param cols  the arrangement
+ * @param id    the panel being opened
+ * @param fills whether a panel's body owns its own layout
  * @return a new array, or the SAME array when the panel is already seated —
  *         identity is the no-re-render contract the layout store relies on.
  */
-export function openInColumns(cols: readonly PanelColumn[], id: string): PanelColumn[] {
+export function openInColumns(cols: readonly PanelColumn[], id: string, fills: FillsPanel): PanelColumn[] {
   if (cols.some((c) => c.panels.includes(id))) return cols as PanelColumn[];
   const last = cols[cols.length - 1];
-  if (last !== undefined && last.panels.length < COLUMN_CAP) {
+  const mayJoin =
+    last !== undefined && last.panels.length < COLUMN_CAP && !fills(id) && !last.panels.some(fills);
+  if (mayJoin) {
     return [...cols.slice(0, -1), { ...last, panels: [...last.panels, id] }];
   }
   return [...cols, { panels: [id], weight: 1, split: DEFAULT_SPLIT }];
+}
+
+/**
+ * A stored arrangement brought into agreement with the seating rule: a column
+ * that holds a filling panel together with anything else becomes one column per
+ * panel, in place.
+ *
+ * <p>Every reader who pressed Files before card 362 has `agents,files~1~0.5` in
+ * localStorage, and criterion 4 asks that it still open and lose nobody. The
+ * pair's TOTAL width is conserved — the parent's weight is divided among the
+ * panels leaving it, so the split costs every other column nothing.</p>
+ *
+ * @param cols  the arrangement
+ * @param fills whether a panel's body owns its own layout
+ * @return a new array, or the SAME array when nothing had to move
+ */
+export function separateFills(cols: readonly PanelColumn[], fills: FillsPanel): PanelColumn[] {
+  const mixed = (c: PanelColumn): boolean => c.panels.length > 1 && c.panels.some(fills);
+  if (!cols.some(mixed)) return cols as PanelColumn[];
+  const out: PanelColumn[] = [];
+  for (const c of cols) {
+    if (!mixed(c)) {
+      out.push(c);
+      continue;
+    }
+    const weight = round4(Math.max(WEIGHT_FLOOR, c.weight / c.panels.length));
+    for (const panel of c.panels) out.push({ panels: [panel], weight, split: DEFAULT_SPLIT });
+  }
+  return out;
 }
 
 /**
@@ -140,14 +193,25 @@ export function setColumnPairShare(
  * order, which is DOCK_ORDER for the store and therefore deterministic (the
  * card asks that the order be said out loud). Returns the same array when
  * nothing diverges.
+ *
+ * <p>Card 362 gives it a second job: a stored column that seats a filling panel
+ * under a neighbour is SEPARATED here (see {@link separateFills}), because the
+ * fill rule above only governs new opens and a blob written before that card
+ * would otherwise keep the arrangement the card exists to end.</p>
  */
-export function reconcileColumns(cols: readonly PanelColumn[], openIds: readonly string[]): PanelColumn[] {
+export function reconcileColumns(
+  cols: readonly PanelColumn[],
+  openIds: readonly string[],
+  fills: FillsPanel,
+): PanelColumn[] {
   let next = cols as PanelColumn[];
   for (const seated of panelsInColumns(cols)) {
     if (!openIds.includes(seated)) next = closeInColumns(next, seated);
   }
-  for (const id of openIds) next = openInColumns(next, id);
-  return next;
+  for (const id of openIds) next = openInColumns(next, id, fills);
+  // Card 362: a pre-card blob seated a filling panel under a neighbour, and
+  // openInColumns above will not have moved it — it only refuses NEW joins.
+  return separateFills(next, fills);
 }
 
 /**

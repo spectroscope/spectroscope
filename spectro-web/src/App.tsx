@@ -88,13 +88,23 @@ import {
   dismissLayoutRecovered,
   openDockPanel,
   openRightPanel,
+  setDockBounds,
   setImagesW,
   setRightPanelW,
   setSidebarW,
   toggleRightPanel,
+  useDockBounds,
   useLayout,
   useLayoutRecovered,
 } from "./state/layout";
+import {
+  IMAGES_MAX_PX,
+  IMAGES_MIN_PX,
+  RIGHT_PANEL_MIN_PX,
+  ROW_RESIZER_PX,
+  fitRowPanel,
+  readDockWidths,
+} from "./state/rowWidths";
 import { TextView } from "./components/TextView";
 import { textExportViewKey } from "./components/textExportClaim";
 import { TraceView } from "./components/TraceView";
@@ -181,10 +191,10 @@ interface Replay {
   kind?: ImportKind;
 }
 
-// Right-panel resize clamps: the panel never shrinks below its minimum and
-// the chat always keeps its reserved width.
-const RIGHT_PANEL_MIN_WIDTH_PX = 260;
-const CHAT_RESERVED_MIN_WIDTH_PX = 360;
+// The row's pixel vocabulary — the minima, the ceilings, the resizer's width
+// and the allocation itself — moved to state/rowWidths.ts with card 361. It
+// used to be two module constants here, and being HERE is what let the two
+// resize handlers below each subtract the same reserve from the same row.
 
 /** Fold a stored session's events into a ready-to-show archive state. */
 const foldArchive = (events: RunEvent[]) => normalizeReplay(reduceAll(initialState, events));
@@ -314,6 +324,10 @@ export function App() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
+  // Card 361: the chat's reserved floor and the dock's ceiling, as the settings
+  // resolved them. Not part of `layout` — they are settings, and this store
+  // persists to localStorage.
+  const dockBounds = useDockBounds();
   const layoutReset = useLayoutRecovered(); // card 241: a broken blob was replaced
   const [tab, setTab] = useState<ViewTab>("chat"); // chat | spectrum | graph | trace | text | lab
   /* Variant B (0.7 A/B): while a fleet is entered, its OWN bar replaces the
@@ -466,14 +480,31 @@ export function App() {
   const connRef = useRef<Connection | null>(null);
   const chatRowRef = useRef<HTMLDivElement>(null); // anchor for the right-panel resizer math
 
+  // Card 361: BOTH handlers go through fitRowPanel, and each one hands over
+  // what the OTHER panel already takes. That "occupied" argument is the whole
+  // fix — before it, the two clamps below each held the same reserve alone and
+  // the chat computed to −318px with both dragged out on a 1030px row.
+  //
+  // The other panel's width is read from the STORE and not from the DOM: the
+  // store is what the other allocator will ask for next, and a rendered width
+  // that the stylesheet has already shrunk would let the pair creep wider on
+  // every drag.
+
   // The right-docked panel (agents + system context) is resized from its left
   // edge: width = distance from the pointer to the row's right edge.
   const resizeRightPanel = (clientX: number): void => {
     const r = chatRowRef.current?.getBoundingClientRect();
-    if (r)
-      setRightPanelW(
-        Math.max(RIGHT_PANEL_MIN_WIDTH_PX, Math.min(r.right - clientX, r.width - CHAT_RESERVED_MIN_WIDTH_PX)),
-      );
+    if (!r) return;
+    setRightPanelW(
+      fitRowPanel({
+        row: r.width,
+        desired: r.right - clientX,
+        occupied: imagesOpen ? layout.imagesW + ROW_RESIZER_PX : 0,
+        reserve: dockBounds.reserve,
+        min: RIGHT_PANEL_MIN_PX,
+        max: dockBounds.max,
+      }),
+    );
   };
 
   // The gallery resizes from its left edge too (owner 2026-07-20): width =
@@ -483,8 +514,17 @@ export function App() {
     const panel = chatRowRef.current?.querySelector(".image-panel");
     const row = chatRowRef.current?.getBoundingClientRect();
     const r = panel?.getBoundingClientRect();
-    if (r && row)
-      setImagesW(Math.max(240, Math.min(r.right - clientX, row.width - CHAT_RESERVED_MIN_WIDTH_PX)));
+    if (!r || !row) return;
+    setImagesW(
+      fitRowPanel({
+        row: row.width,
+        desired: r.right - clientX,
+        occupied: layout.rightPanelOpen ? layout.rightPanelW + ROW_RESIZER_PX : 0,
+        reserve: dockBounds.reserve,
+        min: IMAGES_MIN_PX,
+        max: IMAGES_MAX_PX,
+      }),
+    );
   };
 
   // Design switcher: the live (draft) skin drives the particle backdrop and the
@@ -851,6 +891,19 @@ export function App() {
         if (typeof view.effective.thinking === "boolean") setThinking(view.effective.thinking);
         if (typeof view.effective.imageProvider === "string") setImageProvider(view.effective.imageProvider);
       })
+      .catch(() => {});
+  }, [conn.status]);
+
+  // Card 361: the dock's two widths, adopted on every connect. Its OWN effect
+  // and not a line in the one above, because that one is deliberately skipped
+  // once a control on this tab has been touched by hand — these two were never
+  // touched here, they are only ever changed on the settings page, and a layout
+  // that stopped following the settings because somebody flipped thinking would
+  // be the quietest kind of wrong. A failed fetch leaves the shipped pair.
+  useEffect(() => {
+    if (conn.status !== "open") return;
+    fetchSettings()
+      .then((view) => setDockBounds(readDockWidths(view.effective)))
       .catch(() => {});
   }, [conn.status]);
 
@@ -2410,7 +2463,15 @@ export function App() {
               className="chat-row"
               data-reveal
               ref={chatRowRef}
-              style={{ "--right-panel-w": `${layout.rightPanelW}px` } as CSSProperties}
+              style={
+                {
+                  "--right-panel-w": `${layout.rightPanelW}px`,
+                  // Card 361: the render-time half of the reserve. tokens.css
+                  // carries the shipped 360 so the row is right before
+                  // /api/settings answers; this overrides it with the setting.
+                  "--chat-reserve": `${dockBounds.reserve}px`,
+                } as CSSProperties
+              }
             >
               {(() => {
                 // chat-v2 (PROTOTYPE): the two readings take the SAME props.

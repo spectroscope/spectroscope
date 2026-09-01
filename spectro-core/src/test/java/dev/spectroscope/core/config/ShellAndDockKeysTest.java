@@ -29,11 +29,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code ignoreUnknown} says nothing), and a missing probe reports an invented
  * origin to the settings page.</p>
  *
- * <p>What is NOT claimed here: that anything reads the two widths yet. Measured
- * 2026-09-01 — {@code CHAT_RESERVED_MIN_WIDTH_PX} is a module constant in
- * {@code App.tsx:187} and the 1200 is an argument to {@code clampW} in
- * {@code layout.ts:403}, and neither consults the settings view. Card 361 is
- * what joins them up; this test pins the key's existence and nothing further.</p>
+ * <p>What is NOT claimed here: that anything reads the two widths. This test
+ * pins the key's existence and nothing further, and it stays that way now that
+ * card 361 has wired them — the reader is a browser (a CSS custom property, a
+ * drag handler and the layout store's clamp), so nothing in this module could
+ * observe it. The web half is pinned in {@code spectro-web}:
+ * {@code dockWidthSettings.test.tsx} for the controls and the reach,
+ * {@code rowWidths.test.ts} for the allocation, {@code layout.test.ts} for the
+ * ceiling actually reaching the store. The sentence that stood here until then
+ * — "nothing reads them yet" — was true when it was written, which is the
+ * whole reason it had to be rewritten in the edit that made it false.</p>
  */
 class ShellAndDockKeysTest {
 

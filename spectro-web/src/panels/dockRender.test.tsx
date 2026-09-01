@@ -12,8 +12,10 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RightPanel } from "../components/RightPanel";
+import { DOCK_ORDER, panelFills } from "../panels/dockModel";
 import {
   __resetForTests,
+  openDockPanel,
   setDockColumnShare,
   setDockColumnSplit,
   toggleDockCollapse,
@@ -90,28 +92,49 @@ describe("the workspace is columns of cards (card 236 over card 228)", () => {
   // springt", measured live 2026-08-14. Card 236 replaces it: the arrangement
   // comes from the layout store's column model, the width only scales pixels.
   it("walks the fill rule in the DOM: full height → split → new column", () => {
+    // CARD 362 MOVED HALF OF THIS CASE, and the half that moved is named here
+    // rather than quietly re-typed: it used to press `files` as its second
+    // panel, and Files now takes a column of its own. What did NOT move is the
+    // shape the case is about — full height → split → new column — so the
+    // second panel is a PROSE one (plan) and the walk is unchanged.
     // One panel: one column, no dividers.
     let html = render();
     expect(count(html, "data-col=")).toBe(1);
     expect(count(html, 'role="separator"')).toBe(0);
-    // A second panel splits the first column: one column, one row divider.
-    toggleDockPanel("files");
+    // A second prose panel splits the first column: one column, one row divider.
+    toggleDockPanel("plan");
     html = render();
     expect(count(html, "data-col=")).toBe(1);
     expect(count(html, 'aria-orientation="horizontal"')).toBe(1);
     expect(count(html, 'aria-orientation="vertical"')).toBe(0);
     // A third opens a NEW column: two columns, plus a column divider.
-    toggleDockPanel("terminal");
+    toggleDockPanel("context");
     html = render();
     expect(count(html, "data-col=")).toBe(2);
     expect(count(html, 'aria-orientation="horizontal"')).toBe(1);
     expect(count(html, 'aria-orientation="vertical"')).toBe(1);
-    expect(panelsIn(html)).toEqual(["agents", "files", "terminal"]);
+    expect(panelsIn(html)).toEqual(["agents", "plan", "context"]);
+  });
+
+  it("a panel that FILLS lands in a column of its own, with no row divider (card 362)", () => {
+    // The owner's gesture, in the DOM: the dock opens on the roster, he presses
+    // Files. Before this card that made one column with a horizontal divider
+    // through it, and the tree and its preview shared half the height with the
+    // roster above them.
+    toggleDockPanel("files");
+    const html = render();
+    expect(count(html, "data-col=")).toBe(2);
+    expect(count(html, 'aria-orientation="horizontal"')).toBe(0);
+    expect(count(html, 'aria-orientation="vertical"')).toBe(1);
+    expect(panelsIn(html)).toEqual(["agents", "files"]);
   });
 
   it("projects the stored ratios as flex weights — pixels follow the store, never the window", () => {
-    toggleDockPanel("files");
-    toggleDockPanel("terminal");
+    // Two prose panels and then a third: the case is about the PROJECTION, and
+    // it needs a column of two to have a split to project. Card 362 took `files`
+    // out of that role — a filling panel never shares — so `plan` stands in.
+    toggleDockPanel("plan");
+    toggleDockPanel("context");
     setDockColumnSplit(0, 0.3);
     setDockColumnShare(0, 0.25); // weights 0.5 : 1.5
     const html = render();
@@ -122,10 +145,32 @@ describe("the workspace is columns of cards (card 236 over card 228)", () => {
   });
 
   it("shows no row divider against a folded header — there is no height to trade", () => {
-    toggleDockPanel("files");
-    toggleDockCollapse("files");
+    // `plan` since card 362: a folded panel can only be the top half of a
+    // shared column, and Files no longer shares one.
+    toggleDockPanel("plan");
+    toggleDockCollapse("plan");
     const html = render();
     expect(count(html, 'role="separator"')).toBe(0);
+  });
+
+  it("gives the fill class to exactly the panels the seating rule calls filling", () => {
+    // Card 362 made ONE predicate answer two questions: which panels get a
+    // column to themselves, and which bodies own their own layout instead of
+    // scrolling as prose. This case is what keeps them the same answer — a
+    // hand-typed list back in RightPanel would seat Files alone and then let
+    // its body scroll, which is the two-copies-of-one-truth defect wearing the
+    // face of a fix.
+    for (const id of DOCK_ORDER) openDockPanel(id); // open, never toggle: agents starts open
+    const html = render({ work: [] });
+    for (const id of DOCK_ORDER) {
+      const at = html.indexOf(`data-panel="${id}"`);
+      expect(at, `${id} did not render`).toBeGreaterThan(-1);
+      // This panel's own section: up to the next one, so a neighbour's fill
+      // class can never be read as this one's.
+      const next = html.indexOf("data-panel=", at + 1);
+      const section = html.slice(at, next === -1 ? undefined : next);
+      expect(section.includes("dock-panel-body--fill"), `${id}`).toBe(panelFills(id));
+    }
   });
 
   it("gives EVERY card an expand control and a close control", () => {
