@@ -3031,6 +3031,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Danach endet der Lauf mit „Zug-Limit erreicht“, auch mitten in der Arbeit. Eine Fortsetzung setzt diese Zahl NICHT zurück. Ab Werk hoch genug, dass ein echter Lauf sie selten sieht.",
     en: "After this the run ends on \"turn limit reached\", even mid-task. A continuation does NOT reset it. Ships high enough that a real run rarely meets it.",
   },
+  "set.maxTokens": { de: "Antwort-Budget pro Aufruf", en: "Reply budget per call" },
+  "set.maxTokensNote": {
+    de: "Wie viele Ausgabe-Token EIN Modellaufruf ausgeben darf. Das ist die Obergrenze, die der Harness anfragt \u2014 ein Backend darf eine eigene, niedrigere haben (die OpenAI-kompatible Schnittstelle deckelt hart bei 16.000). Ein zu kleiner Wert schaltet erweitertes Denken f\u00fcr den Aufruf ab, weil dessen Budget darunter bleiben muss.",
+    en: "How many output tokens ONE model call may spend. This is the ceiling the harness asks for \u2014 a backend may hold a lower one of its own (the OpenAI-compatible wire clamps hard at 16,000). Set it too low and extended thinking turns off for that call, because its budget has to stay below this.",
+  },
   "set.commandTimeoutSeconds": { de: "Zeit pro Shell-Befehl", en: "Time per shell command" },
   "set.commandTimeoutSecondsNote": {
     de: "Nach so vielen Sekunden wird ein laufender Befehl abgebrochen und das Modell bekommt einen Fehler. Höher setzen für langsame Builds oder eine Suche über viele Dateien; nach oben gibt es keine Grenze, denn jeder Befehl wird ohnehin einzeln freigegeben.",

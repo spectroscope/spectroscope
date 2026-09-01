@@ -147,6 +147,33 @@ export function ProgressGuardSettings({
           </label>
         </div>
       </ReachBlock>
+      {/* Card 364's completion budget. Its own block for the reason the shell
+        clock below has one: it shares maxTurns' reach and bounds a different
+        thing — how much ONE provider call may write, against how many calls a
+        run may make. Same reach because it is read at the agent's build, on
+        every face: SessionConnection, the REPL, HeadlessRunner and every child
+        pass it in their AgentOptions chain, and AgentBuildReachDriftTest counts
+        those call sites from the source rather than from a list. */}
+      <ReachBlock lang={lang} fields={["maxTokens"]}>
+        <div className="settings-grid">
+          <label className="settings-field" data-progress-field="maxTokens">
+            <span>{t(lang, "set.maxTokens")}</span>
+            <input
+              type="number"
+              min={1}
+              value={count(view, "maxTokens")}
+              onChange={(e) => onSave({ maxTokens: Number(e.target.value) })}
+            />
+            <p className="settings-note">{t(lang, "set.maxTokensNote")}</p>
+            <OriginRow
+              view={view}
+              field="maxTokens"
+              lang={lang}
+              onReset={() => onSave({ maxTokens: null })}
+            />
+          </label>
+        </div>
+      </ReachBlock>
       {/* Card 359's shell clock. Its own block although it shares maxTurns'
         reach, because the two bound different things: one is the ceiling on a
         whole run, the other the ceiling on a single shell call, and one

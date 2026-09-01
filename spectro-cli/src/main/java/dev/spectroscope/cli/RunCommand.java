@@ -52,7 +52,9 @@ public final class RunCommand implements Callable<Integer> {
     @Option(names = "--json", description = "Emit every RunEvent as NDJSON on stdout.")
     private boolean json;
 
-    @Option(names = "--max-turns", description = "Cancel the run when a turn exceeds this 1-based limit.")
+    @Option(names = "--max-turns",
+            description = "Cancel the run when a turn exceeds this 1-based limit."
+                    + " It can end a run EARLIER than the configured maxTurns, never later.")
     private Integer maxTurns;
 
     @Option(names = "--permissions", defaultValue = "readonly",

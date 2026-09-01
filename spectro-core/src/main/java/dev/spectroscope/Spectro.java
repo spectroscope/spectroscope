@@ -166,6 +166,15 @@ public final class Spectro {
                     ? systemPrompt
                     : UNATTENDED_PROMPT + "\nThe workspace is " + workspace + "."
                             + dev.spectroscope.core.config.SpectroConfig.loadAgentsMd(workspace);
+            // settings-reach: compactionThreshold, thinking, maxTurns, maxTokens
+            //     | embedded library | this agent is built by a JVM program that
+            //     embedded spectroscope as a dependency, and its configuration is
+            //     the code above, not the operator's ~/.spectro/settings.json. A
+            //     library that read a settings file off whatever machine it happens
+            //     to run on would change an embedder's behaviour when somebody else
+            //     edited a file they have never seen. The caller sets these through
+            //     AgentOptions directly, and this facade's surface is frozen
+            //     (konzept/SPECTRO-API.md).
             return new dev.spectroscope.core.Agent(AgentOptions.builder()
                     .provider(provider)
                     .systemPrompt(prompt)

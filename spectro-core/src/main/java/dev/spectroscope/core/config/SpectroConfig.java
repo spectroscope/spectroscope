@@ -230,6 +230,20 @@ import java.util.function.Function;
  *                            a chat row of roughly 1560 px the reserve decides,
  *                            at or above it this ceiling does — which is why the
  *                            owner made BOTH settings rather than relaxing one
+ * @param maxTokens           the completion budget ONE provider call may spend,
+ *                            in output tokens (card 364). Default <b>32,000</b>,
+ *                            the number {@code Agent.DEFAULT_MAX_TOKENS} has
+ *                            been spending since the first commit. It is here
+ *                            because {@code AgentOptions.Builder.maxTokens} was
+ *                            <b>public, documented and called zero times</b> in
+ *                            every main source of every module: the seam existed,
+ *                            so the number LOOKED settable, and an audit asking
+ *                            "is it parameterised?" scored it as reachable while
+ *                            no operator could move it. A backend of its own may
+ *                            still clamp below this — the OpenAI-compatible
+ *                            provider holds a hard 16,000 per call — so this is
+ *                            the ceiling the harness asks for, not a promise
+ *                            about what a given model grants
  */
 public record SpectroConfig(
         String provider,
@@ -274,7 +288,81 @@ public record SpectroConfig(
         // sits where it does, one line up.
         int commandTimeoutSeconds,
         int chatReserveWidth,
-        int dockMaxWidth) {
+        int dockMaxWidth,
+        // Card 364, appended for the reason the three above were: FIELD_PROBES
+        // is pinned to this list's ORDER and every positional caller counts
+        // from the front.
+        int maxTokens) {
+
+    /**
+     * Compat: the pre-card-364 arity, which knew no completion budget. Every
+     * caller that built a config positionally keeps compiling and gets the
+     * shipped 32,000.
+     *
+     * @param provider            the backend id
+     * @param model               the model id
+     * @param baseUrl             the legacy per-provider endpoint override
+     * @param compactionThreshold input tokens that trigger compaction
+     * @param permissionMode      ask / auto / readonly
+     * @param autoApprove         tool names that skip the gate
+     * @param imageProvider       which backend draws
+     * @param thinking            whether reasoning is on
+     * @param mcpServers          the configured MCP servers
+     * @param maxRetries          provider retry count
+     * @param promptCaching       whether the provider caches prompts
+     * @param hooks               the configured shell hooks
+     * @param workspace           the pinned workspace, or null
+     * @param logLevel            the root log level
+     * @param imageModel          the image model id
+     * @param sttModel            the speech model id
+     * @param sttProvider         which backend transcribes
+     * @param sttLanguage         the dictation language
+     * @param chromeBinary        an explicit Chrome path
+     * @param otlpEndpoint        the OTLP collector
+     * @param otlpBasicAuth       its credentials
+     * @param ollamaBaseUrl       the ollama endpoint
+     * @param lmstudioBaseUrl     the LM Studio endpoint
+     * @param searxngUrl          the SearXNG instance
+     * @param allowLocalhost      whether the net fence allows loopback
+     * @param headlessMcp         whether an unattended run mounts MCP servers
+     * @param progressGuardWrites detector 1's count
+     * @param progressGuardFailures detector 2's count
+     * @param progressGuardPlanTurns detector 3's count
+     * @param continuationBudget  how often one run may be restarted
+     * @param maxTurns            the per-run turn ceiling
+     * @param llamacppBaseUrl     the llama.cpp endpoint
+     * @param questionsPerRun     how many questions one run may ask
+     * @param maxQuestionOptions  how many options one question may offer
+     * @param maxQuestionChars    how long one question may be
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth    the chat row the dock may never take
+     * @param dockMaxWidth        the widest the dock may be dragged
+     */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds,
+                         int chatReserveWidth, int dockMaxWidth) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
+                continuationBudget, maxTurns, llamacppBaseUrl,
+                questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth,
+                DEFAULT_MAX_TOKENS);
+    }
 
     /**
      * Compat: the pre-card-312 arity, which knew no llama.cpp address. Every
@@ -643,6 +731,24 @@ public record SpectroConfig(
      *  on the owner's own monitor.</p> */
     public static final int DEFAULT_DOCK_MAX_WIDTH = 1200;
 
+    /** The shipped {@code maxTokens}: 32,000 output tokens per provider call —
+     *  card 364 makes the number reachable and does not move it.
+     *
+     *  <p>A second copy of {@code Agent.DEFAULT_MAX_TOKENS} rather than an
+     *  import, for the reason {@link #DEFAULT_MAX_TURNS} carries one: {@code
+     *  Agent} reads this package, and the house answer to a restated number is
+     *  a test that goes and looks. {@code MaxTokensSettingTest} pins the two
+     *  together.</p>
+     *
+     *  <p><b>No ceiling here</b>, and that is deliberate in the same way
+     *  {@link #DEFAULT_COMMAND_TIMEOUT_SECONDS} carries none. The ceilings that
+     *  exist belong to the BACKENDS and are enforced where they are known: the
+     *  OpenAI-compatible provider clamps every request to its own hard 16,000,
+     *  and Anthropic's reasoning budget is derived to stay strictly below
+     *  whatever this number is. A second cap invented here would be a limit no
+     *  provider asked for, which is the shape card 364 exists to remove.</p> */
+    public static final int DEFAULT_MAX_TOKENS = 32_000;
+
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
         mcpServers = mcpServers == null ? List.of() : List.copyOf(mcpServers);
@@ -737,7 +843,9 @@ public record SpectroConfig(
             DEFAULT_MAX_QUESTION_CHARS,
             // Cards 359 and 361: the shell budget and the two dock widths, each
             // shipping the value it already had as an unreachable literal.
-            DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH, DEFAULT_DOCK_MAX_WIDTH);
+            DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH, DEFAULT_DOCK_MAX_WIDTH,
+            // Card 364: the number the harness has always spent, now reachable.
+            DEFAULT_MAX_TOKENS);
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -1071,7 +1179,7 @@ public record SpectroConfig(
                         base.questionsPerRun(), base.maxQuestionOptions(),
                         base.maxQuestionChars(),
                         base.commandTimeoutSeconds(), base.chatReserveWidth(),
-                        base.dockMaxWidth());
+                        base.dockMaxWidth(), base.maxTokens());
             }
         }
         return base;
@@ -1144,7 +1252,9 @@ public record SpectroConfig(
             // beside the fields they read best next to.
             new FieldProbe("commandTimeoutSeconds", p -> p.commandTimeoutSeconds),
             new FieldProbe("chatReserveWidth", p -> p.chatReserveWidth),
-            new FieldProbe("dockMaxWidth", p -> p.dockMaxWidth));
+            new FieldProbe("dockMaxWidth", p -> p.dockMaxWidth),
+            // Card 364 — appended last, same rule.
+            new FieldProbe("maxTokens", p -> p.maxTokens));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -1483,7 +1593,7 @@ public record SpectroConfig(
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
                 continuationBudget, maxTurns, llamacppBaseUrl,
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
-                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth);
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2320,6 +2430,8 @@ public record SpectroConfig(
         // Card 361: the two dock widths, in CSS pixels.
         public Integer chatReserveWidth;
         public Integer dockMaxWidth;
+        // Card 364: the completion budget one provider call may spend.
+        public Integer maxTokens;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -2380,6 +2492,7 @@ public record SpectroConfig(
             out.chatReserveWidth =
                     Optional.ofNullable(higher.chatReserveWidth).orElse(chatReserveWidth);
             out.dockMaxWidth = Optional.ofNullable(higher.dockMaxWidth).orElse(dockMaxWidth);
+            out.maxTokens = Optional.ofNullable(higher.maxTokens).orElse(maxTokens);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -2435,7 +2548,8 @@ public record SpectroConfig(
                     Optional.ofNullable(commandTimeoutSeconds)
                             .orElse(DEFAULTS.commandTimeoutSeconds()),
                     Optional.ofNullable(chatReserveWidth).orElse(DEFAULTS.chatReserveWidth()),
-                    Optional.ofNullable(dockMaxWidth).orElse(DEFAULTS.dockMaxWidth()));
+                    Optional.ofNullable(dockMaxWidth).orElse(DEFAULTS.dockMaxWidth()),
+                    Optional.ofNullable(maxTokens).orElse(DEFAULTS.maxTokens()));
         }
 
         /**

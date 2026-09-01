@@ -77,7 +77,9 @@ public final class SettingsWriter {
             // Card 359: the wall-clock budget one run_command call gets.
             "commandTimeoutSeconds",
             // Card 361: the two dock widths, which bind on different screens.
-            "chatReserveWidth", "dockMaxWidth");
+            "chatReserveWidth", "dockMaxWidth",
+            // Card 364: the completion budget, whose builder method had zero callers.
+            "maxTokens");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is

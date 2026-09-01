@@ -149,6 +149,13 @@ export const SETTING_REACH = {
   // wires them and classifies them in the same edit, which is the only way the
   // sentence and the code can arrive together.
   commandTimeoutSeconds: "next-session",
+  // Card 364: the completion budget one provider call may spend. Measured the
+  // same way maxTurns was, and it lands in the same place — Agent reads
+  // options.maxTokens() once per run (Agent.java's runLoop) and there is no
+  // setter, so a save reaches the next session and not this one. What changed
+  // with the card is not WHEN it lands but WHETHER: the builder method had zero
+  // callers anywhere, so the number was unreachable from every face at once.
+  maxTokens: "next-session",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

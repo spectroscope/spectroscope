@@ -297,8 +297,12 @@ public final class HeadlessRunner {
      * @param cwd         the tools' path sandbox (the job's cwd, or the process cwd for `run`)
      * @param autoApprove headless policy: true = approve every tool (auto),
      *                    false = deny every needsPermission tool (readonly)
-     * @param maxTurns    optional 1-based turn ceiling; null = unlimited. When a
-     *                    {@code turn_start} exceeds it, the run is cancelled from the outside
+     * @param maxTurns    this CALLER's own 1-based turn ceiling, cut from the
+     *                    outside when a {@code turn_start} exceeds it. Null means
+     *                    the caller sets none — <b>not</b> that the run is
+     *                    unlimited: since card 364 the agent is built with the
+     *                    configured {@code maxTurns}, so this parameter can only
+     *                    end a run EARLIER than the setting, never later
      * @param onEvent     called for every RunEvent (the `run` subcommand emits NDJSON here);
      *                    may be null
      * @param log         log sink (the core never prints); never null
@@ -318,7 +322,9 @@ public final class HeadlessRunner {
      * @param prompt        the task text
      * @param cwd           the tools' path sandbox for this run
      * @param autoApprove   headless policy: true approves every tool, false denies each request
-     * @param maxTurns      optional 1-based turn ceiling; null = unlimited
+     * @param maxTurns      this caller's own 1-based turn ceiling, cut from the
+     *                      outside; null = no ceiling from the caller, while the
+     *                      configured {@code maxTurns} still ends the run (card 364)
      * @param onEvent       called for every RunEvent; may be null
      * @param log           log sink (the core never prints); never null
      * @param providedStore the pre-minted session store, or null to mint a fresh one
@@ -433,6 +439,26 @@ public final class HeadlessRunner {
                 // never from model output, so it is exactly as trustworthy here
                 // as there, and the operator asked for it either way.
                 .hooks(HookRunner.load(config.hooks()))
+                // Card 364. `maxTurns` had a settings control, a doc row, a
+                // ReachBlock and a drift test, and ONE call site — the browser
+                // session. `spectro run`, every cron fire and every fleet node
+                // arrive here, and every one of them ran on the hardcoded
+                // default while the operator's number resolved perfectly and
+                // reached nothing. The CALLER's own ceiling (the `maxTurns`
+                // parameter, `--max-turns`) is a separate, outer brake and is
+                // deliberately NOT folded in here: it exists to cut a run
+                // shorter than the setting, and card 264 pinned that it fires
+                // from the outside, on the turn AFTER its limit.
+                .maxTurns(config.maxTurns())
+                // Same card: this builder method had zero callers anywhere, so
+                // every shipped run spent Agent.DEFAULT_MAX_TOKENS and nothing
+                // could change it.
+                .maxTokens(config.maxTokens())
+                // Not card 364's subject but exactly its shape, found by the
+                // same source-derived count: card 263 says an explicit
+                // threshold governs the whole tree, and this face was the one
+                // that never passed it. Null still lets the run derive it.
+                .compactionThreshold(config.compactionThreshold())
                 .build());
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
         // headless failure behaviour stays exactly the inline sink's. An

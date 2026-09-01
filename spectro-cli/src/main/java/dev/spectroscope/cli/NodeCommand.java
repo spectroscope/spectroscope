@@ -81,7 +81,8 @@ public final class NodeCommand implements Callable<Integer> {
     String permissions;
 
     @Option(names = "--max-turns",
-            description = "Cancel the run when a turn exceeds this 1-based limit.")
+            description = "Cancel the run when a turn exceeds this 1-based limit."
+                    + " It can end a run EARLIER than the configured maxTurns, never later.")
     Integer maxTurns;
 
     @Option(names = "--verbose", description = "Trace the agent<->provider protocol on stderr (cyan).")

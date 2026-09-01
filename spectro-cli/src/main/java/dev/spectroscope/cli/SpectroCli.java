@@ -687,6 +687,12 @@ public final class SpectroCli implements Runnable {
                 // card 263 AC 3: the operator's threshold governs the tree, not
                 // just its root — the same value the parent agent is built with
                 .compactionThreshold(config.compactionThreshold())
+                // card 364, the same argument for the two ceilings and for
+                // reasoning visibility: a child that stops at a number nobody
+                // typed is the settings page lying about its own reach
+                .maxTurns(config.maxTurns())
+                .maxTokens(config.maxTokens())
+                .thinking(thinking)
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -849,6 +855,12 @@ public final class SpectroCli implements Runnable {
                 // the CONTINUATION half multiplies a bill, and that half is
                 // already fenced by the leash being null here.
                 .goal(goal)
+                // Card 364: this face never passed either ceiling. `spectro`
+                // with no subcommand is the REPL, and its runs ended on
+                // Agent.DEFAULT_MAX_TURNS while the settings page showed a
+                // number that governed the browser session alone.
+                .maxTurns(config.maxTurns())
+                .maxTokens(config.maxTokens())
                 .onPermission(askOnTerminal)
                 .build());
     }

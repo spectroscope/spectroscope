@@ -1291,6 +1291,11 @@ public final class SessionConnection {
                 // card 263 AC 3: the same number the parent agent is built with
                 // below, so the operator's instruction governs the whole tree
                 .compactionThreshold(active.compactionThreshold())
+                // Card 364: the ceilings and the reasoning switch, for the same
+                // reason — the parent honoured maxTurns and its children did not
+                .maxTurns(active.maxTurns())
+                .maxTokens(active.maxTokens())
+                .thinking(thinking.get())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -1337,6 +1342,9 @@ public final class SessionConnection {
                 // paths, so a browser session ran on Agent.DEFAULT_MAX_TURNS with
                 // the settings key resolving perfectly and reaching nothing.
                 .maxTurns(active.maxTurns())
+                // Card 364: its sibling, which had zero call sites anywhere —
+                // public, documented, and unable to change a single run.
+                .maxTokens(active.maxTokens())
                 // Card 267: the goal, with the SHIPPED teeth — a command whose
                 // exit code is the verdict. The evaluator variant exists and is
                 // wired nowhere: on this house's own backend the judge would be

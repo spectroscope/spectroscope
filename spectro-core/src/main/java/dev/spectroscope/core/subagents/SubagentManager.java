@@ -381,6 +381,24 @@ public final class SubagentManager {
                 // operator who typed a threshold means it for the children too,
                 // and null still lets them derive it from the shared provider.
                 .compactionThreshold(config.compactionThreshold())
+                // Card 364, and the same argument card 263 makes one line up: a
+                // ceiling the operator typed governs the TREE. Until this card
+                // `.maxTurns(` had one caller in the whole repository and
+                // `.maxTokens(` had none, so a child ran on Agent's own two
+                // constants no matter what the settings page said. `thinking`
+                // joins them because a child's events are merged into the very
+                // stream the operator turned reasoning on to watch.
+                .maxTurns(config.maxTurns())
+                .maxTokens(config.maxTokens())
+                // Null-safe on purpose: the seam is nullable ("the parent said
+                // nothing") while the builder's setter is a primitive. Agent
+                // reads this as `Boolean.TRUE.equals(...) ? ON : DEFAULT`, so
+                // false and unset are the SAME state there and nothing is lost
+                // by folding one into the other here. Passing the Boolean
+                // straight through threw an unboxing NPE on every unconfigured
+                // spawn, which arrived as "ERROR: unexpected subagent failure"
+                // in the parent's tool result.
+                .thinking(Boolean.TRUE.equals(config.thinking()))
                 .build());
 
         StringBuilder lastTurnText = new StringBuilder();
