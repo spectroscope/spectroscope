@@ -441,6 +441,8 @@ final class EventRenderer {
             // Card 262: the guard watches one agent's loop; its observation is
             // attributed to that agent so a child's stall reads as the child's.
             case RunEvent.SettingsIgnored e -> null;
+            // Card 337: the operator's own play button, so no agent owns it.
+            case RunEvent.LaunchOutcome e -> null;
             case RunEvent.NoProgress e -> e.agentId();
             // Card 281: the decision answers one agent's stall, so it belongs to
             // that agent for the same reason the observation does.

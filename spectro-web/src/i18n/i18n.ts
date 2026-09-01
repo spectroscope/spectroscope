@@ -178,6 +178,24 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "{n} Einträge übersprungen — nicht als Konfiguration lesbar",
     en: "{n} entries skipped — not readable as configurations",
   },
+  // CARD 352: the operator writes one from here. Setting up "run my app and
+  // open it" was an editor task in a file he could not even see; the writer
+  // has existed since card 350 and nothing called it. The register stays card
+  // 228's — what the field is, in the file's own words, so the form and the
+  // file cannot be read as two different formats.
+  "browser.start.add": { de: "Konfiguration hinzufügen", en: "Add a configuration" },
+  "browser.start.form.name": { de: "Name", en: "Name" },
+  "browser.start.form.command": { de: "Befehl", en: "Command" },
+  "browser.start.form.args": { de: "Argumente (eins pro Zeile)", en: "Arguments (one per line)" },
+  "browser.start.form.port": { de: "Port", en: "Port" },
+  "browser.start.form.url": { de: "Adresse", en: "Address" },
+  "browser.start.form.save": { de: "Speichern", en: "Save" },
+  "browser.start.form.cancel": { de: "Abbrechen", en: "Cancel" },
+  "browser.start.form.hint": {
+    de: "Entweder ein Befehl mit Port, den spectroscope startet — oder nur eine Adresse, an die es sich hängt. Geschrieben wird immer .spectro/launch.json.",
+    en: "Either a command with a port, which spectroscope starts — or just an address, which it attaches to. It is always written to .spectro/launch.json.",
+  },
+  "browser.start.form.saved": { de: "Gespeichert in {file}", en: "Saved to {file}" },
   // Card 204 — the replay. The live pane is half a promise; these are the words
   // for the other half, and the empty state is the one that has to work hardest:
   // a session that never drove a browser and a session whose record was deleted

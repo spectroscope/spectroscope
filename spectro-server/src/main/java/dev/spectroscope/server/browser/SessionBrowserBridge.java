@@ -1,5 +1,6 @@
 package dev.spectroscope.server.browser;
 
+import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.launch.LaunchSupervisor;
 import dev.spectroscope.core.wire.BrowserWireTap;
 
@@ -10,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -40,15 +42,46 @@ public final class SessionBrowserBridge {
     /**
      * One live session's browser-side collaborators.
      *
+     * <p><b>{@code emit} is card 337's whole seam.</b> The view socket is the one
+     * place in a session where something happens and no {@link RunEvent} is
+     * written — a launch that failed used to end in a {@code launch_played} frame
+     * and a React {@code useState}, so the work panel, the trace, the export and
+     * the session's own file all learned nothing about it. A fourth component
+     * rather than a seventh parameter, deliberately: the canon's most expensive
+     * merge was two cards appending to one record in parallel, and this record is
+     * the seam two cards of this wave both touch.
+     *
      * @param tap        the session's sidecar recorder — never null; the
      *                   detached tap when the session records nothing
      * @param launches   what this session has running (card 202)
      * @param projectDir where the launch file is read from, resolved per call
      *                   because a workspace can be picked mid-session; may
      *                   answer null while the session has no folder
+     * @param emit       the session's file-then-socket road for one additive
+     *                   event — never null; a no-op for a session that keeps no
+     *                   record
      */
     public record Live(BrowserWireTap tap, LaunchSupervisor launches,
-                       Supplier<Path> projectDir) {}
+                       Supplier<Path> projectDir, Consumer<RunEvent> emit) {
+
+        /**
+         * The pre-337 shape, for a caller with nowhere to send an event.
+         *
+         * <p>Not a convenience: the CLI holds a supervisor and a project folder
+         * with no socket under it, and a test that measures the launch file's
+         * precedence has no business minting a session store to do it. What it
+         * must not become is a way for the SERVER to register a session whose
+         * launches go unrecorded, which is why the one production construction
+         * site passes four.
+         *
+         * @param tap        the session's sidecar recorder
+         * @param launches   what this session has running
+         * @param projectDir where the launch file is read from
+         */
+        public Live(BrowserWireTap tap, LaunchSupervisor launches, Supplier<Path> projectDir) {
+            this(tap, launches, projectDir, event -> { });
+        }
+    }
 
     private final Map<String, Live> sessions = new ConcurrentHashMap<>();
 

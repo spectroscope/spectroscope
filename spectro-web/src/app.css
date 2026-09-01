@@ -369,6 +369,109 @@
   border-color: var(--border);
 }
 
+/* CARD 352: the operator writes one from here. Tokens only, colour on the
+   hairline and never a fill — the house rule the whole surface keeps. The form
+   is a column of labelled fields rather than a row of bare inputs: five of them
+   fit in 52ch only by stacking, and a launch entry's fields are not
+   self-evident enough to go unlabelled. */
+.browser-start-add {
+  margin-top: 0.75rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.browser-start-add:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.browser-start-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.browser-start-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.browser-start-form input,
+.browser-start-form textarea {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.4rem;
+  resize: vertical;
+}
+
+.browser-start-form input:focus-visible,
+.browser-start-form textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.browser-start-formhint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.browser-start-formrow {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.browser-start-formrow button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.browser-start-formrow button:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+/* The writer's own refusal, which is the only validation on this road. It gets
+   the error hairline rather than a red fill, and it is never swallowed: a save
+   that logs and shows nothing is a silent no-op with a spinner. */
+.browser-start-savenotice {
+  margin: 0.5rem 0 0;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid var(--error);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.browser-start-savedto {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
 /* ---- the web face's live view (card 226) ---------------------------------
    The same frame and bar the desktop hole wears — a reader must not relearn
    the surface between faces. What differs: the bar grows controls (back,

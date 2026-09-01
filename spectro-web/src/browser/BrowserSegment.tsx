@@ -43,6 +43,7 @@ import {
   keyName,
   launchListFrame,
   launchPlayFrame,
+  launchSaveFrame,
   navigateFrame,
   parseViewMessage,
   screenshotFilename,
@@ -61,6 +62,7 @@ import {
   type ViewState,
   type WebFaceMode,
 } from "./liveView";
+import { entryFromDraft, EMPTY_DRAFT, type LaunchDraft, type NewLaunchEntry } from "./launchDraft";
 import { fenceNote, useLoopbackGate, type LoopbackGate } from "./fenceNote";
 import {
   isDesktopShell,
@@ -131,6 +133,13 @@ export function BrowserSegment(props: {
   // The start page's data (card 227), and which play button is mid-press.
   const [launch, setLaunch] = useState<LaunchList | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
+  // Card 352: the server's last word on a save. Its OWN sentence — the
+  // writer is the only validation on this road, and a refusal that only
+  // logs is a silent no-op with a spinner.
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+
+  /** Where the last save landed, for the page to word in the reader's language. */
+  const [savedTo, setSavedTo] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const cue = useBrowserActionCue();
   // What the footer needs to be true about THIS process rather than about
@@ -318,6 +327,19 @@ export function BrowserSegment(props: {
             // Whatever happened, the list's up/exited chips are stale now.
             socket?.send(JSON.stringify(launchListFrame(sessionId)));
             break;
+          case "launchSaved":
+            // Card 352, criterion 6: writing a file the operator cannot then
+            // see is worse than not writing it. The list is asked again on a
+            // success so the entry appears where he is already looking; on a
+            // refusal the writer's sentence goes where he typed.
+            // The REFUSAL travels as the server's own words; the success
+            // travels as a location and is worded by the component, because a
+            // sentence composed out here would be composed in whatever language
+            // the socket handler happened to close over.
+            setSaveNotice(msg.ok ? null : msg.sentence);
+            setSavedTo(msg.ok ? msg.location : null);
+            if (msg.ok) socket?.send(JSON.stringify(launchListFrame(sessionId)));
+            break;
         }
       };
       socket.onclose = () => {
@@ -380,6 +402,19 @@ export function BrowserSegment(props: {
     [sessionId, send],
   );
 
+  // Card 352: the operator's own pen. The entry goes over the SAME socket the
+  // play button uses, because it is the same authority — a person's hand on
+  // this machine — and no tool reaches it.
+  const onSave = useCallback(
+    (entry: NewLaunchEntry): void => {
+      if (sessionId === null) return;
+      setSaveNotice(null);
+      setSavedTo(null);
+      send(launchSaveFrame(sessionId, entry));
+    },
+    [sessionId, send],
+  );
+
   if (!inShell && sessionId !== null) {
     return (
       <WebFaceView
@@ -397,6 +432,9 @@ export function BrowserSegment(props: {
         send={send}
         onDraft={setDraft}
         onPlay={onPlay}
+        onSave={onSave}
+        saveNotice={saveNotice}
+        savedTo={savedTo}
       />
     );
   }
@@ -421,6 +459,9 @@ export function BrowserSegment(props: {
       send={send}
       onDraft={setDraft}
       onPlay={onPlay}
+      onSave={onSave}
+      saveNotice={saveNotice}
+      savedTo={savedTo}
       onShot={() => {
         if (sessionId !== null) send(screenshotVerbFrame(sessionId));
       }}
@@ -464,6 +505,15 @@ export interface WebFaceViewProps {
   send(frame: Record<string, unknown>): void;
   onDraft(next: string | null): void;
   onPlay(name: string): void;
+  /** Card 352: the operator writes a launch configuration from the start page.
+   *  Optional on the whole road down, so the two faces and every suite that
+   *  renders them keep working without it — and so the form appears in exactly
+   *  one place rather than being re-implemented per face. */
+  onSave?(entry: NewLaunchEntry): void;
+  /** The server's own refusal sentence, or null. */
+  saveNotice?: string | null;
+  /** The file the last save landed in, worded by the page. */
+  savedTo?: string | null;
 }
 
 /**
@@ -479,6 +529,7 @@ export interface WebFaceViewProps {
 export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
   const lang = useLang();
   const { sessionId, mode, url, draft, picture, notice, launch, playing, send, onDraft, onPlay } = props;
+  const { onSave, saveNotice, savedTo } = props;
   // Card 345: each face owns whether its launch menu is open. Not lifted —
   // the two faces are mutually exclusive per session, so a shared flag would be
   // one more thing that can disagree with what is on screen.
@@ -597,6 +648,9 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
           </>
         )}
         <LaunchMenu
+          onSave={onSave}
+          saveNotice={saveNotice}
+          savedTo={savedTo}
           launch={launch}
           playing={playing}
           onPlay={onPlay}
@@ -637,7 +691,14 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
           // The empty browser is the START PAGE (card 227): the session's
           // launch configurations, one play button each. Only where no page is
           // open at all — a page mid-cast keeps the idle sentence below.
-          <StartPage launch={launch} playing={playing} onPlay={onPlay} />
+          <StartPage
+            launch={launch}
+            playing={playing}
+            onPlay={onPlay}
+            onSave={onSave}
+            saveNotice={saveNotice}
+            savedTo={savedTo}
+          />
         ) : (
           <div className="browser-empty">
             {mode === "connecting" ? (
@@ -843,6 +904,15 @@ export function LaunchMenu(props: {
   launch: LaunchList | null;
   playing: string | null;
   onPlay(name: string): void;
+  /** Card 352: the operator writes a launch configuration from the start page.
+   *  Optional on the whole road down, so the two faces and every suite that
+   *  renders them keep working without it — and so the form appears in exactly
+   *  one place rather than being re-implemented per face. */
+  onSave?(entry: NewLaunchEntry): void;
+  /** The server's own refusal sentence, or null. */
+  saveNotice?: string | null;
+  /** The file the last save landed in, worded by the page. */
+  savedTo?: string | null;
   open: boolean;
   onOpenChange(open: boolean): void;
   /** Ask the server for the list again. Called each time the menu opens: the
@@ -852,6 +922,7 @@ export function LaunchMenu(props: {
 }): React.JSX.Element {
   const lang = useLang();
   const { launch, playing, onPlay, open, onOpenChange, onRefresh } = props;
+  const { onSave, saveNotice, savedTo } = props;
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -898,7 +969,14 @@ export function LaunchMenu(props: {
       </button>
       {open && (
         <div className="browser-launchmenu__pop" role="menu">
-          <StartPage launch={launch} playing={playing} onPlay={onPlay} />
+          <StartPage
+            launch={launch}
+            playing={playing}
+            onPlay={onPlay}
+            onSave={onSave}
+            saveNotice={saveNotice}
+            savedTo={savedTo}
+          />
         </div>
       )}
     </div>
@@ -909,9 +987,31 @@ export function StartPage(props: {
   launch: LaunchList | null;
   playing: string | null;
   onPlay(name: string): void;
+  /** Card 352: hand one new configuration to the server. Optional so every
+   *  existing mount and every suite that renders this page keeps working —
+   *  without it the page is exactly what it was, list and all. */
+  onSave?(entry: NewLaunchEntry): void;
+  /** The form's initial open state. A prop rather than only internal state so
+   *  this suite can read the open form's markup; this folder renders static
+   *  markup and drives no events. */
+  formOpen?: boolean;
+  /** The server's last word on a save — its refusal, or where the entry went.
+   *  The writer's guards are the only validation on this road, so its sentence
+   *  has to arrive somewhere the operator is looking. */
+  saveNotice?: string | null;
+  /** The file the last save landed in — worded here rather than by the socket
+   *  handler, which would compose a sentence in whatever language it closed
+   *  over. */
+  savedTo?: string | null;
 }): React.JSX.Element {
   const lang = useLang();
-  const { launch, playing, onPlay } = props;
+  const { launch, playing, onPlay, onSave, saveNotice, savedTo } = props;
+  const [open, setOpen] = useState(props.formOpen === true);
+  const [draft, setDraft] = useState<LaunchDraft>(EMPTY_DRAFT);
+  const field =
+    (key: keyof LaunchDraft) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void =>
+      setDraft({ ...draft, [key]: event.target.value });
   return (
     <div className="browser-start">
       <h2>{t(lang, "browser.start.heading")}</h2>
@@ -979,6 +1079,66 @@ export function StartPage(props: {
           {t(lang, "browser.start.shadowed", { file: launch.shadowed.join(", ") })}
         </p>
       )}
+      {/* CARD 352. The writer has existed since card 350 and had no caller at
+          all, so the product could write a launch file and never did. This is
+          the caller, and it is the OPERATOR's — no tool reaches the same road,
+          which is criterion 1 and still the owner's to decide. */}
+      {onSave !== undefined && !open && (
+        <button type="button" className="browser-start-add" onClick={() => setOpen(true)}>
+          {t(lang, "browser.start.add")}
+        </button>
+      )}
+      {onSave !== undefined && open && (
+        <form
+          className="browser-start-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave(entryFromDraft(draft));
+          }}
+        >
+          <label>
+            {t(lang, "browser.start.form.name")}
+            <input value={draft.name} onChange={field("name")} spellCheck={false} autoComplete="off" />
+          </label>
+          <label>
+            {t(lang, "browser.start.form.command")}
+            <input value={draft.command} onChange={field("command")} spellCheck={false} autoComplete="off" />
+          </label>
+          <label>
+            {t(lang, "browser.start.form.args")}
+            <textarea value={draft.args} onChange={field("args")} spellCheck={false} rows={3} />
+          </label>
+          <label>
+            {t(lang, "browser.start.form.port")}
+            <input value={draft.port} onChange={field("port")} inputMode="numeric" autoComplete="off" />
+          </label>
+          <label>
+            {t(lang, "browser.start.form.url")}
+            <input value={draft.url} onChange={field("url")} spellCheck={false} autoComplete="off" />
+          </label>
+          <p className="browser-start-formhint">{t(lang, "browser.start.form.hint")}</p>
+          <div className="browser-start-formrow">
+            <button type="submit">{t(lang, "browser.start.form.save")}</button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setDraft(EMPTY_DRAFT);
+              }}
+            >
+              {t(lang, "browser.start.form.cancel")}
+            </button>
+          </div>
+        </form>
+      )}
+      {saveNotice !== undefined && saveNotice !== null && (
+        <p className="browser-start-savenotice" role="alert">
+          {saveNotice}
+        </p>
+      )}
+      {savedTo !== undefined && savedTo !== null && (
+        <p className="browser-start-savedto">{t(lang, "browser.start.form.saved", { file: savedTo })}</p>
+      )}
     </div>
   );
 }
@@ -1012,6 +1172,15 @@ export interface DesktopFaceViewProps {
   send(frame: Record<string, unknown>): void;
   onDraft(next: string | null): void;
   onPlay(name: string): void;
+  /** Card 352: the operator writes a launch configuration from the start page.
+   *  Optional on the whole road down, so both faces and every suite that renders
+   *  them keep working without it — and so the form lives in exactly one place
+   *  rather than being re-implemented per face. */
+  onSave?(entry: NewLaunchEntry): void;
+  /** The server's own refusal sentence, or null. */
+  saveNotice?: string | null;
+  /** The file the last save landed in, worded by the page. */
+  savedTo?: string | null;
   /** The screenshot control — the shot rides the wire back (saveWireShot). */
   onShot(): void;
 }
@@ -1026,6 +1195,7 @@ export interface DesktopFaceViewProps {
 export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element {
   const lang = useLang();
   const { state, floored, sessionId, url, draft, notice, launch, playing } = props;
+  const { onSave, saveNotice, savedTo } = props;
   // Card 345, this face's own — see the note on the web face.
   const [launchOpen, setLaunchOpen] = useState(false);
   const attached = state === "attached" && sessionId !== null;
@@ -1060,6 +1230,9 @@ export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element 
           </span>
         )}
         <LaunchMenu
+          onSave={onSave}
+          saveNotice={saveNotice}
+          savedTo={savedTo}
           launch={launch}
           playing={playing}
           onPlay={props.onPlay}
@@ -1091,7 +1264,14 @@ export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element 
         {attached && !floored && url === null && (
           // No page open, so the pane is hidden and this hole is really
           // visible: the start page stands where the emptiness stood.
-          <StartPage launch={launch} playing={playing} onPlay={props.onPlay} />
+          <StartPage
+            launch={launch}
+            playing={playing}
+            onPlay={props.onPlay}
+            onSave={onSave}
+            saveNotice={saveNotice}
+            savedTo={savedTo}
+          />
         )}
       </div>
       {notice !== null && (

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.config.governing.Governs;
+import dev.spectroscope.core.launch.LaunchFile;
 import dev.spectroscope.core.tools.Tool.ToolContext;
 
 import java.io.File;
@@ -244,6 +245,53 @@ public final class StandardTools {
             throw new IOException("path is outside the working directory: " + relative);
         }
         return resolved;
+    }
+
+    /**
+     * The one file on this belt that an agent may not author (card 352).
+     *
+     * <p><b>Why this file and no other.</b> Everything else a write tool touches
+     * is data; a launch configuration is a program. {@code runtimeExecutable} is
+     * a free string, and the next press of play runs it as this user on this
+     * machine — the reason {@code launch_start} is rated {@code eval-execute},
+     * the same tier as {@code run_command}, and the reason the product's own
+     * writer is unreachable from any tool. That guard was a bolt on a door with a
+     * hole in the wall beside it: measured on 2026-09-01, {@code write_file}
+     * created {@code .spectro/launch.json} without a murmur and {@code edit_file}
+     * changed an entry's command. The refusal card 352 asked for was by OMISSION.
+     *
+     * <p><b>Both tools, not one.</b> {@code edit_file} can turn an existing
+     * entry's executable into anything at all — the whole of the danger with none
+     * of the effort — so a guard on {@code write_file} alone would be the kind of
+     * fix that reads as done.
+     *
+     * <p><b>What this is NOT.</b> It is not a rule about {@code .spectro}: an
+     * agent still writes settings, skills and notes there, gated the ordinary
+     * way. It is not a claim that a determined model cannot reach the same
+     * effect, because {@code run_command} exists behind the same prompt. It ends
+     * the case where authoring a launch entry looks exactly like writing any
+     * other text file, which is how it would happen by accident.
+     *
+     * <p>The question is asked of {@link LaunchFile}, which already owns where a
+     * launch file lives; a second copy of those two locations here is the shape
+     * this repository has been bitten by twice.
+     *
+     * @param cwd  the sandbox root
+     * @param file the path the tool resolved — the raw argument would be defeated
+     *             by {@code docs/../.spectro/launch.json}
+     * @param tool the tool's wire name, for the sentence
+     * @return the refusal a model reads, or null when this is an ordinary file
+     */
+    private static String refuseLaunchFile(Path cwd, Path file, String tool) {
+        String location = LaunchFile.locationOf(cwd, file);
+        if (location == null) {
+            return null;
+        }
+        return "ERROR: " + tool + " will not author " + location
+                + " — a launch configuration names a program spectroscope will run on this"
+                + " machine, under this account, the next time somebody presses play. That"
+                + " file is the operator's to write, through the app or in his own editor."
+                + " Ask him for the entry you want; every other file here is yours.";
     }
 
     /**
@@ -492,6 +540,10 @@ public final class StandardTools {
                     String relative = input.path("path").asText();
                     String content = input.path("content").asText();
                     Path file = resolveInside(context.cwd(), relative); // path sandbox
+                    String launch = refuseLaunchFile(context.cwd(), file, "write_file");
+                    if (launch != null) {
+                        return launch;
+                    }
                     byte[] next = content.getBytes(StandardCharsets.UTF_8);
                     // Card 269: look at what is there ONCE, before writing over
                     // it, against the bytes already in hand.
@@ -601,6 +653,10 @@ public final class StandardTools {
                         return "ERROR: old_string must be non-empty (use write_file to create a file).";
                     }
                     Path file = resolveInside(context.cwd(), relative); // path sandbox
+                    String launch = refuseLaunchFile(context.cwd(), file, "edit_file");
+                    if (launch != null) {
+                        return launch;
+                    }
                     long size = Files.size(file);
                     if (size > MAX_FILE_BYTES) {
                         return "ERROR: file too large (" + size + " bytes, limit " + MAX_FILE_BYTES + ").";
