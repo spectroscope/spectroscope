@@ -3087,6 +3087,32 @@ export const dict: Record<string, { de: string; en: string }> = {
       '"{key}" was ignored: a workspace folder may not set it, so the whole file is ' +
       "dropped. Some of what that file asked for is not set anywhere else. {hint}",
   },
+  // Card 369: the same refusal, per key. The two lines above are the sentences
+  // of the era when one forbidden key cost the whole file — they stay for
+  // sessions recorded then, and they are not rewritten, because a line replayed
+  // from a session that really did lose its file must not be told it kept
+  // something. The two below are what a reading taken since says, and they name
+  // BOTH halves. The owner reported the old sentence twice: it explained the
+  // RULE ("a workspace folder may not set it, so the whole file is dropped")
+  // and never once said what he still had.
+  "info.settingsKeyDropped": {
+    de:
+      '"{key}" wurde übergangen: Ein Workspace-Ordner darf das nicht setzen. Der ' +
+      "Rest der Datei gilt: {kept}. {hint}",
+    en:
+      '"{key}" was skipped: a workspace folder may not set it. The rest of that ' +
+      "file applies: {kept}. {hint}",
+  },
+  // The same, for a file whose only key was the forbidden one — "the rest of
+  // that file applies: " with nothing after it reads like a truncation.
+  "info.settingsKeyDroppedOnly": {
+    de:
+      '"{key}" wurde übergangen: Ein Workspace-Ordner darf das nicht setzen. Mehr ' +
+      "stand in der Datei nicht. {hint}",
+    en:
+      '"{key}" was skipped: a workspace folder may not set it. That file set ' +
+      "nothing else. {hint}",
+  },
 
   // Cards 281 and 282: the run's three self-reports, one sentence per value.
   //

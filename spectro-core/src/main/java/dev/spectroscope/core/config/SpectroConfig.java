@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -954,7 +955,109 @@ public record SpectroConfig(
      *                {@code "flags"}); a scope that set nothing at all is
      *                simply absent from the map, never present as {@code {}}
      */
-    public record Resolved(SpectroConfig config, Map<String, Origin> origins, Map<String, JsonNode> layers) {}
+    public record Resolved(SpectroConfig config, Map<String, Origin> origins,
+            Map<String, JsonNode> layers, List<ScopeReport> reports) {
+        /** Pre-card-369 shape, for every caller that does not read the report.
+         *  @param config the effective configuration
+         *  @param origins where each field came from
+         *  @param layers the raw layers */
+        public Resolved(SpectroConfig config, Map<String, Origin> origins, Map<String, JsonNode> layers) {
+            this(config, origins, layers, List.of());
+        }
+
+        /** The first scope that had to give something up, or an empty report.
+         *
+         *  <p>A workspace has TWO scopes ({@code settings.json} and
+         *  {@code settings.local.json}) and both can name a forbidden key, so
+         *  the honest answer is {@link #reports()} and this is a convenience for
+         *  the callers that construct one file. An earlier draft of this card
+         *  had a single {@code report} field assigned
+         *  {@code project.isEmpty() ? local : project} — which silently drops
+         *  the local file's refusal whenever both files have one, and telling an
+         *  operator about one of his two files is the same defect this card was
+         *  cut to fix.</p>
+         *
+         *  @return the first non-empty report, else an empty one */
+        public ScopeReport report() {
+            for (ScopeReport r : reports) {
+                if (!r.isEmpty()) {
+                    return r;
+                }
+            }
+            return ScopeReport.nothingDropped();
+        }
+    }
+
+    /**
+     * What a workspace scope had to give up, and what it kept (card 369).
+     *
+     * <p>Before this card a workspace file naming ONE process-global key lost
+     * ALL of itself. The owner's own file was
+     * {@code { "permissionMode": "auto", "allowLocalhost": true }}: the second
+     * key is one of nine a workspace scope may not set, so the first — which it
+     * may — never applied, and his runs asked where he had written auto.</p>
+     *
+     * <p>The rule has not moved. All nine stay forbidden and
+     * {@link #workspaceScopeForbiddenKeys()} is still the one source this reader
+     * and {@code SettingsWriter} both consult. What changed is the blast radius:
+     * the key is dropped, the file is kept, and BOTH halves are named — a notice
+     * that explains the rule without saying what was lost is what sent the owner
+     * back a second time.</p>
+     *
+     * @param dropped the forbidden keys this scope asked for, in list order
+     * @param kept    the keys it asked for that still apply
+     * @param file    the file they came from, or null when nothing was dropped
+     */
+    public record ScopeReport(List<String> dropped, List<String> kept, String file,
+            List<WorkspaceScopeRefused> refusals) {
+        /** Pre-refusal-list shape.
+         *  @param dropped the forbidden keys
+         *  @param kept    what still applies
+         *  @param file    where they came from */
+        public ScopeReport(List<String> dropped, List<String> kept, String file) {
+            this(dropped, kept, file, List.of());
+        }
+
+        /** The ordinary case: a workspace file that broke no rule.
+         *  @return a report naming nothing */
+        public static ScopeReport nothingDropped() {
+            return new ScopeReport(List.of(), List.of(), null, List.of());
+        }
+
+        /** The one refusal, for the common case of a file with a single
+         *  forbidden key — the shape card 354's pricing tests read.
+         *  @return the first refusal
+         *  @throws IllegalStateException when nothing was refused */
+        public WorkspaceScopeRefused only() {
+            if (refusals.isEmpty()) {
+                throw new IllegalStateException("nothing was refused in " + file);
+            }
+            return refusals.get(0);
+        }
+
+        /** @return whether anything was refused at all */
+        public boolean isEmpty() {
+            return dropped.isEmpty();
+        }
+    }
+
+    /**
+     * What the workspace scopes had to give up on this read (card 369).
+     *
+     * <p>ONE read, the same one that produces the config — not a second pass.
+     * Card 354's note argues that point about its own reading and it holds here
+     * for the same reason: a second read of four files answers about a slightly
+     * later moment, and a notice that describes a different moment than the run
+     * is worse than none.</p>
+     *
+     * @param projectDir the launch directory
+     * @param workspace  the resolved workspace, or null to skip its scopes
+     * @param env        the environment layer
+     * @return what was dropped and what was kept
+     */
+    public static ScopeReport reportFor(Path projectDir, Path workspace, Map<String, String> env) {
+        return loadResolved(Overrides.none(), projectDir, workspace, env).report();
+    }
 
     /** Convenience loader: the project layer resolves at the current working directory.
      *  @param overrides the CLI layer — null fields defer to the hierarchy below
@@ -1009,6 +1112,30 @@ public record SpectroConfig(
      */
     public static SpectroConfig loadForWorkspace(Overrides overrides, Path projectDir, Path workspace) {
         return load(overrides, projectDir, workspace, System.getenv());
+    }
+
+    /**
+     * The same read, with what the workspace scopes had to give up (card 369).
+     *
+     * <p>ONE read, and that is the whole reason this overload exists rather than
+     * a second call beside the first. Card 354 made the same argument about its
+     * own pricing: the loader is the only place that holds the allowed scopes
+     * AND everything the folder asked for at the same moment, and a second read
+     * of four files answers about a slightly later one.</p>
+     *
+     * <p>Before this card the caller learned of a refusal by CATCHING one, which
+     * is why the notice's two call sites are both {@code catch} blocks. Nothing
+     * throws for a process-global key any more, so a caller that wants to tell
+     * the operator has to ask.</p>
+     *
+     * @param overrides  the CLI layer
+     * @param projectDir the launch directory
+     * @param workspace  the resolved workspace
+     * @return the effective config alongside the report
+     */
+    public static Resolved loadForWorkspaceWithReport(Overrides overrides, Path projectDir,
+            Path workspace) {
+        return loadResolved(overrides, projectDir, workspace, System.getenv());
     }
 
     /** Visible for tests: the workspace layer is injectable alongside the
@@ -1081,6 +1208,7 @@ public record SpectroConfig(
         // was refused for. It still joins the fold last, so precedence is
         // unchanged.
         Scope flags = new Scope("flags", PartialConfig.fromOverrides(overrides));
+        List<ScopeReport> reports = new ArrayList<>();
         if (workspace != null) {
             Path wsProjectFile = workspace.resolve(PROJECT_SETTINGS);
             Path wsLocalFile = workspace.resolve(WS_LOCAL_SETTINGS);
@@ -1088,8 +1216,13 @@ public record SpectroConfig(
             PartialConfig wsLocal = readFile(wsLocalFile);
             List<Scope> allowed = new ArrayList<>(scopes);
             allowed.add(flags);
-            rejectProcessGlobals(wsProject, wsProjectFile, allowed);
-            rejectProcessGlobals(wsLocal, wsLocalFile, allowed);
+            // Card 369: strip, do not throw. One forbidden key used to cost the
+            // whole file, so a legal setting beside it never applied.
+            // BOTH, and in fold order: a workspace has two scopes and each can
+            // name a forbidden key. Keeping only one of them tells the operator
+            // about one of his two files.
+            reports.add(stripProcessGlobals(wsProject, wsProjectFile, allowed));
+            reports.add(stripProcessGlobals(wsLocal, wsLocalFile, allowed));
             scopes.add(new Scope("project", wsProject));
             scopes.add(new Scope("local", wsLocal));
         }
@@ -1134,7 +1267,7 @@ public record SpectroConfig(
                 layers.put(scope.name(), node);
             }
         }
-        return new Resolved(config, origins, layers);
+        return new Resolved(config, origins, layers, List.copyOf(reports));
     }
 
     /** First-boot seed: when NO user file exists (neither settings.json nor the
@@ -1327,7 +1460,7 @@ public record SpectroConfig(
      * @param hint  where the key belongs instead, and why it may not live here
      */
     private record ProcessGlobal(String key, Function<PartialConfig, Object> get,
-            String rule, String hint) {
+            Consumer<PartialConfig> clear, String rule, String hint) {
     }
 
     /**
@@ -1345,15 +1478,15 @@ public record SpectroConfig(
      * with no way to look it up.</p>
      */
     private static final List<ProcessGlobal> WORKSPACE_SCOPE_FORBIDDEN = List.of(
-            new ProcessGlobal("workspace", p -> p.workspace,
+            new ProcessGlobal("workspace", p -> p.workspace, p -> p.workspace = null,
                     "is not allowed in a workspace scope",
                     "a folder must not point the agent at a different folder."),
-            new ProcessGlobal("logLevel", p -> p.logLevel,
+            new ProcessGlobal("logLevel", p -> p.logLevel, p -> p.logLevel = null,
                     "is process-global and not allowed in a workspace scope",
                     "set it in ~/.spectro/settings.json or SPECTRO_LOG_LEVEL."),
             // Card 199, review finding F4: the workspace is the agent's own cwd,
             // and write_file writes into it.
-            new ProcessGlobal("allowLocalhost", p -> p.allowLocalhost,
+            new ProcessGlobal("allowLocalhost", p -> p.allowLocalhost, p -> p.allowLocalhost = null,
                     "is process-global and not allowed in a workspace scope",
                     "the net fence's opt-in belongs in ~/.spectro/settings.json or "
                             + "SPECTRO_ALLOW_LOCALHOST, not in a folder the agent writes into."),
@@ -1363,7 +1496,7 @@ public record SpectroConfig(
             // the launch of a binary the agent chose — and card 222 shortened
             // the reach of a planted file from the next session to the next
             // tool call.
-            new ProcessGlobal("chromeBinary", p -> p.chromeBinary,
+            new ProcessGlobal("chromeBinary", p -> p.chromeBinary, p -> p.chromeBinary = null,
                     "is process-global and not allowed in a workspace scope",
                     "the browser binary browse_page launches belongs in "
                             + "~/.spectro/settings.json or SPECTRO_CHROME, not in a folder the "
@@ -1373,7 +1506,7 @@ public record SpectroConfig(
             // web_search GETs with the loopback opt-in still off. The settings
             // page writes it to the USER scope, so refusing it here costs an
             // operator nothing.
-            new ProcessGlobal("searxngUrl", p -> p.searxngUrl,
+            new ProcessGlobal("searxngUrl", p -> p.searxngUrl, p -> p.searxngUrl = null,
                     "is process-global and not allowed in a workspace scope",
                     "the instance web_search dials belongs in ~/.spectro/settings.json or "
                             + "SPECTRO_SEARXNG_URL, not in a folder the agent writes into."),
@@ -1383,7 +1516,7 @@ public record SpectroConfig(
             // there could be flipped by one auto-approved write_file — and the
             // next cron fire in that workspace would mount every configured
             // server with nobody watching.
-            new ProcessGlobal("headlessMcp", p -> p.headlessMcp,
+            new ProcessGlobal("headlessMcp", p -> p.headlessMcp, p -> p.headlessMcp = null,
                     "is process-global and not allowed in a workspace scope",
                     "the headless MCP opt-in belongs in ~/.spectro/settings.json or "
                             + "SPECTRO_HEADLESS_MCP, not in a folder the agent writes into."),
@@ -1393,17 +1526,17 @@ public record SpectroConfig(
             // is the off value, a workspace is the folder the agent writes into,
             // and the loop that wrote the same file thirty-one times could have
             // ended that inspection by writing a thirty-second.
-            new ProcessGlobal("progressGuardWrites", p -> p.progressGuardWrites,
+            new ProcessGlobal("progressGuardWrites", p -> p.progressGuardWrites, p -> p.progressGuardWrites = null,
                     "is process-global and not allowed in a workspace scope",
                     "the progress guard's counts belong in ~/.spectro/settings.json, not in "
                             + "a folder the agent writes into — a workspace that can set them "
                             + "to zero can disarm the guard watching it."),
-            new ProcessGlobal("progressGuardFailures", p -> p.progressGuardFailures,
+            new ProcessGlobal("progressGuardFailures", p -> p.progressGuardFailures, p -> p.progressGuardFailures = null,
                     "is process-global and not allowed in a workspace scope",
                     "the progress guard's counts belong in ~/.spectro/settings.json, not in "
                             + "a folder the agent writes into — a workspace that can set them "
                             + "to zero can disarm the guard watching it."),
-            new ProcessGlobal("progressGuardPlanTurns", p -> p.progressGuardPlanTurns,
+            new ProcessGlobal("progressGuardPlanTurns", p -> p.progressGuardPlanTurns, p -> p.progressGuardPlanTurns = null,
                     "is process-global and not allowed in a workspace scope",
                     "the progress guard's counts belong in ~/.spectro/settings.json, not in "
                             + "a folder the agent writes into — a workspace that can set them "
@@ -1432,35 +1565,81 @@ public record SpectroConfig(
      *  asking later would re-read the files and could answer about a different
      *  moment.</p>
      *
-     *  <p><b>The reading is about the FILE, not about the key that tripped it.</b>
-     *  The throw below leaves on the first forbidden key and abandons the whole
-     *  scope, so a settings file's OTHER keys are dropped with it and never
-     *  reach the fold. A per-key reading therefore prices the wrong thing: the
-     *  owner's own ForgeDemo scope asks for {@code allowLocalhost}, which his
-     *  user scope carries anyway, AND for {@code permissionMode}, which nothing
-     *  else sets — priced per key that refusal reads as free and its notice is
-     *  worth suppressing, while he silently loses his permission mode. So
-     *  {@link #nothingIsLost} walks every field the refused scope set, each one
-     *  through its own {@link #FIELD_PROBES} probe, and {@code inForce} is true
-     *  only when dropping this file changes nothing at all.</p>
+     *  <p><b>Card 369 made the reading per KEY, and it had to.</b> Card 354's
+     *  argument for a file-sized reading was sound while the file was what the
+     *  refusal took: the owner's own ForgeDemo scope asks for
+     *  {@code allowLocalhost}, which his user scope carries anyway, AND for
+     *  {@code permissionMode}, which nothing else sets — priced per key back
+     *  then, the refusal read as free and its notice looked worth suppressing
+     *  while he silently lost his permission mode. That is why the whole file
+     *  was priced. The forbidden key alone goes now, so {@code permissionMode}
+     *  reaches the run, and pricing it as lost would raise an alarm about a
+     *  setting that is in force — the same "told two different things" that
+     *  sent him back twice, only in the other direction.</p>
      *
-     *  @param scope   the parsed workspace-scope layer (project or local)
-     *  @param file    the file it was read from, named in the thrown message
+     *  <p>{@link #FIELD_PROBES} is still the derivation, and still not a hand
+     *  list ({@code KnownKeysDriftTest} holds it): it walks the scope AFTER the
+     *  strip to name the keys that DID apply, which is the half the sentence
+     *  never had before this card.</p>
+     *
+     *  @param scope   the parsed workspace-scope layer (project or local),
+     *                 cleared of its forbidden keys in place
+     *  @param file    the file it was read from, named in the report
      *  @param allowed the layers that ARE allowed to carry these keys, in
      *                 ascending precedence — the last one to set a key wins it
-     *  @throws WorkspaceScopeRefused when the scope sets a forbidden field */
-    private static void rejectProcessGlobals(PartialConfig scope, Path file, List<Scope> allowed) {
+     *  @return what this scope gave up, what it kept, and one priced refusal
+     *          per dropped key */
+    private static ScopeReport stripProcessGlobals(PartialConfig scope, Path file,
+            List<Scope> allowed) {
+        List<ProcessGlobal> present = new ArrayList<>();
         for (ProcessGlobal forbidden : WORKSPACE_SCOPE_FORBIDDEN) {
-            Object wanted = forbidden.get().apply(scope);
-            if (wanted != null) {
-                boolean free = nothingIsLost(scope, allowed);
-                String carrier = carrierOf(forbidden.get(), wanted, allowed);
-                throw new WorkspaceScopeRefused(forbidden.key(), file.toString(),
-                        forbidden.hint(), free, free ? carrier : null,
-                        "\"" + forbidden.key() + "\" " + forbidden.rule()
-                                + " (" + file + ") — " + forbidden.hint());
+            if (forbidden.get().apply(scope) != null) {
+                present.add(forbidden);
             }
         }
+        // Card 369's reshaped question, asked once for the whole scope and read
+        // per key below: which of the keys this file gives up is unheld
+        // elsewhere. Card 354 asked "is this refusal free" of the FILE; that
+        // question had a file-sized answer only because the file used to go.
+        List<String> lost = whatIsLost(scope, present, allowed);
+        List<String> dropped = new ArrayList<>();
+        List<WorkspaceScopeRefused> refusals = new ArrayList<>();
+        for (ProcessGlobal forbidden : present) {
+            Object wanted = forbidden.get().apply(scope);
+            if (wanted != null) {
+                // Card 354's pricing, computed BEFORE the strip — reading it
+                // after the clear would price a file nobody has — but asked per
+                // KEY now rather than per file. Card 354 asked it about the
+                // whole file for a reason that card 369 removed: the refusal
+                // used to leave on the first forbidden key and abandon the
+                // scope, so an ordinary setting beside it went down unmentioned
+                // and had to be priced with it. It does not go down any more,
+                // and pricing it as lost would raise an alarm about a key that
+                // is in force — the same "told two different things" the owner
+                // was told twice.
+                String carrier = carrierOf(forbidden.get(), wanted, allowed);
+                boolean free = !lost.contains(forbidden.key());
+                refusals.add(new WorkspaceScopeRefused(forbidden.key(), file.toString(),
+                        forbidden.hint(), free, free ? carrier : null,
+                        "\"" + forbidden.key() + "\" " + forbidden.rule()
+                                + " (" + file + ") — " + forbidden.hint()));
+                dropped.add(forbidden.key());
+                forbidden.clear().accept(scope);
+            }
+        }
+        if (dropped.isEmpty()) {
+            return ScopeReport.nothingDropped();
+        }
+        // What the file still gets, named — because a notice that explains the
+        // rule and not the outcome is what sent the owner back a second time.
+        List<String> kept = new ArrayList<>();
+        for (FieldProbe probe : FIELD_PROBES) {
+            if (probe.get().apply(scope) != null) {
+                kept.add(probe.name());
+            }
+        }
+        return new ScopeReport(List.copyOf(dropped), List.copyOf(kept), file.toString(),
+                List.copyOf(refusals));
     }
 
     /** Whether dropping the refused scope costs the operator nothing: every
@@ -1480,14 +1659,16 @@ public record SpectroConfig(
      *  @param refused the parsed workspace scope that is about to be thrown away
      *  @param allowed the allowed layers, ascending
      *  @return true when nothing this scope asked for is being lost */
-    private static boolean nothingIsLost(PartialConfig refused, List<Scope> allowed) {
-        for (FieldProbe probe : FIELD_PROBES) {
-            Object wanted = probe.get().apply(refused);
-            if (wanted != null && carrierOf(probe.get(), wanted, allowed) == null) {
-                return false;
+    private static List<String> whatIsLost(PartialConfig refused, List<ProcessGlobal> dropped,
+            List<Scope> allowed) {
+        List<String> lost = new ArrayList<>();
+        for (ProcessGlobal forbidden : dropped) {
+            Object wanted = forbidden.get().apply(refused);
+            if (wanted != null && carrierOf(forbidden.get(), wanted, allowed) == null) {
+                lost.add(forbidden.key());
             }
         }
-        return true;
+        return List.copyOf(lost);
     }
 
     /** The allowed layer that already carries {@code wanted} for one field, or

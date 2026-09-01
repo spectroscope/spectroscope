@@ -500,8 +500,12 @@ local verify loop is not opted in (set allowLocalhost in the settings to reach
 it on purpose) (rule: loopback). The address it was given: http://localhost:5173/.
 ```
 
-To turn it on, put it in the settings — `~/.spectro/settings.json`, or the
-project's own settings file:
+To turn it on, put it in the USER settings — `~/.spectro/settings.json`. Not a
+project's own settings file: `allowLocalhost` is process-global, a workspace
+scope may not set it, and the loader skips the key if one does (it says so, and
+the file's other keys still apply). The reason is card 199's: a workspace is a
+folder the agent writes into, so the net fence's only switch must not live
+inside the sandbox it guards.
 
 ```json
 { "allowLocalhost": true }

@@ -218,8 +218,9 @@ the part that had to be decided rather than fallen into — refusing to start
 would have been tidier code and a worse product, leaving a reader with no
 server, no logs, and a fence message about an address nothing is listening on.
 
-Turn it on the same way `browser_navigate` needs it — `~/.spectro/settings.json`
-or the project's own settings:
+Turn it on the same way `browser_navigate` needs it, and in the same place —
+`~/.spectro/settings.json`, never a project's own settings file. The key is
+process-global; a workspace scope that names it has that key skipped:
 
 ```json
 { "allowLocalhost": true }

@@ -83,9 +83,19 @@ public final class SettingsWriter {
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
-     *  the write side of the rule {@code SpectroConfig.rejectProcessGlobals}
+     *  the write side of the rule {@code SpectroConfig.stripProcessGlobals}
      *  enforces when READING a workspace scope, and it is deliberately the same
      *  list object rather than a copy of it.
+     *
+     *  <p><b>The write refuses the whole patch; the read skips the one key.</b>
+     *  Card 369 decided that asymmetry rather than inheriting it. A patch has
+     *  not landed yet, so refusing it entire and naming the key costs the
+     *  operator one correction and stops him laying down a file that would be
+     *  read partially ever after. A file on disk has landed, and refusing it
+     *  entire costs him keys he typed correctly. Both sides read the same list
+     *  object, and {@link #patch}'s message says what the reader would do with
+     *  such a file — an operator who meets both must not be told two different
+     *  things about one file.</p>
      *
      *  <p>{@code allowLocalhost} joined the rule for card 199: a workspace scope
      *  is a folder the AGENT writes into, so leaving the net fence's only switch
@@ -93,8 +103,10 @@ public final class SettingsWriter {
      *  {@code chromeBinary} and {@code searxngUrl} — and found that the two
      *  lists had been hand-written twice. A key in the reader's list and not in
      *  this one is worse than either: the write SUCCEEDS and the next load
-     *  throws the whole file away, so the operator's other keys in that file
-     *  stop applying with nothing naming the one they typed. */
+     *  skips the key unasked, with nothing naming the one they typed. Card 369
+     *  shrank that loss to the one key — before it, the next load threw the
+     *  whole file away and the operator's other settings stopped applying with
+     *  it — but the silence is the same, and the silence is the defect. */
     private static final Set<String> PROCESS_GLOBALS =
             Set.copyOf(SpectroConfig.workspaceScopeForbiddenKeys());
 
@@ -227,9 +239,20 @@ public final class SettingsWriter {
                         + "\" (known: " + String.join(", ", KNOWN_KEYS.stream().sorted().toList()) + ")");
             }
             if (scope != Scope.USER && PROCESS_GLOBALS.contains(key)) {
+                // Card 369, criterion 5: writing stays ALL-OR-NOTHING while
+                // reading became per key, and the two do not disagree because
+                // the sentence says so. A write is a request the operator can
+                // still fix, so refusing it whole costs him nothing and keeps
+                // him from laying down a file he would then have to be told
+                // about on every read. A file already on disk is a fact, and
+                // refusing it whole costs him keys he never typed wrong. The
+                // second clause is what stops an operator being told two
+                // different things about one file.
                 throw new IllegalArgumentException("\"" + key + "\" is "
                         + ("workspace".equals(key) ? "circular" : "process-global")
-                        + " and not allowed in a workspace scope — set it in the user settings");
+                        + " and not allowed in a workspace scope — set it in the user settings."
+                        + " Nothing in this patch was written; in a file that already names it,"
+                        + " \"" + key + "\" alone is skipped and the file's other keys apply");
             }
             JsonNode value = entry.getValue();
             if (value != null && !value.isNull()) {

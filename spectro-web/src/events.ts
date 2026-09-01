@@ -256,6 +256,19 @@ export type RunEvent =
        * "flags"). Present exactly when `inForce` is true.
        */
       inForceFrom?: string;
+      /**
+       * Card 369: the keys in that same file that DID apply, named.
+       *
+       * Until that card one forbidden key cost the whole file, so there was no
+       * second half to name and the sentence could only state the rule. The
+       * outcome has two halves now, and an operator told only what he lost has
+       * to go and look for what he kept — which is what he did, twice.
+       *
+       * ABSENT, like `inForce`, on a line recorded before card 369. Absent is
+       * not the empty array: absent means the file really did go whole, and
+       * that session's replay keeps card 285's sentence.
+       */
+      kept?: string[];
       ts: number;
     }
   // Card 337: the operator pressed play on a launch configuration, and this is

@@ -63,10 +63,25 @@ class WorkspaceRefusalCostTest {
         Files.writeString(ws.resolve(".spectro/settings.json"), json);
     }
 
+    /**
+     * The refusal this read produced.
+     *
+     * <p>CARD 369 changed where it comes from and nothing else. It used to be
+     * thrown, taking the whole workspace file with it; now the forbidden key is
+     * dropped, the file's legal keys apply, and the refusal is a VALUE on the
+     * scope report. Every assertion in this file is about the refusal's own
+     * content — the key, the hint, whether it costs the operator anything and
+     * which scope carries it anyway — and all of that is unchanged, which is why
+     * this file keeps its cases instead of being rewritten around a new idea.</p>
+     *
+     * @param projectDir the launch directory
+     * @param ws         the workspace whose scope is refused
+     * @param env        the environment layer
+     * @return the single refusal that read produced
+     */
     private static SpectroConfig.WorkspaceScopeRefused refusalFrom(
             Path projectDir, Path ws, Map<String, String> env) {
-        return assertThrows(SpectroConfig.WorkspaceScopeRefused.class,
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, env));
+        return SpectroConfig.reportFor(projectDir, ws, env).only();
     }
 
     @Test
@@ -130,13 +145,19 @@ class WorkspaceRefusalCostTest {
     @Test
     void aFileThatAlsoSetsSomethingElseIsNotFree(@TempDir Path projectDir, @TempDir Path ws)
             throws IOException {
-        // The refusal throws on the FIRST forbidden key and abandons the WHOLE
-        // scope, so every other setting in that file goes with it. This IS the
-        // owner's ForgeDemo file, read on 2026-08-31: it asks for allowLocalhost,
-        // which ~/.spectro carries anyway, and for permissionMode "auto", which
-        // nothing else sets. A reading that answered only about the key that
-        // tripped the refusal calls this free and lets the chat stay silent while
-        // he loses his permission mode.
+        // REPLACED by card 369, not loosened, and the fixture is why. This IS
+        // the owner's ForgeDemo file, read on 2026-08-31: it asks for
+        // allowLocalhost, which ~/.spectro carries anyway, and for
+        // permissionMode "auto", which nothing else sets.
+        //
+        // Card 354 demanded FALSE here, and was right to: the refusal took the
+        // whole file, so his permission mode went down with it and a reading
+        // that priced only the key that tripped the refusal would have let the
+        // chat stay silent while he lost it. Card 369 stopped the file from
+        // going. permissionMode reaches the run now — this very test measures
+        // that below — so the refusal of allowLocalhost costs him nothing, and
+        // calling it a loss would raise an alarm about a setting that is in
+        // force. The threshold has not moved; the fact underneath it has.
         writeUserSettings("""
                 { "allowLocalhost": true }
                 """);
@@ -147,12 +168,16 @@ class WorkspaceRefusalCostTest {
         SpectroConfig.WorkspaceScopeRefused refused = refusalFrom(projectDir, ws, Map.of());
 
         assertEquals("allowLocalhost", refused.key());
-        assertEquals(Boolean.FALSE, refused.inForce(),
-                "permissionMode goes down with the file and nothing else sets it, so the"
-                        + " refusal is not free even though the key it named is carried");
-        assertNull(refused.inForceFrom(),
-                "and naming the layer that carries allowLocalhost would answer a question"
-                        + " nobody asked while the loss stays unmentioned");
+        assertEquals(Boolean.TRUE, refused.inForce(),
+                "the key it named is carried by ~/.spectro at the same value, and it is the"
+                        + " only key that goes — so this refusal really does cost nothing");
+        assertEquals("user", refused.inForceFrom(),
+                "and the layer that carries it can be named, which is a question worth"
+                        + " answering now that no unmentioned loss stands beside it");
+        assertEquals("auto", SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
+                        Map.of()).permissionMode(),
+                "the reason it costs nothing: his permission mode is not lost any more."
+                        + " This assertion is the whole of card 369 in one line");
     }
 
     @Test
@@ -178,12 +203,14 @@ class WorkspaceRefusalCostTest {
     @Test
     void aNeighbourKeyCarriedAtTheOTHERValueIsALossToo(@TempDir Path projectDir, @TempDir Path ws)
             throws IOException {
-        // The value comparison has to hold for the keys that did NOT trip the
-        // refusal as well. A whole-file walk asking only "is this key named
-        // somewhere allowed" is green here and wrong: permissionMode is named in
-        // ~/.spectro in order to set it to something else.
+        // The value comparison is the whole difference between a useful answer
+        // and a wrong one, and card 369 moved it onto the key that is actually
+        // dropped rather than onto the file's neighbours — the neighbours are
+        // not dropped any more. The claim is unchanged: a walk asking only "is
+        // this key named somewhere allowed" is green here and wrong, because
+        // ~/.spectro names allowLocalhost in order to set it the OTHER way.
         writeUserSettings("""
-                { "allowLocalhost": true, "permissionMode": "plan" }
+                { "allowLocalhost": false, "permissionMode": "plan" }
                 """);
         writeWorkspaceSettings(ws, """
                 { "permissionMode": "auto", "allowLocalhost": true }
@@ -192,8 +219,12 @@ class WorkspaceRefusalCostTest {
         SpectroConfig.WorkspaceScopeRefused refused = refusalFrom(projectDir, ws, Map.of());
 
         assertEquals(Boolean.FALSE, refused.inForce(),
-                "the file asked for permissionMode auto and auto is not what applies");
+                "the file asked for allowLocalhost true and true is not what applies");
         assertNull(refused.inForceFrom());
+        assertFalse(SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, Map.of())
+                        .allowLocalhost(),
+                "and the fence really is down: the workspace asked to open it and did not"
+                        + " get it, which is the rule this card did not move");
     }
 
     @Test
@@ -244,10 +275,14 @@ class WorkspaceRefusalCostTest {
         // resolved the folder now asking for "workspace" in its own settings.
         writeWorkspaceSettings(ws, JSON.writeValueAsString(Map.of("workspace", ws.toString())));
 
-        SpectroConfig.WorkspaceScopeRefused refused = assertThrows(
-                SpectroConfig.WorkspaceScopeRefused.class,
-                () -> SpectroConfig.load(new SpectroConfig.Overrides(
-                        null, null, null, null, null, ws.toString()), projectDir, ws, Map.of()));
+        // The only case in this file that needs the FLAGS layer, so it reads the
+        // report through the overload that takes one rather than through the
+        // helper above. Card 369 moved the refusal from a throw to a value; what
+        // this case is about — that the command line counts as a scope that
+        // carries the key — is untouched.
+        SpectroConfig.WorkspaceScopeRefused refused = SpectroConfig.loadResolved(
+                new SpectroConfig.Overrides(null, null, null, null, null, ws.toString()),
+                projectDir, ws, Map.of()).report().only();
 
         assertEquals("workspace", refused.key());
         assertEquals(Boolean.TRUE, refused.inForce());
@@ -364,7 +399,19 @@ class WorkspaceRefusalCostTest {
                 return 7;
             }
             if (type == String.class) {
-                return "card-354-" + key;
+                // ⚠️ A VALID value, and card 369 is what made that necessary.
+                //
+                // This returned "card-354-<key>" for every string, and for
+                // `logLevel` that is not a level the loader accepts. It never
+                // showed, because the refusal was THROWN before the fold ever
+                // validated anything — the test's fixture was only legal by
+                // accident of ordering. With the refusal a value rather than a
+                // throw, the fold runs, and an invalid level fails the read for
+                // a reason that has nothing to do with what this file asserts.
+                //
+                // Asked of the loader rather than typed here, so a key that
+                // grows a value check tomorrow does not quietly resurrect this.
+                return "logLevel".equals(key) ? "debug" : "card-354-" + key;
             }
             throw new AssertionError("no sample value for " + key + " of type " + type);
         }

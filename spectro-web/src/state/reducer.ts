@@ -1081,6 +1081,25 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       if (event.inForce === true) {
         return state;
       }
+      // Card 369: a reading taken since the per-key change. The forbidden key
+      // alone was skipped, so the sentence can say what is still in force, and
+      // it must — the old one explained the rule and left the operator to go
+      // and find out what it had cost him.
+      if (event.kept !== undefined) {
+        const kept = event.kept.join(", ");
+        return addTurn(state, {
+          kind: "info",
+          text:
+            event.kept.length > 0
+              ? `"${event.key}" was skipped: a workspace folder may not set it. The rest ` +
+                `of that file applies: ${kept}. ${event.hint}`
+              : `"${event.key}" was skipped: a workspace folder may not set it. That file ` +
+                `set nothing else. ${event.hint}`,
+          infoKey: event.kept.length > 0 ? "info.settingsKeyDropped" : "info.settingsKeyDroppedOnly",
+          infoVars: { key: event.key, kept, hint: event.hint },
+          tone: "warn",
+        });
+      }
       if (event.inForce === false) {
         return addTurn(state, {
           kind: "info",

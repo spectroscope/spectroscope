@@ -493,22 +493,63 @@ class SessionSettingsReachTheBeltTest {
                 .as("test premise: the workspace scope is being read")
                 .isEqualTo("before-the-break");
 
-        // The agent writes a key its own scope may not hold. The whole file goes.
+        // The agent writes a key its own scope may not hold. Card 369: that key
+        // goes and the file's other keys stay. REPLACED rather than loosened —
+        // the assertion below used to demand `imageModel` be null, and it was
+        // right to, because until this card the forbidden key took the whole
+        // file with it. The threshold has not moved; the claim underneath it is
+        // the opposite one, and it is measured, not assumed.
         saveInWorkspace(workspace, "{\"imageModel\": \"after\", \"allowLocalhost\": true}");
 
         assertThat(connection.liveConfig().imageModel())
-                .as("the session's own config answers — a broken file is not fatal, and the"
-                        + " fallback is the session moment rather than the last live reading:"
-                        + " a refused file must not leave the session standing on a value"
-                        + " that came from the same hand")
-                .isNull();
+                .as("the legal key beside the forbidden one still applies — one refused key"
+                        + " must not cost the operator settings he typed correctly")
+                .isEqualTo("after");
+        assertThat(connection.liveConfig().allowLocalhost())
+                .as("and the forbidden one does not: the rule itself has not moved")
+                .isFalse();
         connection.liveConfig();
         connection.liveConfig();
 
         assertThat(occurrences(socket.textJoined(), "allowLocalhost"))
-                .as("the operator is told that a settings file was ignored — exactly once,"
+                .as("the operator is told that a settings key was skipped — exactly once,"
                         + " however many tool calls read it")
                 .isEqualTo(1);
+        assertThat(socket.textJoined())
+                .as("and the notice names the half he KEPT as well as the half he lost:"
+                        + " the sentence that only explained the rule sent him back twice")
+                .contains("imageModel");
+    }
+
+    @Test
+    void bothWorkspaceFilesAreSaid__oneMemoryPerFileAndNotOneForBoth(@TempDir Path workspace)
+            throws IOException {
+        // Card 369. A workspace has TWO scopes and each can name a forbidden
+        // key. The notice is said once per file, so the memory that makes "once"
+        // true has to be keyed BY file: one shared signature lets the second
+        // file's notice be swallowed by the first file's memory, and the
+        // operator is told about one of his two files.
+        //
+        // The two files drop the SAME key deliberately — that is the case a
+        // value-only memory cannot tell apart, and the only case that
+        // distinguishes the two implementations.
+        FakeSocket socket = new FakeSocket("ws-369-two-files", "ws://localhost/ws");
+        SessionConnection connection = sessionOn(socket, workspace);
+        saveInWorkspace(workspace, "{\"imageModel\": \"m\", \"allowLocalhost\": true}");
+        Files.writeString(workspace.resolve(SpectroConfig.WS_LOCAL_SETTINGS),
+                "{\"sttModel\": \"s\", \"allowLocalhost\": true}");
+
+        connection.liveConfig();
+        connection.liveConfig();
+
+        assertThat(occurrences(socket.textJoined(), "settings_ignored"))
+                .as("one notice per file, and both files get theirs — however many tool"
+                        + " calls read them")
+                .isEqualTo(2);
+        assertThat(connection.liveConfig().imageModel())
+                .as("and both files keep their legal keys")
+                .isEqualTo("m");
+        assertThat(connection.liveConfig().sttModel()).isEqualTo("s");
     }
 
     // ---- review finding F5: the app picked the backend and the field went dead ----

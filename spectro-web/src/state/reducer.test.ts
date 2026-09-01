@@ -816,6 +816,86 @@ describe("reduce — images withheld (card 252)", () => {
   });
 });
 
+describe("reduce — one forbidden key does not cost the file (card 369)", () => {
+  // The sentence card 354 left is the one the owner reported TWICE. It explains
+  // the RULE — "a workspace folder may not set it, so the whole file is
+  // dropped" — and never says what he still has. Since card 369 the file is not
+  // dropped, so the sentence has a second half to give him, and these tests pin
+  // both halves rather than the rule.
+  const dropped = {
+    type: "settings_ignored" as const,
+    key: "allowLocalhost",
+    file: "/Users/x/ForgeDemo/.spectro/settings.json",
+    hint: "the opt-in belongs in ~/.spectro/settings.json",
+    ts: 1,
+  };
+
+  it("names the key it skipped AND the keys that still apply", () => {
+    const state = reduce(initialState, {
+      ...dropped,
+      inForce: false,
+      kept: ["permissionMode", "model"],
+    });
+
+    expect(state.turns[0]).toEqual({
+      kind: "info",
+      text:
+        '"allowLocalhost" was skipped: a workspace folder may not set it. The rest of ' +
+        "that file applies: permissionMode, model. " +
+        "the opt-in belongs in ~/.spectro/settings.json",
+      tone: "warn",
+      infoKey: "info.settingsKeyDropped",
+      infoVars: {
+        key: "allowLocalhost",
+        kept: "permissionMode, model",
+        hint: "the opt-in belongs in ~/.spectro/settings.json",
+      },
+    });
+  });
+
+  it("does not read like a truncation when the file had nothing else", () => {
+    const state = reduce(initialState, { ...dropped, inForce: false, kept: [] });
+
+    // toMatchObject, not a property read: vitest erases types, so
+    // `state.turns[0].text` compiles nowhere but passes here — the union has no
+    // such member and `npx tsc -b` is the only thing that says so.
+    expect(state.turns[0]).toMatchObject({
+      text:
+        '"allowLocalhost" was skipped: a workspace folder may not set it. That file set ' +
+        "nothing else. the opt-in belongs in ~/.spectro/settings.json",
+      infoKey: "info.settingsKeyDroppedOnly",
+    });
+  });
+
+  it("still swallows the turn when the skipped key is in force anyway", () => {
+    // The pricing became per KEY with this card — it asks about the key that
+    // was skipped, not about the file, because the file no longer goes. What
+    // does NOT change is that a refusal costing nothing is not worth a chat
+    // turn on an otherwise empty session, and that the frame still rides.
+    const state = reduce(initialState, {
+      ...dropped,
+      inForce: true,
+      inForceFrom: "user",
+      kept: ["permissionMode"],
+    });
+
+    expect(state.turns).toEqual([]);
+    expect(state.trace.map((t) => t.type)).toEqual(["settings_ignored"]);
+  });
+
+  it("leaves a session recorded before this card with its own sentence", () => {
+    // Absent is not the empty array. A line replayed from a session that really
+    // did lose its whole file must not be told it kept something — the same
+    // rule card 354 set for `inForce`, for the same reason.
+    const state = reduce(initialState, { ...dropped, inForce: false });
+
+    expect(state.turns[0]).toMatchObject({
+      infoKey: "info.settingsIgnoredNotAllInForce",
+      text: expect.stringContaining("the whole file is dropped"),
+    });
+  });
+});
+
 describe("reduce — image generation", () => {
   const generated: RunEvent = {
     type: "image_generated",

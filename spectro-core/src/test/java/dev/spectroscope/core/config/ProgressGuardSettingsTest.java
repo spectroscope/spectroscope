@@ -100,14 +100,15 @@ class ProgressGuardSettingsTest {
             Files.createDirectories(ws.resolve(".spectro"));
             Files.writeString(ws.resolve(SpectroConfig.PROJECT_SETTINGS),
                     "{ \"" + key + "\": 0 }");
-            IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
-                    () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
-                            Map.of()),
-                    "a workspace scope set " + key + " and the load accepted it");
-            assertTrue(loud.getMessage().contains(key),
-                    "the refusal must name the key, got: " + loud.getMessage());
-            assertTrue(loud.getMessage().contains("workspace scope"),
-                    "the refusal must name the rule it breaks, got: " + loud.getMessage());
+                    // Card 369: the RULE, on the outcome. The throw is gone — a forbidden
+        // key is dropped and the file's legal keys apply — and the rule it
+        // enforced has not moved: this key still never reaches a run.
+            var report = SpectroConfig.reportFor(projectDir, ws, java.util.Map.of());
+            assertTrue(report.dropped().contains(key),
+                    "a workspace scope set " + key + " and the load kept it");
+            assertTrue(report.only().getMessage() != null
+                    && report.only().getMessage().contains("workspace scope"),
+                    "the refusal must name the rule it breaks: " + report.only().getMessage());
         }
     }
 

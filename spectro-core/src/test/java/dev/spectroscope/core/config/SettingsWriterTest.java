@@ -194,9 +194,9 @@ class SettingsWriterTest {
         // There are TWO copies of this rule: the reader drops a workspace scope
         // that holds a process-global, and the writer refuses to put one there.
         // Adding a key to the reader alone leaves a write that SUCCEEDS and a
-        // file that is then thrown away whole on the next load — the operator's
-        // project model and image backend stop applying and nothing points at
-        // the key they actually typed.
+        // key that the next load then skips — since card 369 the file's other
+        // keys survive that, so the loss is smaller than it was, but nothing
+        // still points at the key they actually typed.
         //
         // So the two lists are one list now, and this test is what keeps them
         // one: it walks the reader's own and asks the writer about each key.
@@ -208,7 +208,7 @@ class SettingsWriterTest {
                         () -> SettingsWriter.patch(file, scope,
                                 JSON.readTree("{\"" + key + "\": \"x\"}")),
                         "a " + scope + " write of \"" + key + "\" is accepted, and the next load"
-                                + " throws the whole file away — the reader refuses it");
+                                + " skips it unasked — the reader refuses it");
                 assertTrue(loud.getMessage().contains(key), loud.getMessage());
             }
         }

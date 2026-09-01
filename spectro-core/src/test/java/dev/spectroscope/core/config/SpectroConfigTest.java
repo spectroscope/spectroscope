@@ -47,6 +47,33 @@ class SpectroConfigTest {
         Files.writeString(file, json);
     }
 
+
+    /**
+     * The rule a workspace scope may not break, checked on the OUTCOME.
+     *
+     * <p>CARD 369 is why this is a helper and not seven copies of
+     * {@code assertThrows}. Those cases pinned the MECHANISM — a load that threw
+     * — and the mechanism moved: a forbidden key is now dropped while the file's
+     * legal keys apply, so the throw is gone and the rule is not. Asserting on
+     * the report and on the effective config says the thing the cards actually
+     * decided, and it would have survived this change without being touched.</p>
+     *
+     * @param projectDir the launch directory
+     * @param ws         the workspace whose scope names the key
+     * @param key        the process-global key it must not get
+     * @return the effective config, for a caller that wants to check the value too
+     */
+    private static SpectroConfig ruleHolds(Path projectDir, Path ws, String key) {
+        SpectroConfig.ScopeReport report =
+                SpectroConfig.reportFor(projectDir, ws, java.util.Map.of());
+        assertTrue(report.dropped().contains(key),
+                "a workspace scope set \"" + key + "\" and the load kept it: " + report.dropped());
+        assertTrue(report.file() != null && report.file().contains(".spectro"),
+                "the report names the file it came from: " + report.file());
+        return SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
+                java.util.Map.of());
+    }
+
     @Test
     void defaultsApplyWithoutAnyFile(@TempDir Path projectDir) {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir);
@@ -1140,20 +1167,19 @@ class SpectroConfigTest {
         Files.writeString(ws.resolve(".spectro/settings.json"), """
                 { "allowLocalhost": true }
                 """);
-        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
-                        java.util.Map.of()));
-        assertTrue(loud.getMessage().contains("allowLocalhost"), loud.getMessage());
+        ruleHolds(projectDir, ws, "allowLocalhost");
 
         Files.delete(ws.resolve(".spectro/settings.json"));
         Files.writeString(ws.resolve(".spectro/settings.local.json"), """
                 { "allowLocalhost": true }
                 """);
-        IllegalArgumentException alsoLocal = assertThrows(IllegalArgumentException.class,
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
-                        java.util.Map.of()));
-        assertTrue(alsoLocal.getMessage().contains("settings.local.json"),
-                "the local half is written by the same hand: " + alsoLocal.getMessage());
+                // Card 369: the local half, on the outcome. "the local half is written by the same hand:"
+        SpectroConfig.ScopeReport local =
+                SpectroConfig.reportFor(projectDir, ws, java.util.Map.of());
+        assertTrue(local.file().contains("settings.local.json"),
+                "the report names the local file: " + local.file());
+        assertFalse(local.dropped().isEmpty(),
+                "and it refused the key there too");
     }
 
     @Test
@@ -1163,10 +1189,13 @@ class SpectroConfigTest {
         Files.writeString(ws.resolve(".spectro/settings.json"), """
                 { "workspace": "/somewhere/else" }
                 """);
-        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, java.util.Map.of()));
-        assertTrue(loud.getMessage().contains("workspace"), loud.getMessage());
-        assertTrue(loud.getMessage().contains("settings.json"), "the message names the offending file");
+                // Card 369: the RULE, checked on the outcome. It used to be checked on
+        // a throw, and the throw is gone — the key is dropped and the file's
+        // legal keys apply. What the card decided is unchanged.
+        ruleHolds(projectDir, ws, "workspace");
+        assertTrue(SpectroConfig.reportFor(projectDir, ws, java.util.Map.of())
+                .file().contains("settings.json"),
+                "the report names the offending file");
     }
 
     @Test
@@ -1184,13 +1213,19 @@ class SpectroConfigTest {
         Files.writeString(ws.resolve(".spectro/settings.local.json"), """
                 { "chromeBinary": "/tmp/not-a-browser.sh" }
                 """);
-        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, java.util.Map.of()));
-        assertTrue(loud.getMessage().contains("chromeBinary"), loud.getMessage());
-        assertTrue(loud.getMessage().contains("settings.local.json"),
-                "the message names the offending file: " + loud.getMessage());
-        assertTrue(loud.getMessage().contains("SPECTRO_CHROME"),
-                "and where it belongs instead: " + loud.getMessage());
+                // Card 369: the RULE, checked on the outcome. It used to be checked on
+        // a throw, and the throw is gone — the key is dropped and the file's
+        // legal keys apply. What the card decided is unchanged.
+        ruleHolds(projectDir, ws, "chromeBinary");
+        assertTrue(SpectroConfig.reportFor(projectDir, ws, java.util.Map.of())
+                .file().contains("settings.local.json"),
+                "the report names the offending file");
+        // The hint now rides on the refusal in the report rather than in a
+        // thrown message — same sentence, same source, card 369 moved only
+        // where it is read from.
+        assertTrue(SpectroConfig.reportFor(projectDir, ws, java.util.Map.of())
+                .only().hint().contains("SPECTRO_CHROME"),
+                "the refusal says where the key belongs instead");
     }
 
     @Test
@@ -1206,11 +1241,16 @@ class SpectroConfigTest {
         Files.writeString(ws.resolve(".spectro/settings.json"), """
                 { "searxngUrl": "http://127.0.0.1:9999" }
                 """);
-        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, java.util.Map.of()));
-        assertTrue(loud.getMessage().contains("searxngUrl"), loud.getMessage());
-        assertTrue(loud.getMessage().contains("SPECTRO_SEARXNG_URL"),
-                "and where it belongs instead: " + loud.getMessage());
+                // Card 369: the RULE, checked on the outcome. It used to be checked on
+        // a throw, and the throw is gone — the key is dropped and the file's
+        // legal keys apply. What the card decided is unchanged.
+        ruleHolds(projectDir, ws, "searxngUrl");
+        // The hint now rides on the refusal in the report rather than in a
+        // thrown message — same sentence, same source, card 369 moved only
+        // where it is read from.
+        assertTrue(SpectroConfig.reportFor(projectDir, ws, java.util.Map.of())
+                .only().hint().contains("SPECTRO_SEARXNG_URL"),
+                "the refusal says where the key belongs instead");
     }
 
     @Test
@@ -1220,9 +1260,10 @@ class SpectroConfigTest {
         Files.writeString(ws.resolve(".spectro/settings.local.json"), """
                 { "logLevel": "debug" }
                 """);
-        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, java.util.Map.of()));
-        assertTrue(loud.getMessage().contains("logLevel"), loud.getMessage());
+                // Card 369: the RULE, checked on the outcome. It used to be checked on
+        // a throw, and the throw is gone — the key is dropped and the file's
+        // legal keys apply. What the card decided is unchanged.
+        ruleHolds(projectDir, ws, "logLevel");
     }
 
     // ---- provenance (settings productization Task 6) -----------------------------------

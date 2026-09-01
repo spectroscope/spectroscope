@@ -171,7 +171,17 @@ public final class SessionConnection {
      *  session may not read is announced when it breaks and not once per tool
      *  call. Holds the MESSAGE rather than a flag: a second, different breakage
      *  is news and gets said. */
+
     private volatile String reportedUnreadable;
+
+    /** The file-and-keys signature of the last workspace drop this session
+     *  reported, so the belt's per-tool-call reading says it once rather
+     *  than once per call. Separate from {@link #reportedUnreadable}: an
+     *  unreadable file and a partly refused one are different conditions
+     *  with different lifetimes, and sharing one field let a clean-read
+     *  reset erase the memory a line before it was consulted. Keyed by FILE
+     *  because a workspace has two scopes that can each drop a key. */
+    private final java.util.Map<String, String> reportedDropped = new java.util.HashMap<>();
 
     private SessionStore store;               // created on the first prompt (or on resume)
     // The tracing seam (KONZEPT §4.3): persistence rides a required port, so
@@ -1528,9 +1538,17 @@ public final class SessionConnection {
             return last;   // before the session moment there is nothing newer to read
         }
         try {
-            SpectroConfig fresh =
-                    SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, workspace);
+            SpectroConfig.Resolved read = SpectroConfig.loadForWorkspaceWithReport(
+                    SpectroConfig.Overrides.none(), projectDir, workspace);
+            SpectroConfig fresh = read.config();
             reportedUnreadable = null;   // a good read makes the next breakage news again
+            // Card 369: a refused key no longer throws — the key is dropped and
+            // the file's legal keys apply — so the notice's two catch blocks
+            // would never speak again. It is asked for on the SUCCESSFUL read,
+            // which is also the only read that holds the answer.
+            for (SpectroConfig.ScopeReport dropped : read.reports()) {
+                reportDropped(dropped);
+            }
             return fresh.withProvider(last.provider(), last.model());
         } catch (RuntimeException unreadable) {
             reportUnreadable(unreadable);
@@ -1557,6 +1575,39 @@ public final class SessionConnection {
      *
      * @param unreadable what the settings loader refused with
      */
+    /**
+     * Says what a workspace scope had to give up, once per file per session.
+     *
+     * <p>Card 369. The sentence names BOTH halves — the key it refused and the
+     * keys the file still got — because the one the owner read explained the
+     * RULE ("a workspace folder may not set it, so the whole file is dropped")
+     * and never said what he had lost. He reported it twice.</p>
+     *
+     * @param report what the loader dropped and kept
+     */
+    private void reportDropped(SpectroConfig.ScopeReport report) {
+        if (report == null) {
+            return;
+        }
+        if (report.isEmpty()) {
+            reportedDropped.remove(report.file());   // a fixed file is news again
+            return;
+        }
+        // Per FILE, because a workspace has two scopes and each can drop a key:
+        // one shared signature would let the second file's notice be swallowed
+        // by the first file's memory.
+        if (report.dropped().toString().equals(reportedDropped.get(report.file()))) {
+            return;
+        }
+        reportedDropped.put(report.file(), report.dropped().toString());
+        for (SpectroConfig.WorkspaceScopeRefused refused : report.refusals()) {
+            recordAndMirror(new RunEvent.SettingsIgnored(
+                    refused.key(), refused.file(), refused.hint(),
+                    refused.inForce(), refused.inForceFrom(), report.kept(),
+                    System.currentTimeMillis()));
+        }
+    }
+
     private void reportUnreadable(RuntimeException unreadable) {
         String message = "workspace settings ignored: " + unreadable.getMessage();
         if (message.equals(reportedUnreadable)) {

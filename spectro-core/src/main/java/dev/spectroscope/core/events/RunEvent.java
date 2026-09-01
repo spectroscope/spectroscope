@@ -190,11 +190,20 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param inForceFrom the allowed layer carrying {@code key} ({@code "env"},
      *                    {@code "user"}, {@code "launch-dir"}, {@code "flags"});
      *                    present exactly when {@code inForce} is true
+     * @param kept        the keys in that same file that DID apply, named —
+     *                    card 369. Until that card a forbidden key cost the
+     *                    whole file, so there was no second half to name and
+     *                    the sentence could only state the rule. It states the
+     *                    outcome now, and the outcome has two halves: an
+     *                    operator who is told what he lost and not what he kept
+     *                    has to go and look. ABSENT, like {@code inForce}, on a
+     *                    line recorded before this card
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record SettingsIgnored(String key, String file, String hint,
-            Boolean inForce, String inForceFrom, long ts) implements RunEvent {
+            Boolean inForce, String inForceFrom, List<String> kept, long ts)
+            implements RunEvent {
 
         /** The pre-354 shape: a refusal with no reading of its cost, on the wire
          *  byte-for-byte as it was before this card.
@@ -203,7 +212,20 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          *  @param hint where the setting does belong
          *  @param ts   epoch millis of emission */
         public SettingsIgnored(String key, String file, String hint, long ts) {
-            this(key, file, hint, null, null, ts);
+            this(key, file, hint, null, null, null, ts);
+        }
+
+        /** The card-354 shape: priced, but from the era when a refusal took the
+         *  whole file — so it has no kept half to name.
+         *  @param key         the setting the scope was not allowed to name
+         *  @param file        the settings file it was read from
+         *  @param hint        where the setting does belong
+         *  @param inForce     whether the refusal costs nothing
+         *  @param inForceFrom the allowed layer carrying {@code key}
+         *  @param ts          epoch millis of emission */
+        public SettingsIgnored(String key, String file, String hint,
+                Boolean inForce, String inForceFrom, long ts) {
+            this(key, file, hint, inForce, inForceFrom, null, ts);
         }
     }
 

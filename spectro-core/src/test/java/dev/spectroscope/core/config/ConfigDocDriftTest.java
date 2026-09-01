@@ -591,6 +591,50 @@ class ConfigDocDriftTest {
         }
     }
 
+    @Test
+    void noDocSendsAWorkspaceScopeAKeyItMayNotHold() throws IOException {
+        // Card 369, and the reason this test exists at all: the owner met the
+        // refusal notice because the SHIPPED DOCUMENTATION told him to create
+        // the file that trips it. `docs/BROWSER.md` read "put it in the settings
+        // — ~/.spectro/settings.json, or the project's own settings file", with
+        // `{ "allowLocalhost": true }` under it, and `docs/LAUNCH.md` said the
+        // same. A reader following either instruction lands in the notice, and
+        // for `allowLocalhost` in particular the instruction is worse than
+        // useless: card 199 forbade that key precisely BECAUSE a workspace is a
+        // folder the agent writes into.
+        //
+        // The keys are derived; the phrasing is not, and that is stated rather
+        // than hidden. A sentence can point at the project scope in words this
+        // does not know, so this is a net with a known mesh — but it is the mesh
+        // the two live defects were caught in, and a doc that adds a THIRD such
+        // sentence in one of these shapes cannot ship silently.
+        Path root = repoRoot();
+        assumeTrue(root != null, "not running from a source checkout");
+        Pattern place = Pattern.compile("project'?s? own settings|project settings file",
+                Pattern.CASE_INSENSITIVE);
+        Pattern denied = Pattern.compile("\\bnot\\b|\\bnever\\b|may not|instead of",
+                Pattern.CASE_INSENSITIVE);
+        List<String> offences = new ArrayList<>();
+        try (Stream<Path> docs = Files.walk(root.resolve("docs"))) {
+            for (Path doc : docs.filter(p -> p.toString().endsWith(".md")).toList()) {
+                String text = Files.readString(doc);
+                for (String key : SpectroConfig.workspaceScopeForbiddenKeys()) {
+                    Matcher at = Pattern.compile("\\b" + Pattern.quote(key) + "\\b").matcher(text);
+                    while (at.find()) {
+                        String window = text.substring(Math.max(0, at.start() - 180),
+                                Math.min(text.length(), at.start() + 180));
+                        if (place.matcher(window).find() && !denied.matcher(window).find()) {
+                            offences.add(doc.getFileName() + " sends \"" + key + "\" to a"
+                                    + " workspace scope: …"
+                                    + window.replaceAll("\\s+", " ").trim() + "…");
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(offences.isEmpty(), String.join("\n", offences));
+    }
+
     /** The row holding {@code marker} inside the "Every key" table — the
      *  deprecation table above it names the same keys in its own cells. */
     private static String rowStartingWith(String html, String marker) {
