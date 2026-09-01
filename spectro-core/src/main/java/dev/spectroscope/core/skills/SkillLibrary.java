@@ -23,7 +23,8 @@ import java.util.stream.Stream;
  * Loads skills — folders that contain a SKILL.md — and exposes them with
  * progressive disclosure, modeled on Claude Code skills: only name and
  * description enter the system prompt (cheap, always visible), the full body
- * is fetched on demand through the {@link #useSkillTool() use_skill} tool.
+ * is fetched on demand through the {@link #useSkillTool() use_skill} tool, and
+ * the files that ship beside it through {@link #readSkillFileTool() read_skill_file}.
  * Skills extend the agent's behavior with data, not code — the loop is untouched.
  *
  * <p>Layering follows the settings hierarchy: the user layer
@@ -42,6 +43,14 @@ public final class SkillLibrary {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int DESCRIPTION_FALLBACK_LIMIT = 120;
+
+    /**
+     * The ceiling on ONE sibling read, the same 50 kB {@code read_file} allows.
+     * Not a policy about skills but about a turn: the fattest catalogue skill is
+     * 5.8 MB over 98 files, and one of them poured into the context would cost
+     * more than the whole body it belongs to.
+     */
+    private static final long MAX_SKILL_FILE_BYTES = 50_000;
 
     /** Insertion order is load order; later roots already replaced earlier entries. */
     private final Map<String, Skill> byName;
@@ -214,19 +223,170 @@ public final class SkillLibrary {
             /** Permission-free — it reads only files the user installed under the skill roots. */
             public boolean needsPermission() { return false; }
 
-            /** Resolves the named skill to its full body; unknown names return an "ERROR: " listing what exists. */
+            /** Resolves the named skill to its address plus its full body; unknown names return an "ERROR: " listing what exists. */
             public String execute(JsonNode input, ToolContext context) {
                 if (byName.isEmpty()) {
                     return "ERROR: no skills are installed.";
                 }
                 String requested = input.path("name").asText();
                 return find(requested)
-                        .map(Skill::body)
-                        .orElseGet(() -> "ERROR: unknown skill '" + requested + "'. Available: "
-                                + skills().stream().map(Skill::name)
-                                        .collect(Collectors.joining(", ")));
+                        .map(skill -> addressOf(skill) + skill.body())
+                        .orElseGet(() -> unknownSkill(requested));
             }
         };
+    }
+
+    /**
+     * Where the skill lives, said before its body — card 358.
+     *
+     * <p>The measured failure this removes: a model announced a loaded skill and
+     * then ran {@code find ~ -maxdepth 8 -type d -name "<skill>"}, which died on
+     * the command timeout. It had the instructions and no address, because
+     * {@link Skill#source()} was written at load and handed to nobody.</p>
+     *
+     * <p>It belongs to the ON-DEMAND half. Progressive disclosure is the whole
+     * design of {@link #systemPromptSection()}: forty skills times a path is
+     * context spent before anyone asks, and pinned as such in
+     * {@code SkillLibraryTest#theCatalogueInTheSystemPromptCarriesNoSkillPaths}.</p>
+     *
+     * <p>It names {@code read_skill_file} rather than {@code read_file} because
+     * the two roots really are different places: skills load against the PROJECT
+     * directory while the tool sandbox root is the WORKSPACE, which an
+     * unconfigured session resolves to a per-session temp dir. Telling the model
+     * an address it could not open with the tool it already has would trade one
+     * wasted turn for another.</p>
+     *
+     * @param skill the skill whose body is being handed over
+     * @return the address block, or "" for a skill that came from no directory
+     */
+    private static String addressOf(Skill skill) {
+        Path dir = skill.source() == null ? null : skill.source().getParent();
+        if (dir == null) {
+            return "";
+        }
+        return "[skill: " + skill.name() + "]\n"
+                + "[directory: " + dir + "]\n"
+                + "Files this skill refers to relatively live in that directory. Read one with "
+                + "read_skill_file (skill: \"" + skill.name() + "\", path: relative to it) — "
+                + "read_file cannot: the directory is outside the working directory.\n\n";
+    }
+
+    /** The one refusal both skill tools give for a name nothing is installed under.
+     *  @param requested the name the model sent
+     *  @return the "ERROR: " line, listing what does exist */
+    private String unknownSkill(String requested) {
+        return "ERROR: unknown skill '" + requested + "'. Available: "
+                + skills().stream().map(Skill::name).collect(Collectors.joining(", "));
+    }
+
+    /**
+     * The other half of card 358: one file that ships BESIDE a skill, read
+     * read-only and scoped to that skill's own directory.
+     *
+     * <p>Measured need — 26 of 59 SKILL.md bodies in this tree name a sibling
+     * that exists on disk, and the catalogue's {@code ui-styling} installs 97
+     * sibling files an agent could then not open.</p>
+     *
+     * <p><b>The security property:</b> a model-supplied string may choose a
+     * location WITHIN a root, never WHICH root. The root is
+     * {@code find(skill).source().getParent()} — server-chosen, from a MAP KEY
+     * the model names, so a traversal typed into {@code skill} matches no key
+     * and reads nothing. Only {@code path} is a path, and it is contained by the
+     * CANONICAL comparison ({@code toRealPath} on both sides), the same form
+     * {@code WorkspaceController} uses and for the same reason: the lexical form
+     * lets a symlink planted inside the root walk straight out of it, because
+     * {@code normalize} resolves text while every read below follows links. Both
+     * sides are canonicalized because a macOS temp root is itself a link
+     * ({@code /var} → {@code /private/var}), and real-against-normalized would
+     * refuse every ordinary read instead.</p>
+     *
+     * <p>It does NOT touch the tools' own sandbox: no skill root joins
+     * {@code ToolContext.cwd()}, and {@code read_file} still refuses these paths.</p>
+     *
+     * @return the {@code read_skill_file} tool, registered wherever
+     *         {@link #useSkillTool()} is
+     */
+    public Tool readSkillFileTool() {
+        return new Tool() {
+            /** Wire name: {@code read_skill_file}. */
+            public String name() { return "read_skill_file"; }
+            /** The model-facing one-liner — says what it reads and what read_file cannot. */
+            public String description() {
+                return "Reads one file that ships beside a skill (max 50 kB): the skill's name "
+                        + "plus a path relative to the skill's own directory, which use_skill "
+                        + "names. Use it for the files a skill body refers to — they live "
+                        + "outside the working directory, so read_file cannot reach them.";
+            }
+            /** Two required strings: the {@code skill} name and the relative {@code path}. */
+            public JsonNode inputSchema() {
+                ObjectNode schema = JSON.createObjectNode();
+                schema.put("type", "object");
+                ObjectNode properties = JSON.createObjectNode();
+                properties.set("skill", JSON.createObjectNode().put("type", "string")
+                        .put("description", "the skill name exactly as the system prompt lists it"));
+                properties.set("path", JSON.createObjectNode().put("type", "string")
+                        .put("description", "path relative to the skill's own directory"));
+                schema.set("properties", properties);
+                schema.set("required", JSON.createArrayNode().add("skill").add("path"));
+                return schema;
+            }
+            /** Read-only inside one skill's directory — no gate, like use_skill. */
+            public boolean needsPermission() { return false; }
+
+            /** The scoped read; every refusal comes back as an "ERROR: " line. */
+            public String execute(JsonNode input, ToolContext context) {
+                if (byName.isEmpty()) {
+                    return "ERROR: no skills are installed.";
+                }
+                String requested = input.path("skill").asText();
+                Optional<Skill> found = find(requested);
+                if (found.isEmpty()) {
+                    return unknownSkill(requested);
+                }
+                Path source = found.orElseThrow().source();
+                Path base = source == null ? null : source.getParent();
+                if (base == null) {
+                    return "ERROR: skill '" + requested + "' was not loaded from a directory.";
+                }
+                String relative = input.path("path").asText();
+                try {
+                    Path file = insideSkillDirectory(base, relative);
+                    if (!Files.isRegularFile(file)) {
+                        return "ERROR: not a file in skill '" + requested + "': " + relative;
+                    }
+                    long size = Files.size(file);
+                    if (size > MAX_SKILL_FILE_BYTES) {
+                        return "ERROR: file too large (" + size + " bytes, limit "
+                                + MAX_SKILL_FILE_BYTES + ") in skill '" + requested + "': "
+                                + relative;
+                    }
+                    return Files.readString(file, StandardCharsets.UTF_8);
+                } catch (java.nio.file.NoSuchFileException missing) {
+                    // A dangling symlink lands here too, and refusing it is right:
+                    // an unresolvable path cannot be proven inside anything.
+                    return "ERROR: no such file in skill '" + requested + "': " + relative;
+                } catch (IOException unreadable) {
+                    return "ERROR: " + unreadable.getMessage();
+                }
+            }
+        };
+    }
+
+    /**
+     * The containment rule of {@link #readSkillFileTool()}, in canonical form.
+     *
+     * @param base     the skill's own directory, as loaded
+     * @param relative the untrusted path from the model
+     * @return the canonical absolute file, proven inside the skill directory
+     * @throws IOException when it escapes, does not exist, or cannot be resolved
+     */
+    private static Path insideSkillDirectory(Path base, String relative) throws IOException {
+        Path realBase = base.toRealPath();
+        Path real = realBase.resolve(relative).normalize().toRealPath();
+        if (!real.equals(realBase) && !real.startsWith(realBase)) {
+            throw new IOException("path is outside the skill directory: " + relative);
+        }
+        return real;
     }
 
     // ---- SKILL.md parsing ----------------------------------------------------------------

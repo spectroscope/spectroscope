@@ -16,7 +16,7 @@
     "land on every gate audit line."
   ],
   "schemaVersion": 1,
-  "mapVersion": "2026-08-17.1",
+  "mapVersion": "2026-09-01.1",
 
   "builtin": {
     "_comment": [
@@ -63,6 +63,7 @@
     "web_fetch": "read",
     "web_search": "read",
     "use_skill": "read",
+    "read_skill_file": "read",
     "browser_read_page": "read",
     "browser_find": "read",
     "browser_read_console": "read",

@@ -652,6 +652,10 @@ public final class SpectroCli implements Runnable {
         }
         if (!skills.skills().isEmpty()) {
             shared.add(skills.useSkillTool());
+            // Card 358: the body and the files beside it are one capability. A
+            // face that hands over the first without the second sends the model
+            // hunting the filesystem for a directory it was never told.
+            shared.add(skills.readSkillFileTool());
         }
         // MCP is just another tool SOURCE. Connect eagerly to every
         // configured server and register each remote tool as mcp__<server>__<tool>

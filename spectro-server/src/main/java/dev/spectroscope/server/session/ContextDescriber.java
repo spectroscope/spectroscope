@@ -122,7 +122,7 @@ final class ContextDescriber {
                 config.maxQuestionOptions(), config.maxQuestionChars()));
         Stream<Tool> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()
-                : Stream.of(skills.useSkillTool());
+                : Stream.of(skills.useSkillTool(), skills.readSkillFileTool());
         Stream<ContextInfo.ToolInfo> registered = Stream.of(standardTools.stream(), extras.stream(), useSkill)
                 .flatMap(tools -> tools)
                 .map(ContextDescriber::asToolInfo);
@@ -161,7 +161,7 @@ final class ContextDescriber {
         Stream<String> beltNames = settingsBelt.stream().map(Tool::name);
         Stream<String> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()
-                : Stream.of(skills.useSkillTool().name());
+                : Stream.of(skills.useSkillTool().name(), skills.readSkillFileTool().name());
         return Stream.of(standard, beltNames, useSkill).flatMap(names -> names).toList();
     }
 
