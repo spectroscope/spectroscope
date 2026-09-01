@@ -249,7 +249,7 @@ public final class SkillLibrary {
                 }
                 String requested = input.path("name").asText();
                 return find(requested)
-                        .map(skill -> addressOf(skill) + skill.body())
+                        .map(skill -> addressOf(skill, context) + skill.body())
                         .orElseGet(() -> unknownSkill(requested));
             }
         };
@@ -268,17 +268,30 @@ public final class SkillLibrary {
      * context spent before anyone asks, and pinned as such in
      * {@code SkillLibraryTest#theCatalogueInTheSystemPromptCarriesNoSkillPaths}.</p>
      *
-     * <p>It names {@code read_skill_file} rather than {@code read_file} because
-     * the two roots really are different places: skills load against the PROJECT
-     * directory while the tool sandbox root is the WORKSPACE, which an
-     * unconfigured session resolves to a per-session temp dir. Telling the model
-     * an address it could not open with the tool it already has would trade one
-     * wasted turn for another.</p>
+     * <p>It names {@code read_skill_file} first because that tool reaches the
+     * directory in every case: skills load against the PROJECT directory while
+     * the tool sandbox root is the WORKSPACE, which an unconfigured session
+     * resolves to a per-session temp dir. Telling the model an address it could
+     * not open with the tool it already has would trade one wasted turn for
+     * another.</p>
      *
-     * @param skill the skill whose body is being handed over
+     * <p><b>Whether {@code read_file} ALSO reaches it is computed, never
+     * asserted</b> — review finding, card 358. The shipped sentence used to end
+     * "read_file cannot: the directory is outside the working directory", and
+     * that is false whenever the skill root sits under the sandbox root, which
+     * is exactly what an operator who points the workspace at a project gets:
+     * this repo's own tracked {@code .spectro/skills/spectroscope/research} is
+     * such a root. Measured before the fix, cwd = the project dir: the address
+     * said "read_file cannot" while {@code read_file} returned the sibling by
+     * both absolute and relative path. A false statement about the model's own
+     * sandbox is the class of error that produced the {@code find ~} sweep this
+     * card exists to remove.</p>
+     *
+     * @param skill   the skill whose body is being handed over
+     * @param context the run's tool context — its {@code cwd()} is the sandbox root
      * @return the address block, or "" for a skill that came from no directory
      */
-    private static String addressOf(Skill skill) {
+    private static String addressOf(Skill skill, Tool.ToolContext context) {
         Path dir = skill.source() == null ? null : skill.source().getParent();
         if (dir == null) {
             return "";
@@ -286,8 +299,42 @@ public final class SkillLibrary {
         return "[skill: " + skill.name() + "]\n"
                 + "[directory: " + dir + "]\n"
                 + "Files this skill refers to relatively live in that directory. Read one with "
-                + "read_skill_file (skill: \"" + skill.name() + "\", path: relative to it) — "
-                + "read_file cannot: the directory is outside the working directory.\n\n";
+                + "read_skill_file (skill: \"" + skill.name() + "\", path: relative to it)"
+                + readFileReach(dir, context) + "\n\n";
+    }
+
+    /**
+     * The second half of the address line: what {@code read_file} can do with the
+     * same directory, decided by the same rule {@code read_file} itself applies.
+     *
+     * <p>It mirrors {@code StandardTools.resolveInside} deliberately — absolute,
+     * lexically normalized, compared by NAME ELEMENTS — because the sentence is a
+     * claim about that tool and not about the filesystem. A canonical comparison
+     * here would say "reaches" for a workspace whose {@code cwd} is a symlink to
+     * the skill root's parent, where the lexical tool refuses.</p>
+     *
+     * <p>With no {@code cwd} to compare against, it claims NOTHING and closes the
+     * sentence with a full stop: an unknown sandbox is not evidence of an
+     * unreachable one.</p>
+     *
+     * @param dir     the skill's own directory, as loaded
+     * @param context the run's tool context, or {@code null}
+     * @return the clause that finishes the address line, punctuation included
+     */
+    private static String readFileReach(Path dir, Tool.ToolContext context) {
+        Path cwd = context == null ? null : context.cwd();
+        if (cwd == null) {
+            return ".";
+        }
+        Path base = cwd.toAbsolutePath().normalize();
+        Path target = dir.toAbsolutePath().normalize();
+        if (target.equals(base)) {
+            return "; read_file reaches it too — it is the working directory itself.";
+        }
+        if (target.startsWith(base)) {
+            return "; read_file reaches it too, at " + base.relativize(target) + "/.";
+        }
+        return " — read_file cannot: the directory is outside the working directory.";
     }
 
     /** The one refusal both skill tools give for a name nothing is installed under.
@@ -319,8 +366,12 @@ public final class SkillLibrary {
      * ({@code /var} → {@code /private/var}), and real-against-normalized would
      * refuse every ordinary read instead.</p>
      *
-     * <p>It does NOT touch the tools' own sandbox: no skill root joins
-     * {@code ToolContext.cwd()}, and {@code read_file} still refuses these paths.</p>
+     * <p>It does NOT touch the tools' own sandbox: the root comes from the
+     * skill's own load location and never from {@code ToolContext.cwd()}.
+     * Whether {@code read_file} could open the same file is a separate question
+     * with a per-run answer — it CAN whenever an operator points the workspace
+     * at a project that carries its own {@code .spectro/skills} — which is why
+     * {@link #addressOf} computes that clause instead of asserting it.</p>
      *
      * @return the {@code read_skill_file} tool, registered wherever
      *         {@link #useSkillTool()} is
@@ -333,8 +384,9 @@ public final class SkillLibrary {
             public String description() {
                 return "Reads one file that ships beside a skill (max 50 kB): the skill's name "
                         + "plus a path relative to the skill's own directory, which use_skill "
-                        + "names. Use it for the files a skill body refers to — they live "
-                        + "outside the working directory, so read_file cannot reach them.";
+                        + "names. Use it for the files a skill body refers to — it reads them "
+                        + "wherever the skill was installed, which read_file cannot do when that "
+                        + "is outside the working directory.";
             }
             /** Two required strings: the {@code skill} name and the relative {@code path}. */
             public JsonNode inputSchema() {

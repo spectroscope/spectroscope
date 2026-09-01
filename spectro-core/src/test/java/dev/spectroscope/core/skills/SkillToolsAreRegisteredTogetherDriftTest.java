@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Card 358: the two halves of a skill — its body and the files beside it — are
- * registered at the same places or the second one is missing from a face nobody
+ * REGISTERED at the same places or the second one is missing from a face nobody
  * looks at.
  *
  * <p>The list is DERIVED and not typed: the scan finds every main source that
@@ -23,6 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code readSkillFileTool()} exactly as often. A sixth registration site added
  * without its sibling reader turns this red on the day it lands, which a
  * hand-written list of five paths could not do.
+ *
+ * <p><b>What it is NOT, narrowed after a review finding:</b> this said "every
+ * face", and a face that hands over a skill body without registering a tool is
+ * invisible to it. {@link SkillInvocations#expand} is exactly that — a
+ * {@code /humanizer} in the user's prompt appends the same {@code [skill: name]}
+ * marker plus the body, wired at {@code SessionConnection}, calling neither
+ * factory. Of the two ways out named by the reviewer — route that door through
+ * the address too, or narrow the sentence to the coverage — this took the
+ * NARROWING, because the slash path strands nobody: its reader takes a NAME,
+ * not a path. The scan is over tool REGISTRATION sites, and the message below
+ * now says only that.
  */
 class SkillToolsAreRegisteredTogetherDriftTest {
 
@@ -57,9 +68,9 @@ class SkillToolsAreRegisteredTogetherDriftTest {
                 + " useSkillTool() calls over " + sources.size()
                 + " main sources — it is looking in the wrong tree: " + sites);
         assertEquals(List.of(), mismatched,
-                "a face that hands the model a skill body and not its files sends it "
-                        + "hunting the filesystem, which is the defect card 358 exists for: "
-                        + mismatched);
+                "a source that REGISTERS use_skill without read_skill_file hands the model "
+                        + "a skill body and not its files, and sends it hunting the "
+                        + "filesystem — the defect card 358 exists for: " + mismatched);
     }
 
     /** Occurrences of a literal — {@code String.split} would drop trailing empties. */
