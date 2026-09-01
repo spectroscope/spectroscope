@@ -47,7 +47,7 @@ describe("a value gets a second reading only where the decimal is unreadable", (
 
   it("stays silent when the plain number already says it", () => {
     // A parenthesis that repeats the number beside it is noise, and this page
-    // is 110 rows long.
+    // has a row for every classified constant in the build.
     expect(readableValue(number({ value: "150", unit: "TURNS" }))).toBeNull();
     expect(readableValue(number({ value: "50000", unit: "BYTES" }))).toBeNull();
     expect(readableValue(number({ value: "150", unit: "MILLISECONDS" }))).toBeNull();

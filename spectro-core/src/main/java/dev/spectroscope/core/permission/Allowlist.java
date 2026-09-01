@@ -1,6 +1,7 @@
 package dev.spectroscope.core.permission;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent.PermissionRequest;
 
 import java.util.List;
@@ -53,6 +54,7 @@ import java.util.Optional;
 public final class Allowlist {
 
     /** The separator between the tool segment and the tier qualifier. */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     static final char TIER_MARK = '#';
 
     /**

@@ -31,6 +31,7 @@ public final class ImageDownscaler {
      *  wire. 2576 is the high-res vision maximum of the current Anthropic
      *  generation (Opus 4.7+); 1568 the classic normalization edge — anything
      *  larger is downscaled by the API anyway, so sending more wastes bytes. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.PIXELS)
     private static final int[] DOWNSCALE_LONG_EDGES_PX = {2576, 1568, 1024};
 
     /** JPEG quality for downscaled photos — visually clean, small on the wire. */

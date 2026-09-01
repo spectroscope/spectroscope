@@ -1,5 +1,6 @@
 package dev.spectroscope.core.local;
 
+import dev.spectroscope.core.config.governing.Governs;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -36,6 +37,16 @@ public final class LocalRuntime {
      *  reach into one that only this process can use. */
     public record LocalEndpoint(String baseUrl, String model, String apiKey) {}
 
+    /**
+     * How long a freshly launched local model gets to answer its health probe
+     * before the launch is called failed. Generous because the first answer
+     * costs a full model load off disk.
+     *
+     * <p><b>It looks settable and is not.</b> A three-argument constructor
+     * takes the budget; the one shipped caller, {@code ServerLocalRuntime},
+     * uses the two-argument form.</p>
+     */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.SECONDS)
     private static final Duration DEFAULT_HEALTH_BUDGET = Duration.ofSeconds(60);
 
     private final Launcher launcher;

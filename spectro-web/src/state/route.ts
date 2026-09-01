@@ -69,8 +69,11 @@ export const SETTINGS_SECTIONS = [
   // from the other end — allowlist, netfence and hooks decide which calls never
   // come back to a person, and these three decide which loops must.
   "progress",
-  // Card 357: the numbers that govern a run — 110 classified constants with
-  // their live values and the code's own words about them. It stands in the
+  // Card 357: the numbers that govern a run — one row per classified constant
+  // in the build, with its live value and the code's own words about it. (The
+  // count used to stand here as a digit. It is derivable from the source, so
+  // per the house rule it belongs in a test and not in prose: the floor lives
+  // in GoverningNumbersDriftTest, and the digit was already stale.) It stands in the
   // system room because it is a property of THIS installation's build, and it
   // needs an address for the same reason the others do: an operator who hit a
   // limit has to be sendable straight at the page that names it.

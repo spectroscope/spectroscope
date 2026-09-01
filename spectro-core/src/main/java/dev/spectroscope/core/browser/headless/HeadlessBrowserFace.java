@@ -56,6 +56,7 @@ public final class HeadlessBrowserFace implements BrowserFace, AutoCloseable {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** How long one page load may take before the sentence says it did not. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     static final Duration LOAD_BUDGET = Duration.ofSeconds(30);
 
     /** How many console lines one page may accumulate — the pane's own cap. */

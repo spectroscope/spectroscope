@@ -61,6 +61,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.browser.headless.HeadlessBrowserFace",
+    "field" : "LOAD_BUDGET",
+    "value" : "30",
+    "expression" : "Duration.ofSeconds(30)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long one page load may take before the sentence says it did not."
+  },
+  {
+    "owner" : "dev.spectroscope.core.browser.headless.HeadlessBrowserFace",
     "field" : "MOBILE_BREAKPOINT",
     "value" : "768",
     "expression" : "768",
@@ -68,6 +78,16 @@
     "unit" : "PIXELS",
     "key" : "",
     "explanation" : "The pane's own breakpoint: below this width, a phone is emulated."
+  },
+  {
+    "owner" : "dev.spectroscope.core.browser.headless.HeadlessChrome",
+    "field" : "STARTUP_BUDGET",
+    "value" : "20",
+    "expression" : "Duration.ofSeconds(20)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long Chrome gets to write its DevToolsActivePort file."
   },
   {
     "owner" : "dev.spectroscope.core.browser.headless.HeadlessFence",
@@ -188,6 +208,16 @@
     "unit" : "COUNT",
     "key" : "maxQuestionOptions",
     "explanation" : "The shipped maxQuestionOptions: the bar renders them in a row."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_MAX_TOKENS",
+    "value" : "32000",
+    "expression" : "32_000",
+    "kind" : "SETTABLE",
+    "unit" : "TOKENS",
+    "key" : "maxTokens",
+    "explanation" : "The shipped maxTokens: 32,000 output tokens per provider call — card 364 makes the number reachable and does not move it.\n\nA second copy of Agent.DEFAULT_MAX_TOKENS rather than an import, for the reason DEFAULT_MAX_TURNS carries one: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTokensSettingTest pins the two together.\n\nNo ceiling here, and that is deliberate in the same way DEFAULT_COMMAND_TIMEOUT_SECONDS carries none. The ceilings that exist belong to the BACKENDS and are enforced where they are known: the OpenAI-compatible provider clamps every request to its own hard 16,000, and Anthropic's reasoning budget is derived to stay strictly below whatever this number is. A second cap invented here would be a limit no provider asked for, which is the shape card 364 exists to remove."
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
@@ -391,6 +421,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.image.ImageDownscaler",
+    "field" : "DOWNSCALE_LONG_EDGES_PX",
+    "value" : "[2576, 1568, 1024]",
+    "expression" : "{2576, 1568, 1024}",
+    "kind" : "FIXED",
+    "unit" : "PIXELS",
+    "key" : "",
+    "explanation" : "Downscale ladder: long-edge targets tried until the re-encode fits the wire. 2576 is the high-res vision maximum of the current Anthropic generation (Opus 4.7+); 1568 the classic normalization edge — anything larger is downscaled by the API anyway, so sending more wastes bytes."
+  },
+  {
+    "owner" : "dev.spectroscope.core.image.ImageDownscaler",
     "field" : "WIRE_IMAGE_LIMIT_BYTES",
     "value" : "5242880",
     "expression" : "5L * 1024 * 1024",
@@ -398,6 +438,36 @@
     "unit" : "BYTES",
     "key" : "",
     "explanation" : "The providers' per-image wire limit (Anthropic rejects larger images)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.image.OpenAiImageProvider",
+    "field" : "CONNECT_TIMEOUT",
+    "value" : "10",
+    "expression" : "java.time.Duration.ofSeconds(10)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "Image renders are SLOW (30–90 s is normal for gpt-image) — the read timeout must outlast them; the auto-detected client cut at ~60 s and failed real generations (found live 2026-07-17)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.image.OpenAiImageProvider",
+    "field" : "READ_TIMEOUT",
+    "value" : "120",
+    "expression" : "java.time.Duration.ofSeconds(120)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The read half of the pair above: 120 s, chosen to outlast the 30–90 s a gpt-image render normally takes. The auto-detected client cut at ~60 s and failed real generations (found live 2026-07-17)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchSupervisor",
+    "field" : "DEFAULT_BUDGET",
+    "value" : "45",
+    "expression" : "Duration.ofSeconds(45)",
+    "kind" : "MODEL_CHOICE",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a start waits for the address to answer, unless the caller says otherwise."
   },
   {
     "owner" : "dev.spectroscope.core.launch.LaunchSupervisor",
@@ -500,6 +570,16 @@
     "explanation" : "Below this multiple of the recommended memory the fit is called tight."
   },
   {
+    "owner" : "dev.spectroscope.core.local.LocalRuntime",
+    "field" : "DEFAULT_HEALTH_BUDGET",
+    "value" : "60",
+    "expression" : "Duration.ofSeconds(60)",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a freshly launched local model gets to answer its health probe before the launch is called failed. Generous because the first answer costs a full model load off disk.\n\nIt looks settable and is not. A three-argument constructor takes the budget; the one shipped caller, ServerLocalRuntime, uses the two-argument form."
+  },
+  {
     "owner" : "dev.spectroscope.core.log.Logged",
     "field" : "ARG_PREVIEW_CHARS",
     "value" : "120",
@@ -550,6 +630,36 @@
     "explanation" : "How long one listed step may be."
   },
   {
+    "owner" : "dev.spectroscope.core.mcp.HttpSseTransport",
+    "field" : "DEFAULT_TIMEOUT",
+    "value" : "20",
+    "expression" : "Duration.ofSeconds(20)",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The bound on one HTTP/SSE request to a remote MCP server, matching the stdio transport's read timeout so the two kinds of server fail on the same clock.\n\nIt looks settable and is not. The two-argument constructor takes a timeout and no shipped call site passes one — McpTransports builds this transport with the server config alone."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.JsonRpcChannel",
+    "field" : "READER_EXIT_GRACE",
+    "value" : "2",
+    "expression" : "Duration.ofSeconds(2)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long teardown waits for the reader thread to leave readLine after the far end has been released. Measured against a real spawned server on both JDKs, the read returns in under a millisecond once the child is gone; this is slack for a loaded machine, not an expected cost. Public because it is one of the four terms in the write-off budget the user guide prints — see StdioTransport.WRITE_OFF_BUDGET."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.McpClient",
+    "field" : "DEFAULT_TIMEOUT",
+    "value" : "20",
+    "expression" : "Duration.ofSeconds(20)",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The bound on a single tools/call before the transport is poisoned and the call degrades to a readable \"ERROR: ...\".\n\nIt looks settable and is not. There is a three-argument constructor taking the timeout, and only the tests ever use it: the one shipped call site is McpServerRegistry's two-argument form. An operator whose MCP server needs 40 seconds has nowhere to say so."
+  },
+  {
     "owner" : "dev.spectroscope.core.mcp.McpTool",
     "field" : "MAX_IMAGE_BYTES",
     "value" : "5242880",
@@ -558,6 +668,66 @@
     "unit" : "BYTES",
     "key" : "",
     "explanation" : "The most one image in an MCP tool result may weigh, in bytes — the providers' own per-image wire limit (see ImageDownscaler), which is the point beyond which an attach would be rejected anyway.\n\nUnlike view_image, an oversized MCP image is refused, not downscaled: the payload comes from a remote server over an untrusted connection, so the size is decided on the ENCODED length before anything is decoded — a hostile server must not be able to make the harness allocate a decoded copy of an arbitrarily large payload."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.StdioTransport",
+    "field" : "DEFAULT_READ_TIMEOUT",
+    "value" : "20",
+    "expression" : "Duration.ofSeconds(20)",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The bound a single request waits for its reply — the number the user guide prints. Public because it is a documented promise, not an implementation detail: a test pins it so the sentence in the guide and the value here cannot drift apart the way a remembered number always does."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.StdioTransport",
+    "field" : "DESTROY_ESCALATION_GRACE",
+    "value" : "2",
+    "expression" : "Duration.ofSeconds(2)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long the polite signal has before the forcible one — the same escalation StandardTools.runCommand uses. Bounded for the tree as a whole, not per process."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.StdioTransport",
+    "field" : "EXIT_AFTER_EOF_GRACE",
+    "value" : "1",
+    "expression" : "Duration.ofSeconds(1)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a server may take to leave on the end-of-stream it was just given, before a signal follows. Step two of the MCP stdio shutdown sequence (close stdin, wait, SIGTERM, SIGKILL); a server that exits on EOF is normally gone in milliseconds and never sees the rest."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.StdioTransport",
+    "field" : "TEARDOWN_TAIL",
+    "value" : "5",
+    "expression" : "EXIT_AFTER_EOF_GRACE.plus(DESTROY_ESCALATION_GRACE).plus(JsonRpcChannel.READER_EXIT_GRACE)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "What a teardown may cost after the read has already given up: EXIT_AFTER_EOF_GRACE + DESTROY_ESCALATION_GRACE + JsonRpcChannel.READER_EXIT_GRACE. Against a real mute server it measures under a millisecond, because the child dies on the first signal and the read returns with it; this is what a pathological server can spend — one that ignores end-of-stream and SIGTERM both."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.StdioTransport",
+    "field" : "WRITE_OFF_BUDGET",
+    "value" : "25",
+    "expression" : "DEFAULT_READ_TIMEOUT.plus(TEARDOWN_TAIL)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The whole write-off: the read bound plus the teardown tail. This — not DEFAULT_READ_TIMEOUT on its own — is the number a person waits for when a server spawns and never speaks, and it is the number chapter 18 of the user guide prints. Card 221 shipped a guide that promised the read bound alone and a TERM-ignoring server measured 22.4 s against it; a documented bound that the code can exceed is the exact failure that card exists to stop."
+  },
+  {
+    "owner" : "dev.spectroscope.core.permission.Allowlist",
+    "field" : "TIER_MARK",
+    "value" : "#",
+    "expression" : "'#'",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "The separator between the tool segment and the tier qualifier."
   },
   {
     "owner" : "dev.spectroscope.core.progress.ProgressGuard",
@@ -642,8 +812,8 @@
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
     "field" : "CONVERSATION_SHARE",
-    "value" : "3",
-    "expression" : "3",
+    "value" : "7",
+    "expression" : "7",
     "kind" : "FIXED",
     "unit" : "RATIO",
     "key" : "",
@@ -657,7 +827,7 @@
     "kind" : "SETTABLE",
     "unit" : "TOKENS",
     "key" : "compactionThreshold",
-    "explanation" : "The threshold used when nothing can be learned — today's constant, kept exactly. Anthropic has no capability endpoint, the OpenAI wire has none, and a backend that is down teaches nothing either; all of them land here. The web gauge names the same figure (contextRingMath.ts), for the same reason and in the same words."
+    "explanation" : "The threshold used when nothing can be learned — today's constant, kept exactly. A custom or unrecognised backend that states no loaded window and publishes no ceiling lands here; since card 366 that no longer includes anthropic, openai or gemini, whose windows ModelWindows knows. The web gauge names the same figure (contextRingMath.ts), for the same reason and in the same words."
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
@@ -672,12 +842,12 @@
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
     "field" : "WINDOW_SHARE",
-    "value" : "4",
-    "expression" : "4",
+    "value" : "10",
+    "expression" : "10",
     "kind" : "FIXED",
     "unit" : "RATIO",
     "key" : "",
-    "explanation" : "…out of this many. See the class note for why the reserve is a quarter."
+    "explanation" : "…out of this many. See the class note for why the reserve is 30 %."
   },
   {
     "owner" : "dev.spectroscope.core.skills.SkillLibrary",
@@ -688,6 +858,16 @@
     "unit" : "CHARACTERS",
     "key" : "",
     "explanation" : "How much of a SKILL.md's first body line becomes the description when the frontmatter names none, in characters. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.skills.SkillLibrary",
+    "field" : "MAX_SKILL_FILE_BYTES",
+    "value" : "50000",
+    "expression" : "50_000",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The ceiling on ONE sibling read, the same 50 kB read_file allows. Not a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",
@@ -788,6 +968,16 @@
     "unit" : "BYTES",
     "key" : "",
     "explanation" : "Plenty of raw HTML to yield the tool's 10k-char text; a hard ceiling on memory."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.DefaultHttpFetcher",
+    "field" : "TIMEOUT",
+    "value" : "15",
+    "expression" : "Duration.ofSeconds(15)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long one fetch may spend on connect and on read before the tool answers with a failure instead of a page. The same 15 s the four search tiers use, and for the same reason: a model waiting on a dead host is spending the turn a person is watching."
   },
   {
     "owner" : "dev.spectroscope.core.tools.ShellCommand",
@@ -960,6 +1150,16 @@
     "explanation" : "What a zero-length span is widened to, so it can be seen at all. One millisecond: too small to read as a measurement, big enough to click."
   },
   {
+    "owner" : "dev.spectroscope.core.web.BraveSearcher",
+    "field" : "TIMEOUT",
+    "value" : "15",
+    "expression" : "Duration.ofSeconds(15)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a single Brave query may take before this tier is treated as dead and the next one is tried. Short on purpose: the tiers fall through in order, so a slow tier costs every tier behind it."
+  },
+  {
     "owner" : "dev.spectroscope.core.web.BrowsePageTool",
     "field" : "CHROME_PAGE_TIMEOUT_MS",
     "value" : "15000",
@@ -1048,6 +1248,36 @@
     "unit" : "NONE",
     "key" : "",
     "explanation" : "Exit code stand-in when the process never produced one (timeout/failure)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.DuckDuckGoSearcher",
+    "field" : "TIMEOUT",
+    "value" : "15",
+    "expression" : "Duration.ofSeconds(15)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a single DuckDuckGo query may take before this tier is treated as dead and the next one is tried. Short on purpose: the tiers fall through in order, so a slow tier costs every tier behind it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.SearxngSearcher",
+    "field" : "TIMEOUT",
+    "value" : "15",
+    "expression" : "Duration.ofSeconds(15)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a single SearXNG query may take before this tier is treated as dead and the next one is tried. Short on purpose: the tiers fall through in order, so a slow tier costs every tier behind it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.TavilySearcher",
+    "field" : "TIMEOUT",
+    "value" : "15",
+    "expression" : "Duration.ofSeconds(15)",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a single Tavily query may take before this tier is treated as dead and the next one is tried. Short on purpose: the tiers fall through in order, so a slow tier costs every tier behind it."
   },
   {
     "owner" : "dev.spectroscope.core.web.WebSearchTool",

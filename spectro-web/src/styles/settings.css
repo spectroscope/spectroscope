@@ -141,8 +141,11 @@
 }
 
 /* ---- Card 357: the numbers that govern a run -------------------------------
-   A reference list, not a form: 110 rows of name, value and the code's own
-   words. The whole design job here is letting somebody SCAN it, so the rows
+   A reference list, not a form: one row per classified constant, each with a
+   name, a value and the code's own words. (A count stood here as a digit, in a
+   CSS comment a reader would take for a layout constraint; it is derivable
+   from the source, so it lives in a test.) The whole design job here is
+   letting somebody SCAN it, so the rows
    are separated by lines and nothing else — no colour on text, no fills, per
    the house rule that colour lives on lines. Every token below is one this
    sheet already uses; an invented custom property would fall back to nothing

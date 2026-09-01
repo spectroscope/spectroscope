@@ -2,6 +2,7 @@ package dev.spectroscope.core.web;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -65,6 +66,10 @@ public final class SearxngSearcher implements WebSearcher {
      *  the DuckDuckGo tier already uses. */
     static final String USER_AGENT = "Mozilla/5.0 (compatible; spectro-web-search)";
 
+    /** How long a single SearXNG query may take before this tier is treated as
+     *  dead and the next one is tried. Short on purpose: the tiers fall through
+     *  in order, so a slow tier costs every tier behind it. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
     private static final ObjectMapper JSON = new ObjectMapper();
 
