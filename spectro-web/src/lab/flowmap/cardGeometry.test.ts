@@ -5,6 +5,7 @@
 // commit: the layout's own row pitch is measured out of a real sceneToFlow run
 // and held against the single source.
 import { describe, expect, it } from "vitest";
+import { blockOf } from "../../testkit/source";
 import {
   RAIL_GAP,
   SUB_CAP_HEAD_PX,
@@ -66,9 +67,11 @@ describe("the caps that make the reserve a bound", () => {
       [".pf-sub--full .pf-sub__meta", SUB_CAP_META_PX],
       [".pf-sub--full .pf-agent__genfull", SUB_CAP_SHELF_PX],
     ] as const) {
-      const block = css.slice(css.indexOf(selector));
-      expect(block, selector).toContain(selector);
-      expect(block.slice(0, block.indexOf("}")), selector).toContain(`max-height: ${cap}px`);
+      // Card 360: an EXACT selector lookup. What stood here sliced from the
+      // first textual occurrence, so a sheet that later grew
+      // `.x .pf-sub--full .pf-sub__head` above this one would have been read
+      // as this rule — the same hole three reviewers found on 2026-08-30.
+      expect(blockOf(css, selector), selector).toContain(`max-height: ${cap}px`);
     }
   });
 });
@@ -130,8 +133,12 @@ describe("the belt is not a growth region of the worker card (card 321)", () => 
   });
 
   it("and the chip it adds spends one cell, like every chip beside it", () => {
-    const block = css.slice(css.indexOf(".pf-chip--foreign {"));
-    const rule = block.slice(0, block.indexOf("}"));
+    // Card 360: exact lookup. The `.pf-chip--foreign {` literal this replaced
+    // is the SAME shape as the anchor three reviewers found on 2026-08-30 —
+    // `.pf-agent--wide .pf-chip--foreign {` contains it as a substring, so a
+    // scoped override would have been read as this rule and the mutation that
+    // proved it left a suite 24/24 green.
+    const rule = blockOf(css, ".pf-chip--foreign");
     expect(rule, "the block was not found where it is looked for").toContain("border-style");
     expect(rule, "a spanning chip is a belt row the worker seat never priced").not.toMatch(
       /grid-(column|area)/,

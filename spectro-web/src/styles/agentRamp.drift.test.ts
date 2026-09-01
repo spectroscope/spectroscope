@@ -12,19 +12,24 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blockOf } from "../testkit/source";
 import { AGENT_RAMP_SLOTS, agentTagColor } from "../lab/agentDirectory";
 import { EXPORT_THEMES } from "../export/themes";
 
 const read = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../${name}`, import.meta.url)), "utf8");
 
-/** The custom properties one selector's block declares. */
+/**
+ * The custom properties one selector's block declares.
+ *
+ * Card 360: the body now comes from the testkit's parsed locator. The line this
+ * replaced was `css.indexOf(`${selector} {`)`, which still matches
+ * `.foo .bar {` when asked for `.bar {` — so a scoped block could be read as
+ * the unscoped one's token set, and the whole point of this file is which
+ * design declares which token.
+ */
 function blockTokens(css: string, selector: string): Set<string> {
-  const start = css.indexOf(`${selector} {`);
-  if (start < 0) throw new Error(`no such selector in the stylesheet: ${selector}`);
-  const open = css.indexOf("{", start);
-  const end = css.indexOf("}", open);
-  const body = css.slice(open + 1, end).replace(/\/\*[\s\S]*?\*\//g, "");
+  const body = blockOf(css, selector);
   const out = new Set<string>();
   for (const line of body.split(";")) {
     const match = /^\s*--([a-z0-9-]+)\s*:\s*\S/i.exec(line);

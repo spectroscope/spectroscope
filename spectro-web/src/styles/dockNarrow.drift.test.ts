@@ -14,17 +14,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blockOf } from "../testkit/source";
 
 const read = (rel: string): string =>
   readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
-/** The declarations of the FIRST block whose selector line contains `sel`. */
-function blockOf(css: string, sel: string): string {
-  const at = css.indexOf(sel);
-  expect(at, `selector ${sel} exists`).toBeGreaterThan(-1);
-  const open = css.indexOf("{", at);
-  return css.slice(open + 1, css.indexOf("}", open));
-}
 
 describe("the chat keeps its floor beside the dock (card 242)", () => {
   it("the panel's render-time cap is the chat reserve, not a percentage", () => {
