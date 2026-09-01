@@ -82,4 +82,25 @@ describe("the reply budget has a control and a sentence in both languages", () =
       expect(t(lang, "set.maxTokensNote" as never)).toMatch(/16[,.]000/);
     }
   });
+
+  it("keeps the thinking warning on the one family and the one value it is true of", () => {
+    // The other half, and it shipped unconditionally in both languages until
+    // this card's review measured it: "set it too low and extended thinking
+    // turns off". AnthropicProvider only ever builds a token budget for the
+    // models in BUDGET_THINKING_MODEL_PREFIXES, and that budget is only ever
+    // zero — the one value that omits thinking — at maxTokens <= 1, which the
+    // control's own min={1} makes a single reachable value. Anthropic's
+    // adaptive models (the shipped default among them) and every other backend
+    // are unaffected at any value, so the unscoped sentence described nothing a
+    // reader of this page could reach. AnthropicProviderTest
+    // .TheOneValueThatTurnsThinkingOff pins the arithmetic; this pins the copy.
+    for (const lang of ["en", "de"] as const) {
+      const note = t(lang, "set.maxTokensNote" as never);
+      expect(
+        note,
+        `${lang}: the note never names Anthropic, so the warning still reads as a property of every backend`,
+      ).toMatch(/Anthropic/);
+      expect(note, `${lang}: the note does not say the value it is true of`).toMatch(/\b1\b/);
+    }
+  });
 });

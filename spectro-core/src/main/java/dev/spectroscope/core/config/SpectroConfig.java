@@ -759,9 +759,12 @@ public record SpectroConfig(
      *  {@link #DEFAULT_COMMAND_TIMEOUT_SECONDS} carries none. The ceilings that
      *  exist belong to the BACKENDS and are enforced where they are known: the
      *  OpenAI-compatible provider clamps every request to its own hard 16,000,
-     *  and Anthropic's reasoning budget is derived to stay strictly below
-     *  whatever this number is. A second cap invented here would be a limit no
-     *  provider asked for, which is the shape card 364 exists to remove.</p> */
+     *  and the older Anthropic models — the ones that take a reasoning budget
+     *  as a number rather than the adaptive shape — derive that budget to stay
+     *  strictly below whatever this number is. A second cap invented here would
+     *  be a limit no provider asked for, which is the shape card 364 exists to
+     *  remove.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "maxTokens")
     public static final int DEFAULT_MAX_TOKENS = 32_000;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */

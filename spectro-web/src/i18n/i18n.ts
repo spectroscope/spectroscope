@@ -3113,8 +3113,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "set.maxTokens": { de: "Antwort-Budget pro Aufruf", en: "Reply budget per call" },
   "set.maxTokensNote": {
-    de: "Wie viele Ausgabe-Token EIN Modellaufruf ausgeben darf. Das ist die Obergrenze, die der Harness anfragt \u2014 ein Backend darf eine eigene, niedrigere haben (die OpenAI-kompatible Schnittstelle deckelt hart bei 16.000). Ein zu kleiner Wert schaltet erweitertes Denken f\u00fcr den Aufruf ab, weil dessen Budget darunter bleiben muss.",
-    en: "How many output tokens ONE model call may spend. This is the ceiling the harness asks for \u2014 a backend may hold a lower one of its own (the OpenAI-compatible wire clamps hard at 16,000). Set it too low and extended thinking turns off for that call, because its budget has to stay below this.",
+    de: "Wie viele Ausgabe-Token EIN Modellaufruf ausgeben darf. Das ist die Obergrenze, die der Harness anfragt \u2014 ein Backend darf eine eigene, niedrigere haben (die OpenAI-kompatible Schnittstelle deckelt hart bei 16.000). Die \u00e4lteren Anthropic-Modelle halten ihr Denk-Budget unter dieser Zahl: dort, und nur dort, bleibt beim Wert 1 kein Platz mehr, und der Aufruf geht ohne Denken raus.",
+    en: "How many output tokens ONE model call may spend. This is the ceiling the harness asks for \u2014 a backend may hold a lower one of its own (the OpenAI-compatible wire clamps hard at 16,000). The older Anthropic models keep their reasoning budget under this number, so on those, and only those, a value of 1 leaves no room and the call goes out without thinking.",
   },
   "set.commandTimeoutSeconds": { de: "Zeit pro Shell-Befehl", en: "Time per shell command" },
   "set.commandTimeoutSecondsNote": {

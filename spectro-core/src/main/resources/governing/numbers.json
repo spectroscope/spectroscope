@@ -191,6 +191,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_MAX_TOKENS",
+    "value" : "32000",
+    "expression" : "32_000",
+    "kind" : "SETTABLE",
+    "unit" : "TOKENS",
+    "key" : "maxTokens",
+    "explanation" : "The shipped maxTokens: 32,000 output tokens per provider call — card 364 makes the number reachable and does not move it.\n\nA second copy of Agent.DEFAULT_MAX_TOKENS rather than an import, for the reason DEFAULT_MAX_TURNS carries one: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTokensSettingTest pins the two together.\n\nNo ceiling here, and that is deliberate in the same way DEFAULT_COMMAND_TIMEOUT_SECONDS carries none. The ceilings that exist belong to the BACKENDS and are enforced where they are known: the OpenAI-compatible provider clamps every request to its own hard 16,000, and the older Anthropic models — the ones that take a reasoning budget as a number rather than the adaptive shape — derive that budget to stay strictly below whatever this number is. A second cap invented here would be a limit no provider asked for, which is the shape card 364 exists to remove."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_MAX_TURNS",
     "value" : "150",
     "expression" : "150",
@@ -642,8 +652,8 @@
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
     "field" : "CONVERSATION_SHARE",
-    "value" : "3",
-    "expression" : "3",
+    "value" : "7",
+    "expression" : "7",
     "kind" : "FIXED",
     "unit" : "RATIO",
     "key" : "",
@@ -657,7 +667,7 @@
     "kind" : "SETTABLE",
     "unit" : "TOKENS",
     "key" : "compactionThreshold",
-    "explanation" : "The threshold used when nothing can be learned — today's constant, kept exactly. Anthropic has no capability endpoint, the OpenAI wire has none, and a backend that is down teaches nothing either; all of them land here. The web gauge names the same figure (contextRingMath.ts), for the same reason and in the same words."
+    "explanation" : "The threshold used when nothing can be learned — today's constant, kept exactly. A custom or unrecognised backend that states no loaded window and publishes no ceiling lands here; since card 366 that no longer includes anthropic, openai or gemini, whose windows ModelWindows knows. The web gauge names the same figure (contextRingMath.ts), for the same reason and in the same words."
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
@@ -672,12 +682,12 @@
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
     "field" : "WINDOW_SHARE",
-    "value" : "4",
-    "expression" : "4",
+    "value" : "10",
+    "expression" : "10",
     "kind" : "FIXED",
     "unit" : "RATIO",
     "key" : "",
-    "explanation" : "…out of this many. See the class note for why the reserve is a quarter."
+    "explanation" : "…out of this many. See the class note for why the reserve is 30 %."
   },
   {
     "owner" : "dev.spectroscope.core.skills.SkillLibrary",
@@ -688,6 +698,16 @@
     "unit" : "CHARACTERS",
     "key" : "",
     "explanation" : "How much of a SKILL.md's first body line becomes the description when the frontmatter names none, in characters. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.skills.SkillLibrary",
+    "field" : "MAX_SKILL_FILE_BYTES",
+    "value" : "50000",
+    "expression" : "50_000",
+    "kind" : "ALIAS",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The ceiling on ONE sibling read, the same 50 kB read_file allows. Not a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",

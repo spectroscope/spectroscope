@@ -56,6 +56,7 @@ public final class SkillLibrary {
      * 5.8 MB over 98 files, and one of them poured into the context would cost
      * more than the whole body it belongs to.
      */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.BYTES)
     private static final long MAX_SKILL_FILE_BYTES = 50_000;
 
     /** Insertion order is load order; later roots already replaced earlier entries. */

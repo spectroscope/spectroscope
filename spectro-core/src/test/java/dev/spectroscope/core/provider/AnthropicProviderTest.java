@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.provider.LlmProvider.ImageContent;
 import dev.spectroscope.core.provider.LlmProvider.PStop;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
@@ -595,6 +596,48 @@ class AnthropicProviderTest {
                     "an absent input must become an OBJECT, was " + call.input().getNodeType());
             assertTrue(call.input().isEmpty(),
                     "the object must be empty, was " + call.input());
+        }
+    }
+
+    /**
+     * How far "set it too low and extended thinking turns off" actually
+     * reaches — card 364's review found the sentence shipped unconditionally in
+     * the settings note (EN and DE) and in the printed guide, and nothing
+     * pinned it.
+     *
+     * <p>It is true of exactly one value on one closing family of models. The
+     * budget shape is only ever built for a model in
+     * {@code BUDGET_THINKING_MODEL_PREFIXES}, and the budget is only ever 0 —
+     * the one value that omits thinking — at {@code maxTokens <= 1}, which the
+     * settings control's own {@code min={1}} makes a single reachable value.
+     * Every model on adaptive thinking, including the shipped default, and
+     * every non-Anthropic backend are unaffected at any value at all.</p>
+     */
+    @Nested
+    class TheOneValueThatTurnsThinkingOff {
+
+        @Test
+        void onlyOneReachableCompletionBudgetLeavesNoRoomForAReasoningBudget() {
+            assertEquals(0, AnthropicProvider.thinkingBudget(1),
+                    "1 is the smallest the settings control allows and the only value that"
+                            + " omits thinking; if that stopped being true the note in the"
+                            + " settings page and the guide describes nothing at all");
+            assertTrue(AnthropicProvider.thinkingBudget(2) > 0,
+                    "2 already leaves room, so the warning covers ONE value — not a range,"
+                            + " which is how it was written");
+        }
+
+        @Test
+        void theShippedDefaultModelIsNotEvenInTheFamilyTheWarningIsAbout() {
+            String shipped = SpectroConfig.defaultModelFor("anthropic");
+            assertFalse(AnthropicProvider.usesLegacyThinkingBudget(shipped),
+                    shipped + " takes the adaptive thinking shape, which carries no token"
+                            + " budget and cannot be squeezed out by maxTokens — so on the"
+                            + " configuration this harness ships, the warning applies to no"
+                            + " value whatever. Say so where it is written, or drop it");
+            assertTrue(AnthropicProvider.usesLegacyThinkingBudget("claude-opus-4-1"),
+                    "the premise: the legacy family is not empty, or the test above is"
+                            + " green over a rule that no longer exists");
         }
     }
 }
