@@ -217,7 +217,7 @@
     "kind" : "SETTABLE",
     "unit" : "TOKENS",
     "key" : "maxTokens",
-    "explanation" : "The shipped maxTokens: 32,000 output tokens per provider call — card 364 makes the number reachable and does not move it.\n\nA second copy of Agent.DEFAULT_MAX_TOKENS rather than an import, for the reason DEFAULT_MAX_TURNS carries one: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTokensSettingTest pins the two together.\n\nNo ceiling here, and that is deliberate in the same way DEFAULT_COMMAND_TIMEOUT_SECONDS carries none. The ceilings that exist belong to the BACKENDS and are enforced where they are known: the OpenAI-compatible provider clamps every request to its own hard 16,000, and Anthropic's reasoning budget is derived to stay strictly below whatever this number is. A second cap invented here would be a limit no provider asked for, which is the shape card 364 exists to remove."
+    "explanation" : "The shipped maxTokens: 32,000 output tokens per provider call — card 364 makes the number reachable and card 365 measured it unchanged.\n\nSETTABLE rather than LOOKS_SETTABLE, and card 364 is what earns that: .maxTokens( went from ZERO shipped call sites to wired on every agent-building path. Before that the builder method existed, was public, and no caller ever passed anything but this number — which is the class of ten constants card 357's inventory calls \"looks settable and is not\".\n\nA second copy of Agent.DEFAULT_MAX_TOKENS rather than an import, for the reason DEFAULT_MAX_TURNS carries one: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTokensSettingTest pins the two together.\n\nThe census left it alone, and it is the one default of four that survived unchanged: of 33,810 real responses across 900 sessions over 50 KB (measured 2026-09-01), the median is 355 output tokens, p99 is 15,408, and only 0.21 % exceed 32,000.\n\nNo ceiling here, deliberately, the same way DEFAULT_COMMAND_TIMEOUT_SECONDS carries none. The ceilings that exist belong to the BACKENDS and are enforced where they are known: the OpenAI-compatible provider clamps every request to its own hard 16,000, and the older Anthropic models derive a reasoning budget that stays strictly below whatever this number is. A second cap invented here would be a limit no provider asked for, which is the shape card 364 removes."
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
@@ -864,10 +864,10 @@
     "field" : "MAX_SKILL_FILE_BYTES",
     "value" : "50000",
     "expression" : "50_000",
-    "kind" : "FIXED",
+    "kind" : "ALIAS",
     "unit" : "BYTES",
     "key" : "",
-    "explanation" : "The ceiling on ONE sibling read, the same 50 kB read_file allows. Not a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to."
+    "explanation" : "The ceiling on ONE sibling read, the same 50 kB read_file allows.\n\nNot a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to.\n\nALIAS and not FIXED, and the two annotations that disagreed about this at the merge are worth recording. It is deliberately the same figure as StandardTools.MAX_FILE_BYTES — a skill's own file is read under the same bound as any other, so an operator cannot learn one ceiling and meet another. That makes it a restatement rather than an independent number, which is exactly what card 357's fourth class is for; classifying it FIXED would put a second number in the registry where there is one decision, and moving one without the other is the shape card 365 found in the two question-budget defaults."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",

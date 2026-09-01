@@ -746,40 +746,35 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.PIXELS, key = "dockMaxWidth")
     public static final int DEFAULT_DOCK_MAX_WIDTH = 1200;
 
-    /** The shipped {@code maxTokens}: 32,000 output tokens per provider call —
-     *  card 364 makes the number reachable and does not move it.
-     *
-     *  <p>A second copy of {@code Agent.DEFAULT_MAX_TOKENS} rather than an
-     *  import, for the reason {@link #DEFAULT_MAX_TURNS} carries one: {@code
-     *  Agent} reads this package, and the house answer to a restated number is
-     *  a test that goes and looks. {@code MaxTokensSettingTest} pins the two
-     *  together.</p>
-     *
-     *  <p><b>No ceiling here</b>, and that is deliberate in the same way
-     *  {@link #DEFAULT_COMMAND_TIMEOUT_SECONDS} carries none. The ceilings that
-     *  exist belong to the BACKENDS and are enforced where they are known: the
-     *  OpenAI-compatible provider clamps every request to its own hard 16,000,
-     *  and Anthropic's reasoning budget is derived to stay strictly below
-     *  whatever this number is. A second cap invented here would be a limit no
-     *  provider asked for, which is the shape card 364 exists to remove.</p> */
     /**
-     * The completion budget one provider call may spend, in output tokens.
+     * The shipped {@code maxTokens}: 32,000 output tokens per provider call —
+     * card 364 makes the number reachable and card 365 measured it unchanged.
      *
-     * <p>SETTABLE rather than LOOKS_SETTABLE because card 364 made it reachable:
-     * {@code .maxTokens(} went from zero shipped call sites to wired on every
+     * <p>SETTABLE rather than LOOKS_SETTABLE, and card 364 is what earns that:
+     * {@code .maxTokens(} went from ZERO shipped call sites to wired on every
      * agent-building path. Before that the builder method existed, was public,
-     * and no caller ever passed anything but this number.</p>
+     * and no caller ever passed anything but this number — which is the class
+     * of ten constants card 357's inventory calls "looks settable and is not".</p>
      *
-     * <p>Card 365 measured it and left it alone — the one default of four that
-     * survived the census unchanged. Of 33,810 real responses across 900
-     * sessions over 50 KB (2026-09-01), median 355 output tokens, p99 15,408,
-     * and only <b>0.21 %</b> exceed 32,000.</p>
+     * <p>A second copy of {@code Agent.DEFAULT_MAX_TOKENS} rather than an
+     * import, for the reason {@link #DEFAULT_MAX_TURNS} carries one: {@code
+     * Agent} reads this package, and the house answer to a restated number is a
+     * test that goes and looks. {@code MaxTokensSettingTest} pins the two
+     * together.</p>
+     *
+     * <p><b>The census left it alone</b>, and it is the one default of four that
+     * survived unchanged: of 33,810 real responses across 900 sessions over
+     * 50 KB (measured 2026-09-01), the median is 355 output tokens, p99 is
+     * 15,408, and only <b>0.21 %</b> exceed 32,000.</p>
+     *
+     * <p><b>No ceiling here</b>, deliberately, the same way
+     * {@link #DEFAULT_COMMAND_TIMEOUT_SECONDS} carries none. The ceilings that
+     * exist belong to the BACKENDS and are enforced where they are known: the
+     * OpenAI-compatible provider clamps every request to its own hard 16,000,
+     * and the older Anthropic models derive a reasoning budget that stays
+     * strictly below whatever this number is. A second cap invented here would
+     * be a limit no provider asked for, which is the shape card 364 removes.</p>
      */
-     *  and the older Anthropic models — the ones that take a reasoning budget
-     *  as a number rather than the adaptive shape — derive that budget to stay
-     *  strictly below whatever this number is. A second cap invented here would
-     *  be a limit no provider asked for, which is the shape card 364 exists to
-     *  remove.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "maxTokens")
     public static final int DEFAULT_MAX_TOKENS = 32_000;
 
