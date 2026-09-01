@@ -3,12 +3,20 @@
 // reported inputTokens of the main agent — against the compaction threshold.
 // The popover adds the char/4 introspection when the harness emits
 // context_info (an additive extra); without it the ring still works.
+//
+// CARD 366 — THE WINDOW COMES FROM THE RUN NOW. The line naming the window has
+// been here since card 300 and never appeared for a local model: the web
+// answered "which window?" from a hand-typed vendor prefix table that returned
+// null for everything that was not Claude, GPT or Gemini. The harness had
+// measured the real answer all along and dropped it before the wire. It now
+// rides on context_info, with its provenance, and the table lives in Java
+// beside the code that derives the threshold from it (ModelWindows).
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ContextSnapshot } from "../state/reducer";
 import { formatTokens } from "../format";
-import { contextWindowFor, formatWindow } from "./contextWindow";
-import { contextDenominator } from "./contextRingMath";
+import { formatWindow } from "./contextWindow";
+import { contextDenominator, namedWindow, type ContextDenominator } from "./contextRingMath";
 
 const SIZE = 18;
 const R = 7;
@@ -17,17 +25,17 @@ const CIRCUMFERENCE = 2 * Math.PI * R;
 const WARM_AT_PCT = 70;
 const CRITICAL_AT_PCT = 90;
 
-export function ContextRing(props: {
-  lastInputTokens: number;
-  context: ContextSnapshot | null;
-  model?: string;
-}) {
+export function ContextRing(props: { lastInputTokens: number; context: ContextSnapshot | null }) {
   const { lastInputTokens, context } = props;
-  const modelWindow = props.model ? contextWindowFor(props.model) : null;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
 
-  const denominator = contextDenominator(context?.threshold, modelWindow);
+  // The window the RUN reported, not a guess about the model's name. It arrives
+  // on the same frame as the threshold, and a context_info frame always carries
+  // one — so the first tier decides here today and this argument is what would
+  // catch a frame that ever stated a window alone. What the window is really
+  // for is the LINE below the number: naming what the denominator is a share of.
+  const denominator = contextDenominator(context?.threshold, context?.contextWindow ?? null);
   const threshold = denominator.value;
   const pct = threshold > 0 ? (lastInputTokens / threshold) * 100 : 0;
   const shownPct = Math.round(pct);
@@ -83,41 +91,71 @@ export function ContextRing(props: {
       </button>
 
       {open && (
-        <div className="context-pop" role="dialog" aria-label="Context usage">
-          <span className="eyebrow">Context</span>
-          <p className="context-line tabular">
-            {formatTokens(lastInputTokens)} of {formatTokens(threshold)}{" "}
-            {denominator.of === "compaction" ? "before compaction" : "of the model window"} ({shownPct}%)
-          </p>
-          {modelWindow !== null && denominator.of === "compaction" && (
-            <p className="context-window tabular">model window · {formatWindow(modelWindow)}</p>
-          )}
-          {context !== null ? (
-            <>
-              <div className="context-parts">
-                <span className="head">part</span>
-                <span className="head num">chars</span>
-                <span className="head num">~tokens</span>
-                {context.parts.map((part, i) => (
-                  <Fragment key={i}>
-                    <span className="context-part-label">{part.label}</span>
-                    <span className="num tabular">{formatTokens(part.chars)}</span>
-                    <span className="num tabular">{formatTokens(part.estTokens)}</span>
-                  </Fragment>
-                ))}
-              </div>
-              <p className="context-meta tabular">
-                messages: {context.messages} &middot; turn: {context.turn}
-              </p>
-              <p className="context-note">char/4 estimate — the usage line is the truth</p>
-            </>
-          ) : (
-            <p className="context-note">
-              Live introspection (context_info) is additive — the ring uses the last usage event.
-            </p>
-          )}
-        </div>
+        <ContextPopover
+          lastInputTokens={lastInputTokens}
+          context={context}
+          denominator={denominator}
+          shownPct={shownPct}
+        />
       )}
     </span>
+  );
+}
+
+/**
+ * The popover's whole content.
+ *
+ * Its own component because the ring's button is all that renders while it is
+ * closed, and this gate has no DOM to click with — so the half that carries
+ * the numbers would otherwise be pinned by nothing. It holds no state and makes
+ * no decision the ring has not already made: which window to name and what to
+ * call it is `namedWindow`, next to the denominator it belongs under.
+ */
+export function ContextPopover(props: {
+  lastInputTokens: number;
+  context: ContextSnapshot | null;
+  denominator: ContextDenominator;
+  shownPct: number;
+}) {
+  const { lastInputTokens, context, denominator, shownPct } = props;
+  const window = namedWindow(context?.contextWindow, context?.thresholdSource, denominator);
+  return (
+    <div className="context-pop" role="dialog" aria-label="Context usage">
+      <span className="eyebrow">Context</span>
+      <p className="context-line tabular">
+        {formatTokens(lastInputTokens)} of {formatTokens(denominator.value)}{" "}
+        {denominator.of === "compaction" ? "before compaction" : "of the model window"} ({shownPct}%)
+      </p>
+      {window !== null && (
+        <p className="context-window tabular">
+          {window.of === "loaded" ? "loaded " : window.of === "published" ? "model " : ""}window ·{" "}
+          {formatWindow(window.tokens)}
+        </p>
+      )}
+      {context !== null ? (
+        <>
+          <div className="context-parts">
+            <span className="head">part</span>
+            <span className="head num">chars</span>
+            <span className="head num">~tokens</span>
+            {context.parts.map((part, i) => (
+              <Fragment key={i}>
+                <span className="context-part-label">{part.label}</span>
+                <span className="num tabular">{formatTokens(part.chars)}</span>
+                <span className="num tabular">{formatTokens(part.estTokens)}</span>
+              </Fragment>
+            ))}
+          </div>
+          <p className="context-meta tabular">
+            messages: {context.messages} &middot; turn: {context.turn}
+          </p>
+          <p className="context-note">char/4 estimate — the usage line is the truth</p>
+        </>
+      ) : (
+        <p className="context-note">
+          Live introspection (context_info) is additive — the ring uses the last usage event.
+        </p>
+      )}
+    </div>
   );
 }

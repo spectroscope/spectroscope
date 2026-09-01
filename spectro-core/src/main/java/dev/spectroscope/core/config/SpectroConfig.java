@@ -52,7 +52,8 @@ import java.util.function.Function;
  * @param compactionThreshold input-token threshold that triggers compaction, or
  *                            {@code null} when nobody set one — then the harness
  *                            DERIVES it from the window the backend says it
- *                            loaded (card 263,
+ *                            loaded, else from the model's published window
+ *                            (card 263, card 366,
  *                            {@link dev.spectroscope.core.session.CompactionThreshold}).
  *                            The default used to be a literal 100,000 here, and
  *                            that is the whole reason a session on a 204,288-token

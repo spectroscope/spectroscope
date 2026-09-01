@@ -147,14 +147,21 @@ describe("the panel says what its divisor is", () => {
   });
 
   it("a published limit says out loud that it is not a measurement", () => {
-    const html = panel([rootStart("gpt-4o"), usage("main", 64_000)]);
-    expect(html).toContain(t(lang, "lab.ctx.note.published", { limit: "128k", model: "gpt-4o" }));
-    expect(html).not.toContain(t(lang, "lab.ctx.note.measured", { limit: "128k" }));
+    // Card 366: the panel learns this from the run instead of from a table of
+    // its own — thresholdSource "model" is the harness saying it derived the
+    // threshold from what the vendor publishes.
+    const html = panel([rootStart("gpt-4o"), ctxInfo(89_600, "model"), usage("main", 44_800)]);
+    expect(html).toContain(t(lang, "lab.ctx.note.published", { limit: "89.6k", model: "gpt-4o" }));
+    expect(html).not.toContain(t(lang, "lab.ctx.note.measured", { limit: "89.6k" }));
   });
 
   it("a stand-in divisor says it is a stand-in", () => {
-    const html = panel([rootStart("some-local-build"), usage("main", 25_000)]);
-    expect(html).toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
+    // And a run that reported NOTHING lands here whatever its model is called:
+    // the web no longer keeps a window table to fill the silence with.
+    const local = panel([rootStart("some-local-build"), usage("main", 25_000)]);
+    const hosted = panel([rootStart("gpt-4o"), usage("main", 25_000)]);
+    expect(local).toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
+    expect(hosted).toContain(t(lang, "lab.ctx.note.unknown", { limit: "100k" }));
   });
 
   it("a fallen-back threshold is named as one, and the percentage is the ring's", () => {

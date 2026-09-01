@@ -4265,12 +4265,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Divisor: {limit} — this is where the run compacts. The threshold is a fall-back, though: the harness learned nothing about the window this backend serves.",
   },
   "lab.ctx.note.published": {
-    de: "Bezugsgröße: {limit} — ein veröffentlichtes Limit für {model}, keine Messung.",
-    en: "Divisor: {limit} — a published limit for {model}, not a measurement.",
+    de: "Bezugsgröße: {limit} — abgeleitet aus dem veröffentlichten Fenster von {model}. Gemessen hat dieses Backend nichts: eine gehostete Instanz gibt es nicht.",
+    en: "Divisor: {limit} — derived from the window {model} publishes. This backend measured nothing: a hosted model has no loaded instance to measure.",
   },
   "lab.ctx.note.unknown": {
-    de: "Bezugsgröße: {limit} — ein Platzhalter. Weder hat der Lauf eine Schwelle gemeldet, noch ist für dieses Modell ein Limit hinterlegt.",
-    en: "Divisor: {limit} — a stand-in. The run reported no threshold and no limit is on file for this model.",
+    de: "Bezugsgröße: {limit} — ein Platzhalter. Dieser Lauf hat keine Schwelle gemeldet, es gibt also nichts, wodurch sich ehrlich teilen ließe.",
+    en: "Divisor: {limit} — a stand-in. This run reported no threshold, so there is nothing on screen to divide by.",
   },
   "lab.ctx.note.childrenNoWindow": {
     de: "Kind-Agenten zeigen keinen Prozentwert: sie laufen ohne Introspektion und melden keine Schwelle, also gibt es nichts, wodurch man ehrlich teilen könnte.",

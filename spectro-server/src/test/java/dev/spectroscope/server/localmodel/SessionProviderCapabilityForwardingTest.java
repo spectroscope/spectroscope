@@ -76,16 +76,16 @@ class SessionProviderCapabilityForwardingTest {
     @Test
     void thatWindowIsWhatTheHarnessThenCompactsAt(@TempDir Path dir) throws Exception {
         // The consequence, spelled out rather than left to arithmetic elsewhere:
-        // a spectro-local session compacts at 6,144 and not at 100,000.
+        // a spectro-local session compacts at 5,734 and not at 100,000.
         Path file = Files.writeString(dir.resolve("m.gguf"), "gguf");
         LlmProvider session = runtimeOver("qwen3-4b", file).providerFor("qwen3-4b").orElseThrow();
 
         CompactionThreshold.Derived derived =
                 CompactionThreshold.derive(null, session.contextWindow());
 
-        assertEquals(6_144, derived.tokens());
+        assertEquals(5_734, derived.tokens());
         assertEquals(CompactionThreshold.Source.WINDOW, derived.source());
-        assertEquals(2_048, CompactionThreshold.summaryBudget(derived),
+        assertEquals(2_458, CompactionThreshold.summaryBudget(derived),
                 "and the summarizer gets the reserve, not a 32,000-token request "
                         + "against an 8,192-token server");
     }

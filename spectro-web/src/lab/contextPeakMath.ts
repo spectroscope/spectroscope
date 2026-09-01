@@ -21,10 +21,21 @@
 //    prints its peak, a bar relative to the biggest peak on the panel, and no
 //    percent sign — and the panel says why in one line.
 //
-// 2. THE RUN'S OWN THRESHOLD BEATS THE TABLE. contextWindowFor is a prefix guess
-//    and has already been wrong once in production: claude-fable-5 fell to the
-//    200k row and the ring read 379% on a healthy session. When the run said
-//    what its own threshold is, that number wins.
+// 2. THE RUN'S OWN THRESHOLD BEATS ANY PUBLISHED FIGURE — and since card 366
+//    that is structural rather than a rule this module enforces. The window
+//    now arrives on the SAME frame as the threshold (context_info carries
+//    both), so the threshold is always the tier that wins here. The thing this
+//    rule used to fend off is gone: the web's own prefix table, a second copy
+//    of knowledge the harness had measured, which had already been wrong once
+//    in production — claude-fable-5 fell to the 200k row and the ring read 379%
+//    on a healthy session. The table lives in Java now (ModelWindows), where it
+//    moves the threshold instead of only colouring a gauge.
+//
+//    THE COST, SAID OUT LOUD: a transcript recorded before card 366 that
+//    carries no context_info at all has no window on it, and the panel now
+//    calls that "unknown" where it used to divide by a table row. That is the
+//    same trade rule 3 already made — a guess that looks measured is worse than
+//    a stand-in that says it is one.
 //
 // 3. A THRESHOLD THE HARNESS FELL BACK TO IS NOT A MEASUREMENT — AND IS STILL
 //    THE DIVISOR. This is what thresholdSource buys: the number 100000 arrives
@@ -59,11 +70,10 @@
 // in through.
 
 import { contextDenominator, type ContextDenominator } from "../components/contextRingMath";
-import { contextWindowFor } from "../components/contextWindow";
 import type { AgentDirectory } from "./agentDirectory";
 
 /** The harness's own CompactionThreshold.Source, as it rides the wire. */
-export type ThresholdSource = "override" | "window" | "fallback";
+export type ThresholdSource = "override" | "window" | "model" | "fallback";
 
 /** One agent's line on the panel. */
 export interface ContextPeakRow {
@@ -100,8 +110,12 @@ export interface ContextPeakRow {
  * - `fellBack`          it is the threshold the run reported, but the harness
  *                       said it fell back to it — the run compacts there and
  *                       nothing about the backend's window was learned
- * - `published`         the run reported no threshold; a published limit from
- *                       the model table is used instead
+ * - `published`         the number came from what the model's VENDOR publishes
+ *                       rather than from anything the backend measured — the
+ *                       harness says so itself now (`thresholdSource: "model"`,
+ *                       card 366), which is the shape every cloud run has: no
+ *                       loaded instance to ask about, and a window that is a
+ *                       fixed property of the model id
  * - `unknown`           neither: a constant stand-in
  * - `childrenNoWindow`  a child is on the panel and prints no percentage
  */
@@ -160,12 +174,14 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
   // divide by different numbers. The provenance is kept aside for the words.
   const reportedThreshold = reported === null ? undefined : reported.threshold;
   const fellBack = reported !== null && reported.source === "fallback";
-  // The recorded run's own model, and nothing else. `models` is the only place
-  // it can come from: agentDirectory builds the root handle with no model at
-  // all (foldAgents keeps records for children only), so reading the handle
-  // here would be a dead branch dressed up as a fallback.
-  const rootModel = rootId === null ? undefined : models[rootId];
-  const rootWindow = rootModel === undefined || rootModel === "" ? null : contextWindowFor(rootModel);
+  // NULL, and not a table lookup on the root's model name any more (card 366).
+  // The header ring passes the window its frame reported here; this panel has
+  // nothing to pass, because the window rides the SAME frame as the threshold
+  // and could therefore never win the tier above it. Threading it in to be
+  // ignored would be plumbing that looks like a decision. What the window does
+  // decide on this panel is the WORDS — `published` below — and that reads the
+  // provenance, which is the part that is not implied by the threshold.
+  const rootWindow = null;
 
   const spent: { id: string; tag: string; name: string; model?: string; peak: number; turns: number }[] = [];
   for (const [id, handle] of directory) {
@@ -209,6 +225,11 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
     };
   });
 
+  // The provenance decides the WORDS and never the number (rule 3). A threshold
+  // the harness derived from a PUBLISHED window is neither a measurement of a
+  // running server nor a stand-in, and card 366 gave it its own name on the
+  // wire — so the panel stops calling it "measured".
+  const published = reported !== null && reported.source === "model";
   const notes: ContextPeakNote[] = [];
   const rootRow = rows.find((r) => r.root);
   if (rootRow !== undefined && rootRow.denominator !== null) {
@@ -216,7 +237,9 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
       rootRow.denominator.of === "compaction"
         ? fellBack
           ? "fellBack"
-          : "measured"
+          : published
+            ? "published"
+            : "measured"
         : rootRow.denominator.of === "window"
           ? "published"
           : "unknown",

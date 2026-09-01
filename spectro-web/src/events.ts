@@ -129,7 +129,15 @@ export type RunEvent =
        *  UNRECOGNISED source the way it treats an absent one — as a threshold
        *  taken at its word — and never as `fallback`, which is the only value
        *  that downgrades what the panel is allowed to call it. */
-      thresholdSource?: "override" | "window" | "fallback";
+      thresholdSource?: "override" | "window" | "model" | "fallback";
+      /** The window `threshold` was derived from, when the run knew one
+       *  (additive, card 366). Absent = nothing was learned about the window;
+       *  never 0, because a zero would be a claim about the room available.
+       *  This is what lets a gauge name its own denominator's origin — the web
+       *  used to answer that from a hand-typed vendor prefix table, which
+       *  returned null for every local model and so never said anything at all
+       *  on the backends this house tests with. */
+      contextWindow?: number;
       parts: { label: string; chars: number; estTokens: number; text?: string }[];
       ts: number;
     } // additive: context introspection

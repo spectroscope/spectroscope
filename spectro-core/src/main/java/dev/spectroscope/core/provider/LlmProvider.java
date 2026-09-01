@@ -99,9 +99,17 @@ public interface LlmProvider {
      * is the LOADED window and not the model's ceiling: LM Studio states both —
      * a model whose {@code max_context_length} is 1,048,576 loaded at 204,288 —
      * and reporting the ceiling would push compaction past the window the server
-     * actually holds, which is the one direction worse than the constant. A
-     * provider that cannot ask (anthropic has no such endpoint; the OpenAI wire
-     * has none either) answers 0 and lands on the documented fallback.</p>
+     * actually holds, which is the one direction worse than the constant.</p>
+     *
+     * <p><b>A provider that cannot ask answers 0, and since card 366 that is no
+     * longer the end of the question.</b> anthropic has no such endpoint and the
+     * OpenAI wire has none either — but a hosted model has nothing to ask
+     * BECAUSE it has no loaded instance: its window is a published property of
+     * the model id, and {@link dev.spectroscope.core.session.ModelWindows} is
+     * the rung below this one. The sentence here used to end "and lands on the
+     * documented fallback", which read "cannot ask" as "cannot know" and left a
+     * 1,000,000-token model compacting at 100,000. Only a backend that states no
+     * window AND publishes none reaches the constant now.</p>
      *
      * @return the usable context window in tokens, or 0 when nothing is known
      */

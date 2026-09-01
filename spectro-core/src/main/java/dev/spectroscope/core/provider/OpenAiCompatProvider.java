@@ -254,6 +254,15 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * than the constant this card removes. An installed but unloaded model
      * therefore teaches nothing, which is the honest answer.</p>
      *
+     * <p>Card 366 pins that rule rather than softening it. The owner's complaint
+     * there was about the CLOUD case — a hosted model whose published window
+     * never reached the threshold at all — and the tempting reading of it was
+     * "so read the ceiling here too". That would break exactly this: the local
+     * derivation stays on {@code context_length}, and
+     * {@code ContextWindowShapesTest
+     * .lmStudioReportsTheLoadedInstancesWindowAndNotTheModelsCeiling} is the
+     * test that goes red if anyone finishes the wrong half of the complaint.</p>
+     *
      * @param listing the parsed response body, whatever it turned out to be
      * @param model   the model id this provider sends to; null teaches nothing
      * @return the loaded context length in tokens, or 0 when nothing is known

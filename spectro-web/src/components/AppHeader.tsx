@@ -267,7 +267,7 @@ export function AppHeader(props: {
       )}
 
       {props.lastInputTokens > 0 && (
-        <ContextRing lastInputTokens={props.lastInputTokens} context={props.context} model={props.model} />
+        <ContextRing lastInputTokens={props.lastInputTokens} context={props.context} />
       )}
 
       {props.viewingLive && props.running && (

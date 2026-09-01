@@ -16,11 +16,14 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Card 263 end to end: the number the loop compacts at, and the number the ring
  * is told about, are the SAME derived number — and both follow the backend.
+ * Card 366 adds the cloud half: a hosted model has no loaded instance to ask
+ * about, and its PUBLISHED window reaches the same event by the same path.
  *
  * <p>The owner's report was that the context ring reads "43.0k of 100k before
  * compaction" while the loaded model offers 204,288. The ring is innocent
@@ -54,15 +57,26 @@ class AgentCompactionThresholdTest {
         private final int window;
         private final List<ProviderRequest> requests = new ArrayList<>();
         private final int reportedInputTokens;
+        private final String model;
 
         SizedProvider(int window, int reportedInputTokens) {
+            this(window, reportedInputTokens, null);
+        }
+
+        SizedProvider(int window, int reportedInputTokens, String model) {
             this.window = window;
             this.reportedInputTokens = reportedInputTokens;
+            this.model = model;
         }
 
         @Override
         public int contextWindow() {
             return window;
+        }
+
+        @Override
+        public String modelName() {
+            return model;
         }
 
         @Override
@@ -117,10 +131,40 @@ class AgentCompactionThresholdTest {
         RunEvent.ContextInfo info =
                 firstInfo(collect(agent(new SizedProvider(204_288, 10), null)));
 
-        assertEquals(153_216, info.threshold(),
-                "the ring must be told three quarters of the window the backend loaded");
+        assertEquals(143_001, info.threshold(),
+                "the ring must be told 70 % of the window the backend loaded");
         assertEquals("window", info.thresholdSource(),
                 "and told which fact produced it, so caption and behaviour cannot disagree");
+        assertEquals(204_288, info.contextWindow(),
+                "and the window itself, so the gauge names its own denominator's origin");
+    }
+
+    @Test
+    void aCloudModelReachesTheGaugeWithItsPublishedWindow() {
+        // Card 366, the whole point. A provider with no capability endpoint
+        // answers 0 — there is no loaded instance to overrun — and before this
+        // card that put a 1,000,000-token model on the 100,000 constant, 10 % of
+        // the window the operator is paying for.
+        RunEvent.ContextInfo info = firstInfo(collect(
+                agent(new SizedProvider(0, 10, "claude-opus-4-6"), null)));
+
+        assertEquals(700_000, info.threshold());
+        assertEquals("model", info.thresholdSource());
+        assertEquals(1_000_000, info.contextWindow());
+    }
+
+    @Test
+    void aLocalModelKeepsDerivingFromTheInstanceTheServerLoaded() {
+        // Card 366, AC 3: the local behaviour is UNCHANGED and pinned. This is
+        // the shape that made the two cases look like one — an id the published
+        // table also knows, served by a backend holding far less. The loaded
+        // instance wins, and the event says so.
+        RunEvent.ContextInfo info = firstInfo(collect(
+                agent(new SizedProvider(32_768, 10, "claude-opus-4-6"), null)));
+
+        assertEquals(22_937, info.threshold(), "70 % of what the SERVER holds");
+        assertEquals("window", info.thresholdSource());
+        assertEquals(32_768, info.contextWindow());
     }
 
     @Test
@@ -142,6 +186,8 @@ class AgentCompactionThresholdTest {
 
         assertEquals(CompactionThreshold.FALLBACK_THRESHOLD, info.threshold());
         assertEquals("fallback", info.thresholdSource());
+        assertNull(info.contextWindow(),
+                "nothing was learned, and the event may not invent a window");
     }
 
     @Test
@@ -152,16 +198,16 @@ class AgentCompactionThresholdTest {
         // two constant comparisons. Under a Compaction.maybeCompact mutated to
         // never fire, that class stayed 5/5 green while seven other tests in
         // core went red — the house rule is to replace such a test, not loosen
-        // it. So: a model loaded at 8,192 compacts at 6,144, a turn reporting
+        // it. So: a model loaded at 8,192 compacts at 5,734, a turn reporting
         // 7,000 input tokens is over it, and the proof is the summarizer's own
         // call arriving at the provider.
         CompactingProvider small = new CompactingProvider(8_192, 7_000);
 
         List<RunEvent> events = collect(agent(small, null, withNoop()));
 
-        assertEquals(6_144, firstInfo(events).threshold());
+        assertEquals(5_734, firstInfo(events).threshold());
         assertTrue(events.stream().anyMatch(RunEvent.Compaction.class::isInstance),
-                "7,000 input tokens over a 6,144 line must actually summarize");
+                "7,000 input tokens over a 5,734 line must actually summarize");
         assertEquals(1, small.summaries.size(), "exactly one summarizer call");
     }
 
@@ -184,14 +230,14 @@ class AgentCompactionThresholdTest {
     @Test
     void theSummarizerIsNeverAskedForMoreThanTheWindowItMustFitIn() {
         // Review finding: the summarizer's request carried a literal 32,000
-        // maxTokens. On the 8k model above the reserve is 2,048, so the one call
+        // maxTokens. On the 8k model above the reserve is 2,458, so the one call
         // the reserve exists to hold asked for four times the whole window.
         // Compaction never throws, so that degrades into an ErrorEvent every
         // other turn — silently, in exactly the configuration AC 4 exists for.
         CompactingProvider small = new CompactingProvider(8_192, 7_000);
         collect(agent(small, null, withNoop()));
 
-        assertEquals(2_048, small.summaries.getFirst().maxTokens(),
+        assertEquals(2_458, small.summaries.getFirst().maxTokens(),
                 "the summarizer gets the reserve the threshold kept back");
 
         // And the clamp only ever takes budget away: on the owner's own window
