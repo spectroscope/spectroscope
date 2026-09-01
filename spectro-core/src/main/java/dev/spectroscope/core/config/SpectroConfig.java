@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.mcp.McpServerConfig;
 import dev.spectroscope.core.provider.AnthropicProvider;
 import dev.spectroscope.core.provider.LlmProvider;
@@ -529,19 +530,25 @@ public record SpectroConfig(
 
     /** The shipped {@code progressGuardWrites}: the same bytes under a third new
      *  name is where "a second copy" stops explaining it. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "progressGuardWrites")
     public static final int DEFAULT_PROGRESS_WRITES = 3;
+
     /** The shipped {@code progressGuardFailures}: above the two a flaky test is
      *  allowed, and the counter resets on any success of the same call. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "progressGuardFailures")
     public static final int DEFAULT_PROGRESS_FAILURES = 3;
+
     /** The shipped {@code progressGuardPlanTurns}: 0, meaning off. The reason is
      *  on card 262 and in {@code ProgressSettings} — it needs a maintained plan,
      *  and the runs it was cut for keep none. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TURNS, key = "progressGuardPlanTurns")
     public static final int DEFAULT_PROGRESS_PLAN_TURNS = 0;
 
     /** The shipped {@code continuationBudget}: three restarts of one run. No
      *  budget vocabulary existed anywhere in the owner's sixteen work orders, so
      *  this number is an addition to the house language rather than a recovery
      *  of it — card 266 owner call 2, decided while building. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "continuationBudget")
     public static final int DEFAULT_CONTINUATION_BUDGET = 3;
 
     /**
@@ -561,12 +568,15 @@ public record SpectroConfig(
      * 2026-08-31 asked four times: it was in that sixth, and the refusal cost it
      * a turn it then ran out of.</p>
      */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "questionsPerRun")
     public static final int DEFAULT_QUESTIONS_PER_RUN = 9;
 
     /** The shipped {@code maxQuestionOptions}: the bar renders them in a row. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "maxQuestionOptions")
     public static final int DEFAULT_MAX_QUESTION_OPTIONS = 4;
 
     /** The shipped {@code maxQuestionChars}: a question is read under time pressure. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.CHARACTERS, key = "maxQuestionChars")
     public static final int DEFAULT_MAX_QUESTION_CHARS = 500;
 
     /** The shipped {@code maxTurns}: the runaway-loop brake, in turns per run.
@@ -605,6 +615,7 @@ public record SpectroConfig(
      *  spectroscope on an arbitrary backend, and only the shape of the work
      *  transfers. What IS pinned is the decision: {@code MaxTurnsSettingTest}
      *  holds this constant to 150 and to {@code Agent.DEFAULT_MAX_TURNS}.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TURNS, key = "maxTurns")
     public static final int DEFAULT_MAX_TURNS = 150;
 
     /** The shipped {@code commandTimeoutSeconds}: ten seconds per shell call —
@@ -624,12 +635,14 @@ public record SpectroConfig(
      *  key exists to remove. A non-positive value is not special-cased either —
      *  {@code Process.waitFor} treats it as "do not wait", which fails fast and
      *  visibly rather than hanging.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.SECONDS, key = "commandTimeoutSeconds")
     public static final int DEFAULT_COMMAND_TIMEOUT_SECONDS = 10;
 
     /** The shipped {@code chatReserveWidth}: 360 CSS pixels of the chat row the
      *  right dock may never take. Card 242 introduced the reserve because the
      *  proportional cap before it left the chat at 356 px on a 1150 px window;
      *  card 361 makes the number the operator's. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.PIXELS, key = "chatReserveWidth")
     public static final int DEFAULT_CHAT_RESERVE_WIDTH = 360;
 
     /** The shipped {@code dockMaxWidth}: 1200 CSS pixels, the ceiling card 228
@@ -641,6 +654,7 @@ public record SpectroConfig(
      *  the ceiling decides and the reserve is. Raising only one of them was the
      *  premise card 361 was nearly scoped on, and it would have changed nothing
      *  on the owner's own monitor.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.PIXELS, key = "dockMaxWidth")
     public static final int DEFAULT_DOCK_MAX_WIDTH = 1200;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */

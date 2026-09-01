@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolOutput;
 
@@ -45,18 +46,26 @@ import java.util.function.Supplier;
 public final class BrowsePageTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
+     *  kept as a second copy of the same number. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
 
     /** Wall-clock kill budget for the Chrome process. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     static final long CHROME_TIMEOUT_SECONDS = 25;
 
     /** Chrome-side page-load cap (ms) — Chrome gives up on the page before we kill it. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final int CHROME_PAGE_TIMEOUT_MS = 15_000;
 
     /** Virtual time granted to page JavaScript (ms) — this is what makes SPAs render. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final int CHROME_VIRTUAL_TIME_BUDGET_MS = 8_000;
 
     /** How much of Chrome's stderr an error answer quotes. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int STDERR_TAIL_CHARS = 300;
 
     /** macOS application-bundle binaries, most common first. */

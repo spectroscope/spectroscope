@@ -1,5 +1,6 @@
 package dev.spectroscope.core.browser.headless;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.net.NetFence;
 
 import java.net.InetAddress;
@@ -43,6 +44,7 @@ import java.util.function.LongSupplier;
 public final class HeadlessFence {
 
     /** How long one resolved answer is reused — the desktop hook's own window. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     public static final long LOOKUP_TTL_MS = 30_000;
 
     private final BooleanSupplier allowLocalhost;

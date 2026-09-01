@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.HookConfig;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.graph.Redaction;
 import dev.spectroscope.core.tools.ShellCommand;
 import dev.spectroscope.core.tools.ToolOutput;
@@ -30,11 +31,16 @@ import java.util.Map;
 public final class HookRunner {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
+     *  kept as a second copy of the same number. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
 
     /** The per-hook timeout applied when an entry sets none. Public because the
      *  settings surface prints it ("unset falls back to N seconds") and a second
      *  spelling of N is a number that drifts. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.SECONDS, key = "hooks[].timeoutSeconds")
     public static final long DEFAULT_TIMEOUT_SECONDS = 10;
 
     /** How the reason of a redacted command reads, so the marker is one string.

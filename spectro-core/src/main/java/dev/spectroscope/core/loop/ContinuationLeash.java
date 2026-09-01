@@ -1,6 +1,7 @@
 package dev.spectroscope.core.loop;
 
 import dev.spectroscope.core.PlanVerdict;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 
 import java.util.List;
@@ -60,6 +61,7 @@ public final class ContinuationLeash {
      * retry and a finish, and it sits in the same settings block as card 262's
      * thresholds because an operator tuning one will want the other.</p>
      */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "continuationBudget")
     public static final int DEFAULT_BUDGET = 3;
 
     /**
@@ -79,9 +81,11 @@ public final class ContinuationLeash {
      *  listing. The message is spent from the same context pool as the work, so
      *  a 200-step plan must not eat the window it is trying to save. The COUNT
      *  is never clipped, only the list. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     private static final int MAX_LISTED_STEPS = 8;
 
     /** How long one listed step may be. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_STEP_CHARS = 120;
 
     /** What the leash decided. Pinned on by tests and by the wire: the prose in

@@ -1,5 +1,6 @@
 package dev.spectroscope.core.log;
 
+import dev.spectroscope.core.config.governing.Governs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,8 +32,11 @@ import java.util.stream.Collectors;
 public final class Logged {
 
     /** Per-argument preview cap — enough to recognize a call, never a payload dump. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     static final int ARG_PREVIEW_CHARS = 120;
 
+    /** Nanoseconds in a millisecond. A unit conversion and not a limit. */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     private static final long NANOS_PER_MILLI = 1_000_000L;
 
     /** Static utility — never instantiated. */

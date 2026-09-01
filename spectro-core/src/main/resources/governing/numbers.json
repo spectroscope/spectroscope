@@ -1,0 +1,1102 @@
+[
+  {
+    "owner" : "dev.spectroscope.core.Agent",
+    "field" : "CONTEXT_PART_TEXT_CAP",
+    "value" : "16384",
+    "expression" : "16_384",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Context-part texts are capped for the wire — a whole conversation can be megabytes; the char counts stay the full truth regardless."
+  },
+  {
+    "owner" : "dev.spectroscope.core.Agent",
+    "field" : "DEFAULT_MAX_TOKENS",
+    "value" : "32000",
+    "expression" : "32_000",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The completion budget one turn spends when nothing configures it. Public because CompactionThreshold is defined AGAINST it (card 263): the share of the context window kept back has to hold one of these, and a second copy of the number in the derivation would drift the day this one moves."
+  },
+  {
+    "owner" : "dev.spectroscope.core.Agent",
+    "field" : "DEFAULT_MAX_TURNS",
+    "value" : "150",
+    "expression" : "150",
+    "kind" : "SETTABLE",
+    "unit" : "TURNS",
+    "key" : "maxTurns",
+    "explanation" : "The runaway-loop brake, in turns per run, when nothing configures it. Was a private constant until card 266; a continuation effectively raises the ceiling, and a ceiling that is the product of two numbers — only one of them visible — is not a ceiling anybody can reason about. It joins maxTokens and compactionThreshold in AgentOptions.\n\nCard 365 moved it from 15 to 150. This copy has to move WITH the settings default and not after it: every face that never passes maxTurns — spectro run, a cron fire, a fleet node, every child agent — reads this constant and nothing else, so a settings default raised alone would have raised nothing for any of them. The census behind the number, with its date and its n, is a snapshot in SpectroConfig.DEFAULT_MAX_TURNS; MaxTurnsSettingTest holds the two together."
+  },
+  {
+    "owner" : "dev.spectroscope.core.browser.BrowserTools",
+    "field" : "MAX_SCREENSHOT_BYTES",
+    "value" : "5242880",
+    "expression" : "5L * 1024 * 1024",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The provider-side wire limit for one image, shared with the MCP path. A pane screenshot measured 10.8 KB at 1100x760 in the card 200 spike, so this is a guard rather than a routine cost."
+  },
+  {
+    "owner" : "dev.spectroscope.core.browser.BrowserTools",
+    "field" : "MOBILE_WIDTH",
+    "value" : "375",
+    "expression" : "375",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "PIXELS",
+    "key" : "",
+    "explanation" : "The three presets, and the width below which the pane emulates a phone."
+  },
+  {
+    "owner" : "dev.spectroscope.core.browser.headless.HeadlessBrowserFace",
+    "field" : "CONSOLE_CAP",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "FIXED",
+    "unit" : "LINES",
+    "key" : "",
+    "explanation" : "How many console lines one page may accumulate — the pane's own cap."
+  },
+  {
+    "owner" : "dev.spectroscope.core.browser.headless.HeadlessBrowserFace",
+    "field" : "MOBILE_BREAKPOINT",
+    "value" : "768",
+    "expression" : "768",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "PIXELS",
+    "key" : "",
+    "explanation" : "The pane's own breakpoint: below this width, a phone is emulated."
+  },
+  {
+    "owner" : "dev.spectroscope.core.browser.headless.HeadlessFence",
+    "field" : "LOOKUP_TTL_MS",
+    "value" : "30000",
+    "expression" : "30_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long one resolved answer is reused — the desktop hook's own window."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.HeapBudget",
+    "field" : "FLOOR_BYTES",
+    "value" : "268435456",
+    "expression" : "256L * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The smallest heap on which the server's import path still works, measured rather than derived from the cap.\n\nIt used to be the cap times eight, because content() answered with Files.readString: the whole transcript as a UTF-16 String plus the response copy. A unit test now measures that doubling directly, at 50,334,944 bytes of thread allocation for a 25,165,818 byte file, and the endpoint no longer does it. It streams the file to the socket, so its heap cost is a buffer and no longer scales with the file at all.\n\nMeasured 2026-08-03 against the 0.5.0 jar with -Xmx128m over the real store: the 73.6 MiB transcript served byte-identically in 126 ms, the 82.9 MiB one in 175 ms, and three concurrent reads of the 82.9 MiB one each returned all 86,913,996 bytes with no OutOfMemoryError. 256 MiB is that proven-working ceiling doubled, because the experiment exercised the import path alone and a real server also holds sessions, sockets and the fleet aggregator."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.HeapBudget",
+    "field" : "GIB",
+    "value" : "1073741824",
+    "expression" : "1L << 30",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "A gibibyte. A unit conversion and not a limit, like MIB."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.HeapBudget",
+    "field" : "MAX_RAM_PERCENT",
+    "value" : "33",
+    "expression" : "33",
+    "kind" : "FIXED",
+    "unit" : "PERCENT",
+    "key" : "",
+    "explanation" : "The share of the machine every launch path we control hands the JVM. A third: 15.8 GiB on a 48 GiB workstation, 5.3 on a 16 GiB laptop, 2.6 on an 8 GiB one, 1.3 on a 4 GiB box. Every one of those is more than the 25% the same machine gets today, which is the property a literal cannot have."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.HeapBudget",
+    "field" : "MIB",
+    "value" : "1048576",
+    "expression" : "1L << 20",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "A mebibyte. A unit conversion and not a limit: the value is arithmetic, so changing it does not change what a run may do."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.HeapBudget",
+    "field" : "TRANSCRIPT_IMPORT_CAP_BYTES",
+    "value" : "134217728",
+    "expression" : "128L * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The cap ClaudeTranscriptsController refuses transcripts above, mirrored here because line() reports it at boot and core cannot see into the server module to read it. It is reported, not computed with: floorBytes() ignores it, and this mirror once justified itself by saying the floor was a function of it, which was true of the read that held the file in heap and false from the moment that read was streamed. The mirror is not on trust: HeapFlagDriftTest reads the controller's source and fails when the two drift apart."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_CHAT_RESERVE_WIDTH",
+    "value" : "360",
+    "expression" : "360",
+    "kind" : "SETTABLE",
+    "unit" : "PIXELS",
+    "key" : "chatReserveWidth",
+    "explanation" : "The shipped chatReserveWidth: 360 CSS pixels of the chat row the right dock may never take. Card 242 introduced the reserve because the proportional cap before it left the chat at 356 px on a 1150 px window; card 361 makes the number the operator's."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_COMMAND_TIMEOUT_SECONDS",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "commandTimeoutSeconds",
+    "explanation" : "The shipped commandTimeoutSeconds: ten seconds per shell call — card 359 makes the number reachable and does not move it.\n\nStandardTools reads THIS rather than keeping a second copy, because its own copy is where the defect was: the constant was private, and one line under it run_command's model-facing description typed the same ten as a literal over a parameter its javadoc already said tests shrink.\n\nNo upper bound is enforced, and that is a decision rather than an oversight (card 359, criterion 3). Every run_command call passes the permission gate, so the person who typed a large number here is the same person approving the call it applies to; a ceiling picked without a measurement would be a second accidental limit of exactly the kind this key exists to remove. A non-positive value is not special-cased either — Process.waitFor treats it as \"do not wait\", which fails fast and visibly rather than hanging."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_CONTINUATION_BUDGET",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "continuationBudget",
+    "explanation" : "The shipped continuationBudget: three restarts of one run. No budget vocabulary existed anywhere in the owner's sixteen work orders, so this number is an addition to the house language rather than a recovery of it — card 266 owner call 2, decided while building."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_DOCK_MAX_WIDTH",
+    "value" : "1200",
+    "expression" : "1200",
+    "kind" : "SETTABLE",
+    "unit" : "PIXELS",
+    "key" : "dockMaxWidth",
+    "explanation" : "The shipped dockMaxWidth: 1200 CSS pixels, the ceiling card 228 raised from 720 on 2026-08-14 and which has been unreachable since.\n\nIt is a separate key from the reserve above because they bind on different screens: below a chat row of roughly 1560 px the reserve decides the dock's limit and this ceiling is irrelevant, at or above it the ceiling decides and the reserve is. Raising only one of them was the premise card 361 was nearly scoped on, and it would have changed nothing on the owner's own monitor."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_MAX_QUESTION_CHARS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "SETTABLE",
+    "unit" : "CHARACTERS",
+    "key" : "maxQuestionChars",
+    "explanation" : "The shipped maxQuestionChars: a question is read under time pressure."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_MAX_QUESTION_OPTIONS",
+    "value" : "4",
+    "expression" : "4",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "maxQuestionOptions",
+    "explanation" : "The shipped maxQuestionOptions: the bar renders them in a row."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_MAX_TURNS",
+    "value" : "150",
+    "expression" : "150",
+    "kind" : "SETTABLE",
+    "unit" : "TURNS",
+    "key" : "maxTurns",
+    "explanation" : "The shipped maxTurns: the runaway-loop brake, in turns per run. Card 266 owner call 4 said this becomes an option and 15 stays the value; AgentOptions got its field in that wave and the settings chain did not, so until card 282 every browser session ran on the harness's own fallback with nowhere to change it.\n\nDeliberately a second copy of Agent.DEFAULT_MAX_TURNS rather than an import: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTurnsSettingTest pins the two together, the same way ProgressGuardSettingsTest pins the guard's three against ProgressSettings.defaults().\n\nCard 365 moved it from 15 to 150, and the 15 had never been measured against anything. DATED SNAPSHOT, 2026-09-01, n = 7,139 real Claude Code sessions on the owner's machine (7,785 transcript files; 646 were under 2 KB or carried no assistant response). A turn is one provider round-trip, counted as a unique message.id — an assistant LINE is not a turn, there are 2.53 lines per response:\n\nturns median 14 · p75 40 · p90 88 · p95 129 · p99 288 · max 1441\nhuman inputs median 1 · p90 2 · p95 4\n\n48.0 % of those sessions exceed 15 turns, so the shipped ceiling was ending half of all real work in the middle — which is literally what happened to the owner's run on 2026-08-31, stopReason: \"max_turns\" at step 5 of an 8-step plan. 150 is his number: above p95 and comfortably above the hundred he asked for.\n\nIt stays PROSE and does not become a test, on the canon's own rule: these figures are not derivable from this repo, so nothing here could re-derive them and a test would only restate them. They are therefore stamped with a date and an n rather than presented as a property of the thing — the census was of Claude Code on a million-token model, not of spectroscope on an arbitrary backend, and only the shape of the work transfers. What IS pinned is the decision: MaxTurnsSettingTest holds this constant to 150 and to Agent.DEFAULT_MAX_TURNS."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_PROGRESS_FAILURES",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "progressGuardFailures",
+    "explanation" : "The shipped progressGuardFailures: above the two a flaky test is allowed, and the counter resets on any success of the same call."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_PROGRESS_PLAN_TURNS",
+    "value" : "0",
+    "expression" : "0",
+    "kind" : "SETTABLE",
+    "unit" : "TURNS",
+    "key" : "progressGuardPlanTurns",
+    "explanation" : "The shipped progressGuardPlanTurns: 0, meaning off. The reason is on card 262 and in ProgressSettings — it needs a maintained plan, and the runs it was cut for keep none."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_PROGRESS_WRITES",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "progressGuardWrites",
+    "explanation" : "The shipped progressGuardWrites: the same bytes under a third new name is where \"a second copy\" stops explaining it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_QUESTIONS_PER_RUN",
+    "value" : "9",
+    "expression" : "9",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "questionsPerRun",
+    "explanation" : "The shipped questionsPerRun: nine.\n\nCard 265 shipped three, called it \"the concept's number\" and listed all three ask caps among its open owner calls as \"stated GUESSES … want a word\". Card 356 made it settable; card 365 set it, from the owner's word after a census rather than from taste.\n\nTHE MEASUREMENT, a dated snapshot and not a property — it comes from outside this repo and cannot be re-derived by a test. Over 7,139 real Claude Code sessions on the owner's machine (2026-09-01), only 127 (1.8 %) use the ask tool at all — but of those, 16.5 % ask more than three times, p90 is 5 and the largest asked 12. A budget of three therefore failed one asking session in six, and the owner's own run of 2026-08-31 asked four times: it was in that sixth, and the refusal cost it a turn it then ran out of."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.CommandGoalCheck",
+    "field" : "DEFAULT_TIMEOUT_SECONDS",
+    "value" : "600",
+    "expression" : "600",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The shipped wall-clock budget for one check, in seconds. A goal's check is a test suite or a build, not a deployment; ten minutes is the point past which \"it hung\" is the more likely reading."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.EvaluatorGoalCheck",
+    "field" : "MAX_MESSAGE_CHARS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How much of one message's text the judge is shown."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.EvaluatorGoalCheck",
+    "field" : "MAX_TOKENS",
+    "value" : "512",
+    "expression" : "512",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The completion budget for one judgement — a verdict and a reason, not an essay."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.EvaluatorGoalCheck",
+    "field" : "TRANSCRIPT_TAIL",
+    "value" : "12",
+    "expression" : "12",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many of the run's most recent messages the judge is shown."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.GoalVerdict",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "4000",
+    "expression" : "4_000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How much of the check's output is kept. Enough to see a failing assertion, small enough that a chatty test suite cannot eat the window the goal is trying to protect."
+  },
+  {
+    "owner" : "dev.spectroscope.core.graph.CompiledGraph",
+    "field" : "DEFAULT_RECURSION_LIMIT",
+    "value" : "10007",
+    "expression" : "10007",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The superstep ceiling a run gets when the caller names none.\n\nLangGraph 1.x's own number, counted rather than read: a runaway single-node cycle runs exactly this many iterations there. An earlier 25 was a margin chosen against one caller's loop, and it is the obvious wrong guess — a corrective-RAG graph configured for four rewrites legitimately needs 27 supersteps, so at 25 an operator got a working system on LangGraph and a recursion failure here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.graph.CompiledGraph",
+    "field" : "RETAINED_FRONTIERS",
+    "value" : "16",
+    "expression" : "16",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many frontiers are kept to name a cycle in the failure message. A ceiling of ten thousand must not quietly turn into ten thousand retained frontiers."
+  },
+  {
+    "owner" : "dev.spectroscope.core.graph.CompiledGraph",
+    "field" : "RUN_ID_LENGTH",
+    "value" : "12",
+    "expression" : "12",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How many hex characters name a run. Long enough to tell two turns apart."
+  },
+  {
+    "owner" : "dev.spectroscope.core.graph.GraphRecords",
+    "field" : "MESSAGE_LIMIT",
+    "value" : "1000",
+    "expression" : "1000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How much of a failure message is a diagnostic. Beyond this it is payload wearing a diagnostic's coat — a message built by interpolating a retrieved document is the measured shape, and this file is the one people attach to bug reports."
+  },
+  {
+    "owner" : "dev.spectroscope.core.graph.StateClipper",
+    "field" : "MAX_DEPTH",
+    "value" : "32",
+    "expression" : "32",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Deep enough for any real state, shallow enough that a cycle cannot outrun it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.graph.StatePolicy",
+    "field" : "RECORD_CAP",
+    "value" : "8192",
+    "expression" : "8192",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The ceiling on a whole record, envelope included."
+  },
+  {
+    "owner" : "dev.spectroscope.core.graph.Topology",
+    "field" : "SCHEMA_VERSION",
+    "value" : "1",
+    "expression" : "1",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "The current shape of this record."
+  },
+  {
+    "owner" : "dev.spectroscope.core.hooks.HookRunner",
+    "field" : "DEFAULT_TIMEOUT_SECONDS",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "hooks[].timeoutSeconds",
+    "explanation" : "The per-hook timeout applied when an entry sets none. Public because the settings surface prints it (\"unset falls back to N seconds\") and a second spelling of N is a number that drifts."
+  },
+  {
+    "owner" : "dev.spectroscope.core.hooks.HookRunner",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "10000",
+    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
+    "kind" : "ALIAS",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
+  },
+  {
+    "owner" : "dev.spectroscope.core.image.ImageDownscaler",
+    "field" : "DOWNSCALE_JPEG_QUALITY",
+    "value" : "0.85",
+    "expression" : "0.85f",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "JPEG quality for downscaled photos — visually clean, small on the wire."
+  },
+  {
+    "owner" : "dev.spectroscope.core.image.ImageDownscaler",
+    "field" : "WIRE_IMAGE_LIMIT_BYTES",
+    "value" : "5242880",
+    "expression" : "5L * 1024 * 1024",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The providers' per-image wire limit (Anthropic rejects larger images)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchSupervisor",
+    "field" : "LOG_LINES",
+    "value" : "400",
+    "expression" : "400",
+    "kind" : "FIXED",
+    "unit" : "LINES",
+    "key" : "",
+    "explanation" : "How many lines of a launched process's output are kept."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchSupervisor",
+    "field" : "PROBE_INTERVAL_MS",
+    "value" : "150",
+    "expression" : "150",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How often the address is probed while a start waits."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchSupervisor",
+    "field" : "STOP_GRACE_MS",
+    "value" : "3000",
+    "expression" : "3_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a stop waits for a signalled tree before it stops being polite."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchTools",
+    "field" : "DEFAULT_LOG_LINES",
+    "value" : "80",
+    "expression" : "80",
+    "kind" : "MODEL_CHOICE",
+    "unit" : "LINES",
+    "key" : "",
+    "explanation" : "How many log lines launch_logs returns unless asked otherwise."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchTools",
+    "field" : "DEFAULT_WAIT_SECONDS",
+    "value" : "45",
+    "expression" : "(int) LaunchSupervisor.DEFAULT_BUDGET.toSeconds()",
+    "kind" : "MODEL_CHOICE",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a start waits by default, in seconds, as the schema advertises it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchTools",
+    "field" : "MAX_WAIT_SECONDS",
+    "value" : "180",
+    "expression" : "180",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The longest wait a caller may ask for. A dev server that takes longer is broken."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchWriter",
+    "field" : "MAX_PORT",
+    "value" : "65535",
+    "expression" : "65535",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "The largest port a socket can hold."
+  },
+  {
+    "owner" : "dev.spectroscope.core.leveling.LevelingFold",
+    "field" : "MAX_TRACKED_SESSIONS",
+    "value" : "200",
+    "expression" : "200",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many sessions the fold keeps bookkeeping for. Two booleans per session, dropped entirely once no join needs them; the cap only bounds the pathological case of a home that never opens a trace."
+  },
+  {
+    "owner" : "dev.spectroscope.core.local.LocalPreflight",
+    "field" : "DISK_HEADROOM",
+    "value" : "1.25",
+    "expression" : "1.25",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "Free disk must exceed the download by this much, since the .part file and its atomic move briefly share the volume with everything else."
+  },
+  {
+    "owner" : "dev.spectroscope.core.local.LocalPreflight",
+    "field" : "TIGHT_RAM",
+    "value" : "1.25",
+    "expression" : "1.25",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "Below this multiple of the recommended memory the fit is called tight."
+  },
+  {
+    "owner" : "dev.spectroscope.core.log.Logged",
+    "field" : "ARG_PREVIEW_CHARS",
+    "value" : "120",
+    "expression" : "120",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Per-argument preview cap — enough to recognize a call, never a payload dump."
+  },
+  {
+    "owner" : "dev.spectroscope.core.log.Logged",
+    "field" : "NANOS_PER_MILLI",
+    "value" : "1000000",
+    "expression" : "1_000_000L",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "Nanoseconds in a millisecond. A unit conversion and not a limit."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.ContinuationLeash",
+    "field" : "DEFAULT_BUDGET",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "continuationBudget",
+    "explanation" : "The shipped budget: three continuations per run.\n\nDecided while building, because card 266's owner call 2 records that no budget vocabulary exists anywhere in the owner's sixteen work orders — the number is an addition to the house language rather than a recovery of it. Three is the smallest count that can hold a run through a stumble, a retry and a finish, and it sits in the same settings block as card 262's thresholds because an operator tuning one will want the other."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.ContinuationLeash",
+    "field" : "MAX_LISTED_STEPS",
+    "value" : "8",
+    "expression" : "8",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many open steps the continuation message names before it stops listing. The message is spent from the same context pool as the work, so a 200-step plan must not eat the window it is trying to save. The COUNT is never clipped, only the list."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.ContinuationLeash",
+    "field" : "MAX_STEP_CHARS",
+    "value" : "120",
+    "expression" : "120",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How long one listed step may be."
+  },
+  {
+    "owner" : "dev.spectroscope.core.mcp.McpTool",
+    "field" : "MAX_IMAGE_BYTES",
+    "value" : "5242880",
+    "expression" : "dev.spectroscope.core.image.ImageDownscaler.WIRE_IMAGE_LIMIT_BYTES",
+    "kind" : "ALIAS",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The most one image in an MCP tool result may weigh, in bytes — the providers' own per-image wire limit (see ImageDownscaler), which is the point beyond which an attach would be rejected anyway.\n\nUnlike view_image, an oversized MCP image is refused, not downscaled: the payload comes from a remote server over an untrusted connection, so the size is decided on the ENCODED length before anything is decoded — a hostile server must not be able to make the harness allocate a decoded copy of an arbitrarily large payload."
+  },
+  {
+    "owner" : "dev.spectroscope.core.progress.ProgressGuard",
+    "field" : "MAX_PATH_LIST_CHARS",
+    "value" : "160",
+    "expression" : "160",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How much of the \"already written to\" list the SENTENCE carries. The structured details carry all of them; this is the prose budget."
+  },
+  {
+    "owner" : "dev.spectroscope.core.progress.ProgressGuard",
+    "field" : "MAX_QUESTION_CHARS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The question must stay readable under time pressure; card 265 caps its own tool at 500 characters and this question travels the same bar."
+  },
+  {
+    "owner" : "dev.spectroscope.core.progress.ProgressGuard",
+    "field" : "MEMORY",
+    "value" : "512",
+    "expression" : "512",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How much of one detector's memory is kept. startRun() empties it between runs, but one run can itself write thousands of files, and a guard that remembers all of them is a leak inside it. Eviction is oldest-first and costs only the ability to notice a repeat older than this many distinct contents — which is not the failure mode this guards."
+  },
+  {
+    "owner" : "dev.spectroscope.core.progress.ProgressSettings",
+    "field" : "MIN_CONTENT_CHARS",
+    "value" : "64",
+    "expression" : "64",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The floor under detector 1, in characters of content.\n\nNot configurable, and deliberately so: it exists to keep one specific class of honest work out of the detector rather than to be tuned. A scaffold writes empty __init__.py, py.typed and .gitkeep files by the dozen, all byte-identical and all legitimate, and every one of them is shorter than this. The loop this card was cut from wrote 283 bytes a time, four times over the floor."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.AnthropicProvider",
+    "field" : "THINKING_BUDGET",
+    "value" : "2048",
+    "expression" : "2048",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "A modest reasoning budget, capped so maxTokens always stays strictly larger."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.ExchangeLatency",
+    "field" : "WINDOW",
+    "value" : "16",
+    "expression" : "16",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many recent exchanges the median is taken over."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.OpenAiCompatProvider",
+    "field" : "MAX_TOKENS_CAP",
+    "value" : "16000",
+    "expression" : "16_000",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The largest completion cap this provider ever sends. The harness default (32k) suits Anthropic and local servers, but api.openai.com enforces PER-MODEL caps and rejects a too-large value with HTTP 400 — the smallest cap among current chat models is gpt-4o-mini's 16384, so 16000 is the safe ceiling for everything the picker offers."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.Compaction",
+    "field" : "DEFAULT_KEEP_MESSAGES",
+    "value" : "4",
+    "expression" : "4",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many of the most recent messages survive a compaction untouched. Nothing passes another value — maybeCompact reads this constant directly — and no argument for the four is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "CONVERSATION_SHARE",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "The share of the window the conversation may fill before compaction."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "FALLBACK_THRESHOLD",
+    "value" : "100000",
+    "expression" : "100_000",
+    "kind" : "SETTABLE",
+    "unit" : "TOKENS",
+    "key" : "compactionThreshold",
+    "explanation" : "The threshold used when nothing can be learned — today's constant, kept exactly. Anthropic has no capability endpoint, the OpenAI wire has none, and a backend that is down teaches nothing either; all of them land here. The web gauge names the same figure (contextRingMath.ts), for the same reason and in the same words."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "MIN_SUMMARY_TOKENS",
+    "value" : "512",
+    "expression" : "512",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The smallest completion a summary can plausibly be written in. A window so small that its reserve is under this has bigger problems than the summarizer; asking for zero tokens would just fail the call."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "WINDOW_SHARE",
+    "value" : "4",
+    "expression" : "4",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "…out of this many. See the class note for why the reserve is a quarter."
+  },
+  {
+    "owner" : "dev.spectroscope.core.skills.SkillLibrary",
+    "field" : "DESCRIPTION_FALLBACK_LIMIT",
+    "value" : "120",
+    "expression" : "120",
+    "kind" : "UNEXAMINED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How much of a SKILL.md's first body line becomes the description when the frontmatter names none, in characters. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.ChildBudget",
+    "field" : "CEILING_MS",
+    "value" : "1800000",
+    "expression" : "1_800_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "The hard stop on a derived run budget: 30 min. Above the largest exchange ever measured here (1,560.9 s = 26.0 min, HTTP 200), so a single real exchange still fits inside it.\n\nThis bounds ONE of the two clocks, not the child. The two run in sequence — see worstCaseMs() for what a child can actually hold its requester for, which is more than this number."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.ChildBudget",
+    "field" : "FLOOR_MS",
+    "value" : "300000",
+    "expression" : "300_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "The smallest run budget any child gets, whatever the backend says: 300 s. Two and a half times the literal it replaces, and above the 276.6 s that 3 × the owner's measured p50 works out to — so on that backend the floor is what actually governs."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.ChildBudget",
+    "field" : "GRACE_CEILING_MS",
+    "value" : "2700000",
+    "expression" : "2_700_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "The hard stop on the queue grace: 45 min — the run ceiling plus one full wave of the same. Like CEILING_MS it bounds its own clock only; worstCaseMs() composes them."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.ChildBudget",
+    "field" : "P50_MULTIPLE",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "How many median exchanges a child may spend once it has started producing: three. A child that has had three median turns and is still going is not waiting, it is lost."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.SubagentManager",
+    "field" : "MAX_PARALLEL_CHILDREN",
+    "value" : "4",
+    "expression" : "4",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many children one spawn_agents call may start at once.\n\nUnchanged by card 270, deliberately: nobody has measured whether the house test backend serves four concurrent completions usefully, and konzept/ORCHESTRATION.md §7 leaves the width an open owner call until someone does. It moves when a number says so, with the number."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.AskUserQuestionTool",
+    "field" : "MAX_OPTIONS",
+    "value" : "4",
+    "expression" : "4",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "maxQuestionOptions",
+    "explanation" : "How many choices one question may offer — the bar renders them in a row."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.AskUserQuestionTool",
+    "field" : "MAX_OPTION_CHARS",
+    "value" : "100",
+    "expression" : "100",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How long one option label may be."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.AskUserQuestionTool",
+    "field" : "MAX_QUESTION_CHARS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "SETTABLE",
+    "unit" : "CHARACTERS",
+    "key" : "maxQuestionChars",
+    "explanation" : "How long one question may be. A question is read under time pressure."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.AskUserQuestionTool",
+    "field" : "QUESTIONS_PER_RUN",
+    "value" : "9",
+    "expression" : "9",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "questionsPerRun",
+    "explanation" : "How many questions one run may ask when nobody configured it — the value the one-argument constructor hands over.\n\nA model that discovers it can stall a run by asking must not be able to loop, and that argument carries a BOUND, not an unreachable one; card 356 made this settable and card 365 chose the number from a census rather than from the concept's original guess of three.\n\nIt must equal SpectroConfig.DEFAULT_QUESTIONS_PER_RUN, and a test pins that. Two shipped defaults for one setting is a disagreement the operator can only find by hitting it: the configured path would allow nine while a tool built without config allowed three, and both would call themselves the default."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.DefaultHttpFetcher",
+    "field" : "MAX_BODY_BYTES",
+    "value" : "524288",
+    "expression" : "512 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "Plenty of raw HTML to yield the tool's 10k-char text; a hard ceiling on memory."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ShellCommand",
+    "field" : "DRAIN_GRACE_MS",
+    "value" : "1000",
+    "expression" : "1_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long after child exit we wait for the drain to finish. Normally the exit closes the pipe instantly; a background grandchild holding the fd open must not hang the tool, so we take the partial snapshot instead."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ShellCommand",
+    "field" : "NO_EXIT",
+    "value" : "-1",
+    "expression" : "-1",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "Exit code stand-in when the process never produced one (timeout/failure)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "COMMAND_TIMEOUT_SECONDS",
+    "value" : "10",
+    "expression" : "dev.spectroscope.core.config.SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS",
+    "kind" : "ALIAS",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "run_command's shipped wall-clock budget, READ from the settings record rather than kept as a second copy of the same ten (card 359). A private literal here is what made the number unreachable, and the description one screen down typed it a second time."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "MAX_DOCUMENT_BYTES",
+    "value" : "10485760",
+    "expression" : "10L * 1024 * 1024",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The providers' practical per-document limit — Anthropic's request cap is ~32 MB total and base64 inflates by a third, so 10 MB source keeps requests healthy."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "MAX_FILE_BYTES",
+    "value" : "50000",
+    "expression" : "50_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "How much of a file one read may take, in bytes. Beyond it the tool refuses and names the limit rather than truncating in silence. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "MAX_GLOB_RESULTS",
+    "value" : "200",
+    "expression" : "200",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many paths one glob answer carries. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "10000",
+    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
+    "kind" : "ALIAS",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "MAX_SOURCE_IMAGE_BYTES",
+    "value" : "52428800",
+    "expression" : "50L * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "Sanity cap on the SOURCE file — beyond this, even downscaling is refused."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "WIRE_IMAGE_LIMIT_BYTES",
+    "value" : "5242880",
+    "expression" : "dev.spectroscope.core.image.ImageDownscaler.WIRE_IMAGE_LIMIT_BYTES",
+    "kind" : "ALIAS",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The providers' per-image wire limit — the ladder itself moved to the shared ImageDownscaler (file_upload: the composer attachment path applies the same policy)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ToolOutput",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "10000",
+    "expression" : "10_000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The output clamp every tool/hook result shares."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.UpdatePlanTool",
+    "field" : "MAX_KEY_CHARS",
+    "value" : "24",
+    "expression" : "24",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "…and how long one of those keys may be. The reason for the pair stands on MAX_NAMED_KEYS above: both exist because a rejection quotes model-supplied text straight back into the context. Twenty-four characters is a plan key, not a sentence."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.UpdatePlanTool",
+    "field" : "MAX_NAMED_KEYS",
+    "value" : "4",
+    "expression" : "4",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "A rejection is quoted back into the model's context, and every key in it is model-supplied: without these bounds one confused step could carry a megabyte of prose as a key name and the tool result would carry it right back."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.WebFetchTool",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "10000",
+    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
+    "kind" : "ALIAS",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.WebFetchTool",
+    "field" : "MAX_REDIRECTS",
+    "value" : "5",
+    "expression" : "5",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many redirects one call may take before it gives up. Every one of them is fenced, so the budget is about loops and latency, not safety."
+  },
+  {
+    "owner" : "dev.spectroscope.core.trace.OtlpSink",
+    "field" : "CUT",
+    "value" : "4000",
+    "expression" : "4000",
+    "kind" : "UNEXAMINED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The bound on one attribute's payload, in characters. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.trace.OtlpSink",
+    "field" : "MAX_BUFFER",
+    "value" : "20000",
+    "expression" : "20_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many events are held while nothing has drained them. Beyond it the sink warns once and stops buffering rather than growing without a bound. No argument for this particular value is recorded here."
+  },
+  {
+    "owner" : "dev.spectroscope.core.trace.OtlpSink",
+    "field" : "ZERO_SPAN_FLOOR_MS",
+    "value" : "1",
+    "expression" : "1",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "What a zero-length span is widened to, so it can be seen at all. One millisecond: too small to read as a measurement, big enough to click."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.BrowsePageTool",
+    "field" : "CHROME_PAGE_TIMEOUT_MS",
+    "value" : "15000",
+    "expression" : "15_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "Chrome-side page-load cap (ms) — Chrome gives up on the page before we kill it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.BrowsePageTool",
+    "field" : "CHROME_TIMEOUT_SECONDS",
+    "value" : "25",
+    "expression" : "25",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "Wall-clock kill budget for the Chrome process."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.BrowsePageTool",
+    "field" : "CHROME_VIRTUAL_TIME_BUDGET_MS",
+    "value" : "8000",
+    "expression" : "8_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "Virtual time granted to page JavaScript (ms) — this is what makes SPAs render."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.BrowsePageTool",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "10000",
+    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
+    "kind" : "ALIAS",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.BrowsePageTool",
+    "field" : "STDERR_TAIL_CHARS",
+    "value" : "300",
+    "expression" : "300",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How much of Chrome's stderr an error answer quotes."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.DefaultChromeRunner",
+    "field" : "DRAIN_GRACE_MS",
+    "value" : "1000",
+    "expression" : "1_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long after child exit we wait for the drains to finish."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.DefaultChromeRunner",
+    "field" : "MAX_DOM_BYTES",
+    "value" : "2097152",
+    "expression" : "2 * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "Raw DOM cap in bytes — plenty for the tool's 10k-char text, a hard memory ceiling."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.DefaultChromeRunner",
+    "field" : "MAX_STDERR_BYTES",
+    "value" : "16384",
+    "expression" : "16 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "Chrome's diagnostics only feed a short error tail — no reason to keep more."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.DefaultChromeRunner",
+    "field" : "NO_EXIT",
+    "value" : "-1",
+    "expression" : "-1",
+    "kind" : "PLUMBING",
+    "unit" : "NONE",
+    "key" : "",
+    "explanation" : "Exit code stand-in when the process never produced one (timeout/failure)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.WebSearchTool",
+    "field" : "DEFAULT_MAX_RESULTS",
+    "value" : "5",
+    "expression" : "5",
+    "kind" : "MODEL_CHOICE",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Hits per search when the model does not ask for a count."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.WebSearchTool",
+    "field" : "MAX_MAX_RESULTS",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Hard ceiling on hits per search — more is noise in the context window."
+  },
+  {
+    "owner" : "dev.spectroscope.core.web.WebSearchTool",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "10000",
+    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
+    "kind" : "ALIAS",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
+  },
+  {
+    "owner" : "dev.spectroscope.core.wire.BrowserWireRecorder",
+    "field" : "DEFAULT_CEILING_BYTES",
+    "value" : "67108864",
+    "expression" : "64L * 1024 * 1024",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The default per-session byte ceiling.\n\nA quarter of the llm-wire's, and the smaller number is the point: this file carries no bodies at all, so a run that reaches 64 MB of it is a run whose browser trace has stopped being a trace. The measured traffic this has to hold is 3,447 tool calls across 35 sessions (card 201's count of the owner's own transcripts); at a few kilobytes per call that is single-digit megabytes."
+  },
+  {
+    "owner" : "dev.spectroscope.core.wire.LlmWireRecorder",
+    "field" : "DEFAULT_CEILING_BYTES",
+    "value" : "268435456",
+    "expression" : "256L * 1024 * 1024",
+    "kind" : "LOOKS_SETTABLE",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The default per-session byte ceiling: generous, but not unbounded."
+  }
+]

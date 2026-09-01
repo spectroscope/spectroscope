@@ -1,5 +1,6 @@
 package dev.spectroscope.core.goal;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.ShellCommand;
 
 import java.util.Map;
@@ -25,6 +26,7 @@ public final class CommandGoalCheck implements GoalCheck {
     /** The shipped wall-clock budget for one check, in seconds. A goal's check
      *  is a test suite or a build, not a deployment; ten minutes is the point
      *  past which "it hung" is the more likely reading. */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.SECONDS)
     public static final long DEFAULT_TIMEOUT_SECONDS = 600;
 
     private final long timeoutSeconds;

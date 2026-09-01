@@ -1,5 +1,7 @@
 package dev.spectroscope.core.image;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -22,6 +24,7 @@ import java.io.IOException;
 public final class ImageDownscaler {
 
     /** The providers' per-image wire limit (Anthropic rejects larger images). */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.BYTES)
     public static final long WIRE_IMAGE_LIMIT_BYTES = 5L * 1024 * 1024;
 
     /** Downscale ladder: long-edge targets tried until the re-encode fits the
@@ -31,6 +34,7 @@ public final class ImageDownscaler {
     private static final int[] DOWNSCALE_LONG_EDGES_PX = {2576, 1568, 1024};
 
     /** JPEG quality for downscaled photos — visually clean, small on the wire. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     private static final float DOWNSCALE_JPEG_QUALITY = 0.85f;
 
     /** Static utility — never instantiated. */

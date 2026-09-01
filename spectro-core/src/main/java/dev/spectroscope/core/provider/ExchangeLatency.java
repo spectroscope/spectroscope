@@ -1,5 +1,7 @@
 package dev.spectroscope.core.provider;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.util.Arrays;
 import java.util.OptionalLong;
 
@@ -28,6 +30,7 @@ import java.util.OptionalLong;
 public final class ExchangeLatency {
 
     /** How many recent exchanges the median is taken over. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     public static final int WINDOW = 16;
 
     private final long[] recent = new long[WINDOW];

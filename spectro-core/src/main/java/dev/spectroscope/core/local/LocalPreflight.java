@@ -1,5 +1,7 @@
 package dev.spectroscope.core.local;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,9 +23,11 @@ public final class LocalPreflight {
 
     /** Free disk must exceed the download by this much, since the {@code .part}
      *  file and its atomic move briefly share the volume with everything else. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     private static final double DISK_HEADROOM = 1.25;
 
     /** Below this multiple of the recommended memory the fit is called tight. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     private static final double TIGHT_RAM = 1.25;
 
     /**

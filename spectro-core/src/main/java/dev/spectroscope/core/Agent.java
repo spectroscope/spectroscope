@@ -1,5 +1,6 @@
 package dev.spectroscope.core;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.local.ModelProfile;
 import dev.spectroscope.core.provider.LlmProvider.ToolSpec;
@@ -79,6 +80,7 @@ public final class Agent {
      *  census behind the number, with its date and its n, is a snapshot in
      *  {@link dev.spectroscope.core.config.SpectroConfig#DEFAULT_MAX_TURNS};
      *  {@code MaxTurnsSettingTest} holds the two together. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TURNS, key = "maxTurns")
     public static final int DEFAULT_MAX_TURNS = 150;
 
     /**
@@ -102,6 +104,7 @@ public final class Agent {
      *  is defined AGAINST it (card 263): the share of the context window kept
      *  back has to hold one of these, and a second copy of the number in the
      *  derivation would drift the day this one moves. */
+    @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.TOKENS)
     public static final int DEFAULT_MAX_TOKENS = 32_000;
 
     /**
@@ -1275,6 +1278,7 @@ public final class Agent {
 
     /** Context-part texts are capped for the wire — a whole conversation can be
      *  megabytes; the char counts stay the full truth regardless. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int CONTEXT_PART_TEXT_CAP = 16_384;
 
     /** Builds one labeled slice of the context estimate, deriving its tokens as

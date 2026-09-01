@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.core.Asker;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.PlanVerdict;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 
 import java.nio.charset.StandardCharsets;
@@ -191,14 +192,17 @@ public final class ProgressGuard {
      *  guard that remembers all of them is a leak inside it. Eviction is
      *  oldest-first and costs only the ability to notice a repeat older than
      *  this many distinct contents — which is not the failure mode this guards. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     static final int MEMORY = 512;
 
     /** The question must stay readable under time pressure; card 265 caps its
      *  own tool at 500 characters and this question travels the same bar. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_QUESTION_CHARS = 500;
 
     /** How much of the "already written to" list the SENTENCE carries. The
      *  structured details carry all of them; this is the prose budget. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_PATH_LIST_CHARS = 160;
 
     private final ProgressSettings settings;

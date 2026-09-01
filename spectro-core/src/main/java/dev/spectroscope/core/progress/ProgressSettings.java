@@ -1,5 +1,7 @@
 package dev.spectroscope.core.progress;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 /**
  * The three numbers the progress guard fires on, and the one floor it will not
  * look below (card 262, criterion 6).
@@ -51,6 +53,7 @@ public record ProgressSettings(int identicalWrites, int repeatedFailures, int st
      * legitimate, and every one of them is shorter than this. The loop this card
      * was cut from wrote 283 bytes a time, four times over the floor.</p>
      */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     public static final int MIN_CONTENT_CHARS = 64;
 
     /** The shipped defaults: both cheap detectors on, the plan net off.

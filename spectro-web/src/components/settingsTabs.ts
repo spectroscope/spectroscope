@@ -70,7 +70,11 @@ export const SETTINGS_TAB_SECTIONS = {
   permissions: ["allowlist", "netfence", "hooks", "progress"],
   // Where this installation points: the fleet hub, the trace sink, the default
   // workspace, the log level.
-  system: ["fleet", "observability", "workspace", "logging"],
+  // Card 357 adds `limits` here and nowhere else: the governing constants are
+  // a property of this installation's build, like the log level and the
+  // default workspace, and they are the one block on the whole surface that
+  // changes nothing — it is a reference page, so it stands last.
+  system: ["fleet", "observability", "workspace", "logging", "limits"],
 } as const satisfies Record<SettingsTab, readonly PanelSection[]>;
 
 /**

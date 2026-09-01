@@ -1,6 +1,7 @@
 package dev.spectroscope.core.session;
 
 import dev.spectroscope.core.Agent;
+import dev.spectroscope.core.config.governing.Governs;
 
 import java.util.Locale;
 import java.util.function.IntSupplier;
@@ -49,17 +50,21 @@ public final class CompactionThreshold {
      * The web gauge names the same figure ({@code contextRingMath.ts}), for the
      * same reason and in the same words.
      */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "compactionThreshold")
     public static final int FALLBACK_THRESHOLD = 100_000;
 
     /** The share of the window the conversation may fill before compaction. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     private static final int CONVERSATION_SHARE = 3;
 
     /** …out of this many. See the class note for why the reserve is a quarter. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     private static final int WINDOW_SHARE = 4;
 
     /** The smallest completion a summary can plausibly be written in. A window
      *  so small that its reserve is under this has bigger problems than the
      *  summarizer; asking for zero tokens would just fail the call. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
     private static final int MIN_SUMMARY_TOKENS = 512;
 
     /** Which fact produced the threshold — carried on {@code context_info} so

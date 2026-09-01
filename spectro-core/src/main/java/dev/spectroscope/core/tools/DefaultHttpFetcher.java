@@ -1,5 +1,6 @@
 package dev.spectroscope.core.tools;
 
+import dev.spectroscope.core.config.governing.Governs;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -33,6 +34,7 @@ public final class DefaultHttpFetcher implements HttpFetcher {
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
 
     /** Plenty of raw HTML to yield the tool's 10k-char text; a hard ceiling on memory. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     static final int MAX_BODY_BYTES = 512 * 1024;
 
     private final RestClient http;

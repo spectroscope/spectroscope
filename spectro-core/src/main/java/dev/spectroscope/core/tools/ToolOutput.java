@@ -1,5 +1,7 @@
 package dev.spectroscope.core.tools;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 /**
  * Shared output hygiene for tool and hook results — one cap, one truncation,
  * so run_command, grep, web_fetch and hook stdout cannot drift apart.
@@ -7,6 +9,7 @@ package dev.spectroscope.core.tools;
 public final class ToolOutput {
 
     /** The output clamp every tool/hook result shares. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     public static final int MAX_OUTPUT_CHARS = 10_000;
 
     /** Static utility — no instances. */

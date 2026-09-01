@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -42,6 +43,7 @@ public record Topology(@JsonProperty("schema_version") int schemaVersion,
                        List<Branch> branches) {
 
     /** The current shape of this record. */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     public static final int SCHEMA_VERSION = 1;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

@@ -1,5 +1,6 @@
 package dev.spectroscope.core.goal;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
 import dev.spectroscope.core.provider.LlmProvider.ProviderEvent;
@@ -40,12 +41,15 @@ public final class EvaluatorGoalCheck implements GoalCheck {
     public static final String UNMET_WORD = "GOAL_NOT_MET";
 
     /** The completion budget for one judgement — a verdict and a reason, not an essay. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
     private static final int MAX_TOKENS = 512;
 
     /** How many of the run's most recent messages the judge is shown. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     private static final int TRANSCRIPT_TAIL = 12;
 
     /** How much of one message's text the judge is shown. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_MESSAGE_CHARS = 2_000;
 
     private static final String SYSTEM =

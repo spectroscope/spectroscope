@@ -1,6 +1,7 @@
 package dev.spectroscope.core.web;
 
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.governing.Governs;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,15 +22,19 @@ import java.util.concurrent.TimeUnit;
 public final class DefaultChromeRunner implements BrowsePageTool.ChromeRunner {
 
     /** Exit code stand-in when the process never produced one (timeout/failure). */
+    @Governs(kind = Governs.Kind.PLUMBING, unit = Governs.Unit.NONE)
     static final int NO_EXIT = -1;
 
     /** Raw DOM cap in bytes — plenty for the tool's 10k-char text, a hard memory ceiling. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     static final int MAX_DOM_BYTES = 2 * 1024 * 1024;
 
     /** Chrome's diagnostics only feed a short error tail — no reason to keep more. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     static final int MAX_STDERR_BYTES = 16 * 1024;
 
     /** How long after child exit we wait for the drains to finish. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final long DRAIN_GRACE_MS = 1_000;
 
     /** One argv exec, blocking until exit, timeout or cancellation — see the class contract. */

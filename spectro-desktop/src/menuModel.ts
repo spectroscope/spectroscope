@@ -123,6 +123,11 @@ const SETTINGS_ROWS: ReadonlyArray<readonly [string, string]> = [
   // route.ts, which is the whole point of that guard — a section reachable by
   // hash and by nothing a person can click is half a feature.
   ["progress", "Progress guard"],
+  // Card 357: the numbers that govern a run — read-only, and the one row here
+  // that changes nothing. It is on the menu for the same reason it has an
+  // address: an operator who hit a limit has to be sendable at the page that
+  // names it.
+  ["limits", "Governing numbers"],
 ];
 
 /**

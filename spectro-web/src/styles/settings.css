@@ -139,3 +139,104 @@
   color: var(--text-faint);
   border-style: dashed;
 }
+
+/* ---- Card 357: the numbers that govern a run -------------------------------
+   A reference list, not a form: 110 rows of name, value and the code's own
+   words. The whole design job here is letting somebody SCAN it, so the rows
+   are separated by lines and nothing else — no colour on text, no fills, per
+   the house rule that colour lives on lines. Every token below is one this
+   sheet already uses; an invented custom property would fall back to nothing
+   and warn nowhere, which is how bus.css lost its borders for months. */
+.gn-filter input {
+  font-family: var(--font-mono);
+}
+
+.gn-group {
+  margin-top: var(--sp-3);
+}
+
+.gn-kind {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+
+/* How many numbers stand under this heading. A count the page derives, so it
+   is drawn as a fact beside the label rather than as a badge that shouts. */
+.gn-count {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.gn-kind-why {
+  margin-top: 0;
+}
+
+.gn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gn-row {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-2) 0;
+}
+
+.gn-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  /* The name can be long and the row must not push the panel sideways: the
+     head wraps, and every child may shrink. A nowrap label without min-width
+     is the exact shape that made the lab card jump (card 319). */
+  min-width: 0;
+}
+
+.gn-name,
+.gn-value,
+.gn-expr {
+  font-family: var(--font-mono);
+  min-width: 0;
+}
+
+.gn-name {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.gn-value {
+  color: var(--text);
+}
+
+/* The friendlier reading of a value — 30 min beside 1800000 — and the
+   initializer it was written as. Both are second readings of the same number,
+   so both stand back from it. */
+.gn-readable,
+.gn-expr,
+.gn-unit {
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+
+/* The one row-level statement worth a line: this number has a settings key. */
+.gn-key {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+.gn-why {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-dim);
+}
+
+.gn-empty {
+  margin-top: var(--sp-2);
+}
