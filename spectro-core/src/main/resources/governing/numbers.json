@@ -481,6 +481,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.launch.LaunchSupervisor",
+    "field" : "OUTPUT_DRAIN_GRACE_MS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a FAILED start waits for the reader to finish before it reports.\n\nSmall on purpose. By the time this is waited on the process is dead and reaped, so the pipe is at EOF and the reader returns at once; the budget is for the scheduler, not for the program. It exists because the CI runner proved that \"the process is dead\" and \"the thread that reads its output has run\" are two different facts."
+  },
+  {
+    "owner" : "dev.spectroscope.core.launch.LaunchSupervisor",
     "field" : "PROBE_INTERVAL_MS",
     "value" : "150",
     "expression" : "150",

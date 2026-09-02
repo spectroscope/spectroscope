@@ -14,6 +14,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CountDownLatch;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -167,6 +169,57 @@ class LaunchSupervisorTest {
                         "a start that failed leaves nothing behind");
             }
         }
+    }
+
+    /**
+     * A failed start WAITS for the reader before it reports what the process said.
+     *
+     * <p>This pins the mechanism, deterministically, because the call site cannot
+     * be pinned on this machine at all. The sibling
+     * {@code aCommandThatNeverAnswersFailsWithItsOwnOutput} asserts the property
+     * end to end and passed every local gate of this wave, then failed on the
+     * FIRST Linux run, at the line that reads the tail. The cause is the canon's
+     * own confusion of "dead" with "not scheduled": {@code waitForAnswer} returns
+     * the moment {@code process.isAlive()} goes false, the drain reads on its own
+     * virtual thread, and nothing joined it.</p>
+     *
+     * <p>Two attempts to make that race deterministic here failed, and the second
+     * one taught something worth keeping: piling MORE output into the pipe makes
+     * the race LESS likely, not more. Past the pipe buffer the writer blocks until
+     * the reader takes the bytes, so by the time the process can exit the reader
+     * has necessarily run. The dangerous shape is one line and an immediate exit —
+     * exactly the sibling — and on macOS the scheduler wins that race every time.
+     * A bite there came back green, so it pinned nothing and was deleted.</p>
+     *
+     * <p>What is left is honest: this test holds the WAIT, the compiler holds that
+     * the call site passes the drain thread to it, and the Linux runner holds the
+     * ordering. Three different things, none of them pretending to be the others.</p>
+     *
+     * @throws Exception if the helper thread cannot be started or joined
+     */
+    @Test
+    void aFailedStartWaitsForTheReaderRatherThanRacingIt() throws Exception {
+        AtomicBoolean readerFinished = new AtomicBoolean(false);
+        CountDownLatch started = new CountDownLatch(1);
+        Thread reader = Thread.startVirtualThread(() -> {
+            started.countDown();
+            try {
+                Thread.sleep(Duration.ofMillis(300));
+            } catch (InterruptedException stopped) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            readerFinished.set(true);
+        });
+        assertTrue(started.await(5, TimeUnit.SECONDS), "test premise: the reader is running");
+
+        LaunchSupervisor.awaitOutput(reader);
+
+        assertTrue(readerFinished.get(),
+                "the wait returned before the reader had finished, which is the defect the first"
+                        + " Linux run of this code found: a start that failed reported the death"
+                        + " with none of the output that says why");
+        assertFalse(reader.isAlive(), "and the reader really is done, not merely slept past");
     }
 
     /** Criterion 2: a url with no command attaches, and attaching starts nothing. */

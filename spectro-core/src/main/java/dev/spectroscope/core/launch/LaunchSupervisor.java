@@ -102,6 +102,16 @@ public final class LaunchSupervisor implements AutoCloseable {
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final long STOP_GRACE_MS = 3_000;
 
+    /** How long a FAILED start waits for the reader to finish before it reports.
+     *
+     *  <p>Small on purpose. By the time this is waited on the process is dead and
+     *  reaped, so the pipe is at EOF and the reader returns at once; the budget is
+     *  for the scheduler, not for the program. It exists because the CI runner
+     *  proved that "the process is dead" and "the thread that reads its output has
+     *  run" are two different facts.</p> */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
+    private static final long OUTPUT_DRAIN_GRACE_MS = 2_000;
+
     /** How often the address is probed while a start waits. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     private static final long PROBE_INTERVAL_MS = 150;
@@ -330,7 +340,7 @@ public final class LaunchSupervisor implements AutoCloseable {
             return new Outcome(false, null, "the session closed while it was starting", "");
         }
         ensureReaper();
-        drain(process, entryHeld);
+        Thread reader = drain(process, entryHeld);
         if (waitForAnswer(endpoint, budget, process, strangerHoldsIt)) {
             return new Outcome(true, running, null, "");
         }
@@ -343,6 +353,16 @@ public final class LaunchSupervisor implements AutoCloseable {
         // read as one the program chose.
         reap(entryHeld);
         held.remove(entry.name());
+        // WAIT FOR THE READER, and this is the whole fix. `waitForAnswer` returns
+        // the moment `process.isAlive()` goes false, and the drain runs on its own
+        // virtual thread — so "the process is dead" was being read as "everything
+        // it wrote has been collected". On macOS the reader happened to be
+        // scheduled first and every assertion passed; the first Linux run of this
+        // code failed on the one that reads the tail. A start that fails then
+        // reports the death with no reason attached, which is precisely what this
+        // Outcome was built to carry. The reap above has already torn the pipe, so
+        // this join returns immediately in every case that is not pathological.
+        awaitOutput(reader);
         String tail = entryHeld.text();
         String problem = problemFor(process, address, budget, strangerHoldsIt);
         return new Outcome(false, null, problem, tail);
@@ -405,8 +425,8 @@ public final class LaunchSupervisor implements AutoCloseable {
      * the kind of line that carries a box-drawing character or an arrow, and a
      * mangled one is worse than none.
      */
-    private static void drain(Process process, Held into) {
-        Thread.startVirtualThread(() -> {
+    private static Thread drain(Process process, Held into) {
+        return Thread.startVirtualThread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), OUTPUT_CHARSET))) {
                 String line;
@@ -417,6 +437,18 @@ public final class LaunchSupervisor implements AutoCloseable {
                 // A reaped child tears the pipe down mid-read; the snapshot stands.
             }
         });
+    }
+
+    /** Lets the reader finish what the dead process left in the pipe.
+     *
+     *  @param reader the drain thread started for this process */
+    static void awaitOutput(Thread reader) {
+        try {
+            reader.join(java.time.Duration.ofMillis(OUTPUT_DRAIN_GRACE_MS));
+        } catch (InterruptedException interrupted) {
+            // The caller is going away; the snapshot taken so far still stands.
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** Polls the address until it answers, the budget runs out, or the process dies. */
