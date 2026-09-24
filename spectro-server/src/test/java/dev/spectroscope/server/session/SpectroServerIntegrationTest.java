@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -30,6 +31,7 @@ import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -83,6 +85,10 @@ class SpectroServerIntegrationTest {
 
     @Autowired
     TestRestTemplate rest;
+
+    /** The one /ws handler; the persist test reads its sessions' parked calls. */
+    @Autowired
+    SpectroSocketHandler socketHandler;
 
     @BeforeAll
     static void scriptedOllamaAndConfig() throws IOException {
@@ -788,12 +794,20 @@ class SpectroServerIntegrationTest {
                             new AssertionError("run_command must trigger a permission_request, got " + events));
             String callId = request.path("callId").asText();
 
-            // 3. Approve, remember AND persist the rule.
+            // 3. Wait until the broker holds a future for the call. The loop sends
+            //    permission_request before it asks the broker, and
+            //    onPermissionResponse drops an answer that finds no future.
+            for (int i = 0; i < 100 && !parked(callId); i++) {
+                Thread.sleep(100);
+            }
+            assertTrue(parked(callId), "the broker must park the call before it is answered");
+
+            // 4. Approve, remember AND persist the rule.
             socket.sendText("""
                     {"type":"permission_response","callId":"%s","allowed":true,"remember":true,"persist":true}"""
                     .formatted(callId), true);
 
-            // 4. Let the run finish.
+            // 5. Let the run finish.
             assertTrue(runEnded.await(20, TimeUnit.SECONDS), "run_end must arrive");
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
@@ -1092,6 +1106,25 @@ class SpectroServerIntegrationTest {
             assertTrue(runEnded.await(20, TimeUnit.SECONDS), "run_end must arrive");
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
+    }
+
+    /** True once a session on this server holds a parked permission future for
+     *  the call. Read by reflection: the handler's connections and each
+     *  connection's pending map are private. */
+    @SuppressWarnings("unchecked")
+    private boolean parked(String callId) throws ReflectiveOperationException {
+        Field connectionsField = SpectroSocketHandler.class.getDeclaredField("connections");
+        connectionsField.setAccessible(true);
+        Field pendingField = SessionConnection.class.getDeclaredField("pending");
+        pendingField.setAccessible(true);
+        for (SessionConnection connection
+                : ((Map<String, SessionConnection>) connectionsField.get(socketHandler)).values()) {
+            if (((Map<String, CompletableFuture<Boolean>>) pendingField.get(connection))
+                    .containsKey(callId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The first recorded /api/chat body whose messages carry the marker text. */
