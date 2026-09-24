@@ -1,6 +1,9 @@
 // Small pure formatting helpers shared by the components. No state, no React.
 
 import { t, type Lang } from "./i18n/i18n";
+// Type only, so format.ts keeps its one runtime dependency and there is no
+// import edge from a pure formatter into a React store.
+import type { AnswerLineMode } from "./state/answerLine";
 
 /** 950 -> "950", 12400 -> "12.4k", 231000 -> "231k". */
 export function formatTokens(n: number): string {
@@ -128,4 +131,119 @@ export function prettyJson(input: unknown): string {
   } catch {
     return String(input);
   }
+}
+
+/** Middle-ellipsis WITHOUT the basename split — for glob patterns and other
+ *  non-path strings the disk pill shows, where the directories are the point. */
+export function clipMiddle(s: string, max = 22): string {
+  if (s.length <= max) return s;
+  const keep = max - 1; // room for the ellipsis
+  const head = Math.ceil(keep / 2);
+  const tail = Math.floor(keep / 2);
+  return `${s.slice(0, head)}…${s.slice(s.length - tail)}`;
+}
+
+/** Last path segment, then Apple-style middle ellipsis so start AND end stay readable. */
+export function fileLabel(path: string, max = 22): string {
+  const segs = path.split(/[/\\]+/).filter(Boolean);
+  const name = segs.length > 0 ? segs[segs.length - 1] : path;
+  return clipMiddle(name, max);
+}
+
+/** What one segment of the answer line is. `value` is the number or string as
+ *  it reads, `label` is the word beside it and is empty where the value speaks
+ *  for itself, `title` carries the untruncated string where the value was
+ *  shortened. */
+export type AnswerSegmentKind =
+  "in" | "cacheRead" | "cacheWrite" | "out" | "context" | "rate" | "duration" | "window" | "model";
+
+export interface AnswerSegment {
+  kind: AnswerSegmentKind;
+  value: string;
+  label: string;
+  title?: string;
+}
+
+/** The part of an assistant turn this line reads. Structural on purpose: the
+ *  reducer's Turn is assignable to it and format.ts keeps its one import. */
+export interface AnswerLineTurn {
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  };
+  durationMs?: number;
+  endTs?: number;
+  model?: string;
+}
+
+/**
+ * The segments of one answer's line, in reading order (card 374). Empty when
+ * nothing was measured: no usage event, no line, which is the behaviour the
+ * flat row had at Chat.tsx:736 and the one criterion 10 pins.
+ *
+ * normal is the everyday reading the owner asked for: what went in, what came
+ * out, how long it took. extended adds what the event carries beyond that, the
+ * cache halves where the provider reported them, the true context size, the
+ * rate, the wall clock window and the model.
+ *
+ * The context total is the sum Agent.contextTokens computes at Agent.java:1353,
+ * the uncached remainder plus both cache halves. It is drawn ONLY where a cache
+ * half was reported: with no cache the sum IS the remainder, and two labels
+ * over one number read as two measurements. On the owner's backends, which
+ * build the two argument PUsage (OpenAiCompatProvider.java:967,
+ * OllamaProvider.java:593), that means the total is always absent.
+ *
+ * The cache rule itself is not restated here. It is read out of cacheSplit,
+ * which already says a reported zero counts as none and is pinned six ways in
+ * format.test.ts.
+ */
+export function answerLineSegments(
+  mode: AnswerLineMode,
+  turn: AnswerLineTurn,
+  lang: Lang = "en",
+): AnswerSegment[] {
+  const usage = turn.usage;
+  if (usage === undefined) return [];
+  const extended = mode === "extended";
+  const split = cacheSplit(usage);
+  const cached = split.reduce((n, c) => n + c.tokens, 0);
+
+  const segments: AnswerSegment[] = [{ kind: "in", value: String(usage.inputTokens), label: "in" }];
+  if (extended) {
+    for (const c of split) {
+      segments.push({
+        kind: c.kind === "read" ? "cacheRead" : "cacheWrite",
+        value: String(c.tokens),
+        label: t(lang, c.kind === "read" ? "chat.cacheRead" : "chat.cacheWrite"),
+      });
+    }
+  }
+  segments.push({ kind: "out", value: String(usage.outputTokens), label: "out" });
+  if (extended && cached > 0) {
+    segments.push({
+      kind: "context",
+      value: String(usage.inputTokens + cached),
+      label: t(lang, "aline.context"),
+    });
+  }
+  if (extended) {
+    const rate = tokensPerSecond(usage.outputTokens, turn.durationMs);
+    if (rate !== null) segments.push({ kind: "rate", value: rate, label: "" });
+  }
+  if (turn.durationMs !== undefined) {
+    segments.push({ kind: "duration", value: formatDuration(turn.durationMs), label: "" });
+  }
+  if (extended && turn.endTs !== undefined && turn.durationMs !== undefined) {
+    segments.push({
+      kind: "window",
+      value: `${clockTime(turn.endTs - turn.durationMs)} → ${clockTime(turn.endTs)}`,
+      label: "",
+    });
+  }
+  if (extended && turn.model !== undefined) {
+    segments.push({ kind: "model", value: fileLabel(turn.model), label: "", title: turn.model });
+  }
+  return segments;
 }

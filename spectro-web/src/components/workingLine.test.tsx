@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { WorkingLine, showWorkingLine, workingTimer } from "./WorkingLine";
-import { initialState, normalizeReplay, reduceAll } from "../state/reducer";
+import { initialState, liveThinkingTurns, normalizeReplay, reduceAll } from "../state/reducer";
 import type { RunEvent } from "../events";
 import { read, stripComments } from "../testkit/source";
 import { setLang } from "../state/lang";
@@ -73,6 +73,39 @@ describe("showWorkingLine — when the transcript needs a sign of life", () => {
   it("never shows on a replayed archive", () => {
     expect(showWorkingLine(normalizeReplay(fold([rootStart])), true)).toBe(false);
     expect(showWorkingLine(fold([rootStart]), false)).toBe(false);
+  });
+});
+
+describe("showWorkingLine with children thinking at once (card 395)", () => {
+  // A child's open block keeps its place in the list while a sibling's later
+  // turns arrive, so its live thinking marker can pulse above the last turn.
+  const fanOut: RunEvent[] = [
+    rootStart,
+    { type: "tool_call", agentId: "main", callId: "spawn", name: "spawn_agents", input: {}, ts: 1100 },
+    { type: "agent_spawn", agentId: "explore-1", parentId: "main", task: "a", ts: 1101 },
+    { type: "agent_spawn", agentId: "explore-2", parentId: "main", task: "b", ts: 1102 },
+    { type: "run_start", runId: "r2", agentId: "explore-1", parentId: "main", prompt: "a", ts: 1103 },
+    { type: "run_start", runId: "r3", agentId: "explore-2", parentId: "main", prompt: "b", ts: 1104 },
+    { type: "thinking_delta", agentId: "explore-1", text: "a1", ts: 1200 },
+    { type: "thinking_delta", agentId: "explore-2", text: "b1", ts: 1201 },
+    { type: "tool_call", agentId: "explore-2", callId: "k-b", name: "read_file", input: {}, ts: 1202 },
+    { type: "thinking_delta", agentId: "explore-1", text: "a2", ts: 1203 },
+  ];
+
+  it("stays away while a child's block pulses above a sibling's later tool turn", () => {
+    const s = fold(fanOut);
+    expect(s.turns[s.turns.length - 1].kind).toBe("tool");
+    expect(liveThinkingTurns(s).size).toBe(1);
+    expect(showWorkingLine(s, true)).toBe(false);
+  });
+
+  it("returns once that child calls a tool too and nothing pulses", () => {
+    const s = fold([
+      ...fanOut,
+      { type: "tool_call", agentId: "explore-1", callId: "k-a", name: "read_file", input: {}, ts: 1204 },
+    ]);
+    expect(liveThinkingTurns(s).size).toBe(0);
+    expect(showWorkingLine(s, true)).toBe(true);
   });
 });
 

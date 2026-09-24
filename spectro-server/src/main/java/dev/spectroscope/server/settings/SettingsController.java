@@ -3,6 +3,7 @@ package dev.spectroscope.server.settings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.HookConfig;
+import dev.spectroscope.core.config.SettingFloors;
 import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
@@ -139,9 +140,11 @@ public class SettingsController {
      * @return {@code effective} (the resolved config, every field, nulls
      *         included), {@code origins} (per-field winner + shadowed layers),
      *         {@code layers} (each non-empty scope's own settings as raw JSON),
-     *         {@code files} (the concrete paths for this view) and
+     *         {@code files} (the concrete paths for this view),
      *         {@code workspace} (the resolved directory, or {@code null} in the
-     *         process-moment view)
+     *         process-moment view), {@code floors} (each whole-number key's
+     *         lowest value, card 386) and {@code belowFloor} (every value a
+     *         settings file held below its floor, skipped on this read)
      * @throws ResponseStatusException 400 for a malformed session id, 404 when
      *                                  the session has neither a pinned nor a
      *                                  configured workspace
@@ -160,6 +163,10 @@ public class SettingsController {
         out.put("layers", resolved.layers());
         out.put("files", files(workspace));
         out.put("workspace", workspace == null ? null : workspace.toString());
+        // Card 386: the page takes each number field's lowest value from here
+        // and names a value this read skipped where it shows the value's origin.
+        out.put("floors", SettingFloors.floors());
+        out.put("belowFloor", resolved.belowFloor());
         return out;
     }
 

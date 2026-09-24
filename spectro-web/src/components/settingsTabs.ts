@@ -146,3 +146,19 @@ export function settingsTabButtonId(tab: SettingsTab): string {
 export function settingsTabPanelId(tab: SettingsTab): string {
   return `settings-page-${tab}`;
 }
+
+/**
+ * The DOM anchor of a settings section: one id per address the route
+ * vocabulary knows (#/settings/{section}, card 131).
+ *
+ * <p>It lives here rather than in the panel because two callers need it now:
+ * the deep link that opens the page, and card 381's search, which points at
+ * exactly the same anchors. A second scheme beside this one would drift the
+ * first time a section was renamed.</p>
+ *
+ * @param section the section
+ * @return the element id its heading carries
+ */
+export function sectionAnchorId(section: SettingsSection): string {
+  return `settings-sec-${section}`;
+}

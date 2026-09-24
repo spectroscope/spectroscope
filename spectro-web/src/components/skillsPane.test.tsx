@@ -1,4 +1,4 @@
-// The skills segment's surface. Card 225 built it as a read-only ledger; card
+// The skills view. Card 225 built it as a read-only ledger; card
 // 228 makes it the skills' ONE home — "in den Skills sollte man diese auch
 // installieren können, und sie sollen aus den Einstellungen raus". The view
 // now IS the manager: both roots listed, per-skill on/off, delete for
@@ -75,11 +75,12 @@ describe("one truth, measured — never a second copy", () => {
 });
 
 describe("the doors point at the place", () => {
-  it("routes the plus menu's skills rows to the rail view, not the settings page", () => {
+  it("routes the plus menu's skills rows to the skills view, not the settings page", () => {
     // Card 224's Manage/Browse rows land on #/settings/skills[-catalogue];
-    // since card 228 the App answers both by opening the skills segment.
+    // since card 228 the App answers both by opening the skills view, and
+    // since card 409 that view is a flag of its own rather than a segment.
     expect(app).toMatch(/section === "skills" \|\| section === "skills-catalogue"/);
-    expect(app).toMatch(/setNav\("skills"\)/);
+    expect(app).toMatch(/openSkills\(\)/);
   });
 
   it("mounts the pane without a manage door — the view IS the manager", () => {
@@ -111,7 +112,7 @@ describe("what install means is said, both halves", () => {
   });
 
   it("keeps DE and EN for each key the pane says", () => {
-    for (const key of ["nav.skills", "nav.skillsNote", "skv.claim", "skv.installNote"]) {
+    for (const key of ["nav.skills", "skv.claim", "skv.installNote"]) {
       expect(dict[key], key).toBeDefined();
       expect(dict[key].de, `${key}.de`).toBeTruthy();
       expect(dict[key].en, `${key}.en`).toBeTruthy();

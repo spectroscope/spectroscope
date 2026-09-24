@@ -48,7 +48,11 @@ public class SkillsController {
     private final Path projectRoot;
 
     /** The shelf behind the install verb (card 182) — vendored, never fetched. */
-    private final SkillCatalogue catalogue = new SkillCatalogue();
+    private final SkillCatalogue catalogue;
+
+    /** Where a set remove parks the folders it takes out until all of them are
+     *  out (card 410); a sibling of the skills root, like the install staging. */
+    static final String REMOVE_HOLDING_DIR = ".skill-remove";
 
     /** Spring wiring — the same roots SkillLibrary.defaultRoots resolves. */
     public SkillsController() {
@@ -58,8 +62,14 @@ public class SkillsController {
     }
 
     public SkillsController(Path userRoot, Path projectRoot) {
+        this(userRoot, projectRoot, new SkillCatalogue());
+    }
+
+    /** The seam the half-failed set install tests use to break one copy. */
+    SkillsController(Path userRoot, Path projectRoot, SkillCatalogue catalogue) {
         this.userRoot = userRoot;
         this.projectRoot = projectRoot;
+        this.catalogue = catalogue;
     }
 
     private static boolean fenced(HttpServletRequest request) {
@@ -97,7 +107,12 @@ public class SkillsController {
             row.put("commit", entry.commit());
             row.put("files", entry.files());
             row.put("bytes", entry.bytes());
-            row.put("installed", occupied(entry.pack(), entry.name()) != null);
+            String root = occupied(entry.pack(), entry.name());
+            row.put("installed", root != null);
+            // Card 410: which root carries it. A set remove and a row's off
+            // switch may only take out a user-root copy; the project's is the
+            // repo's business, the same line the single DELETE draws.
+            row.put("root", root);
             rows.add(row);
         }
         return rows;
@@ -167,6 +182,227 @@ public class SkillsController {
             }
             case FAILED -> ResponseEntity.status(500).body(Map.of("error", result.message()));
         };
+    }
+
+    /**
+     * Copy several catalogue skills into the user root in one request, all or
+     * nothing (card 410: a pack's install button). Every id is checked before
+     * anything is written; one unknown or already carried id refuses the whole
+     * set, and the answer names each refused id with the facts a single
+     * install's refusal carries. A copy that fails after others landed takes
+     * those back. A copy that will not delete stays, and the answer is then a
+     * 500 that names it under {@code leftover}.
+     *
+     * @param body    {@code {skills: ["<pack>/<name>", ...]}}
+     * @param request the servlet request, for the fence
+     * @return 404 foreign; 400 no list; 409 a refused id (nothing written); 413 or 500 a failed
+     *         copy (nothing left written); 500 with {@code leftover} a failed copy whose take-back
+     *         left those ids installed; 200 {@code {installed: [facts...]}}
+     */
+    @PostMapping(value = "/api/skills/install-set", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> installSet(@RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.status(404).build();
+        }
+        List<String> ids = ids(body);
+        if (ids == null) {
+            return ResponseEntity.status(400).body(Map.of("message", "A list of catalogue ids ('skills') is required."));
+        }
+        List<Map<String, Object>> refused = new ArrayList<>();
+        List<SkillCatalogue.Entry> entries = new ArrayList<>();
+        for (String id : ids) {
+            SkillCatalogue.Entry entry = SkillCatalogue.find(id).orElse(null);
+            if (entry == null || child(child(userRoot, entry.pack()), entry.name()) == null) {
+                refused.add(refusal(id, 404, "Unknown catalogue skill: " + id, null, null));
+                continue;
+            }
+            String taken = occupied(entry.pack(), entry.name());
+            if (taken != null) {
+                refused.add(refusal(id, 409, "user".equals(taken)
+                                ? "Already installed. Delete it first to install it again."
+                                : "The project already carries this skill; it would win anyway.",
+                        qualified(entry.pack(), entry.name()), taken));
+                continue;
+            }
+            entries.add(entry);
+        }
+        if (!refused.isEmpty()) {
+            return ResponseEntity.status(409).body(Map.of(
+                    "message", "Nothing was installed: " + refused.size() + " of " + ids.size() + " refused.",
+                    "refused", refused));
+        }
+        List<Path> written = new ArrayList<>();
+        List<Map<String, Object>> installed = new ArrayList<>();
+        for (SkillCatalogue.Entry entry : entries) {
+            Path target = child(child(userRoot, entry.pack()), entry.name());
+            SkillCatalogue.InstallResult result =
+                    catalogue.install(entry, target, userRoot.resolveSibling(SkillCatalogue.STAGING_DIR));
+            if (result.status() != SkillCatalogue.Status.INSTALLED) {
+                // written.get(n) is the copy of entries.get(n): both grow in step until here.
+                List<String> leftover = new ArrayList<>();
+                for (int back = 0; back < written.size(); back++) {
+                    if (deleteTree(written.get(back))) {
+                        deleteIfEmpty(written.get(back).getParent());
+                    } else {
+                        leftover.add(entries.get(back).id());
+                    }
+                }
+                int status = switch (result.status()) {
+                    case TAKEN -> 409;
+                    case TOO_LARGE -> 413;
+                    default -> 500;
+                };
+                List<Map<String, Object>> failed = List.of(refusal(entry.id(), status, result.message(),
+                        qualified(entry.pack(), entry.name()), status == 409 ? "user" : null));
+                if (leftover.isEmpty()) {
+                    return ResponseEntity.status(status).body(Map.of(
+                            "message", "Nothing was installed: " + entry.id() + " failed.",
+                            "refused", failed));
+                }
+                // A copy that would not delete is still in the user root, where
+                // the loader reads it, so the answer names it.
+                return ResponseEntity.status(500).body(Map.of(
+                        "message", entry.id() + " failed, and " + leftover.size()
+                                + " copied before it could not be taken back: " + String.join(", ", leftover) + ".",
+                        "refused", failed,
+                        "leftover", leftover));
+            }
+            written.add(target);
+            Map<String, Object> facts = new LinkedHashMap<>(result.facts());
+            facts.put("skill", entry.id());
+            installed.add(facts);
+        }
+        return ResponseEntity.ok(Map.of("installed", installed));
+    }
+
+    /**
+     * Take several catalogue skills out of the user root in one request, all or
+     * nothing (card 410: a pack's remove button). Every id must name a catalogue
+     * skill the user root carries; one that is missing, or only in the project
+     * root, refuses the whole set. The folders are first moved aside into a
+     * holding folder beside the root, and only deleted once every one of them
+     * is out, so a move that fails halfway puts the earlier ones back. One that
+     * will not go back stays in the holding folder, and the answer is then a 500
+     * that names it under {@code leftover} and the folder under {@code holding}.
+     *
+     * @param body    {@code {skills: ["<pack>/<name>", ...]}}
+     * @param request the servlet request, for the fence
+     * @return 404 foreign; 400 no list; 409 a refused id (nothing removed); 500 a failed move
+     *         (nothing left removed); 500 with {@code leftover} and {@code holding} a failed move
+     *         whose put-back left those ids out of the root; 200 {@code {removed: [ids]}}
+     */
+    @PostMapping(value = "/api/skills/remove-set", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> removeSet(@RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.status(404).build();
+        }
+        List<String> ids = ids(body);
+        if (ids == null) {
+            return ResponseEntity.status(400).body(Map.of("message", "A list of catalogue ids ('skills') is required."));
+        }
+        List<Map<String, Object>> refused = new ArrayList<>();
+        List<Path> targets = new ArrayList<>();
+        for (String id : ids) {
+            SkillCatalogue.Entry entry = SkillCatalogue.find(id).orElse(null);
+            Path user = entry == null ? null : child(child(userRoot, entry.pack()), entry.name());
+            if (user != null && Files.isDirectory(user)) {
+                targets.add(user);
+            } else if (entry != null && "project".equals(occupied(entry.pack(), entry.name()))) {
+                refused.add(refusal(id, 409, "A project skill belongs to the repo; remove it there.",
+                        qualified(entry.pack(), entry.name()), "project"));
+            } else {
+                refused.add(refusal(id, 404, "Not installed: " + id, null, null));
+            }
+        }
+        if (!refused.isEmpty()) {
+            return ResponseEntity.status(409).body(Map.of(
+                    "message", "Nothing was removed: " + refused.size() + " of " + ids.size() + " refused.",
+                    "refused", refused));
+        }
+        Path holdingRoot = userRoot.resolveSibling(REMOVE_HOLDING_DIR);
+        Path holding = holdingRoot.resolve(String.valueOf(System.nanoTime()));
+        List<Path> moved = new ArrayList<>();
+        for (int i = 0; i < targets.size(); i++) {
+            try {
+                Files.createDirectories(holding);
+                move(targets.get(i), holding.resolve(String.valueOf(i)));
+                moved.add(targets.get(i));
+            } catch (IOException | RuntimeException failure) {
+                // moved.get(n) is targets.get(n), and targets.get(n) is the folder of ids.get(n).
+                List<String> leftover = new ArrayList<>();
+                for (int back = moved.size() - 1; back >= 0; back--) {
+                    try {
+                        move(holding.resolve(String.valueOf(back)), moved.get(back));
+                    } catch (IOException | RuntimeException stuck) {
+                        leftover.add(0, ids.get(back));
+                    }
+                }
+                deleteIfEmpty(holding);
+                deleteIfEmpty(holdingRoot);
+                List<Map<String, Object>> failed = List.of(refusal(ids.get(i), 500,
+                        String.valueOf(failure.getMessage()), null, null));
+                if (leftover.isEmpty()) {
+                    return ResponseEntity.status(500).body(Map.of(
+                            "message", "Nothing was removed: " + ids.get(i) + " could not be moved.",
+                            "refused", failed));
+                }
+                // A folder that would not go back is out of the root and waits
+                // in the holding folder, which stays; the answer names both.
+                return ResponseEntity.status(500).body(Map.of(
+                        "message", ids.get(i) + " could not be moved, and " + leftover.size()
+                                + " moved before it could not be put back: " + String.join(", ", leftover)
+                                + ". They wait in " + holding + ".",
+                        "refused", failed,
+                        "leftover", leftover,
+                        "holding", holding.toString()));
+            }
+        }
+        // A holding folder that will not delete stays beside the root. The
+        // loader does not read there, and the skills are out of the root.
+        deleteTree(holding);
+        deleteIfEmpty(holdingRoot);
+        for (Path target : targets) {
+            deleteIfEmpty(target.getParent());
+        }
+        return ResponseEntity.ok(Map.of("removed", ids));
+    }
+
+    /** The one move a set remove makes, out to the holding folder and back; the
+     *  seam its failure tests break. */
+    void move(Path from, Path to) throws IOException {
+        Files.move(from, to);
+    }
+
+    /** The set's ids, de-duplicated in order; null when the body carries no usable list. */
+    private static List<String> ids(Map<String, Object> body) {
+        if (!(body.get("skills") instanceof List<?> raw) || raw.isEmpty()) {
+            return null;
+        }
+        java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>();
+        for (Object id : raw) {
+            if (!(id instanceof String text) || text.isBlank()) {
+                return null;
+            }
+            ids.add(text);
+        }
+        return List.copyOf(ids);
+    }
+
+    /** One refused id of a set, in the shape a single install's refusal already has. */
+    private static Map<String, Object> refusal(String id, int status, String message, String name, String root) {
+        Map<String, Object> refusal = new LinkedHashMap<>();
+        refusal.put("skill", id);
+        refusal.put("status", status);
+        refusal.put("message", message);
+        if (name != null) {
+            refusal.put("name", name);
+        }
+        if (root != null) {
+            refusal.put("root", root);
+        }
+        return refusal;
     }
 
     /** Which root already carries this exact pack/skill folder — "user", "project", or null. */
@@ -308,6 +544,23 @@ public class SkillsController {
                     .body(Map.of("error", "a project skill belongs to the repo — remove it there"));
         }
         return ResponseEntity.status(404).build();
+    }
+
+    /** Deletes a folder and everything in it; a folder that is not there is fine.
+     *  @param root the folder
+     *  @return whether the folder is gone afterwards */
+    private static boolean deleteTree(Path root) {
+        if (!Files.exists(root)) {
+            return true;
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (Path p : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(p);
+            }
+        } catch (IOException | java.io.UncheckedIOException stays) {
+            return false;
+        }
+        return !Files.exists(root);
     }
 
     private static void deleteIfEmpty(Path dir) {

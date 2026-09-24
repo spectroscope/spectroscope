@@ -64,6 +64,22 @@ import java.util.List;
  *                            the same reason the guard carries its own asker —
  *                            a statement wired without its teeth would be a goal
  *                            that grades itself
+ * @param steering            what the operator typed while the run was already
+ *                            working (card 380); null leaves the loop
+ *                            byte-identical to before, which is what every
+ *                            headless face wires. The holder is polled, never
+ *                            called back: the socket thread writes into it and
+ *                            the loop reads it once per turn, the shape card
+ *                            267's goal already uses
+ * @param rtkFilter           card 379: the last look at a tool call's input
+ *                            before the permission gate sees it, so the gate is
+ *                            asked about the line that will actually run. Null
+ *                            rewrites nothing, which is the shipped state
+ * @param sessionWindow       the context window the operator set for this session
+ *                            (card 390), shared with every child the session
+ *                            spawns; null sets nothing and leaves the loop
+ *                            byte-identical to before. The loop reads it at the
+ *                            top of every turn, the shape card 267's goal uses
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
@@ -74,7 +90,142 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                            dev.spectroscope.core.progress.ProgressGuard progressGuard,
                            Integer maxTurns,
                            dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
-                           dev.spectroscope.core.goal.SessionGoal goal) {
+                           dev.spectroscope.core.goal.SessionGoal goal,
+                           dev.spectroscope.core.steering.SteeringInbox steering,
+                           dev.spectroscope.core.tools.RtkFilter rtkFilter,
+                           dev.spectroscope.core.session.SessionWindow sessionWindow) {
+
+    /** Compat: the arity before card 390, with cards 379 and 380 in it. Never
+     *  released. A caller without a session window sets nothing, and the
+     *  window is derived as before.
+     *
+     * @param provider            the LLM backend the loop streams from
+     * @param systemPrompt        system prompt sent with every provider request
+     * @param registry            the tool belt
+     * @param cwd                 working directory the file tools resolve against
+     * @param onPermission        blocking human gate
+     * @param agentId             id stamped on every emitted event
+     * @param parentId            the spawning agent's id; null for the main agent
+     * @param initialMessages     history seed of a resumed session
+     * @param providerName        build-time provider label for run_start
+     * @param maxTokens           output-token budget per provider call
+     * @param compactionThreshold input-token level that triggers compaction
+     * @param introspection       TRUE emits a context_info estimate each turn
+     * @param thinking            TRUE requests the model's reasoning stream
+     * @param hooks               external shell hooks around tool calls
+     * @param llmWire             the session's backend-to-LLM recorder
+     * @param latency             the session's shared window of exchange durations
+     * @param progressGuard       the harness's eye on a run going nowhere
+     * @param maxTurns            the runaway-loop brake, in turns per run
+     * @param continuationLeash   the leash that keeps an unfinished run going
+     * @param goal                what this run is FOR, and the check that decides it
+     * @param steering            what the operator typed while the run was working
+     * @param rtkFilter           the rtk rewrite of a shell line before the gate */
+    public AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
+                        Path cwd, PermissionBroker onPermission, String agentId, String parentId,
+                        List<ProviderMessage> initialMessages, String providerName,
+                        Integer maxTokens, Integer compactionThreshold, Boolean introspection,
+                        Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire,
+                        dev.spectroscope.core.provider.ExchangeLatency latency,
+                        dev.spectroscope.core.progress.ProgressGuard progressGuard,
+                        Integer maxTurns,
+                        dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
+                        dev.spectroscope.core.goal.SessionGoal goal,
+                        dev.spectroscope.core.steering.SteeringInbox steering,
+                        dev.spectroscope.core.tools.RtkFilter rtkFilter) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
+                initialMessages, providerName, maxTokens, compactionThreshold, introspection,
+                thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
+                goal, steering, rtkFilter, null);
+    }
+
+    /** Compat: the arity of card 380's branch, goal and then the inbox. Never
+     *  released. It is the one form of arity 21, and it is a prefix of the
+     *  record. The branches of cards 379 and 390 each had a form of arity 21
+     *  of their own; neither is kept, because two overloads of arity 21 would
+     *  make a null in position 21 ambiguous. A caller without an rtk filter
+     *  or a session window gets neither.
+     *
+     * @param provider            the LLM backend the loop streams from
+     * @param systemPrompt        system prompt sent with every provider request
+     * @param registry            the tool belt
+     * @param cwd                 working directory the file tools resolve against
+     * @param onPermission        blocking human gate
+     * @param agentId             id stamped on every emitted event
+     * @param parentId            the spawning agent's id; null for the main agent
+     * @param initialMessages     history seed of a resumed session
+     * @param providerName        build-time provider label for run_start
+     * @param maxTokens           output-token budget per provider call
+     * @param compactionThreshold input-token level that triggers compaction
+     * @param introspection       TRUE emits a context_info estimate each turn
+     * @param thinking            TRUE requests the model's reasoning stream
+     * @param hooks               external shell hooks around tool calls
+     * @param llmWire             the session's backend-to-LLM recorder
+     * @param latency             the session's shared window of exchange durations
+     * @param progressGuard       the harness's eye on a run going nowhere
+     * @param maxTurns            the runaway-loop brake, in turns per run
+     * @param continuationLeash   the leash that keeps an unfinished run going
+     * @param goal                what this run is FOR, and the check that decides it
+     * @param steering            what the operator typed while the run was working */
+    public AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
+                        Path cwd, PermissionBroker onPermission, String agentId, String parentId,
+                        List<ProviderMessage> initialMessages, String providerName,
+                        Integer maxTokens, Integer compactionThreshold, Boolean introspection,
+                        Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire,
+                        dev.spectroscope.core.provider.ExchangeLatency latency,
+                        dev.spectroscope.core.progress.ProgressGuard progressGuard,
+                        Integer maxTurns,
+                        dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
+                        dev.spectroscope.core.goal.SessionGoal goal,
+                        dev.spectroscope.core.steering.SteeringInbox steering) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
+                initialMessages, providerName, maxTokens, compactionThreshold, introspection,
+                thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
+                goal, steering, null, null);
+    }
+
+    /** Compat: the arity before cards 379, 380 and 390, the canonical
+     *  constructor 0.12.0 shipped. Every older compat below lands here. A
+     *  caller without an inbox can never be steered, and the loop runs exactly
+     *  as card 267 left it. A caller without an rtk filter runs every shell
+     *  line exactly as the model wrote it, which is also what the shipped
+     *  setting does. A caller without a session window sets nothing.
+     *
+     * @param provider            the LLM backend the loop streams from
+     * @param systemPrompt        system prompt sent with every provider request
+     * @param registry            the tool belt
+     * @param cwd                 working directory the file tools resolve against
+     * @param onPermission        blocking human gate
+     * @param agentId             id stamped on every emitted event
+     * @param parentId            the spawning agent's id; null for the main agent
+     * @param initialMessages     history seed of a resumed session
+     * @param providerName        build-time provider label for run_start
+     * @param maxTokens           output-token budget per provider call
+     * @param compactionThreshold input-token level that triggers compaction
+     * @param introspection       TRUE emits a context_info estimate each turn
+     * @param thinking            TRUE requests the model's reasoning stream
+     * @param hooks               external shell hooks around tool calls
+     * @param llmWire             the session's backend-to-LLM recorder
+     * @param latency             the session's shared window of exchange durations
+     * @param progressGuard       the harness's eye on a run going nowhere
+     * @param maxTurns            the runaway-loop brake, in turns per run
+     * @param continuationLeash   the leash that keeps an unfinished run going
+     * @param goal                what this run is FOR, and the check that decides it */
+    public AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
+                        Path cwd, PermissionBroker onPermission, String agentId, String parentId,
+                        List<ProviderMessage> initialMessages, String providerName,
+                        Integer maxTokens, Integer compactionThreshold, Boolean introspection,
+                        Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire,
+                        dev.spectroscope.core.provider.ExchangeLatency latency,
+                        dev.spectroscope.core.progress.ProgressGuard progressGuard,
+                        Integer maxTurns,
+                        dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
+                        dev.spectroscope.core.goal.SessionGoal goal) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
+                initialMessages, providerName, maxTokens, compactionThreshold, introspection,
+                thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
+                goal, null, null, null);
+    }
 
     /** Compat: the pre-267 arity. A caller without a goal states nothing, and
      *  the loop runs exactly as card 266 left it.
@@ -227,6 +378,9 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private Integer maxTurns; // nullable → the shipped 15
         private dev.spectroscope.core.loop.ContinuationLeash continuationLeash; // nullable, never continues
         private dev.spectroscope.core.goal.SessionGoal goal; // nullable, states nothing
+        private dev.spectroscope.core.steering.SteeringInbox steering; // nullable, never steered
+        private dev.spectroscope.core.tools.RtkFilter rtkFilter; // nullable, rewrites nothing
+        private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable, sets nothing
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -312,13 +466,40 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
             return this;
         }
 
+        /** What the operator typed while the run was already working (card 380).
+         *  @param value the session's inbox; null can never be steered and
+         *               leaves the loop byte-identical to before
+         *  @return this builder */
+        public Builder steering(dev.spectroscope.core.steering.SteeringInbox value) {
+            this.steering = value;
+            return this;
+        }
+
+        /** Card 379: the rtk seam, read on every call rather than snapshotted.
+         *  @param value the filter; null rewrites nothing, which is what the
+         *               shipped {@code rtkFilter: "off"} amounts to
+         *  @return this builder */
+        public Builder rtkFilter(dev.spectroscope.core.tools.RtkFilter value) {
+            this.rtkFilter = value;
+            return this;
+        }
+
+        /** The context window the operator set for this session (card 390).
+         *  @param value the session's holder, shared with its children; null
+         *               sets nothing and leaves the loop byte-identical to before
+         *  @return this builder */
+        public Builder sessionWindow(dev.spectroscope.core.session.SessionWindow value) {
+            this.sessionWindow = value;
+            return this;
+        }
+
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
             return new AgentOptions(provider, systemPrompt, registry, cwd, onPermission,
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
                     introspection, thinking, hooks, llmWire, latency, progressGuard,
-                    maxTurns, continuationLeash, goal);
+                    maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow);
         }
     }
 }

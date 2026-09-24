@@ -11,6 +11,7 @@ import { isMcpTool, prettyMcp, ROOT_AGENT } from "../labScene";
 import type { DiskState, Focus, GateState, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
 import type { AgentDirectory } from "../agentDirectory";
+import type { ThresholdSource } from "../../wire/thresholdSources";
 import { t, type Lang } from "../../i18n/i18n";
 import { imageUrl } from "./imageUrl";
 import { modelLocation, outboundHop } from "./addresses";
@@ -433,7 +434,12 @@ export interface Detail {
     /** Which fact produced `threshold` (card 300). Absent when the frame said
      *  nothing — which is not the same as "fallback", and the difference is
      *  exactly what a percentage may honestly be built on. */
-    thresholdSource?: "override" | "window" | "model" | "fallback";
+    thresholdSource?: ThresholdSource;
+    /** The window that threshold was derived from (card 366 on the wire, card
+     *  377 on this fold). Absent on every pre-366 recording. The panel divides
+     *  by it, so dropping it here would leave the lab on a compaction point
+     *  while the header ring is on the window: one run, two scales. */
+    contextWindow?: number;
   } | null;
   /**
    * in-flight tool per agent (set on tool_call, cleared on tool_result).
@@ -741,6 +747,7 @@ export function deriveDetail(applied: RunEvent[]): Detail {
             estimatedTokens: e.estimatedTokens,
             threshold: e.threshold,
             ...(e.thresholdSource === undefined ? {} : { thresholdSource: e.thresholdSource }),
+            ...(e.contextWindow === undefined ? {} : { contextWindow: e.contextWindow }),
           };
         }
         break;

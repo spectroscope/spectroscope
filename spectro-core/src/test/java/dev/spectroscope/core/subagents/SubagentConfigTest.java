@@ -1,7 +1,9 @@
 package dev.spectroscope.core.subagents;
 
 import dev.spectroscope.core.PermissionBroker;
+import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.hooks.HookRunner;
+import dev.spectroscope.core.provider.ExchangeLatency;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.wire.LlmWireRecorder;
@@ -13,6 +15,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -90,10 +93,98 @@ class SubagentConfigTest {
                 .baseTools(List.of())
                 .build();
 
-        assertEquals(ChildBudget.FLOOR_MS, config.budget().runBudgetMs());
+        assertEquals(SpectroConfig.DEFAULT_SUBAGENT_BUDGET_SECONDS * 1000L,
+                config.budget().runBudgetMs());
         assertTrue(config.budget().observedP50Ms().isEmpty(),
                 "an unfed window has measured nothing and says so");
         assertTrue(config.budget().derivation().contains("nothing measured"),
                 config.budget().derivation());
+    }
+
+    @Test
+    void theOperatorsFloorReachesTheDerivedBudget() {
+        SubagentConfig config = SubagentConfig.builder()
+                .provider(PROVIDER)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .budget(ChildBudget.derivedFrom(new ExchangeLatency()))
+                .subagentBudgetSeconds(60)
+                .build();
+        assertEquals(60_000L, config.budget().runBudgetMs());
+        assertEquals(60_000L, config.budget().floorMs());
+    }
+
+    @Test
+    void anAbsentFloorMeansTheShippedTwoHours() {
+        SubagentConfig config = SubagentConfig.builder()
+                .provider(PROVIDER)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .build();
+        // The literal, not DEFAULT_SUBAGENT_BUDGET_SECONDS * 1000: a test that
+        // restates the constant it is checking agrees with whatever the constant
+        // becomes, and the name of this one is a claim about two hours.
+        assertEquals(7_200_000L, config.budget().runBudgetMs());
+    }
+
+    @Test
+    void theFloorGovernsWhenNoBudgetIsHandedIn() {
+        // The other half of the canonical constructor: no budget at all plus an
+        // operator's floor, which is the branch a face that names only its
+        // number would take. The case above covers an absent floor, the one
+        // below a budget that is handed in; this one is neither.
+        SubagentConfig config = SubagentConfig.builder()
+                .provider(PROVIDER)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .subagentBudgetSeconds(60)
+                .build();
+        assertEquals(60_000L, config.budget().runBudgetMs());
+        assertEquals(60_000L, config.budget().floorMs());
+    }
+
+    @Test
+    void anExplicitBudgetStillWinsOverTheFloor() {
+        ChildBudget fixed = ChildBudget.fixed(45_000L);
+        SubagentConfig config = SubagentConfig.builder()
+                .provider(PROVIDER)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .budget(fixed)
+                .subagentBudgetSeconds(60)
+                .build();
+        assertEquals(45_000L, config.budget().runBudgetMs());
+        assertSame(fixed, config.budget(),
+                "withFloorMs returns itself on an override, which is what the record's"
+                        + " javadoc promises; a copy carrying the same number would satisfy"
+                        + " the assertion above and break that promise silently");
+    }
+
+    @Test
+    void aFloorOfZeroIsRefusedByNameWhenABudgetIsHandedIn() {
+        // The branch both shipped faces take: SessionConnection and SpectroCli
+        // hand in a derived budget AND the operator's number, so the floor
+        // arrives through withFloorMs rather than through the null branch.
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> SubagentConfig.builder()
+                        .provider(PROVIDER)
+                        .cwd(Path.of("."))
+                        .parentAgentId("main")
+                        .budget(ChildBudget.derivedFrom(new ExchangeLatency()))
+                        .subagentBudgetSeconds(0)
+                        .build());
+        assertTrue(refused.getMessage().contains("subagentBudgetSeconds"), refused.getMessage());
+    }
+
+    @Test
+    void aFloorOfZeroIsRefusedByNameWhenNoBudgetIsHandedIn() {
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> SubagentConfig.builder()
+                        .provider(PROVIDER)
+                        .cwd(Path.of("."))
+                        .parentAgentId("main")
+                        .subagentBudgetSeconds(0)
+                        .build());
+        assertTrue(refused.getMessage().contains("subagentBudgetSeconds"), refused.getMessage());
     }
 }

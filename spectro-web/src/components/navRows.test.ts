@@ -1,4 +1,4 @@
-// The rail's nav list, as a model rather than as JSX. Seven rows share one
+// The rail's nav list, as a model rather than as JSX. The rows share one
 // visual recipe, so what is worth pinning is not the markup but the decisions:
 // which rows exist, what each one is called in both languages, which one is
 // dimmed rather than dropped, and which row owns which row-level action.
@@ -7,10 +7,22 @@ import { dict } from "../i18n/i18n";
 import { navActionRows, navSegmentRows } from "./navRows";
 
 describe("navActionRows", () => {
-  const rows = navActionRows();
+  const rows = navActionRows({ skillsOpen: false });
 
-  it("keeps the three actions the rail has always opened with, in order", () => {
-    expect(rows.map((r) => r.id)).toEqual(["newChat", "scenarios", "starters"]);
+  it("opens with the three actions it always had, then Skills (card 409)", () => {
+    // Skills joined the upper group on 2026-09-24: a thing you open beside the
+    // session list, like Scenarios and Starters, not a segment that swaps it.
+    expect(rows.map((r) => r.id)).toEqual(["newChat", "scenarios", "starters", "skills"]);
+  });
+
+  it("keeps the Skills row ungated and with no row action", () => {
+    // The catalogue reads one endpoint and starts no process, so the fleet
+    // lock has nothing to protect here, the same reasoning as the state graph.
+    for (const skillsOpen of [false, true]) {
+      const skills = navActionRows({ skillsOpen }).find((r) => r.id === "skills");
+      expect(skills?.disabled, String(skillsOpen)).toBe(false);
+      expect(skills?.trailing, String(skillsOpen)).toBe(null);
+    }
   });
 
   it("gives every row a label key that exists in both languages", () => {
@@ -40,12 +52,12 @@ describe("navSegmentRows", () => {
   const at = (over: Partial<Parameters<typeof navSegmentRows>[0]> = {}) =>
     navSegmentRows({ active: "sessions", fleetsLocked: false, fleetCount: 0, ...over });
 
-  it("keeps the segments in the order the strip had them, skills last", () => {
-    // Four segments since card 228: the rail lists places you go, and the
-    // browser is a thing a SESSION has (card 218's own rule) — its doors are
-    // the session tab and the workspace panel. Skills closes the list (card
-    // 225): a catalogue is the furthest thing from "what has run".
-    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph", "skills"]);
+  it("keeps the three segments in the order the strip had them", () => {
+    // The browser left with card 228: the rail lists places you go, and the
+    // browser is a thing a SESSION has (card 218's own rule). Skills left with
+    // card 409: it opens beside the list instead of swapping it, so it sits in
+    // the upper group now.
+    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph"]);
   });
 
   it("lists no browser segment — the browser belongs to a session, not the rail", () => {
@@ -53,18 +65,6 @@ describe("navSegmentRows", () => {
     // door opened a browser that belongs to NO session. The session tab
     // `browser` and the workspace's browser card are the doors that remain.
     expect(at().some((r) => r.id === "browser")).toBe(false);
-  });
-
-  it("lists the skills segment on every face, ungated and with no row action", () => {
-    // The catalogue reads one endpoint and starts no process, so the fleet
-    // lock has nothing to protect here — same reasoning as the state graph.
-    // And it is the place you go to LOOK (card 225): the fast switches live
-    // elsewhere, so the row carries no trailing affordance.
-    const locked = at({ fleetsLocked: true });
-    expect(locked.find((r) => r.id === "skills")?.disabled).toBe(false);
-    expect(at({ active: "skills" }).find((r) => r.id === "skills")?.active).toBe(true);
-    expect(at({ active: "skills" }).find((r) => r.id === "skills")?.trailing).toBe(null);
-    expect(at().find((r) => r.id === "skills")?.trailing).toBe(null);
   });
 
   it("gives every row a label key that exists in both languages", () => {
@@ -107,7 +107,7 @@ describe("navSegmentRows", () => {
   });
 
   it("marks exactly one segment active", () => {
-    for (const active of ["sessions", "fleets", "stategraph", "skills"] as const) {
+    for (const active of ["sessions", "fleets", "stategraph"] as const) {
       const rows = at({ active });
       expect(rows.filter((r) => r.active).map((r) => r.id)).toEqual([active]);
     }

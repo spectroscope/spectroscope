@@ -399,4 +399,105 @@ class CompactionThresholdTest {
                 CompactionThreshold.derive(null, 0, "gpt-4o")),
                 "no row in today's table is small enough for the clamp to bite");
     }
+
+    // ---- Card 390: the window the operator set for this session ----------
+
+    @Test
+    void aSessionWindowBecomesTheWindowTheThresholdAndItsOwnSource() {
+        // The owner's case of 2026-09-23: minimax-m3:cloud, where the harness
+        // learned nothing (no loaded instance, no row in ModelWindows) and fell
+        // back to 100,000. He typed 512,000 into the ring.
+        Derived derived = CompactionThreshold.derive(null, 0, "minimax-m3:cloud", 512_000);
+
+        assertEquals(358_400, derived.tokens(), "70 % of the window he set, like every other window");
+        assertEquals(Source.WINDOW_OVERRIDE, derived.source());
+        assertEquals(512_000, derived.window(), "the window itself rides along for the ring to divide by");
+    }
+
+    @Test
+    void aSessionWindowOutranksTheLoadedAndThePublishedWindow() {
+        // The operator sets it because the harness got it wrong, so the
+        // harness's own facts may not argue with it.
+        Derived overLoaded = CompactionThreshold.derive(null, 204_288, "qwen", 250_368);
+        assertEquals(175_257, overLoaded.tokens(), "the share of 250,368, not of the loaded 204,288");
+        assertEquals(Source.WINDOW_OVERRIDE, overLoaded.source());
+        assertEquals(250_368, overLoaded.window());
+
+        Derived overPublished = CompactionThreshold.derive(null, 0, "claude-opus-4-6", 200_000);
+        assertEquals(140_000, overPublished.tokens(), "the share of 200,000, not of the published 1M");
+        assertEquals(Source.WINDOW_OVERRIDE, overPublished.source());
+        assertEquals(200_000, overPublished.window());
+    }
+
+    @Test
+    void aSessionWindowOutranksAnExplicitThresholdToo() {
+        // Card 390, owner call 3 (default taken): the session window is the
+        // operator's explicit choice for THIS session, so it wins over the
+        // settings key as well.
+        Derived derived = CompactionThreshold.derive(50_000, 204_288, "qwen", 512_000);
+
+        assertEquals(358_400, derived.tokens());
+        assertEquals(Source.WINDOW_OVERRIDE, derived.source());
+        assertEquals(512_000, derived.window());
+    }
+
+    @Test
+    void theLazyFormAsksTheBackendNothingWhileASessionWindowIsSet() {
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        Derived derived = CompactionThreshold.derive(null, () -> {
+            asked.incrementAndGet();
+            return 204_288;
+        }, "qwen", 512_000);
+
+        assertEquals(358_400, derived.tokens());
+        assertEquals(Source.WINDOW_OVERRIDE, derived.source());
+        assertEquals(512_000, derived.window());
+        assertEquals(0, asked.get(), "the operator gave the answer, so nobody is asked");
+    }
+
+    @Test
+    void withNoSessionWindowTheFourArgumentFormsDecideAsTheThreeArgumentOnes() {
+        Integer[] thresholds = {null, 0, 50_000};
+        int[] windows = {0, 8_192, 204_288};
+        String[] models = {null, "qwen", "claude-opus-4-6"};
+        for (Integer threshold : thresholds) {
+            for (int window : windows) {
+                for (String model : models) {
+                    assertEquals(CompactionThreshold.derive(threshold, window, model),
+                            CompactionThreshold.derive(threshold, window, model, 0),
+                            "eager, " + threshold + "/" + window + "/" + model);
+                    assertEquals(CompactionThreshold.derive(threshold, () -> window, model),
+                            CompactionThreshold.derive(threshold, () -> window, model, 0),
+                            "lazy, " + threshold + "/" + window + "/" + model);
+                }
+            }
+        }
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+        CompactionThreshold.derive(null, () -> {
+            asked.incrementAndGet();
+            return 204_288;
+        }, "qwen", 0);
+        assertEquals(1, asked.get(), "with no session window the backend is asked, once");
+    }
+
+    @Test
+    void theSummarizerUnderASessionWindowGetsTheReserveOfThatWindow() {
+        // 10,000 set: the threshold is 7,000 and the reserve 3,000. A budget of
+        // 32,000 there would ask the summarizer for three times the window.
+        assertEquals(3_000, CompactionThreshold.summaryBudget(
+                new Derived(7_000, Source.WINDOW_OVERRIDE, 10_000)));
+        assertEquals(3_000, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(null, 0, null, 10_000)));
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.summaryBudget(
+                CompactionThreshold.derive(null, 0, null, 512_000)),
+                "the clamp only takes budget away; a big window keeps the default");
+    }
+
+    @Test
+    void theSessionWindowRidesTheWireAsWindowOverride() {
+        assertEquals("window_override", Source.WINDOW_OVERRIDE.wireName());
+    }
 }

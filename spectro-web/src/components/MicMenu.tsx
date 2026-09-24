@@ -66,8 +66,12 @@ export function MicMenu({
         title={t(lang, "voice.pick.title")}
         onClick={() => setOpen((o) => !o)}
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
-          <path d="M4 6l4 4 4-4z" />
+        {/* Card 383: a 12 unit box at 12px, so a viewBox unit is one CSS
+            pixel. It was a 16 unit box at 12px, which mapped 1.333 units to
+            the pixel. The caret keeps the size it had on screen: the path is
+            the old one scaled by 0.75, so it still spans 6px by 3px. */}
+        <svg viewBox="0 0 12 12" width="12" height="12" fill="currentColor" aria-hidden="true">
+          <path d="M3 4.5l3 3 3-3z" />
         </svg>
       </button>
 

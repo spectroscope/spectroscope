@@ -181,6 +181,22 @@ public class SessionsController {
     }
 
     /**
+     * Card 379: whether rtk resolves where the agent's shell looks, and which
+     * version answered.
+     *
+     * @param version what {@code rtk --version} printed, or null when rtk does
+     *                not resolve
+     * @return {@code available} and {@code version} for the popover
+     */
+    static Map<String, Object> rtkProbe(java.util.function.Supplier<String> version) {
+        String found = version.get();
+        Map<String, Object> rtk = new LinkedHashMap<>();
+        rtk.put("available", found != null);
+        rtk.put("version", found == null ? "" : found);
+        return rtk;
+    }
+
+    /**
      * The active LLM backend for the header + the Lab map: the boot config's
      * provider and model (the same layers the socket builds its agent from). A
      * mid-session switch is reflected client-side by the set_provider round-trip;
@@ -229,6 +245,10 @@ public class SessionsController {
             providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
         }
         out.put("providerStatus", providerStatus);
+        // Card 379: the popover prints the version the binary printed, and when
+        // rtk does not resolve it renders the row disabled with the reason
+        // instead of hiding the switch.
+        out.put("rtk", rtkProbe(dev.spectroscope.core.tools.RtkFilter::installedVersion));
         // Card 193: the address each LOCAL-MODEL provider would dial — the same
         // endpointFor the model-list probe itself uses, so the settings page's
         // address field and the "backend not reachable" sentence can name the

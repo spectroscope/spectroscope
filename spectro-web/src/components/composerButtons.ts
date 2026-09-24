@@ -8,6 +8,13 @@
 // disarms until the server's run_end flips running off, so the click visibly
 // took (the card-78 bug was a stop that LOOKED ignored). Same pure split as
 // micButtonState: decisions here, DOM in Chat.tsx.
+//
+// Card 380 splits that last sentence in two. A submit during a run now usually
+// STEERS: it goes straight to the running turn, which reads it at its next safe
+// point. It still queues where steering cannot serve, with attachments (owner
+// call 2 keeps steering text only) or against a server that refused the frame.
+// The label follows what will actually happen, because a button that promised a
+// delivery the page is not going to attempt is worse than the old one.
 
 import { t, type Lang } from "../i18n/i18n";
 
@@ -21,6 +28,9 @@ export interface ComposerButtonsView {
   sendLabel: string;
   /** Only an empty draft disables sending — running does not. */
   sendDisabled: boolean;
+  /** The dict key for the hint beside the seat, or null when a submit needs no
+   *  explaining. Chat renders it; this module never touches the DOM. */
+  sendHintKey: string | null;
 }
 
 /**
@@ -31,14 +41,16 @@ export interface ComposerButtonsView {
  * @param lang the chrome language for the labels
  */
 export function composerButtons(
-  opts: { running: boolean; stopping: boolean; draftEmpty: boolean },
+  opts: { running: boolean; stopping: boolean; draftEmpty: boolean; steers?: boolean },
   lang: Lang = "en",
 ): ComposerButtonsView {
+  const steers = opts.running && opts.steers === true;
   return {
     seat: opts.running && opts.draftEmpty ? "stop" : "send",
     stopDisabled: opts.stopping,
     stopLabel: t(lang, opts.stopping ? "chat.stopping" : "chat.stop"),
-    sendLabel: t(lang, opts.running ? "chat.queue" : "chat.send"),
+    sendLabel: t(lang, steers ? "chat.steer" : opts.running ? "chat.queue" : "chat.send"),
     sendDisabled: opts.draftEmpty,
+    sendHintKey: steers ? "chat.steerHint" : opts.running ? "chat.queuedHint" : null,
   };
 }

@@ -69,6 +69,16 @@
   color: var(--text-dim);
   font-size: var(--fs-12);
 }
+/* Card 398: the label of a test build, under the name. It is long, so it may
+   break anywhere rather than widen the panel. */
+.about-build {
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+.about-build-label {
+  color: var(--text);
+}
 .about-close {
   flex-shrink: 0;
   background: none;

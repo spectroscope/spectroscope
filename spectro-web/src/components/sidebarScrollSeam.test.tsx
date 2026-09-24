@@ -23,11 +23,11 @@ import { blankBlockComments as code } from "../testkit/source";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Sidebar } from "./Sidebar";
 
-/** The five segments the rail switches between: browser since card 201,
- *  skills since card 225. */
-type NavMode = "sessions" | "fleets" | "stategraph" | "skills";
+/** The three segments the rail switches between. The browser left with card
+ *  228, and Skills with card 409: it opens beside the list now. */
+type NavMode = "sessions" | "fleets" | "stategraph";
 
-const SEGMENTS: NavMode[] = ["sessions", "fleets", "stategraph", "skills"];
+const SEGMENTS: NavMode[] = ["sessions", "fleets", "stategraph"];
 
 const css = code(readFileSync(fileURLToPath(new URL("../styles/sidebar.css", import.meta.url)), "utf8"));
 
@@ -62,6 +62,8 @@ function rail(nav: NavMode): string {
       onImport={() => {}}
       onScenarios={() => {}}
       onStarters={() => {}}
+      skillsOpen={false}
+      onSkills={() => {}}
       onSelectScenario={() => {}}
       stateGraphSource={null}
       onStateGraphScenario={() => {}}
@@ -183,7 +185,7 @@ describe("the options control shares the last nav row's line", () => {
 describe("the scrollbar spans the session list only", () => {
   it("gives every segment's content one scrolling block", () => {
     // The second ask. `.sidebar-list` starts where the rows start, so the bar
-    // measures the rows it moves — on all four segments, because a block that
+    // measures the rows it moves, on every segment, because a block that
     // existed on one of them would move the seam when the reader switches.
     for (const nav of SEGMENTS) {
       expect(rail(nav), nav).toContain('class="sidebar-list"');

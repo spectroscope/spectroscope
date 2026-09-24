@@ -20,6 +20,7 @@ import {
 import type { UiState } from "./state/reducer";
 import { currentLiveTraceWanted, useLiveTraceWanted } from "./state/liveTrace";
 import { fetchLlmWireIndex, mergeLlmExchanges } from "./wire/llmWire";
+import { windowOverrideFrame } from "./wire/windowOverride";
 import { seedResumedLive, summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
@@ -31,7 +32,8 @@ import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ImagePanel } from "./components/ImagePanel";
 import { backendWithAKey } from "./components/imageBackend";
 import { ImportDialog } from "./components/ImportDialog";
-import { GateBar } from "./components/GateBar";
+import { PermissionDialog } from "./components/PermissionDialog";
+import { gateQueue, gateSurface, routeGateAnswer } from "./state/gateQueue";
 import { AskBar } from "./components/AskBar";
 import { LevelPill } from "./components/LevelPill";
 import { LevelingPanel } from "./components/LevelingPanel";
@@ -83,6 +85,7 @@ import { fetchSettings, putSettings } from "./state/serverSettings";
 import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
 import { useReasoningCapability } from "./components/ReasoningControl";
 import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
+import { initialSteering, noteFrame, routeSubmit } from "./state/steering";
 import {
   applyDockReturn,
   dismissLayoutRecovered,
@@ -259,17 +262,37 @@ export function App() {
    * browser cannot re-read a picked file without a fresh user gesture, so any
    * persistence would restore the frame and not the picture.
    */
-  /*
-   * `skills` is the fifth segment (card 225, owner wish): the installed
-   * catalogue one glance away. Same vocabulary decision as `stategraph` —
-   * component state, not a route: the view is a listing of the server's roots,
-   * it has no artifact to reopen and nothing a deep link could promise.
-   */
   // Card 228: the browser left this union — the rail lists places you go, and
   // the browser is a thing a session has. Since 2026-08-30 it has exactly one
   // door, the workspace's browser card; the session tab that was the other one
   // is gone, because two holes meant two rectangles for one native view.
-  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "skills">("sessions");
+  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph">("sessions");
+  /*
+   * The skills view, card 409. It was a fifth value of `nav` (card 225), and
+   * that one value drove the rail's list AND this surface, so opening Skills
+   * took the session list away, and opening a session did not bring the chat
+   * back (the owner, 2026-09-24: "kann man nicht mehr auf seine letzte Session
+   * gehen, ohne auf Sessions vorher geklickt zu haben"). It is a flag of its
+   * own now: the Skills row in the rail's upper group opens it, the list
+   * underneath stays what the segment says, and every place the reader opens
+   * closes it. Still component state, not a route, for the reason card 225
+   * gave: a listing of the server's roots has nothing a deep link could reopen.
+   */
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  // openSession closes the view only after its fetch lands, so a Skills press
+  // made while a session loads must outdate that close: last press wins. Its
+  // own nonce, because a navNonce ticket would also drop an in-flight resume.
+  const skillsNonce = useRef(createNavNonce()).current;
+  const openSkills = (): void => {
+    skillsNonce.issue();
+    setSkillsOpen(true);
+  };
+  /** A segment press, from the rail or the desktop menu: it shows that
+   *  segment's surface, so the skills view in front of it closes. */
+  const pickSegment = (next: "sessions" | "fleets" | "stategraph"): void => {
+    setSkillsOpen(false);
+    setNav(next);
+  };
   /*
    * The artifacts the state graph is drawing — up here because the arm below
    * unmounts whenever `nav` moves off "stategraph". They lived in the pane,
@@ -346,6 +369,13 @@ export function App() {
   refreshLeveling.current = leveling.refresh;
   const beaconRef = useRef(leveling.visit);
   beaconRef.current = leveling.visit;
+  // Card 380: whether a submit during a run reaches the running turn or waits
+  // for it, and which sent sentences no run has answered for yet. In a ref
+  // because onEvents is memoised with no dependencies, and in state as well
+  // because the send button's label and the pending rows read off it. One
+  // truth, two readers: every write sets both, ref first.
+  const steering = useRef(initialSteering);
+  const [steeringView, setSteeringView] = useState(initialSteering);
   // Components too deep for a prop report through the module beacon; the app is
   // the only thing that knows where those reports should go.
   useEffect(() => {
@@ -568,6 +598,31 @@ export function App() {
     // resume rather than let the transport retry it: the socket reconnects with
     // the same URL, so a page that kept ?resume= would be refused every second
     // for as long as the other window is open.
+    // Card 380: an older server answers the steering frame by name and has no
+    // other way to say so. One refusal turns the direct path off for this
+    // socket and puts the sentence back in the queue, where it sends after the
+    // run like it always did. Without the flag the page would draw one error
+    // row per submit at an operator who cannot do anything about it.
+    //
+    // Fix round 2026-09-24: the run's own steering_message line answers for
+    // the pending rows. Read, the row gives way to the drawn turn. Missed,
+    // because the run ended first on whichever exit, the sentence goes back
+    // into the same queue and starts the next run, which is owner call 3 as
+    // the card words it: exactly today's behaviour, nothing lost.
+    let steer = steering.current;
+    const giveBack: string[] = [];
+    for (const event of batch as unknown[]) {
+      const read = noteFrame(steer, event);
+      steer = read.next;
+      giveBack.push(...read.requeue);
+    }
+    if (steer !== steering.current) {
+      steering.current = steer;
+      setSteeringView(steer);
+    }
+    if (giveBack.length > 0) {
+      setQueue((q) => giveBack.reduce((line, text) => enqueue(line, text), q));
+    }
     for (const event of batch as unknown[]) {
       const refused = readSessionBusy(event);
       if (refused !== null) {
@@ -600,6 +655,10 @@ export function App() {
     setQueue([]);
     setStopRequested(false);
     awaitingRunStart.current = false;
+    // A fresh socket may well be a newer server, so the refusal flag goes back
+    // with the rest of the old session's state (card 380).
+    steering.current = initialSteering;
+    setSteeringView(initialSteering);
     const connection = connect({
       onEvents,
       resume: resumeId ?? undefined, // ?resume=<id>: the server reloads the JSONL history
@@ -666,7 +725,7 @@ export function App() {
       // And stripped by the same switch (card 246): out rows are trace rows.
       setLive((s) => windowTrace(stripLiveTrace(recordOutgoing(s, msg), currentLiveTraceWanted())));
       // Leveling beacons ride here rather than in each component: this is the one
-      // place every client message passes, so a gate answered from the bar, the
+      // place every client message passes, so a gate answered from the window, the
       // lab or a fleet all report the same way, and a future sender gets it free.
       // Both acts are things the event stream cannot tell apart on its own — the
       // core emits the same permission events for an allowlist auto-approval.
@@ -711,6 +770,25 @@ export function App() {
   // the session is free. Order is preserved — the queue is the only waiting
   // line, the direct path exists just to keep idle sends chip-flash-free.
   const send = (text: string, attachments?: PendingAttachment[]): void => {
+    // Card 380: while a run is up the message no longer waits by default, it
+    // goes to the turn that is running. Only with the queue EMPTY, because a
+    // message that overtook waiting chips would break the order invariant the
+    // comment above states, and only on a socket that has not refused the
+    // frame. The queue stays as the fallback for both of those and for
+    // attachments, which steering does not carry.
+    if (live.running && !awaitingRunStart.current && conn.status === "open" && queue.length === 0) {
+      const routed = routeSubmit(steering.current, text, attachments);
+      if (routed.action === "drop") {
+        return;
+      }
+      if (routed.action === "steer" && sendClient(routed.frame)) {
+        steering.current = routed.next;
+        setSteeringView(routed.next);
+        return;
+      }
+      // A frame that never hit the wire falls through to the queue rather than
+      // vanishing: send() returns false on a flapped socket.
+    }
     // queue.length in the guard: while chips wait, a new submit must join the
     // line, never jump it (review find F2 — order stays submission order).
     if (live.running || awaitingRunStart.current || conn.status !== "open" || queue.length > 0) {
@@ -745,19 +823,6 @@ export function App() {
   }, [connOpen, live.running, queue, sendNow, drainKick]);
   const unqueue = (id: number): void => {
     setQueue((q) => removeQueued(q, id));
-  };
-  const decide = (
-    callId: string,
-    allowed: boolean,
-    opts?: { remember?: boolean; persist?: boolean },
-  ): void => {
-    sendClient({
-      type: "permission_response",
-      callId,
-      allowed,
-      remember: opts?.remember,
-      persist: opts?.persist,
-    });
   };
   // Card 265: the answer to a parked question. Its own frame and its own sender —
   // a question is not a permission, and answering one consents to nothing, so
@@ -1040,6 +1105,7 @@ export function App() {
   ): Promise<void> => {
     const cause: NavCause = opts?.cause ?? "gesture";
     const ticket = navNonce.issue();
+    const skillsTicket = skillsNonce.issue();
     try {
       // The llm-wire index rides along: its frames are socket-only, so a
       // reopened file's fold has no exchange rows — the index brings them
@@ -1060,6 +1126,9 @@ export function App() {
       });
       setLlmWire(wire.length === 0 ? null : { sessionId: id, count: wire.length });
       setEnteredFleet(null);
+      // Card 409: the session is what the surface shows now, unless Skills was
+      // pressed while the fetch ran.
+      if (skillsNonce.isCurrent(skillsTicket)) setSkillsOpen(false);
       // Card 242: entering a session brings back the dock the user left open —
       // the launch kept the greeting clean, this is the other half of the rule.
       applyDockReturn();
@@ -1104,6 +1173,7 @@ export function App() {
     setReplay(null);
     setImportedPhases(null); // a fresh chat declared nothing
     setEnteredFleet(null);
+    setSkillsOpen(false); // card 409: the live view is a place, so it closes the skills view
   };
 
   const returnToLive = (): void => {
@@ -1119,6 +1189,7 @@ export function App() {
     navNonce.issue(); // outdate any in-flight session open
     setReplay(null);
     setEnteredFleet(contextId);
+    setSkillsOpen(false); // card 409: a fleet is a place, so it closes the skills view
     setTraceAgent(null);
     // The sidebar follows the surface. A pasted #/fleet/{id} used to enter the
     // fleet while the segment still read "Sessions", because the segment was a
@@ -1332,6 +1403,7 @@ export function App() {
       kind,
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
+    setSkillsOpen(false); // card 409: and a session view closes the skills view
     applyDockReturn(); // card 242: an import is an entered session too
     setImportOpen(false);
     // A file from the STORE is an address; a paste and a picked file are not,
@@ -1387,6 +1459,7 @@ export function App() {
   const openScenario = (dsl: Dsl): void => {
     const events = compile(dsl, lang);
     setScenariosOpen(false);
+    setSkillsOpen(false); // card 409: either kind of scenario is a place
     if (dsl.fleet === true) {
       // A fleet scenario: fold the compiled events into a replay fleet and enter
       // it like a live one — the fleet canvas shows the topology at a glance.
@@ -1422,6 +1495,7 @@ export function App() {
     setLiveEvents([]); // the graph starts empty too
     setReplay(null);
     setEnteredFleet(null);
+    setSkillsOpen(false); // card 409: a fresh chat is a place
     setResumeId(null); // a fresh chat never carries an old session along
     setImagesOpen(false); // the gallery re-opens with the first new image
     // No provider state to reset: the fresh connection announces its backend
@@ -1460,7 +1534,7 @@ export function App() {
       // Cursor and pick belong to the OLD file; orientation is a preference.
       setStateGraphView((v) => ({ ...v, cursor: null, picked: null }));
     },
-    setNav,
+    setNav: pickSegment,
     fleetsLocked,
     openLevelPanel: () => setLevelPanelOpen(true),
     changeTab,
@@ -1604,7 +1678,7 @@ export function App() {
           // desktop menu, card 224's rows) redirects there instead of opening
           // a page whose anchor no longer exists.
           if (action.section === "skills" || action.section === "skills-catalogue") {
-            setNav("skills");
+            openSkills();
             redirectedToPlace = true;
             break;
           }
@@ -1837,20 +1911,46 @@ export function App() {
     seededRef.current = labSeed;
     labBackToLive(labStreamRef.current);
   }, [labSeed, viewingLive, enteredFleet]);
-  // The entered fleet's parked permission gates (block 4): the same GateBar,
-  // but answered over REST to the node (POST /api/fleet/{node}/gate) instead of
-  // the session socket. Best-effort like stop — if the node left, its own close
-  // denies the gate, so a failed POST is nothing to shout about.
+  // The entered fleet's parked permission gates (block 4), answered over REST
+  // to the node (POST /api/fleet/{node}/gate) instead of the session socket.
+  // Best-effort like stop — if the node left, its own close denies the gate, so
+  // a failed POST is nothing to shout about.
   const fleetGate = enteredFleet !== null ? fleetPending(enteredFleetModel) : [];
-  const decideFleetGate = (callId: string, allowed: boolean): void => {
-    const gate = fleetGate.find((g) => g.callId === callId);
-    if (gate === undefined) return; // already decided, or the node is gone
-    void fetch(`/api/fleet/${encodeURIComponent(gate.agentId)}/gate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callId, allow: allowed }),
-    }).catch(() => {
-      // best-effort: the node's close denies the gate if this never lands
+  // Card 382: ONE queue behind ONE window. The session's own gates come first,
+  // a node's gates behind them, and the entry says which transport answers it.
+  // The session half reads the LIVE fold and never a stepped prefix: the Lab's
+  // old window read `applied`, so scrubbing back re-asked a decided call and
+  // hid a fresh one.
+  const gateQ = gateQueue(viewingLive ? live.pendingPermissions : [], fleetGate);
+  const gateHead = gateQ.length === 0 ? null : gateQ[0];
+  const decide = (
+    callId: string,
+    allowed: boolean,
+    opts?: { remember?: boolean; persist?: boolean },
+  ): void => {
+    // The server answers an unknown call id with silence: no future completes,
+    // no rule is written, nothing comes back. So the refusal has to happen
+    // here, or a stale click reports success and changes nothing.
+    const to = routeGateAnswer(gateQ, callId);
+    if (to === null) return;
+    if (to === "fleet") {
+      const gate = fleetGate.find((g) => g.callId === callId);
+      if (gate === undefined) return;
+      void fetch(`/api/fleet/${encodeURIComponent(gate.agentId)}/gate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callId, allow: allowed }),
+      }).catch(() => {
+        // best-effort: the node's close denies the gate if this never lands
+      });
+      return;
+    }
+    sendClient({
+      type: "permission_response",
+      callId,
+      allowed,
+      remember: opts?.remember,
+      persist: opts?.persist,
     });
   };
   // Stop a fleet node from the canvas — best-effort, confirmed once (the node
@@ -1893,7 +1993,10 @@ export function App() {
     // Both segment arms of the chain collapse into this one term under
     // `enteredFleet === null`: only the sessions segment reaches the tabs at
     // all, so the hidden trace must not survive a move to fleets or stategraph.
+    // Card 409: the rail stays on sessions under the skills view, which covers
+    // the tabs, so the flag is part of the term.
     nav === "sessions" &&
+    !skillsOpen &&
     enteredFleet === null &&
     // The chain's leveling gate reads `tab !== "chat" && …`; under `tab ===
     // "trace"` that term is already true, and the compiler says so. A surface
@@ -1987,19 +2090,9 @@ export function App() {
     }
   };
 
-  // The workspace announcement makes the Files panel visible: the first
-  // workspace_info of a session opens the right panel on the Files tab —
-  // the agent's desk appears where its files land.
-  // Only a RESOLVED workspace throws the panel open. The connect-time frame
-  // names a prospective folder for every new chat; opening the Files tab on it
-  // would hijack the panel before anything has happened.
-  const wsPath = live.workspace?.resolved === true ? (live.workspace.path ?? null) : null;
-  useEffect(() => {
-    if (wsPath !== null) {
-      openRightPanel();
-      openDockPanel("files");
-    }
-  }, [wsPath]);
+  // A resolved workspace opens no panel (card 402, the owner on 2026-09-24:
+  // "das Panel soll nicht aufgehen"). The Files panel reads the announcement
+  // whenever the operator opens it. Pinned by workspaceResolvedDock.test.ts.
 
   // The gallery opens for an image that ARRIVES while you are watching, never
   // for one a view already had. The old rule keyed on "are there any images",
@@ -2021,13 +2114,20 @@ export function App() {
     seenImages.current = null;
   }, [viewKey]);
 
-  // While the Lab tab is active it owns the permission flow (the dialog
-  // appears when the user STEPS onto the request) — suppress the global
-  // gate bar meanwhile. Replays never ask.
-  const gateVisible =
-    enteredFleet === null && viewingLive && tab !== "lab" && live.pendingPermissions.length > 0;
+  // Where the gate shows. Every view but the Lab draws the window. The Lab
+  // draws none, not even for a live gate (fix round 2026-09-24, the owner: "Der
+  // muss weg im Lab"); the chat tab carries a small "gate open" chip instead,
+  // and the gate is answered in the chat. The Lab term mirrors the render chain
+  // below: the sessions segment, no fleet entered, the lab tab, not locked.
+  const labOnScreen =
+    nav === "sessions" &&
+    !skillsOpen && // card 409: the skills view covers the Lab while the rail stays on sessions
+    enteredFleet === null &&
+    tab === "lab" &&
+    !(leveling.snapshot && !isSurfaceOpen(leveling.snapshot, "lab"));
+  const gateShown = gateSurface(gateQ, labOnScreen);
 
-  // Card 265. The same guard as the gate bar, for the same reason and one more:
+  // Card 265. The same guard the old gate bar had, for the same reason and one more:
   // an ARCHIVED or IMPORTED session must never grow a live control, because the
   // decision it shows was made by somebody else, months ago, and has an answer
   // already. The reducer clears the queue on a replay as well — this is the
@@ -2042,28 +2142,35 @@ export function App() {
         ? t(lang, "hdr.newSession")
         : t(lang, "hdr.archivedSession");
 
-  /* The segments that take the WHOLE surface. Neither belongs to one run — a
+  /* The views that take the WHOLE surface. Neither belongs to one run: a
      state graph is a topology and the skills view is the product's own
-     catalogue — so the session tab row is suppressed on both. Hoisted out of
+     catalogue, so the session tab row is suppressed on both. Hoisted out of
      the ternary because the chain below is already three deep. */
-  const wholeSurface = nav === "stategraph" || nav === "skills";
+  const wholeSurface = skillsOpen || nav === "stategraph";
 
   /* Card 219: whether a modal is open OVER the dock. The dock's browser panel
      folds this into the segment's `active`, because the native pane cannot be
      painted over by any dialog (card 201) — it has to be told to hide before
-     the dialog is believed. Every sheet that renders over the main area is
-     listed; the two whole-surface browser doors keep their historic shape and
-     their (pre-existing) occlusion gap is recorded on the card, not repaired
-     here in passing. */
+     the dialog is believed. The list is not complete: the import dialog, the
+     image lightbox and the local model dialog the provider picker opens are
+     missing, and the other modals of the web tree were not checked against it
+     (merge report of 2026-09-24, for a later card). The two whole-surface
+     browser doors keep their historic shape and their (pre-existing)
+     occlusion gap is recorded on the card, not repaired here in passing.
+     Card 387: the drawer term is the drawer's own render guard, because the
+     drawer hides itself in off while levelPanelOpen can stay true. Card 382:
+     the permission window's term is its own render guard for the same
+     reason, read by permissionWindowCoversDock.drift.test.ts. */
   const dockCovered =
     settingsOpen ||
     keymapOpen ||
     doctorOpen ||
-    levelPanelOpen ||
+    (levelPanelOpen && leveling.snapshot && leveling.snapshot.mode !== "off") ||
     onboardingOpen ||
     localChooserOpen ||
     localNoticeOpen ||
-    spawnDialogOpen;
+    spawnDialogOpen ||
+    (gateShown === "window" && gateHead !== null);
 
   return (
     <div
@@ -2085,7 +2192,7 @@ export function App() {
       {sidebarOpen && (
         <Sidebar
           nav={nav}
-          onNav={setNav}
+          onNav={pickSegment}
           onCollapse={() => setSidebarOpen(false)}
           fleetsLocked={leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false}
           activeId={replay === null ? null : replay.id}
@@ -2101,11 +2208,15 @@ export function App() {
             // belong to the OLD file, orientation is a preference and stays.
             setStateGraphRun(run);
             setStateGraphView((v) => ({ ...v, cursor: null, picked: null }));
+            // Card 409: the run is drawn on the surface the skills view covers.
+            setSkillsOpen(false);
           }}
           onNewChat={newChat}
           onImport={() => setImportOpen(true)}
           onScenarios={() => setScenariosOpen(true)}
           onStarters={() => setStartersOpen(true)}
+          skillsOpen={skillsOpen}
+          onSkills={openSkills}
           onSelectScenario={openScenario}
           activeFleet={enteredFleet}
           onRemoveFleet={(contextId) => {
@@ -2164,6 +2275,7 @@ export function App() {
           onApplyProvider={changeProvider}
           lastInputTokens={view.lastInputTokens}
           context={view.context}
+          onWindowOverride={(tokens) => sendClient(windowOverrideFrame(tokens))}
           running={live.running}
           onAbort={abort}
         />
@@ -2282,6 +2394,13 @@ export function App() {
               onClick={() => changeTab("chat")}
             >
               chat
+              {/* The Lab draws no gate window, so while it is on screen this is
+                  the one sign that a run waits on an answer, and where. */}
+              {gateShown === "notice" && (
+                <span className="fleet-gate-chip mono pulse" title={t(lang, "gate.waitingInChat")}>
+                  {t(lang, "sp.gateOpen")}
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -2375,9 +2494,11 @@ export function App() {
             handed IN because this arm unmounts on every segment change. */}
         {/* The skills view takes the whole surface too (card 225): it is the
             product's catalogue, not a lens on one run. Mounted per visit, so
-            it re-reads the roots each time the segment opens. Since card 228
-            it IS the manager — look, switch and install in one place. */}
-        {nav === "skills" ? (
+            it re-reads the roots each time it opens. Since card 228 it IS the
+            manager, look, switch and install in one place. Since card 409 it
+            answers its own flag and sits ahead of every segment arm: the rail
+            keeps its list while the view is open. */}
+        {skillsOpen ? (
           <SkillsPane />
         ) : nav === "stategraph" ? (
           <StateGraphPane
@@ -2456,7 +2577,7 @@ export function App() {
           /* A locked surface shows a teaser, never its content. The tab itself
              stays visible and clickable: a feature nobody can see is a feature
              nobody adopts. Chat is excluded by name because it opens at level 0,
-             and the gate bar below sits OUTSIDE this chain by construction, so
+             and the gate window below sits OUTSIDE this chain by construction, so
              no lock can ever cover a permission request. */
           <LockedSurface
             snapshot={leveling.snapshot}
@@ -2516,16 +2637,19 @@ export function App() {
                   onPickFolder: pickWorkspace,
                   queued: queue,
                   onUnqueue: unqueue,
+                  steers: steeringView.understood && queue.length === 0,
+                  steerPending: steeringView.pending,
                   onAbort: abort,
                   stopRequested,
                   // Card 224: the plus menu's Manage/Browse rows — the same
                   // open-at-a-section move the onboarding sheet makes, history
                   // manners included. Card 228: the skills rows point at the
                   // rail's Skills view now — skills are a PLACE, and the
-                  // settings page no longer carries the section.
+                  // settings page no longer carries the section. Card 409:
+                  // the same opener as the rail's Skills row.
                   onOpenSettingsSection: (section: SettingsSection) => {
                     if (section === "skills" || section === "skills-catalogue") {
-                      setNav("skills");
+                      openSkills();
                       return;
                     }
                     setSettingsOpen(true);
@@ -2668,7 +2792,6 @@ export function App() {
               provider={viewingLive ? curProvider : (view.provider ?? undefined)}
               model={viewingLive ? curModel : undefined}
               onSend={send}
-              onDecide={decide}
               onReturnToLive={returnToLive}
               onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
               onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
@@ -2753,7 +2876,12 @@ export function App() {
              and never meets this screen. */
           <LevelingIntro onChoose={(mode) => void leveling.setMode(mode)} />
         )}
-        {levelPanelOpen && leveling.snapshot && (
+        {/* Card 387. The mode is named at the render, not left to the pill that
+          opens this drawer being hidden. "No pill, no panel, no tracking" held
+          in off only because two other guards happened to: openLevelPanel in
+          shellCommandRouter fires behind fleetsLocked, which is false in off,
+          and the fold refuses to mark. Neither is a promise about this drawer. */}
+        {levelPanelOpen && leveling.snapshot && leveling.snapshot.mode !== "off" && (
           <div className="lvl-drawer-scrim" onClick={() => setLevelPanelOpen(false)}>
             <div
               className="lvl-drawer"
@@ -2775,7 +2903,11 @@ export function App() {
             </div>
           </div>
         )}
-        {levelUp && leveling.snapshot && (
+        {/* Same guard, same reason (card 387). levelUp is set by an effect on
+          any snapshot whose level climbed, and in off the fold writes no marks,
+          so the level does not climb. That is the good behaviour of another
+          file, not a guard on this toast. */}
+        {levelUp && leveling.snapshot && leveling.snapshot.mode !== "off" && (
           <div
             className="lvl-toast"
             role="status"
@@ -2796,33 +2928,29 @@ export function App() {
             )}
           </div>
         )}
-        {/* The gate surface: pending permissions as a first-class bar, on
-            every lens — the violet line means "the run waits on you". */}
-        {gateVisible && (
-          <GateBar
-            pending={live.pendingPermissions}
-            cards={live.cards}
+        {/* The gate surface: a window over the page, because the run is not
+            going anywhere until somebody answers. There is no bar to fold it
+            into (fix round 2026-09-24): it stays until it is answered. */}
+        {gateShown === "window" && gateHead !== null && (
+          <PermissionDialog
+            key={gateHead.permission.callId}
+            permission={gateHead.permission}
+            index={0}
+            total={gateQ.length}
             workspaceConfigured={live.workspace?.configured ?? false}
+            agents={live.agents}
+            workspacePath={live.workspace?.path ?? null}
+            /* A node's gate is answered over the hub and leaves no card in this
+               session, so the session's own history would be somebody else's
+               record beside it. */
+            cards={gateHead.source === "session" ? live.cards : {}}
+            allowRemember={gateHead.source === "session"}
             onDecide={decide}
           />
         )}
         {/* The ask surface: the run stopped and is waiting for an answer. Same
             slot as the gate, its own component — Escape must not answer. */}
         {askVisible && <AskBar pending={live.pendingAsks} onAnswer={answerQuestion} />}
-        {/* The FLEET gate: a node in ask mode parked a tool; answer it over the
-            hub. Same bar, no "remember" (a remote node has no allowlist here).
-            Shown on EVERY tab while a fleet is entered — since card 59 the lab
-            tab renders the fleet's machine room, so the old own-session guard
-            fell. */}
-        {enteredFleet !== null && fleetGate.length > 0 && (
-          <GateBar
-            pending={fleetGate}
-            cards={{}}
-            workspaceConfigured={false}
-            allowRemember={false}
-            onDecide={decideFleetGate}
-          />
-        )}
         <UsageFooter state={view} connection={conn.status} />
       </div>
 

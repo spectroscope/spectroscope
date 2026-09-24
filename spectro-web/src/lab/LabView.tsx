@@ -8,7 +8,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ClientMessage, RunEvent } from "../events";
 import { Chat } from "../components/Chat";
-import { PermissionDialog } from "../components/PermissionDialog";
 import { Resizer } from "../components/Resizer";
 import { setChatW, setCtxW, setTraceW, toggleChat, toggleCtx, toggleTrace, useLayout } from "../state/layout";
 import type { PendingAttachment } from "../components/AttachmentPreview";
@@ -98,7 +97,6 @@ export function LabView(props: {
   /** The current model name, shown in the Map's LLM node. */
   model?: string;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
-  onDecide: (callId: string, allowed: boolean, opts?: { remember?: boolean; persist?: boolean }) => void;
   onReturnToLive: () => void;
   /** Present only for resumable archives — passed through to the Lab's chat. */
   onResume?: () => void;
@@ -201,14 +199,13 @@ export function LabView(props: {
     };
   }, []);
 
-  // Permission: the dialog appears when the user STEPS ONTO the request (the
-  // server is genuinely parked on the future meanwhile — the token sits at the
-  // gate). Once answered, the callId hides locally until the decision event is
-  // stepped; replays never ask (their decisions are already in the file).
-  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
-  useEffect(() => {
-    if (st.applied.length === 0) setAnswered(new Set());
-  }, [st.applied.length]);
+  // Permissions are NOT asked here (card 382). The Lab reads a recording, and
+  // the state it reads is folded from `applied` alone — so scrubbing a live run
+  // back between a request and its decision put an ANSWERED gate back on screen
+  // and offered to decide it a second time, while a gate that had just arrived
+  // waited in the queue and was drawn nowhere. One window over every tab, fed
+  // by the live fold, is the whole fix; this view keeps its scrub controls and
+  // asks nothing.
 
   // The workflow lens reconstructs from the FULL known timeline (applied +
   // still-queued), while the cursor — applied — lights it. Same (events, upto)
@@ -216,18 +213,6 @@ export function LabView(props: {
   const allEvents = useMemo(() => [...st.applied, ...st.queue], [st.applied, st.queue]);
 
   const viewingLive = st.source === "live";
-  const pendingPermission = useMemo(
-    () => (viewingLive ? st.ui.pendingPermissions.find((p) => !answered.has(p.callId)) : undefined),
-    [viewingLive, st.ui.pendingPermissions, answered],
-  );
-  const decide = (
-    callId: string,
-    allowed: boolean,
-    opts?: { remember?: boolean; persist?: boolean },
-  ): void => {
-    setAnswered((prev) => new Set(prev).add(callId));
-    props.onDecide(callId, allowed, opts);
-  };
 
   // Resizable/collapsible panes: the chat (left) and JSONL (right) can be dragged
   // or collapsed to give the stepper more room; widths persist across tab switches.
@@ -474,17 +459,6 @@ export function LabView(props: {
              replay and an import have none, and then nothing is shortened. */
           workspaceRoot={st.ui.workspace?.path ?? null}
           onFocusEvent={props.onFocusEvent}
-        />
-      )}
-
-      {pendingPermission !== undefined && (
-        <PermissionDialog
-          key={pendingPermission.callId}
-          permission={pendingPermission}
-          index={0}
-          total={st.ui.pendingPermissions.length}
-          workspaceConfigured={st.ui.workspace?.configured ?? false}
-          onDecide={decide}
         />
       )}
     </div>

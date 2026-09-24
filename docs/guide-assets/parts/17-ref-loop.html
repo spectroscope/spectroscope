@@ -107,6 +107,15 @@ cheap, and introspection shows you both at work.</p>
       no loaded window may still be running a model whose vendor <em>publishes</em>
       one — anthropic and every hosted id an OpenAI-compatible gateway is really
       serving — and then the threshold is seven tenths of that published figure.
+      An ollama <em>cloud</em> model (its entry on <code>/api/tags</code> carries
+      <code>remote_host</code>) has no loaded instance on your machine, and ollama
+      publishes its window on <code>/api/show</code> as the
+      <code>model_info</code> key ending in <code>.context_length</code>; that
+      figure is read before the vendor table, and ollama's answer is kept for as
+      long as the session stays on that model, so
+      <code>glm-5.3:cloud</code> at 1&thinsp;048&thinsp;576 compacts at
+      734&thinsp;003. For a local model the same key is the trained length, not
+      the loaded one, and is not read.
       Only a backend that states no window <em>and</em> publishes none keeps
       the old 100&thinsp;000, and a server that answers "no such endpoint" is not asked
       again for the rest of the session. An explicit setting always wins — and

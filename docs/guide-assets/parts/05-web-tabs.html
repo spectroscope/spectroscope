@@ -218,10 +218,10 @@ tools see. Every session gets its own folder (<code>&lt;tmpdir&gt;/spectroscope-
 unless a <code>workspace</code> is configured — chapter 30), the server announces it over
 the socket (<code>workspace_info</code>, visible in the trace), and the tab follows it
 live: what the agent writes appears here, and the repo you started spectroscope in stays clean.
-The panel <strong>opens itself</strong> on the Files tab when the announcement arrives —
-the agent's desk appears where its files land. And you can <strong>pick the desk per
-session</strong>: the “Choose folder …” button opens the <em>native</em> folder dialog on
-the spectroscope machine (<code>POST /api/pick-workspace</code>, macOS; a browser cannot hand out
+The announcement leaves the panel as it was. The Files icon in the header opens it on
+this tab, and the tab then shows the folder the run resolved.
+And you can <strong>pick the desk per session</strong>: the “Choose folder …” button opens
+the <em>native</em> folder dialog on the spectroscope machine (<code>POST /api/pick-workspace</code>, macOS; a browser cannot hand out
 absolute paths, but spectroscope runs locally), and the picked path travels back as the additive
 <code>set_workspace</code> socket message. Only before the first run — once the agent ran,
 the sandbox and every subagent are anchored, the button locks and a new chat is the way to

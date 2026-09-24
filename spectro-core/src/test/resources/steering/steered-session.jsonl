@@ -1,0 +1,11 @@
+{"type":"run_start","runId":"r1","agentId":"main","prompt":"list the files","ts":1000}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1001}
+{"type":"text_delta","agentId":"main","text":"Looking at the API.","ts":1002}
+{"type":"turn_start","agentId":"main","turn":2,"ts":1003}
+{"type":"steering_message","agentId":"main","text":"use the cached list, not the API","taken":true,"turn":2,"ts":1004}
+{"type":"text_delta","agentId":"main","text":"Using the cached list.","ts":1005}
+{"type":"run_end","runId":"r1","stopReason":"end_turn","ts":1006}
+{"type":"run_start","runId":"r2","agentId":"main","prompt":"and now the tests","ts":2000}
+{"type":"turn_start","agentId":"main","turn":1,"ts":2001}
+{"type":"steering_message","agentId":"main","text":"skip the slow ones","taken":false,"turn":1,"ts":2002}
+{"type":"run_end","runId":"r2","stopReason":"end_turn","ts":2003}

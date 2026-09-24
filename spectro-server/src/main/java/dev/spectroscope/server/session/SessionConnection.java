@@ -108,6 +108,23 @@ public final class SessionConnection {
      */
     private dev.spectroscope.core.goal.SessionGoal goal;
 
+    /**
+     * Card 380: what the operator typed while a run was already working.
+     *
+     * <p>On the CONNECTION for the same reason the goal is, and final for a
+     * reason the goal's own javadoc gives: {@link #buildAgentOnce} runs once per
+     * browser session, so a holder made at build time would be a holder the
+     * second prompt could not reach. The loop polls this object every turn,
+     * which is what makes the sentence steer rather than be remembered.</p>
+     *
+     * <p>Built eagerly and never replaced, so the socket thread always has one
+     * to ask. Between runs it is closed: a sentence that arrives then is
+     * refused and handed back to the operator (fix round 2026-09-24), never
+     * kept for a run it was not typed into.</p>
+     */
+    private final dev.spectroscope.core.steering.SteeringInbox steering =
+            new dev.spectroscope.core.steering.SteeringInbox();
+
     /** callId -> the future the agent's virtual thread is blocked on. */
     private final Map<String, CompletableFuture<Boolean>> pending = new ConcurrentHashMap<>();
 
@@ -200,6 +217,8 @@ public final class SessionConnection {
     private List<ProviderMessage> initial = List.of();
 
     private volatile CancelSignal signal;     // the running run's signal, or null
+    /** Card 395: the running run's drain as a quit sees it, or null between runs. */
+    private volatile RunDrain drain;
 
     /** The live permission mode, for the asker's own short circuit — a method
      *  reference rather than a field read, because the asker is built before both
@@ -216,6 +235,10 @@ public final class SessionConnection {
     }
     private volatile boolean running = false;
     private Agent agent;                      // one agent per connection, built lazily
+    // Card 379: what the rtk filter asks. The real binary unless a test hands
+    // in a scripted one, so the wiring can be pinned without rtk installed.
+    private dev.spectroscope.core.tools.RtkFilter.Oracle rtkOracle =
+            dev.spectroscope.core.tools.RtkFilter.binaryOracle();
     private SubagentManager subagents;        // built together with the agent — the spawn
                                               // tools inside the registry reference exactly
                                               // this instance, so it must never be rebuilt
@@ -244,6 +267,21 @@ public final class SessionConnection {
      *  arrives — {@link #buildAgentOnce} replays them onto the fresh agent. */
     private final AtomicReference<String> reasoningMode = new AtomicReference<>();
     private final AtomicReference<String> reasoningEffort = new AtomicReference<>();
+
+    /**
+     * Card 390: the context window the operator set for this session from the
+     * ring, or none.
+     *
+     * <p>One holder for the connection's whole life, handed by reference to the
+     * agent and to every child it spawns, and read by their loops at the top of
+     * every turn. A socket-thread write therefore reaches the running run from
+     * its next turn and every later run, without rebuilding the agent. A resume
+     * restores it from the session file before the agent is built; a second
+     * socket cannot hold the same session (card 212), so one holder per
+     * connection is one holder per session.</p>
+     */
+    private final dev.spectroscope.core.session.SessionWindow sessionWindow =
+            new dev.spectroscope.core.session.SessionWindow();
 
     /**
      * The header provider picker swaps this mid-session. The agent is built once
@@ -552,6 +590,7 @@ public final class SessionConnection {
         }
         try {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
+            restoreSessionWindow(resumeId);               // card 390: before the agent is built
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
             // Resume appends to an existing file, so the ladder counts from its
             // end — a receipt that names an event must name the right one.
@@ -811,6 +850,79 @@ public final class SessionConnection {
             case "off" -> LlmProvider.ProviderRequest.Reasoning.OFF;
             default -> LlmProvider.ProviderRequest.Reasoning.DEFAULT;
         }, reasoningEffort.get());
+    }
+
+    /**
+     * The operator sets or clears the context window for this session, from the
+     * ring (card 390).
+     *
+     * <p>The server decides what may be set ({@link WindowOverrideRequest}): a
+     * refused value is answered with an error naming the value and the range,
+     * and changes nothing. Otherwise the holder the loop reads each turn is set
+     * or cleared, and the choice is answered at once with a
+     * {@code window_override} event carrying the threshold, source and window
+     * that follow from it, written to the session file first and sent second
+     * ({@link #recordAndMirror}), so the ring moves without waiting for a run
+     * and a resume finds the choice.</p>
+     *
+     * <p>The answer is derived the way a run derives it. While a window is set
+     * that asks nobody. After a clear, with the agent built and no explicit
+     * threshold, the backend is asked for its loaded window once, on this
+     * thread, as the start of a run asks it, and for the window it publishes
+     * for the model id when the loaded one is unknown (card 391); before the
+     * agent is built there is no backend to ask, and the answer names what is
+     * known without it.</p>
+     *
+     * @param tokens the frame's {@code tokens} node, untrusted; absent or null clears
+     */
+    void onSetWindowOverride(JsonNode tokens) {
+        WindowOverrideRequest.Parsed parsed = WindowOverrideRequest.parse(tokens);
+        switch (parsed) {
+            case WindowOverrideRequest.Refused refused -> {
+                sendError(refused.message());
+                return;
+            }
+            case WindowOverrideRequest.Set set -> sessionWindow.set(set.tokens());
+            case WindowOverrideRequest.Clear clear -> sessionWindow.clear();
+        }
+        // The choice belongs on the session's record, and a choice made before
+        // the first prompt needs the id the record is named after; the goal
+        // does the same (onSetGoal).
+        ensureStore();
+        SpectroConfig active = activeConfig.get();
+        LlmProvider provider = switchable;
+        dev.spectroscope.core.session.CompactionThreshold.Derived now =
+                dev.spectroscope.core.session.CompactionThreshold.derive(
+                        active.compactionThreshold(),
+                        provider == null ? () -> 0 : provider::contextWindow,
+                        provider == null ? () -> 0 : provider::publishedWindow,
+                        provider == null ? active.model() : provider.modelName(),
+                        sessionWindow.tokens());
+        recordAndMirror(new RunEvent.WindowOverride(
+                sessionWindow.isSet() ? sessionWindow.tokens() : null,
+                now.tokens(), now.source().wireName(),
+                now.window() > 0 ? now.window() : null,
+                System.currentTimeMillis()));
+    }
+
+    /** This session's window holder, the one the loop and the children read.
+     *  @return the holder, never null */
+    dev.spectroscope.core.session.SessionWindow sessionWindow() {
+        return sessionWindow;
+    }
+
+    /**
+     * Takes a resumed session's window from its own record (card 390), before
+     * any prompt builds the agent. A value outside the range a person may set
+     * (a file edited by hand) is not obeyed.
+     *
+     * @param sessionId the session being resumed
+     */
+    private void restoreSessionWindow(String sessionId) {
+        Integer recorded = SessionStore.recordedWindowOverride(sessionId);
+        if (recorded != null && WindowOverrideRequest.inRange(recorded)) {
+            sessionWindow.set(recorded);
+        }
     }
 
     /**
@@ -1113,6 +1225,12 @@ public final class SessionConnection {
         runSignal.onCancel(asker::releaseAllPending);
         ensureStore();
         reportRunning(true);   // every rail on this machine, not just this page
+        // Card 395: a quit while this run's events are still queued must not
+        // lose them. The drain registers before the run can queue anything, and
+        // the finally below unregisters it.
+        RunDrain runDrain = new RunDrain(runSignal);
+        this.drain = runDrain;
+        QuitFlush.register(runDrain);
 
         try {
             // Everything below is exactly what the CLI builds — nothing new in the core.
@@ -1134,17 +1252,122 @@ public final class SessionConnection {
             try (EventStream events = subagents.run(agent, text,
                     new RunOptions(runSignal, attachments, expanded.equals(text) ? null : expanded))) {
                 for (RunEvent event : events) {
-                    tracing.onEvent(event); // file and socket get the SAME object
-                    send(event);
+                    // File first, socket second; the file and socket get the SAME object.
+                    if (!runDrain.record(event)) {
+                        break; // sealed by a quit: this drain writes nothing more
+                    }
+                    if (runDrain.sending()) {
+                        send(event);
+                    }
                 }
             }
         } catch (RuntimeException failure) {
             sendError("Run ended with an error: " + failure.getMessage());
         } finally {
+            runDrain.finished();
+            QuitFlush.unregister(runDrain);
             running = false;
             reportRunning(false);      // a run that died still stopped running
             this.signal = null;
+            this.drain = null;
             releasePending();          // orphaned questions: deny them
+        }
+    }
+
+    /**
+     * Card 395: the running run's drain, for the tests that stop it as a quit would.
+     *
+     * @return the drain of the run in flight, or null between runs
+     */
+    QuitFlush.Drain drain() {
+        return drain;
+    }
+
+    /**
+     * Card 395: one run's drain as a quit sees it. The drain loop writes every
+     * event through {@link #record}, which also keeps the set of runs whose
+     * {@code run_start} is in the file and whose {@code run_end} is not yet.
+     * After {@link #quit()} the loop stops sending to the socket and writes the
+     * file only. {@link #seal()} closes the open runs with a {@code run_end}
+     * (stop reason {@code aborted}, owner call 2 at its default) and makes every
+     * later {@link #record} a no-op, so nothing from this drain lands behind that
+     * terminal line. Rows written outside the drain can still follow it: an
+     * {@code llm_exchange} comes from the provider thread through
+     * {@code sendLlmExchange} and {@code recordAndMirror}.
+     */
+    private final class RunDrain implements QuitFlush.Drain {
+
+        private final CancelSignal runSignal;
+        private final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        /** Runs opened in the file and not yet closed there, in start order; guarded by this. */
+        private final java.util.LinkedHashSet<String> openRuns = new java.util.LinkedHashSet<>();
+        private volatile boolean quitting;
+        /** Guarded by this. */
+        private boolean sealed;
+
+        /** @param runSignal the signal a quit cancels */
+        RunDrain(CancelSignal runSignal) {
+            this.runSignal = runSignal;
+        }
+
+        /**
+         * Writes one event to the session's ports and notes the runs it opens and closes.
+         *
+         * @param event the next event of the merged stream
+         * @return false once the drain is sealed; the event was not written
+         */
+        synchronized boolean record(RunEvent event) {
+            if (sealed) {
+                return false;
+            }
+            tracing.onEvent(event);
+            if (event instanceof RunEvent.RunStart start) {
+                openRuns.add(start.runId());
+            } else if (event instanceof RunEvent.RunEnd end) {
+                openRuns.remove(end.runId());
+            }
+            return true;
+        }
+
+        /** @return false once a quit asked the loop to write the file only */
+        boolean sending() {
+            return !quitting;
+        }
+
+        /** Called by the run's finally: the loop has written its last event. */
+        void finished() {
+            done.countDown();
+        }
+
+        @Override
+        public void quit() {
+            quitting = true;
+            // Detached like onAbort: cancel listeners close provider streams, and
+            // the quit must not hang on them.
+            Thread.ofVirtual().name("spectro-quit-cancel").start(runSignal::cancel);
+        }
+
+        @Override
+        public boolean awaitDrained(long nanos) throws InterruptedException {
+            return done.await(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
+        }
+
+        @Override
+        public synchronized void seal() {
+            if (sealed) {
+                return;
+            }
+            sealed = true;
+            List<String> open = new ArrayList<>(openRuns);
+            java.util.Collections.reverse(open); // a child closes before the run that spawned it
+            for (String runId : open) {
+                try {
+                    store.append(new RunEvent.RunEnd(runId, "aborted", System.currentTimeMillis()));
+                } catch (RuntimeException unwritable) {
+                    // The process is exiting; there is nowhere else to put it.
+                }
+            }
+            openRuns.clear();
         }
     }
 
@@ -1213,7 +1436,7 @@ public final class SessionConnection {
         ensureGoal();
 
         ToolRegistry registry = new ToolRegistry();
-        StandardTools.all().forEach(registry::register);
+        StandardTools.all(active.commandTimeoutSeconds()).forEach(registry::register);
         // ONE supplier step, two consumers (card 270, criterion 3): the settings
         // belt is assembled once and its tools go on the parent registry AND into
         // the belt the children inherit. The returned trio inside it is the
@@ -1273,7 +1496,7 @@ public final class SessionConnection {
         // main-only and a child writing it would clobber the operator's view.
         // Neither are the spawn and dev verbs, registered below — depth stays 1
         // by construction.
-        List<Tool> childBase = new ArrayList<>(StandardTools.all());
+        List<Tool> childBase = new ArrayList<>(StandardTools.all(active.commandTimeoutSeconds()));
         childBase.addAll(settingsBelt.tools());
         childBase.addAll(mcp.tools());
         if (!skills.skills().isEmpty()) {
@@ -1308,11 +1531,17 @@ public final class SessionConnection {
                 // card 263 AC 3: the same number the parent agent is built with
                 // below, so the operator's instruction governs the whole tree
                 .compactionThreshold(active.compactionThreshold())
+                // Card 390: the SAME holder the parent reads, so the children
+                // compact against the window the operator set for the session
+                .sessionWindow(sessionWindow)
                 // Card 364: the ceilings and the reasoning switch, for the same
                 // reason — the parent honoured maxTurns and its children did not
                 .maxTurns(active.maxTurns())
                 .maxTokens(active.maxTokens())
                 .thinking(thinking.get())
+                // Card 372: the floor of every child's run budget, the same
+                // number the settings page shows under "time per subagent"
+                .subagentBudgetSeconds(active.subagentBudgetSeconds())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -1330,9 +1559,17 @@ public final class SessionConnection {
                 .initialMessages(initial)
                 .providerName(active.provider())
                 .compactionThreshold(active.compactionThreshold())
+                .sessionWindow(sessionWindow) // card 390: read by the loop every turn
                 .introspection(true) // additive: context introspection for the ring in the web UI
                 .thinking(thinking.get()) // reasoning visibility; the header toggle applies on the next run
                 .hooks(hooks) // external pre/post_tool_use shell hooks (config-only)
+                // Card 379: the rtk seam. liveConfig() re-reads the settings
+                // chain on every call, so the popover switch decides the NEXT
+                // run_command of a session that is already open. Reading
+                // `active` here would bind the value at the build and need a
+                // reconnect to change (the defect card 222 was the bill for).
+                .rtkFilter(new dev.spectroscope.core.tools.RtkFilter(
+                        () -> liveConfig().rtkFilterOn(), rtkOracle))
                 .llmWire(llmWire) // the backend-to-LLM record rides the session's recorder (card 184)
                 .latency(latency) // the parent's own exchanges price its children (card 270)
                 // Card 262: this face has a person attached (a browser holding a
@@ -1368,6 +1605,10 @@ public final class SessionConnection {
                 // weaker than the worker it judges, which is what owner call 1
                 // is about and what the card measured.
                 .goal(goal)
+                // Card 380: the browser is the one face with somebody attached
+                // while a turn is in flight. spectro run, a cron fire and a
+                // fleet node wire nothing here on purpose.
+                .steering(steering)
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
@@ -1393,6 +1634,13 @@ public final class SessionConnection {
         if (active != null) {
             agent.continuationLeash().setBudget(active.continuationBudget());
         }
+    }
+
+    /** Card 379: the oracle the next {@link #buildAgentOnce} hands the rtk
+     *  filter, for the test that pins the live wiring without rtk installed.
+     *  @param oracle what the filter asks about a shell line */
+    void useRtkOracle(dev.spectroscope.core.tools.RtkFilter.Oracle oracle) {
+        this.rtkOracle = oracle;
     }
 
     /** This session's agent, for the tests that pin what the live build wired
@@ -2060,6 +2308,45 @@ public final class SessionConnection {
      *  @return the goal, or null before {@link #ensureGoal} has run */
     dev.spectroscope.core.goal.SessionGoal goal() {
         return goal;
+    }
+
+    /** This session's steering inbox, the very one the loop polls each turn.
+     *  @return the inbox, never null */
+    dev.spectroscope.core.steering.SteeringInbox steering() {
+        return steering;
+    }
+
+    /**
+     * A sentence the operator typed while the run was still working (card 380).
+     *
+     * <p>No {@code running} guard, on purpose, and that is the whole difference
+     * from {@link #onUserMessage}. A user_message starts a run and two runs at
+     * once is a contradiction; a steering message starts nothing, it puts one
+     * line where the loop will read it. The same shape card 267's goal has, and
+     * the same reason it has no guard either.</p>
+     *
+     * <p>A run can end between the browser deciding to steer and the frame
+     * arriving. The first build let such a sentence wait for the next run's
+     * first turn, and that run then read it as "sent while you were working"
+     * although it had never been typed into it (audit 2026-09-21). Since the
+     * fix round of 2026-09-24 the inbox is only open while a run is, and a
+     * sentence it refuses goes straight back to the operator as a
+     * {@code steering_message} with {@code taken} false and turn 0, the same
+     * line the loop writes for a sentence its run ended without reading. The
+     * page puts the text in the old waiting line, so it starts the next run as
+     * that run's own prompt (owner call 3). Recorded, because the operator did
+     * type it and the record should say what became of it.</p>
+     *
+     * <p>A sentence the inbox took is not recorded here. That line is written
+     * where the sentence is READ, by the loop, against the turn it changed.</p>
+     *
+     * @param text what the operator typed; blank is dropped at the inbox
+     */
+    public void onSteeringMessage(String text) {
+        if (steering.submit(text) == dev.spectroscope.core.steering.SteeringInbox.Submitted.NO_RUN) {
+            recordAndMirror(new RunEvent.SteeringMessage("main", text.strip(), false, 0,
+                    System.currentTimeMillis()));
+        }
     }
 
     /**

@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 75,
+    "endpointCount": 77,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -788,7 +788,7 @@
       "path": "/api/skills",
       "area": "skills",
       "name": "list skills",
-      "description": "All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}. Card 182 adds catalogue:[{id,name,pack,description,licence,repo,commit,files,bytes,installed}] — the vendored shelf POST /api/skills/install copies from. A build without the catalogue resource answers catalogue:[].",
+      "description": "All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}. Card 182 adds catalogue:[{id,name,pack,description,licence,repo,commit,files,bytes,installed}]: the vendored shelf POST /api/skills/install copies from. A build without the catalogue resource answers catalogue:[]. Card 410 adds root to each catalogue row: user, project or null, the root that carries the skill, read fresh on every list.",
       "fence": "host+origin",
       "writes": false,
       "pathVars": [],
@@ -899,6 +899,46 @@
         "skill": "superpowers/brainstorming"
       },
       "bodyNote": "{skill: \"<pack>/<name>\"} — one of the ids from the catalogue rows of GET /api/skills."
+    },
+    {
+      "id": "skills-install-set",
+      "method": "POST",
+      "path": "/api/skills/install-set",
+      "area": "skills",
+      "name": "install a set of catalogue skills",
+      "description": "Card 410: copy several catalogue skills into ~/.spectro/skills in one request, all or nothing. Every id is checked before anything is written; one unknown or already carried id refuses the whole set with 409 and a refused list naming each id with status, message, name and root. A copy that fails after others landed deletes those again and answers 413 or 500 with the failing id; a copy that will not delete stays and the answer is 500 with those ids under leftover. 400 no list. Answers {installed:[{skill,name,pack,files,bytes,licence,commit}]}.",
+      "fence": "host+origin+json",
+      "writes": true,
+      "caution": "Copies files into ~/.spectro/skills. It never overwrites; one taken name refuses the whole set.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "skills": [
+          "superpowers/brainstorming",
+          "superpowers/writing-plans"
+        ]
+      },
+      "bodyNote": "{skills: [\"<pack>/<name>\", ...]}: ids from the catalogue rows of GET /api/skills."
+    },
+    {
+      "id": "skills-remove-set",
+      "method": "POST",
+      "path": "/api/skills/remove-set",
+      "area": "skills",
+      "name": "remove a set of catalogue skills",
+      "description": "Card 410: delete several user-root catalogue skills in one request, all or nothing. Every id must name a catalogue skill the user root carries; a missing one (404) or one only the project root carries (409) refuses the whole set with a refused list. The folders are moved into ~/.spectro/.skill-remove first and deleted once all are out; a move that fails puts the earlier ones back and answers 500; a folder that will not go back stays in the holding folder and the answer names it under leftover and the folder under holding. Emptied pack folders go too. 400 no list. Answers {removed:[ids]}.",
+      "fence": "host+origin+json",
+      "writes": true,
+      "caution": "Deletion is permanent: the removed skills are gone from ~/.spectro/skills.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "skills": [
+          "superpowers/brainstorming",
+          "superpowers/writing-plans"
+        ]
+      },
+      "bodyNote": "{skills: [\"<pack>/<name>\", ...]}: ids from the catalogue rows of GET /api/skills that the user root carries."
     },
     {
       "id": "files-tree",
@@ -1543,7 +1583,7 @@
       "path": "/api/bundles",
       "area": "starter-bundles",
       "name": "starter-bundle catalog",
-      "description": "The starter-bundle catalog: {bundles:[{id,name,description,fleet}], buildTools:[gradle,maven,python,bash], version}.",
+      "description": "The starter-bundle catalog: {bundles:[{id,name,description,fleet}], buildTools:[gradle,maven,python,bash], version, label}. label is present only on a test build: the build label the jar was stamped with (card 398).",
       "fence": "host",
       "writes": false,
       "pathVars": [],

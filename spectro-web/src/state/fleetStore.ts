@@ -329,11 +329,11 @@ export async function hydrateFleet(): Promise<void> {
   }
 }
 
-/** The undecided permission requests of a fleet model, as the GateBar's
+/** The undecided permission requests of a fleet model, as the gate window's
  *  `PendingPermission[]` — the same request-minus-decision-by-callId fold as
  *  {@link summarize}'s pendingGate flag, but KEEPING each request's payload so
  *  an operator can answer it (block 4). {@code agentId} names the node the
- *  answer POSTs to; order is first-parked-first (the queue the GateBar shows). */
+ *  answer POSTs to; order is first-parked-first (the queue the gate window counts, card 382). */
 export function fleetPending(model: FleetModel): PendingPermission[] {
   const byCallId = new Map<string, PendingPermission>();
   for (const event of model.events) {

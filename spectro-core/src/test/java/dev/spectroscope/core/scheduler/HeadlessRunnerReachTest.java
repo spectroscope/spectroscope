@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Card 364, criterion 1, for the three unattended faces: {@code spectro run},
@@ -209,5 +210,47 @@ class HeadlessRunnerReachTest {
                 "an unattended run spent a budget nobody typed. Every provider call of the"
                         + " run carries it, not just the first — a per-turn read is what a"
                         + " compaction summary and a retried turn go through too");
+    }
+
+    @Test
+    void theConfiguredShellBudgetReachesAnUnattendedRunsShell(@TempDir Path dir,
+            @TempDir Path cwd) throws IOException {
+        // Card 370, criterion 1, for these same three faces and the other road
+        // into a run. The tool belt is assembled one line under the registry in
+        // runOnce, and it took no argument at all until this card: an operator
+        // who raised the budget so a nightly build could finish watched it go on
+        // dying at ten, and the error said ten.
+        //
+        // Read off the tool RESULT rather than off the belt, because a budget
+        // that is announced and not enforced is the half of criterion 1 a
+        // description cannot show.
+        SpectroConfig config = configuredWith(dir,
+                "{ \"maxTurns\": 2, \"commandTimeoutSeconds\": 1 }");
+        List<String> outputs = new ArrayList<>();
+        LlmProvider oneSlowCommand = request -> {
+            if (request.messages().size() >= 3) {
+                return List.of(new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN));
+            }
+            return List.of(
+                    new LlmProvider.PToolCall("c370", "run_command",
+                            JSON.createObjectNode().put("command", "sleep 5")),
+                    new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE));
+        };
+
+        new HeadlessRunner(JSON, config, oneSlowCommand)
+                // autoApprove: the unattended policy, which is what makes the
+                // shell reachable without anybody at a keyboard.
+                .runOnce("Run one slow command", cwd, true, null, event -> {
+                    if (event instanceof RunEvent.ToolResult result) {
+                        outputs.add(result.output());
+                    }
+                }, line -> { });
+
+        assertFalse(outputs.isEmpty(), "the shell tool was never driven at all");
+        assertTrue(outputs.stream().anyMatch(out -> out.contains("timed out after 1 s")),
+                "an unattended run killed its command on a budget nobody typed. The"
+                        + " operator's number reached the config, the settings page and the"
+                        + " reference row, and stopped one seam short of the shell: "
+                        + outputs);
     }
 }

@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -79,7 +80,11 @@ public final class SettingsWriter {
             // Card 361: the two dock widths, which bind on different screens.
             "chatReserveWidth", "dockMaxWidth",
             // Card 364: the completion budget, whose builder method had zero callers.
-            "maxTokens");
+            "maxTokens",
+            // Card 372: the floor of a child agent's run budget, in seconds.
+            "subagentBudgetSeconds",
+            // Card 379: the rtk proxy switch, off or on.
+            "rtkFilter");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
@@ -176,7 +181,8 @@ public final class SettingsWriter {
      * keys, secret-shaped keys ({@code *_API_KEY}/{@code *_TOKEN}), process-globals
      * (whatever {@code SpectroConfig.workspaceScopeForbiddenKeys()} names) in a
      * {@code PROJECT}/{@code LOCAL} scope,
-     * and values of the wrong shape all throw {@link IllegalArgumentException}
+     * values of the wrong shape, and whole numbers below their key's floor
+     * ({@link SettingFloors}, card 386) all throw {@link IllegalArgumentException}
      * without writing anything. The file must still bind as a whole after the merge
      * — this is what stops a patch from bricking a settings file that {@link
      * SpectroConfig#load} would then fail to read on every subsequent boot. A
@@ -262,6 +268,16 @@ public final class SettingsWriter {
         ObjectNode probe = patch.deepCopy();
         probe.properties().removeIf(e -> e.getValue() == null || e.getValue().isNull());
         bindOrThrow(probe);   // type check the patch itself (int fields, list shapes, block shapes)
+        // Card 386: the range, after the shape. The whole patch is refused, as
+        // card 369 decided for a process-global key, and the sentence says
+        // what a read of a file holding such a value does instead.
+        List<SettingFloors.Below> below = SettingFloors.below(probe);
+        if (!below.isEmpty()) {
+            SettingFloors.Below first = below.get(0);
+            throw new IllegalArgumentException(first.sentence()
+                    + ". Nothing in this patch was written; in a file that already holds it, \""
+                    + first.key() + "\" alone is skipped and the file's other keys apply");
+        }
     }
 
     /** Checks a single field's value against its known-value set, for the fields
@@ -278,6 +294,7 @@ public final class SettingsWriter {
             case "sttLanguage" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_LANGUAGES);
             case "logLevel" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_LOG_LEVELS);
             case "permissionMode" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PERMISSION_MODES);
+            case "rtkFilter" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_RTK_FILTER_VALUES);
             default -> { }
         }
     }

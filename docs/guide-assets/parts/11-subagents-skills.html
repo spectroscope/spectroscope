@@ -17,10 +17,13 @@ you can watch in every view.</p>
 <p>Children see <em>only their task text</em> — no conversation history — which is the
 point: a fresh, focused context. Their final text is all the parent receives, wrapped
 with the token cost so delegation visibly costs something:
-<code>[worker-1] result (tokens: 2.1k in / 0.4k out): …</code></p>
+<code>[worker-1] result (tokens: 2.1k in / 0.4k out): …</code>
+A child cut off by its budget is the exception: the text of the turn it was cut in comes
+back as well, below the error and under the marker line
+<code>--- what the child had written before the cut, unfinished ---</code> (card 371).</p>
 
 <div class="kv">
-  <dt>Limits</dt><dd>at most 4 parallel children (schema-enforced and runtime-checked); 120 s per child (then <code>ERROR: [worker-1] timeout after 120 s — cut the subtask smaller.</code>); nesting depth 1 — children simply do not have the spawn tools.</dd>
+  <dt>Limits</dt><dd>at most 4 parallel children (schema-enforced and runtime-checked); one run budget per child, counted from its first token and set by the key <code>subagentBudgetSeconds</code>, shipped at two hours, with the current number and the full derivation in that key's row in chapter 30. A child that runs past it is cut, and the parent is handed <code>ERROR: [worker-1] out of budget: 7200 s of work since its first token (derivation). Raise subagentBudgetSeconds in the settings, or cut the subtask smaller.</code> In place of <code>derivation</code> the budget writes its own account of where the number came from: the floor from the key, and the measured median exchange it was weighed against once this session has measured one. Nesting depth 1, because children simply do not have the spawn tools.</dd>
   <dt>Cancellation</dt><dd>each child has its own CancelSignal; the parent's cancel cascades — Ctrl+C or Stop ends the whole tree cleanly.</dd>
   <dt>Isolation that isn't</dt><dd>same working-directory sandbox, same permission broker (the dialog names the asking child), same hooks. Delegation never widens what is allowed.</dd>
 </div>

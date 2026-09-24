@@ -22,12 +22,12 @@
   {
     "owner" : "dev.spectroscope.core.Agent",
     "field" : "DEFAULT_MAX_TURNS",
-    "value" : "150",
-    "expression" : "150",
+    "value" : "1000",
+    "expression" : "1000",
     "kind" : "SETTABLE",
     "unit" : "TURNS",
     "key" : "maxTurns",
-    "explanation" : "The runaway-loop brake, in turns per run, when nothing configures it. Was a private constant until card 266; a continuation effectively raises the ceiling, and a ceiling that is the product of two numbers — only one of them visible — is not a ceiling anybody can reason about. It joins maxTokens and compactionThreshold in AgentOptions.\n\nCard 365 moved it from 15 to 150. This copy has to move WITH the settings default and not after it: every face that never passes maxTurns — spectro run, a cron fire, a fleet node, every child agent — reads this constant and nothing else, so a settings default raised alone would have raised nothing for any of them. The census behind the number, with its date and its n, is a snapshot in SpectroConfig.DEFAULT_MAX_TURNS; MaxTurnsSettingTest holds the two together."
+    "explanation" : "The runaway-loop brake, in turns per run, when nothing configures it. Was a private constant until card 266; a continuation effectively raises the ceiling, and a ceiling that is the product of two numbers — only one of them visible — is not a ceiling anybody can reason about. It joins maxTokens and compactionThreshold in AgentOptions.\n\nCard 365 moved it from 15 to 150 and card 373 to 1000. This copy has to move WITH the settings default and not after it: every face that never passes maxTurns — spectro run, a cron fire, a fleet node, every child agent — reads this constant and nothing else, so a settings default raised alone would have raised nothing for any of them. The measurements behind the number, each with its date and its n, are a snapshot in SpectroConfig.DEFAULT_MAX_TURNS; MaxTurnsSettingTest holds the two together."
   },
   {
     "owner" : "dev.spectroscope.core.browser.BrowserTools",
@@ -162,12 +162,12 @@
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_COMMAND_TIMEOUT_SECONDS",
-    "value" : "10",
-    "expression" : "10",
+    "value" : "900",
+    "expression" : "900",
     "kind" : "SETTABLE",
     "unit" : "SECONDS",
     "key" : "commandTimeoutSeconds",
-    "explanation" : "The shipped commandTimeoutSeconds: ten seconds per shell call — card 359 makes the number reachable and does not move it.\n\nStandardTools reads THIS rather than keeping a second copy, because its own copy is where the defect was: the constant was private, and one line under it run_command's model-facing description typed the same ten as a literal over a parameter its javadoc already said tests shrink.\n\nNo upper bound is enforced, and that is a decision rather than an oversight (card 359, criterion 3). Every run_command call passes the permission gate, so the person who typed a large number here is the same person approving the call it applies to; a ceiling picked without a measurement would be a second accidental limit of exactly the kind this key exists to remove. A non-positive value is not special-cased either — Process.waitFor treats it as \"do not wait\", which fails fast and visibly rather than hanging."
+    "explanation" : "The shipped commandTimeoutSeconds: fifteen minutes per shell call.\n\nCard 359 made the number reachable at ten seconds and left it there, and said so in its own out-of-scope list. Card 370 makes it reach every run and moves it, on the owner's word of 2026-09-17: \"wie lange ein Command dauern kann, das muss hoch auf Viertelstunde oder so mindestens\". The reason he gave is the one an operator meets on the first slow call: an npm install and a cold test run both take longer than ten seconds, so under the old default they could only ever come back as a timeout.\n\nStandardTools reads THIS rather than keeping a second copy, because its own copy is where the defect was: the constant was private, and one line under it run_command's model-facing description typed the same ten as a literal over a parameter its javadoc already said tests shrink.\n\nNo upper bound is enforced, and that is a decision rather than an oversight (card 359, criterion 3). Every run_command call passes the permission gate, so the person who typed a large number here is the same person approving the call it applies to; a ceiling picked without a measurement would be a second accidental limit of exactly the kind this key exists to remove. A non-positive value is not special-cased either — Process.waitFor treats it as \"do not wait\", which fails fast and visibly rather than hanging."
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
@@ -222,12 +222,12 @@
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_MAX_TURNS",
-    "value" : "150",
-    "expression" : "150",
+    "value" : "1000",
+    "expression" : "1000",
     "kind" : "SETTABLE",
     "unit" : "TURNS",
     "key" : "maxTurns",
-    "explanation" : "The shipped maxTurns: the runaway-loop brake, in turns per run. Card 266 owner call 4 said this becomes an option and 15 stays the value; AgentOptions got its field in that wave and the settings chain did not, so until card 282 every browser session ran on the harness's own fallback with nowhere to change it.\n\nDeliberately a second copy of Agent.DEFAULT_MAX_TURNS rather than an import: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTurnsSettingTest pins the two together, the same way ProgressGuardSettingsTest pins the guard's three against ProgressSettings.defaults().\n\nCard 365 moved it from 15 to 150, and the 15 had never been measured against anything. DATED SNAPSHOT, 2026-09-01, n = 7,139 real Claude Code sessions on the owner's machine (7,785 transcript files; 646 were under 2 KB or carried no assistant response). A turn is one provider round-trip, counted as a unique message.id — an assistant LINE is not a turn, there are 2.53 lines per response:\n\nturns median 14 · p75 40 · p90 88 · p95 129 · p99 288 · max 1441\nhuman inputs median 1 · p90 2 · p95 4\n\n48.0 % of those sessions exceed 15 turns, so the shipped ceiling was ending half of all real work in the middle — which is literally what happened to the owner's run on 2026-08-31, stopReason: \"max_turns\" at step 5 of an 8-step plan. 150 is his number: above p95 and comfortably above the hundred he asked for.\n\nIt stays PROSE and does not become a test, on the canon's own rule: these figures are not derivable from this repo, so nothing here could re-derive them and a test would only restate them. They are therefore stamped with a date and an n rather than presented as a property of the thing — the census was of Claude Code on a million-token model, not of spectroscope on an arbitrary backend, and only the shape of the work transfers. What IS pinned is the decision: MaxTurnsSettingTest holds this constant to 150 and to Agent.DEFAULT_MAX_TURNS."
+    "explanation" : "The shipped maxTurns: the runaway-loop brake, in turns per run. Card 266 owner call 4 said this becomes an option and 15 stays the value; AgentOptions got its field in that wave and the settings chain did not, so until card 282 every browser session ran on the harness's own fallback with nowhere to change it.\n\nDeliberately a second copy of Agent.DEFAULT_MAX_TURNS rather than an import: Agent reads this package, and the house answer to a restated number is a test that goes and looks. MaxTurnsSettingTest pins the two together, the same way ProgressGuardSettingsTest pins the guard's three against ProgressSettings.defaults().\n\nCard 365 moved it from 15 to 150, and the 15 had never been measured against anything. DATED SNAPSHOT, 2026-09-01, n = 7,139 real Claude Code sessions on the owner's machine (7,785 transcript files; 646 were under 2 KB or carried no assistant response). A turn is one provider round-trip, counted as a unique message.id — an assistant LINE is not a turn, there are 2.53 lines per response:\n\nturns median 14 · p75 40 · p90 88 · p95 129 · p99 288 · max 1441\nhuman inputs median 1 · p90 2 · p95 4\n\n48.0 % of those sessions exceed 15 turns, so the shipped ceiling was ending half of all real work in the middle — which is literally what happened to the owner's run on 2026-08-31, stopReason: \"max_turns\" at step 5 of an 8-step plan. 150 is his number: above p95 and comfortably above the hundred he asked for.\n\nCard 373 moved it from 150 to 1000 on 2026-09-17, on the owner's word (\"setzt die hoch, dass die auch mal über Nacht durcharbeiten können\") and on a scan of his own session store: 114 runs, the longest 118 turns in 2 h 10 min, none at or above 150, and an 8 hour night at that pace is about 440. 1000 is above the night and above the census p99 of 288, and below the census maximum on purpose: a run past a thousand turns on one prompt is a loop until proven otherwise, and the key is there to raise.\n\nIt stays PROSE and does not become a test, on the canon's own rule: these figures are not derivable from this repo, so nothing here could re-derive them and a test would only restate them. They are therefore stamped with a date and an n rather than presented as a property of the thing — the census was of Claude Code on a million-token model, not of spectroscope on an arbitrary backend, and only the shape of the work transfers. What IS pinned is the decision: MaxTurnsSettingTest holds this constant to 1000 and to Agent.DEFAULT_MAX_TURNS."
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
@@ -268,6 +268,16 @@
     "unit" : "COUNT",
     "key" : "questionsPerRun",
     "explanation" : "The shipped questionsPerRun: nine.\n\nCard 265 shipped three, called it \"the concept's number\" and listed all three ask caps among its open owner calls as \"stated GUESSES … want a word\". Card 356 made it settable; card 365 set it, from the owner's word after a census rather than from taste.\n\nTHE MEASUREMENT, a dated snapshot and not a property — it comes from outside this repo and cannot be re-derived by a test. Over 7,139 real Claude Code sessions on the owner's machine (2026-09-01), only 127 (1.8 %) use the ask tool at all — but of those, 16.5 % ask more than three times, p90 is 5 and the largest asked 12. A budget of three therefore failed one asking session in six, and the owner's own run of 2026-08-31 asked four times: it was in that sixth, and the refusal cost it a turn it then ran out of."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_SUBAGENT_BUDGET_SECONDS",
+    "value" : "7200",
+    "expression" : "7200",
+    "kind" : "SETTABLE",
+    "unit" : "SECONDS",
+    "key" : "subagentBudgetSeconds",
+    "explanation" : "The shipped subagentBudgetSeconds: the floor of a child agent's run budget, in seconds. Two hours.\n\nCard 372, the owner's number of 2026-09-17: \"Die Subagenten-Runtime muss auf zwei Stunden hoch, oder drei, und alles einstellbar.\" Until this card the floor was a fixed 300 s constant inside ChildBudget, with no key above it; on 2026-09-16 it cut a planner child that was still streaming a 2,400-line plan. The floor is the operator's side of the derived budget, max(floor, min(30 min, 3 x p50)): the 30 minute ceiling caps the measured term only and never a number an operator typed, otherwise a setting of 3600 would silently have become 1800.\n\nThe price is the card's and the owner's: a child that wedges after its first token holds its parent for this long, plus up to 45 minutes of queue grace before that token. No upper bound is enforced, for the reason DEFAULT_COMMAND_TIMEOUT_SECONDS gives."
   },
   {
     "owner" : "dev.spectroscope.core.goal.CommandGoalCheck",
@@ -887,17 +897,17 @@
     "kind" : "FIXED",
     "unit" : "MILLISECONDS",
     "key" : "",
-    "explanation" : "The hard stop on a derived run budget: 30 min. Above the largest exchange ever measured here (1,560.9 s = 26.0 min, HTTP 200), so a single real exchange still fits inside it.\n\nThis bounds ONE of the two clocks, not the child. The two run in sequence — see worstCaseMs() for what a child can actually hold its requester for, which is more than this number."
+    "explanation" : "The hard stop on a DERIVED run budget: 30 min. Above the largest exchange ever measured here (1,560.9 s = 26.0 min, HTTP 200), so a single real exchange still fits inside it.\n\nIt bounds the measured term only. A floor the operator typed passes it untouched (card 372); this number says how far a measurement may carry a child, not how long an operator may let one run.\n\nAnd it bounds ONE of the two clocks, not the child. The two run in sequence, so what a child can actually hold its requester for is worstCaseMs() and not this constant. At the shipped floor that composed number is far above this one, 9,900,000 ms against 1,800,000. Under a floor the operator has lowered it can sit well below it: at a 60 s floor with nothing measured the worst case is 420,000 ms. Either way, read it there rather than here."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",
     "field" : "FLOOR_MS",
-    "value" : "300000",
-    "expression" : "300_000L",
-    "kind" : "FIXED",
+    "value" : "7200000",
+    "expression" : "dev.spectroscope.core.config.SpectroConfig.DEFAULT_SUBAGENT_BUDGET_SECONDS * 1000L",
+    "kind" : "ALIAS",
     "unit" : "MILLISECONDS",
     "key" : "",
-    "explanation" : "The smallest run budget any child gets, whatever the backend says: 300 s. Two and a half times the literal it replaces, and above the 276.6 s that 3 × the owner's measured p50 works out to — so on that backend the floor is what actually governs."
+    "explanation" : "The shipped floor of a child's run budget in milliseconds. An earlier release published this name, so it is kept, deprecated, for code compiled against it. The floor is now the operator's subagentBudgetSeconds, and this constant restates its shipped default, SpectroConfig.DEFAULT_SUBAGENT_BUDGET_SECONDS, so it no longer says which floor a given budget runs on."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",
@@ -911,6 +921,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",
+    "field" : "IMPLIED_P50_MS",
+    "value" : "100000",
+    "expression" : "100_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "The p50 assumed while nothing has been measured on this backend: 100 s, the median the original 300 s floor stood on (300 s / 3). The operator's floor does not move it: an unmeasured backend is priced by what backends have measured, not by how patient the operator is. It prices the queue allowance only; the run budget of an unmeasured backend is the floor."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.ChildBudget",
     "field" : "P50_MULTIPLE",
     "value" : "3",
     "expression" : "3",
@@ -918,6 +938,16 @@
     "unit" : "RATIO",
     "key" : "",
     "explanation" : "How many median exchanges a child may spend once it has started producing: three. A child that has had three median turns and is still going is not waiting, it is lost."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.MergedEventStream",
+    "field" : "MAX_MERGED_TEXT_BYTES",
+    "value" : "7680",
+    "expression" : "7_680",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "Card 395: the most bytes the text of one merged delta may take once it is written as JSON (UTF-8, with the escapes JSON needs). The session file writes each line through Files.write, which hands the bytes over in chunks of 8,192, and a second writer landing between two chunks tears the line (card 406; measured on 2026-09-24 with a 12,000-character merged line). This budget leaves 512 bytes for the rest of the line, so a merge never builds a line of that size. A single delta that is larger already is handed out as it came."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.SubagentManager",
@@ -990,6 +1020,16 @@
     "explanation" : "How long one fetch may spend on connect and on read before the tool answers with a failure instead of a page. The same 15 s the four search tiers use, and for the same reason: a model waiting on a dead host is spending the turn a person is watching."
   },
   {
+    "owner" : "dev.spectroscope.core.tools.RtkFilter",
+    "field" : "ORACLE_TIMEOUT_SECONDS",
+    "value" : "5",
+    "expression" : "5",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long one oracle call may take before spectro stops waiting and runs the raw line.\n\nMeasured 2026-09-21 on this machine, 30 calls of rtk rewrite across six shell lines: median 10.6 ms, p95 14.1 ms, slowest 14.3 ms. Five seconds is therefore roughly 350 times the slowest observed call, which is a deadline for a hung process and not a budget anything normal runs into. It is not tuned to the measurement and does not need to be: a rewrite is an optimisation, so overshooting the deadline costs the saving on one call and never the call itself."
+  },
+  {
     "owner" : "dev.spectroscope.core.tools.ShellCommand",
     "field" : "DRAIN_GRACE_MS",
     "value" : "1000",
@@ -1012,12 +1052,12 @@
   {
     "owner" : "dev.spectroscope.core.tools.StandardTools",
     "field" : "COMMAND_TIMEOUT_SECONDS",
-    "value" : "10",
+    "value" : "900",
     "expression" : "dev.spectroscope.core.config.SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS",
     "kind" : "ALIAS",
     "unit" : "SECONDS",
     "key" : "",
-    "explanation" : "run_command's shipped wall-clock budget, READ from the settings record rather than kept as a second copy of the same ten (card 359). A private literal here is what made the number unreachable, and the description one screen down typed it a second time."
+    "explanation" : "run_command's shipped wall-clock budget, READ from the settings record rather than kept as a second copy of the same number (card 359). A private literal here is what made the number unreachable, and the description one screen down typed it a second time. The faces that have a settings record in hand do not come through here at all; they call all(long) with the operator's own value (card 370)."
   },
   {
     "owner" : "dev.spectroscope.core.tools.StandardTools",

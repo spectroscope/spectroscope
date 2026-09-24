@@ -136,8 +136,9 @@ describe("layout store", () => {
   });
 
   it("openRightPanel opens once and stays idempotent", () => {
-    // The workspace announcement calls this on every session — an already
-    // open panel must not churn state (or re-render subscribers).
+    // Callers do not check first (the chat's work chip calls it on every
+    // click), so an already open panel must not churn state (or re-render
+    // subscribers).
     if (__getState().rightPanelOpen) toggleRightPanel();
     openRightPanel();
     expect(__getState().rightPanelOpen).toBe(true);

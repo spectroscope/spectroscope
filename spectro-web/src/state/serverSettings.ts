@@ -38,6 +38,24 @@ export interface SettingsView {
   files: Record<string, string>;
   /** The resolved workspace directory, or null in the process-moment view. */
   workspace: string | null;
+  /** Each whole-number key's lowest value, from the server's one table
+   *  (card 386). Absent from a server older than that card. */
+  floors?: Record<string, number>;
+  /** Every value a settings file held below its key's floor, skipped on the
+   *  read that built this view (card 386). */
+  belowFloor?: BelowFloor[];
+}
+
+/** A value a settings file held below its key's floor, skipped on read so the
+ *  layer below applies. Mirrors SettingFloors.Skipped on the server. */
+export interface BelowFloor {
+  key: string;
+  /** The value as the file holds it, in JSON notation. */
+  value: string;
+  floor: number;
+  /** The scope the file belongs to: user, launch-dir, project or local. */
+  layer: string;
+  file: string;
 }
 
 let activeFetch: typeof fetch = (...args) => window.fetch(...args);
@@ -116,6 +134,48 @@ export function textFieldPatch(field: string, raw: string, current: string): Rec
   const next = raw.trim();
   if (next === current.trim()) return null;
   return { [field]: next === "" ? null : next };
+}
+
+/**
+ * The lowest value the server allows for `field`, or undefined when the view
+ * carries none for it (card 386).
+ *
+ * @param view  the resolved settings view
+ * @param field the settings key
+ * @return the key's floor, or undefined
+ */
+export function floorOf(view: SettingsView, field: string): number | undefined {
+  const floor = view.floors?.[field];
+  return typeof floor === "number" ? floor : undefined;
+}
+
+/**
+ * The patch a number field of the settings page sends for one change, or
+ * `null` when it must send nothing (card 386).
+ *
+ * The fields used to send `Number(e.target.value)`, and `Number("")` is 0: an
+ * operator who cleared a field to retype it saved a zero, and for the shell
+ * time limit that made every command of the next session time out at once.
+ * An empty field is not a number anybody typed, so it sends nothing, and the
+ * saved value stays. Neither does a value below the floor or one that is not
+ * a whole number: the server would refuse both.
+ *
+ * @param field the settings key
+ * @param raw   what the input holds after the change
+ * @param floor the key's floor from the view, or undefined when it has none
+ * @return a one-key patch, or null to send nothing
+ */
+export function numberFieldPatch(
+  field: string,
+  raw: string,
+  floor: number | undefined,
+): Record<string, number> | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  if (!Number.isInteger(value)) return null;
+  if (floor !== undefined && value < floor) return null;
+  return { [field]: value };
 }
 
 /** Layer names as they appear in an Origin's `winner`/`shadowed`, mapped to

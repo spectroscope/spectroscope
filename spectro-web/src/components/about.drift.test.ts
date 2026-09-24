@@ -111,6 +111,7 @@ describe("the About strings are localised", () => {
       "about.open",
       "about.title",
       "about.tagline",
+      "about.testBuild",
       "about.licences",
       "about.code",
       "about.images",

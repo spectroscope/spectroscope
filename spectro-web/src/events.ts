@@ -3,6 +3,8 @@
 // JSONL files on disk (camelCase fields, snake_case type values). Never invent
 // fields here; extend only additively, and let the reducer ignore unknown types.
 
+import type { ThresholdSource } from "./wire/thresholdSources";
+
 // attachment REFERENCE — the bytes live in the blob store next to the
 // session file, never in the event (JSONL-FORMAT.md §7).
 export interface AttachmentRef {
@@ -121,15 +123,15 @@ export type RunEvent =
        *  (ContextInfoThresholdSourceAdditivityTest), declared here so a
        *  consumer can tell a measurement from a stand-in.
        *
-       *  NARROWER THAN THE CONTRACT, ON PURPOSE. Java writes
-       *  `CompactionThreshold.Source.wireName()`, and that enum may grow — its
-       *  own additivity test already replays an unknown `"tokenizer"`. These
-       *  three are the ones that exist today; a fourth would arrive here as a
-       *  value the union does not list. Every reader must therefore treat an
-       *  UNRECOGNISED source the way it treats an absent one — as a threshold
-       *  taken at its word — and never as `fallback`, which is the only value
-       *  that downgrades what the panel is allowed to call it. */
-      thresholdSource?: "override" | "window" | "model" | "fallback";
+       *  THE UNION IS THE JAVA ENUM, READ OFF IT. Java writes
+       *  `CompactionThreshold.Source.wireName()`; `ThresholdSource` is that
+       *  enum lowercased, and windowOverride.drift.test.ts turns red when a
+       *  constant is added on one side only (card 390). A page older than a
+       *  new source still meets it on a newer server, so every reader must
+       *  treat an UNRECOGNISED source the way it treats an absent one, as a
+       *  threshold taken at its word, and never as `fallback`, which is the
+       *  only value that downgrades what the panel is allowed to call it. */
+      thresholdSource?: ThresholdSource;
       /** The window `threshold` was derived from, when the run knew one
        *  (additive, card 366). Absent = nothing was learned about the window;
        *  never 0, because a zero would be a claim about the room available.
@@ -141,6 +143,22 @@ export type RunEvent =
       parts: { label: string; chars: number; estTokens: number; text?: string }[];
       ts: number;
     } // additive: context introspection
+  // Card 390: the operator set or cleared the window for this session from the
+  // ring. The server writes it to the session file and sends it at once, which
+  // is what moves the ring without a run; a resume takes the window from the
+  // last such line. No agentId: a person's hand, like launch_outcome.
+  | {
+      type: "window_override";
+      /** The window he set. Absent after a clear; never 0. */
+      tokens?: number;
+      /** The compaction threshold that follows from the choice. */
+      threshold: number;
+      /** `window_override` while a window is set, the automatic source after a clear. */
+      thresholdSource?: ThresholdSource;
+      /** The window that threshold is measured against; absent when none is known. */
+      contextWindow?: number;
+      ts: number;
+    } // additive (card 390)
   | {
       type: "agent_message";
       from: string;
@@ -425,6 +443,26 @@ export type RunEvent =
        *  nothing was ever measured. */
       waitMs?: number;
       ts: number;
+    }
+  // Card 380: the operator handed the running turn a sentence, and the loop
+  // read it. Its own type rather than the imported `queue_operation`, which is
+  // import only and carries no id at all: a native waiting line that can take
+  // one message back would have to invent one, and making that type native
+  // reopens the narrowing queueSeat.test.ts made BECAUSE it is import only.
+  //
+  // `text` is the operator's own words, not the attributed wording the model
+  // reads. The attribution belongs to the request, and a record that quoted the
+  // harness back at itself would make the sentence unsearchable.
+  | {
+      type: "steering_message";
+      agentId: string;
+      text: string;
+      /** False when the turn cap refused it: recorded, never delivered. Two
+       *  different facts, and a line without this field would report a
+       *  correction that never reached the model. */
+      taken: boolean;
+      turn: number;
+      ts: number;
     }; // additive
 
 /** One question of an ask, as the wire carries it (card 265). Deliberately the
@@ -451,12 +489,21 @@ export type ClientMessage =
   | { type: "set_provider"; provider: string; model?: string } // switch the LLM backend mid-session
   | { type: "set_workspace"; mode?: "random" | "default" | "set"; path?: string } // pin THIS session's workspace by mode (before the first run)
   | { type: "set_permission_mode"; mode: string } // switch ask/auto/readonly mid-session (composer gear)
+  // Card 390: the window for this session, from the context ring. null clears;
+  // the server decides the range and answers with a `window_override` event.
+  | { type: "set_window_override"; tokens: number | null }
   // Card 265: the answer to a parked question. Its own frame rather than a wider
   // permission_response, because that one carries allowlist work ("remember",
   // "persist") and answering a question consents to nothing. `cancelled` is the
   // skip button: released, never answered — "" would be a person saying nothing,
   // which is a different fact from nobody saying anything.
-  | { type: "question_response"; callId: string; answers: string[]; cancelled?: boolean };
+  | { type: "question_response"; callId: string; answers: string[]; cancelled?: boolean }
+  // Card 380: one sentence for the turn that is already running. Its own frame
+  // rather than a user_message, because a user_message starts a run and the
+  // server refuses a second one; this starts nothing. Text only (owner call 2):
+  // the attachment path stores blobs before a run begins, and a mid-run store
+  // is a second question with its own failure mode.
+  | { type: "steering_message"; text: string };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {

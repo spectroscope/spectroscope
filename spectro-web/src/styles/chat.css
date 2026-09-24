@@ -186,6 +186,20 @@
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+/* Card 380, fix round 2026-09-24: a steering message says where it stands, in
+   the bubble. The pending row is the page's own until the run answers for it,
+   so it reads as not yet part of the record. */
+.user-turn--steer-pending {
+  opacity: 0.72;
+}
+.steer-state {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.steer-state--undelivered {
+  color: var(--warn);
+}
 /* Attachments ride along inside the bubble, right-aligned with it. */
 .user-turn .user-attachments {
   justify-content: flex-end;
@@ -506,8 +520,15 @@
 .thinking-caret--open {
   transform: rotate(90deg);
 }
+/* Card 418: the open body grows to half the chat pane, never under 240 px.
+   The chat pane publishes that ceiling on its transcript scroller
+   (thinkingCeiling.ts); this :root value is the floor for every thinking block
+   outside a chat pane, such as a Spectrum lane. */
+:root {
+  --thinking-body-max: 240px;
+}
 .thinking-body {
-  max-height: 240px;
+  max-height: var(--thinking-body-max);
   overflow-y: auto;
   padding: var(--sp-2) var(--sp-3) var(--sp-3);
   border-top: 1px solid var(--border);

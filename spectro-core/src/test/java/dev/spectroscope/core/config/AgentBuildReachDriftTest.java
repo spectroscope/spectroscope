@@ -54,17 +54,31 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *       pinned by nothing. {@code SubagentReachTest} beside this file proves
  *       {@code SubagentManager} honours the seam; only this reader proves an
  *       operator's number arrives AT it;</li>
- *   <li>the <b>keys</b> are every {@link SpectroConfig} record component that an
- *       {@link AgentOptions} component of the same name and the same (boxed)
- *       type can carry. That rule — same name, same type — is what "a settings
- *       key that maps to an AgentOptions field" means, and it excludes the two
- *       name collisions that are not mappings: config's {@code provider} is a
- *       backend id and the option is an {@code LlmProvider}, config's
- *       {@code hooks} is a list of declarations and the option is a built
- *       {@code HookRunner}. A chain is then asked only for the keys the record
- *       it builds can actually CARRY, by the same rule applied to that record —
- *       a config that has no field for a key cannot be blamed for not passing
- *       it.</li>
+ *   <li>the <b>keys</b> are every {@link SpectroConfig} record component that
+ *       ANY chain's target record can carry: a component of the same name and
+ *       the same (boxed) type in {@link AgentOptions} or in
+ *       {@link dev.spectroscope.core.subagents.SubagentConfig}. That rule, same
+ *       name and same type, is what "a settings key that maps onto a field an
+ *       agent is built from" means, and it excludes the two name collisions that
+ *       are not mappings: config's {@code provider} is a backend id and the
+ *       option is an {@code LlmProvider}, config's {@code hooks} is a list of
+ *       declarations and the option is a built {@code HookRunner}. Both
+ *       exclusions survive the union, because the child config carries those two
+ *       names at the SAME non-matching types the options record does: it is
+ *       handed a built {@code LlmProvider} and a built {@code HookRunner} too,
+ *       so no target rescues a collision the rule is there to drop. A chain is
+ *       then asked only for the keys the record it builds can actually CARRY, by
+ *       the same rule applied to that record, so an {@code AgentOptions} chain is
+ *       never asked for a key only the child config has a field for, and a config
+ *       with no field for a key cannot be blamed for not passing it.
+ *
+ *       <p>The union is not a widening for its own sake. This rule used to
+ *       INTERSECT the config with {@code AgentOptions} alone, so a key that only
+ *       the child config carries was governed by nothing: card 372 added one,
+ *       both shipped chains passed it, and deleting either call left this guard
+ *       green. A key that reaches an agent only through its children is still a
+ *       number an operator typed, and it is the branch of the tree where nobody
+ *       is watching.</p></li>
  * </ul>
  *
  * <p><b>What this test does NOT claim.</b> It reads for the builder CALL, not
@@ -155,11 +169,16 @@ class AgentBuildReachDriftTest {
         Path root = repoRoot();
         assumeTrue(root != null, "not running from a source checkout");
         List<String> keys = governedKeys();
+        List<String> targetNames = new ArrayList<>();
+        for (Chain chain : CHAINS) {
+            targetNames.add(chain.target().getSimpleName());
+        }
         assertFalse(keys.isEmpty(),
-                "no settings key maps onto an AgentOptions field any more — either the"
-                        + " record was rewritten or the mapping rule (same name, same boxed"
-                        + " type) stopped describing it, and this guard is now watching"
-                        + " nothing while reporting green");
+                "no settings key maps onto a component of " + String.join(" or ", targetNames)
+                        + " any more. Either one of those records was rewritten or the"
+                        + " mapping rule (same name, same boxed type, in the target of at"
+                        + " least one chain) stopped describing it, and this guard is now"
+                        + " watching nothing while reporting green");
 
         List<BuildSite> sites = buildSites(root);
         assertTrue(sites.size() >= 2,
@@ -371,49 +390,66 @@ class AgentBuildReachDriftTest {
         }
     }
 
-    /** Every settings key an {@link AgentOptions} field of the same name and the
-     *  same boxed type can carry.
+    /** Every settings key that a field of the same name and the same boxed type
+     *  can carry in the target of AT LEAST ONE chain. The union, not the
+     *  intersection: a key reaches an agent through the options record, through
+     *  the child config, or through both, and a key only one of them carries is
+     *  no less an operator's number than a key both carry.
      *
      *  @return the mapped key names, in the config record's own order */
     private static List<String> governedKeys() {
-        Map<String, Class<?>> options = new LinkedHashMap<>();
-        for (var component : AgentOptions.class.getRecordComponents()) {
-            options.put(component.getName(), boxed(component.getType()));
+        List<Map<String, Class<?>>> targets = new ArrayList<>();
+        for (Chain chain : CHAINS) {
+            targets.add(componentsOf(chain.target()));
         }
         List<String> keys = new ArrayList<>();
         for (var component : SpectroConfig.class.getRecordComponents()) {
-            Class<?> option = options.get(component.getName());
-            if (option != null && option.equals(boxed(component.getType()))) {
-                keys.add(component.getName());
+            Class<?> configType = boxed(component.getType());
+            for (Map<String, Class<?>> target : targets) {
+                if (configType.equals(target.get(component.getName()))) {
+                    keys.add(component.getName());
+                    break;
+                }
             }
         }
         return keys;
     }
 
+    /** One record's components, by name, with primitives boxed.
+     *
+     *  @param record the record class to read
+     *  @return name to boxed type, in the record's own declaration order */
+    private static Map<String, Class<?>> componentsOf(Class<?> record) {
+        Map<String, Class<?>> components = new LinkedHashMap<>();
+        for (var component : record.getRecordComponents()) {
+            components.put(component.getName(), boxed(component.getType()));
+        }
+        return components;
+    }
+
     /** Which of the governed keys one builder's target record can carry, by the
      *  same rule that produced the keys: a component of the same name whose
-     *  boxed type matches {@link AgentOptions}'.
+     *  boxed type matches {@link SpectroConfig}'.
      *
-     *  <p>{@code AgentOptions} itself carries all of them by construction. A
-     *  child config carries the ones it was given fields for — and the ones it
-     *  has no field for are not its failure, they are a different card.</p>
+     *  <p>The comparison is against the CONFIG's type rather than any one
+     *  target's, because a key is governed as soon as some target matches the
+     *  config. Measuring a second target against the first one's type would ask
+     *  every chain for the keys only the first can carry, and ask none of them
+     *  for a key only the second has a field for.</p>
+     *
+     *  <p>Each record carries the keys it was given fields for; the ones it has
+     *  no field for are not its failure, they are a different card.</p>
      *
      *  @param target  the record the chain builds
      *  @param governed the governed keys, in the config record's order
      *  @return the subset this record can carry */
     private static List<String> keysCarriedBy(Class<?> target, List<String> governed) {
-        Map<String, Class<?>> options = new LinkedHashMap<>();
-        for (var component : AgentOptions.class.getRecordComponents()) {
-            options.put(component.getName(), boxed(component.getType()));
-        }
-        Map<String, Class<?>> carried = new LinkedHashMap<>();
-        for (var component : target.getRecordComponents()) {
-            carried.put(component.getName(), boxed(component.getType()));
-        }
+        Map<String, Class<?>> config = componentsOf(SpectroConfig.class);
+        Map<String, Class<?>> carried = componentsOf(target);
         List<String> keys = new ArrayList<>();
         for (String key : governed) {
             Class<?> here = carried.get(key);
-            if (here != null && here.equals(options.get(key))) {
+            if (here != null && here.equals(config.get(key))) {
                 keys.add(key);
             }
         }

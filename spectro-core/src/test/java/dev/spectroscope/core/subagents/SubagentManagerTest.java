@@ -27,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -103,6 +104,14 @@ class SubagentManagerTest {
 
     /** The card-205 arity: the parent session's web tools, granted to research children only. */
     private static Setup setup(RoutingProvider provider, long timeoutMs, List<Tool> webTools) {
+        return setup(provider, timeoutMs, webTools, null);
+    }
+
+    /** With thinking, because a child agent DROPS a PThinkingDelta when reasoning is
+     *  off (Agent, case PThinkingDelta). A test that needs the reasoning stream to
+     *  reach the parent must ask for it, or it measures the queue grace instead. */
+    private static Setup setup(RoutingProvider provider, long timeoutMs, List<Tool> webTools,
+                               Boolean thinking) {
         SubagentManager manager = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
                 .cwd(Path.of("."))
@@ -111,6 +120,7 @@ class SubagentManagerTest {
                 .baseTools(List.of(fakeReadTool("list_dir"), fakeReadTool("read_file"),
                         fakeReadTool("write_file")))
                 .webTools(webTools)
+                .thinking(thinking)
                 .build(),
                 timeoutMs);
         ToolRegistry registry = new ToolRegistry();
@@ -560,6 +570,72 @@ class SubagentManagerTest {
         };
     }
 
+    /** A child whose only written token is a newline and which then wedges. Models
+     *  open an answer with a blank line often enough that this is the ordinary
+     *  shape of "the cut came before the first real word", not a corner case. */
+    private static RoutingProvider aChildThatWritesOnlyWhitespaceThenWedges() {
+        return new RoutingProvider() {
+            @Override
+            public Iterable<ProviderEvent> stream(ProviderRequest request) {
+                if (!request.system().contains("subagent")) {
+                    return super.stream(request);
+                }
+                CancelSignal signal = request.signal();
+                return () -> new java.util.Iterator<ProviderEvent>() {
+                    private int served;
+
+                    @Override
+                    public boolean hasNext() {
+                        if (served == 1) {
+                            awaitCancel(signal); // wedged AFTER the newline
+                        }
+                        return served < 2;
+                    }
+
+                    @Override
+                    public ProviderEvent next() {
+                        return served++ == 0
+                                ? new PTextDelta("\n")
+                                : new PStop(PStop.StopReason.ABORTED);
+                    }
+                };
+            }
+        };
+    }
+
+    /** A child that only REASONS and then wedges: it spends its budget without
+     *  ever writing an answer. A thinking delta is a first-token kind, so the run
+     *  budget arms, while nothing lands in the child's answer buffer. */
+    private static RoutingProvider aChildThatOnlyThinksThenWedges() {
+        return new RoutingProvider() {
+            @Override
+            public Iterable<ProviderEvent> stream(ProviderRequest request) {
+                if (!request.system().contains("subagent")) {
+                    return super.stream(request);
+                }
+                CancelSignal signal = request.signal();
+                return () -> new java.util.Iterator<ProviderEvent>() {
+                    private int served;
+
+                    @Override
+                    public boolean hasNext() {
+                        if (served == 1) {
+                            awaitCancel(signal); // wedged AFTER the first reasoning token
+                        }
+                        return served < 2;
+                    }
+
+                    @Override
+                    public ProviderEvent next() {
+                        return served++ == 0
+                                ? new PThinkingDelta("weighing the options")
+                                : new PStop(PStop.StopReason.ABORTED);
+                    }
+                };
+            }
+        };
+    }
+
     /** A child the backend kept in its queue for {@code queuedMs} and which then
      *  answered promptly — the third and fourth child of a four-wide wave on a
      *  single loaded local model. */
@@ -690,6 +766,93 @@ class SubagentManagerTest {
         assertTrue(result.output().contains("out of budget"), result.output());
         assertTrue(result.output().contains("first token"),
                 "the parent is told WHICH clock ran out: " + result.output());
+        assertTrue(result.output().contains("subagentBudgetSeconds"),
+                "the parent is told which setting raises the budget: " + result.output());
+    }
+
+    @Test
+    void aChildOutOfBudgetHandsBackWhatItHadWritten() {
+        RoutingProvider provider = aChildThatSpeaksOnceThenWedges();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Write the plan"}""")));
+        provider.parentTurns.add(textTurn("The worker ran out of budget."));
+
+        List<RunEvent> events = collect(setup(provider, 300), "Run a slow writer");
+
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(result.isError(), "a cut is still an error: " + result.output());
+        assertTrue(result.output().startsWith("ERROR: [worker-1] out of budget"), result.output());
+        assertTrue(result.output().contains(SubagentManager.PARTIAL_OUTPUT_MARKER),
+                "the marker that says the text is unfinished: " + result.output());
+        assertTrue(result.output().indexOf("starting to think") > result.output().indexOf(SubagentManager.PARTIAL_OUTPUT_MARKER),
+                "the text the child had written before the cut follows the marker: " + result.output());
+    }
+
+    @Test
+    void aChildCutWithNothingWrittenGetsNoEmptyMarker() {
+        RoutingProvider provider = aChildThatOnlyThinksThenWedges();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Think it over"}""")));
+        provider.parentTurns.add(textTurn("The worker ran out of budget."));
+
+        List<RunEvent> events = collect(setup(provider, 300, List.of(), true), "Run a slow thinker");
+
+        // The stop reason is the proof that this child was cut by the RUN BUDGET and
+        // not by the queue grace: only a first-token kind arms that clock, and a
+        // reasoning delta is one. Without it the test would silently measure the
+        // other clock, where the marker could never appear anyway.
+        RunEvent.RunEnd childEnd = events.stream()
+                .filter(RunEvent.RunEnd.class::isInstance)
+                .map(RunEvent.RunEnd.class::cast)
+                .filter(end -> !end.runId().isBlank())
+                .filter(end -> events.stream()
+                        .anyMatch(other -> other instanceof RunEvent.RunStart start
+                                && start.runId().equals(end.runId())
+                                && "worker-1".equals(start.agentId())))
+                .findFirst().orElseThrow();
+        assertEquals("child_budget_exhausted", childEnd.stopReason(),
+                "this child must reach the budget branch, not the queue grace");
+
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(result.isError(), "a cut is still an error: " + result.output());
+        assertTrue(result.output().startsWith("ERROR: [worker-1] out of budget"), result.output());
+        assertFalse(result.output().contains(SubagentManager.PARTIAL_OUTPUT_MARKER),
+                "nothing was written, so the parent gets no empty marker: " + result.output());
+    }
+
+    @Test
+    void aChildCutAfterOnlyWhitespaceGetsNoEmptyMarker() {
+        RoutingProvider provider = aChildThatWritesOnlyWhitespaceThenWedges();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Start the plan"}""")));
+        provider.parentTurns.add(textTurn("The worker ran out of budget."));
+
+        List<RunEvent> events = collect(setup(provider, 300), "Run a worker that only breaks a line");
+
+        // Same positive twin as the test above: the stop reason proves the child
+        // reached the BUDGET branch. A newline is a text delta and therefore a
+        // first-token kind, so the run budget arms on it while the answer buffer
+        // holds nothing a reader could use.
+        RunEvent.RunEnd childEnd = events.stream()
+                .filter(RunEvent.RunEnd.class::isInstance)
+                .map(RunEvent.RunEnd.class::cast)
+                .filter(end -> !end.runId().isBlank())
+                .filter(end -> events.stream()
+                        .anyMatch(other -> other instanceof RunEvent.RunStart start
+                                && start.runId().equals(end.runId())
+                                && "worker-1".equals(start.agentId())))
+                .findFirst().orElseThrow();
+        assertEquals("child_budget_exhausted", childEnd.stopReason(),
+                "this child must reach the budget branch, not the queue grace");
+
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(result.isError(), "a cut is still an error: " + result.output());
+        assertTrue(result.output().startsWith("ERROR: [worker-1] out of budget"), result.output());
+        assertFalse(result.output().contains(SubagentManager.PARTIAL_OUTPUT_MARKER),
+                "a newline is not text the parent can read, so it gets no marker: " + result.output());
     }
 
     @Test
@@ -715,6 +878,8 @@ class SubagentManagerTest {
         RunEvent.ToolResult result = firstToolResult(events);
         assertTrue(result.isError());
         assertTrue(result.output().contains("never produced a token"), result.output());
+        assertFalse(result.output().contains(SubagentManager.PARTIAL_OUTPUT_MARKER),
+                "a child that never spoke has nothing to hand back: " + result.output());
     }
 
     @Test

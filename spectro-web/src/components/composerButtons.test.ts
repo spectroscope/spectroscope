@@ -56,3 +56,46 @@ describe("composerButtons", () => {
     expect(queue.sendLabel).toBe("Einreihen");
   });
 });
+
+// ── card 380: the button says what it does ────────────────────────────────
+
+describe("the send seat while a run is up (card 380)", () => {
+  it("reads Steer when the submit will reach the running turn", () => {
+    const view = composerButtons({ running: true, stopping: false, draftEmpty: false, steers: true });
+
+    expect(view.sendLabel).toBe("Steer");
+    expect(view.sendHintKey).toBe("chat.steerHint");
+  });
+
+  it("reads Zuruf in German", () => {
+    const view = composerButtons({ running: true, stopping: false, draftEmpty: false, steers: true }, "de");
+
+    expect(view.sendLabel).toBe("Zuruf");
+  });
+
+  it("still reads Queue when the message will wait instead", () => {
+    // Attachments, or a server that refused the frame. The label must not
+    // promise a delivery the page is not going to attempt.
+    const view = composerButtons({
+      running: true,
+      stopping: false,
+      draftEmpty: false,
+      steers: false,
+    });
+
+    expect(view.sendLabel).toBe("Queue");
+    expect(view.sendHintKey).toBe("chat.queuedHint");
+  });
+
+  it("reads Send with no run up, whatever the steering flag says", () => {
+    const view = composerButtons({
+      running: false,
+      stopping: false,
+      draftEmpty: false,
+      steers: true,
+    });
+
+    expect(view.sendLabel).toBe("Send");
+    expect(view.sendHintKey).toBeNull();
+  });
+});

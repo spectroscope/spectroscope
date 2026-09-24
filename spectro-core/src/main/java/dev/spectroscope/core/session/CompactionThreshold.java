@@ -38,6 +38,14 @@ import java.util.function.IntSupplier;
  * That is not the same as "no endpoint publishes it" — one does, and
  * {@link ModelWindows} names it and says why this table is not it.</p>
  *
+ * <p>Card 391 gave the third rung a second source, asked before the table: the
+ * window the BACKEND publishes for the model id it serves. Ollama answers one
+ * on {@code /api/show} for its cloud models, which have no loaded instance on
+ * the machine and no row in the table; measured on 2026-09-24, 1,048,576 for
+ * {@code glm-5.3:cloud} and 512,000 for {@code minimax-m3:cloud}, where every
+ * run had compacted at 100,000. The five-argument {@code derive} takes that
+ * question; the forms without it read the table alone.</p>
+ *
  * <h2>The reserve, and why it is 30 %</h2>
  *
  * <p>70 % of the window belongs to the conversation; the last 30 % is kept back.
@@ -65,9 +73,20 @@ import java.util.function.IntSupplier;
  * {@code CompactionThresholdTest} rather than only asserted here — a number a
  * comment remembers is the third place a stale claim lives.</p>
  *
- * <p><b>An explicit setting always wins.</b> {@code compactionThreshold} in the
- * settings hierarchy is the lever, and a number the operator typed is knowledge
- * the harness does not have. Only an UNSET threshold is derived.</p>
+ * <p><b>An explicit setting wins over everything the harness learns.</b>
+ * {@code compactionThreshold} in the settings hierarchy is the lever, and a
+ * number the operator typed is knowledge the harness does not have. Only an
+ * UNSET threshold is derived.</p>
+ *
+ * <h2>The fifth fact, above all four (card 390)</h2>
+ *
+ * <p>The window the operator sets for one session from the context ring
+ * ({@link Source#WINDOW_OVERRIDE}) outranks the four above, the explicit
+ * setting included: the settings key is a standing choice, the session window
+ * is the choice for this session, made while looking at the ring. The
+ * threshold is 70 % of it, like any window. The four-argument forms of
+ * {@code derive} take it; the three-argument forms are the same decision with
+ * no session window.</p>
  */
 public final class CompactionThreshold {
 
@@ -97,16 +116,26 @@ public final class CompactionThreshold {
     private static final int MIN_SUMMARY_TOKENS = 512;
 
     /** Which fact produced the threshold — carried on {@code context_info} so
-     *  the gauge's caption and the harness's behaviour cannot disagree again. */
+     *  the gauge's divisor, caption and the harness's behaviour cannot
+     *  disagree again. */
     public enum Source {
         /** An explicit {@code compactionThreshold} in the settings hierarchy. */
         OVERRIDE,
         /** The window the backend says the LOADED instance actually serves. */
         WINDOW,
-        /** The window the model's vendor PUBLISHES — {@link ModelWindows}. */
+        /** The window PUBLISHED for the model id: the figure the backend
+         *  states for it ({@code LlmProvider.publishedWindow()}, card 391),
+         *  else {@link ModelWindows}. */
         MODEL,
         /** Nothing was learned — {@link #FALLBACK_THRESHOLD}. */
-        FALLBACK;
+        FALLBACK,
+        /** The window the operator set for this session (card 390), from the
+         *  context ring. It outranks every other source, the explicit
+         *  {@code compactionThreshold} included, and the threshold is the same
+         *  share of it as of any other window. Declared last so the ordinals
+         *  of the four older constants do not move; the precedence lives in
+         *  {@link #derive(Integer, int, String, int)}, not in this order. */
+        WINDOW_OVERRIDE;
 
         /** @return the lowercase name this source rides the wire under */
         public String wireName() {
@@ -167,7 +196,25 @@ public final class CompactionThreshold {
      *         window behind that fact
      */
     public static Derived derive(Integer override, int reportedWindow, String model) {
-        int published = ModelWindows.windowFor(model);
+        return decide(override, reportedWindow, 0, model);
+    }
+
+    /**
+     * The eager decision with the backend's published figure as an argument
+     * (card 391): a positive {@code backendPublished} is the MODEL rung, and
+     * {@link ModelWindows} is read only when it is 0 or less.
+     *
+     * @param override         the configured {@code compactionThreshold}, or null
+     * @param reportedWindow   the backend's LOADED window, or 0
+     * @param backendPublished the window the backend publishes for the model
+     *                         id, or 0
+     * @param model            the model id, for {@link ModelWindows}
+     * @return the threshold to compact at, the fact that produced it, and the
+     *         window behind that fact
+     */
+    private static Derived decide(Integer override, int reportedWindow, int backendPublished,
+                                  String model) {
+        int published = backendPublished > 0 ? backendPublished : ModelWindows.windowFor(model);
         // The best window KNOWN, whichever rung the threshold ends up on: an
         // override decides the number, and the gauge still gets to name what
         // that number sits inside. THIS IS THE ONLY PLACE an OVERRIDE's window
@@ -254,6 +301,87 @@ public final class CompactionThreshold {
     }
 
     /**
+     * The whole decision with the window the operator set for this session
+     * (card 390) on top: when {@code sessionWindow} is positive it decides
+     * alone, and the threshold is the same 70 % of it as of any other window.
+     * It outranks the explicit {@code compactionThreshold} as well, because it
+     * is the operator's choice for this one session and the settings key is a
+     * standing one. With {@code sessionWindow} at 0 or below the answer is
+     * exactly {@link #derive(Integer, int, String)}'s.
+     *
+     * @param override       the configured {@code compactionThreshold}, or null
+     * @param reportedWindow the backend's stated window, or 0
+     * @param model          the model id the run is addressed to, or null
+     * @param sessionWindow  the window the operator set for this session, or 0
+     *                       when none is set; the range a person may type is
+     *                       checked by the server before the value gets here
+     * @return the threshold to compact at, the fact that produced it, and the
+     *         window behind that fact
+     */
+    public static Derived derive(Integer override, int reportedWindow, String model, int sessionWindow) {
+        if (sessionWindow > 0) {
+            return new Derived(share(sessionWindow), Source.WINDOW_OVERRIDE, sessionWindow);
+        }
+        return derive(override, reportedWindow, model);
+    }
+
+    /**
+     * The lazy decision with the session window on top (card 390). While a
+     * session window is set the backend is not asked: its answer could not
+     * change the outcome.
+     *
+     * @param override       the configured {@code compactionThreshold}, or null
+     * @param reportedWindow how to ask the provider; called at most once, and
+     *                       not at all while a session window or an explicit
+     *                       threshold decides
+     * @param model          the model id the run is addressed to, or null
+     * @param sessionWindow  the window the operator set for this session, or 0
+     * @return the threshold to compact at, the fact that produced it, and the
+     *         window behind that fact
+     */
+    public static Derived derive(Integer override, IntSupplier reportedWindow, String model, int sessionWindow) {
+        if (sessionWindow > 0) {
+            return derive(override, 0, model, sessionWindow);
+        }
+        return derive(override, reportedWindow, model);
+    }
+
+    /**
+     * The lazy decision with the window the BACKEND publishes for the model id
+     * (card 391) on the MODEL rung, consulted before {@link ModelWindows}. Each
+     * question is asked only when its answer can still change the outcome:
+     * neither while a session window or an explicit threshold decides, and the
+     * published one not when the loaded window is known. Under an explicit
+     * threshold the window named beside it is the table's, as in the other
+     * lazy forms.
+     *
+     * @param override        the configured {@code compactionThreshold}, or null
+     * @param reportedWindow  how to ask the provider for its LOADED window;
+     *                        called at most once
+     * @param publishedWindow how to ask the provider for the window it
+     *                        publishes for the model id; called at most once,
+     *                        and only after the loaded window answered 0 or less
+     * @param model           the model id the run is addressed to, or null
+     * @param sessionWindow   the window the operator set for this session, or 0
+     * @return the threshold to compact at, the fact that produced it, and the
+     *         window behind that fact
+     */
+    public static Derived derive(Integer override, IntSupplier reportedWindow,
+                                 IntSupplier publishedWindow, String model, int sessionWindow) {
+        if (sessionWindow > 0) {
+            return derive(override, 0, model, sessionWindow);
+        }
+        if (isSet(override)) {
+            return derive(override, 0, model);
+        }
+        int reported = reportedWindow.getAsInt();
+        if (reported > 0) {
+            return derive(null, reported, model);
+        }
+        return decide(null, 0, publishedWindow.getAsInt(), model);
+    }
+
+    /**
      * What the compaction summarizer may spend on its own completion.
      *
      * <p>The summarizer asked for a flat {@link Agent#DEFAULT_MAX_TOKENS}
@@ -277,7 +405,8 @@ public final class CompactionThreshold {
      * @return the {@code maxTokens} for the summarizer's request
      */
     public static int summaryBudget(Derived derived) {
-        boolean fromWindow = derived.source() == Source.WINDOW || derived.source() == Source.MODEL;
+        boolean fromWindow = derived.source() == Source.WINDOW || derived.source() == Source.MODEL
+                || derived.source() == Source.WINDOW_OVERRIDE;
         if (!fromWindow || derived.window() <= 0) {
             return Agent.DEFAULT_MAX_TOKENS;
         }

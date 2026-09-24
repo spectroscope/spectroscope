@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** A WebSocketSession that records instead of transmitting. */
@@ -25,7 +26,14 @@ public final class FakeSocket implements WebSocketSession {
     private final URI uri;
     private final ByteArrayOutputStream binary = new ByteArrayOutputStream();
     final List<String> text = new ArrayList<>();
+    /** Card 395: System.nanoTime() when each text frame was recorded, index for index with {@link #text}. */
+    final List<Long> textArrivedAt = new ArrayList<>();
     public final AtomicReference<CloseStatus> closed = new AtomicReference<>();
+
+    /** Card 395: what one frame costs the modelled client, in nanoseconds. Zero records at once. */
+    private volatile long frameCostNanos;
+    /** Card 395: a frame in its paced wait gives up the wait when the socket closes. */
+    private final Object pacing = new Object();
 
     public FakeSocket(String id, String uri) {
         this.id = id;
@@ -41,14 +49,75 @@ public final class FakeSocket implements WebSocketSession {
         return String.join("\n", text);
     }
 
+    /**
+     * Card 395: models a client that needs this long per frame before it takes
+     * the next one, the way a browser tab behind on its own rendering holds a
+     * blocking server send. The wait happens outside this socket's monitor, so
+     * a test reading the recorded frames is never held up by it, and it ends
+     * early when the socket closes.
+     *
+     * @param perFrame the time one frame costs; zero turns pacing off again
+     */
+    public void costPerFrame(java.time.Duration perFrame) {
+        frameCostNanos = perFrame.toNanos();
+        synchronized (pacing) {
+            pacing.notifyAll();
+        }
+    }
+
+    /**
+     * A copy of the recorded text frames and their arrival times.
+     *
+     * @return the frames in arrival order, each with its System.nanoTime() stamp
+     */
+    public synchronized List<Frame> frames() {
+        List<Frame> out = new ArrayList<>(text.size());
+        for (int i = 0; i < text.size(); i++) {
+            out.add(new Frame(text.get(i), textArrivedAt.get(i)));
+        }
+        return out;
+    }
+
+    /**
+     * One recorded text frame.
+     *
+     * @param payload   the frame text as the server sent it
+     * @param arrivedAt System.nanoTime() once the modelled client had taken it
+     */
+    public record Frame(String payload, long arrivedAt) {}
+
     @Override
-    public synchronized void sendMessage(WebSocketMessage<?> message) {
-        if (message instanceof BinaryMessage bin) {
-            byte[] bytes = new byte[bin.getPayload().remaining()];
-            bin.getPayload().get(bytes);
-            binary.write(bytes, 0, bytes.length);
-        } else if (message instanceof TextMessage txt) {
-            text.add(txt.getPayload());
+    public void sendMessage(WebSocketMessage<?> message) {
+        pace();
+        synchronized (this) {
+            if (message instanceof BinaryMessage bin) {
+                byte[] bytes = new byte[bin.getPayload().remaining()];
+                bin.getPayload().get(bytes);
+                binary.write(bytes, 0, bytes.length);
+            } else if (message instanceof TextMessage txt) {
+                text.add(txt.getPayload());
+                textArrivedAt.add(System.nanoTime());
+            }
+        }
+    }
+
+    /** Waits out the modelled per-frame cost; returns early when pacing is switched off or the socket closes. */
+    private void pace() {
+        long cost = frameCostNanos;
+        if (cost <= 0) {
+            return;
+        }
+        long until = System.nanoTime() + cost;
+        synchronized (pacing) {
+            long left;
+            while (frameCostNanos > 0 && isOpen() && (left = until - System.nanoTime()) > 0) {
+                try {
+                    TimeUnit.NANOSECONDS.timedWait(pacing, left);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
         }
     }
 
@@ -122,11 +191,14 @@ public final class FakeSocket implements WebSocketSession {
 
     @Override
     public void close() {
-        closed.compareAndSet(null, CloseStatus.NORMAL);
+        close(CloseStatus.NORMAL);
     }
 
     @Override
     public void close(CloseStatus status) {
         closed.compareAndSet(null, status);
+        synchronized (pacing) {
+            pacing.notifyAll();
+        }
     }
 }

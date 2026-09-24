@@ -7,6 +7,7 @@ import type { AskedQuestionWire, ClientMessage, RunEvent } from "../events";
 import type { WorkspaceMode } from "../workspace/paneState";
 
 import type { ToolResultDetail } from "../import/toolResultDetail";
+import type { ThresholdSource } from "../wire/thresholdSources";
 
 export interface ToolCard {
   callId: string;
@@ -59,7 +60,14 @@ export interface ToolCard {
 export type UserAttachment = { name: string; mediaType: string; dataBase64: string };
 
 export type Turn =
-  | { kind: "user"; text: string; attachments?: UserAttachment[] }
+  | {
+      kind: "user";
+      text: string;
+      attachments?: UserAttachment[];
+      /** Set only on a steering message (card 380): whether the run read it or
+       *  ended first. Absent on every ordinary prompt. */
+      steer?: "delivered" | "undelivered";
+    }
   | {
       kind: "assistant";
       agentId: string;
@@ -170,7 +178,7 @@ export interface ContextSnapshot {
   threshold: number;
   /** Where `threshold` came from, when the frame said (card 300). Absent =
    *  the frame stated nothing, which is not the same as "fallback". */
-  thresholdSource?: "override" | "window" | "model" | "fallback";
+  thresholdSource?: ThresholdSource;
   /** The window `threshold` was measured against, when the frame said (card
    *  366). Absent = the run learned no window; the gauge then names none
    *  rather than guessing one. */
@@ -319,8 +327,13 @@ export interface UiState {
    */
   rootAgentId: string | null;
   /** True while thinking_delta is streaming for the current turn and no answer
-   *  text or tool call has arrived yet — drives the live "thinking…" indicator. */
+   *  text or tool call has arrived yet. Any agent's delta sets or clears it. */
   thinkingActive: boolean;
+  /** Card 395: the same fact per agent, so two children thinking at once both
+   *  show it. An agent is listed from its thinking_delta until its own
+   *  text_delta, its own tool_call, its own run_end or the root's run_end.
+   *  {@link liveThinkingTurns} reads it for the live "thinking…" indicator. */
+  thinkingAgents: string[];
   /** Parked on send, picked up by the root run_start case — the user
    *  bubble is created by the reducer, so there is no local echo to hang the
    *  thumbnails on. */
@@ -384,6 +397,7 @@ export const initialState: UiState = {
   lastInputTokens: 0,
   rootAgentId: null,
   thinkingActive: false,
+  thinkingAgents: [],
   outboxAttachments: null,
   importedAttachments: undefined,
   agents: [],
@@ -573,6 +587,59 @@ const GOAL_OUTCOMES: ReadonlySet<string> = new Set(["met", "unmet", "unknown"]);
 import { CLEAN_FINISHES, stopReasonKey } from "./stopReason";
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
+
+/** Which agent a flat turn belongs to, the way threads.ts ownerOf assigns it:
+ *  an assistant turn by its agentId, a tool turn by its card, a line by its
+ *  agentId, and everything else, a user turn included, by the run's own agent
+ *  (here read off rootAgentId). */
+function turnOwner(state: Pick<UiState, "cards" | "rootAgentId">, turn: Turn): string {
+  const root = state.rootAgentId ?? "main";
+  switch (turn.kind) {
+    case "assistant":
+      return turn.agentId;
+    case "tool":
+      return state.cards[turn.callId]?.agentId ?? root;
+    case "info":
+    case "error":
+      return turn.agentId ?? root;
+    default:
+      return root;
+  }
+}
+
+/** Card 395: the index of the agent's open assistant turn, the one its next
+ *  delta joins. It is the agent's latest turn of any kind when that turn is an
+ *  assistant turn, and -1 when the agent has no turn yet or its latest is a
+ *  tool call, a line or a user turn. {@link turnOwner} says whose turn that
+ *  is: a line with no agentId and every user turn (a prompt or a steering
+ *  message) belong to the root, so they end the root's phase. Other
+ *  agents' turns after it do not close it, so two children thinking at once
+ *  keep one block each. */
+function openAssistantTurn(state: Pick<UiState, "turns" | "cards" | "rootAgentId">, agentId: string): number {
+  for (let i = state.turns.length - 1; i >= 0; i--) {
+    const turn = state.turns[i];
+    if (turnOwner(state, turn) !== agentId) continue;
+    return turn.kind === "assistant" ? i : -1;
+  }
+  return -1;
+}
+
+/** Card 395: the indices of the turns that show the live "thinking…" marker,
+ *  one per agent in {@link UiState.thinkingAgents}: that agent's open
+ *  assistant turn. */
+export function liveThinkingTurns(
+  state: Pick<UiState, "turns" | "cards" | "rootAgentId" | "thinkingAgents">,
+): Set<number> {
+  const live = new Set<number>();
+  for (const agentId of state.thinkingAgents) {
+    const open = openAssistantTurn(state, agentId);
+    if (open >= 0) live.add(open);
+  }
+  return live;
+}
+
+const withoutThinking = (agents: string[], agentId: string): string[] =>
+  agents.includes(agentId) ? agents.filter((id) => id !== agentId) : agents;
 
 // An append copies the trace, so a fold costs O(rows²): measured 6000 rows in
 // 16 ms / +5 MB, 50 000 in 2.7 s / +116 MB. A session's worth is cheap; anything
@@ -871,21 +938,26 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       return state;
 
     case "thinking_delta": {
-      // Reasoning stream: appends to the current assistant turn's thinking buffer,
-      // creating the turn if none is open for this agent. Marks thinking active —
+      // Reasoning stream: appends to the agent's open assistant turn, creating
+      // the turn if the agent has none open. Card 395: the open turn is the
+      // agent's latest turn even when other agents' turns came after it, so
+      // children thinking at once each keep one block. Marks thinking active:
       // the disclosure header pulses until the answer (or a tool) arrives.
-      const last = state.turns[state.turns.length - 1];
-      if (last !== undefined && last.kind === "assistant" && last.agentId === event.agentId) {
-        return {
-          ...state,
-          thinkingActive: true,
-          turns: [...state.turns.slice(0, -1), { ...last, thinking: last.thinking + event.text }],
-        };
+      const thinkingAgents = state.thinkingAgents.includes(event.agentId)
+        ? state.thinkingAgents
+        : [...state.thinkingAgents, event.agentId];
+      const open = openAssistantTurn(state, event.agentId);
+      const own = open >= 0 ? state.turns[open] : undefined;
+      if (own !== undefined && own.kind === "assistant") {
+        const turns = state.turns.slice();
+        turns[open] = { ...own, thinking: own.thinking + event.text };
+        return { ...state, thinkingActive: true, thinkingAgents, turns };
       }
       return addTurn(
         {
           ...state,
           thinkingActive: true,
+          thinkingAgents,
           assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
         },
         { kind: "assistant", agentId: event.agentId, text: "", thinking: event.text },
@@ -894,19 +966,21 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
 
     case "text_delta": {
       // The answer begins: thinking for this turn is settled (the buffer stays for
-      // the disclosure, but the live indicator stops).
-      const last = state.turns[state.turns.length - 1];
-      if (last !== undefined && last.kind === "assistant" && last.agentId === event.agentId) {
-        return {
-          ...state,
-          thinkingActive: false,
-          turns: [...state.turns.slice(0, -1), { ...last, text: last.text + event.text }],
-        };
+      // the disclosure, but the live indicator stops). Joins the agent's open
+      // assistant turn by the same rule as thinking_delta.
+      const thinkingAgents = withoutThinking(state.thinkingAgents, event.agentId);
+      const open = openAssistantTurn(state, event.agentId);
+      const own = open >= 0 ? state.turns[open] : undefined;
+      if (own !== undefined && own.kind === "assistant") {
+        const turns = state.turns.slice();
+        turns[open] = { ...own, text: own.text + event.text };
+        return { ...state, thinkingActive: false, thinkingAgents, turns };
       }
       return addTurn(
         {
           ...state,
           thinkingActive: false,
+          thinkingAgents,
           assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
         },
         { kind: "assistant", agentId: event.agentId, text: event.text, thinking: "" },
@@ -933,6 +1007,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         {
           ...state,
           thinkingActive: false,
+          thinkingAgents: withoutThinking(state.thinkingAgents, event.agentId),
           cards: { ...state.cards, [card.callId]: card },
           ...(held !== undefined ? { orphanCardImages: orphans } : {}),
           // Card 265, belt and braces: tool_call is emitted BEFORE the tool
@@ -1272,8 +1347,14 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     }
 
     case "run_end": {
-      // A subagent's run_end must not flip the UI to "ready" mid-run.
-      if (state.rootRunId !== null && event.runId !== state.rootRunId) return state;
+      // A subagent's run_end must not flip the UI to "ready" mid-run. Card 395:
+      // it does take that child off the live thinking marker.
+      if (state.rootRunId !== null && event.runId !== state.rootRunId) {
+        const child = state.agents.find((a) => a.runId === event.runId && a.parentId !== null);
+        if (child === undefined) return state;
+        const thinkingAgents = withoutThinking(state.thinkingAgents, child.id);
+        return thinkingAgents === state.thinkingAgents ? state : { ...state, thinkingAgents };
+      }
       // Card 282, criterion 8. The owner's report was a session whose last
       // visible line was a green tool result: run_end carried max_turns and the
       // transcript drew nothing, while the footer said "gestoppt · max_turns"
@@ -1298,8 +1379,38 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         rootRunId: null,
         runStartTs: null,
         thinkingActive: false,
+        thinkingAgents: [],
         lastStopReason: event.stopReason,
       };
+    }
+
+    // Card 380: the operator handed the running turn a sentence. It is drawn as
+    // an OPERATOR turn, never as the agent's own text. That is not cosmetic:
+    // operator words that read back as model output are unrecoverable, because
+    // nothing in the record afterwards says which they were. Card 141 fixed the
+    // same defect on the import path.
+    //
+    // A message the run never read gets a second line saying so, and since the
+    // fix round of 2026-09-24 that is every exit, not the turn cap alone. The
+    // sentence is still drawn, because the operator did type it and watching it
+    // vanish off the screen is its own loss; the mark and the note keep the
+    // drawing from claiming a delivery that never happened. The note says where
+    // the text went: the page puts it back in the waiting line and it starts the
+    // next run (owner call 3).
+    case "steering_message": {
+      const said = addTurn(state, {
+        kind: "user",
+        text: event.text,
+        steer: event.taken ? "delivered" : "undelivered",
+      });
+      return event.taken
+        ? said
+        : addTurn(said, {
+            kind: "info",
+            text: "The run ended before it read the steering message. It goes out as the next message.",
+            infoKey: "chat.steerNotTaken",
+            tone: "warn",
+          });
     }
 
     case "error":
@@ -1347,6 +1458,26 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           ...(event.thresholdSource === undefined ? {} : { thresholdSource: event.thresholdSource }),
           ...(event.contextWindow === undefined ? {} : { contextWindow: event.contextWindow }),
           parts: event.parts,
+        },
+      };
+
+    case "window_override":
+      // Card 390: the server's answer to the operator setting or clearing the
+      // window for this session. It moves the ring at once by replacing the
+      // three fields that follow from the choice; what only a run measures
+      // (turn, messages, estimate, parts) stays. Before the first context_info
+      // there is no snapshot, and none is invented.
+      if (state.context === null) return state;
+      return {
+        ...state,
+        context: {
+          turn: state.context.turn,
+          messages: state.context.messages,
+          estimatedTokens: state.context.estimatedTokens,
+          threshold: event.threshold,
+          ...(event.thresholdSource === undefined ? {} : { thresholdSource: event.thresholdSource }),
+          ...(event.contextWindow === undefined ? {} : { contextWindow: event.contextWindow }),
+          parts: state.context.parts,
         },
       };
 
@@ -1457,6 +1588,7 @@ export function normalizeReplay(state: UiState): UiState {
     rootRunId: null,
     runStartTs: null,
     thinkingActive: false,
+    thinkingAgents: [],
     pendingPermissions: [],
     // Card 265, criterion 8: an imported or archived transcript NEVER shows a
     // live question. An interrupted one carries a tool_call whose result never

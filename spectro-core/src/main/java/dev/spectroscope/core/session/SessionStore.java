@@ -348,6 +348,47 @@ public final class SessionStore {
     }
 
     /**
+     * The context window the operator set for a stored session, as its own
+     * record carries it (card 390).
+     *
+     * <p>The LAST {@code window_override} line decides, because every set and
+     * every clear writes one: a set gives its value, a clear gives null. Read
+     * line by line like {@link #recordedWorkspace}, and only lines naming the
+     * type are parsed; a {@code context_info} line that names the source in its
+     * {@code thresholdSource} is skipped by the same filter. A torn line is
+     * skipped, so a crash in the middle of a write leaves the line before it in
+     * force.</p>
+     *
+     * @param id the session id to read
+     * @return the window in tokens, or null when the file names none, the last
+     *         line is a clear, or the file is missing or unreadable
+     */
+    public static Integer recordedWindowOverride(String id) {
+        Integer last = null;
+        try {
+            Path path = sessionFile(id);
+            if (!Files.isRegularFile(path)) {
+                return null;
+            }
+            for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
+                if (!line.contains("\"type\":\"window_override\"")) {
+                    continue;
+                }
+                try {
+                    if (JSON.readValue(line, RunEvent.class) instanceof RunEvent.WindowOverride choice) {
+                        last = choice.tokens() != null && choice.tokens() > 0 ? choice.tokens() : null;
+                    }
+                } catch (IOException torn) {
+                    // A truncated line is not a choice; the one before it stands.
+                }
+            }
+        } catch (IOException unreadable) {
+            return null;
+        }
+        return last;
+    }
+
+    /**
      * Reads a session's events. A truncated last line (crash mid-write) is
      * discarded: each line is parsed in its own try/catch. The id goes through
      * {@link #sessionFile(String)} first — a traversal id never reaches the
@@ -862,6 +903,12 @@ public final class SessionStore {
             // Card 267: the check grades ONE agent's run, so its verdict
             // belongs to that agent — the same reason the two above do.
             case RunEvent.GoalCheck e -> e.agentId();
+            // Card 380: the sentence was typed by a person, but it reached ONE
+            // agent's loop and changed what that agent read next. The rail it
+            // belongs on is that agent's, for the same reason the three above
+            // are: a correction handed to a child must not read as a correction
+            // of the run that spawned it.
+            case RunEvent.SteeringMessage e -> e.agentId();
             // Card 337: a human's hand on the play button. There is no agent to
             // attribute it to, and inventing one would put an operator's action
             // on some model's rail.
@@ -874,6 +921,10 @@ public final class SessionStore {
             // for one agent — every agent in it reads the same settings, so
             // attributing the refusal to one of them would be an invention.
             case RunEvent.SettingsIgnored e -> null;
+            // Card 390: the operator set the window for the SESSION from the
+            // ring. Every agent in it reads the same holder, so attributing
+            // the choice to one of them would be an invention.
+            case RunEvent.WindowOverride e -> null;
             case RunEvent.RunEnd e -> null;
         });
     }

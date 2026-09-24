@@ -16,24 +16,15 @@
 
 import { t, type Lang } from "../i18n/i18n";
 import type { SettingsView } from "../state/serverSettings";
+import { NumberField } from "./settingsNumberField";
 import { OriginRow } from "./settingsOrigin";
 import { ReachBlock } from "./settingsReach";
 
-/** The two keys, with the floor each input refuses to go under. The dock's own
- *  minimum is the ceiling's floor: a ceiling below it would make every drag
- *  illegal, and readDockWidths heals such a value back to the shipped one
- *  anyway — the input says so before the healing has to. */
-const FIELDS = [
-  ["chatReserveWidth", 0],
-  ["dockMaxWidth", 260],
-] as const;
-
-/** Reads a width out of the resolved view, tolerating a null the server sends
- *  for a field no layer set. */
-function px(view: SettingsView, field: string): number {
-  const raw = view.effective[field];
-  return typeof raw === "number" ? raw : 0;
-}
+/** The two keys. Their floors come from the server's table since card 386:
+ *  the ceiling's floor is the dock's own minimum, because a ceiling below it
+ *  would make every drag illegal, and readDockWidths heals such a value back
+ *  to the shipped one. */
+const FIELDS = ["chatReserveWidth", "dockMaxWidth"] as const;
 
 /**
  * The dock-width block of the settings page's general room.
@@ -57,15 +48,10 @@ export function DockWidthSettings({
       <p className="settings-note">{t(lang, "set.dockWidthHint")}</p>
       <ReachBlock lang={lang} fields={["chatReserveWidth", "dockMaxWidth"]} note="set.dockWidthApplies">
         <div className="settings-grid">
-          {FIELDS.map(([field, floor]) => (
+          {FIELDS.map((field) => (
             <label key={field} className="settings-field" data-dock-field={field}>
               <span>{t(lang, `set.${field}`)}</span>
-              <input
-                type="number"
-                min={floor}
-                value={px(view, field)}
-                onChange={(e) => onSave({ [field]: Number(e.target.value) })}
-              />
+              <NumberField view={view} field={field} lang={lang} onSave={onSave} />
               <p className="settings-note">{t(lang, `set.${field}Note`)}</p>
               <OriginRow view={view} field={field} lang={lang} onReset={() => onSave({ [field]: null })} />
             </label>

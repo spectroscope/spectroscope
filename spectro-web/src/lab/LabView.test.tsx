@@ -60,7 +60,6 @@ const render = (): string =>
       liveEvents={[]}
       running={false}
       onSend={() => {}}
-      onDecide={() => {}}
       onReturnToLive={() => {}}
       sendClient={() => true}
     />,
@@ -171,7 +170,6 @@ describe("the Lab hands the open run's declaration to the lens", () => {
         liveEvents={[]}
         running={false}
         onSend={() => {}}
-        onDecide={() => {}}
         onReturnToLive={() => {}}
         sendClient={() => true}
       />,

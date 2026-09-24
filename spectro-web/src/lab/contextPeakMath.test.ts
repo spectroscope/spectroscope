@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from "vitest";
 import { contextPeaks } from "./contextPeakMath";
-import { contextDenominator } from "../components/contextRingMath";
+import { contextDenominator, contextGauge } from "../components/contextRingMath";
 import { agentDirectory } from "./agentDirectory";
+import { contextPeakOf } from "./ContextPeak";
 import { deriveDetail } from "./flowmap/sceneToFlow";
 import type { RunEvent } from "../events";
 
@@ -302,20 +303,31 @@ describe("the lab and the header ring divide by the same number", () => {
   });
 
   it("and so does the cloud run that shape has become", () => {
-    // The same run after card 366: 1M published, 700k threshold, and both
-    // surfaces divide by the number the harness will actually compact at.
-    const reported = { threshold: 700_000, source: "model" as const };
+    // The same run after card 366: 1M published, 700k threshold.
+    //
+    // CARD 377 REPLACED THIS ASSERTION RATHER THAN MOVING IT, and the old one
+    // is why. It compared the lab against `contextDenominator(700_000,
+    // 1_000_000)` while the lab's own fixture carried no window at all, so it
+    // would have stayed green while the ring divided by 1,000,000 and this
+    // panel by 700,000, which is the exact disagreement the whole describe
+    // block is named after. The window is now ON the fixture, and both sides
+    // read the function the ring reads.
+    const reported = { threshold: 700_000, source: "model" as const, window: 1_000_000 };
     const lab = table([start("main", "claude-opus-4-6"), usage("main", 350_000)], reported);
-    expect(lab.rows[0].denominator).toEqual(contextDenominator(700_000, 1_000_000));
-    expect(lab.rows[0].pct).toBe(50);
+    expect(lab.rows[0].denominator).toEqual(
+      contextGauge(reported.threshold, reported.window, reported.source).denominator,
+    );
+    expect(lab.rows[0].denominator).toEqual({ value: 1_000_000, of: "window" });
+    expect(lab.rows[0].pct).toBe(35);
   });
 
   it("and so does a run whose threshold the operator typed", () => {
-    const lab = table([start("main", "gpt-4o"), usage("main", 2_500)], {
-      threshold: 5_000,
-      source: "override",
-    });
-    expect(lab.rows[0].denominator).toEqual(contextDenominator(5_000, 128_000));
+    const reported = { threshold: 5_000, source: "override" as const, window: 128_000 };
+    const lab = table([start("main", "gpt-4o"), usage("main", 2_500)], reported);
+    expect(lab.rows[0].denominator).toEqual(
+      contextGauge(reported.threshold, reported.window, reported.source).denominator,
+    );
+    expect(lab.rows[0].denominator).toEqual({ value: 5_000, of: "compaction" });
   });
 
   it("…and where the ring has nothing to divide by, the lab prints nothing", () => {
@@ -369,5 +381,104 @@ describe("the shape at the edges", () => {
     const t = table([...CHILDREN, usage("kid-a", 12_000)]);
     expect(t.rows.map((r) => r.tag)).toEqual(["w1"]);
     expect(t.notes).toEqual(["childrenNoWindow"]);
+  });
+});
+
+// CARD 377: the lab moves with the ring. The panel receives the window the
+// transcript states, and the root's percentage is a share of it.
+describe("the window the transcript states is the root's divisor (card 377)", () => {
+  it("the owner's own run: 143k of a loaded 250,368, and the note names the window", () => {
+    const t = table([start("main", "qwen3.8-flash-next@q4_k_xl"), usage("main", 143_000)], {
+      threshold: 175_257,
+      source: "window",
+      window: 250_368,
+    });
+    expect(t.rows[0].denominator).toEqual({ value: 250_368, of: "window" });
+    expect(t.rows[0].pct).toBe(57);
+    // REPLACED, not loosened: this asserted `measured`, whose sentence names
+    // the THRESHOLD (175,257) while the row beside it divides by 250,368.
+    // The note has to name the divisor the row uses, and `window` does.
+    expect(t.notes).toContain("window");
+    expect(t.notes).not.toContain("measured");
+    expect(t.notes).not.toContain("published");
+  });
+
+  it("a cloud run divides by the published window, and the note names the window too", () => {
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 350_000)], {
+      threshold: 700_000,
+      source: "model",
+      window: 1_000_000,
+    });
+    expect(t.rows[0].denominator).toEqual({ value: 1_000_000, of: "window" });
+    expect(t.rows[0].pct).toBe(35);
+    // REPLACED, not loosened: `published`'s sentence names the threshold the
+    // vendor's window produced (700,000), which is not what divides here.
+    expect(t.notes).toContain("modelWindow");
+    expect(t.notes).not.toContain("published");
+  });
+
+  it("an operator-typed threshold stays the divisor even beside a window", () => {
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 2_500)], {
+      threshold: 5_000,
+      source: "override",
+      window: 1_000_000,
+    });
+    expect(t.rows[0].denominator).toEqual({ value: 5_000, of: "compaction" });
+    expect(t.rows[0].pct).toBe(50);
+  });
+
+  it("a transcript carrying no window keeps exactly the reading it had", () => {
+    // Every pre-card-366 recording, and every foreign JSONL.
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 100_000)], {
+      threshold: 175_257,
+      source: "window",
+    });
+    expect(t.rows[0].denominator).toEqual({ value: 175_257, of: "compaction" });
+    expect(t.rows[0].pct).toBe(57);
+  });
+
+  it("and a transcript with no threshold at all still prints no percentage", () => {
+    const t = table([start("main", "claude-opus-4-6"), usage("main", 859_000)]);
+    expect(t.rows[0].denominator).toBeNull();
+    expect(t.rows[0].pct).toBeNull();
+    expect(t.notes).toContain("unknown");
+  });
+});
+
+// The same fact, carried the whole way: a real context_info event, folded by
+// deriveDetail, read by the panel's own join. The three hand-built fixtures
+// above cannot prove the window survives the fold.
+describe("the window reaches the panel through the real join (card 377)", () => {
+  const info = (extra: Record<string, unknown>): RunEvent =>
+    ({
+      type: "context_info",
+      agentId: "main",
+      turn: 1,
+      messages: 4,
+      estimatedTokens: 43_000,
+      threshold: 175_257,
+      parts: [],
+      ts: 5,
+      ...extra,
+    }) as RunEvent;
+
+  it("a context_info frame stating a window makes the window the divisor", () => {
+    const t = contextPeakOf([
+      start("main", "qwen3.8-flash-next@q4_k_xl"),
+      info({ thresholdSource: "window", contextWindow: 250_368 }),
+      usage("main", 143_000),
+    ]);
+    expect(t.rows[0].denominator).toEqual({ value: 250_368, of: "window" });
+    expect(t.rows[0].pct).toBe(57);
+  });
+
+  it("a frame stating no window divides by the threshold, as it always did", () => {
+    const t = contextPeakOf([
+      start("main", "qwen3.8-flash-next@q4_k_xl"),
+      info({ thresholdSource: "window" }),
+      usage("main", 143_000),
+    ]);
+    expect(t.rows[0].denominator).toEqual({ value: 175_257, of: "compaction" });
+    expect(t.rows[0].pct).toBe(82);
   });
 });

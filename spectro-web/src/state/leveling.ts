@@ -15,6 +15,30 @@
 /** How much of the ladder is doing work in this home. */
 export type LevelingMode = "ladder" | "checklist" | "off";
 
+/**
+ * The modes in the order every screen that asks about them draws them, guided
+ * first and gone-for-good last.
+ *
+ * Written as a record over the union rather than as a second list, so the two
+ * cannot come apart: a fourth mode added to the type without a place here is a
+ * compile error, and a key here that the type does not know is the same error
+ * from the other side. Before this, the triple was typed by hand in three files
+ * that cannot see each other, and the welcome screen was typed narrower than
+ * the model it asks about.
+ */
+const MODE_ORDER: Record<LevelingMode, null> = { ladder: null, checklist: null, off: null };
+
+/** Every mode, in screen order. */
+export const LEVELING_MODES = Object.keys(MODE_ORDER) as readonly LevelingMode[];
+
+/**
+ * The mode the welcome screen suggests.
+ *
+ * Here rather than in the screen, so that screen holds no mode name of its own
+ * and cannot offer a set of buttons that differs from this list.
+ */
+export const SUGGESTED_MODE: LevelingMode = "ladder";
+
 /** Whether the engine saw it happen or a hand said it did. */
 export type MarkOrigin = "observed" | "manual";
 

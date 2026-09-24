@@ -58,3 +58,27 @@ describe("ctxTotals carries the threshold's provenance (card 300)", () => {
     expect(d.ctxTotals?.threshold).toBe(5_000);
   });
 });
+
+// Card 377: the WINDOW rides the same fold. The panel divides by it now, so a
+// fold that drops it would leave the lab reading a compaction point while the
+// header ring reads the window: one run, two scales.
+describe("ctxTotals carries the window too (card 377)", () => {
+  it("the window arrives when the frame stated one", () => {
+    const d = deriveDetail([rootStart, info({ thresholdSource: "window", contextWindow: 250_368 })]);
+    expect(d.ctxTotals?.contextWindow).toBe(250_368);
+  });
+
+  it("a frame that stated none leaves the key absent, not undefined", () => {
+    const d = deriveDetail([rootStart, info({ thresholdSource: "window" })]);
+    expect("contextWindow" in (d.ctxTotals as object)).toBe(false);
+  });
+
+  it("the latest root frame wins, window included", () => {
+    const d = deriveDetail([
+      rootStart,
+      info({ thresholdSource: "window", contextWindow: 131_072 }),
+      info({ thresholdSource: "window", contextWindow: 250_368, ts: 9 }),
+    ]);
+    expect(d.ctxTotals?.contextWindow).toBe(250_368);
+  });
+});

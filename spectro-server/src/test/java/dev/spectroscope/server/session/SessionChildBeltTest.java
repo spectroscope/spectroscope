@@ -13,11 +13,14 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -321,6 +324,12 @@ class SessionChildBeltTest {
      * that does not come from the expected asker, so a prompt raised under the
      * parent's name would hang this test rather than pass it.
      *
+     * <p>A call is answered, and marked answered, only once the broker holds a
+     * future for it. The loop sends permission_request before it asks the
+     * broker, and {@code onPermissionResponse} drops an answer that finds no
+     * future, so an answer sent on the frame alone could be lost and the run
+     * would not end.</p>
+     *
      * @param connection  the session whose prompts are being answered
      * @param socket      the recording socket the prompts arrive on
      * @param expectedAsker the agentId every prompt in this run must carry
@@ -328,7 +337,9 @@ class SessionChildBeltTest {
      * @return the answering thread, to be interrupted by the caller
      */
     private static Thread answerEveryPromptFrom(SessionConnection connection, FakeSocket socket,
-                                                String expectedAsker, boolean allow) {
+                                                String expectedAsker, boolean allow)
+            throws ReflectiveOperationException {
+        Map<String, CompletableFuture<Boolean>> futures = pending(connection);
         return Thread.ofVirtual().name("card-270-gate").start(() -> {
             List<String> answered = new java.util.ArrayList<>();
             while (!Thread.currentThread().isInterrupted()) {
@@ -338,7 +349,8 @@ class SessionChildBeltTest {
                     }
                     String callId = frame.path("callId").asText();
                     if (answered.contains(callId)
-                            || !expectedAsker.equals(frame.path("agentId").asText())) {
+                            || !expectedAsker.equals(frame.path("agentId").asText())
+                            || !futures.containsKey(callId)) {
                         continue;
                     }
                     answered.add(callId);
@@ -351,6 +363,15 @@ class SessionChildBeltTest {
                 }
             }
         });
+    }
+
+    /** The session's parked permission futures, keyed by callId. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, CompletableFuture<Boolean>> pending(SessionConnection connection)
+            throws ReflectiveOperationException {
+        Field field = SessionConnection.class.getDeclaredField("pending");
+        field.setAccessible(true);
+        return (Map<String, CompletableFuture<Boolean>>) field.get(connection);
     }
 
     /** Who was asked about what, one "agentId|tool" entry per permission prompt. */

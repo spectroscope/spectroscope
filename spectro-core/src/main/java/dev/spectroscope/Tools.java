@@ -62,10 +62,25 @@ public final class Tools {
 
     /** @return the full standard belt, in registration order */
     public static List<Tool> all() {
+        // settings-reach: commandTimeoutSeconds
+        //     | embedded library | this belt is assembled by a JVM program that
+        //     took spectroscope as a dependency, so its numbers come from the
+        //     code that declares them and not from an operator's settings file
+        //     on whatever machine that program happens to run on. A library that
+        //     read one would change an embedder's behaviour because somebody
+        //     else edited a file they have never seen. The facade's surface is
+        //     frozen (konzept/SPECTRO-API.md), so there is no second arity here
+        //     to hand a budget to either; an embedder that wants its own builds
+        //     the belt with StandardTools.all(long) directly.
         return StandardTools.all();
     }
 
     private static Tool byName(String name) {
+        // settings-reach: commandTimeoutSeconds
+        //     | embedded library | the same belt, taken one tool at a time, and
+        //     the path behind Tools.runCommand() itself. Same facade, same
+        //     absence of a settings file it could honestly read, same frozen
+        //     surface.
         return StandardTools.all().stream()
                 .filter(tool -> name.equals(tool.name()))
                 .findFirst()

@@ -15,11 +15,14 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEventHandler, ReactNode } from "react";
 import { DISCLOSURE_LEVELS, setDisclosure, useDisclosure } from "../state/disclosure";
 import { CHAT_WIDTHS, setChatWidth, useChatWidth } from "../state/chatWidth";
+import { ANSWER_LINE_MODES, setAnswerLine, useAnswerLine } from "../state/answerLine";
 import { CHAT_VIEW_MODES, setChatView, useChatView } from "../state/chatView";
 import { setLiveTraceWanted, useLiveTraceWanted } from "../state/liveTrace";
 import { dismissesMenu, MODAL_LAYER } from "./menuDismiss";
+import { RtkFilterSection } from "./RtkFilterSection";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { useRtkFilter } from "../state/rtkFilter";
 
 export interface DisclosureMenuProps {
   /** The session tools' home (card 243, sole home since card 255): export, the
@@ -35,9 +38,11 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
   const lang = useLang();
   const level = useDisclosure();
   const width = useChatWidth();
+  const answerLine = useAnswerLine();
   const chatView = useChatView();
   const liveTrace = useLiveTraceWanted();
   const [open, setOpen] = useState(false);
+  const rtk = useRtkFilter(open);
   const [focusIdx, setFocusIdx] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -168,6 +173,35 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
             </div>
           </div>
 
+          {/* Card 374: how much the line under one answer says. A reading
+              preference like the width below it, so it lives in this menu. The
+              two words are the same two the section above offers, which is why
+              the section head carries the whole burden of telling them apart. */}
+          <div className="wsg-section">
+            <div className="wsg-section-head">
+              <span>{t(lang, "aline.title")}</span>
+            </div>
+            <div className="wsg-modes" role="group" aria-label={t(lang, "aline.title")}>
+              {ANSWER_LINE_MODES.map((m) => (
+                <div
+                  key={m}
+                  role="menuitemradio"
+                  aria-checked={answerLine === m}
+                  className={`wsg-mode-row${answerLine === m ? " wsg-mode-row--active" : ""}`}
+                  onClick={() => setAnswerLine(m)}
+                >
+                  <span className="wsg-mode-marker" aria-hidden="true">
+                    {answerLine === m ? "\u203A" : ""}
+                  </span>
+                  <span className="wsg-mode-body">
+                    <span className="wsg-mode-name mono">{t(lang, `aline.${m}`)}</span>
+                    <span className="wsg-mode-hint">{t(lang, `aline.${m}.hint`)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Owner 2026-07-25: the reading width lives in the same menu — how
               wide the text column may run, not a forced width. */}
           <div className="wsg-section">
@@ -251,6 +285,11 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
               </div>
             </div>
           </div>
+
+          {/* Card 379: the rtk switch, LAST. The owner asked for it "unten in
+              den chat einstellungen", so it sits at the bottom of this menu
+              and adds nothing to the icon row under the field. */}
+          <RtkFilterSection lang={lang} rtk={rtk} />
         </div>
       )}
     </div>

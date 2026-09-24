@@ -42,6 +42,7 @@ export function contextPeakOf(applied: RunEvent[]): ContextPeakTable {
         : {
             threshold: totals.threshold,
             ...(totals.thresholdSource === undefined ? {} : { source: totals.thresholdSource }),
+            ...(totals.contextWindow === undefined ? {} : { window: totals.contextWindow }),
           },
   });
 }

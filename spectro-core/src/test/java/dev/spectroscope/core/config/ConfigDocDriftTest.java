@@ -635,6 +635,82 @@ class ConfigDocDriftTest {
         assertTrue(offences.isEmpty(), String.join("\n", offences));
     }
 
+    /**
+     * Card 386, review round 2. The {@code subagentBudgetSeconds} row said a
+     * zero "is refused when the session's subagent manager is built". Since
+     * card 386 a settings value below its floor never gets that far: a save
+     * is refused and a value in a file is skipped when the file is read. The
+     * floors live in {@link SettingFloors}, so this walks that table: each
+     * floored key's row ends with its own floor, one paragraph says what a
+     * value below a floor does, and the old sentence is gone. It reads the
+     * part and both assembled editions, because the editions are what a
+     * reader opens.
+     *
+     * <p>Wave H1c: the check was "the row names its floor somewhere", while
+     * the card said every row ends with it. Two rows named it mid-sentence
+     * and the check was green; the browser stage found them. It now reads
+     * the end of the last cell.</p>
+     */
+    @Test
+    void everyFlooredKeyRowEndsWithItsFloorAndTheChapterSaysWhatHappensBelowIt()
+            throws IOException {
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        Path root = repoRoot();
+        List<Path> carriers = List.of(source, root.resolve("docs/USER-GUIDE.html"),
+                root.resolve("docs/USER-GUIDE-LIGHT.html"));
+
+        assertFalse(SettingFloors.table().isEmpty(),
+                "SettingFloors holds no floor at all, so the loop below would check nothing");
+        List<String> offences = new ArrayList<>();
+        for (Path carrier : carriers) {
+            String html = Files.readString(carrier);
+            String name = root.relativize(carrier).toString();
+            for (SettingFloors.Floor floor : SettingFloors.table()) {
+                String row = keyRow(html, floor.key()).strip();
+                String ending = "Floor <code>" + floor.floor() + "</code>";
+                String lastCell = row.endsWith("</td>")
+                        ? row.substring(0, row.length() - "</td>".length()).strip()
+                        : row;
+                if (!lastCell.endsWith(ending)) {
+                    offences.add(name + ": the row for \"" + floor.key() + "\" does not end"
+                            + " with \"" + ending + "\", the floor SettingFloors holds it to."
+                            + " It ends: …" + lastCell.substring(Math.max(0, lastCell.length() - 80)));
+                }
+            }
+            // One phrase per fact. Single words were not enough: "skipped"
+            // stands twice in the paragraph, so dropping the sentence about a
+            // read left the check green (bite 24).
+            String rule = paragraphContaining(html, "below its floor").replaceAll("\\s+", " ");
+            for (String fact : List.of(
+                    "save below the floor is refused",
+                    "in a settings file is skipped when the file is read",
+                    "falls back to the layer below",
+                    "settings page names the skipped value")) {
+                assertTrue(rule.contains(fact),
+                        name + ": the paragraph about a value below its floor does not"
+                                + " say \"" + fact + "\". Paragraph: " + rule);
+            }
+            assertFalse(html.contains("refused when the session's subagent manager is built"),
+                    name + " still says a zero subagentBudgetSeconds is refused when the"
+                            + " subagent manager is built; a save refuses it and a read"
+                            + " skips it before that");
+        }
+        assertTrue(offences.isEmpty(), String.join("\n", offences));
+    }
+
+    /** The row whose first cell is {@code key} in the "Every key" table. Other
+     *  rows name keys in their prose, so a search for the key alone can land
+     *  in the wrong row: {@code subagentBudgetSeconds}'s row names
+     *  {@code commandTimeoutSeconds}. */
+    private static String keyRow(String html, String key) {
+        int table = html.indexOf("id=\"ch-config-keys\"");
+        assertTrue(table > 0, "the \"Every key\" table has moved or lost its anchor");
+        int start = html.indexOf("<tr><td><code>" + key + "</code></td>", table);
+        assertTrue(start > 0, "the \"Every key\" table has no row for " + key);
+        return html.substring(start, html.indexOf("</tr>", start));
+    }
+
     /** The row holding {@code marker} inside the "Every key" table — the
      *  deprecation table above it names the same keys in its own cells. */
     private static String rowStartingWith(String html, String marker) {

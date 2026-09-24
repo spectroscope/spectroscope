@@ -140,6 +140,22 @@
   border-style: dashed;
 }
 
+/* Card 386: a value a settings file held below its key's floor, skipped on
+   read. A sentence, so it wraps, and the warning sits on the line. */
+.origin-skipped {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-chip, 8px);
+  padding: 1px var(--sp-2);
+}
+
+/* Card 386: a number field whose draft is empty or below the floor is not
+   saved. The line says so; the note under it says why. */
+.settings-field input[aria-invalid="true"] {
+  border-color: var(--warn);
+}
+
 /* ---- Card 357: the numbers that govern a run -------------------------------
    A reference list, not a form: one row per classified constant, each with a
    name, a value and the code's own words. (A count stood here as a digit, in a
@@ -150,9 +166,6 @@
    the house rule that colour lives on lines. Every token below is one this
    sheet already uses; an invented custom property would fall back to nothing
    and warn nowhere, which is how bus.css lost its borders for months. */
-.gn-filter input {
-  font-family: var(--font-mono);
-}
 
 .gn-group {
   margin-top: var(--sp-3);
@@ -235,6 +248,19 @@
   color: var(--text-dim);
 }
 
+/* Card 381. The shared .copy chip is absolute and opacity:0, revealed by
+   hovering the output well it normally sits in (toolcard.css). There is no
+   well in a reference row, so without this correction the button is invisible
+   AND out of flow: the clipboard still answers a scripted click, which is
+   exactly how a DOM check passes while nobody can see the thing. The same
+   correction about.css and graph.css already make, for the same reason. */
+.gn-head .copy {
+  position: static;
+  opacity: 1;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .gn-why {
   margin: var(--sp-2) 0 0;
   color: var(--text-dim);
@@ -242,4 +268,76 @@
 
 .gn-empty {
   margin-top: var(--sp-2);
+}
+
+/* ---- Card 381: the one search field, and what it points at -----------------
+   The box stands above the room tabs and belongs to the page, not to a room.
+   Its results POINT rather than narrow: a hit names its room and its section
+   and a click walks there, because five of the six rooms are hidden and
+   removing rows from them would show the reader nothing. Every token below
+   already exists in this sheet; an invented custom property resolves to
+   nothing and warns nowhere, which is how bus.css lost its borders. */
+.settings-search {
+  padding: 0 var(--sp-4) var(--sp-2);
+}
+
+.settings-search-field input {
+  font-family: var(--font-mono);
+}
+
+.settings-search-out {
+  margin-top: var(--sp-2);
+}
+
+.settings-hits {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  /* A short query can match most of the page. The list keeps its own scroll so
+     the rooms below it stay reachable without a page-long scroll first. */
+  max-height: 40vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.settings-hit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-2) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-hit:hover,
+.settings-hit:focus-visible {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.settings-hit-what {
+  font-family: var(--font-mono);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-hit-where,
+.settings-hit-kind {
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+  min-width: 0;
+}
+
+/* Which of the three sources a hit came from. Faint: it explains the row, it
+   is not the row. */
+.settings-hit-kind {
+  margin-left: auto;
+  color: var(--text-faint);
 }

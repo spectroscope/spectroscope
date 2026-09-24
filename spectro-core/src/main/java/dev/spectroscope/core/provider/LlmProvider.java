@@ -111,12 +111,36 @@ public interface LlmProvider {
      * distinction being that a ceiling is not what this method asks for.) The
      * sentence here used to end "and lands on the documented fallback", which
      * read "cannot ask" as "cannot know" and left a 1,000,000-token model
-     * compacting at 100,000. Only a backend that states no window AND publishes
-     * none reaches the constant now.</p>
+     * compacting at 100,000. The run reaches the constant only when this method,
+     * {@link #publishedWindow()} and that table all answer 0. That includes a
+     * backend that does publish a window through an endpoint the harness does
+     * not read: until card 391 that was ollama, whose {@code /api/show} names a
+     * {@code context_length} for every cloud model while every run on one
+     * compacted at 100,000.</p>
      *
      * @return the usable context window in tokens, or 0 when nothing is known
      */
     default int contextWindow() {
+        return 0;
+    }
+
+    /**
+     * The window the BACKEND publishes for this provider's model id, asked only
+     * when {@link #contextWindow()} knew nothing (card 391).
+     *
+     * <p>It is the same rung as {@link dev.spectroscope.core.session.ModelWindows}
+     * (source {@code model}), consulted before that table: a figure the backend
+     * states for the id it serves is read off the server, the table is typed by
+     * hand. It ranks BELOW a loaded window for the reason {@link #contextWindow()}
+     * gives: a server can serve less than a model can hold.</p>
+     *
+     * <p>0 means "nothing published", never "no room". A provider that cannot
+     * ask answers 0, and so does one whose question failed; the derivation then
+     * continues to the table and the fallback. It must not throw into a run.</p>
+     *
+     * @return the published context window in tokens, or 0 when nothing is known
+     */
+    default int publishedWindow() {
         return 0;
     }
 

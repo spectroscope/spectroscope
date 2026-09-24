@@ -247,6 +247,11 @@ import java.util.function.Function;
  *                            provider holds a hard 16,000 per call — so this is
  *                            the ceiling the harness asks for, not a promise
  *                            about what a given model grants
+ * @param subagentBudgetSeconds the smallest run budget ONE child agent gets once it
+ *                              has produced its first token, in seconds (card 372)
+ * @param rtkFilter             card 379: {@code "on"} sends the agent's shell
+ *                              lines through the rtk proxy, {@code "off"} runs
+ *                              them as the model wrote them. Ships off
  */
 public record SpectroConfig(
         String provider,
@@ -295,7 +300,157 @@ public record SpectroConfig(
         // Card 364, appended for the reason the three above were: FIELD_PROBES
         // is pinned to this list's ORDER and every positional caller counts
         // from the front.
-        int maxTokens) {
+        int maxTokens,
+        // Card 372: the floor of every child agent's run budget, in seconds.
+        // Appended last, like every key since card 359: FIELD_PROBES is pinned
+        // to this order and every positional caller counts from the front.
+        int subagentBudgetSeconds,
+        // Card 379: "off" or "on". Appended last, like every key since card 359:
+        // FIELD_PROBES is pinned to this order and every positional caller
+        // counts from the front.
+        String rtkFilter) {
+
+    /** Compat: the pre-card-379 arity, which knew no rtk switch. Every caller
+     *  that built a config positionally keeps compiling and gets the shipped
+     *  {@code off}.
+     *
+     * @param provider              the LLM backend
+     * @param model                 the model id
+     * @param baseUrl               the legacy provider address
+     * @param compactionThreshold   input-token level that triggers compaction
+     * @param permissionMode        ask / auto / readonly
+     * @param autoApprove           the allowlist rules
+     * @param imageProvider         the image backend
+     * @param thinking              TRUE requests the reasoning stream
+     * @param mcpServers            the configured MCP servers
+     * @param maxRetries            provider retries
+     * @param promptCaching         TRUE asks the provider to cache the prompt
+     * @param hooks                 the configured shell hooks
+     * @param workspace             the workspace directory
+     * @param logLevel              file-diagnostics level
+     * @param imageModel            the image model id
+     * @param sttModel              the transcription model id
+     * @param sttProvider           auto / local / openai
+     * @param sttLanguage           auto or a language code
+     * @param chromeBinary          the browser binary
+     * @param otlpEndpoint          the trace endpoint
+     * @param otlpBasicAuth         the trace credentials
+     * @param ollamaBaseUrl         ollama's address
+     * @param lmstudioBaseUrl       LM Studio's address
+     * @param searxngUrl            the SearXNG instance
+     * @param allowLocalhost        TRUE lets the net fence dial loopback
+     * @param headlessMcp           TRUE mounts MCP servers in unattended runs
+     * @param progressGuardWrites   identical-write count that speaks
+     * @param progressGuardFailures failing-call count that speaks
+     * @param progressGuardPlanTurns planless turns that speak
+     * @param continuationBudget    continuations per run
+     * @param maxTurns              the runaway-loop brake
+     * @param llamacppBaseUrl       llama.cpp's address
+     * @param questionsPerRun       the ask budget
+     * @param maxQuestionOptions    options per question
+     * @param maxQuestionChars      characters per question
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth      pixels of chat the dock may never take
+     * @param dockMaxWidth          the dock's ceiling
+     * @param maxTokens             the completion budget
+     * @param subagentBudgetSeconds the child run budget floor */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds, int chatReserveWidth,
+                         int dockMaxWidth, int maxTokens, int subagentBudgetSeconds) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp, progressGuardWrites,
+                progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
+                llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, DEFAULT_RTK_FILTER);
+    }
+
+    /**
+     * Compat: the pre-card-372 arity, which knew no child run budget. Every
+     * caller that built a config positionally keeps compiling and gets the
+     * shipped two hours.
+     *
+     * @param provider            the backend id
+     * @param model               the model id
+     * @param baseUrl             the legacy per-provider endpoint override
+     * @param compactionThreshold input tokens that trigger compaction
+     * @param permissionMode      ask / auto / readonly
+     * @param autoApprove         tool names that skip the gate
+     * @param imageProvider       which backend draws
+     * @param thinking            whether reasoning is on
+     * @param mcpServers          the configured MCP servers
+     * @param maxRetries          provider retry count
+     * @param promptCaching       whether the provider caches prompts
+     * @param hooks               the configured shell hooks
+     * @param workspace           the pinned workspace, or null
+     * @param logLevel            the root log level
+     * @param imageModel          the image model id
+     * @param sttModel            the speech model id
+     * @param sttProvider         which backend transcribes
+     * @param sttLanguage         the dictation language
+     * @param chromeBinary        an explicit Chrome path
+     * @param otlpEndpoint        the OTLP collector
+     * @param otlpBasicAuth       its credentials
+     * @param ollamaBaseUrl       the ollama endpoint
+     * @param lmstudioBaseUrl     the LM Studio endpoint
+     * @param searxngUrl          the SearXNG instance
+     * @param allowLocalhost      whether the net fence allows loopback
+     * @param headlessMcp         whether an unattended run mounts MCP servers
+     * @param progressGuardWrites detector 1's count
+     * @param progressGuardFailures detector 2's count
+     * @param progressGuardPlanTurns detector 3's count
+     * @param continuationBudget  how often one run may be restarted
+     * @param maxTurns            the per-run turn ceiling
+     * @param llamacppBaseUrl     the llama.cpp endpoint
+     * @param questionsPerRun     how many questions one run may ask
+     * @param maxQuestionOptions  how many options one question may offer
+     * @param maxQuestionChars    how long one question may be
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth    the chat row the dock may never take
+     * @param dockMaxWidth        the widest the dock may be dragged
+     * @param maxTokens           the completion budget one provider call may spend
+     */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds,
+                         int chatReserveWidth, int dockMaxWidth, int maxTokens) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
+                continuationBudget, maxTurns, llamacppBaseUrl,
+                questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                DEFAULT_SUBAGENT_BUDGET_SECONDS,
+            // Card 379: rtk swallows failures, so the switch ships off.
+            DEFAULT_RTK_FILTER);
+    }
 
     /**
      * Compat: the pre-card-364 arity, which knew no completion budget. Every
@@ -364,7 +519,7 @@ public record SpectroConfig(
                 continuationBudget, maxTurns, llamacppBaseUrl,
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth,
-                DEFAULT_MAX_TOKENS);
+                DEFAULT_MAX_TOKENS, DEFAULT_SUBAGENT_BUDGET_SECONDS);
     }
 
     /**
@@ -697,6 +852,14 @@ public record SpectroConfig(
      *  stopReason: "max_turns"} at step 5 of an 8-step plan. 150 is his number:
      *  above p95 and comfortably above the hundred he asked for.</p>
      *
+     *  <p>Card 373 moved it from 150 to 1000 on 2026-09-17, on the owner's word
+     *  ("setzt die hoch, dass die auch mal über Nacht durcharbeiten können") and
+     *  on a scan of his own session store: 114 runs, the longest 118 turns in
+     *  2 h 10 min, none at or above 150, and an 8 hour night at that pace is
+     *  about 440. 1000 is above the night and above the census p99 of 288, and
+     *  below the census maximum on purpose: a run past a thousand turns on one
+     *  prompt is a loop until proven otherwise, and the key is there to raise.</p>
+     *
      *  <p>It stays PROSE and does not become a test, on the canon's own rule:
      *  these figures are not derivable from this repo, so nothing here could
      *  re-derive them and a test would only restate them. They are therefore
@@ -704,12 +867,20 @@ public record SpectroConfig(
      *  thing — the census was of Claude Code on a million-token model, not of
      *  spectroscope on an arbitrary backend, and only the shape of the work
      *  transfers. What IS pinned is the decision: {@code MaxTurnsSettingTest}
-     *  holds this constant to 150 and to {@code Agent.DEFAULT_MAX_TURNS}.</p> */
+     *  holds this constant to 1000 and to {@code Agent.DEFAULT_MAX_TURNS}.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TURNS, key = "maxTurns")
-    public static final int DEFAULT_MAX_TURNS = 150;
+    public static final int DEFAULT_MAX_TURNS = 1000;
 
-    /** The shipped {@code commandTimeoutSeconds}: ten seconds per shell call —
-     *  card 359 makes the number reachable and does not move it.
+    /** The shipped {@code commandTimeoutSeconds}: fifteen minutes per shell call.
+     *
+     *  <p>Card 359 made the number reachable at ten seconds and left it there,
+     *  and said so in its own out-of-scope list. Card 370 makes it reach every
+     *  run and moves it, on the owner's word of 2026-09-17: "wie lange ein
+     *  Command dauern kann, das muss hoch auf Viertelstunde oder so
+     *  mindestens". The reason he gave is the one an operator meets on the
+     *  first slow call: an {@code npm install} and a cold test run both take
+     *  longer than ten seconds, so under the old default they could only ever
+     *  come back as a timeout.</p>
      *
      *  <p>{@code StandardTools} reads THIS rather than keeping a second copy,
      *  because its own copy is where the defect was: the constant was private,
@@ -726,7 +897,7 @@ public record SpectroConfig(
      *  {@code Process.waitFor} treats it as "do not wait", which fails fast and
      *  visibly rather than hanging.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.SECONDS, key = "commandTimeoutSeconds")
-    public static final int DEFAULT_COMMAND_TIMEOUT_SECONDS = 10;
+    public static final int DEFAULT_COMMAND_TIMEOUT_SECONDS = 900;
 
     /** The shipped {@code chatReserveWidth}: 360 CSS pixels of the chat row the
      *  right dock may never take. Card 242 introduced the reserve because the
@@ -778,6 +949,26 @@ public record SpectroConfig(
      */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "maxTokens")
     public static final int DEFAULT_MAX_TOKENS = 32_000;
+
+    /** The shipped {@code subagentBudgetSeconds}: the floor of a child agent's
+     *  run budget, in seconds. Two hours.
+     *
+     *  <p>Card 372, the owner's number of 2026-09-17: "Die Subagenten-Runtime
+     *  muss auf zwei Stunden hoch, oder drei, und alles einstellbar." Until
+     *  this card the floor was a fixed 300 s constant inside
+     *  {@code ChildBudget}, with no key above it; on 2026-09-16 it cut a
+     *  planner child that was still streaming a 2,400-line plan. The floor is
+     *  the operator's side of the derived budget,
+     *  {@code max(floor, min(30 min, 3 x p50))}: the 30 minute ceiling
+     *  caps the measured term only and never a number an operator typed,
+     *  otherwise a setting of 3600 would silently have become 1800.</p>
+     *
+     *  <p>The price is the card's and the owner's: a child that wedges after
+     *  its first token holds its parent for this long, plus up to 45 minutes
+     *  of queue grace before that token. No upper bound is enforced, for the
+     *  reason {@link #DEFAULT_COMMAND_TIMEOUT_SECONDS} gives.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.SECONDS, key = "subagentBudgetSeconds")
+    public static final int DEFAULT_SUBAGENT_BUDGET_SECONDS = 7200;
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -834,6 +1025,33 @@ public record SpectroConfig(
      *  load-time check below and {@link SettingsWriter}'s write-time check. */
     static final Set<String> KNOWN_PERMISSION_MODES = Set.of("ask", "auto", "readonly");
 
+    /** {@code rtkFilter} off: the agent's shell line runs as the model wrote it. */
+    public static final String RTK_FILTER_OFF = "off";
+
+    /** {@code rtkFilter} on: spectro asks {@code rtk rewrite} what the line could
+     *  become and runs the answer, minus the verbs
+     *  {@link dev.spectroscope.core.tools.RtkFilter#DENIED_VERBS} refuses. */
+    public static final String RTK_FILTER_ON = "on";
+
+    /** {@code rtkFilter}'s known values: the single source for the load-time
+     *  check and {@link SettingsWriter}'s write-time check. */
+    public static final Set<String> KNOWN_RTK_FILTER_VALUES =
+            Set.of(RTK_FILTER_OFF, RTK_FILTER_ON);
+
+    /** The shipped {@code rtkFilter}: off.
+     *
+     *  <p>Not a tuning default. Measured 2026-09-21 against rtk 0.45.0 on this
+     *  machine: {@code rtk test sh -c 'exit 7'} returns 0 in silence, and
+     *  {@code rtk err sh -c 'exit 3'} returns 0 while printing
+     *  {@code [ok] Command completed successfully (no errors)}, a success line
+     *  the child never wrote. The saving is real where it is real (77.7 % on
+     *  {@code ls -la}, 51.0 % on {@code git status}, and zero on three of the
+     *  eight commands tried), but a wrapper that reports success for a failure
+     *  is pointed at the one thing this product promises. The operator turns it
+     *  on knowing that; it is not turned on for him.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "rtkFilter")
+    public static final String DEFAULT_RTK_FILTER = RTK_FILTER_OFF;
+
     private static final SpectroConfig DEFAULTS = new SpectroConfig(
             // compactionThreshold null: unset, so the harness derives it (card 263)
             "anthropic", "claude-opus-4-8", "http://localhost:11434", null, "ask", List.of(),
@@ -875,7 +1093,9 @@ public record SpectroConfig(
             // shipping the value it already had as an unreachable literal.
             DEFAULT_COMMAND_TIMEOUT_SECONDS, DEFAULT_CHAT_RESERVE_WIDTH, DEFAULT_DOCK_MAX_WIDTH,
             // Card 364: the number the harness has always spent, now reachable.
-            DEFAULT_MAX_TOKENS);
+            DEFAULT_MAX_TOKENS,
+            // Card 372: the child run budget floor, the owner's two hours.
+            DEFAULT_SUBAGENT_BUDGET_SECONDS);
 
     /**
      * The shipped defaults themselves — every value the layer chain falls back
@@ -897,6 +1117,31 @@ public record SpectroConfig(
      */
     static SpectroConfig shippedDefaults() {
         return DEFAULTS;
+    }
+
+    /**
+     * The reading every call site uses, so the string comparison lives once.
+     *
+     * @return true when the operator turned the rtk proxy on
+     */
+    public boolean rtkFilterOn() {
+        return RTK_FILTER_ON.equals(rtkFilter);
+    }
+
+    /**
+     * @param value {@link #RTK_FILTER_ON} or {@link #RTK_FILTER_OFF}
+     * @return a copy carrying that switch and nothing else changed
+     */
+    public SpectroConfig withRtkFilter(String value) {
+        return new SpectroConfig(provider, model, baseUrl, compactionThreshold, permissionMode,
+                autoApprove, imageProvider, thinking, mcpServers, maxRetries, promptCaching,
+                hooks, workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp, progressGuardWrites,
+                progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
+                llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, value);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -954,15 +1199,29 @@ public record SpectroConfig(
      *                {@code "launch-dir"}, {@code "project"}, {@code "local"},
      *                {@code "flags"}); a scope that set nothing at all is
      *                simply absent from the map, never present as {@code {}}
+     * @param reports    what each workspace scope had to give up (card 369)
+     * @param belowFloor every value a settings file held below its key's floor,
+     *                   skipped on this read so the layer below applies (card 386)
      */
     public record Resolved(SpectroConfig config, Map<String, Origin> origins,
-            Map<String, JsonNode> layers, List<ScopeReport> reports) {
+            Map<String, JsonNode> layers, List<ScopeReport> reports,
+            List<SettingFloors.Skipped> belowFloor) {
         /** Pre-card-369 shape, for every caller that does not read the report.
          *  @param config the effective configuration
          *  @param origins where each field came from
          *  @param layers the raw layers */
         public Resolved(SpectroConfig config, Map<String, Origin> origins, Map<String, JsonNode> layers) {
-            this(config, origins, layers, List.of());
+            this(config, origins, layers, List.of(), List.of());
+        }
+
+        /** Pre-card-386 shape, for every caller that does not read the floors.
+         *  @param config the effective configuration
+         *  @param origins where each field came from
+         *  @param layers the raw layers
+         *  @param reports what the workspace scopes gave up */
+        public Resolved(SpectroConfig config, Map<String, Origin> origins, Map<String, JsonNode> layers,
+                List<ScopeReport> reports) {
+            this(config, origins, layers, reports, List.of());
         }
 
         /** The first scope that had to give something up, or an empty report.
@@ -1199,9 +1458,14 @@ public record SpectroConfig(
     static Resolved loadResolved(Overrides overrides, Path projectDir, Path workspace,
             Map<String, String> env) {
         List<Scope> scopes = new ArrayList<>();
+        // Card 386: every file is read through its floors, and a value below one
+        // costs that key alone, the way card 369 treats a process-global key.
+        List<SettingFloors.Skipped> belowFloor = new ArrayList<>();
         scopes.add(new Scope("env", PartialConfig.envLayer(env)));
-        scopes.add(new Scope("user", readFile(CONFIG_PATH).overriddenBy(readFile(USER_SETTINGS_PATH))));
-        scopes.add(new Scope("launch-dir", readFile(projectDir.resolve(PROJECT_SETTINGS))));
+        scopes.add(new Scope("user", readFloored(CONFIG_PATH, "user", belowFloor)
+                .overriddenBy(readFloored(USER_SETTINGS_PATH, "user", belowFloor))));
+        scopes.add(new Scope("launch-dir",
+                readFloored(projectDir.resolve(PROJECT_SETTINGS), "launch-dir", belowFloor)));
         // Built here rather than appended below because the refusal's cost
         // reading (card 354) needs the whole ALLOWED chain, and flags are part
         // of it — a --workspace on the command line carries the key the folder
@@ -1212,8 +1476,8 @@ public record SpectroConfig(
         if (workspace != null) {
             Path wsProjectFile = workspace.resolve(PROJECT_SETTINGS);
             Path wsLocalFile = workspace.resolve(WS_LOCAL_SETTINGS);
-            PartialConfig wsProject = readFile(wsProjectFile);
-            PartialConfig wsLocal = readFile(wsLocalFile);
+            PartialConfig wsProject = readFloored(wsProjectFile, "project", belowFloor);
+            PartialConfig wsLocal = readFloored(wsLocalFile, "local", belowFloor);
             List<Scope> allowed = new ArrayList<>(scopes);
             allowed.add(flags);
             // Card 369: strip, do not throw. One forbidden key used to cost the
@@ -1267,7 +1531,7 @@ public record SpectroConfig(
                 layers.put(scope.name(), node);
             }
         }
-        return new Resolved(config, origins, layers, List.copyOf(reports));
+        return new Resolved(config, origins, layers, List.copyOf(reports), List.copyOf(belowFloor));
     }
 
     /** First-boot seed: when NO user file exists (neither settings.json nor the
@@ -1341,6 +1605,8 @@ public record SpectroConfig(
                 "auto, de, en");
         validateKnown("logLevel", base.logLevel(), KNOWN_LOG_LEVELS,
                 "error, warn, info, debug, trace");
+        validateKnown("rtkFilter", base.rtkFilter(), KNOWN_RTK_FILTER_VALUES,
+                RTK_FILTER_OFF + ", " + RTK_FILTER_ON);
 
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
@@ -1363,7 +1629,8 @@ public record SpectroConfig(
                         base.questionsPerRun(), base.maxQuestionOptions(),
                         base.maxQuestionChars(),
                         base.commandTimeoutSeconds(), base.chatReserveWidth(),
-                        base.dockMaxWidth(), base.maxTokens());
+                        base.dockMaxWidth(), base.maxTokens(),
+                        base.subagentBudgetSeconds(), base.rtkFilter());
             }
         }
         return base;
@@ -1438,7 +1705,10 @@ public record SpectroConfig(
             new FieldProbe("chatReserveWidth", p -> p.chatReserveWidth),
             new FieldProbe("dockMaxWidth", p -> p.dockMaxWidth),
             // Card 364 — appended last, same rule.
-            new FieldProbe("maxTokens", p -> p.maxTokens));
+            new FieldProbe("maxTokens", p -> p.maxTokens),
+            // Card 372, appended last, same rule.
+            new FieldProbe("subagentBudgetSeconds", p -> p.subagentBudgetSeconds),
+            new FieldProbe("rtkFilter", p -> p.rtkFilter));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -1825,7 +2095,8 @@ public record SpectroConfig(
                 progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
                 continuationBudget, maxTurns, llamacppBaseUrl,
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
-                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens);
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, rtkFilter);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2563,22 +2834,69 @@ public record SpectroConfig(
      *  something to silently ignore") — the pre-fix code caught IOException
      *  wholesale here, so a typo'd settings file silently loaded as an EMPTY
      *  layer instead.
-     *  @param path the layer's JSON file (user config or project settings)
-     *  @return the parsed partial; all fields null when the file does not exist
+     *
+     *  <p>Card 386: a whole-number key that holds a value below its floor
+     *  ({@link SettingFloors}) is skipped. Only that key is dropped, the file's
+     *  other keys still apply, and each skipped value is recorded with the
+     *  layer and the file it came from.</p>
+     *  @param path    the layer's JSON file (user config or project settings)
+     *  @param layer   the scope name reported beside a skipped value
+     *  @param skipped collects what was skipped, in read order
+     *  @return the parsed partial without the keys below their floor; all
+     *          fields null when the file does not exist
      *  @throws IllegalArgumentException when the file exists but is not valid
      *          JSON for this shape */
-    private static PartialConfig readFile(Path path) {
-        String raw;
-        try {
-            raw = Files.readString(path, StandardCharsets.UTF_8);
-        } catch (java.nio.file.NoSuchFileException absent) {
-            return new PartialConfig(); // layer absent — all fields null
-        } catch (IOException unreadable) {
-            // Anything else reading the file (permissions, a directory sitting
-            // where a file is expected, …) is not a JSON parse problem — treated
-            // the same as absent, exactly like before this fix.
+    private static PartialConfig readFloored(Path path, String layer, List<SettingFloors.Skipped> skipped) {
+        String raw = readRaw(path);
+        if (raw == null) {
             return new PartialConfig();
         }
+        // Bound first, exactly as before, so a malformed file still fails loudly
+        // with the same message. Only a file that binds is checked for floors.
+        PartialConfig partial = bind(raw, path);
+        try {
+            JsonNode tree = JSON.readTree(raw);
+            List<SettingFloors.Below> below = SettingFloors.below(tree);
+            if (below.isEmpty()) {
+                return partial;
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode kept =
+                    (com.fasterxml.jackson.databind.node.ObjectNode) tree;
+            for (SettingFloors.Below value : below) {
+                kept.remove(value.key());
+                skipped.add(new SettingFloors.Skipped(value.key(), value.value(), value.floor(),
+                        layer, path.toString()));
+            }
+            return JSON.treeToValue(kept, PartialConfig.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException unreachable) {
+            // The same string bound above, so neither call is expected to
+            // throw here; if one does, the partial as bound is used.
+            return partial;
+        }
+    }
+
+    /** The text of one settings file, or null when there is none to read.
+     *  @param path the layer's JSON file
+     *  @return its content, or null when it is absent or unreadable */
+    private static String readRaw(Path path) {
+        try {
+            return Files.readString(path, StandardCharsets.UTF_8);
+        } catch (java.nio.file.NoSuchFileException absent) {
+            return null;
+        } catch (IOException unreadable) {
+            // Anything else reading the file (permissions, a directory sitting
+            // where a file is expected) is not a JSON parse problem and is
+            // treated the same as absent.
+            return null;
+        }
+    }
+
+    /** Binds one file's text to the partial shape.
+     *  @param raw  the file's content
+     *  @param path the file, named in the failure
+     *  @return the parsed partial
+     *  @throws IllegalArgumentException when the text is not valid JSON for this shape */
+    private static PartialConfig bind(String raw, Path path) {
         try {
             // Parsing a String (not a stream) can only ever fail with a JSON
             // parse problem — readValue(String, Class) never touches real I/O,
@@ -2664,6 +2982,9 @@ public record SpectroConfig(
         public Integer dockMaxWidth;
         // Card 364: the completion budget one provider call may spend.
         public Integer maxTokens;
+        // Card 372: the child run budget floor, in seconds.
+        public Integer subagentBudgetSeconds;
+        public String rtkFilter;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -2725,6 +3046,9 @@ public record SpectroConfig(
                     Optional.ofNullable(higher.chatReserveWidth).orElse(chatReserveWidth);
             out.dockMaxWidth = Optional.ofNullable(higher.dockMaxWidth).orElse(dockMaxWidth);
             out.maxTokens = Optional.ofNullable(higher.maxTokens).orElse(maxTokens);
+            out.subagentBudgetSeconds = Optional.ofNullable(higher.subagentBudgetSeconds)
+                    .orElse(subagentBudgetSeconds);
+            out.rtkFilter = Optional.ofNullable(higher.rtkFilter).orElse(rtkFilter);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -2781,7 +3105,10 @@ public record SpectroConfig(
                             .orElse(DEFAULTS.commandTimeoutSeconds()),
                     Optional.ofNullable(chatReserveWidth).orElse(DEFAULTS.chatReserveWidth()),
                     Optional.ofNullable(dockMaxWidth).orElse(DEFAULTS.dockMaxWidth()),
-                    Optional.ofNullable(maxTokens).orElse(DEFAULTS.maxTokens()));
+                    Optional.ofNullable(maxTokens).orElse(DEFAULTS.maxTokens()),
+                    Optional.ofNullable(subagentBudgetSeconds)
+                            .orElse(DEFAULTS.subagentBudgetSeconds()),
+                    Optional.ofNullable(rtkFilter).orElse(DEFAULTS.rtkFilter()));
         }
 
         /**

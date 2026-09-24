@@ -97,6 +97,29 @@
   gap: var(--sp-3);
   margin-top: var(--sp-5);
 }
+/* ---------- Card 382: the four fields the gate window grew ---------- */
+
+/* Who asked, on one line: the child, the agent that spawned it, the task. */
+.requested-by {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.perm-parent,
+.perm-task {
+  color: var(--text-faint);
+}
+/* A command is read, not scanned — it gets the room a program gets, and it
+   never becomes the window's one-line lead. */
+.perm-command {
+  max-height: 12rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* The recorded outcomes, with room above them. */
+.modal--gate .gate-history { margin-top: var(--sp-3); }
 
 @keyframes modal-in {
   from { opacity: 0; transform: translateY(10px) scale(0.97); }
@@ -112,7 +135,13 @@
 .composer {
   position: relative;
   border-top: 1px solid var(--border);
-  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  /* CARD 383: the bottom drops a rung. Below it is the usage footer with its
+     own hairline and padding, not the window edge, so 16px here read as a
+     second margin on top of that one.
+     CARD 408: the top drops a rung too, the owner asked for less blank above
+     the field. The bottom stays at --sp-3: composerRow.drift.test.ts reads it
+     for card 383's reach math, and composerSlack.drift.test.ts pins it. */
+  padding: var(--sp-2) var(--sp-4) var(--sp-3) var(--sp-4);
 }
 /* History fades out before it reaches the composer. */
 .composer::before {
@@ -133,6 +162,10 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  /* Every child of this column keeps --sp-2. Card 383 tightens only the
+     field and the icon row under it, through the sibling rule next to
+     .composer-actions, so a row another card adds to this column is not
+     handed a gap nobody chose for it (audit 2026-09-21, section H). */
   gap: var(--sp-2);
   max-width: var(--content-max);
   margin: 0 auto;
@@ -165,11 +198,24 @@
   flex-direction: column;
 }
 
+/* Card 375, loop wave H1c: the row wraps. At 390 px the row is 308 px wide and
+   superpowers:verification-before-completion alone is 403, so a row that could
+   not wrap pushed the name's end and the pack tag out of the list and the
+   picker scrolled sideways. Name, tag and description fill a line in that
+   order, and an item goes to the next line when it and the gap before it do
+   not fit. The description counts as zero wide for this (flex: 1,
+   min-width: 0). So the tag goes down when the name, the gap and the tag do
+   not fit together, and the description leaves the line of the item before it
+   only when its gap no longer fits behind that item. On the line it keeps, it
+   gets what is left, which can be a few pixels, as for
+   superpowers:verification-before-completion at 1440. */
 .slash-row {
   width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--sp-3);
+  row-gap: var(--sp-1);
   padding: 6px var(--sp-2);
   background: none;
   border: 0;
@@ -184,9 +230,20 @@
   background: var(--surface-2);
 }
 
+/* No wider than the row, and a name longer than that breaks inside itself,
+   after a hyphen where it has one and anywhere where it has none. */
 .slash-name {
   flex: none;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   color: var(--text);
+}
+
+/* Card 375: the pack, beside the name. .wsg-scope-tag (workspace-gear.css)
+   brings the chip's look and no flex at all, so in this row it would take the
+   default 0 1 auto and shrink while .slash-desc keeps its flex: 1. */
+.slash-row .wsg-scope-tag {
+  flex: none;
 }
 
 /* One line, so a long description ends in an ellipsis rather than pushing the
@@ -230,6 +287,15 @@
      the clamp below is the visible end of the text. */
   pointer-events: none;
   overflow: hidden;
+}
+
+/* Card 407. .settings-label's bottom margin, calc(8px - 24px), is sized for
+   the settings page's 24px flex gap. Both popovers have an 8px gap, so that
+   margin pulled the next box 8px up into the heading. Here the gap alone is
+   the space under the heading: 8px, as on the settings page. */
+.wsg-pop.slash-pop > .settings-label,
+.wsg-pop.slash-tip > .settings-label {
+  margin-bottom: 0;
 }
 
 /* The documented side. Offset by the list's own width, so the two boxes keep
@@ -493,16 +559,27 @@
 .composer-actions {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  /* CARD 383: no gap. Claude's row, the owner's size reference, stands its
+     icons 22px apart centre to centre; with 24px boxes edge to edge this row
+     stands them 24px apart. The ring inside each box is the space between two
+     glyphs. */
+  gap: 0;
   width: 100%;
   /* Card 243, the last resort: a surface narrower than even the folded icon
      row (the lab's chat column goes to 220px) wraps rather than clips — a
      clipped control is an unreachable one. At every window-level width the
      fold below keeps this row one line (folded it needs ~277px, and card 242
-     floors the chat at 360px). */
+     floors the chat at 360px). Since card 383 the row needs 136px: five 24px
+     boxes, the 16px device caret, no gap. */
   flex-wrap: wrap;
 }
 .composer-actions .mic-button { margin-left: auto; }
+/* CARD 383: the field and the icon row under it read as one control, so the
+   row sits one rung closer to the field than the column's own gap: --sp-1
+   instead of --sp-2. Written as the difference of the two rungs, because
+   .composer-inner's gap still applies between them. Only this adjacent pair
+   moves; every other child of the column keeps the column's gap. */
+.composer-box + .composer-actions { margin-top: calc(var(--sp-1) - var(--sp-2)); }
 
 /* ---- Card 255: one home per control, and it is the three-dots menu. Card 243
    moved export and translation into that menu below a 500px composer column and
@@ -532,6 +609,26 @@
   gap: var(--sp-2);
 }
 
+/* Card 378: the walk counter, above the box with the other composer notices.
+   Faint and small like .assistant-meta, never accent: it reports a position,
+   it does not raise an alarm. The slot is mounted at all times and holds one
+   line through min-height equal to line-height, so the chat above does not
+   move when the words come and go. A max-height would be a lid, and an empty
+   row under a lid still collapses. nowrap keeps the words to that one line. */
+.composer-history {
+  max-width: var(--content-max);
+  width: 100%;
+  /* Card 408: no margin under the slot. The min-height reservation stays. */
+  margin: 0 auto;
+  font-size: var(--fs-11);
+  font-family: var(--font-mono);
+  line-height: 16px;
+  min-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-faint);
+}
 /* Card 78 #3: the waiting line — queued messages as removable chips. */
 .queue-chips {
   display: flex;
@@ -608,7 +705,8 @@
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  padding: var(--sp-2) var(--sp-4);
+  /* Card 408: 4px above and below the one line of text, owner's request. */
+  padding: var(--sp-1) var(--sp-4);
   background: var(--surface);
   border-top: 1px solid var(--border);
   font-size: var(--fs-12);

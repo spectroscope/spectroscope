@@ -25,6 +25,7 @@ import { searxngOffer } from "../components/webSearchSetup";
 import { hookReadingKey, timeoutNoteKey } from "../components/hooksSetup";
 import { SETTINGS_TABS, settingsTabLabelKey } from "../components/settingsTabs";
 import { SOURCE_DEPTHS } from "../state/sourceDepth";
+import { LEVELING_MODES } from "../state/leveling";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -179,6 +180,14 @@ describe("i18n dict", () => {
       expect(dict[`trace.depthTitle.${d}`], `trace.depthTitle.${d}`).toBeDefined();
     }
     expect(dict["trace.depthAria"], "trace.depthAria").toBeDefined();
+    // The welcome screen draws one button per leveling mode (card 387), and
+    // each button carries a name and a line saying what that answer costs. A
+    // fourth mode added to the list without its two strings would print the
+    // bare key at the one screen a fresh home sees first.
+    for (const m of LEVELING_MODES) {
+      expect(dict[`leveling.intro.${m}`], `leveling.intro.${m}`).toBeDefined();
+      expect(dict[`leveling.intro.${m}.hint`], `leveling.intro.${m}.hint`).toBeDefined();
+    }
     // Why a line has no tree. Two reasons, two sentences: they are different
     // statements about the file, and one word for both would say "not a JSON
     // object" about a 2.7 MB document that is one.

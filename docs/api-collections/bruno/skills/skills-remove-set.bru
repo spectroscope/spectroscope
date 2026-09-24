@@ -1,0 +1,36 @@
+meta {
+  name: remove a set of catalogue skills
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/skills/remove-set
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "skills": [
+      "superpowers/brainstorming",
+      "superpowers/writing-plans"
+    ]
+  }
+}
+
+docs {
+  Card 410: delete several user-root catalogue skills in one request, all or nothing. Every id must name a catalogue skill the user root carries; a missing one (404) or one only the project root carries (409) refuses the whole set with a refused list. The folders are moved into ~/.spectro/.skill-remove first and deleted once all are out; a move that fails puts the earlier ones back and answers 500; a folder that will not go back stays in the holding folder and the answer names it under leftover and the folder under holding. Emptied pack folders go too. 400 no list. Answers {removed:[ids]}.
+  
+  Body: {skills: ["<pack>/<name>", ...]}: ids from the catalogue rows of GET /api/skills that the user root carries.
+  
+  CAUTION: Deletion is permanent: the removed skills are gone from ~/.spectro/skills.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

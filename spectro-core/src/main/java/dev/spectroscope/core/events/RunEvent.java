@@ -51,6 +51,7 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.ErrorEvent.class,         name = "error"),
     @JsonSubTypes.Type(value = RunEvent.ImageGenerated.class,     name = "image_generated"), // from additive
     @JsonSubTypes.Type(value = RunEvent.ContextInfo.class,        name = "context_info"),  // additive
+    @JsonSubTypes.Type(value = RunEvent.WindowOverride.class,     name = "window_override"), // additive (card 390)
     @JsonSubTypes.Type(value = RunEvent.AgentMessage.class,       name = "agent_message"), // A2A-lite, additive
     @JsonSubTypes.Type(value = RunEvent.Plan.class,               name = "plan"),          // additive
     @JsonSubTypes.Type(value = RunEvent.LlmExchange.class,        name = "llm_exchange"),  // additive (card 184 leg 3)
@@ -64,18 +65,20 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.Continuation.class,       name = "continuation"),     // additive (card 266)
     @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check"),       // additive (card 267)
     @JsonSubTypes.Type(value = RunEvent.SettingsIgnored.class,    name = "settings_ignored"), // additive (card 285)
-    @JsonSubTypes.Type(value = RunEvent.LaunchOutcome.class,      name = "launch_outcome")    // additive (card 337)
+    @JsonSubTypes.Type(value = RunEvent.LaunchOutcome.class,      name = "launch_outcome"),   // additive (card 337)
+    @JsonSubTypes.Type(value = RunEvent.SteeringMessage.class, name = "steering_message") // additive (card 380)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
         RunEvent.PermissionDecision, RunEvent.ToolResult, RunEvent.AgentSpawn,
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
-        RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
+        RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo, RunEvent.WindowOverride,
         RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision,
         RunEvent.ImagesWithheld, RunEvent.QuestionAsked, RunEvent.QuestionAnswered,
         RunEvent.NoProgress, RunEvent.ProgressIntervention,
         RunEvent.Continuation, RunEvent.GoalCheck,
-        RunEvent.SettingsIgnored, RunEvent.LaunchOutcome {
+        RunEvent.SettingsIgnored, RunEvent.LaunchOutcome,
+        RunEvent.SteeringMessage {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -927,6 +930,37 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         }
     }
 
+    /**
+     * Additive (card 390): the operator set or cleared the context window for
+     * this session, from the context ring.
+     *
+     * <p>The server writes it to the session file when the choice arrives and
+     * then sends it to the page, which is how the ring moves without waiting
+     * for a run. A resumed session takes its window from the LAST such line;
+     * {@code SessionStore.recordedWindowOverride} reads it. The line changes
+     * nothing in the rebuilt conversation.</p>
+     *
+     * <p>No agent owns it: it is a person's hand on the ring, and every agent
+     * of the session reads the same window. {@link LaunchOutcome} carries no
+     * agent for the same reason.</p>
+     *
+     * @param tokens          the window the operator set, or null when he
+     *                        cleared it (dropped from the line when null; a 0
+     *                        would read as a window of nothing)
+     * @param threshold       the compaction threshold that follows from the
+     *                        choice, as {@code CompactionThreshold.derive}
+     *                        decided it at that moment
+     * @param thresholdSource the wire name of the source behind that threshold:
+     *                        {@code window_override} while a window is set, the
+     *                        automatic source after a clear
+     * @param contextWindow   the window that threshold was measured against, or
+     *                        null when none is known (dropped when null)
+     * @param ts              epoch millis of the choice
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record WindowOverride(Integer tokens, int threshold, String thresholdSource,
+                          Integer contextWindow, long ts) implements RunEvent {}
+
     /** One labeled slice of the context estimate; not a RunEvent itself, like {@link Attachment}.
      *  @param label     what the slice covers (e.g. "system prompt")
      *  @param chars     raw character count of the slice
@@ -1023,6 +1057,41 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record LaunchOutcome(String name, boolean ok, boolean up, String url, String problem,
                          long durationMs, long ts) implements RunEvent {}
+
+    /**
+     * Additive: the operator handed the running turn a sentence (card 380).
+     *
+     * <p>One line per pickup, written where the loop read it, so the correction
+     * sits in the recorded stream next to the turn it changed. Today the same
+     * correction leaves no trace at all: stopping the run and typing again makes
+     * a separate run in a separate file, and nothing downstream can say the two
+     * were one thought.</p>
+     *
+     * <p><b>Key off {@code taken}.</b> A sentence the run read and one it never
+     * got to are two different facts, and a line that carried only the text
+     * would report a correction that never reached the model. {@code false}
+     * means the run ended first, on whichever exit, and the sentence was handed
+     * back rather than kept: the browser puts it in the old waiting line and it
+     * starts the next run as that run's own prompt (owner call 3). A line with
+     * {@code false} and turn 0 was typed while no run was open at all. Until the
+     * fix round of 2026-09-24 the false case meant the turn cap only, and the
+     * sentence stayed behind for the next run to fold in, which was the defect.</p>
+     *
+     * <p>The text here is the operator's OWN words, not the attributed wording
+     * the model reads. The attribution is a property of the request, not of what
+     * the person said, and a record that quoted the harness back at itself would
+     * make the operator's sentence unsearchable.</p>
+     *
+     * @param agentId the agent whose run read it, or missed it
+     * @param text    what the operator typed, folded in arrival order when
+     *                several arrived during one turn
+     * @param taken   true when the run read it; false when the run ended first
+     * @param turn    the turn the pickup happened on, or the last turn of the run
+     *                that missed it, or 0 when no run was open
+     * @param ts      epoch millis of emission
+     */
+    record SteeringMessage(String agentId, String text, boolean taken, int turn,
+                           long ts) implements RunEvent {}
 
     /** Present from day one so the wire format never changes later.
      *  @param kind      the attachment kind — {@code "image"} today

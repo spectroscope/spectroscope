@@ -335,7 +335,7 @@ public final class HeadlessRunner {
                            Consumer<RunEvent> onEvent, Consumer<String> log,
                            SessionStore providedStore, List<RunEvent.Attachment> attachments) {
         ToolRegistry registry = new ToolRegistry(); // standard tools; never the spawn tools
-        StandardTools.all().forEach(registry::register);
+        StandardTools.all(config.commandTimeoutSeconds()).forEach(registry::register);
 
         LlmProvider provider = providerOverride != null
                 ? providerOverride
@@ -556,6 +556,7 @@ public final class HeadlessRunner {
         String policy = externalBroker != null ? "node broker"
                 : autoApprove ? "auto" : "readonly";
         boolean approves = externalBroker != null || autoApprove;
+        // belt-names-only: reads Tool::name or size(), no budget applies (card 370)
         log.accept("mcp: --permissions auto approves the " + StandardTools.all().size()
                 + " standard tools in the path sandbox plus every mounted MCP tool above,"
                 + " unwatched (this run: " + policy

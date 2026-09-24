@@ -37,16 +37,39 @@ import java.util.Map;
 @RestController
 public class BundleController {
 
-    /** GET /api/bundles — the catalog for the picker. */
+    /**
+     * GET /api/bundles: the catalog for the picker, the server's version and,
+     * on a test build, its label (card 398).
+     *
+     * @return the catalog
+     */
     @GetMapping("/api/bundles")
     public Map<String, Object> list() {
+        return catalog(StarterBundles.VERSION, StarterBundles.BUILD_LABEL);
+    }
+
+    /**
+     * The catalog for a given stamp. The {@code label} key is present only
+     * when there is a label, so a release build answers with the same keys as
+     * before card 398.
+     *
+     * @param version the plain module version
+     * @param label   the build label, or null
+     * @return the catalog as the endpoint serves it
+     */
+    static Map<String, Object> catalog(String version, String label) {
         List<Map<String, Object>> items = StarterBundles.list().stream()
                 .map(b -> Map.<String, Object>of(
                         "id", b.id(), "name", b.name(), "description", b.description(), "fleet", b.fleet()))
                 .toList();
-        return Map.of("bundles", items,
-                "buildTools", List.of("gradle", "maven", "python", "bash"),
-                "version", StarterBundles.VERSION);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("bundles", items);
+        out.put("buildTools", List.of("gradle", "maven", "python", "bash"));
+        out.put("version", version);
+        if (label != null) {
+            out.put("label", label);
+        }
+        return out;
     }
 
     /** GET /api/bundles/{id}?build=gradle — the rendered file set (copy-paste). */

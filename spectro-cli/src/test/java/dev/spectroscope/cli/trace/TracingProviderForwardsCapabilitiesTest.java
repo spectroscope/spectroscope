@@ -60,4 +60,23 @@ class TracingProviderForwardsCapabilitiesTest {
                 traced(new Known(0, LlmProvider.Vision.BLIND)).vision(),
                 "card 252's fence must not fall open under --verbose");
     }
+
+    @Test
+    void thePublishedWindowSurvivesTheVerboseWrapper() {
+        // Card 391: an Ollama cloud model states no loaded window and publishes
+        // one. A --verbose run must reach the same threshold as any other run.
+        LlmProvider publishing = new LlmProvider() {
+            @Override
+            public int publishedWindow() {
+                return 1_048_576;
+            }
+
+            @Override
+            public Iterable<ProviderEvent> stream(ProviderRequest request) {
+                return List.of(new PStop(PStop.StopReason.END_TURN));
+            }
+        };
+
+        assertEquals(1_048_576, traced(publishing).publishedWindow());
+    }
 }

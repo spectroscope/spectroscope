@@ -92,6 +92,14 @@ public final class RetryingProvider implements LlmProvider {
         return delegate.contextWindow();
     }
 
+    /** Delegates (card 391), for the reason {@link #contextWindow()} does: a
+     *  default answer here would put every Ollama cloud session back on the
+     *  100,000 fallback. */
+    @Override
+    public int publishedWindow() {
+        return delegate.publishedWindow();
+    }
+
     /**
      * Returns a lazy iterable whose {@code iterator()} runs the retrying establishment.
      *

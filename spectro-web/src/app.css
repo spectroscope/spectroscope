@@ -19,7 +19,7 @@
 @import "./styles/settings-trace.css"; /* Design drawer + trace view */
 @import "./styles/spectrum.css"; /* Spectrum tab: fleet lanes (phase-4 design transplant) */
 @import "./styles/fleet.css"; /* Spectrum LIVE: fleet roster cards + lane reasoning peek */
-@import "./styles/surfaces.css"; /* Phase-4 surfaces: gate bar, explain panel, doctor page */
+@import "./styles/surfaces.css"; /* Phase-4 surfaces: gate marks, ask bar, explain panel, doctor page */
 @import "./styles/lab.css"; /* Lab: controls, flow map box, petri net, JSONL strip, system map */
 @import "./styles/keymap.css"; /* Keymap overlay: the ? shortcut sheet (edu port) */
 @import "./styles/workspace-gear.css"; /* Composer gear: permission mode + always-allow rules (Task 16) */
@@ -35,7 +35,7 @@
    its "runs code" warning shipped without a colour, because the rule that gives
    it one is in here. sheetReach.drift.test.ts holds the line now. */
 @import "./styles/settings.css";
-@import "./styles/skillspane.css"; /* Skills segment: the catalogue as a whole-surface list (card 225) */
+@import "./styles/skillspane.css"; /* The skills view: the catalogue as a whole-surface list (card 225) */
 
 /* Back and forward in the tab bar (card 179). The desktop shell draws no URL
    bar, so these are the only way back there. Same weight as a tab, set apart by

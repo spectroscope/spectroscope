@@ -59,6 +59,18 @@ public class SpectroServerApplication {
         org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SpectroServerApplication.class);
         log.info(heap.line());
         heap.warning().ifPresent(log::warn);
+        // Card 396: a server the desktop app started ends with the desktop
+        // app, also when the app died by SIGKILL and never sent SIGTERM.
+        ParentWatch.install(System.getProperty(
+                        dev.spectroscope.core.local.LlamaServerBinary.BUNDLE_DIR_PROPERTY),
+                gone -> {
+                    log.warn("parent watch: PID {} has ended, so this server shuts down"
+                            + " instead of keeping its port and runs to itself", gone.pid());
+                    System.exit(0);
+                })
+                .ifPresent(parent -> log.info(
+                        "parent watch: this server ends when its parent, PID {}, ends",
+                        parent.pid()));
         // Card 90: the bundled skills reach ~/.spectro/skills exactly once —
         // absent-only + ledgered, a courtesy that must never break the boot.
         BundledSkills.seedFromClasspath();
