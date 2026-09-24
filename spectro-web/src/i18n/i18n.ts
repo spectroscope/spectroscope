@@ -55,10 +55,6 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "A state graph sits beside the session as a pair of files, not on the server — load it in the view on the right.",
   },
   "nav.skills": { de: "Skills", en: "Skills" },
-  "nav.skillsNote": {
-    de: "Installierte Skills und der mitgelieferte Katalog, mit Namespace und Schalter-Stand. Schalten, Installieren und Entfernen: in der Ansicht rechts.",
-    en: "Installed skills and the bundled catalogue, with namespace and enabled state. Switch, install and remove in the view on the right.",
-  },
   "browser.title": { de: "Der sichtbare Browser", en: "The visible browser" },
   "browser.noPage": { de: "noch keine Seite geöffnet", en: "no page open yet" },
   "browser.attachedNote": {
@@ -629,19 +625,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.scrubAt": { de: "Frame {n} / {t}", en: "frame {n} / {t}" },
   "trace.scrubReset": { de: "ans Ende", en: "to the end" },
 
-  // gate surface (first-class permission bar)
-  "gate.aria": { de: "Permission-Gate", en: "Permission gate" },
-  "gate.kicker": { de: "gate", en: "gate" },
-  "gate.queue": { de: "+{n} wartend", en: "+{n} waiting" },
-  "gate.remember": { de: "immer erlauben (Session)", en: "always allow (session)" },
-  "gate.persist": { de: "im Projekt speichern", en: "save to project" },
-  "gate.deny": { de: "Ablehnen", en: "Deny" },
-  "gate.allow": { de: "Erlauben", en: "Allow" },
-  "gate.expandAria": {
-    de: "Vollen Input und aufgezeichnete Entscheidungen zeigen",
-    en: "Show the full input and recorded outcomes",
+  // recorded gate outcomes, shown in the permission window (card 382)
+  "gate.waitingInChat": {
+    de: "Eine Berechtigungsanfrage wartet. Beantworten kannst du sie im Chat.",
+    en: "A permission request is waiting. You can answer it in the chat.",
   },
-  "gate.collapse": { de: "Einklappen", en: "Collapse" },
   "gate.recorded": { de: "aufgezeichnet", en: "recorded" },
   "gate.histAllowed": { de: "erlaubt", en: "allowed" },
   "gate.histDenied": { de: "abgelehnt", en: "denied" },
@@ -907,6 +895,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "perm.deny": { de: "Ablehnen", en: "Deny" },
   "perm.allow": { de: "Erlauben", en: "Allow" },
+  // card 382: the four fields the window grew (a default, owner call 5 is open)
+  "perm.command": { de: "Befehl", en: "Command" },
+  "perm.cwd": { de: "Arbeitsverzeichnis", en: "Working directory" },
+  "perm.parent": { de: "gestartet von {id}", en: "spawned by {id}" },
+  "perm.task": { de: "Auftrag: {task}", en: "Task: {task}" },
 
   // provider picker (header)
   "pp.chipTitle": { de: "LLM-Backend wechseln", en: "Switch LLM backend" },
@@ -1796,6 +1789,29 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Aus: keine Frames im Speicher — Aufzeichnung und OTLP-Export laufen weiter",
     en: "Off: no frames held in memory — the recording and the OTLP export keep running",
   },
+  // Card 379: the rtk proxy switch, the last section of the chat settings and
+  // the first one there that writes a server setting.
+  "rtk.title": { de: "Shell durch rtk", en: "Shell through rtk" },
+  "rtk.on": { de: "an", en: "on" },
+  "rtk.off": { de: "aus", en: "off" },
+  "rtk.on.hint": {
+    de: "rtk kürzt die Ausgabe der Befehle, die es kennt. gradlew, find, test und err laufen nie durch rtk.",
+    en: "rtk shortens the output of the commands it knows. gradlew, find, test and err never run through rtk.",
+  },
+  "rtk.off.hint": {
+    de: "Jede Shell-Zeile läuft so, wie das Modell sie geschrieben hat.",
+    en: "Every shell line runs exactly as the model wrote it.",
+  },
+  "rtk.version": { de: "gefunden: {v}", en: "found: {v}" },
+  "rtk.missing": {
+    de: "rtk wurde dort, wo die Shell des Agenten sucht, nicht gefunden. Jede Shell-Zeile läuft so, wie das Modell sie geschrieben hat, und kein Befehl scheitert daran.",
+    en: "rtk was not found where the agent's shell looks. Every shell line runs exactly as the model wrote it, and no command fails because of it.",
+  },
+  "rtk.warning": {
+    de: "rtk kann einen Fehler verbergen: rtk err und rtk find meldeten 0 für Befehle, die gescheitert waren. Spectro nutzt beide nie, und der Schalter ist ab Werk trotzdem aus.",
+    en: "rtk can hide a failure: rtk err and rtk find answered 0 for commands that had failed. Spectro never uses those two, and the switch still ships off.",
+  },
+  "rtk.saveFailed": { de: "Nicht gespeichert: {e}", en: "Not saved: {e}" },
   "trace.noMatch": { de: "Keine Frames passen zum Filter.", en: "No frames match the current filter." },
   "trace.count": { de: "{v} von {t}", en: "{v} of {t}" },
   "trace.new": { de: "{n} neue ↓", en: "{n} new ↓" },
@@ -2241,6 +2257,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   "ctx.copy": { de: "kopieren", en: "copy" },
   "ctx.copied": { de: "kopiert ✓", en: "copied ✓" },
 
+  // Card 390: the context ring's row for the window of this session.
+  "ctx.window.label": { de: "Fenster für diese Session", en: "Window for this session" },
+  "ctx.window.active": { de: "Für diese Session gesetzt: {window}", en: "Set for this session: {window}" },
+  "ctx.window.placeholder": { de: "Token, z. B. 500000", en: "tokens, e.g. 500000" },
+  "ctx.window.set": { de: "Setzen", en: "Set" },
+  "ctx.window.clear": { de: "Aufheben", en: "Clear" },
+  "ctx.window.range": {
+    de: "Ganze Token, {floor} bis {ceiling}. Ersetzt das erkannte Fenster, bis du es aufhebst.",
+    en: "Whole tokens, {floor} to {ceiling}. Replaces the detected window until you clear it.",
+  },
+
   // agents tab
   "agents.empty": {
     de: "Noch kein Lauf. Sobald du etwas schickst, erscheint hier der Haupt-Agent — und jeder Subagent, den er spawnt, bleibt für die Session sichtbar.",
@@ -2276,8 +2303,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "fan-out: a subagent this session started. This is the kind a live run produces.",
   },
   "work.kindLine.trigger": {
-    de: "Getriggert: ein Lauf, den ein wartender Node geweckt hat (Karte 72). Er kommt mit einem Headless- oder Fleet-Lauf, nie aus diesem Fenster.",
-    en: "triggered: a run woken by a lingering node (card 72). It arrives with a headless or fleet run, never from this window.",
+    de: "Getriggert: ein Lauf, den ein wartender Node geweckt hat. Er kommt mit einem Headless- oder Fleet-Lauf, nie aus diesem Fenster.",
+    en: "triggered: a run woken by a lingering node. It arrives with a headless or fleet run, never from this window.",
   },
   "work.kindLine.launched": {
     de: "Hintergrund: ein Task, der mit einer Quittung samt eigener Id geantwortet hat. Nur ein importiertes Claude-Code-Transkript trägt so eine, denn kein spectroscope-Werkzeug schreibt sie.",
@@ -2344,8 +2371,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "work.chipFoldOpen": { de: "die Turns dieses Agenten zeigen", en: "show this agent's turns" },
   "work.chipFoldClose": { de: "die Turns dieses Agenten einklappen", en: "fold this agent's turns away" },
   "work.triggerNone": {
-    de: "Getriggerte Node-Läufe (Karte 72) trägt der Draht bereits; keine aufgezeichnete Session hier hat einen. Sobald eine kommt, steht sie hier.",
-    en: "Triggered node runs (card 72) are already on the wire; no recorded session here has one. The first one that arrives shows up here.",
+    de: "Getriggerte Node-Läufe trägt der Draht bereits; keine aufgezeichnete Session hier hat einen. Sobald eine kommt, steht sie hier.",
+    en: "Triggered node runs are already on the wire; no recorded session here has one. The first one that arrives shows up here.",
   },
   "work.v1": { de: "v1 · wie aufgezeichnet", en: "v1 · as recorded" },
   "work.v1.hint": {
@@ -2403,11 +2430,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.gnNote": {
     de: "{governing} Zahlen entscheiden in diesem Build, was ein Lauf darf, wie lange er dauern darf und wie viel er erzeugen darf ({all} klassifiziert insgesamt). Der Text unter jeder Zahl ist der Kommentar aus dem Quelltext selbst — nichts davon wurde für diese Seite geschrieben.",
     en: "{governing} numbers decide what a run may do, how long it may take and how much it may produce in this build ({all} classified in total). The text under each number is the comment from the source itself — none of it was written for this page.",
-  },
-  "set.gnFilter": { de: "Suchen", en: "Filter" },
-  "set.gnFilterHint": {
-    de: "Name, Klasse oder ein Wort aus der Begründung",
-    en: "a name, a class, or a word from the reason",
   },
   "set.gnNoMatch": { de: "Keine Zahl passt dazu.", en: "No number matches that." },
   "set.gnLoading": { de: "Wird geladen …", en: "Loading …" },
@@ -2468,6 +2490,55 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.gnUnit.LINES": { de: "Zeilen", en: "lines" },
   "set.gnUnit.RATIO": { de: "Faktor", en: "factor" },
   "set.gnUnit.NONE": { de: "ohne Einheit", en: "no unit" },
+  // ---- Card 381: the page-wide search, and the sentence a row hands over ----
+  "set.search": { de: "Suchen", en: "Search" },
+  "set.searchHint": {
+    de: "Beschriftung, Einstellungsschlüssel oder ein Wort aus der Erklärung",
+    en: "a label, a settings key or a word from the explanation",
+  },
+  "set.searchNone": {
+    de: "Nichts auf dieser Seite passt dazu.",
+    en: "Nothing on this page matches that.",
+  },
+  "set.searchCount": { de: "{n} Treffer", en: "{n} matches" },
+  "set.searchSection": { de: "Abschnitt", en: "section" },
+  "set.searchField": { de: "Einstellung", en: "setting" },
+  "set.searchNumber": { de: "Feste Zahl", en: "governing number" },
+  "set.gnCopy": { de: "Prompt kopieren", en: "Copy prompt" },
+  // One sentence per kind. They differ because the kinds differ: three of the
+  // eight would be false if they all said "change this".
+  "set.gnPrompt.SETTABLE": {
+    de: "Bitte ändere die Einstellung {key}. Dahinter steht die Konstante {owner}.{field}, heute {value} {unit}. Die Einstellungsseite schreibt diesen Schlüssel bereits, es geht also um einen Wert und nicht um einen neuen Hebel.",
+    en: "Please change the setting {key}. Behind it stands the constant {owner}.{field}, today {value} {unit}. The settings page already writes this key, so this is a value and not a new lever.",
+  },
+  "set.gnPrompt.MODEL_CHOICE": {
+    de: "{owner}.{field} ist keine Bedieneinstellung. Das Modell entscheidet das pro Aufruf, und {value} {unit} ist nur, was dieser Build mitschickt, wenn er nichts Besseres hat. Bitte erkläre, was sich änderte, wenn die Zahl festgelegt würde, und ob sie es sollte.",
+    en: "{owner}.{field} is not an operator setting. The model decides this per call, and {value} {unit} is only what this build sends when it has nothing better. Please explain what would change if the number were fixed, and whether it should be.",
+  },
+  "set.gnPrompt.LOOKS_SETTABLE": {
+    de: "Bitte verdrahte den Überschreibungsweg, den es für {owner}.{field} schon gibt; die Konstante steht bei {value} {unit}. Die parametrisierte Überladung liegt im Quelltext und keine ausgelieferte Aufrufstelle übergibt sie. Das ist eine Verdrahtung und kein neuer Einstellungsschlüssel.",
+    en: "Please wire the override path that already exists for {owner}.{field}; the constant stands at {value} {unit}. The parameterised overload is in the source and no shipped call site passes it. This is a wiring job and not a new settings key.",
+  },
+  "set.gnPrompt.UNEXAMINED": {
+    de: "Bitte leg eine Karte an, um {owner}.{field} erreichbar zu machen. Die Konstante steht bei {value} {unit}, trägt keinen Einstellungsschlüssel, und ihre eigene Notiz sagt, dass niemand die Zahl gemessen hat. Die Konfigurationsreferenz in {path} hat eine Zeile für jeden Einstellungsschlüssel; {shapeA} und {shapeB} dort sind die Form dafür.",
+    en: "Please open a card to make {owner}.{field} reachable. It stands at {value} {unit}, carries no settings key, and its own note says nobody measured the number. The configuration reference in {path} has a row for every settings key; {shapeA} and {shapeB} there are the shape to follow.",
+  },
+  "set.gnPrompt.FOREIGN_CONTRACT": {
+    de: "Bitte leg eine Karte für {owner}.{field} an; die Konstante steht bei {value} {unit}. Etwas außerhalb dieses Quelltextes legt sie fest, die Karte benennt also zuerst, was das ist und ob wir es überhaupt bewegen dürfen. Die Konfigurationsreferenz in {path} hat eine Zeile für jeden Einstellungsschlüssel; {shapeA} und {shapeB} dort sind die Form dafür.",
+    en: "Please open a card for {owner}.{field}; the constant stands at {value} {unit}. Something outside this source fixes it, so the card starts by naming what that is and whether we may move it at all. The configuration reference in {path} has a row for every settings key; {shapeA} and {shapeB} there are the shape to follow.",
+  },
+  "set.gnPrompt.FIXED": {
+    de: "Bitte leg eine Karte an, um {owner}.{field} einstellbar zu machen. Die Konstante steht bei {value} {unit} und niemand hat einen Hebel dafür gebaut. Die Konfigurationsreferenz in {path} hat eine Zeile für jeden Einstellungsschlüssel; {shapeA} und {shapeB} dort sind die Form dafür.",
+    en: "Please open a card to make {owner}.{field} settable. It stands at {value} {unit} and nobody has built a lever for it. The configuration reference in {path} has a row for every settings key; {shapeA} and {shapeB} there are the shape to follow.",
+  },
+  "set.gnPrompt.ALIAS": {
+    de: "Die Zahl, die zu ändern ist, heißt {expression}. {owner} erklärt {field} nur als Wiederholung davon, und eine Wiederholung zu ändern bewegt nichts.",
+    en: "The number to change is {expression}. {owner} declares {field} only as a restatement of it, and changing a restatement moves nothing.",
+  },
+  "set.gnPrompt.ALIAS_LITERAL": {
+    de: "{owner} erklärt {field} als das Literal {expression}. Dahinter steht keine weitere Konstante, eine Änderung muss also an der Deklaration selbst passieren.",
+    en: "{owner} declares {field} as the literal {expression}. There is no other constant behind it, so a change has to happen at the declaration itself.",
+  },
   "set.sessionHint": {
     de: "Landet in ~/.spectro/settings.json und gilt ab der nächsten neuen Session. Zurücksetzen fällt auf die darunterliegende Ebene zurück (z. B. env).",
     en: "Lands in ~/.spectro/settings.json and applies from the next new session. Resetting falls back to the layer below (e.g. env).",
@@ -2526,6 +2597,20 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.layer.local": { de: "lokal", en: "local" },
   "set.layer.flags": { de: "Flags", en: "Flags" },
   "set.reset": { de: "Zurücksetzen", en: "Reset" },
+  // Card 386: a value a settings file held below its key's floor, skipped on read.
+  "set.originBelowFloor": {
+    de: "{value} aus {layer} liegt unter dem Mindestwert {floor} und wurde übersprungen",
+    en: "{value} from {layer} is below the floor of {floor} and was skipped",
+  },
+  // Card 386: a number field whose draft is not saved.
+  "set.numberEmpty": {
+    de: "Nicht gespeichert: ein leeres Feld ändert nichts. Der gespeicherte Wert kehrt zurück, wenn du das Feld verlässt.",
+    en: "Not saved: an empty field changes nothing. The saved value comes back when you leave the field.",
+  },
+  "set.numberHeld": {
+    de: "Nicht gespeichert: dieses Feld nimmt eine ganze Zahl ab {floor}.",
+    en: "Not saved: this field takes a whole number of at least {floor}.",
+  },
   "set.pick": { de: "Ordner wählen …", en: "Choose folder …" },
   "set.wsApplies": {
     de: "Gilt ab der nächsten neuen Session; eine laufende Session behält ihren eigenen Workspace.",
@@ -2631,6 +2716,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   // row's description in full — the row itself only has space for its first
   // few words.
   "slash.about": { de: "Beschreibung", en: "Description" },
+  "slash.namespace": { de: "Namensraum", en: "Namespace" },
   "chat.placeholder": { de: "Nachricht an den Agenten …", en: "Message the agent …" },
   "chat.running": { de: "Läuft …", en: "Running …" },
   "chat.send": { de: "Senden", en: "Send" },
@@ -2639,6 +2725,29 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.stopAria": { de: "Laufenden Lauf stoppen", en: "Stop the running turn" },
   "chat.queue": { de: "Einreihen", en: "Queue" },
   "chat.queuedHint": { de: "startet nach dem laufenden Lauf", en: "sends after the current run" },
+  // Card 380. Zuruf in German, steering message in English, and deliberately
+  // nothing that reads like the two queue strings above: one is the send
+  // button while a run is up, the other the Lab's imported queue seat, and a
+  // third word that looked like either would blur what a reader most needs to
+  // tell apart.
+  "chat.steer": { de: "Zuruf", en: "Steer" },
+  "chat.steerHint": {
+    de: "Zuruf: erreicht den laufenden Lauf beim nächsten Schritt",
+    en: "Steering message: reaches the running turn at its next step",
+  },
+  "chat.steerNotTaken": {
+    de: "Der Lauf endete, bevor er den Zuruf gelesen hat. Er geht als nächste Nachricht raus.",
+    en: "The run ended before it read the steering message. It goes out as the next message.",
+  },
+  // Fix round 2026-09-24: the sentence is on the screen from the moment it is
+  // sent. "Next safe point" is the card's own wording for where the loop reads
+  // it; the two outcomes follow once the run has answered for it.
+  "chat.steerPending": {
+    de: "Zuruf, wartet auf den nächsten sicheren Punkt",
+    en: "Steering message, waiting for the next safe point",
+  },
+  "chat.steerDelivered": { de: "Zuruf, angekommen", en: "Steering message, delivered" },
+  "chat.steerUndelivered": { de: "Zuruf, nicht angekommen", en: "Steering message, not delivered" },
   "chat.unqueue": { de: "Aus der Warteschlange nehmen", en: "Remove from queue" },
   // Names the row that holds export and translate, above the input. A group of
   // two buttons with no name is two loose buttons to a screen reader.
@@ -2655,6 +2764,22 @@ export const dict: Record<string, { de: string; en: string }> = {
   "width.normal.hint": { de: "die gewohnte Lesebreite", en: "the usual reading width" },
   "width.wide": { de: "breit", en: "wide" },
   "width.wide.hint": { de: "30 % mehr Platz als Maximum", en: "30% more room as the maximum" },
+
+  // Card 374: how much the line under one answer says. The section head does
+  // the disambiguating from the disclosure level two rows up, which offers the
+  // same two words.
+  "aline.title": { de: "Antwortzeile", en: "answer line" },
+  "aline.normal": { de: "normal", en: "normal" },
+  "aline.normal.hint": {
+    de: "Tokens rein, Tokens raus, Dauer",
+    en: "tokens in, tokens out, duration",
+  },
+  "aline.extended": { de: "erweitert", en: "extended" },
+  "aline.extended.hint": {
+    de: "alle Zahlen, die das Ereignis trägt, plus das Modell",
+    en: "every number the event carries, plus the model",
+  },
+  "aline.context": { de: "im Fenster", en: "context" },
   "disc.normal.hint": { de: "Thinking und Tools eingeklappt", en: "thinking and tools collapsed" },
   "disc.extended.hint": {
     de: "alles aufgeklappt: Thinking + Tool-Ein-/Ausgaben",
@@ -3022,6 +3147,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "search.placeholder": { de: "Suchen …", en: "Find …" },
   "search.noMatches": { de: "keine Treffer", en: "no matches" },
   "search.of": { de: "Treffer {n} von {total}", en: "hit {n} of {total}" },
+  // Card 378: how far back the arrow keys have walked the prompts already
+  // sent. One based and newest first, so the first press reads 1 of n. The
+  // German word is the owner's own, off his screenshot.
+  "composer.historyAt": { de: "Verlauf {n}/{total}", en: "History {n}/{total}" },
   "search.prev": { de: "Vorheriger Treffer", en: "Previous match" },
   "search.next": { de: "Nächster Treffer", en: "Next match" },
 
@@ -3041,9 +3170,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "chat.cacheRead": { de: "aus dem Cache", en: "cache read" },
   "chat.cacheWrite": { de: "in den Cache", en: "cache write" },
+  // Card 374: normal shows three numbers, so the tooltip promises three. The
+  // extended reading has its own title one entry below.
   "chat.usageTitle": {
-    de: "Tokens dieser Antwort (rein · Cache · raus), ihr Tempo in Tokens pro Sekunde, wie lange sie gedauert hat und welches Modell sie geschrieben hat",
-    en: "This answer's tokens (in · cache · out), its speed in tokens per second, how long it took, and the model that wrote it",
+    de: "Tokens dieser Antwort (rein · raus) und wie lange sie gedauert hat",
+    en: "This answer's tokens (in · out) and how long it took",
+  },
+  "aline.titleExtended": {
+    de: "Alles, was das Ereignis trägt: Tokens, Cache, Fenster, Tempo, Zeitraum, Modell. Cache-Zahlen stehen nur da, wenn der Anbieter sie gemeldet hat; LM Studio und llama.cpp melden keine.",
+    en: "Everything the event carries: tokens, cache, context, speed, time window, model. Cache numbers appear only where the provider reported them, and LM Studio and llama.cpp report none.",
   },
   "chat.historyAria": { de: "Verlauf des Agenten-Laufs", en: "Agent run history" },
   "info.spawned": { de: "Subagent {id} gestartet: {task}", en: "Subagent {id} spawned: {task}" },
@@ -3208,6 +3343,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.maxTurnsNote": {
     de: "Danach endet der Lauf mit „Zug-Limit erreicht“, auch mitten in der Arbeit. Eine Fortsetzung setzt diese Zahl NICHT zurück. Ab Werk hoch genug, dass ein echter Lauf sie selten sieht.",
     en: "After this the run ends on \"turn limit reached\", even mid-task. A continuation does NOT reset it. Ships high enough that a real run rarely meets it.",
+  },
+  "set.subagentBudgetSeconds": { de: "Zeit pro Subagent", en: "Time per subagent" },
+  "set.subagentBudgetSecondsNote": {
+    de: "Wie viele Sekunden ein Subagent arbeiten darf, gezählt ab seinem ersten Token; ab Werk zwei Stunden. Ein langsames Backend kann das Budget anheben, wenn der Wert unter dreißig Minuten liegt; die zwei Stunden ab Werk hebt es nie an. Wird ein Subagent abgebrochen, kommt der Text des Zuges zurück, in dem er abgebrochen wurde.",
+    en: "How many seconds a subagent may work, counted from its first token; ships at two hours. A slow backend can raise the budget when the floor is under thirty minutes, and it never raises the shipped two hours. A subagent that is cut off hands back the text of the turn it was cut in.",
   },
   "set.maxTokens": { de: "Antwort-Budget pro Aufruf", en: "Reply budget per call" },
   "set.maxTokensNote": {
@@ -3585,10 +3725,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "This output is text, not JSON — shown verbatim:",
   },
 
-  // the skills segment's surface (card 225; the one home since card 228)
+  // the skills view (card 225; the one home since card 228). Since card 409
+  // the claim also carries what the rail's note used to say (namespace and
+  // enabled state): the rail no longer swaps its list for a note.
   "skv.claim": {
-    de: "Beide Skill-Wurzeln und der mitgelieferte Katalog. Schalten, Installieren und Löschen passiert hier.",
-    en: "Both skill roots and the bundled catalogue. Switch, install and remove here.",
+    de: "Installierte Skills aus beiden Skill-Wurzeln und der mitgelieferte Katalog, mit Namespace und Schalter-Stand. Schalten, Installieren und Löschen passiert hier.",
+    en: "Installed skills from both skill roots and the bundled catalogue, with namespace and enabled state. Switch, install and remove here.",
   },
   // The two install roads that exist: the catalogue button below, and a
   // SKILL.md folder dropped under a root — the road the CLI's /skills line
@@ -3620,16 +3762,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the bundled skill catalogue (card 182)
   "skset.catalogue": { de: "Katalog", en: "Catalogue" },
   "skset.catalogueNote": {
-    de: "57 Skills aus vier Sammlungen, in dieser App mitgeliefert — ohne Netz. Ein Klick kopiert einen davon samt LICENSE nach ~/.spectro/skills/<Sammlung>/, der Agent ruft ihn als <Sammlung>:<Skill>. Es wird nichts ausgeführt, und ein eigener Skill gleichen Namens bleibt unangetastet.",
-    en: "57 skills from four collections, carried inside this app — no network needed. One click copies one of them, with its LICENSE, into ~/.spectro/skills/<pack>/, and the agent calls it <pack>:<skill>. Nothing is executed, and a skill of your own with the same name is left alone.",
+    de: "Diese Skills sind in der App enthalten, nach Sammlung gruppiert, und die Installation braucht kein Netz. Der Installieren-Knopf einer Sammlung kopiert alle ihre noch nicht installierten Skills in einem Schritt nach ~/.spectro/skills/<Sammlung>/, jeden samt LICENSE. Der Entfernen-Knopf löscht die Skills der Sammlung wieder aus diesem Ordner. In einer aufgeklappten Sammlung installiert oder entfernt der Schalter einer Zeile genau einen Skill. Der Agent ruft einen Skill als <Sammlung>:<Skill>. Beim Installieren wird nichts ausgeführt, und ein eigener Skill gleichen Namens bleibt unangetastet.",
+    en: "These skills ship inside this app, grouped by pack, and installing them needs no network. The install button on a pack copies all of its skills that are not installed yet into ~/.spectro/skills/<pack>/ in one step, each with its LICENSE. The remove button deletes the pack's skills from that folder. Open a pack to install or remove one skill with its switch. The agent calls a skill <pack>:<skill>. Installing runs nothing, and a skill of your own with the same name is left alone.",
   },
   "skset.catalogueEmpty": {
     de: "Dieser Build trägt keinen Katalog.",
     en: "This build carries no catalogue.",
   },
-  "skset.install": { de: "installieren", en: "install" },
   "skset.installing": { de: "kopiere …", en: "copying ..." },
-  "skset.installed": { de: "installiert", en: "installed" },
   "skset.installTitle": {
     de: "Aus {pack}, Lizenz {licence} — LICENSE und PROVENANCE.json werden mitkopiert",
     en: "From {pack}, licensed {licence} — LICENSE and PROVENANCE.json travel with it",
@@ -3639,6 +3779,42 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Dieser Skill ist schon installiert. Zum Neu-Installieren erst löschen — ein Kopieren darüber würde eigene Änderungen und den Aus-Schalter verlieren.",
     en: "This skill is already installed. Delete it first to install it again — copying over it would lose your edits and its off switch.",
   },
+
+  // card 410: a pack of the catalogue as one set, collapsed to its header
+  "skset.packCount": { de: "{installed} von {total} installiert", en: "{installed} of {total} installed" },
+  "skset.packInstall": { de: "{count} installieren", en: "install {count}" },
+  "skset.packRemove": { de: "{count} entfernen", en: "remove {count}" },
+  "skset.packInstallTitle": {
+    de: "Kopiert die {count} noch fehlenden Skills dieser Sammlung in einem Schritt nach ~/.spectro/skills/{pack}/",
+    en: "Copies the {count} skills of this pack that are not installed yet into ~/.spectro/skills/{pack}/ in one step",
+  },
+  "skset.packRemoveTitle": {
+    de: "Entfernt die {count} installierten Skills dieser Sammlung in einem Schritt aus ~/.spectro/skills/{pack}/",
+    en: "Removes the {count} installed skills of this pack from ~/.spectro/skills/{pack}/ in one step",
+  },
+  "skset.removing": { de: "entferne …", en: "removing ..." },
+  "skset.rowRemoveTitle": {
+    de: "Installiert. Ausschalten entfernt ihn aus ~/.spectro/skills/{pack}/",
+    en: "Installed. Switching it off removes it from ~/.spectro/skills/{pack}/",
+  },
+  "skset.rowProjectTitle": {
+    de: "Liegt im Projekt unter .spectro/skills und wird dort entfernt",
+    en: "Carried by the project's .spectro/skills; remove it there",
+  },
+  "skset.setInstallRefused": { de: "Nichts installiert, {count} abgelehnt:", en: "Nothing was installed, {count} refused:" },
+  "skset.setRemoveRefused": { de: "Nichts entfernt, {count} abgelehnt:", en: "Nothing was removed, {count} refused:" },
+  "skset.refusedTaken": { de: "schon installiert", en: "already installed" },
+  "skset.refusedProject": { de: "liegt im Projekt", en: "the project carries it" },
+  "skset.setStopped": { de: "Abgebrochen, {count} fehlgeschlagen:", en: "Stopped, {count} failed:" },
+  "skset.setInstallLeftover": {
+    de: "Nicht zurückgenommen, weiter installiert:",
+    en: "Could not be taken back, still installed:",
+  },
+  "skset.setRemoveLeftover": {
+    de: "Nicht zurückgelegt, nicht mehr installiert:",
+    en: "Could not be put back, no longer installed:",
+  },
+  "skset.setRemoveHolding": { de: "Die Ordner liegen in {path}.", en: "Their folders are in {path}." },
 
   "mcpset.title": { de: "MCP-Server", en: "MCP servers" },
   // When they land is no longer said here: the block's own ReachBlock derives
@@ -4120,8 +4296,24 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Kein Zwang: du kannst jederzeit alles öffnen, in den Einstellungen oder direkt an jeder verschlossenen Fläche.",
     en: "Nothing is forced: you can open everything at any moment, in the settings or right on any closed surface.",
   },
-  "leveling.intro.ladder": { de: "Mit dem Tutorial anfangen", en: "Start with the tutorial" },
-  "leveling.intro.everything": { de: "Alles sofort öffnen", en: "Open everything now" },
+  "leveling.intro.ladder": { de: "Schritt für Schritt durchs Produkt", en: "Walk me through it" },
+  "leveling.intro.ladder.hint": {
+    de: "Der Chat ist offen. Jede weitere Fläche geht auf, sobald du die davor benutzt hast.",
+    en: "The chat is open. Each further surface opens once you have used the one before it.",
+  },
+  "leveling.intro.checklist": {
+    de: "Alles öffnen, Tutorial behalten",
+    en: "Open everything, keep the tutorial",
+  },
+  "leveling.intro.checklist.hint": {
+    de: "Nichts ist gesperrt. Das Tutorial bleibt oben in der Leiste und zählt weiter mit.",
+    en: "Nothing is locked. The tutorial stays in the tab bar and keeps counting.",
+  },
+  "leveling.intro.off": { de: "Alles öffnen, Tutorial aus", en: "Open everything, no tutorial" },
+  "leveling.intro.off.hint": {
+    de: "Nichts ist gesperrt, kein Pill, kein Panel, keine Aufzeichnung. Danach ist nichts mehr wegzuklicken.",
+    en: "Nothing is locked, no pill, no panel, no tracking. There is nothing left to click away afterwards.",
+  },
   "leveling.intro.foot": {
     de: "Diese Frage kommt nur einmal. Ändern kannst du es später in den Einstellungen.",
     en: "This question is asked once. You can change it later in the settings.",
@@ -4152,6 +4344,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "about.open": { de: "Über", en: "About" },
   "about.title": { de: "Über spectroscope", en: "About spectroscope" },
   "about.tagline": { de: "Agent-Orchestrator", en: "agent orchestrator" },
+  "about.testBuild": { de: "Testbuild", en: "Test build" },
   "about.licences": { de: "Lizenzen", en: "Licenses" },
   "about.codeLabel": { de: "Code", en: "Code" },
   "about.code": {
@@ -4480,6 +4673,17 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Bezugsgröße: {limit} — abgeleitet aus dem veröffentlichten Fenster von {model}. Gemessen hat dieses Backend nichts: eine gehostete Instanz gibt es nicht.",
     en: "Divisor: {limit} — derived from the window {model} publishes. This backend measured nothing: a hosted model has no loaded instance to measure.",
   },
+  /* Card 377: the two notes the panel raises when the WINDOW is what it is
+     dividing by. `measured` and `published` name the threshold; these two name
+     the window, because that is the number the row beside them is a share of. */
+  "lab.ctx.note.window": {
+    de: "Bezugsgröße: {limit}, das Fenster, das das Backend dieses Laufes selbst angegeben hat. Dieser Lauf kompaktiert unterhalb davon, nicht bei diesem Wert.",
+    en: "Divisor: {limit}, the window this run's backend stated itself. This run compacts below it, not at it.",
+  },
+  "lab.ctx.note.modelWindow": {
+    de: "Bezugsgröße: {limit}, das Fenster, das {model} veröffentlicht. Dieser Lauf kompaktiert unterhalb davon, nicht bei diesem Wert.",
+    en: "Divisor: {limit}, the window {model} publishes. This run compacts below it, not at it.",
+  },
   /* No {limit} in this one on purpose: when it is raised there is no divisor
      on the panel, and the sentence would have been naming the stand-in it
      exists to say the panel refused. Its EN said "nothing on screen to divide
@@ -4489,6 +4693,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lab.ctx.note.unknown": {
     de: "Kein Prozentwert für den Wurzel-Agenten: dieser Lauf hat keine Schwelle gemeldet, also gibt es nichts, wodurch sich ehrlich teilen ließe.",
     en: "No percentage for the root: this run reported no threshold, so there is nothing to divide by honestly.",
+  },
+  /* Card 390: the root divides by the window the operator set for the
+     session from the context ring, not by one the backend stated. */
+  "lab.ctx.note.setWindow": {
+    de: "Bezugsgröße: {limit}, das Fenster, das für diese Session von Hand gesetzt wurde. Dieser Lauf kompaktiert unterhalb davon, nicht bei diesem Wert.",
+    en: "Divisor: {limit}, the window the operator set for this session. This run compacts below it, not at it.",
   },
   "lab.ctx.note.childrenNoWindow": {
     de: "Kind-Agenten zeigen keinen Prozentwert: sie laufen ohne Introspektion und melden keine Schwelle, also gibt es nichts, wodurch man ehrlich teilen könnte.",

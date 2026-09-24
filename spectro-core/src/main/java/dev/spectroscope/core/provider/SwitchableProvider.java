@@ -88,4 +88,11 @@ public final class SwitchableProvider implements LlmProvider {
     public int contextWindow() {
         return delegate.get().contextWindow();
     }
+
+    /** The CURRENT delegate's published window (card 391), not remembered here
+     *  for the reason {@link #contextWindow()} gives. */
+    @Override
+    public int publishedWindow() {
+        return delegate.get().publishedWindow();
+    }
 }

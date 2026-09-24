@@ -23,6 +23,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { t, type Lang } from "../i18n/i18n";
+import { CopyButton } from "./CopyButton";
+import { governingPrompt } from "./settingsPrompt";
 import {
   fetchGoverningNumbers,
   filterGoverningNumbers,
@@ -40,6 +42,7 @@ import {
  *  about it. Nothing here is written for the page. */
 function GoverningNumberRow({ number, lang }: { number: GoverningNumber; lang: Lang }) {
   const readable = readableValue(number);
+  const prompt = governingPrompt(number, lang);
   return (
     <li className="gn-row">
       <div className="gn-head">
@@ -62,6 +65,11 @@ function GoverningNumberRow({ number, lang }: { number: GoverningNumber; lang: L
             {t(lang, "set.gnKey")} <code>{number.key}</code>
           </span>
         ) : null}
+        {/* Card 381. The button's PRESENCE is the kind's decision, not this
+            row's: `governingPrompt` returns null for the one kind that governs
+            nothing, and a row that drew a button anyway would offer a change
+            to a unit conversion. */}
+        {prompt !== null ? <CopyButton text={() => prompt} label={t(lang, "set.gnCopy")} /> : null}
       </div>
       {number.explanation.split("\n\n").map((paragraph, at) => (
         <p className="gn-why" key={at}>
@@ -114,15 +122,20 @@ export function GoverningNumbersList({ numbers, lang }: { numbers: readonly Gove
 }
 
 /**
- * The block the settings page mounts: the fetch, the filter box, and the list
- * above.
+ * The block the settings page mounts: the fetch and the list above.
  *
- * @param props.lang the reader's language
+ * <p>Card 381 took its filter box away. The page has ONE search field now, at
+ * the top and outside every room, and this block is narrowed by the query that
+ * field holds. Two boxes over the same data with two different rules (one
+ * narrowing, one pointing) is the collision the settings survey named, and
+ * keeping the old one would have moved it rather than closed it.</p>
+ *
+ * @param props.lang  the reader's language
+ * @param props.query the page-wide query, blank when nothing is typed
  */
-export function GoverningNumbersBlock({ lang }: { lang: Lang }) {
+export function GoverningNumbersBlock({ lang, query }: { lang: Lang; query: string }) {
   const [numbers, setNumbers] = useState<GoverningNumber[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -154,15 +167,6 @@ export function GoverningNumbersBlock({ lang }: { lang: Lang }) {
       <p className="settings-note">
         {t(lang, "set.gnNote", { governing: governingCount, all: numbers.length })}
       </p>
-      <label className="settings-field gn-filter">
-        <span>{t(lang, "set.gnFilter")}</span>
-        <input
-          type="search"
-          value={query}
-          placeholder={t(lang, "set.gnFilterHint")}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </label>
       <GoverningNumbersList numbers={shown} lang={lang} />
     </div>
   );

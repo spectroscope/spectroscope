@@ -56,9 +56,31 @@ export function slashQueryAt(draft: string, caret: number): SlashQueryAt | null 
   return { query: draft.slice(at, caret), start: slashAt };
 }
 
-/** Where a query hit: the front of a name ranks above the middle of one. */
-const STARTS = 0;
-const CONTAINS = 1;
+/** Where a query hit, best first. The full name typed out beats the folder
+ *  typed out, which beats the front of a name, which beats its middle.
+ *
+ *  The two exact tiers are the positions of {@link exactSpellings}, so a
+ *  spelling added there has to earn a tier here as well. */
+export const EXACT_NAME = 0;
+export const EXACT_FOLDER = 1;
+export const STARTS = 2;
+export const CONTAINS = 3;
+
+/**
+ * The spellings an exact query wins on, best first: the name the agent knows,
+ * then the folder the reader remembers.
+ *
+ * The PACK is deliberately absent. `rankOf` spells a skill three ways, and
+ * giving the pack an exact tier would put a whole pack on the exact rank at
+ * once: `ui-ux-pro-max` returns seven rows today, and seven exact matches
+ * decide nothing.
+ *
+ * @param skill one installed skill
+ * @returns its exact spellings, in tier order
+ */
+export function exactSpellings(skill: SkillOption): string[] {
+  return [skill.name, skill.folder];
+}
 
 /**
  * The skills a query offers, best first.
@@ -79,8 +101,10 @@ const CONTAINS = 1;
 export function matchSkills(query: string, skills: readonly SkillOption[]): SkillOption[] {
   const needle = query.toLowerCase();
   const ranked: { rank: number; skill: SkillOption }[] = [];
-  for (const skill of skills) {
-    if (skill.disabled) continue;
+  // The disabled rows go before the dedup, not after it. A disabled copy in a
+  // later root does not displace a live copy in an earlier one, so dropping
+  // them first is what makes the dedup agree with the loader.
+  for (const skill of lastPerName(skills.filter((s) => !s.disabled))) {
     if (needle === "") {
       ranked.push({ rank: STARTS, skill });
       continue;
@@ -92,7 +116,31 @@ export function matchSkills(query: string, skills: readonly SkillOption[]): Skil
   return ranked.map((r) => r.skill);
 }
 
-function rankOf(needle: string, skill: SkillOption): number | null {
+/** One row per qualified name, the later winning, which is the loader's own
+ *  rule for two roots carrying the same skill. It expects the live rows only:
+ *  `loadSkill` returns before it writes when the folder carries `.disabled`
+ *  (SkillLibrary.java:169-175, the only writer to `byName` at :175), so a
+ *  disabled copy never overwrites a live one in either direction. */
+function lastPerName(skills: readonly SkillOption[]): SkillOption[] {
+  const byName = new Map<string, SkillOption>();
+  for (const skill of skills) byName.set(skill.name, skill);
+  return [...byName.values()];
+}
+
+/**
+ * How well a query fits a skill, or null for not at all.
+ *
+ * @param needle the query, already lowercased
+ * @param skill  the skill to rank
+ * @returns one of the four ranks, or null
+ */
+export function rankOf(needle: string, skill: SkillOption): number | null {
+  const exact = exactSpellings(skill).map((s) => s.toLowerCase());
+  for (let tier = 0; tier < exact.length; tier++) {
+    // An empty spelling is not a name, so it wins nothing: an older server can
+    // send a blank folder, and "" === "" would hand it the top row.
+    if (exact[tier] !== "" && exact[tier] === needle) return tier;
+  }
   const spellings = [skill.name, skill.folder, skill.pack ?? ""].map((s) => s.toLowerCase());
   if (spellings.some((s) => s !== "" && s.startsWith(needle))) return STARTS;
   if (spellings.some((s) => s !== "" && s.includes(needle))) return CONTAINS;

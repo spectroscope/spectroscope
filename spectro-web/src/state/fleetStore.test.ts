@@ -305,7 +305,7 @@ describe("fleetPending", () => {
     expect(pending).toEqual([{ callId: "c2", agentId: "node-b", name: "run_command", input: { cmd: "ls" } }]);
   });
 
-  it("keeps the parked order — first-parked first (the queue the GateBar shows)", () => {
+  it("keeps the parked order, first-parked first (the queue the gate window counts)", () => {
     const pending = fleetPending(
       model([
         { type: "permission_request", agentId: "node-a", callId: "first", name: "t", input: {}, ts: 1 },

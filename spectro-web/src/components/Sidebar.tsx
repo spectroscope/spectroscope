@@ -21,7 +21,7 @@ import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
 import { SessionSigil, countLabel, sessionModelLabel, sessionSignal, sessionTitleLines } from "./sessionRows";
 import { NavIcon, NavRow } from "./NavRow";
-import { navActionRows, navSegmentRows } from "./navRows";
+import { navActionRows, navSegmentRows, type NavSegmentId } from "./navRows";
 import { RunDot } from "./RunDot";
 import { runState, storedRunState, type RunState } from "./runIndicator";
 import { useLiveSessions } from "../state/liveSessions";
@@ -63,6 +63,11 @@ export function Sidebar(props: {
    *  below (a redundant second path; the owner may retire the modal later). */
   onScenarios: () => void;
   onStarters: () => void;
+  /** True while the skills view is on screen. It marks the Skills row and
+   *  nothing else: the list below stays whatever the segment says (card 409). */
+  skillsOpen: boolean;
+  /** Opens the skills view, beside the list rather than instead of it. */
+  onSkills: () => void;
   /** Play a scenario inline from the list — replays it like a session. */
   onSelectScenario: (dsl: Dsl) => void;
   /** The state-graph run on screen (its source names the active rail row). */
@@ -82,9 +87,9 @@ export function Sidebar(props: {
    *  it was a private useState, pressing `fleets` re-rendered the sidebar's own
    *  list and NOTHING else — App was never told, so the whole right-hand side
    *  stood still until something was loaded. */
-  nav: "sessions" | "fleets" | "stategraph" | "skills";
+  nav: NavSegmentId;
   /** Switch segment. App owns the state so the surface can answer the press. */
-  onNav: (next: "sessions" | "fleets" | "stategraph" | "skills") => void;
+  onNav: (next: NavSegmentId) => void;
   /** Fold the sidebar away. Offered here as well as in the header because the
    *  header's own control is the first thing a narrow window takes away. */
   onCollapse?: () => void;
@@ -138,6 +143,7 @@ export function Sidebar(props: {
     newChat: props.onNewChat,
     scenarios: props.onScenarios,
     starters: props.onStarters,
+    skills: props.onSkills,
   };
 
   /** Which segment each row asks App for. Spelled out one call at a time
@@ -147,7 +153,6 @@ export function Sidebar(props: {
     sessions: () => props.onNav("sessions"),
     fleets: () => props.onNav("fleets"),
     stategraph: () => props.onNav("stategraph"),
-    skills: () => props.onNav("skills"),
   };
 
   /**
@@ -242,15 +247,17 @@ export function Sidebar(props: {
           )}
         </div>
 
-        {/* The three actions, as rows. They were buttons — a filled primary and
-          two ghosts — and three boxes at the top of a rail argue with the list
+        {/* The actions, as rows. They were buttons (a filled primary and
+          two ghosts), and three boxes at the top of a rail argue with the list
           underneath for the attention the list should win. Scenarios keeps its
           modal alongside the inline scenario rows below (a redundant second
-          path; owner may retire it). */}
+          path; owner may retire it). Skills is the fourth since card 409, and
+          like the other three it leaves the list below alone. */}
         <div className="sidebar-nav">
-          {navActionRows().map((row) => (
+          {navActionRows({ skillsOpen: props.skillsOpen }).map((row) => (
             <NavRow
               key={row.id}
+              active={row.active}
               icon={<NavIcon id={row.icon} />}
               label={t(lang, row.labelKey)}
               title={row.titleKey !== undefined ? t(lang, row.titleKey) : undefined}
@@ -304,10 +311,10 @@ export function Sidebar(props: {
               changed is only WHICH line it rides, not which block: no row of its
               own, and no name of a row either — the stylesheet places it against
               this group's bottom edge, which is the last row's bottom edge
-              whichever row that is. Browser is the last one today (card 201),
-              and it was Stategraph a card ago.
+              whichever row that is. State graph is the last one since card
+              409 moved Skills up; Browser and Skills have both been last.
 
-              The guard, on the segment: the line is drawn on all four segments,
+              The guard, on the segment: the line is drawn on every segment,
               and options for a list you are not looking at are noise. */}
           {nav === "sessions" && <SessionListOptions />}
         </div>
@@ -398,10 +405,6 @@ export function Sidebar(props: {
               ))}
             </nav>
           </>
-        ) : nav === "skills" ? (
-          /* Same shape as the browser's arm: the list lives on the surface
-           (card 225), so the rail says what the segment is for and stops. */
-          <p className="sidebar-note">{t(lang, "nav.skillsNote")}</p>
         ) : nav === "stategraph" ? (
           /* The scenario rail, the fleet list's idiom — offered PERMANENTLY,
            because the empty-state shelf disappears the moment a run loads
@@ -509,7 +512,7 @@ export function Sidebar(props: {
       </div>
 
       {/* Outside the segment branch on purpose: settings is not a fact about
-          sessions, and a control that exists on one of four segments is a
+          sessions, and a control that exists on one of three segments is a
           control a reader learns not to look for. The head solved the same
           problem at the other end of the rail. */}
       <div className="sidebar-foot">

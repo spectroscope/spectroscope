@@ -1,0 +1,36 @@
+meta {
+  name: install a set of catalogue skills
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/skills/install-set
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "skills": [
+      "superpowers/brainstorming",
+      "superpowers/writing-plans"
+    ]
+  }
+}
+
+docs {
+  Card 410: copy several catalogue skills into ~/.spectro/skills in one request, all or nothing. Every id is checked before anything is written; one unknown or already carried id refuses the whole set with 409 and a refused list naming each id with status, message, name and root. A copy that fails after others landed deletes those again and answers 413 or 500 with the failing id; a copy that will not delete stays and the answer is 500 with those ids under leftover. 400 no list. Answers {installed:[{skill,name,pack,files,bytes,licence,commit}]}.
+  
+  Body: {skills: ["<pack>/<name>", ...]}: ids from the catalogue rows of GET /api/skills.
+  
+  CAUTION: Copies files into ~/.spectro/skills. It never overwrites; one taken name refuses the whole set.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

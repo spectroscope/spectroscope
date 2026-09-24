@@ -40,50 +40,82 @@ import java.util.OptionalLong;
  * <pre>
  *   p50            = median of the last {@link ExchangeLatency#WINDOW} measured
  *                    exchanges of THIS session (parent's and children's alike)
- *   implied p50    = {@link #FLOOR_MS} / {@link #P50_MULTIPLE}  — used while nothing
- *                    has been measured yet, so the floor stays self-consistent
- *   runBudget      = min({@link #CEILING_MS}, max({@link #FLOOR_MS}, {@link #P50_MULTIPLE} × p50))
+ *   floor          = the operator's {@code subagentBudgetSeconds} in
+ *                    milliseconds (card 372), shipped at two hours
+ *   implied p50    = {@link #IMPLIED_P50_MS}, standing in for p50 in the
+ *                    queue allowance while nothing has been measured
+ *   runBudget      = floor
+ *                        while nothing has been measured
+ *                  = max(floor, min({@link #CEILING_MS}, {@link #P50_MULTIPLE} × p50))
+ *                        once something has been measured
  *   queueAllowance = ({@link SubagentManager#MAX_PARALLEL_CHILDREN} - 1) × p50
  *   grace          = min({@link #GRACE_CEILING_MS}, runBudget + queueAllowance)
  *   worst case     = grace + runBudget          — the clocks run in SEQUENCE
  * </pre>
  *
- * <p>Worked, on the numbers above: p50 = 92,200 ms, so 3 × p50 = 276,600 ms and
- * the floor governs — runBudget = <b>300,000 ms</b>, two and a half times the
- * literal it replaces and still under the observed maximum exchange. The queue
- * allowance is 3 × 92,200 = 276,600 ms, so grace = <b>576,600 ms</b>. On a
- * hosted backend with a p50 of two seconds the floor governs both and a child
- * gets the same 300 s; the p50 term only bites on slow backends, which is where
- * the defect was. At p50 = 200 s the budget is 600 s.</p>
+ * <p><b>The ceiling caps the measured term, never the floor.</b> It is a limit on
+ * what a measurement may claim, and an operator who types 3,600 s means 3,600 s.
+ * Card 372 moved the {@code min} inside the {@code max} for exactly that reason:
+ * the old {@code min(CEILING, max(floor, ...))} would have turned a typed hour
+ * into half of one without saying so.</p>
  *
- * <p><b>The two clocks are sequential, so their ceilings compose.</b> The grace
+ * <p>Worked, on the shipped floor of 7,200,000 ms and the numbers above: p50 =
+ * 92,200 ms, so the measured term is min(1,800,000, 276,600) = 276,600 ms and
+ * the floor governs, runBudget = <b>7,200,000 ms</b>. The queue allowance is
+ * 3 × 92,200 = 276,600 ms, so grace = min(2,700,000, 7,476,600) =
+ * <b>2,700,000 ms</b>, its own ceiling. Worst case 9,900,000 ms, <b>165 min</b>.
+ * A backend slow enough to matter is priced above the floor only when the
+ * operator has lowered it: at a 60 s floor and a p50 of 200 s a child gets
+ * 600 s.</p>
+ *
+ * <p><b>The two clocks are sequential, so their bounds compose.</b> The grace
  * is disarmed by the first token and the run budget armed at that same instant,
  * so a child that speaks just before its grace expires and then wedges costs
- * {@code grace + runBudget}. At both ceilings that is 45 + 30 = <b>75 min</b>,
- * and neither {@link #CEILING_MS} nor {@link #GRACE_CEILING_MS} is the number a
- * reader wants — {@link #worstCaseMs()} is, and it computes it rather than
- * restating it.</p>
+ * {@code grace + runBudget}. At the grace ceiling and the shipped floor that is
+ * 45 + 120 = <b>165 min</b>, and neither {@link #CEILING_MS} nor
+ * {@link #GRACE_CEILING_MS} is the number a reader wants. {@link #worstCaseMs()}
+ * is, and it computes it rather than restating it.</p>
  *
  * <p><b>An explicit override wins outright</b> ({@link #fixed}): a face or a test
  * that names a number gets that number, and the grace is derived from the
  * override's own implied p50 rather than from the measurement — an override is a
  * statement about this run, not a new estimate of the backend.</p>
  *
- * <p>{@link #FLOOR_MS}, {@link #P50_MULTIPLE} and the ceilings are the values
+ * <p>{@link #P50_MULTIPLE} and the ceilings are the values
  * {@code konzept/ORCHESTRATION.md} §7 proposed. The concept files them as an
  * open OWNER decision (§9, item 5), so they are named here, in one place, with
- * their measurement beside them, rather than spread over the code.</p>
+ * their measurement beside them, rather than spread over the code. The floor is
+ * no longer one of them: card 372 handed it to the operator under the key
+ * {@code subagentBudgetSeconds}. Its shipped value,
+ * {@link dev.spectroscope.core.config.SpectroConfig#DEFAULT_SUBAGENT_BUDGET_SECONDS},
+ * is still the floor the one-argument {@link #derivedFrom(ExchangeLatency)}
+ * uses, the floor {@link #fixed(long)} carries beside its override, and the
+ * floor {@code SubagentConfig}'s canonical constructor applies when the key is
+ * null. The deprecated {@link #FLOOR_MS} restates it in milliseconds for code
+ * compiled against the release that published it.</p>
  */
 public final class ChildBudget {
 
-    /**
-     * The smallest run budget any child gets, whatever the backend says: 300 s.
-     * Two and a half times the literal it replaces, and above the 276.6 s that
-     * 3 × the owner's measured p50 works out to — so on that backend the floor
-     * is what actually governs.
-     */
+    /** The p50 assumed while nothing has been measured on this backend: 100 s,
+     *  the median the original 300 s floor stood on (300 s / 3). The operator's
+     *  floor does not move it: an unmeasured backend is priced by what backends
+     *  have measured, not by how patient the operator is. It prices the queue
+     *  allowance only; the run budget of an unmeasured backend is the floor. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
-    public static final long FLOOR_MS = 300_000L;
+    public static final long IMPLIED_P50_MS = 100_000L;
+
+    /** The shipped floor of a child's run budget in milliseconds. An earlier
+     *  release published this name, so it is kept, deprecated, for code
+     *  compiled against it. The floor is now the operator's
+     *  {@code subagentBudgetSeconds}, and this constant restates its shipped
+     *  default,
+     *  {@link dev.spectroscope.core.config.SpectroConfig#DEFAULT_SUBAGENT_BUDGET_SECONDS},
+     *  so it no longer says which floor a given budget runs on.
+     *  @deprecated read {@link #floorMs()} on the budget in hand */
+    @Deprecated
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.MILLISECONDS)
+    public static final long FLOOR_MS =
+            dev.spectroscope.core.config.SpectroConfig.DEFAULT_SUBAGENT_BUDGET_SECONDS * 1000L;
 
     /** How many median exchanges a child may spend once it has started
      *  producing: three. A child that has had three median turns and is still
@@ -92,13 +124,21 @@ public final class ChildBudget {
     public static final int P50_MULTIPLE = 3;
 
     /**
-     * The hard stop on a derived run budget: 30 min. Above the largest exchange
+     * The hard stop on a DERIVED run budget: 30 min. Above the largest exchange
      * ever measured here (1,560.9 s = 26.0 min, HTTP 200), so a single real
      * exchange still fits inside it.
      *
-     * <p><b>This bounds ONE of the two clocks, not the child.</b> The two run in
-     * sequence — see {@link #worstCaseMs()} for what a child can actually hold
-     * its requester for, which is more than this number.</p>
+     * <p><b>It bounds the measured term only.</b> A floor the operator typed
+     * passes it untouched (card 372); this number says how far a measurement
+     * may carry a child, not how long an operator may let one run.</p>
+     *
+     * <p><b>And it bounds ONE of the two clocks, not the child.</b> The two run
+     * in sequence, so what a child can actually hold its requester for is
+     * {@link #worstCaseMs()} and not this constant. At the shipped floor that
+     * composed number is far above this one, 9,900,000 ms against 1,800,000.
+     * Under a floor the operator has lowered it can sit well below it: at a
+     * 60 s floor with nothing measured the worst case is 420,000 ms. Either
+     * way, read it there rather than here.</p>
      */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
     public static final long CEILING_MS = 1_800_000L;
@@ -120,21 +160,63 @@ public final class ChildBudget {
 
     private final ExchangeLatency latency;
     private final Long overrideMs;
+    private final long floorMs;
 
-    private ChildBudget(ExchangeLatency latency, Long overrideMs) {
+    private ChildBudget(ExchangeLatency latency, Long overrideMs, long floorMs) {
         this.latency = latency;
         this.overrideMs = overrideMs;
+        this.floorMs = floorMs;
     }
 
     /**
-     * The production shape: derived from what this session has measured.
+     * The production shape with the shipped floor,
+     * {@link dev.spectroscope.core.config.SpectroConfig#DEFAULT_SUBAGENT_BUDGET_SECONDS}.
      *
      * @param latency the session's shared window — the parent's own exchanges
      *                and its children's both land in it
      * @return a budget that re-derives itself on every read
      */
     public static ChildBudget derivedFrom(ExchangeLatency latency) {
-        return new ChildBudget(latency == null ? new ExchangeLatency() : latency, null);
+        return derivedFrom(latency,
+                dev.spectroscope.core.config.SpectroConfig.DEFAULT_SUBAGENT_BUDGET_SECONDS * 1000L);
+    }
+
+    /**
+     * The production shape with the operator's floor (card 372).
+     *
+     * @param latency the session's shared window
+     * @param floorMs the smallest run budget, from {@code subagentBudgetSeconds}
+     * @return a budget that re-derives itself on every read
+     * @throws IllegalArgumentException when the floor is not positive
+     */
+    public static ChildBudget derivedFrom(ExchangeLatency latency, long floorMs) {
+        requirePositiveFloor(floorMs);
+        return new ChildBudget(latency == null ? new ExchangeLatency() : latency, null, floorMs);
+    }
+
+    /**
+     * The one refusal both entry points speak with, so a floor of zero is
+     * refused in the same words wherever it arrives.
+     *
+     * <p>It names the settings key rather than the parameter. Since card 386 a
+     * settings value below 1 does not get here: {@code SettingFloors} has the
+     * settings writer refuse it on save and the config loader skip it on read.
+     * What can still reach this check is code that builds a
+     * {@code SubagentConfig} with its own number, which multiplies
+     * {@code subagentBudgetSeconds} by a thousand and hands the result over.
+     * The key is the name that code's author finds in the config reference;
+     * a "floorMs" is not in it.</p>
+     *
+     * @param floorMs the floor to check, in milliseconds
+     * @throws IllegalArgumentException when it is not positive
+     */
+    private static void requirePositiveFloor(long floorMs) {
+        if (floorMs <= 0) {
+            // Reported in seconds, the unit the key is typed in. A floor that is
+            // not a whole number of seconds cannot come from the key.
+            throw new IllegalArgumentException(
+                    "subagentBudgetSeconds must be positive, got " + floorMs / 1000 + " s");
+        }
     }
 
     /**
@@ -145,7 +227,32 @@ public final class ChildBudget {
      * @return a budget that ignores the backend and reports this number
      */
     public static ChildBudget fixed(long runBudgetMs) {
-        return new ChildBudget(new ExchangeLatency(), runBudgetMs);
+        return new ChildBudget(new ExchangeLatency(), runBudgetMs,
+                dev.spectroscope.core.config.SpectroConfig.DEFAULT_SUBAGENT_BUDGET_SECONDS * 1000L);
+    }
+
+    /**
+     * The same window under the operator's floor. An explicit override is a
+     * statement about this run and keeps winning, so it returns itself.
+     *
+     * <p>The floor is checked BEFORE the override is consulted, so this method
+     * refuses exactly what {@link #derivedFrom(ExchangeLatency, long)} refuses.
+     * It is the branch both shipped faces take, and an override used to swallow
+     * a zero here and hand back a budget whose floor nobody had agreed to.</p>
+     *
+     * @param floorMs the floor from {@code subagentBudgetSeconds}
+     * @return this budget when overridden, else a derived one with that floor
+     * @throws IllegalArgumentException when the floor is not positive
+     */
+    public ChildBudget withFloorMs(long floorMs) {
+        requirePositiveFloor(floorMs);
+        return overrideMs != null ? this : derivedFrom(latency, floorMs);
+    }
+
+    /** The floor a measurement has to clear before it governs.
+     *  @return the floor in force, in milliseconds */
+    public long floorMs() {
+        return floorMs;
     }
 
     /** The window this budget observes, so children can feed the same one their
@@ -171,15 +278,26 @@ public final class ChildBudget {
     /**
      * The budget a child may spend once it has produced its first token.
      *
-     * @return milliseconds; the override when one is set, else
-     *         {@code min(CEILING, max(FLOOR, P50_MULTIPLE × p50))}
+     * <p>There is no measured term until something has been measured. A session
+     * that has seen no exchange yet hands the child the floor and nothing else,
+     * so a child on a 60 s floor gets 60 s rather than the 300 s that
+     * {@link #IMPLIED_P50_MS} would have implied. The implied median prices the
+     * queue allowance, which has no other number to stand on; the run budget
+     * does, and it is the operator's.</p>
+     *
+     * @return milliseconds; the override when one is set, the floor while
+     *         nothing has been measured, else
+     *         {@code max(floor, min(CEILING, P50_MULTIPLE × p50))}
      */
     public long runBudgetMs() {
         if (overrideMs != null) {
             return overrideMs;
         }
-        long p50 = p50OrImplied();
-        return Math.min(CEILING_MS, Math.max(FLOOR_MS, P50_MULTIPLE * p50));
+        OptionalLong measured = latency.p50Ms();
+        if (measured.isEmpty()) {
+            return floorMs;
+        }
+        return Math.max(floorMs, Math.min(CEILING_MS, P50_MULTIPLE * measured.orElseThrow()));
     }
 
     /**
@@ -201,16 +319,16 @@ public final class ChildBudget {
      * disarms it at the child's first token, arming the run budget for its full
      * length at that same instant. So a child that stays mute until one
      * millisecond before its grace expires, and then wedges, spends
-     * {@code grace + runBudget}. At both ceilings that is 45 + 30 = <b>75
-     * min</b>, not the 30 that {@link #CEILING_MS} alone suggests — a reader who
-     * takes the run ceiling for the child's cost is out by a factor of two and a
-     * half.</p>
+     * {@code grace + runBudget}. At the grace ceiling and the shipped floor
+     * that is 45 + 120 = <b>165 min</b>, not the 30 that {@link #CEILING_MS}
+     * alone suggests. A reader who takes the run ceiling for the child's cost
+     * is out by more than a factor of five.</p>
      *
      * <p>Nothing in the harness enforces this composed number; it is a fact
      * about the two clocks, exposed so it can be read and pinned instead of
-     * recomputed in someone's head. Whether 75 min is an acceptable worst case
-     * for one {@code spawn_agents} call is an open owner question, filed with
-     * the other budget constants.</p>
+     * recomputed in someone's head. The floor under it is the operator's
+     * ({@code subagentBudgetSeconds}), so whoever raises that number raises
+     * this one with it.</p>
      *
      * @return milliseconds a child can cost at worst, grace plus run budget
      */
@@ -223,26 +341,31 @@ public final class ChildBudget {
      * its requester. A budget that cannot say where its number came from is the
      * literal again, wearing a method.
      *
+     * <p>It names the key as well as the number, because the floor is now
+     * something the reader can change: a child that says only "7200 s floor"
+     * leaves its requester hunting for where that came from.</p>
+     *
      * <p>The sample size is {@link ExchangeLatency#sampleSize()}, never
      * {@link ExchangeLatency#observed()}: the median is taken over the ring, so
      * on a long session the raw counter names hundreds of exchanges that were
      * deliberately forgotten. A sentence written to justify a number must not
      * overstate the evidence behind it.</p>
      *
-     * @return e.g. {@code "derived: max(300 s floor, 3 × 92 s measured p50 over
-     *         9 exchanges)"}
+     * @return e.g. {@code "derived: max(7200 s floor (subagentBudgetSeconds),
+     *         min(1800 s ceiling, 3 × 92 s measured p50 over 9 exchanges))"}
      */
     public String derivation() {
         if (overrideMs != null) {
             return "explicit override: " + overrideMs / 1000 + " s";
         }
+        String floor = floorMs / 1000 + " s floor (subagentBudgetSeconds)";
         OptionalLong measured = latency.p50Ms();
         if (measured.isEmpty()) {
-            return "derived: " + FLOOR_MS / 1000 + " s floor (nothing measured on this backend yet)";
+            return "derived: " + floor + ", nothing measured on this backend yet";
         }
-        return "derived: max(" + FLOOR_MS / 1000 + " s floor, " + P50_MULTIPLE + " × "
-                + measured.orElseThrow() / 1000 + " s measured p50 over "
-                + latency.sampleSize() + " exchanges)";
+        return "derived: max(" + floor + ", min(" + CEILING_MS / 1000 + " s ceiling, "
+                + P50_MULTIPLE + " × " + measured.orElseThrow() / 1000 + " s measured p50 over "
+                + latency.sampleSize() + " exchanges))";
     }
 
     /**
@@ -250,19 +373,22 @@ public final class ChildBudget {
      *
      * <p>Three sources, and the order is the point. An OVERRIDE implies its own
      * p50 ({@code override / P50_MULTIPLE}): a face or a test that says "a child
-     * gets 45 s" means a small run, and inheriting the floor's implied 100 s
-     * queue allowance there would make the grace a hundred times the budget — the
-     * first version of this method did exactly that, and a 300 ms test budget
-     * came out with a 300-second grace. Otherwise the MEASUREMENT, which is the
-     * whole idea. Failing both, the p50 the floor stands on, so an unmeasured
-     * backend is priced consistently with the floor rather than with a zero
-     * allowance — a zero would make grace == budget and put the clock back where
-     * the literal had it.</p>
+     * gets 45 s" means a small run, and inheriting a 100 s queue allowance there
+     * would make the grace a hundred times the budget. The first version of this
+     * method did exactly that, and a 300 ms test budget came out with a
+     * 300-second grace. Otherwise the MEASUREMENT, which is the whole idea.
+     * Failing both, {@link #IMPLIED_P50_MS}, so an unmeasured backend's queue is
+     * priced by what backends have shown rather than with a zero allowance. A
+     * zero would make grace == budget and put the clock back where the literal
+     * had it. The operator's floor is deliberately not used here: it says how
+     * long a child may work, not how long this backend takes to answer. Since
+     * card 372 this feeds {@link #firstTokenGraceMs()} alone; the run budget of
+     * an unmeasured backend is the floor itself.</p>
      */
     private long p50OrImplied() {
         if (overrideMs != null) {
             return Math.max(1, overrideMs / P50_MULTIPLE);
         }
-        return latency.p50Ms().orElse(FLOOR_MS / P50_MULTIPLE);
+        return latency.p50Ms().orElse(IMPLIED_P50_MS);
     }
 }

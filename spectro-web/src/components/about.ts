@@ -91,3 +91,31 @@ export function releaseVersion(raw: unknown): string | null {
   const v = raw.trim();
   return v === "" ? null : v;
 }
+
+/**
+ * The build label of a test build, or null on a release (card 398).
+ *
+ * The server sends it in /api/bundles next to `version` only when its jar was
+ * built with one, for example "0.13.0-beta (merge-2026-09-24, a1b2c3d, 24.09.
+ * 14:05)". The same narrowing as the version: a string, trimmed, or nothing.
+ *
+ * @param raw the `label` field as it arrived from the server, unvalidated
+ * @return the trimmed label, or null when the server reported none
+ */
+export function buildLabel(raw: unknown): string | null {
+  return releaseVersion(raw);
+}
+
+/** The page title index.html carries, which a release keeps. */
+const BASE_TITLE = "spectroscope";
+
+/**
+ * The document title, and with it the desktop window title: the plain name on a
+ * release, the name and the label on a test build (card 398).
+ *
+ * @param label the build label, or null
+ * @return the title to show
+ */
+export function windowTitle(label: string | null): string {
+  return label === null ? BASE_TITLE : `${BASE_TITLE} ${label}`;
+}

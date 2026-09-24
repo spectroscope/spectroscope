@@ -49,7 +49,8 @@ import java.util.List;
  *                      built without introspection and emit no {@code context_info}
  * @param budget        what a child may spend (card 270). Default: derived from
  *                      a fresh, unfed {@link dev.spectroscope.core.provider.ExchangeLatency},
- *                      which means the {@link ChildBudget#FLOOR_MS} floor governs.
+ *                      which means {@code subagentBudgetSeconds} below governs
+ *                      (card 372).
  *                      A face that shares its parent agent's latency window pays
  *                      the measured price instead of the floor
  * @param maxTurns      the parent's turn ceiling, so a child stops where the
@@ -78,6 +79,16 @@ import java.util.List;
  *                      one. {@code SubagentReachTest.aLiveThinkingToggleMoves
  *                      TheParentAloneUntilTheNextSession} holds that measured
  *                      (nullable → the provider's default)
+ * @param subagentBudgetSeconds the operator's floor for every child's run budget,
+ *                      in seconds (card 372). Nullable: the shipped default. It is
+ *                      applied to {@code budget} in the canonical constructor, so a
+ *                      face passes its window and its number and never composes
+ *                      the two by hand
+ * @param sessionWindow the context window the operator set for the parent's
+ *                      session (card 390), the SAME holder the parent reads, so
+ *                      a child compacts against the window the operator stated
+ *                      and sees a change from its next turn (nullable: the
+ *                      children derive their window as before)
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -92,15 +103,76 @@ public record SubagentConfig(
         Integer compactionThreshold,
         Integer maxTurns,
         Integer maxTokens,
-        Boolean thinking) {
+        Boolean thinking,
+        Integer subagentBudgetSeconds,
+        dev.spectroscope.core.session.SessionWindow sessionWindow) {
 
     /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
-     *  and an absent budget to the derived one over an unfed window (the floor). */
+     *  and an absent budget to the derived one over an unfed window. The
+     *  operator's floor is applied here, to the budget either way, so a face
+     *  hands over its latency window and its number separately and the two are
+     *  composed in one place (card 372). An explicit {@link ChildBudget#fixed}
+     *  override keeps winning: {@link ChildBudget#withFloorMs} returns itself. */
     public SubagentConfig {
         webTools = webTools == null ? List.of() : List.copyOf(webTools);
+        long floorMs = (subagentBudgetSeconds == null
+                ? dev.spectroscope.core.config.SpectroConfig.DEFAULT_SUBAGENT_BUDGET_SECONDS
+                : subagentBudgetSeconds) * 1000L;
         budget = budget == null
-                ? ChildBudget.derivedFrom(new dev.spectroscope.core.provider.ExchangeLatency())
-                : budget;
+                ? ChildBudget.derivedFrom(new dev.spectroscope.core.provider.ExchangeLatency(), floorMs)
+                : budget.withFloorMs(floorMs);
+    }
+
+    /** The pre-card-390 arity, kept so a caller that does not carry a session
+     *  window still compiles; its children derive their window as before.
+     *  @param provider      the provider the children run on
+     *  @param cwd           sandbox root, same as the parent's
+     *  @param parentAgentId agentId of the parent agent
+     *  @param onPermission  the same blocking broker the parent uses
+     *  @param baseTools     the belt a child inherits, WITHOUT the spawn tools
+     *  @param hooks         the parent's hooks (nullable → none)
+     *  @param llmWire       the session's recorder (nullable → children record nothing)
+     *  @param webTools      the parent's web tools (nullable → none)
+     *  @param budget        what a child may spend (nullable → derived)
+     *  @param compactionThreshold the parent's explicit threshold (nullable → derived)
+     *  @param maxTurns      the parent's turn ceiling (nullable → the default)
+     *  @param maxTokens     the parent's completion budget (nullable → the default)
+     *  @param thinking      whether reasoning is surfaced (nullable → the provider's default)
+     *  @param subagentBudgetSeconds the operator's floor (nullable → the shipped one) */
+    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
+                          PermissionBroker onPermission, List<Tool> baseTools,
+                          HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
+                          ChildBudget budget, Integer compactionThreshold, Integer maxTurns,
+                          Integer maxTokens, Boolean thinking, Integer subagentBudgetSeconds) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
+                webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
+                subagentBudgetSeconds, null);
+    }
+
+    /** The 0.12.0 arity, before card 372 added the floor setting and card 390
+     *  the session window (card 412). It passes neither, so it builds the record
+     *  the 14 argument form builds with a null {@code subagentBudgetSeconds}:
+     *  the children run on the shipped floor and derive their window.
+     *  @param provider      the provider the children run on
+     *  @param cwd           sandbox root, same as the parent's
+     *  @param parentAgentId agentId of the parent agent
+     *  @param onPermission  the same blocking broker the parent uses
+     *  @param baseTools     the belt a child inherits, WITHOUT the spawn tools
+     *  @param hooks         the parent's hooks (nullable → none)
+     *  @param llmWire       the session's recorder (nullable → children record nothing)
+     *  @param webTools      the parent's web tools (nullable → none)
+     *  @param budget        what a child may spend (nullable → derived)
+     *  @param compactionThreshold the parent's explicit threshold (nullable → derived)
+     *  @param maxTurns      the parent's turn ceiling (nullable → the default)
+     *  @param maxTokens     the parent's completion budget (nullable → the default)
+     *  @param thinking      whether reasoning is surfaced (nullable → the provider's default) */
+    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
+                          PermissionBroker onPermission, List<Tool> baseTools,
+                          HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
+                          ChildBudget budget, Integer compactionThreshold, Integer maxTurns,
+                          Integer maxTokens, Boolean thinking) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
+                webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking, null);
     }
 
     /** The pre-card-364 arity, kept so a caller that does not carry the
@@ -121,7 +193,7 @@ public record SubagentConfig(
                           HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
                           ChildBudget budget, Integer compactionThreshold) {
         this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
-                webTools, budget, compactionThreshold, null, null, null);
+                webTools, budget, compactionThreshold, null, null, null, null);
     }
 
     /** The pre-card-263 arity, kept so a caller that does not carry the
@@ -141,15 +213,19 @@ public record SubagentConfig(
                           HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
                           ChildBudget budget) {
         this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
-                webTools, budget, null, null, null, null);
+                webTools, budget, null, null, null, null, null);
     }
 
     /**
-     * The labeled way to build one. The telescoping compat constructors that
-     * used to sit here are gone on purpose: their unlabeled {@code null} slots
-     * are what let both faces drop the llm-wire recorder for a month while
-     * every suite stayed green (card 231). An optional seam is now set by NAME
-     * or not at all.
+     * The labeled way to build one, and the one to use in new code: here a
+     * seam is set by NAME, never by its position. Card 231 deleted the
+     * telescoping compat constructors of its day, because their unlabeled
+     * {@code null} slots let both faces drop the llm-wire recorder for a month
+     * while every suite stayed green. The positional compat constructors above
+     * were added after that card, each so that code written against an earlier
+     * component list still compiles, and each names that list in its own
+     * javadoc. One of them is the canonical form of 0.12.0, restored by card
+     * 412.
      *
      * @return a builder whose optional seams default exactly as the record's
      *         javadoc states: no hooks, no recorder, no web grant
@@ -173,6 +249,8 @@ public record SubagentConfig(
         private Integer maxTurns;               // nullable -> Agent.DEFAULT_MAX_TURNS
         private Integer maxTokens;              // nullable -> Agent.DEFAULT_MAX_TOKENS
         private Boolean thinking;               // nullable -> the provider's default
+        private Integer subagentBudgetSeconds;   // nullable -> the shipped floor
+        private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable -> children derive
 
         private Builder() {
         }
@@ -251,11 +329,29 @@ public record SubagentConfig(
             return this;
         }
 
+        /** @param value the operator's {@code subagentBudgetSeconds}, the floor of
+         *               every child's run budget (card 372); null means the shipped
+         *               default
+         *  @return this builder */
+        public Builder subagentBudgetSeconds(Integer value) {
+            this.subagentBudgetSeconds = value;
+            return this;
+        }
+
+        /** The window the operator set for the parent's session (card 390).
+         *  @param value the parent session's window holder, the SAME instance
+         *               the parent reads; null lets the children derive
+         *  @return this builder */
+        public Builder sessionWindow(dev.spectroscope.core.session.SessionWindow value) {
+            this.sessionWindow = value;
+            return this;
+        }
+
         /** @return the finished config, normalized by the canonical constructor */
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
                     baseTools, hooks, llmWire, webTools, budget, compactionThreshold,
-                    maxTurns, maxTokens, thinking);
+                    maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow);
         }
     }
 }

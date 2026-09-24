@@ -65,12 +65,24 @@ tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
 }
 
+// Card 398: the label a test build carries, for example
+// "0.13.0-beta (merge-2026-09-24, a1b2c3d, 24.09. 14:05)". scripts/build-label.sh
+// computes it and build-desktop-runkit.sh passes it as -Pspectro.buildLabel.
+// Empty when the property is absent or empty, and then nothing is stamped.
+val buildLabel: String = providers.gradleProperty("spectro.buildLabel").orElse("").get().trim()
+require(!buildLabel.contains('\\') && !buildLabel.contains('\n')) {
+    "spectro.buildLabel may not contain a backslash or a line break: '$buildLabel'"
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {
         events("failed", "skipped")
     }
     // user.home is redirected by the ROOT subprojects block (card 235).
+    // BuildLabelStampTest compares the stamp on the test classpath, which is
+    // the processResources output, with the label this build was given.
+    systemProperty("spectro.test.expectedBuildLabel", buildLabel)
 }
 
 // Load ANTHROPIC_API_KEY & friends from a local .env file (gitignored), so no
@@ -135,7 +147,13 @@ tasks.processResources {
     // chain to the build files on disk.
     val moduleVersion = version.toString()
     inputs.property("moduleVersion", moduleVersion)
+    // Card 398: the build label rides the same file, as a label= line, only
+    // when the build was given one. UTF-8 because a branch name in the label
+    // may be outside ASCII; StarterBundles reads it as UTF-8.
+    val labelLine = if (buildLabel.isEmpty()) "" else "label=$buildLabel"
+    inputs.property("labelLine", labelLine)
+    filteringCharset = "UTF-8"
     filesMatching("starter/spectro-version.properties") {
-        expand("version" to moduleVersion)
+        expand("version" to moduleVersion, "labelLine" to labelLine)
     }
 }

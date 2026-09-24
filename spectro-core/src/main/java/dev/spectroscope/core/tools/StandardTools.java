@@ -51,9 +51,11 @@ public final class StandardTools {
     private static final int MAX_GLOB_RESULTS = 200;
 
     /** {@code run_command}'s shipped wall-clock budget, READ from the settings
-     *  record rather than kept as a second copy of the same ten (card 359).
+     *  record rather than kept as a second copy of the same number (card 359).
      *  A private literal here is what made the number unreachable, and the
-     *  description one screen down typed it a second time. */
+     *  description one screen down typed it a second time. The faces that have
+     *  a settings record in hand do not come through here at all; they call
+     *  {@link #all(long)} with the operator's own value (card 370). */
     @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.SECONDS)
     private static final long COMMAND_TIMEOUT_SECONDS =
             dev.spectroscope.core.config.SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS;
@@ -65,7 +67,10 @@ public final class StandardTools {
     private StandardTools() {}
 
     /**
-     * All standard tools; register each into a {@link ToolRegistry}.
+     * All standard tools, with the shipped shell budget. A face that has a
+     * settings record in hand calls {@link #all(long)} instead; this arity is
+     * for the published SDK facade, which has no settings file to read, and for
+     * the callers that only want the tool NAMES.
      *
      * @return list_dir, read_file, write_file, run_command, edit_file, glob, grep,
      *         view_image and view_file
@@ -75,12 +80,24 @@ public final class StandardTools {
     }
 
     /**
-     * Visible for tests: the command timeout is the only knob worth turning there.
+     * All standard tools with the operator's shell budget wired into
+     * {@code run_command} (card 370). Every face of the app calls this one: the
+     * browser session, the belt its children inherit, the REPL, the headless
+     * runner behind {@code spectro run} and the context describer.
      *
-     * @param commandTimeoutSeconds run_command's wall-clock budget — timeout tests shrink it
+     * <p>It was package-private until card 370, and its javadoc said it existed
+     * for tests. All five of those faces sit in other packages, four of them in
+     * other modules (three in spectro-server, one in spectro-cli; only the
+     * headless runner is in this one), so the overload could not be called from
+     * anywhere that needed it and every shipped belt took the default. {@code
+     * ToolBeltReachDriftTest} walks the sources and refuses a bare
+     * {@link #all()} that does not say why it takes that default.</p>
+     *
+     * @param commandTimeoutSeconds run_command's wall-clock budget, from
+     *                              {@code SpectroConfig#commandTimeoutSeconds()}
      * @return the same tool set with the given timeout wired into run_command
      */
-    static List<Tool> all(long commandTimeoutSeconds) {
+    public static List<Tool> all(long commandTimeoutSeconds) {
         return List.of(listDir(), readFile(), writeFile(), runCommand(commandTimeoutSeconds),
                 editFile(), glob(), grep(), viewImage(), viewFile());
     }
@@ -703,12 +720,48 @@ public final class StandardTools {
     // ---- run_command -------------------------------------------------------------------
 
     /**
+     * The one call run_command makes into a shell. {@link ShellCommand#run} in
+     * production; a test hands in a recorder so a command that would stop a
+     * process is never started for real.
+     */
+    @FunctionalInterface
+    interface Shell {
+        /**
+         * Runs one line.
+         *
+         * @param command        the shell line
+         * @param extraEnv       environment entries layered over the inherited environment
+         * @param cwd            working directory
+         * @param timeoutSeconds wall-clock budget
+         * @param signal         run-scoped cancel
+         * @param maxOutputChars output cap
+         * @return the outcome
+         */
+        ShellCommand.Result run(String command, Map<String, String> extraEnv, Path cwd,
+                                long timeoutSeconds, dev.spectroscope.core.CancelSignal signal,
+                                int maxOutputChars);
+    }
+
+    /**
      * Builds {@code run_command}: one shell line through {@link ShellCommand},
      * permission-gated — arbitrary execution is the sharpest tool in the belt.
      *
      * @param timeoutSeconds wall-clock budget per call; tests shrink it
      */
     private static Tool runCommand(long timeoutSeconds) {
+        return runCommand(timeoutSeconds, HostGuard::live, ShellCommand::run);
+    }
+
+    /**
+     * Builds {@code run_command} over a given host guard and shell.
+     *
+     * @param timeoutSeconds wall-clock budget per call
+     * @param guard          the host guard, asked once per call
+     * @param shell          the shell the line runs in
+     * @return the tool
+     */
+    static Tool runCommand(long timeoutSeconds, java.util.function.Supplier<HostGuard> guard,
+                           Shell shell) {
         return new Tool() {
             /** Wire name: {@code run_command}. */
             public String name() { return "run_command"; }
@@ -731,7 +784,24 @@ public final class StandardTools {
             /** Delegates to ShellCommand and maps its Result onto the tool convention — timeout, spawn failure and non-zero exit become "ERROR: " strings. */
             public String execute(JsonNode input, ToolContext context) {
                 String command = input.path("command").asText();
-                ShellCommand.Result result = ShellCommand.run(command, Map.of(), context.cwd(),
+                // Card 396: a line the host guard reads as aimed at this app
+                // does not reach a shell, whoever allowed the call. The model's
+                // own line is read too when rtk rewrote it.
+                HostGuard host = guard.get();
+                java.util.Optional<String> refused = host.refusal(command);
+                if (refused.isEmpty() && input.hasNonNull(RtkFilter.ORIGINAL_FIELD)) {
+                    refused = host.refusal(input.path(RtkFilter.ORIGINAL_FIELD).asText());
+                }
+                if (refused.isPresent()) {
+                    return refused.get();
+                }
+                // Card 379, Owner call 7: a line the rtk filter rewrote runs
+                // with rtk's telemetry refused. Spectro does not answer that
+                // consent prompt on the operator's behalf. An untouched line
+                // carries nothing, so a run with the switch off has the same
+                // environment it had before this card.
+                ShellCommand.Result result = shell.run(command,
+                        RtkFilter.shellEnvFor(input), context.cwd(),
                         timeoutSeconds, context.signal(), MAX_OUTPUT_CHARS);
                 if (result.timedOut()) {
                     return "ERROR: command timed out after " + timeoutSeconds + " s.";

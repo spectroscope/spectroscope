@@ -1,25 +1,32 @@
 // Card 244: the transcript's sign of life while the agent works and nothing
 // else moves. The caret and the thinking dot both live on an OPEN assistant
 // turn, so they cover neither the stretch from run_start to the first delta
-// nor a running tool — exactly the seconds that read as "is it stuck?". The
+// nor a running tool, exactly the seconds that read as "is it stuck?". The
 // line yields to an open permission question, because that wait is the
-// owner's, not the model's.
+// owner's, not the model's. Card 395: a child's thinking dot can pulse on a
+// block above a sibling's later turns, and the line yields to that dot too.
 
 import { useEffect, useState } from "react";
-import type { UiState } from "../state/reducer";
+import { liveThinkingTurns, type UiState } from "../state/reducer";
 import { formatTimer } from "./voiceButton";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 /** Whether the working line has a job: a live view, a running run, no open
- *  permission question, and no open assistant turn already pulsing its own
- *  indicator (the caret or the thinking dot). */
+ *  permission question, no agent's open block showing the live thinking dot
+ *  ({@link liveThinkingTurns}, which can mark a block above the last turn),
+ *  and a last turn that is not an assistant turn, since the last assistant
+ *  turn carries the caret while the run runs. */
 export function showWorkingLine(
-  state: Pick<UiState, "running" | "turns" | "pendingPermissions">,
+  state: Pick<
+    UiState,
+    "running" | "turns" | "pendingPermissions" | "cards" | "rootAgentId" | "thinkingAgents"
+  >,
   liveView: boolean,
 ): boolean {
   if (!liveView || !state.running) return false;
   if (state.pendingPermissions.length > 0) return false;
+  if (liveThinkingTurns(state).size > 0) return false;
   const last = state.turns[state.turns.length - 1];
   return last === undefined || last.kind !== "assistant";
 }

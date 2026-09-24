@@ -45,7 +45,10 @@ echo "==> [1/5] web UI build (embedded into the server jar; not a standalone ass
 
 # 2) JVM apps: CLI dist, server bootJar, mcp-notes dist
 echo "==> [2/5] cli + server + mcp-notes (gradle)"
-./gradlew :spectro-cli:distZip :spectro-server:bootJar :spectro-mcp-notes:distZip --console=plain
+# The empty label property stamps the server jar without a build label (card
+# 398), even when a gradle.properties on this machine sets one.
+./gradlew :spectro-cli:distZip :spectro-server:bootJar :spectro-mcp-notes:distZip --console=plain \
+  "-Pspectro.buildLabel="
 cp -f "spectro-cli/build/distributions/spectro-${VERSION}.zip"                 "$OUT/"
 cp -f "spectro-server/build/libs/spectro-server-${VERSION}.jar"                "$OUT/"
 cp -f "spectro-mcp-notes/build/distributions/spectro-mcp-notes-${VERSION}.zip" "$OUT/"
@@ -66,7 +69,9 @@ else
   # block, not the exit code") looking for something that is not there, unable
   # to tell a failed build from a log the wrapper truncated — the same confusion
   # that shipped 0.6.1 with no dmg. An `if` condition is exempt from `set -e`.
-  if VERSION="$VERSION" ./scripts/build-desktop-runkit.sh; then :; else DESKTOP_RC=$?; fi
+  # SPECTRO_RELEASE=1: this is the release path, so the desktop build carries no
+  # build label even when HEAD is not the release tag (card 398).
+  if SPECTRO_RELEASE=1 VERSION="$VERSION" ./scripts/build-desktop-runkit.sh; then :; else DESKTOP_RC=$?; fi
   # Deliberately not fatal on its own: step 4 below is the single place that
   # decides whether this build is a release, and it can name every miss at once
   # instead of dying on the first cp.

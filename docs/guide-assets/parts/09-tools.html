@@ -41,7 +41,7 @@ Every model-supplied path passes the sandbox. Every mutation passes the gate.</p
 <div class="card">
   <h4>The caps</h4>
   <p>Files: 50&thinsp;kB read/edit ceiling. Output: 10&thinsp;000 chars shared clamp
-  (surrogate-safe truncation). Glob: 200 results. Shell: 10&thinsp;s timeout, pipe drained
+  (surrogate-safe truncation). Glob: 200 results. Shell: 900&thinsp;s timeout, pipe drained
   on a background thread — a timeout means “genuinely hung”, never “output too large”.
   Web: 512&thinsp;kB streamed body cap before the text clip.</p>
 </div>
@@ -83,7 +83,9 @@ A denied edit writes nothing. <em>Try: “In README.md, change the title X to Y.
 
 <div class="ref"><div class="ref-head"><code class="name">run_command</code><span class="chip prefix">gated · remembers first token</span><span class="meta">input: { command }</span></div>
 <div class="ref-body"><p>Runs a shell command in the working directory via <code>/bin/sh -c</code>: stderr
-merged, output drained concurrently and capped, 10&thinsp;s timeout, killed on abort.
+merged, output drained concurrently and capped, killed on abort. The timeout is
+the <code>commandTimeoutSeconds</code> setting, 900&thinsp;s as shipped, and the tool
+tells the model the number it was built with.
 Non-zero exit returns <code>ERROR: exit code &lt;n&gt;</code> <em>plus the output</em> —
 exit-code feedback is what lets the model fix its own mistakes. An “always allow”
 remembers only the first token (<code>run_command:git*</code>).</p></div></div>

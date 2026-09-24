@@ -442,6 +442,11 @@ final class EventRenderer {
             // attributed to that agent so a child's stall reads as the child's.
             case RunEvent.SettingsIgnored e -> null;
             // Card 337: the operator's own play button, so no agent owns it.
+            // Card 380: a sentence the operator typed into a running turn. The
+            // CLI never wires an inbox, so this arm is unreachable from a
+            // spectro run; it is here because the switch is exhaustive and an
+            // imported or replayed session may carry the line.
+            case RunEvent.SteeringMessage e -> e.agentId();
             case RunEvent.LaunchOutcome e -> null;
             case RunEvent.NoProgress e -> e.agentId();
             // Card 281: the decision answers one agent's stall, so it belongs to
@@ -455,6 +460,10 @@ final class EventRenderer {
             // Card 265: the answer joins its question by callId and carries no
             // agent, exactly like the verdict that closes a permission request.
             case RunEvent.QuestionAnswered e -> null;
+            // Card 390: the operator's window for the session, set from the
+            // browser ring. No agent owns it; the CLI never writes one, and a
+            // resumed or replayed session may carry the line.
+            case RunEvent.WindowOverride e -> null;
             case RunEvent.RunEnd e -> null;
         };
     }

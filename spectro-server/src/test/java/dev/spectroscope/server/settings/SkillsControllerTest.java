@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** The settings skill manager (card 90): list both roots incl. disabled, flip
  *  the marker, delete user-root skills only — all behind the full fence. */
@@ -359,5 +361,327 @@ class SkillsControllerTest {
         remote.setRemoteAddr("203.0.113.7");
         assertEquals(404, c.delete(null, "verification", remote).getStatusCode().value());
         assertTrue(Files.exists(userRoot.resolve("verification")), "nothing happened");
+    }
+
+    // ---- card 410: a pack installs and uninstalls as one set -----------------------------
+
+    private static final List<String> THREE = List.of(
+            "superpowers/brainstorming", "superpowers/writing-plans", "superpowers/test-driven-development");
+
+    private static ResponseEntity<Map<String, Object>> installSet(SkillsController c, List<?> ids,
+            MockHttpServletRequest request) {
+        return c.installSet(Map.of("skills", ids), request);
+    }
+
+    private static ResponseEntity<Map<String, Object>> removeSet(SkillsController c, List<?> ids,
+            MockHttpServletRequest request) {
+        return c.removeSet(Map.of("skills", ids), request);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> refused(ResponseEntity<Map<String, Object>> answer) {
+        return (List<Map<String, Object>>) answer.getBody().get("refused");
+    }
+
+    @Test
+    void aSetInstallWritesEverySkillIntoTheUserRootAndNothingIntoTheProject() throws IOException {
+        SkillsController c = marketplace();
+
+        ResponseEntity<Map<String, Object>> answer = installSet(c, THREE, local());
+
+        assertEquals(200, answer.getStatusCode().value());
+        for (String id : THREE) {
+            String leaf = id.substring(id.indexOf('/') + 1);
+            assertTrue(Files.isRegularFile(userRoot.resolve("superpowers").resolve(leaf).resolve("SKILL.md")), id);
+            assertTrue(Files.isRegularFile(userRoot.resolve("superpowers").resolve(leaf).resolve("LICENSE")), id);
+        }
+        try (var left = Files.list(projectRoot)) {
+            assertEquals(List.of(), left.toList(), "the project root is never a set's destination");
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> installed = (List<Map<String, Object>>) answer.getBody().get("installed");
+        assertEquals(THREE, installed.stream().map(r -> r.get("skill")).toList());
+    }
+
+    @Test
+    void aSetInstallWithOneTakenIdWritesNothingAndNamesTheTakenOne() throws IOException {
+        // All or nothing: one refusal means the other two are not written either,
+        // and the refusal carries the same facts a single install's 409 does.
+        SkillsController c = marketplace();
+        assertEquals(200, install(c, "superpowers/writing-plans", local()).getStatusCode().value());
+
+        ResponseEntity<Map<String, Object>> answer = installSet(c, THREE, local());
+
+        assertEquals(409, answer.getStatusCode().value());
+        List<Map<String, Object>> refused = refused(answer);
+        assertEquals(1, refused.size());
+        assertEquals("superpowers/writing-plans", refused.get(0).get("skill"));
+        assertEquals(409, refused.get(0).get("status"));
+        assertEquals("user", refused.get(0).get("root"));
+        assertEquals("superpowers:writing-plans", refused.get(0).get("name"));
+        assertFalse(String.valueOf(refused.get(0).get("message")).isBlank());
+        assertFalse(Files.exists(userRoot.resolve("superpowers/brainstorming")));
+        assertFalse(Files.exists(userRoot.resolve("superpowers/test-driven-development")));
+        assertTrue(Files.isRegularFile(userRoot.resolve("superpowers/writing-plans/SKILL.md")), "and the taken one stays");
+    }
+
+    @Test
+    void aSetInstallNamesAnUnknownIdAndWritesNothing() throws IOException {
+        SkillsController c = marketplace();
+
+        ResponseEntity<Map<String, Object>> answer =
+                installSet(c, List.of("superpowers/brainstorming", "superpowers/../../x"), local());
+
+        assertEquals(409, answer.getStatusCode().value());
+        assertEquals(List.of("superpowers/../../x"), refused(answer).stream().map(r -> r.get("skill")).toList());
+        assertEquals(404, refused(answer).get(0).get("status"));
+        try (var left = Files.list(userRoot)) {
+            assertEquals(List.of(), left.toList());
+        }
+    }
+
+    @Test
+    void aSetInstallThatFailsHalfwayTakesBackWhatItAlreadyWrote() throws IOException {
+        // The first skill lands, the second one's copy breaks: the set answers
+        // as a failure, so the first one must not stay behind as if it had not.
+        userRoot = dir.resolve("user");
+        projectRoot = dir.resolve("project");
+        Files.createDirectories(userRoot);
+        Files.createDirectories(projectRoot);
+        SkillCatalogue breaking = new SkillCatalogue() {
+            @Override
+            void copy(org.springframework.core.io.Resource source, Path destination) throws IOException {
+                if (destination.toString().contains("writing-plans-")) {
+                    throw new IOException("disk gave up");
+                }
+                super.copy(source, destination);
+            }
+        };
+        SkillsController c = new SkillsController(userRoot, projectRoot, breaking);
+
+        ResponseEntity<Map<String, Object>> answer = installSet(c, THREE, local());
+
+        assertEquals(500, answer.getStatusCode().value());
+        assertEquals(List.of("superpowers/writing-plans"), refused(answer).stream().map(r -> r.get("skill")).toList());
+        try (var left = Files.list(userRoot)) {
+            assertEquals(List.of(), left.toList(), "brainstorming was written and taken back, the pack folder too");
+        }
+        assertFalse(Files.exists(userRoot.resolveSibling(".skill-install")), "no staging leftovers");
+    }
+
+    @Test
+    void aSetInstallWhoseTakeBackCannotDeleteACopyNamesTheCopyThatStayed() throws IOException {
+        // The second copy breaks, and the first one's folder will not delete.
+        // That folder stays where the loader reads it, so the answer may not
+        // say nothing was installed.
+        userRoot = dir.resolve("user");
+        projectRoot = dir.resolve("project");
+        Files.createDirectories(userRoot);
+        Files.createDirectories(projectRoot);
+        assumeTrue(Files.getFileStore(userRoot).supportsFileAttributeView("posix"), "needs POSIX permissions");
+        Path first = userRoot.resolve("superpowers/brainstorming");
+        boolean[] stillWritable = {true};
+        SkillCatalogue breaking = new SkillCatalogue() {
+            @Override
+            void copy(org.springframework.core.io.Resource source, Path destination) throws IOException {
+                if (destination.toString().contains("writing-plans-")) {
+                    Files.setPosixFilePermissions(first,
+                            java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"));
+                    stillWritable[0] = Files.isWritable(first);
+                    throw new IOException("disk gave up");
+                }
+                super.copy(source, destination);
+            }
+        };
+        SkillsController c = new SkillsController(userRoot, projectRoot, breaking);
+
+        ResponseEntity<Map<String, Object>> answer;
+        try {
+            answer = installSet(c, THREE, local());
+            assumeFalse(stillWritable[0], "running as root deletes it anyway");
+        } finally {
+            if (Files.exists(first)) {
+                Files.setPosixFilePermissions(first, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+            }
+        }
+
+        assertEquals(500, answer.getStatusCode().value());
+        assertEquals(List.of("superpowers/brainstorming"), answer.getBody().get("leftover"));
+        String message = String.valueOf(answer.getBody().get("message"));
+        assertTrue(message.contains("superpowers/brainstorming"), message);
+        assertFalse(message.startsWith("Nothing was installed"), message);
+        assertEquals(List.of("superpowers/writing-plans"), refused(answer).stream().map(r -> r.get("skill")).toList());
+        assertTrue(Files.isRegularFile(first.resolve("SKILL.md")), "the copy the answer names is really still there");
+    }
+
+    @Test
+    void aSetRemoveThatCannotPutAFolderBackNamesItAndWhereItWaits() throws IOException {
+        // The second move out fails, and the first folder will not go back.
+        // It is out of the root, so the answer may not say nothing was removed,
+        // and it names the holding folder the skill now waits in.
+        SkillsController plain = marketplace();
+        assertEquals(200, installSet(plain, List.of("humanizer/humanizer", "superpowers/brainstorming"), local())
+                .getStatusCode().value());
+        Path humanizer = userRoot.resolve("humanizer/humanizer");
+        Path brainstorming = userRoot.resolve("superpowers/brainstorming");
+        SkillsController c = new SkillsController(userRoot, projectRoot) {
+            @Override
+            void move(Path from, Path to) throws IOException {
+                if (from.equals(brainstorming) || to.equals(humanizer)) {
+                    throw new IOException("the disk said no");
+                }
+                super.move(from, to);
+            }
+        };
+
+        ResponseEntity<Map<String, Object>> answer =
+                removeSet(c, List.of("humanizer/humanizer", "superpowers/brainstorming"), local());
+
+        assertEquals(500, answer.getStatusCode().value());
+        assertEquals(List.of("humanizer/humanizer"), answer.getBody().get("leftover"));
+        String message = String.valueOf(answer.getBody().get("message"));
+        assertTrue(message.contains("humanizer/humanizer"), message);
+        assertFalse(message.startsWith("Nothing was removed"), message);
+        assertEquals(List.of("superpowers/brainstorming"), refused(answer).stream().map(r -> r.get("skill")).toList());
+        Path holding = Path.of(String.valueOf(answer.getBody().get("holding")));
+        assertTrue(holding.startsWith(userRoot.resolveSibling(".skill-remove")), holding.toString());
+        assertTrue(message.contains(holding.toString()), message);
+        assertTrue(Files.isRegularFile(holding.resolve("0").resolve("SKILL.md")), "it waits where the answer says");
+        assertFalse(Files.exists(humanizer), "and it is out of the root");
+        assertTrue(Files.isRegularFile(brainstorming.resolve("SKILL.md")), "the one that failed to move stays");
+    }
+
+    @Test
+    void aSetNeedsANonEmptyListOfIds() throws IOException {
+        SkillsController c = marketplace();
+
+        assertEquals(400, c.installSet(Map.of(), local()).getStatusCode().value());
+        assertEquals(400, installSet(c, List.of(), local()).getStatusCode().value());
+        assertEquals(400, installSet(c, List.of(7), local()).getStatusCode().value());
+        assertEquals(400, installSet(c, List.of(" "), local()).getStatusCode().value());
+        assertEquals(400, c.removeSet(Map.of("skills", "superpowers/brainstorming"), local()).getStatusCode().value());
+    }
+
+    @Test
+    void aSetRemoveTakesOutExactlyTheNamedSkills() throws IOException {
+        SkillsController c = marketplace();
+        installSet(c, THREE, local());
+
+        ResponseEntity<Map<String, Object>> answer =
+                removeSet(c, List.of("superpowers/brainstorming", "superpowers/writing-plans"), local());
+
+        assertEquals(200, answer.getStatusCode().value());
+        assertEquals(List.of("superpowers/brainstorming", "superpowers/writing-plans"),
+                answer.getBody().get("removed"));
+        assertFalse(Files.exists(userRoot.resolve("superpowers/brainstorming")));
+        assertFalse(Files.exists(userRoot.resolve("superpowers/writing-plans")));
+        assertTrue(Files.isRegularFile(userRoot.resolve("superpowers/test-driven-development/SKILL.md")));
+
+        assertEquals(200, removeSet(c, List.of("superpowers/test-driven-development"), local())
+                .getStatusCode().value());
+        try (var left = Files.list(userRoot)) {
+            assertEquals(List.of(), left.toList(), "the emptied pack folder goes with its last skill");
+        }
+        assertFalse(Files.exists(userRoot.resolveSibling(".skill-remove")), "no holding folder left behind");
+    }
+
+    @Test
+    void aSetRemoveWithOneRefusalRemovesNothing() throws IOException {
+        SkillsController c = marketplace();
+        install(c, "superpowers/brainstorming", local());
+        Files.createDirectories(projectRoot.resolve("superpowers/writing-plans"));
+        Files.writeString(projectRoot.resolve("superpowers/writing-plans/SKILL.md"), "theirs");
+
+        ResponseEntity<Map<String, Object>> answer = removeSet(c, THREE, local());
+
+        assertEquals(409, answer.getStatusCode().value());
+        Map<Object, Object> byId = new java.util.HashMap<>();
+        refused(answer).forEach(r -> byId.put(r.get("skill"), r.get("status")));
+        assertEquals(Map.of("superpowers/writing-plans", 409, "superpowers/test-driven-development", 404), byId);
+        assertEquals("project", refused(answer).stream()
+                .filter(r -> "superpowers/writing-plans".equals(r.get("skill"))).findFirst().orElseThrow().get("root"));
+        assertTrue(Files.isRegularFile(userRoot.resolve("superpowers/brainstorming/SKILL.md")), "nothing was removed");
+        assertTrue(Files.isRegularFile(projectRoot.resolve("superpowers/writing-plans/SKILL.md")));
+    }
+
+    @Test
+    void aSetRemoveThatFailsHalfwayPutsBackWhatItAlreadyMoved() throws IOException {
+        // Two packs, the second one's folder read-only: the first skill has
+        // already left the root when the second one cannot. All or nothing
+        // means the first one comes back.
+        SkillsController c = marketplace();
+        assertEquals(200, installSet(c, List.of("humanizer/humanizer", "superpowers/brainstorming"), local())
+                .getStatusCode().value());
+        Path pack = userRoot.resolve("superpowers");
+        java.util.Set<java.nio.file.attribute.PosixFilePermission> before;
+        try {
+            before = Files.getPosixFilePermissions(pack);
+        } catch (UnsupportedOperationException notPosix) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "needs POSIX permissions");
+            return;
+        }
+        Files.setPosixFilePermissions(pack, java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"));
+        ResponseEntity<Map<String, Object>> answer;
+        try {
+            assumeFalse(Files.isWritable(pack), "running as root moves it anyway");
+            answer = removeSet(c, List.of("humanizer/humanizer", "superpowers/brainstorming"), local());
+        } finally {
+            Files.setPosixFilePermissions(pack, before);
+        }
+
+        assertEquals(500, answer.getStatusCode().value());
+        assertEquals(List.of("superpowers/brainstorming"), refused(answer).stream().map(r -> r.get("skill")).toList());
+        assertTrue(Files.isRegularFile(userRoot.resolve("humanizer/humanizer/SKILL.md")), "the moved one is back");
+        assertTrue(Files.isRegularFile(userRoot.resolve("superpowers/brainstorming/SKILL.md")));
+        assertFalse(Files.exists(userRoot.resolveSibling(".skill-remove")), "no holding folder left behind");
+    }
+
+    @Test
+    void theFullFenceGuardsBothSetRoutes() throws IOException {
+        SkillsController c = marketplace();
+        install(c, "superpowers/brainstorming", local());
+
+        MockHttpServletRequest rebound = local();
+        rebound.setServerName("attacker.example");
+        assertEquals(404, installSet(c, THREE, rebound).getStatusCode().value());
+        assertNull(installSet(c, THREE, rebound).getBody(), "a refusal says nothing");
+
+        MockHttpServletRequest crossSite = local();
+        crossSite.addHeader("Origin", "https://evil.example");
+        assertEquals(404, removeSet(c, List.of("superpowers/brainstorming"), crossSite).getStatusCode().value());
+
+        MockHttpServletRequest remote = local();
+        remote.setRemoteAddr("203.0.113.7");
+        assertEquals(404, removeSet(c, List.of("superpowers/brainstorming"), remote).getStatusCode().value());
+
+        assertTrue(Files.isRegularFile(userRoot.resolve("superpowers/brainstorming/SKILL.md")));
+        assertFalse(Files.exists(userRoot.resolve("superpowers/writing-plans")));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aCatalogueRowSaysWhichRootCarriesItReadFreshOnEveryList() throws IOException {
+        // The count the pack header shows is read from these rows, so they must
+        // follow the disk, not an earlier answer: a folder written or deleted
+        // behind the server's back shows on the next list.
+        SkillsController c = marketplace();
+        java.util.function.Supplier<Map<String, Object>> brainstorming = () -> row(
+                (List<Map<String, Object>>) c.list(local()).getBody().get("catalogue"), "superpowers/brainstorming");
+
+        assertNull(brainstorming.get().get("root"));
+        assertTrue(brainstorming.get().containsKey("root"), "the field is there, empty, when nothing carries it");
+
+        Files.createDirectories(userRoot.resolve("superpowers/brainstorming"));
+        assertEquals("user", brainstorming.get().get("root"));
+        assertEquals(true, brainstorming.get().get("installed"));
+
+        Files.delete(userRoot.resolve("superpowers/brainstorming"));
+        Files.createDirectories(projectRoot.resolve("superpowers/brainstorming"));
+        assertEquals("project", brainstorming.get().get("root"));
+        assertEquals(true, brainstorming.get().get("installed"));
+
+        Files.delete(projectRoot.resolve("superpowers/brainstorming"));
+        assertNull(brainstorming.get().get("root"));
+        assertEquals(false, brainstorming.get().get("installed"));
     }
 }

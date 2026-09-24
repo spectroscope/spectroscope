@@ -18,7 +18,7 @@ import { SLASH_TIP_GAP, SLASH_TIP_MIN, SLASH_TIP_W, SlashTip, slashTipBox, slash
 import { useSlashPicker } from "./SlashPicker";
 import { __resetSkillList, loadSkills } from "../state/skillList";
 import type { SkillOption } from "../state/slashCommands";
-import { read, stripComments } from "../testkit/source";
+import { blockOf, read, stripComments } from "../testkit/source";
 import { setLang } from "../state/lang";
 
 /** A real catalogue description: the reason this card exists is that four words
@@ -251,6 +251,29 @@ describe("the picker hands the popover the focused row", () => {
     expect(source).toMatch(/event\.key === "Escape"[\s\S]{0,120}setDismissed\(true\)/);
     expect(source).toMatch(/event\.key === "Enter" \|\| event\.key === "Tab"[\s\S]{0,120}pick\(active\)/);
   });
+
+  /** The rows, one fragment each, so an assertion cannot be satisfied by some
+   *  other row's markup further down. */
+  function rowsOf(html: string): string[] {
+    return html.split("<li").slice(1);
+  }
+
+  it("says which pack a row came from, and says nothing for a top-level skill", () => {
+    const rows = rowsOf(renderToStaticMarkup(<Picker draft="/" />));
+    expect(rows.length).toBe(3);
+    const grill = rows.find((r) => r.includes("matt-pocock:grill-me"));
+    expect(grill).toMatch(/class="wsg-scope-tag"[^>]*>matt-pocock</);
+    const zeta = rows.find((r) => r.includes(">zeta<"));
+    expect(zeta).toBeDefined();
+    expect(zeta).not.toContain("wsg-scope-tag");
+  });
+
+  it("names the tag in both languages", () => {
+    setLang("de");
+    expect(renderToStaticMarkup(<Picker draft="/" />)).toContain('title="Namensraum"');
+    setLang("en");
+    expect(renderToStaticMarkup(<Picker draft="/" />)).toContain('title="Namespace"');
+  });
 });
 
 describe("the popover's box, as the stylesheet draws it", () => {
@@ -303,6 +326,56 @@ describe("the popover's box, as the stylesheet draws it", () => {
     for (const sel of [".wsg-pop.slash-tip", ".slash-tip-name", ".slash-tip-text"]) {
       expect(declsOf(sel)).not.toMatch(/#[0-9a-fA-F]{3}/);
       expect(declsOf(sel)).not.toMatch(/\b(rgb|hsl)a?\(/);
+    }
+  });
+
+  it("holds the pack tag at its own width inside the row", () => {
+    // .wsg-scope-tag carries font, colour, border and padding and NO flex, so
+    // inside .slash-row it takes the flex default 0 1 auto and shrinks under a
+    // long description. The row rule is what stops that.
+    expect(blockOf(css, ".slash-row .wsg-scope-tag")).toMatch(/flex:\s*none/);
+    // And the description keeps the ellipsis it had, so a long one still ends
+    // in dots rather than pushing the name or the tag out of the row.
+    const desc = blockOf(css, ".slash-desc");
+    expect(desc).toMatch(/flex:\s*1/);
+    expect(desc).toMatch(/min-width:\s*0/);
+    expect(desc).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it("lets a narrow row wrap, and holds the name to the row's width", () => {
+    // Card 375 criterion 5 failed at 390 px in loop wave V0 (Finding 1): the
+    // name was flex: none in a row that did not wrap, so
+    // superpowers:verification-before-completion and its tag ran past a 308 px
+    // row and the picker scrolled sideways. These are the declarations the fix
+    // rests on: the row may break into a second line, and the name is capped at
+    // the row's width and may break inside itself. What they add up to on
+    // screen is read in the browser, not here.
+    expect(blockOf(css, ".slash-row")).toMatch(/flex-wrap:\s*wrap\s*;/);
+    const name = blockOf(css, ".slash-name");
+    expect(name).toMatch(/max-width:\s*100%\s*;/);
+    expect(name).toMatch(/overflow-wrap:\s*anywhere\s*;/);
+  });
+
+  it("paints the tag in three tokens and no colour of its own", () => {
+    // Criterion 7, decided statically: a screenshot cannot say "only these
+    // three". --text-faint, --surface-2 and --border are the colour-bearing
+    // ones; the rest is font, radius and spacing.
+    const gear = read("../styles/workspace-gear.css", import.meta.url);
+    const allowed = new Set([
+      "--font-mono",
+      "--fs-11",
+      "--text-faint",
+      "--surface-2",
+      "--border",
+      "--radius-chip",
+      "--sp-2",
+    ]);
+    for (const body of [blockOf(gear, ".wsg-scope-tag"), blockOf(css, ".slash-row .wsg-scope-tag")]) {
+      expect(body).not.toMatch(/#[0-9a-fA-F]{3}/);
+      expect(body).not.toMatch(/\b(rgb|hsl)a?\(/);
+      for (const m of body.matchAll(/var\((--[\w-]+)/g)) {
+        expect(allowed, `${m[1]} is new on the tag`).toContain(m[1]);
+      }
     }
   });
 });

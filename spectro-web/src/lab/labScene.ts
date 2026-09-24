@@ -13,6 +13,12 @@
 
 import { emptyQueue, foldQueue, type QueueState } from "./flowmap/queueDepth";
 import type { RunEvent } from "../events";
+import { clipMiddle, fileLabel } from "../format";
+
+// Card 374 moved these two into format.ts, where the answer line needs them and
+// where the pure formatters live. They are re-exported here so every existing
+// importer and both existing pins keep their import path.
+export { clipMiddle, fileLabel };
 
 /** The element an agent's packet currently sits on / that is active. */
 export type Focus = "user" | "agent" | "llm" | "gate" | "disk" | "cmd" | "mcp";
@@ -102,23 +108,6 @@ export const SHELL_TOOLS = new Set(["run_command", "Bash"]);
  *  station that draws it has to ask the classifier about the SAME key or the
  *  two would disagree about what is being coloured. */
 export const SHELL_COMMAND_KEY = "command";
-
-/** Middle-ellipsis WITHOUT the basename split — for glob patterns and other
- *  non-path strings the disk pill shows, where the directories are the point. */
-export function clipMiddle(s: string, max = 22): string {
-  if (s.length <= max) return s;
-  const keep = max - 1; // room for the ellipsis
-  const head = Math.ceil(keep / 2);
-  const tail = Math.floor(keep / 2);
-  return `${s.slice(0, head)}…${s.slice(s.length - tail)}`;
-}
-
-/** Last path segment, then Apple-style middle ellipsis so start AND end stay readable. */
-export function fileLabel(path: string, max = 22): string {
-  const segs = path.split(/[/\\]+/).filter(Boolean);
-  const name = segs.length > 0 ? segs[segs.length - 1] : path;
-  return clipMiddle(name, max);
-}
 
 /** A fresh loop — a spawned/running agent starts "at the agent". */
 export function initialLoop(): Loop {

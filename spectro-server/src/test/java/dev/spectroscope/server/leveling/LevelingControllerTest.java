@@ -1,5 +1,7 @@
 package dev.spectroscope.server.leveling;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.leveling.Ladder;
 import dev.spectroscope.core.leveling.LevelingRecorder;
 import dev.spectroscope.core.leveling.LevelingState;
@@ -205,6 +207,49 @@ class LevelingControllerTest {
         Path settings = dir.resolve("settings.json");
         java.nio.file.Files.writeString(settings, "{}");
         assertEquals(LevelingState.Mode.CHECKLIST, ServerLeveling.freshMode(sessions, settings));
+    }
+
+    @Test
+    void offAtTheWelcomeScreenIsAnAnswer_andChangingItBackDoesNotAskAgain(@TempDir Path dir) {
+        // Card 387 gives the welcome screen a third button, and that button posts off.
+        // The transition it opens is off-then-ladder, and nothing pinned it: the existing
+        // intro case walks ladder-then-reset, and the two other off posts in this file are
+        // followed by a reset and by a visit, never by a second mode.
+        //
+        // Both halves matter. Answering off has to COUNT as an answer, or a fresh home that
+        // picked "no tutorial" meets the welcome screen again on the next start. And coming
+        // back out of off must not re-ask, or the operator who changes their mind in the
+        // settings is thrown back to the screen they already answered.
+        LevelingController controller = controller(dir);
+        assertEquals(false, body(controller.state(local())).get("introSeen"),
+                "a pristine home has not answered yet");
+
+        controller.mode(new LevelingController.ModeBody("off"), local());
+        Map<String, Object> chosen = body(controller.state(local()));
+        assertEquals("off", chosen.get("mode"));
+        assertEquals(true, chosen.get("introSeen"), "picking off IS answering the question");
+
+        controller.mode(new LevelingController.ModeBody("ladder"), local());
+        Map<String, Object> changed = body(controller.state(local()));
+        assertEquals("ladder", changed.get("mode"));
+        assertEquals(true, changed.get("introSeen"), "a change of mind is not a new home");
+    }
+
+    @Test
+    void offAtTheWelcomeScreenIsOnDiskAndSurvivesARestart(@TempDir Path dir) throws Exception {
+        // Card 387, criterion 5: the choice is measured at the file, not at the screen.
+        // The case above asks the same controller that took the answer, so it holds even
+        // if the answer only ever lived in memory. This one reads the file, then starts a
+        // second controller on the same home, which is what a server restart does.
+        controller(dir).mode(new LevelingController.ModeBody("off"), local());
+
+        JsonNode onDisk = new ObjectMapper().readTree(dir.resolve("leveling.json").toFile());
+        assertEquals("off", onDisk.path("mode").asText(), "the file records mode off");
+        assertTrue(onDisk.path("introSeen").asBoolean(false), "the file records the intro as answered");
+
+        Map<String, Object> restarted = body(controller(dir).state(local()));
+        assertEquals("off", restarted.get("mode"), "a restarted server serves off");
+        assertEquals(true, restarted.get("introSeen"), "and does not ask again");
     }
 
     @Test

@@ -35,9 +35,22 @@ import { addressSpecFor } from "./providerAddress";
  * them to the list. A whole settings component shipped silent, which is the
  * card's own defect wearing a build-system hat.
  */
-const PAGE_FILES: string[] = readdirSync(fileURLToPath(new URL(".", import.meta.url)))
-  .filter((name) => /Settings(Panel)?\.tsx$/.test(name) && !name.includes(".test."))
-  .sort();
+const COMPONENT_FILES: string[] = readdirSync(fileURLToPath(new URL(".", import.meta.url))).filter(
+  (name) => name.endsWith(".tsx") && !name.includes(".test."),
+);
+
+/** A settings-page file by its name, the walker's set before card 379. */
+const isSettingsPageFile = (name: string): boolean => /Settings(Panel)?\.tsx$/.test(name);
+
+/**
+ * Card 379 widened the set to every component that renders a reach block, so
+ * the composer popover's rtk section is walked. It is a union and not a swap:
+ * a settings-page file that renders no block yet (FleetSettings.tsx) stays
+ * walked, or a field added there without a sentence would go unnoticed.
+ */
+const PAGE_FILES: string[] = COMPONENT_FILES.filter(
+  (name) => isSettingsPageFile(name) || /<ReachBlock\b/.test(source(name)),
+).sort();
 
 /** The file with its block comments blanked out, newlines kept so a reported
  *  line still lines up. Prose ABOUT a reach block is not a reach block — the
@@ -182,6 +195,40 @@ describe("the sentence about when a setting lands", () => {
 });
 
 describe("the settings page, walked", () => {
+  it("reads the composer popover too, not only the settings page", () => {
+    // Card 379, criterion 2, and it comes FIRST because without it the bites
+    // below prove nothing: a bite that lands in a file nobody walks looks
+    // exactly like a test that does not hold.
+    //
+    // Until this card the filter was /Settings(Panel)?\.tsx$/, which matched
+    // ten files on the settings page and no file of the composer popover. That
+    // was harmless while every popover section wrote localStorage. rtkFilter is
+    // a server setting in that popover, drawn by RtkFilterSection.tsx, so under
+    // the old filter a deleted rtkFilter row would have stayed green.
+    //
+    // The new filter is not a longer list. It asks each file whether it
+    // actually renders a <ReachBlock>, so the next component that gains one is
+    // walked on the day it gains it and never on the day somebody remembers.
+    expect(PAGE_FILES).toContain("RtkFilterSection.tsx");
+    // And the settings page is still walked in full, including a page file that
+    // renders no block of its own.
+    const settingsPage = COMPONENT_FILES.filter(isSettingsPageFile);
+    expect(settingsPage.length).toBeGreaterThan(0);
+    for (const name of settingsPage) {
+      expect(PAGE_FILES, `${name} dropped out of the walk`).toContain(name);
+    }
+  });
+
+  it("says when the rtk switch lands, and says it in the popover", () => {
+    const block = ALL_BLOCKS.find((b) => b.fields.includes("rtkFilter"));
+    expect(block, "no ReachBlock speaks for rtkFilter").toBeDefined();
+    expect(block!.file).toBe("RtkFilterSection.tsx");
+    expect(reachOf(block!.fields as SettingKey[])).toBe("live");
+    // The block has to wrap the save itself, or the walker sees a sentence
+    // with no control under it and a control with no sentence over it.
+    expect(fieldsIn(block!.body)).toContain("rtkFilter");
+  });
+
   it("says when EVERY saveable field lands", () => {
     // A field with no sentence is the silence card 222 is about: the owner had
     // a page that was right about the configuration and said nothing about the

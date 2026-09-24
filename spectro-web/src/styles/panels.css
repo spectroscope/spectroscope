@@ -885,6 +885,9 @@
 
 .context-line { margin: var(--sp-1) 0 0; font-size: var(--fs-16); font-weight: 400; letter-spacing: var(--track-heading); }
 .context-window { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
+/* Card 377: where the run compacts, under a headline that now names the window. */
+.context-compacts { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
+.context-ring-mark { opacity: 0.75; }
 
 .context-parts { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--sp-3); row-gap: 2px; margin: var(--sp-3) 0; font-size: var(--fs-12); }
 .context-parts .head { font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }
@@ -893,6 +896,29 @@
 
 .context-meta { margin: 0 0 var(--sp-2); font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); }
 .context-note { margin: 0; font-size: var(--fs-12); line-height: 1.5; color: var(--text-faint); }
+
+/* Card 390: the popover's row for the window of this session, live view only.
+   A text input and two buttons on one line, the value in force above them and
+   the allowed range below. */
+.context-override { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-2); }
+.context-override-label { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); }
+.context-override-on { margin: 0; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text); }
+.context-override-row { display: flex; gap: var(--sp-1); align-items: center; }
+.context-override-input {
+  flex: 1 1 auto; min-width: 0; padding: 2px 6px; font-family: var(--font-mono);
+  font-size: var(--fs-12); color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-control);
+}
+.context-override-input:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+.context-override-apply,
+.context-override-clear {
+  padding: 2px 8px; font-family: var(--font-mono); font-size: var(--fs-12);
+  color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-control); cursor: pointer;
+}
+.context-override-apply:disabled,
+.context-override-clear:disabled { color: var(--text-faint); cursor: not-allowed; }
+.context-override-range { margin: 0; font-size: var(--fs-12); line-height: 1.5; color: var(--text-faint); }
 
 
 /* Agent chips (Spectrum -> Trace hand-off): the pinned lane wears its
@@ -1136,7 +1162,13 @@
 /* The device picker's caret, a step quieter than the glyph it hangs off: it
    picks a device, it does not record. */
 .mic-anchor { position: relative; display: inline-flex; }
-.mic-menu-button { width: 16px; min-width: 16px; padding: 0; color: var(--text-faint); }
+.mic-menu-button { position: relative; width: 16px; min-width: 16px; height: 24px; padding: 0; color: var(--text-faint); }
+/* CARD 383: the caret's own reach, and its height. It is as tall as the row's
+   other controls (24px, .attach-button in attachments-voice.css), so the row
+   has one height. Its box is 16 wide and touches the microphone's and the
+   gear's, so the reach grows up and down by 4px and not sideways, exactly as
+   theirs does: 16 by 32. */
+.mic-menu-button::before { content: ""; position: absolute; inset: -4px 0; }
 .mic-menu-button:hover { color: var(--text); }
 /* Both pinned like .disc-pop, for the reason that file documents: a later
    sheet's bottom-pin would otherwise win the cascade and squash the popover. */

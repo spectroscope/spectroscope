@@ -13,6 +13,7 @@
 
 import { t, type Lang } from "../i18n/i18n";
 import type { SettingsView } from "../state/serverSettings";
+import { NumberField } from "./settingsNumberField";
 import { OriginRow } from "./settingsOrigin";
 import { ReachBlock } from "./settingsReach";
 import {
@@ -52,12 +53,7 @@ function CountField({
   return (
     <label className="settings-field" data-progress-state={state} data-progress-field={field}>
       <span>{t(lang, `set.progress.${field}`)}</span>
-      <input
-        type="number"
-        min={0}
-        value={value}
-        onChange={(e) => onSave({ [field]: Number(e.target.value) })}
-      />
+      <NumberField view={view} field={field} lang={lang} onSave={onSave} />
       <span className="settings-chip" data-progress-state={state}>
         {t(lang, state === "armed" ? "set.progress.chipArmed" : "set.progress.chipOff")}
       </span>
@@ -136,14 +132,34 @@ export function ProgressGuardSettings({
         <div className="settings-grid">
           <label className="settings-field">
             <span>{t(lang, "set.maxTurns")}</span>
-            <input
-              type="number"
-              min={1}
-              value={count(view, "maxTurns")}
-              onChange={(e) => onSave({ maxTurns: Number(e.target.value) })}
-            />
+            <NumberField view={view} field="maxTurns" lang={lang} onSave={onSave} />
             <p className="settings-note">{t(lang, "set.maxTurnsNote")}</p>
             <OriginRow view={view} field="maxTurns" lang={lang} onReset={() => onSave({ maxTurns: null })} />
+          </label>
+        </div>
+      </ReachBlock>
+      {/* Card 372's floor under every child. Its own block although it shares
+        maxTurns' reach, for the same reason the shell clock further down has
+        one: the two bound different things, how long ONE child may work against
+        how many turns the whole run gets, and a single sentence over both would
+        read as one limit. The reach was measured at the call site rather than
+        inherited from the neighbours: SessionConnection.buildAgentOnce() builds
+        the SubagentManager from the config it adopted at that moment
+        (SessionConnection.java:1298), and the manager keeps it, so a save
+        reaches the next session and not this one. The reasoning stands beside
+        the entry in settingsReach.tsx. */}
+      <ReachBlock lang={lang} fields={["subagentBudgetSeconds"]}>
+        <div className="settings-grid">
+          <label className="settings-field" data-progress-field="subagentBudgetSeconds">
+            <span>{t(lang, "set.subagentBudgetSeconds")}</span>
+            <NumberField view={view} field="subagentBudgetSeconds" lang={lang} onSave={onSave} />
+            <p className="settings-note">{t(lang, "set.subagentBudgetSecondsNote")}</p>
+            <OriginRow
+              view={view}
+              field="subagentBudgetSeconds"
+              lang={lang}
+              onReset={() => onSave({ subagentBudgetSeconds: null })}
+            />
           </label>
         </div>
       </ReachBlock>
@@ -158,12 +174,7 @@ export function ProgressGuardSettings({
         <div className="settings-grid">
           <label className="settings-field" data-progress-field="maxTokens">
             <span>{t(lang, "set.maxTokens")}</span>
-            <input
-              type="number"
-              min={1}
-              value={count(view, "maxTokens")}
-              onChange={(e) => onSave({ maxTokens: Number(e.target.value) })}
-            />
+            <NumberField view={view} field="maxTokens" lang={lang} onSave={onSave} />
             <p className="settings-note">{t(lang, "set.maxTokensNote")}</p>
             <OriginRow
               view={view}
@@ -177,21 +188,18 @@ export function ProgressGuardSettings({
       {/* Card 359's shell clock. Its own block although it shares maxTurns'
         reach, because the two bound different things: one is the ceiling on a
         whole run, the other the ceiling on a single shell call, and one
-        sentence over both would read as one limit. The reach itself was
-        measured at the call site — SessionConnection.buildAgentOnce() calls
-        StandardTools.all() (SessionConnection.java:1202) and runCommand closes
-        over its budget there, with no setter anywhere — and the reasoning is
-        written down beside the entry in settingsReach.tsx. */}
+        sentence over both would read as one limit. The reach was measured on
+        the call that carries the number: SessionConnection.buildAgentOnce()
+        calls StandardTools.all(active.commandTimeoutSeconds()), and
+        StandardTools.runCommand closes over that budget as it builds the tool.
+        The tool has no setter and nothing re-reads the config per call, so a
+        save reaches the next session and not the one already open. The
+        reasoning is written down beside the entry in settingsReach.tsx. */}
       <ReachBlock lang={lang} fields={["commandTimeoutSeconds"]}>
         <div className="settings-grid">
           <label className="settings-field" data-progress-field="commandTimeoutSeconds">
             <span>{t(lang, "set.commandTimeoutSeconds")}</span>
-            <input
-              type="number"
-              min={1}
-              value={count(view, "commandTimeoutSeconds")}
-              onChange={(e) => onSave({ commandTimeoutSeconds: Number(e.target.value) })}
-            />
+            <NumberField view={view} field="commandTimeoutSeconds" lang={lang} onSave={onSave} />
             <p className="settings-note">{t(lang, "set.commandTimeoutSecondsNote")}</p>
             <OriginRow
               view={view}
@@ -213,12 +221,7 @@ export function ProgressGuardSettings({
             data-progress-field="continuationBudget"
           >
             <span>{t(lang, "set.continuationBudget")}</span>
-            <input
-              type="number"
-              min={0}
-              value={count(view, "continuationBudget")}
-              onChange={(e) => onSave({ continuationBudget: Number(e.target.value) })}
-            />
+            <NumberField view={view} field="continuationBudget" lang={lang} onSave={onSave} />
             <p className="settings-note">{t(lang, "set.continuationBudgetNote")}</p>
             <OriginRow
               view={view}
@@ -234,13 +237,7 @@ export function ProgressGuardSettings({
         the same as maxTurns two blocks up. */}
       <ReachBlock lang={lang} fields={["questionsPerRun", "maxQuestionOptions", "maxQuestionChars"]}>
         <div className="settings-grid">
-          {(
-            [
-              ["questionsPerRun", 0],
-              ["maxQuestionOptions", 1],
-              ["maxQuestionChars", 1],
-            ] as const
-          ).map(([field, floor]) => (
+          {(["questionsPerRun", "maxQuestionOptions", "maxQuestionChars"] as const).map((field) => (
             <label
               key={field}
               className="settings-field"
@@ -248,12 +245,7 @@ export function ProgressGuardSettings({
               data-progress-field={field}
             >
               <span>{t(lang, `set.${field}`)}</span>
-              <input
-                type="number"
-                min={floor}
-                value={count(view, field)}
-                onChange={(e) => onSave({ [field]: Number(e.target.value) })}
-              />
+              <NumberField view={view} field={field} lang={lang} onSave={onSave} />
               <p className="settings-note">{t(lang, `set.${field}Note`)}</p>
               <OriginRow view={view} field={field} lang={lang} onReset={() => onSave({ [field]: null })} />
             </label>

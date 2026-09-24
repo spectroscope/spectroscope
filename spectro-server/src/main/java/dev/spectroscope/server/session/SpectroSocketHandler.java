@@ -140,6 +140,11 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             case "set_reasoning" ->                            // picker reasoning control, additive (card 88)
                     connection.onSetReasoning(
                             frame.path("mode").asText(""), frame.path("effort").asText(""));
+            // Card 390: the window the operator sets for this session from the
+            // ring. The node goes through untouched: the connection decides
+            // what may be set, and absent or null clears.
+            case "set_window_override" ->                      // additive
+                    connection.onSetWindowOverride(frame.path("tokens"));
             case "set_provider" ->                             // provider picker, additive
                     connection.onSetProvider(
                             frame.path("provider").asText(""), frame.path("model").asText(""));
@@ -153,6 +158,13 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             case "set_goal" ->                                 // additive
                     connection.onSetGoal(frame.path("outcome").asText(""),
                             frame.path("check").asText(""));
+            // Card 380: the operator hands the running turn one sentence. Its
+            // own frame rather than a user_message, because a user_message
+            // starts a run and this one starts nothing: it puts a line where
+            // the loop reads it at its next safe point. The same separation
+            // card 265 drew for question_response, and for the same reason.
+            case "steering_message" ->                         // additive (card 380)
+                    connection.onSteeringMessage(frame.path("text").asText(""));
             default -> connection.sendError("Unknown message type.");
         }
     }

@@ -34,13 +34,14 @@ const render = (lang: "en" | "de" = "en"): string =>
 
 describe("the shell clock is classified before it is drawn", () => {
   it("reaches the next session, which is what buildAgentOnce makes true", () => {
-    // MEASURED, not assumed. SessionConnection.buildAgentOnce() calls
-    // StandardTools.all() (SessionConnection.java:1202) and registers the
-    // result; runCommand closes over its budget at that moment and there is no
-    // setter anywhere. So a save cannot move the session already open — the
-    // same reason the guard's three counts are next-session and their
-    // neighbour continuationBudget, which SessionConnection re-reads per
-    // prompt, is not.
+    // MEASURED, not assumed, and measured on the call that carries the
+    // number: SessionConnection.buildAgentOnce() calls
+    // StandardTools.all(active.commandTimeoutSeconds()) and registers the
+    // result; StandardTools.runCommand closes over that budget as the tool is
+    // built, and the tool has no setter. So a save cannot move the session
+    // already open, which is the same reason the guard's three counts are
+    // next-session while their neighbour continuationBudget, re-read per
+    // prompt by SessionConnection, is not.
     expect(SETTING_REACH.commandTimeoutSeconds).toBe("next-session");
   });
 

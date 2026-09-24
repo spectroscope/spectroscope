@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import { t } from "../i18n/i18n";
 import type { RunEvent } from "../events";
 import { chatToHtml, escapeHtml, exportFilename, textFeedToHtml } from "./html";
+import { read, stripComments } from "../testkit/source";
+import { setAnswerLine } from "../state/answerLine";
 
 /** Pinned so the header stamp is deterministic across machines and zones. */
 const NOW = Date.UTC(2026, 6, 27, 12, 3, 0);
@@ -587,5 +589,45 @@ describe("an abandoned run in the exported document", () => {
     expect(html).toContain(`ended: ${t("en", "stop.end_turn")}`);
     expect(html).not.toContain("steps open");
     expect(html).not.toContain("no plan on record");
+  });
+});
+
+describe("the export does not follow the answer line preference (card 374)", () => {
+  it("prints every segment while the reader's own line is set to normal", () => {
+    setAnswerLine("normal");
+    const events: RunEvent[] = [
+      {
+        type: "run_start",
+        runId: "r1",
+        agentId: "main",
+        prompt: "hi",
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+        ts,
+      },
+      { type: "text_delta", agentId: "main", text: "hello", ts },
+      { type: "usage", agentId: "main", inputTokens: 79, outputTokens: 5, ts: ts + 500 },
+    ];
+    // The assertion is scoped to the answer's OWN row, not to the document.
+    // A document-wide toContain cannot see the model leave this row: the
+    // footer repeats provider and model, so it stays green either way
+    // (measured 2026-09-18 by running the bite below against the loose form).
+    const html = chatToHtml(events, { now: NOW });
+    const open = html.indexOf('<div class="x-assistant-meta">');
+    expect(open).toBeGreaterThan(-1);
+    const row = html.slice(open, html.indexOf("</div>", open));
+    expect(row).toContain("79 in");
+    expect(row).toContain("5 out");
+    // The model and the UTC window are exactly what normal hides on screen, so
+    // these two are the assertion: a shared file carries every number.
+    expect(row).toContain("claude-sonnet-5");
+    expect(row).toContain("UTC");
+  });
+
+  it("reads no preference at all", () => {
+    const source = stripComments(read("./html.ts", import.meta.url));
+    expect(source).not.toContain("answerLine");
+    // The positive twin: this IS the file that builds the row.
+    expect(source).toContain("x-assistant-meta");
   });
 });

@@ -176,6 +176,8 @@ describe("the rail asks the store how much to say", () => {
         onImport={() => {}}
         onScenarios={() => {}}
         onStarters={() => {}}
+        skillsOpen={false}
+        onSkills={() => {}}
         onSelectScenario={() => {}}
         stateGraphSource={null}
         onStateGraphScenario={() => {}}

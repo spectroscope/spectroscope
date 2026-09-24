@@ -1,5 +1,6 @@
 package dev.spectroscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.local.ModelProfile;
@@ -72,16 +73,17 @@ public final class Agent {
      *  of them visible — is not a ceiling anybody can reason about. It joins
      *  {@code maxTokens} and {@code compactionThreshold} in {@link AgentOptions}.
      *
-     *  <p>Card 365 moved it from 15 to 150. This copy has to move WITH the
-     *  settings default and not after it: every face that never passes
-     *  {@code maxTurns} — {@code spectro run}, a cron fire, a fleet node, every
-     *  child agent — reads this constant and nothing else, so a settings
+     *  <p>Card 365 moved it from 15 to 150 and card 373 to 1000. This copy has
+     *  to move WITH the settings default and not after it: every face that never
+     *  passes {@code maxTurns} — {@code spectro run}, a cron fire, a fleet node,
+     *  every child agent — reads this constant and nothing else, so a settings
      *  default raised alone would have raised nothing for any of them. The
-     *  census behind the number, with its date and its n, is a snapshot in
+     *  measurements behind the number, each with its date and its n, are a
+     *  snapshot in
      *  {@link dev.spectroscope.core.config.SpectroConfig#DEFAULT_MAX_TURNS};
      *  {@code MaxTurnsSettingTest} holds the two together. */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TURNS, key = "maxTurns")
-    public static final int DEFAULT_MAX_TURNS = 150;
+    public static final int DEFAULT_MAX_TURNS = 1000;
 
     /**
      * The turn ceiling this run actually stops at — the configured value, or
@@ -277,7 +279,8 @@ public final class Agent {
         // with 8,192 must not ask the summarizer for 32,000 tokens either.
         CompactionThreshold.Derived compaction = CompactionThreshold.derive(
                 options.compactionThreshold(), () -> options.provider().contextWindow(),
-                options.provider().modelName());
+                () -> options.provider().publishedWindow(),
+                options.provider().modelName(), sessionWindowTokens());
         Compaction.Result result = Compaction.maybeCompact(
                 options.provider(), List.copyOf(messages),
                 Integer.MAX_VALUE, 1, // force: pretend the context is over any threshold
@@ -314,11 +317,64 @@ public final class Agent {
         try {
             runLoop(prompt, promptForModel, attachments, signal, emit, agentId);
         } finally {
+            // Card 380: every exit that writes run_end has closed the inbox
+            // already, through closingTheInbox. This is the one that does not:
+            // a throw that escapes the loop's own catch. The inbox must not stay
+            // open past its run, or the next run reads a sentence typed into
+            // this one.
+            dev.spectroscope.core.steering.SteeringInbox steering = options.steering();
+            if (steering != null) {
+                String unread = steering.close();
+                if (unread != null) {
+                    emit.accept(new RunEvent.SteeringMessage(agentId, unread, false, 0, now()));
+                }
+            }
             // One operator line per run (the JSONL stays the source of truth).
             log.info("run finished in {} ms",
                     (System.nanoTime() - startedAtNanos) / 1_000_000);
             org.slf4j.MDC.remove("agentId");
         }
+    }
+
+    /**
+     * Wraps the run's sink so that the run's own {@code run_end} closes the
+     * steering inbox first (card 380, fix round 2026-09-24).
+     *
+     * <p>One place for every exit. The loop writes {@code run_end} from several
+     * lines (the answer that ends the run, the turn cap, the abort and a named
+     * cancel, the error catch, the goal's verdict, the progress guard's stop),
+     * and the first build closed nothing at any of them: a sentence the run
+     * never read stayed in the inbox and the NEXT run folded it into its first
+     * request. Keyed on the event rather than on those lines, so an exit added
+     * later cannot forget it.</p>
+     *
+     * <p>What the run did not read goes on the record as not taken, in THIS run,
+     * before its {@code run_end}, with the operator's own words. That line is
+     * what the browser reads to hand the sentence back (owner call 3: it falls
+     * back to the old waiting line and starts the next run).</p>
+     *
+     * @param sink     the stream's own sink
+     * @param runId    this run's id; a child's {@code run_end} passes untouched
+     * @param agentId  this agent's id, for the record and for the turn count
+     * @param steering the inbox to close
+     * @return the sink the loop writes to
+     */
+    private Consumer<RunEvent> closingTheInbox(Consumer<RunEvent> sink, String runId, String agentId,
+                                               dev.spectroscope.core.steering.SteeringInbox steering) {
+        int[] turnNow = {0};
+        return event -> {
+            if (event instanceof TurnStart start && agentId.equals(start.agentId())) {
+                turnNow[0] = start.turn();
+            }
+            if (event instanceof RunEnd end && runId.equals(end.runId())) {
+                String unread = steering.close();
+                if (unread != null) {
+                    sink.accept(new RunEvent.SteeringMessage(agentId, unread, false, turnNow[0],
+                            now()));
+                }
+            }
+            sink.accept(event);
+        };
     }
 
     /**
@@ -328,13 +384,20 @@ public final class Agent {
      * @param promptForModel the model's reading of it (card 247), or null for the prompt itself
      * @param attachments    images riding along with the prompt, or null for a text-only run
      * @param signal         cooperative cancellation, checked at the loop's safe points
-     * @param emit           the event sink of the owning {@link EventStream}
+     * @param sink           the owning {@link EventStream}'s own sink, which the loop wraps
+     *                       with {@link #closingTheInbox} when a steering inbox is set
      * @param agentId        this agent's id, already in the MDC
      */
     private void runLoop(String prompt, String promptForModel,
                          List<RunEvent.Attachment> attachments, CancelSignal signal,
-                         Consumer<RunEvent> emit, String agentId) {
+                         Consumer<RunEvent> sink, String agentId) {
         String runId = UUID.randomUUID().toString();
+        // Card 380: what the operator typed while this run was working. Null on
+        // every headless face. spectro run, a cron fire, a fleet node and a
+        // child agent have nobody attached at the moment a turn is in flight,
+        // and a null inbox leaves this loop exactly as card 267 left it.
+        dev.spectroscope.core.steering.SteeringInbox steering = options.steering();
+        Consumer<RunEvent> emit = steering == null ? sink : closingTheInbox(sink, runId, agentId, steering);
         int maxTokens = options.maxTokens() != null ? options.maxTokens() : DEFAULT_MAX_TOKENS;
         // Card 263: ONCE per run, before the first token flows — the provider's
         // window question can cost a round trip, and context_info is emitted
@@ -345,9 +408,20 @@ public final class Agent {
         // the provider's answer as an argument spent the probe anyway and threw
         // it away — 330 ms against api.openai.com, 2,001 ms against a host that
         // black-holes the connection, all of it before run_start is emitted.
+        // Card 390: the question is asked through a probe that answers from its
+        // first call for the rest of this run, because the derivation is made
+        // again at the top of every turn (the session window is read there).
+        java.util.function.IntSupplier windowProbe =
+                askedOnce(() -> options.provider().contextWindow());
+        // Card 391: the window the backend publishes for the model id, asked
+        // only when the loaded window answered nothing, and at most once per
+        // run by the same means.
+        java.util.function.IntSupplier publishedProbe =
+                askedOnce(() -> options.provider().publishedWindow());
+        String windowModel = options.provider().modelName();
         CompactionThreshold.Derived compaction = CompactionThreshold.derive(
-                options.compactionThreshold(), () -> options.provider().contextWindow(),
-                options.provider().modelName());
+                options.compactionThreshold(), windowProbe, publishedProbe, windowModel,
+                sessionWindowTokens());
         int compactionThreshold = compaction.tokens();
         int summaryBudget = CompactionThreshold.summaryBudget(compaction);
         // Card 262: the harness's own eye on a run that is going nowhere. Null
@@ -380,6 +454,7 @@ public final class Agent {
         SessionGoal goal = options.goal();
         GoalGate goalGate = new GoalGate();
         ProgressGuard progress = options.progressGuard();
+
         if (progress != null) {
             // Its memory and its stand-down are sentences about THIS run. One
             // agent serves every prompt of a browser session, so without this
@@ -393,6 +468,13 @@ public final class Agent {
         String providerLabel = options.provider().providerName();
         if (providerLabel == null) {
             providerLabel = options.providerName();
+        }
+        // Card 380, fix round 2026-09-24: from here on the operator can reach
+        // this run. Opened before run_start because run_start is what tells the
+        // browser a run is up, and a sentence sent on that news must find the
+        // door open. Closed again on every way out, by closingTheInbox.
+        if (steering != null) {
+            steering.open();
         }
         // The folder is recorded on the run itself (card 284): the in-memory pin
         // dies with the process, so without this a resume after a restart lands
@@ -433,6 +515,28 @@ public final class Agent {
             for (int turn = 1; turn <= maxTurns; turn++) {
                 emit.accept(new TurnStart(agentId, turn, now()));
 
+                // Card 380: a sentence the operator typed while the previous
+                // turn was working. Read HERE, before the request for this turn
+                // is built, so the model meets it in the same run rather than in
+                // the next one. Taken means gone: one sentence cannot be read by
+                // two turns, the rule card 266 wrote for continuations.
+                //
+                // It goes in as user content through the same fold card 262
+                // uses, because the request path never merges adjacent roles and
+                // two user messages in a row reach Anthropic as "roles must
+                // alternate". And it goes in ATTRIBUTED: a tool that printed a
+                // sentence and a person who typed one must not look the same to
+                // the model, or a file in the workspace could speak with the
+                // operator's authority.
+                if (steering != null) {
+                    String said = steering.take();
+                    if (said != null) {
+                        emit.accept(new RunEvent.SteeringMessage(agentId, said, true, turn, now()));
+                        appendUserText(messages,
+                                dev.spectroscope.core.steering.SteeringInbox.attributed(said));
+                    }
+                }
+
                 // Card 262, detector 3: the only one of the three with no tool
                 // call to hang on, so the loop asks it itself — once per turn,
                 // before the provider is called, against the ledger card 264
@@ -464,6 +568,22 @@ public final class Agent {
                             appendUserText(messages, answer.guidance());
                         }
                     }
+                }
+
+                // Card 390: the window the operator set for this session is
+                // read HERE, once per turn, before the estimate and the
+                // compaction check, so a value set while this run works
+                // reaches its next turn. The backend is still asked at most
+                // once per run: windowProbe answers every later call itself.
+                CompactionThreshold.Derived thisTurn = CompactionThreshold.derive(
+                        options.compactionThreshold(), windowProbe, publishedProbe, windowModel,
+                        sessionWindowTokens());
+                if (!thisTurn.equals(compaction)) {
+                    compaction = thisTurn;
+                    compactionThreshold = compaction.tokens();
+                    summaryBudget = CompactionThreshold.summaryBudget(compaction);
+                    log.info("compacting at {} input tokens ({}) from turn {}",
+                            compactionThreshold, compaction.source().wireName(), turn);
                 }
 
                 // context introspection, opt-in via the options.
@@ -626,6 +746,50 @@ public final class Agent {
                     // steps still open was the app reporting a clean finish for
                     // a run that walked away mid-plan.
                     String reason = stopReasonName(stopReason);
+                    // Card 380: the operator typed while the model was writing
+                    // its last answer, which is exactly when an operator types.
+                    // The loop's top read cannot deliver that sentence,
+                    // because this turn is the last one there will be, so the
+                    // run goes through the continuation door and carries on for
+                    // one more turn. Without this half the most common case
+                    // behaves exactly as it did before the card.
+                    //
+                    // First at this gate on purpose: before the goal's check
+                    // and before the leash. A person who is watching beats a
+                    // heuristic about an open plan, and this door has to work
+                    // on the faces that wire no leash at all. With a goal
+                    // stated, the goal's branch below leaves the gate on every
+                    // end_turn (it returns, or continues when the leash lets a
+                    // failed check buy a turn), so a read placed after it never
+                    // ran on such a session (fix round 2, 2026-09-24).
+                    //
+                    // A sentence taken here skips the check at this exit. The
+                    // check runs at the next graded exit, if the run reaches
+                    // one: an end_turn with nothing waiting or at the cap,
+                    // max_tokens, or max_turns after the loop. A failed check
+                    // at an end_turn below the cap can continue the run again.
+                    // A run that ends by abort, error or the progress guard
+                    // before such an exit is not graded. With nothing waiting,
+                    // take() returns null and everything below runs exactly as
+                    // before.
+                    //
+                    // At the cap it loses, and says so. The leash keeps itself
+                    // below the ceiling for the same reason (a continuation the
+                    // run can never take is a line that lies), so at the cap the
+                    // sentence stays unread and the run ends. What happens to it
+                    // then is the same on every exit and lives in one place,
+                    // closingTheInbox: recorded as not taken, handed back.
+                    if (steering != null && !signal.isCancelled()
+                            && "end_turn".equals(reason) && turn < maxTurns) {
+                        String said = steering.take();
+                        if (said != null) {
+                            emit.accept(new RunEvent.SteeringMessage(agentId, said, true,
+                                    turn, now()));
+                            appendUserText(messages,
+                                    dev.spectroscope.core.steering.SteeringInbox.attributed(said));
+                            continue;
+                        }
+                    }
                     // Card 267, THE PIVOT. Where a goal is stated, the CHECK
                     // decides this exit and the plan ledger does not.
                     //
@@ -639,6 +803,13 @@ public final class Agent {
                     // A failing check then buys its continuation from the SAME
                     // budget, through the same three decisions, so the bound
                     // stays one number an operator can read (criterion 6).
+                    //
+                    // Card 380's steering read above comes first only on an
+                    // end_turn below the cap, and there the goal decides only
+                    // when nothing was waiting. At the cap and on max_tokens
+                    // that read does not run, so the goal grades while a
+                    // sentence may still wait, and closingTheInbox hands that
+                    // sentence back when the run ends.
                     //
                     // A CEILING is graded but does not get to decide. max_tokens
                     // (here) and max_turns (after the loop) say that something
@@ -1151,8 +1322,24 @@ public final class Agent {
      * @param emit    sink for the permission events and tool-emitted domain events
      * @return the timed outcome — output, execution time, and the gate wait when one parked the call
      */
-    private GuardedResult runGuarded(Tool tool, PToolCall call, String agentId, CancelSignal signal,
+    private GuardedResult runGuarded(Tool tool, PToolCall originalCall, String agentId,
+                                     CancelSignal signal,
                                      Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
+        // Card 379, Owner call 1: rtk is asked what a line could BECOME, never
+        // whether it may run. The rewrite therefore happens HERE, above the
+        // gate, so the gate and the shell decide and act on one string; gating
+        // on the model's line while executing another is the one outcome a
+        // product whose promise is observing cannot ship. The original travels
+        // inside the same input node, so the gate event and every reader of it
+        // carry both lines. The tool_call event upstream is untouched on
+        // purpose: it is the record of what the MODEL said.
+        PToolCall call = originalCall;
+        if (options.rtkFilter() != null) {
+            JsonNode filtered = options.rtkFilter().apply(call.name(), call.input());
+            if (filtered != call.input()) {
+                call = new PToolCall(call.callId(), call.name(), filtered);
+            }
+        }
         // pre_tool_use runs BEFORE the permission gate. A block short-circuits: no
         // permission events, no execute — the model sees it as this tool_result
         // ERROR, and the RUN sees it as the hook_decision events emitted first.
@@ -1239,8 +1426,9 @@ public final class Agent {
      *
      * @param turn       the turn the estimate precedes (1-based)
      * @param messages   the history that will ride along with the next request
-     * @param compaction the threshold this run derived ONCE, plus the fact behind
-     *                   it — handed in rather than re-derived, so the number the
+     * @param compaction the threshold derived for this turn (card 390 derives it
+     *                   again at the top of every turn), plus the fact behind it,
+     *                   handed in rather than re-derived, so the number the
      *                   gauge reads and the number the summarizer is triggered by
      *                   cannot drift apart (card 263)
      * @return the additive {@code context_info} event, ready to emit
@@ -1413,6 +1601,44 @@ public final class Agent {
     }
 
     /**
+     * The session window this agent reads every turn, or null where none is
+     * wired (card 390). For the tests that pin the holder a real build wired,
+     * the same reason {@link #goal()} exists.
+     *
+     * @return the session's holder, or null
+     */
+    public dev.spectroscope.core.session.SessionWindow sessionWindow() {
+        return options.sessionWindow();
+    }
+
+    /** The session window in force right now (card 390).
+     *  @return its tokens, or 0 when none is wired or none is set */
+    private int sessionWindowTokens() {
+        dev.spectroscope.core.session.SessionWindow window = options.sessionWindow();
+        return window == null ? 0 : window.tokens();
+    }
+
+    /**
+     * A window question that asks the provider on its first call and answers
+     * every later call with that first answer (card 390). One per run, so a
+     * model switched between runs is asked again on the next one.
+     *
+     * @param probe the provider's own question
+     * @return the same question, asked at most once
+     */
+    private static java.util.function.IntSupplier askedOnce(java.util.function.IntSupplier probe) {
+        boolean[] asked = {false};
+        int[] answer = {0};
+        return () -> {
+            if (!asked[0]) {
+                answer[0] = probe.getAsInt();
+                asked[0] = true;
+            }
+            return answer[0];
+        };
+    }
+
+    /**
      * The progress guard this agent runs with, or null when nothing is watching
      * (card 262).
      *
@@ -1458,6 +1684,30 @@ public final class Agent {
      */
     public dev.spectroscope.core.goal.SessionGoal goal() {
         return options.goal();
+    }
+
+    /**
+     * The inbox this agent polls for what the operator typed mid run (card 380).
+     *
+     * <p>Exposed for the same reason {@link #goal()} is: the fence is the
+     * WIRING, and a test that builds its own inbox proves nothing about the face
+     * the operator actually uses. Null on every headless face.</p>
+     *
+     * @return the session's steering inbox, or null
+     */
+    public dev.spectroscope.core.steering.SteeringInbox steering() {
+        return options.steering();
+    }
+
+    /**
+     * The rtk filter this agent runs its shell lines through, or null where none
+     * is wired (card 379). Same reason as {@link #goal()}: the fence is the
+     * wiring a real session build did, not one a test assembled.
+     *
+     * @return the filter, or null
+     */
+    public dev.spectroscope.core.tools.RtkFilter rtkFilter() {
+        return options.rtkFilter();
     }
 
     /**

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, ReactNode } from "react";
 import type { ClientMessage, RunEvent } from "../events";
 import type { Turn, UiState } from "../state/reducer";
+import { liveThinkingTurns } from "../state/reducer";
 import { groupTurns, groupTurnsV2 } from "../state/threads";
 import {
   NO_FOLDS_OPEN,
@@ -32,19 +33,29 @@ import {
   wheelPull,
   type ReaderPull,
 } from "../state/scrollPin";
-import { agentAccent, cacheSplit, clockTime, formatDuration, tokensPerSecond } from "../format";
+import { agentAccent, answerLineSegments } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
 import { AttachmentThumbs } from "./AttachmentThumbs";
 import { MAX_PENDING_ATTACHMENTS } from "./attachmentCap";
 import type { PendingAttachment } from "./AttachmentPreview";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
+import { useThinkingCeiling } from "./thinkingCeiling";
 import { WorkingLine, showWorkingLine } from "./WorkingLine";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { liveReading, type LiveRoute } from "./liveTranscription";
 import { composerHeight, showsPlaceholder } from "./composerGrowth";
+import {
+  atDraft,
+  composerKeyAction,
+  recallEntries,
+  recallReadout,
+  walkStep,
+  type WalkState,
+} from "./composerKeys";
 import { useLiveWanted } from "../state/liveWanted";
+import { useAnswerLine } from "../state/answerLine";
 import { voiceErrorKey } from "./voiceError";
 import { opensTheSheet, type SttStatus } from "./voiceNoticeReading";
 import { markVoiceNoticeSeen, readVoiceNoticeSeen, shouldShowVoiceNotice } from "./voiceNoticeFlag";
@@ -55,6 +66,7 @@ import { formatTimer, micButtonState } from "./voiceButton";
 import { composerButtons } from "./composerButtons";
 import { useSlashPicker } from "./SlashPicker";
 import type { QueuedMessage } from "../state/sendQueue";
+import type { PendingSteer } from "../state/steering";
 import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
 import { PlusMenu, type PlusMenuSection } from "./PlusMenuSettings";
@@ -93,7 +105,7 @@ export interface ChildFoldControls {
  *  ten lines is exactly 10 × 22 + 2 × 10 = 240, the cap sits ON a line
  *  boundary, and the scrollbar only appears once an eleventh line exists.
  *  Keep in sync with the .composer-box textarea max-height. */
-const TEXTAREA_MAX_HEIGHT_PX = 240;
+export const TEXTAREA_MAX_HEIGHT_PX = 240;
 /** An armed delete button disarms again after this long. */
 const DELETE_ARM_TIMEOUT_MS = 4000;
 
@@ -141,6 +153,14 @@ export function Chat(props: {
    *  queue and its drain; the composer renders the chips. */
   queued?: QueuedMessage[];
   onUnqueue?: (id: number) => void;
+  /** Card 380: true while a submit would reach the RUNNING turn rather than
+   *  wait for it. App decides it (a server that refused the frame turns it
+   *  off); the composer only says so. */
+  steers?: boolean;
+  /** Card 380, fix round 2026-09-24: steering messages that have left the
+   *  composer and that no run has answered for yet, oldest first. Drawn at the
+   *  live edge of the transcript until the run reads them or ends. */
+  steerPending?: PendingSteer[];
   /** The bottom stop button (card 78 #2) — same wire as the header stop. */
   onAbort?: () => void;
   /** True from the stop click until run_end: the button reads "stopping …". */
@@ -181,6 +201,8 @@ export function Chat(props: {
   // during a layout pass, not rendered from.
   const ghostRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Card 418: an open thinking body may grow to half this pane's height, never under 240 px.
+  useThinkingCeiling(scrollRef);
   // A live view follows the edge; an archive does not. An import is a record
   // you read from the beginning, so it must not open at its own end.
   const pinnedRef = useRef(props.liveView);
@@ -198,6 +220,9 @@ export function Chat(props: {
   // that can, because wanting live text is not consent to send the audio of
   // someone who chose the offline path off their machine.
   const liveWanted = useLiveWanted();
+  // Card 374: how much the line under each answer says, this browser profile's
+  // reading, set in the three dots menu under the composer.
+  const answerLine = useAnswerLine();
   const live = liveReading(
     {
       route: (sttStatus?.route === "hosted" ? "hosted" : "local") as LiveRoute,
@@ -566,7 +591,7 @@ export function Chat(props: {
   // Declared after `autosize` on purpose: the hook rules read the order.
   useEffect(() => {
     autosize();
-  }, [voice.provisional, autosize]);
+  }, [draft, voice.provisional, autosize]);
 
   // Card 78 #3: running no longer blocks — App queues the message and sends
   // it when the run ends (the chips above the composer show the waiting line).
@@ -575,6 +600,36 @@ export function Chat(props: {
   // first refusal on every key, because it owns Enter while its list is open
   // and the composer owns it the rest of the time.
   const [caret, setCaret] = useState(0);
+  // Card 378: the walk through the prompts already sent. The step function and
+  // the readout are pure and live in composerKeys.ts; what is held here is only
+  // where the walk stands.
+  const [walk, setWalk] = useState<WalkState>(atDraft);
+  const entries = useMemo(() => recallEntries(state.turns, props.queued ?? []), [state.turns, props.queued]);
+  const readout = recallReadout(walk);
+  // A different session is a different history. App swaps props on the same
+  // mount, so without this the walk would survive into a transcript it never
+  // belonged to.
+  useEffect(() => {
+    setWalk(atDraft());
+  }, [props.viewKey]);
+  /** Brings a prompt back into the box and puts the caret where a second press
+   *  keeps walking the list rather than walking inside the text. */
+  const recall = (direction: "back" | "forward"): boolean => {
+    const step = walkStep(walk, direction, entries, draft);
+    if (!step.moved) return false;
+    setWalk(step.state);
+    setDraft(step.text);
+    // Owner call 2, taken at the recall rather than at the send: a recalled
+    // text sits visibly in the field, and an invisible second copy in the queue
+    // is the surprise nobody expects. The cost is named on the card: walking
+    // forward to the draft again leaves that message unsent.
+    if (step.unqueue !== null) props.onUnqueue?.(step.unqueue);
+    const at = direction === "back" ? 0 : step.text.length;
+    setCaret(at);
+    const el = textareaRef.current;
+    if (el !== null) requestAnimationFrame(() => el.setSelectionRange(at, at));
+    return true;
+  };
   const slash = useSlashPicker(draft, caret, liveView, (text, nextCaret) => {
     setDraft(text);
     setCaret(nextCaret);
@@ -607,9 +662,8 @@ export function Chat(props: {
     setPin(true);
     props.onSend(text, attachments.pending.length > 0 ? attachments.pending : undefined);
     setDraft("");
+    setWalk(atDraft());
     attachments.clear();
-    const el = textareaRef.current;
-    if (el !== null) el.style.height = "auto";
   };
 
   const lastUserText = (): string | null => {
@@ -621,6 +675,18 @@ export function Chat(props: {
   };
 
   const lastIndex = state.turns.length - 1;
+  // Card 395: every agent that is thinking marks its own open block, so two
+  // children thinking at once both pulse and both follow their live edge.
+  const liveThinking = useMemo(
+    () =>
+      liveThinkingTurns({
+        turns: state.turns,
+        cards: state.cards,
+        rootAgentId: state.rootAgentId,
+        thinkingAgents: state.thinkingAgents,
+      }),
+    [state.turns, state.cards, state.rootAgentId, state.thinkingAgents],
+  );
   const micBase = micButtonState(voice.micPhase, voice.micAvailable, lang);
   // Card 187 step 1: a failure says why, on the control that failed. The button
   // keeps its own title while nothing has gone wrong, so the normal case reads
@@ -632,6 +698,9 @@ export function Chat(props: {
       running: liveView && state.running,
       stopping: props.stopRequested === true,
       draftEmpty: draft.trim() === "",
+      // Attachments never steer (owner call 2), so a draft carrying one says
+      // Queue even on a server that understands the frame.
+      steers: props.steers === true && attachments.pending.length === 0,
     },
     lang,
   );
@@ -695,13 +764,17 @@ export function Chat(props: {
                     ),
                   )}
             </div>
+            {turn.steer !== undefined && (
+              <div className={`steer-state steer-state--${turn.steer}`}>
+                {t(lang, turn.steer === "delivered" ? "chat.steerDelivered" : "chat.steerUndelivered")}
+              </div>
+            )}
           </div>
         );
       case "assistant": {
-        // Card 245: this answer's generation speed — same source numbers as
-        // the segments beside it, so the row cannot contradict itself.
-        const tps =
-          turn.usage !== undefined ? tokensPerSecond(turn.usage.outputTokens, turn.durationMs) : null;
+        // Card 374: the whole decision about what this line says lives in the
+        // builder, so the row cannot drift from its own tests.
+        const meta = answerLineSegments(answerLine, turn, lang);
         return (
           <div key={`${vk}:${i}`} className={`assistant-turn${hitClass(i)}`}>
             {turn.agentId !== "main" && !inThread && (
@@ -713,10 +786,7 @@ export function Chat(props: {
               </span>
             )}
             {turn.thinking !== "" && (
-              <ThinkingDisclosure
-                text={turn.thinking}
-                active={liveView && state.thinkingActive && i === lastIndex}
-              />
+              <ThinkingDisclosure text={turn.thinking} active={liveView && liveThinking.has(i)} />
             )}
             {/* The answer gets its own card, markdown-rendered; a turn that is
                 still all thinking shows no empty box. */}
@@ -728,33 +798,21 @@ export function Chat(props: {
                 )}
               </div>
             )}
-            {/* Per-message footer: this answer's token cost + how long it took
-                (from its usage event; the trace JSON carries the same numbers).
-                No usage event means nothing was measured for this answer — the
-                duration, the window and the model are all stamped by it — so an
-                unmetered answer gets no line rather than an empty one. */}
-            {turn.usage !== undefined && (
-              <div className="assistant-meta tabular" title={t(lang, "chat.usageTitle")}>
-                {turn.usage.inputTokens} in
-                {/* The input side splits when the provider cached: the read is
-                    the hit (context that rode in from the cache), the write is
-                    what this request stored. The raw "in" above is only the
-                    uncached remainder. Nothing reported, nothing rendered. */}
-                {cacheSplit(turn.usage)
-                  .map(
-                    (c) =>
-                      ` · ${c.tokens} ${t(lang, c.kind === "read" ? "chat.cacheRead" : "chat.cacheWrite")}`,
-                  )
-                  .join("")}
-                {` · ${turn.usage.outputTokens} out`}
-                {/* Card 245: the speed, beside the tokens it is made of. */}
-                {tps !== null && ` · ${tps}`}
-                {turn.durationMs !== undefined && ` · ${formatDuration(turn.durationMs)}`}
-                {/* Card 87: the answer's wall-clock window + the model that made it. */}
-                {turn.endTs !== undefined &&
-                  turn.durationMs !== undefined &&
-                  ` · ${clockTime(turn.endTs - turn.durationMs)} → ${clockTime(turn.endTs)}`}
-                {turn.model !== undefined && ` · ${turn.model}`}
+            {/* Per-message footer: what this answer cost and how long it took.
+                No usage event means nothing was measured, so an unmetered
+                answer gets no line rather than an empty one (card 374 keeps
+                that, through an empty segment list). */}
+            {meta.length > 0 && (
+              <div
+                className="assistant-meta tabular"
+                title={t(lang, answerLine === "extended" ? "aline.titleExtended" : "chat.usageTitle")}
+              >
+                {meta.map((s, k) => (
+                  <span key={s.kind} title={s.title}>
+                    {k > 0 ? " · " : ""}
+                    {s.label === "" ? s.value : `${s.value} ${s.label}`}
+                  </span>
+                ))}
               </div>
             )}
           </div>
@@ -1027,6 +1085,19 @@ export function Chat(props: {
                 </section>
               ),
             )}
+            {/* Card 380, fix round 2026-09-24: a steering message is on the
+                screen from the moment it is sent. The loop reads it at its next
+                safe point, which can be minutes away, and until then this row
+                is the page's own. The run's steering_message line replaces it
+                with the drawn turn, read or missed. */}
+            {liveView &&
+              props.steerPending?.map((p) => (
+                <div key={`${vk}:steer-${p.id}`} className="user-turn user-turn--steer-pending" role="status">
+                  <div className="eyebrow">{t(lang, "chat.you")}</div>
+                  <div className="user-text">{p.text}</div>
+                  <div className="steer-state steer-state--pending">{t(lang, "chat.steerPending")}</div>
+                </div>
+              ))}
             {/* Card 244: the sign of life at the live edge, for the stretches
                 no caret and no thinking dot covers (before the first delta,
                 and while a tool runs). The bottom-pin scroll carries it. */}
@@ -1095,6 +1166,18 @@ export function Chat(props: {
                 <span>{t(lang, `voice.live.${voice.liveFailed}`)}</span>
               </div>
             )}
+            {/* Card 378: how far back the walk has gone, in the same faint
+                monospace the answer footers use. The words are absent while
+                the operator is in his own draft, since there is no position
+                there and a row reading 0 of 2 would invent one. The slot
+                itself stays mounted and holds its line, so the chat above does
+                not move when the walk starts or comes home (audit 2026-09-21,
+                section H point 4). */}
+            <div className="composer-history" role="status">
+              {readout.kind === "at"
+                ? t(lang, "composer.historyAt", { n: readout.position, total: readout.total })
+                : null}
+            </div>
             <div className={attachments.dragOver ? "composer-inner drag-over" : "composer-inner"}>
               {/* Card 183: anchored to .composer-inner, which is why it is the
                   positioned ancestor. It opens UPWARD like the menus in the
@@ -1176,7 +1259,6 @@ export function Chat(props: {
                       onChange={(e) => {
                         setDraft(e.target.value);
                         setCaret(e.target.selectionStart ?? e.target.value.length);
-                        autosize();
                       }}
                       onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
                       onScroll={(e) => {
@@ -1185,11 +1267,29 @@ export function Chat(props: {
                         if (marksRef.current !== null) marksRef.current.scrollTop = e.currentTarget.scrollTop;
                       }}
                       onKeyDown={(e) => {
+                        // The picker keeps first refusal: it owns both arrows
+                        // and Enter while its list is open.
                         if (slash.handleKey(e)) return;
-                        if (e.key === "Enter" && !e.shiftKey) {
+                        const action = composerKeyAction({
+                          key: e.key,
+                          shiftKey: e.shiftKey,
+                          altKey: e.altKey,
+                          metaKey: e.metaKey,
+                          ctrlKey: e.ctrlKey,
+                          isComposing: e.nativeEvent.isComposing,
+                          value: e.currentTarget.value,
+                          selectionStart: e.currentTarget.selectionStart ?? 0,
+                          selectionEnd: e.currentTarget.selectionEnd ?? 0,
+                        });
+                        if (action === "send") {
                           e.preventDefault();
                           submit();
+                          return;
                         }
+                        // At either end of the list nothing moves, and the key
+                        // goes back to the caret rather than being swallowed.
+                        if (action === "recall-back" && recall("back")) e.preventDefault();
+                        if (action === "recall-forward" && recall("forward")) e.preventDefault();
                       }}
                       /* On the DRAFT, not on the chat root: a paste into the
                        search box or the workspace terminal is not an
@@ -1217,7 +1317,11 @@ export function Chat(props: {
                       className="composer-seat composer-seat--send"
                       disabled={buttons.sendDisabled}
                       aria-label={buttons.sendLabel}
-                      title={buttons.sendLabel}
+                      title={
+                        buttons.sendHintKey === null
+                          ? buttons.sendLabel
+                          : `${buttons.sendLabel}: ${t(lang, buttons.sendHintKey)}`
+                      }
                       onClick={submit}
                     >
                       <svg
@@ -1301,8 +1405,14 @@ export function Chat(props: {
                     <span className="mic-led" aria-hidden="true" />
                   )}
                   {mic.recording ? (
-                    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                      <rect x="3" y="3" width="10" height="10" rx="1.5" />
+                    // Card 383: 16 at 16, like the idle microphone it replaces,
+                    // so a viewBox unit is one CSS pixel. It rendered at 14
+                    // against a 16 unit box, which put every coordinate the
+                    // glyph was drawn on at an arbitrary subpixel offset. The
+                    // square goes from 10 units to 9 to keep the size it had on
+                    // screen: 9px now against 8.75px before.
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
+                      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
                     </svg>
                   ) : (
                     <svg

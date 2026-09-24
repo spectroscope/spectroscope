@@ -21,8 +21,8 @@ export function ThinkingDisclosure(props: { text: string; active: boolean }) {
   const lang = useLang();
 
   // Card 78 #5: while the block is OPEN and still STREAMING, the body follows
-  // the live edge (the owner's "nach 20 Zeilen essig" — the box is 240 px and
-  // used to just stop). Same pinning as the chat scroll: the position decides,
+  // the live edge (the owner's "nach 20 Zeilen essig": the box has a ceiling
+  // and used to just stop there). Same pinning as the chat scroll: the position decides,
   // recomputed on every scroll event — a programmatic jump lands at the bottom
   // and stays pinned, a reader scrolling up releases it, returning re-engages.
   const bodyRef = useRef<HTMLDivElement>(null);

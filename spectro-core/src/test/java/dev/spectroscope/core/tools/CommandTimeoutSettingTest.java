@@ -14,7 +14,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -70,17 +69,22 @@ class CommandTimeoutSettingTest {
     }
 
     @Test
-    void theShippedBeltAnnouncesTheConfiguredDefault() {
-        // The belt nobody parameterises — Tools.all(), SessionConnection's
-        // buildAgentOnce, HeadlessRunner — has to speak the number the settings
-        // chain ships, or the key is reachable and the sentence still wrong.
-        assertEquals(descriptionAt(SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS),
-                StandardTools.all().stream()
-                        .filter(tool -> "run_command".equals(tool.name()))
-                        .findFirst().orElseThrow().description(),
-                "the default belt's run_command does not announce"
-                        + " SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS — two numbers, one"
-                        + " of which an operator can move and the other not");
+    void theShippedBeltAnnouncesTheNumberTheRecordShips() {
+        // Card 370 replaced the test that stood here, which could not fail.
+        // It compared descriptionAt(DEFAULT_COMMAND_TIMEOUT_SECONDS) with the
+        // description off StandardTools.all(), and all() returns
+        // all(COMMAND_TIMEOUT_SECONDS) while COMMAND_TIMEOUT_SECONDS IS
+        // DEFAULT_COMMAND_TIMEOUT_SECONDS. Both sides were one expression, and
+        // its own comment named the three belts nobody parameterised and then
+        // asserted a tautology about them.
+        //
+        // What stands here instead is the shipped number itself, plus the
+        // assertion that the sentence moves, so the literal above cannot be
+        // satisfied by a literal below.
+        String shipped = descriptionAt(SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS);
+        assertTrue(shipped.contains("900 s timeout"), shipped);
+        assertNotEquals(shipped, descriptionAt(SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS + 1),
+                "the description moves with the number, so the assertion above is not a literal match");
     }
 
     @Test

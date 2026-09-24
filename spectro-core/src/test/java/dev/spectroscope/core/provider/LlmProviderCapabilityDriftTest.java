@@ -46,7 +46,8 @@ class LlmProviderCapabilityDriftTest {
      *  default, mapped to the signature a real implementation must declare. */
     private static final Map<String, String> CAPABILITIES = Map.of(
             "vision", "Vision vision()",
-            "contextWindow", "int contextWindow()");
+            "contextWindow", "int contextWindow()",
+            "publishedWindow", "int publishedWindow()");
 
     /** Implementations that deliberately answer the defaults, with the reason.
      *  An entry here is a decision on the record, not an exemption granted to
@@ -55,7 +56,22 @@ class LlmProviderCapabilityDriftTest {
             "AnthropicProvider.java",
             "the Anthropic API publishes no capability listing and no loaded window;"
                     + " its models are documented as sighted, and UNKNOWN sends the image"
-                    + " anyway (LlmProvider#vision)");
+                    + " anyway (LlmProvider#vision); its published windows come from"
+                    + " ModelWindows, and reading them off the Models API is not built"
+                    + " (ModelWindows class note)");
+
+    /** One capability one implementation deliberately answers with the default
+     *  (card 391), keyed {@code File.java#capability}, with the reason. The
+     *  file-wide list above exempts every capability of a file; this one
+     *  exempts exactly one. */
+    private static final Map<String, String> BY_DESIGN_FOR_ONE = Map.of(
+            "OpenAiCompatProvider.java#publishedWindow",
+            "no endpoint this provider dials is read for a published window: LM Studio's"
+                    + " max_context_length is a ceiling above the window it loads, which"
+                    + " contextWindow() reads, and ModelWindows covers the hosted ids",
+            "ServerLocalRuntime.java#publishedWindow",
+            "the bundled catalogue states the window the runtime was started with, and"
+                    + " contextWindow() answers it; a published figure could only rank below it");
 
     /** The repo root, found by the file that only it carries. */
     private static Path repoRoot() {
@@ -131,7 +147,8 @@ class LlmProviderCapabilityDriftTest {
                 if (source.contains(capability.getValue())) {
                     continue;
                 }
-                if (BY_DESIGN.containsKey(name)) {
+                if (BY_DESIGN.containsKey(name)
+                        || BY_DESIGN_FOR_ONE.containsKey(name + "#" + capability.getKey())) {
                     continue;
                 }
                 drifted.add(name + " does not answer " + capability.getKey() + "()");
@@ -153,5 +170,17 @@ class LlmProviderCapabilityDriftTest {
         BY_DESIGN.forEach((name, reason) ->
                 assertFalse(reason == null || reason.isBlank(),
                         name + " is exempted without saying why"));
+        BY_DESIGN_FOR_ONE.forEach((key, reason) ->
+                assertFalse(reason == null || reason.isBlank(),
+                        key + " is exempted without saying why"));
+    }
+
+    @Test
+    void aOneCapabilityExemptionNamesACapabilityTheScanChecks() {
+        // A key with a misspelt capability would exempt nothing and read as a
+        // decision on the record.
+        BY_DESIGN_FOR_ONE.keySet().forEach(key ->
+                assertTrue(CAPABILITIES.containsKey(key.substring(key.indexOf('#') + 1)),
+                        key + " names no capability in CAPABILITIES"));
     }
 }

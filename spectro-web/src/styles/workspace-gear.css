@@ -104,6 +104,18 @@
 .wsg-mode-row--active .wsg-mode-name {
   color: var(--accent);
 }
+/* Card 379: a row whose control cannot act, the rtk switch when rtk is missing.
+   Dimmed and inert, and the hint under the name says why. */
+.wsg-mode-row--disabled {
+  cursor: not-allowed;
+  color: var(--text-faint);
+}
+.wsg-mode-row--disabled:hover {
+  background: none;
+}
+.wsg-mode-row--disabled .wsg-mode-name {
+  color: var(--text-faint);
+}
 
 .wsg-mode-marker {
   width: 1em;

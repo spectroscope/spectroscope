@@ -86,9 +86,26 @@ else
   echo "==> no Developer ID — ad-hoc signing (docs/DESKTOP-SIGNING.md for zero-warning)"
 fi
 
-# 1) server fat jar → the version-neutral path the app's extraResources points at
+# 0c) the build label (card 398). A test build carries one, for example
+#     "0.13.0-beta (merge-2026-09-24, a1b2c3d, 24.09. 14:05)", and About and the
+#     window title show it. A release build carries none: HEAD is the tag
+#     v$VERSION, or SPECTRO_RELEASE=1 (build-release-assets.sh sets it). A build
+#     without git, or where git cannot read the checkout, carries none either.
+#     scripts/build-label.sh decides and prints the reason to stderr, just above
+#     the line below. The label goes into the server jar only; VERSION, the jar
+#     name and the DMG name stay on the plain version.
+LABEL="$(./scripts/build-label.sh)"
+if [ -n "$LABEL" ]; then
+  echo "==> test build: $LABEL"
+else
+  echo "==> no build label (reason above)"
+fi
+
+# 1) server fat jar → the version-neutral path the app's extraResources points at.
+#    The label property is passed on every build, empty when there is no label,
+#    so a spectro.buildLabel left in a gradle.properties cannot reach that jar.
 echo "==> [1/7] server bootJar"
-./gradlew :spectro-server:bootJar --console=plain
+./gradlew :spectro-server:bootJar --console=plain "-Pspectro.buildLabel=${LABEL}"
 JAR="spectro-server/build/libs/spectro-server-${VERSION}.jar"
 [ -f "$JAR" ] || { echo "!! server jar not found: $JAR"; exit 1; }
 mkdir -p "$D/build"; cp -f "$JAR" "$D/build/spectro-server.jar"
@@ -101,6 +118,10 @@ mkdir -p "$D/build"; cp -f "$JAR" "$D/build/spectro-server.jar"
 #     OUT OF the staged jar and compared to the tree's bundle; a stale jar —
 #     an old UI under a fresh version — is refused before packaging.
 ./scripts/verify-staged-server-jar.sh "$D/build/spectro-server.jar"
+
+# 1c) THE STAGED JAR CARRIES THE LABEL THIS BUILD COMPUTED (card 398), read out
+#     of the jar: exactly the label when there is one, none when there is none.
+./scripts/verify-build-label.sh "$D/build/spectro-server.jar" "$LABEL"
 
 # 2) jlink a full runtime (ALL-MODULE-PATH so Spring Boot's reflection is safe)
 echo "==> [2/7] jlink JRE"

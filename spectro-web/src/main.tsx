@@ -6,6 +6,7 @@ import { App } from "./App";
 import { initDesign } from "./state/designPrefs";
 import { installBrowserLog } from "./state/browserLog";
 import { installSearchHotkey } from "./components/SearchBox";
+import { applyBuildTitle } from "./state/buildTitle";
 import "./tokens.css";
 import "./fonts.css";
 import "./app.css";
@@ -25,5 +26,9 @@ installBrowserLog();
 // virtualises and paginates its text, so the native bar searches a DOM that is
 // not what the reader sees.
 installSearchHotkey();
+
+// A test build names itself in the window title (card 398); a release keeps
+// the title index.html gives it.
+void applyBuildTitle();
 
 createRoot(document.getElementById("root")!).render(<App />);

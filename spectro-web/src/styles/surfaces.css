@@ -1,15 +1,11 @@
-/* Phase-4 surfaces: the gate bar, the explain panel, the doctor page.
+/* Phase-4 surfaces: the gate marks, the ask bar, the explain panel, the doctor page.
    Colors come exclusively from tokens.css; the violet line is the one
    "waiting on you" mark, gate outcomes wear the gate red / token teal. */
 
-/* ---------- Gate bar (first-class permission surface) ---------- */
-.gate-bar {
-  position: relative;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding: var(--sp-2) var(--sp-4) var(--sp-2) calc(var(--sp-4) + 4px);
-  flex: none;
-}
+/* ---------- Gate marks (card 382) ---------- */
+/* The gate bar is gone: a permission is asked in the window alone. What stays
+   here is shared: the violet line the ask bar still draws, and the recorded
+   outcomes the window lists. */
 .gate-line {
   position: absolute;
   left: 0;
@@ -18,73 +14,6 @@
   width: 3px;
   background: var(--ev-pending);
 }
-.gate-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-}
-.gate-kicker {
-  font-size: var(--fs-11);
-  color: var(--ev-pending);
-  text-transform: uppercase;
-  letter-spacing: var(--track-eyebrow);
-}
-.gate-tool { font-size: var(--fs-13); color: var(--text); }
-.gate-input {
-  flex: 1;
-  min-width: 8rem;
-  font-size: var(--fs-12);
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gate-queue { font-size: var(--fs-11); color: var(--ev-pending); }
-.gate-remember {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  font-size: var(--fs-12);
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-.gate-remember input { accent-color: var(--accent); }
-.gate-deny,
-.gate-allow {
-  font: inherit;
-  font-size: var(--fs-13);
-  font-weight: 560;
-  border-radius: var(--radius-control);
-  padding: var(--sp-1) var(--sp-4);
-  cursor: pointer;
-  transition: border-color var(--t-fast), filter var(--t-fast), transform var(--t-fast);
-}
-.gate-deny {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-.gate-deny:hover { border-color: var(--border-strong); transform: translateY(-1px); }
-.gate-allow {
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: var(--text-on-accent);
-}
-.gate-allow:hover { filter: brightness(1.12); transform: translateY(-1px); }
-.gate-expand { margin-left: auto; }
-
-.gate-detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding-top: var(--sp-2);
-}
-/* The full payload, rendered as the tool card renders it. Bounded and scrolling
-   rather than clipped: the deny/allow buttons live above this box, so it can be
-   as tall as it likes, but a bar that grows past a screenful stops being a bar. */
-.gate-payload { max-height: 22rem; overflow-y: auto; }
-.gate-payload .tv-well { max-height: none; overflow: visible; }
 .gate-history {
   display: flex;
   align-items: center;
@@ -475,6 +404,51 @@
   padding: 4px var(--sp-2);
 }
 .skset-input--wide { flex: 1; min-width: 0; }
+/* The catalogue shelf as packs (card 410): one header row per pack with its
+   count and two set buttons; the pack's rows sit below it only while open. */
+.skset-packs { list-style: none; margin: var(--sp-2) 0; padding: 0; display: flex; flex-direction: column; }
+.skset-pack { border-bottom: 1px solid var(--border); }
+.skset-pack:last-child { border-bottom: none; }
+.skset-pack-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  font-size: var(--fs-12);
+}
+.skset-pack-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.skset-pack-toggle:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.skset-pack-caret { flex: none; color: var(--text-faint); }
+.skset-pack-toggle[aria-expanded="true"] .skset-pack-caret { transform: rotate(90deg); }
+.skset-pack-count { flex: none; color: var(--text-faint); }
+/* The two set buttons wrap as one piece: when the header has no room beside
+   the count, both move to the next line, at the right edge. */
+.skset-pack-sets { flex: none; display: flex; gap: var(--sp-2); margin-left: auto; }
+.skset-pack-remove:disabled,
+.skset-pack-remove:disabled:hover { cursor: default; opacity: 0.6; color: var(--text-faint); border-color: var(--border-strong); background: none; }
+.skset-pack-rows { margin: 0 0 var(--sp-1) var(--sp-4); }
+/* In an opened pack the name gives way, not the switch: at 390 px the full
+   name of four superpowers rows pushed the switch past the view's right edge.
+   The name wraps (at a hyphen where it can), the chip stays on one line. */
+.skset-pack-rows .skset-name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.skset-pack-rows .wsg-scope-tag { flex: none; }
+.skset-pack-refused { margin: 0 0 var(--sp-1) var(--sp-4); }
+.skset-refused-list { list-style: none; margin: 0; padding: 0; }
 
 /* ---------- Find box (in-view search, Cmd+F) ----------
    Floats over the top right of the CONTENT being read, not over the chrome.

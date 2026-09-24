@@ -51,6 +51,15 @@ public final class SubagentManager {
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     public static final int MAX_PARALLEL_CHILDREN = 4;
 
+    /** The line between an out-of-budget error and the text the child had
+     *  written before the cut (card 371). The parent reads the error first and
+     *  the unfinished text after it. What survives the cut is the LAST turn and
+     *  nothing before it: {@code lastTurnText} is cleared at every
+     *  {@code TurnStart}, so a child cut in its eighth turn hands back that
+     *  turn and the seven earlier ones are gone. */
+    public static final String PARTIAL_OUTPUT_MARKER =
+            "--- what the child had written before the cut, unfinished ---";
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private static final JsonNode SPAWN_AGENT_SCHEMA = parseSchema("""
@@ -383,6 +392,10 @@ public final class SubagentManager {
                 // operator who typed a threshold means it for the children too,
                 // and null still lets them derive it from the shared provider.
                 .compactionThreshold(config.compactionThreshold())
+                // Card 390: the window the operator set for the session, the
+                // SAME holder the parent reads, so a change reaches a working
+                // child from its next turn as it reaches the parent.
+                .sessionWindow(config.sessionWindow())
                 // Card 364, and the same argument card 263 makes one line up: a
                 // ceiling the operator typed governs the TREE. Until this card
                 // `.maxTurns(` had one caller in the whole repository and
@@ -449,9 +462,21 @@ public final class SubagentManager {
         // "timeout" learns nothing it can act on, and the old sentence could even
         // print "timeout after 0 s" for a sub-second test budget.
         if (ChildBudget.STOP_BUDGET_EXHAUSTED.equals(stoppedBy.get())) {
-            return "ERROR: [" + childId + "] out of budget: " + runBudgetMs / 1000
+            String error = "ERROR: [" + childId + "] out of budget: " + runBudgetMs / 1000
                     + " s of work since its first token (" + budget.derivation()
-                    + ") — cut the subtask smaller.";
+                    + "). Raise subagentBudgetSeconds in the settings, or cut the subtask smaller.";
+            // Card 371: the buffer above was accumulated for the "finished normally"
+            // path only, and a cut threw it away. A 2,400-line plan was lost that way
+            // on 2026-09-16. Hand it back, marked as unfinished.
+            //
+            // Blank, not empty, and stripped on the way out: the same two calls the
+            // normal-answer path below makes. A model that opens its answer with a
+            // newline and is cut there has a buffer that is non-empty and holds
+            // nothing a reader can use, and isEmpty() printed the marker over it.
+            if (lastTurnText.toString().isBlank()) {
+                return error;
+            }
+            return error + "\n" + PARTIAL_OUTPUT_MARKER + "\n" + lastTurnText.toString().strip();
         }
         if (ChildBudget.STOP_NO_FIRST_TOKEN.equals(stoppedBy.get())) {
             return "ERROR: [" + childId + "] never produced a token within " + graceMs / 1000

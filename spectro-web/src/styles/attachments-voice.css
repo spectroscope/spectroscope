@@ -11,10 +11,45 @@
   max-width: none; /* the column already constrains the width */
 }
 
+/* CARD 383: the box follows the owner's reference, Claude's composer. This
+   rule used to declare a 44px square, so a 16px glyph sat in 14px of blank
+   ring on every side and two neighbouring glyphs stood 52px apart centre to
+   centre. His screenshot of Claude's row, measured on 2026-09-24, puts
+   Claude's icons 22px apart centre to centre with glyphs of the same 16px
+   class as ours. 24px is the rung of the spacing ladder at or above that
+   pitch, and it leaves a whole 4px ring around the 16px glyph, so the glyph
+   sits a whole number of px inside its box. That is not a promise about
+   device pixels: where the box itself lands is not pinned here, and
+   composerRow.drift.test.ts states the same limit. The boxes stand edge to edge
+   (.composer-actions has no gap), which makes the pitch the box.
+
+   `position: relative` is here for the reach below and not for the box. The
+   ::before is taken out of flow by `position: absolute`, so it never becomes a
+   grid item in .icon-button's `display: grid` and never moves the glyph. */
 .attach-button {
-  width: 44px;  /* touch target ≥ 44px (UI-UX-CONCEPT 4.4) */
-  height: 44px;
+  position: relative;
   flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+/* The reach, built the way this composer already builds it on the thumbnail
+   remove cross (.composer-thumb-x::before in modal-composer.css): the tile is
+   what the eye reads, the ::before is what the pointer hits. It grows up and
+   down by 4px and not sideways. Sideways the neighbour's box starts at this
+   box's edge, so any width beyond the box would take a click meant for the
+   neighbour. Upward 4px is exactly the space to the field, so the reach ends
+   at the field's edge and never takes a click meant for the field. 24 by 32.
+
+   This is a deliberate shortfall against UI-UX-CONCEPT section 6, `Touch
+   targets >= 44 px despite the desktop focus`, and it follows the owner's
+   words about Claude's size. The concept document lives one repository up and
+   is the owner's to edit; the card lists it as an open owner call, and
+   composerRow.drift.test.ts holds the geometry. */
+.attach-button::before {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
 }
 
 /* Drag-over tints the input zone (accent-soft) with a dashed Coral border.

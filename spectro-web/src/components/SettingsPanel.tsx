@@ -28,8 +28,10 @@
 import { useEffect, useRef, useState, type KeyboardEventHandler, type ReactNode } from "react";
 import { DESIGNS, applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
 import type { SettingsSection } from "../state/route";
+import { LEVELING_MODES, type LevelingMode } from "../state/leveling";
 import {
   SETTINGS_TABS,
+  sectionAnchorId,
   settingsTabButtonId,
   settingsTabLabelKey,
   settingsTabPanelId,
@@ -66,6 +68,15 @@ import { readDockWidths } from "../state/rowWidths";
 import { DockWidthSettings } from "./DockWidthSettings";
 import { CopyButton } from "./CopyButton";
 import { GoverningNumbersBlock } from "./GoverningNumbersBlock";
+import { SettingsSearch } from "./SettingsSearchBox";
+import {
+  buildSettingsManifest,
+  matchSettings,
+  openSettingsHit,
+  scrollToSettingsAnchor,
+  type SettingsHit,
+} from "./settingsSearch";
+import { fetchGoverningNumbers, type GoverningNumber } from "../state/governingNumbers";
 import { ReachBlock } from "./settingsReach";
 import { OriginRow } from "./settingsOrigin";
 import { ProgressGuardSettings } from "./ProgressGuardSettings";
@@ -212,11 +223,11 @@ const SAVED_FLASH_MS = 1400;
 const IMAGE_PROVIDERS = ["gemini", "openai"] as const;
 const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
-/** The DOM anchor of a settings section — one id per address the route
- *  vocabulary knows (#/settings/{section}, card 131). */
-export function sectionAnchorId(section: SettingsSection): string {
-  return `settings-sec-${section}`;
-}
+/** The DOM anchor of a settings section. Defined in settingsTabs.ts and
+ *  re-exported here, where its callers have always imported it from: card 381's
+ *  search points at the same anchors, and two definitions of one id scheme is
+ *  how a renamed section silently stops being reachable. */
+export { sectionAnchorId };
 
 export function SettingsPanel({
   open,
@@ -396,6 +407,26 @@ export function SettingsPanel({
   // from there moves nothing and marks the link served — the silent half of the
   // regression review found. Null means "not from here", so the deep link keeps
   // its one chance until its own room is on screen.
+  // Card 381: the page-wide query. It lives here because two consumers read
+  // it: the result list above the rooms, and the limits list inside one.
+  const [query, setQuery] = useState("");
+  const [registry, setRegistry] = useState<GoverningNumber[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void fetchGoverningNumbers().then(
+      (read) => {
+        if (alive) setRegistry(read);
+      },
+      // A registry that never arrives costs the search its reference rows and
+      // nothing else. The sections and the saveable keys are local data.
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
   const scrollTo = settingsScrollTarget(activeTab, section);
   const scrolledFor = useRef<string | null>(null);
   useEffect(() => {
@@ -445,6 +476,12 @@ export function SettingsPanel({
   const pickTab = (tab: SettingsTab): void => {
     setRoom(settingsRoomPick(address, tab));
     bodyRef.current?.scrollTo({ top: 0 });
+  };
+
+  /** A search result: open its room, then scroll to the same anchor a deep
+   *  link would have used, one frame later (see scrollToSettingsAnchor). */
+  const pickHit = (hit: SettingsHit): void => {
+    openSettingsHit(hit, pickTab, scrollToSettingsAnchor);
   };
 
   /** Arrow keys along the row. Focus follows to the tab BUTTON, not into the
@@ -590,6 +627,19 @@ export function SettingsPanel({
             </svg>
           </button>
         </header>
+
+        {/* ---- Card 381: one search field, above the rooms and outside every
+            one of them. It searches a manifest derived from the grouping
+            table, the reach table and the generated registry, never the DOM,
+            which would only ever see the rows the limits list happened to be
+            showing. ---- */}
+        <SettingsSearch
+          lang={lang}
+          query={query}
+          onQuery={setQuery}
+          hits={query.trim() === "" ? null : matchSettings(buildSettingsManifest(lang, registry), query)}
+          onPick={pickHit}
+        />
 
         {/* ---- The rooms (card 256). One button per entry of the grouping
             table; the labels come from the dictionary, never from a language
@@ -758,15 +808,19 @@ export function SettingsPanel({
                 <div className="settings-grid">
                   <label className="settings-field">
                     <span>{t(lang, "leveling.settings.mode")}</span>
+                    {/* Options from the mode list, not from three hand-typed
+                      values (card 387). The welcome screen asks the same
+                      question, and a select that types its own subset is how
+                      that screen came to offer two of three answers. */}
                     <select
                       value={leveling.snapshot.mode}
-                      onChange={(e) =>
-                        void leveling.setMode(e.target.value as "ladder" | "checklist" | "off")
-                      }
+                      onChange={(e) => void leveling.setMode(e.target.value as LevelingMode)}
                     >
-                      <option value="ladder">{t(lang, "leveling.settings.mode.ladder")}</option>
-                      <option value="checklist">{t(lang, "leveling.settings.mode.checklist")}</option>
-                      <option value="off">{t(lang, "leveling.settings.mode.off")}</option>
+                      {LEVELING_MODES.map((mode) => (
+                        <option key={mode} value={mode}>
+                          {t(lang, `leveling.settings.mode.${mode}`)}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label className="settings-field">
@@ -1311,7 +1365,7 @@ export function SettingsPanel({
                 <div className="settings-label" id={sectionAnchorId("limits")}>
                   {t(lang, "set.secLimits")}
                 </div>
-                <GoverningNumbersBlock lang={lang} />
+                <GoverningNumbersBlock lang={lang} query={query} />
               </>
             )}
           </SettingsTabPage>

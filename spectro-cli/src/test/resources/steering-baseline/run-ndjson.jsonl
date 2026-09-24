@@ -1,0 +1,20 @@
+{"type":"run_start","runId":"<run>","agentId":"main","prompt":"Summarise notes.txt","provider":"anthropic","workspace":"<path>","ts":0}
+{"type":"turn_start","agentId":"main","turn":1,"ts":0}
+{"type":"thinking_delta","agentId":"main","text":"Look at the folder first.","ts":0}
+{"type":"text_delta","agentId":"main","text":"Let me look.","ts":0}
+{"type":"tool_call","agentId":"main","callId":"c1","name":"list_dir","input":{"path":"."},"ts":0}
+{"type":"usage","agentId":"main","inputTokens":120,"outputTokens":18,"ts":0}
+{"type":"tool_result","agentId":"main","callId":"c1","output":"notes.txt","isError":false,"durationMs":0,"ts":0}
+{"type":"turn_start","agentId":"main","turn":2,"ts":0}
+{"type":"tool_call","agentId":"main","callId":"c2","name":"read_file","input":{"path":"notes.txt"},"ts":0}
+{"type":"tool_call","agentId":"main","callId":"c3","name":"write_file","input":{"path":"summary.txt","content":"two lines"},"ts":0}
+{"type":"usage","agentId":"main","inputTokens":180,"outputTokens":22,"cacheReadTokens":64,"cacheCreationTokens":16,"ts":0}
+{"type":"tool_result","agentId":"main","callId":"c2","output":"alpha\nbeta\n","isError":false,"durationMs":0,"ts":0}
+{"type":"permission_request","agentId":"main","callId":"c3","name":"write_file","input":{"path":"summary.txt","content":"two lines"},"ts":0}
+{"type":"permission_decision","callId":"c3","allowed":false,"ts":0}
+{"type":"tool_result","agentId":"main","callId":"c3","output":"ERROR: the user denied the execution.","isError":true,"durationMs":0,"gateWaitMs":0,"ts":0}
+{"type":"turn_start","agentId":"main","turn":3,"ts":0}
+{"type":"text_delta","agentId":"main","text":"Two lines, ","ts":0}
+{"type":"text_delta","agentId":"main","text":"nothing written.","ts":0}
+{"type":"usage","agentId":"main","inputTokens":200,"outputTokens":9,"ts":0}
+{"type":"run_end","runId":"<run>","stopReason":"end_turn","ts":0}

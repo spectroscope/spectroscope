@@ -28,22 +28,37 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * anything; a census of 7,139 real Claude Code sessions on the owner's machine
  * (2026-09-01) put the median run at 14 turns and p95 at 129, with 48.0 % of
  * sessions going past 15 — so the shipped ceiling was cutting half of all real
- * work off mid-task. The owner's number is 150. The census itself is a dated
- * snapshot in {@link SpectroConfig#DEFAULT_MAX_TURNS}'s javadoc, because it is
- * not derivable from this repo and so cannot be re-derived by a test; the
+ * work off mid-task. The owner's number then was 150. The census itself is a
+ * dated snapshot in {@link SpectroConfig#DEFAULT_MAX_TURNS}'s javadoc, because
+ * it is not derivable from this repo and so cannot be re-derived by a test; the
  * DECISION is pinned below, where an accidental revert goes red.</p>
+ *
+ * <p><b>Card 373</b> moved it again, to 1000 on 2026-09-17. Nothing here can
+ * re-derive that measurement either, so it carries its own date and its own n on
+ * the test below and in the constant's javadoc.</p>
  */
 class MaxTurnsSettingTest {
 
+    /**
+     * Card 373: the ceiling ships above what an unattended night needs.
+     *
+     * <p>Nothing in this repo can re-derive this number, so it is pinned as a
+     * literal and the measurement that produced it is stamped with its date and
+     * its n. DATED MEASUREMENT, 2026-09-17, a scan over the owner's own session
+     * store: 62 session files, 114 runs with a {@code run_end}, longest run 118
+     * turns in 2 h 10 min, no run at or above 150, five runs at the old ceiling
+     * of 15; an 8 hour night at that pace is about 440 turns, and the
+     * 7,139-session census behind the 150 had p99 288 and maximum 1441. 1000
+     * sits above the night and above the census p99; the census maximum stays
+     * out of reach on purpose.</p>
+     */
     @Test
-    void theShippedCeilingIsTheNumberTheOwnerChoseFromTheCensus() {
-        // A decision, not a derivation — so it is pinned as a literal and the
-        // measurement that produced it is stamped with its date and its n in
-        // the constant's own javadoc. Card 365, criteria 1 and 4.
-        assertEquals(150, SpectroConfig.DEFAULT_MAX_TURNS,
-                "the shipped turn ceiling is not the owner's 150 — the census that"
-                        + " produced it is in the constant's javadoc, and a run that ends"
-                        + " at 15 ends 48 % of real sessions in the middle");
+    void theShippedCeilingSitsAboveAnOvernightRun() {
+        assertEquals(1000, SpectroConfig.DEFAULT_MAX_TURNS,
+                "the shipped turn ceiling is not the owner's 1000. The measurement"
+                        + " behind it is in this test's javadoc and in the constant's: a"
+                        + " ceiling at 150 sits below the roughly 440 turns an 8 hour night"
+                        + " takes at the pace his own longest run held");
         assertEquals(SpectroConfig.DEFAULT_MAX_TURNS, Agent.DEFAULT_MAX_TURNS,
                 "the harness's own fallback still carries the old ceiling — every face"
                         + " that never passes maxTurns reads Agent's copy, so a settings"

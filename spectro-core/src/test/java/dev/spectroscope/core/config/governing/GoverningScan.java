@@ -314,13 +314,14 @@ final class GoverningScan {
     /**
      * The javadoc standing above a declaration, flattened to plain text.
      *
-     * <p>The walk steps back over the {@link Governs} annotation lines first:
-     * the annotation sits between the prose and the constant, and the prose is
-     * what the operator reads.</p>
+     * <p>The walk steps back over every annotation line first, {@link Governs}
+     * and any other that stands on a line of its own ({@code @Deprecated} on
+     * {@code ChildBudget.FLOOR_MS}, card 412): the annotations sit between the
+     * prose and the constant, and the prose is what the operator reads.</p>
      */
     private static String javadocAbove(List<String> lines, int at) {
         int cursor = at - 1;
-        while (cursor >= 0 && lines.get(cursor).trim().startsWith("@Governs")) {
+        while (cursor >= 0 && lines.get(cursor).trim().startsWith("@")) {
             cursor--;
         }
         if (cursor < 0 || !lines.get(cursor).trim().endsWith("*/")) {

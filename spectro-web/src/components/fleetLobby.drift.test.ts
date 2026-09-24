@@ -36,7 +36,10 @@ describe("the fleets segment reaches App", () => {
     expect(app).toMatch(/const \[nav, setNav\] = useState<[^>]*"sessions"[^>]*>\("sessions"\)/);
     expect(app).toMatch(/const \[nav, setNav\] = useState<[^>]*"fleets"[^>]*>\("sessions"\)/);
     expect(app).toMatch(/nav=\{nav\}/);
-    expect(app).toMatch(/onNav=\{setNav\}/);
+    // Card 409: a segment press also closes the skills view, so the rail hands
+    // the press to pickSegment, which sets the segment it was given.
+    expect(app).toMatch(/onNav=\{pickSegment\}/);
+    expect(app).toMatch(/const pickSegment = \(next: [^)]*\): void => \{[^}]*setNav\(next\);/);
   });
 
   it("follows the surface when a fleet is entered by address", () => {

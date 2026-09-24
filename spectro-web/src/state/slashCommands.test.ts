@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { matchSkills, slashQueryAt, tokenInsert, type SkillOption } from "./slashCommands";
+import {
+  CONTAINS,
+  EXACT_FOLDER,
+  EXACT_NAME,
+  STARTS,
+  exactSpellings,
+  matchSkills,
+  rankOf,
+  slashQueryAt,
+  tokenInsert,
+  type SkillOption,
+} from "./slashCommands";
 
 const skill = (name: string, over: Partial<SkillOption> = {}): SkillOption => ({
   name,
@@ -74,6 +85,83 @@ describe("which skills a query offers", () => {
     ]);
   });
 
+  it("puts the name typed in FULL above a longer name that starts with it", () => {
+    // Measured 2026-09-18 on the installed skills: all three of these return
+    // the wrong first row today, and Enter inserts a skill nobody typed.
+    const tdd = [skill("superpowers:test-driven-development"), skill("test-driven-development")];
+    expect(matchSkills("test-driven-development", tdd).map((s) => s.name)).toEqual([
+      "test-driven-development",
+      "superpowers:test-driven-development",
+    ]);
+
+    const plans = [skill("superpowers:writing-plans"), skill("writing-plans")];
+    expect(matchSkills("writing-plans", plans).map((s) => s.name)).toEqual([
+      "writing-plans",
+      "superpowers:writing-plans",
+    ]);
+
+    // Not a namespace collision: the packed skill wins the STARTS tie on
+    // localeCompare, so a set built from bare-name collisions alone misses it.
+    const verify = [skill("superpowers:verification-before-completion"), skill("verification")];
+    expect(matchSkills("verification", verify).map((s) => s.name)).toEqual([
+      "verification",
+      "superpowers:verification-before-completion",
+    ]);
+  });
+
+  it("puts an exact FOLDER above a name that merely starts with the query", () => {
+    // The folder earns a tier of its own, below the full name: typing the half
+    // a reader remembers still beats a longer neighbour.
+    const library = [skill("aaa:review-notes-extra"), skill("zzz:review-notes")];
+    expect(matchSkills("review-notes", library).map((s) => s.name)).toEqual([
+      "zzz:review-notes",
+      "aaa:review-notes-extra",
+    ]);
+  });
+
+  it("offers a qualified name once, although both roots send it", () => {
+    // SkillsController sends one row per root and nobody between dedupes
+    // (SkillsController.java:195-204, skillList.ts:49-60), so `verification`
+    // arrives twice. The loader's rule is that the later root wins
+    // (SkillLibrary.java:120), and the picker follows it.
+    const library = [
+      skill("verification", { description: "the user root copy" }),
+      skill("verification", { description: "the project root copy" }),
+    ];
+    const hits = matchSkills("verification", library);
+    expect(hits.map((s) => s.name)).toEqual(["verification"]);
+    expect(hits[0].description).toBe("the project root copy");
+  });
+
+  it("keeps the copy the loader keeps, whichever root carries the .disabled marker", () => {
+    // loadSkill returns before it writes when the folder carries .disabled
+    // (SkillLibrary.java:169-175, the only writer to byName at :175), so a
+    // disabled copy never overwrites a live one. A skill live in the user root
+    // and disabled in the project root is therefore LIVE for the agent, and a
+    // picker that dropped it would hide a skill the agent can still call.
+    const laterDisabled = [
+      skill("verification", { description: "the user root copy" }),
+      skill("verification", { description: "the project root copy", disabled: true }),
+    ];
+    const kept = matchSkills("verification", laterDisabled);
+    expect(kept.map((s) => s.name)).toEqual(["verification"]);
+    expect(kept[0].description).toBe("the user root copy");
+
+    // The other direction, so a fix cannot simply drop the later row: when the
+    // project copy is the live one, the later root still wins.
+    const earlierDisabled = [
+      skill("verification", { description: "the user root copy", disabled: true }),
+      skill("verification", { description: "the project root copy" }),
+    ];
+    const later = matchSkills("verification", earlierDisabled);
+    expect(later.map((s) => s.name)).toEqual(["verification"]);
+    expect(later[0].description).toBe("the project root copy");
+
+    // Both roots off means the agent cannot call it, so neither may the reader.
+    const bothDisabled = laterDisabled.map((s) => ({ ...s, disabled: true }));
+    expect(matchSkills("verification", bothDisabled)).toEqual([]);
+  });
+
   it("ignores case, because nobody shifts while completing", () => {
     expect(matchSkills("BRAIN", LIBRARY).map((s) => s.name)).toEqual(["superpowers:brainstorming"]);
   });
@@ -88,6 +176,37 @@ describe("which skills a query offers", () => {
 
   it("offers nothing rather than everything when nothing matches", () => {
     expect(matchSkills("zzz", LIBRARY)).toEqual([]);
+  });
+});
+
+describe("which spellings earn an exact tier (derived from the source, not retyped)", () => {
+  const PACKED = skill("superpowers:writing-plans");
+  const TOP = skill("verification");
+
+  it("gives every exported exact spelling its own tier, all of them above STARTS", () => {
+    for (const s of [PACKED, TOP]) {
+      const spellings = exactSpellings(s);
+      expect(spellings.length).toBeGreaterThan(0);
+      spellings.forEach((spelling, tier) => {
+        // A top-level skill spells its name and its folder the same way, and
+        // rankOf returns on the first hit, so the rank an exact query wins is
+        // the FIRST position that spelling holds, not every position it holds.
+        const firstTier = spellings.findIndex((o) => o.toLowerCase() === spelling.toLowerCase());
+        expect(rankOf(spelling.toLowerCase(), s), `${s.name} spelled "${spelling}"`).toBe(firstTier);
+        // The derivation. A spelling added to the function without a tier of
+        // its own lands on STARTS or below and this is what says so.
+        expect(tier, `tier for "${spelling}"`).toBeLessThan(STARTS);
+      });
+    }
+    expect([EXACT_NAME, EXACT_FOLDER]).toEqual([0, 1]);
+  });
+
+  it("gives the PACK no exact tier, on purpose", () => {
+    // Decision 2: an exact tier on the pack would put seven rows on the top
+    // rank at once for `ui-ux-pro-max`, which decides nothing.
+    expect(rankOf("superpowers", PACKED)).toBe(STARTS);
+    expect(rankOf("plans", PACKED)).toBe(CONTAINS);
+    expect(rankOf("zzz", PACKED)).toBeNull();
   });
 });
 

@@ -10,28 +10,60 @@
 // bundle's own package.json is stale and would be a confident wrong answer.
 // A failed fetch shows no version at all.
 //
+// A test build reports a build label next to the version (card 398). The
+// identity line shows it under the name, beside the plain version, so the
+// operator can tell a test app from the installed release.
+//
 // Every licence sentence comes from ABOUT, which about.drift.test.ts pins to
 // LICENSE and LICENSE-ASSETS.md. Editing the terms here without editing the
 // licence there fails the gate, which is the point.
 
 import { useEffect, useState } from "react";
-import { ABOUT, releaseVersion } from "./about";
+import { ABOUT, buildLabel, releaseVersion } from "./about";
 import { CopyButton } from "./CopyButton";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+
+/**
+ * The name, the server's version and, on a test build, its label (card 398).
+ *
+ * @param props.version the plain version the server reported, or null
+ * @param props.label   the build label the server reported, or null on a release
+ * @param props.lang    the display language
+ */
+export function AboutIdentity(props: { version: string | null; label: string | null; lang: Lang }) {
+  const { version, label, lang } = props;
+  return (
+    <div className="about-names">
+      <h2 id="about-title" className="about-name">
+        spectroscope
+        {version !== null && <span className="about-version mono"> v{version}</span>}
+      </h2>
+      {label !== null && (
+        <span className="about-build">
+          {t(lang, "about.testBuild")} <span className="about-build-label mono">{label}</span>
+        </span>
+      )}
+      <span className="about-tagline">{t(lang, "about.tagline")}</span>
+    </div>
+  );
+}
 
 export function AboutDialog(props: { onClose: () => void }) {
   const lang = useLang();
   const [version, setVersion] = useState<string | null>(null);
+  const [label, setLabel] = useState<string | null>(null);
   const { onClose } = props;
 
-  // The server's number or none. A late reply after close must not land.
+  // The server's number and label, or none. A late reply after close must not land.
   useEffect(() => {
     let live = true;
     fetch("/api/bundles")
       .then((r) => (r.ok ? r.json() : null))
       .then((c) => {
-        if (live) setVersion(releaseVersion(c?.version));
+        if (!live) return;
+        setVersion(releaseVersion(c?.version));
+        setLabel(buildLabel(c?.label));
       })
       .catch(() => {
         /* offline or an older server: the panel simply shows no version */
@@ -69,13 +101,7 @@ export function AboutDialog(props: { onClose: () => void }) {
               <rect x="42" y="14" width="2" height="36" rx="0.7" fill="var(--sp-ocean)" />
               <rect x="49.35" y="14" width="1.3" height="36" rx="0.7" fill="var(--text-faint)" />
             </svg>
-            <div className="about-names">
-              <h2 id="about-title" className="about-name">
-                spectroscope
-                {version !== null && <span className="about-version mono"> v{version}</span>}
-              </h2>
-              <span className="about-tagline">{t(lang, "about.tagline")}</span>
-            </div>
+            <AboutIdentity version={version} label={label} lang={lang} />
           </div>
           <button
             type="button"

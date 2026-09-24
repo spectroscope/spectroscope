@@ -1,4 +1,4 @@
-// The skills segment's surface — since card 228 the skills' ONE home (owner:
+// The skills view, since card 228 the skills' ONE home (owner:
 // "in den Skills sollte man diese auch installieren können, und sie sollen
 // aus den Einstellungen raus"). You look, switch, install and remove in the
 // same view; the settings page keeps the MCP servers and nothing else of
@@ -7,8 +7,10 @@
 // The view mounts the MANAGER (SkillsSettings) rather than drawing a copy of
 // its lists: one component, one `/api/skills` reader, and it stays in a
 // *Settings.tsx file so the card-222 reach walker keeps walking its switches.
-// Mounted per segment visit, so returning re-reads the roots — a switch
-// flipped in the plus menu in between is on screen the next time this is.
+// Mounted each time the view opens, so returning re-reads the roots: a
+// switch flipped in the plus menu in between is on screen the next time this
+// is. Since card 409 the view is opened from the rail's upper group and the
+// session list stays beside it; its claim carries what the rail's note said.
 
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";

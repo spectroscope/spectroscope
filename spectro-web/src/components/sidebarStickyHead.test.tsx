@@ -42,9 +42,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Sidebar } from "./Sidebar";
 import { SESS_OPTS_GAP, sessOptsPlacement } from "./SessionListOptions";
 
-/** The five segments the rail switches between, as <Sidebar> declares them
- *  (browser is the fourth since card 201, skills the fifth since card 225). */
-type NavMode = "sessions" | "fleets" | "stategraph" | "skills";
+/** The three segments the rail switches between, as <Sidebar> declares them
+ *  (the browser left with card 228, Skills with card 409). */
+type NavMode = "sessions" | "fleets" | "stategraph";
 
 const css = code(readFileSync(fileURLToPath(new URL("../styles/sidebar.css", import.meta.url)), "utf8"));
 
@@ -88,6 +88,8 @@ function rail(nav: NavMode): string {
       onImport={() => {}}
       onScenarios={() => {}}
       onStarters={() => {}}
+      skillsOpen={false}
+      onSkills={() => {}}
       onSelectScenario={() => {}}
       stateGraphSource={null}
       onStateGraphScenario={() => {}}
@@ -156,10 +158,12 @@ describe("the options control rides the rail's sticky head", () => {
   it("keeps the control on the sessions segment only", () => {
     // The risk this move introduces, named: the head is drawn on all four
     // segments, so a control dropped into it without its guard would offer the
-    // session-list options while looking at fleets, a state graph or the
-    // skills view — options for a list that is not on screen.
+    // session-list options while looking at fleets or a state graph, which is
+    // options for a list that is not on screen. The skills view is not in
+    // this loop since card 409: it opens beside the session list, so the list
+    // and its options stay.
     expect(sessions).toContain('class="sess-opts-btn"');
-    for (const other of ["fleets", "stategraph", "skills"] as const) {
+    for (const other of ["fleets", "stategraph"] as const) {
       expect(rail(other), other).not.toContain('class="sess-opts-btn"');
       expect(rail(other), other).not.toContain("sess-opts");
     }

@@ -603,7 +603,7 @@ public final class SpectroCli implements Runnable {
         // The belt both the main agent and the children get, in registration
         // order. update_plan and the spawn/dev verbs are added to the REGISTRY
         // only, further down — they are main-only by decision, not by accident.
-        List<Tool> shared = new ArrayList<>(StandardTools.all());
+        List<Tool> shared = new ArrayList<>(StandardTools.all(config.commandTimeoutSeconds()));
         // the provider is created lazily per call — a missing API key only
         // matters (and errors readably) when the model actually asks for an image.
         shared.add(new GenerateImageTool(config::imageProviderFromConfig,
@@ -698,6 +698,9 @@ public final class SpectroCli implements Runnable {
                 .maxTurns(config.maxTurns())
                 .maxTokens(config.maxTokens())
                 .thinking(thinking)
+                // card 372: the floor of every child's run budget, the operator's
+                // own number rather than the one this class used to imply
+                .subagentBudgetSeconds(config.subagentBudgetSeconds())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);

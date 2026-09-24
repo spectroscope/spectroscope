@@ -93,6 +93,18 @@ public final class TracingProvider implements LlmProvider {
         return delegate.contextWindow();
     }
 
+    /**
+     * Delegates (card 391): an observer must not answer a capability question
+     * on the observed thing's behalf, or a {@code --verbose} run on an Ollama
+     * cloud model would compact at the 100,000 fallback.
+     *
+     * @return the wrapped provider's own published window
+     */
+    @Override
+    public int publishedWindow() {
+        return delegate.publishedWindow();
+    }
+
     // ------------------------------------------------------------- ⇢ request
 
     /**

@@ -17,8 +17,8 @@
 
 import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import type { PendingPermission } from "../state/reducer";
-import { describeTool } from "./toolViews";
+import type { AgentInfo, PendingPermission, ToolCard } from "../state/reducer";
+import { describeTool, splitInput } from "./toolViews";
 import { InputRegions } from "./ToolViewBody";
 import { t } from "../i18n/i18n";
 import type { Lang } from "../i18n/i18n";
@@ -36,8 +36,7 @@ export type GateSubject = { labelKey: string; text: string };
  * `# keep the cache` + `rm -rf build` then reads as a comment — the payload
  * block below is the only place a command can be read as what it is.
  *
- * Shared by both gate surfaces (this modal and the fleet bar) so the same
- * request never leads with two different subjects.
+ * Exported for the tests, which pin it on its own.
  *
  * @param name  the tool's wire name
  * @param input the pending call's input, of any shape
@@ -66,6 +65,68 @@ export function gateSubject(name: string, input: unknown): GateSubject | null {
   }
 }
 
+/**
+ * The command a shell call would run, when the payload keeps it on one line.
+ *
+ * <p>Card 382, criterion 6. A short command stays inside the JSON shape, where
+ * it is read as a value among values; long or multi-line commands are already
+ * lifted into a labelled block by {@link splitInput}, and lifting them twice
+ * would print the same command above itself. So this returns a command only
+ * when the payload did NOT lift it.</p>
+ *
+ * <p>It is a BLOCK and never the window's one-line lead: folding a multi-line
+ * command onto one line joins its lines with spaces, which is the rule
+ * {@link gateSubject} follows and keeps following.</p>
+ *
+ * @param name the tool's wire name
+ * @param input the pending call's input, of any shape
+ * @return the command verbatim, or null when there is none to add
+ */
+export function gateCommand(name: string, input: unknown): string | null {
+  const view = describeTool(name, input, undefined, false);
+  if (view.kind !== "command") return null;
+  const lifted = splitInput(name, input).blocks.some((block) => block.key === "command");
+  return lifted ? null : view.command;
+}
+
+/** Recorded outcomes shown in the window, newest first. */
+export const GATE_HISTORY_MAX = 6;
+
+/** What this session already decided, in the order a person read it last. */
+export function GateHistory({ cards, lang }: { cards: Record<string, ToolCard>; lang: Lang }) {
+  const decided = Object.values(cards)
+    .filter((c) => c.permission === "allowed" || c.permission === "denied")
+    .slice(-GATE_HISTORY_MAX)
+    .reverse();
+  if (decided.length === 0) return null;
+  return (
+    <div className="gate-history">
+      <span className="gate-history-label mono">{t(lang, "gate.recorded")}</span>
+      {decided.map((c) => (
+        <span key={c.callId} className="gate-history-row mono">
+          <span className={`gate-outcome gate-outcome--${c.permission}`}>
+            {t(lang, c.permission === "allowed" ? "gate.histAllowed" : "gate.histDenied")}
+          </span>
+          {c.name}
+          <span className="gate-history-agent">{c.agentId}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What the Tab key may reach inside the window.
+ *
+ * <p>Exported because a trap that misses a control is invisible until the
+ * control is first or last in the window, and then it is a skip nobody can
+ * explain. The suite counts the nodes this selector reaches against the nodes
+ * HTML makes focusable and demands the same number. The earlier selector,
+ * `button, [tabindex="0"]`, reached 3 of 4: it missed the remember checkbox,
+ * and the persist checkbox that appears beside it.</p>
+ */
+export const GATE_FOCUSABLE_SELECTOR = 'button, input, select, textarea, a[href], [tabindex="0"]';
+
 /** The lead line, in the tool card's own vocabulary — a gate and the card that
  *  records it afterwards describe the same call in the same words. */
 export function GateSubjectLine({ subject, lang }: { subject: GateSubject; lang: Lang }) {
@@ -89,12 +150,26 @@ export function PermissionDialog(props: {
    *  checkbox stays hidden (behind a small hint) rather than offering a
    *  write that would 404. */
   workspaceConfigured: boolean;
+  /** The session roster, so a child agent is named with its parent and its
+   *  task instead of a raw id nobody can place. */
+  agents?: readonly AgentInfo[];
+  /** Where the call would land: the session's workspace. Null when nothing
+   *  announced one yet, and then the line stays out rather than guessing. */
+  workspacePath?: string | null;
+  /** The session's tool cards — the recorded outcomes of earlier gates. */
+  cards?: Record<string, ToolCard>;
+  /** False for a FLEET gate: a remote node has no allowlist we control, so
+   *  remember would be an inert control that looks like it did something. */
+  allowRemember?: boolean;
   onDecide: (callId: string, allowed: boolean, opts?: { remember?: boolean; persist?: boolean }) => void;
 }) {
   const { permission } = props;
   const dialogRef = useRef<HTMLDivElement>(null);
   const lang = useLang();
   const subject = gateSubject(permission.name, permission.input);
+  const command = gateCommand(permission.name, permission.input);
+  const asker = props.agents?.find((a) => a.id === permission.agentId);
+  const allowRemember = props.allowRemember !== false;
 
   // "Always allow" remembers for the session; "persist" (gated behind it) writes it
   // to the project's .spectro/settings.json. Only Allow carries the flags.
@@ -116,7 +191,7 @@ export function PermissionDialog(props: {
       return;
     }
     if (e.key !== "Tab") return;
-    const focusables = dialogRef.current?.querySelectorAll<HTMLElement>('button, [tabindex="0"]');
+    const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(GATE_FOCUSABLE_SELECTOR);
     if (focusables === undefined || focusables.length === 0) return;
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
@@ -149,10 +224,43 @@ export function PermissionDialog(props: {
         <h2 id="permission-title">
           <span className="mono">{permission.name}</span> {t(lang, "perm.wants")}
         </h2>
+        {/* Who asked, as what it is. A raw id places nobody: a child is named
+            with the agent that spawned it and the task it was handed, both of
+            which the roster already carries. */}
         {permission.agentId !== "main" && (
-          <p className="requested-by">{t(lang, "perm.by", { id: permission.agentId })}</p>
+          <p className="requested-by">
+            <span className="perm-asker">{t(lang, "perm.by", { id: permission.agentId })}</span>
+            {asker?.parentId != null && (
+              <span className="perm-parent">{t(lang, "perm.parent", { id: asker.parentId })}</span>
+            )}
+            {asker !== undefined && asker.task !== "" && (
+              <span className="perm-task">{t(lang, "perm.task", { task: asker.task })}</span>
+            )}
+          </p>
         )}
         {subject !== null && <GateSubjectLine subject={subject} lang={lang} />}
+        {/* The command as its own block. A short one stays inside the JSON
+            shape otherwise, where it is one value among values — and the shape
+            is exactly what nobody reads under time pressure. */}
+        {command !== null && (
+          <div className="tv-region">
+            <div className="tv-region-head">
+              <span className="tv-label">{t(lang, "perm.command")}</span>
+            </div>
+            <pre className="tv-well mono perm-command">{command}</pre>
+          </div>
+        )}
+        {/* Where it would land. The session's workspace, not a per-call path:
+            nothing on the wire says a child ever runs against another folder,
+            so this claims only what is known. */}
+        {props.workspacePath != null && props.workspacePath !== "" && (
+          <div className="tv-region">
+            <div className="tv-region-head">
+              <span className="tv-label">{t(lang, "perm.cwd")}</span>
+            </div>
+            <div className="tv-path mono">{props.workspacePath}</div>
+          </div>
+        )}
         {/* Focusable, because a payload that only scrolls with a mouse cannot be
             read to the end by a keyboard. Reachable by Tab, never the initial
             focus: that belongs to Deny, and arriving on the payload would put a
@@ -166,28 +274,34 @@ export function PermissionDialog(props: {
             clip={false}
           />
         </div>
-        <div className="modal-remember">
-          <label>
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => {
-                setRemember(e.target.checked);
-                if (!e.target.checked) setPersist(false);
-              }}
-            />{" "}
-            {t(lang, "perm.always")} <span className="mono">{permission.name}</span> {t(lang, "perm.session")}
-          </label>
-          {remember && props.workspaceConfigured && (
-            <label className="modal-remember-persist">
-              <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} />{" "}
-              {t(lang, "perm.persist")}
+        {allowRemember && (
+          <div className="modal-remember">
+            <label>
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => {
+                  setRemember(e.target.checked);
+                  if (!e.target.checked) setPersist(false);
+                }}
+              />{" "}
+              {t(lang, "perm.always")} <span className="mono">{permission.name}</span>{" "}
+              {t(lang, "perm.session")}
             </label>
-          )}
-          {remember && !props.workspaceConfigured && (
-            <p className="modal-remember-hint">{t(lang, "perm.noPersistHint")}</p>
-          )}
-        </div>
+            {remember && props.workspaceConfigured && (
+              <label className="modal-remember-persist">
+                <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} />{" "}
+                {t(lang, "perm.persist")}
+              </label>
+            )}
+            {remember && !props.workspaceConfigured && (
+              <p className="modal-remember-hint">{t(lang, "perm.noPersistHint")}</p>
+            )}
+          </div>
+        )}
+        {/* What this session decided before. The old bar carried it and the
+            window did not; the window is the only surface now. */}
+        {props.cards !== undefined && <GateHistory cards={props.cards} lang={lang} />}
         <div className="modal-actions">
           {/* Deny is the ghost button and carries the initial focus — the safe default. */}
           <button type="button" className="ghost" autoFocus onClick={() => decide(false)}>

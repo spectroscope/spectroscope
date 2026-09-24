@@ -223,6 +223,7 @@ public final class NodeCommand implements Callable<Integer> {
                        NodeSpec spec, SessionStore store, Consumer<String> log, boolean linger,
                        boolean askMode) {
         String topic = BusEnvelope.topicFor(spec.contextId());
+        // belt-names-only: reads Tool::name or size(), no budget applies (card 370)
         List<String> capabilities = StandardTools.all().stream().map(Tool::name).toList();
         NodeCard card = new NodeCard(spec.nodeId(), spec.role(), capabilities, topic);
         // The node's own cancel signal: a hub ctl{stop} ends a RUNNING turn.

@@ -14,10 +14,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchSettings, putSettings } from "../state/serverSettings";
-import { installSkill, skillPath, useInstallState, type CatalogueRow } from "../state/skillInstall";
+import {
+  installSet,
+  installSkill,
+  removeSet,
+  removeSkill,
+  skillPath,
+  useInstallState,
+  usePackState,
+  useRowRemoval,
+  type CatalogueRow,
+  type InstallRefusal,
+  type PackRefusal,
+  type SetAction,
+} from "../state/skillInstall";
+import { packGroups, type PackGroup } from "../state/skillPacks";
 import { mcpTarget } from "./plusMenu";
 import { ReachBlock } from "./settingsReach";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 interface SkillRow {
@@ -58,7 +72,7 @@ export function SkillsSettings({
   const [skills, setSkills] = useState<SkillRow[] | null | "failed">(null);
   const [catalogue, setCatalogue] = useState<CatalogueRow[] | null>(null);
   const [armed, setArmed] = useState<string | null>(null);
-  const { pending: installing, refused } = useInstallState();
+  const { refused } = useInstallState();
 
   const load = useCallback((): void => {
     fetch("/api/skills")
@@ -106,7 +120,7 @@ export function SkillsSettings({
   // The install itself lives in state/skillInstall — it is the one call in this
   // panel that may NOT be swallowed, and the rules that make it honest (one at
   // a time, a refusal is said, a refusal does not reload) are pinned there.
-  const install = (row: CatalogueRow): void => void installSkill(row, load);
+  // Since card 410 the shelf's rows call it from CataloguePack.
   const installMessage =
     refused === null
       ? null
@@ -180,39 +194,237 @@ export function SkillsSettings({
           {catalogue.length === 0 ? (
             <p className="settings-note">{t(lang, "skset.catalogueEmpty")}</p>
           ) : (
-            <ul className="skset-list">
-              {catalogue.map((row) => (
-                <li key={row.id} className="skset-row">
-                  <span className="skset-name mono">{row.name}</span>
-                  {/* The pack is not decoration: it is half the name the agent
-                      calls, and the folder the copy lands in. */}
-                  <span className="wsg-scope-tag">{row.pack}</span>
-                  <span className="skset-desc" title={row.description}>
-                    {row.description}
-                  </span>
-                  {row.installed ? (
-                    <span className="skset-desc">{t(lang, "skset.installed")}</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="skset-install"
-                      // The row is one line of nowrap text, so the provenance
-                      // rides in the tooltip rather than pushing the name out.
-                      title={t(lang, "skset.installTitle", { pack: row.pack, licence: row.licence })}
-                      disabled={installing !== null}
-                      onClick={() => install(row)}
-                    >
-                      {installing === row.id ? t(lang, "skset.installing") : t(lang, "skset.install")}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <CatalogueShelf catalogue={catalogue} lang={lang} reload={load} />
           )}
           {installMessage !== null && <p className="settings-error">{installMessage}</p>}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The catalogue shelf as packs (card 410; owner, 2026-09-24: "dass wir die
+ * einklappen und man kann die ausklappen und einzeln installieren, aber dass
+ * wir einfach diese Skillsets mit einem Button installieren"). The groups and
+ * their counts are computed from the rows of the latest `/api/skills` read on
+ * every render. The one thing held here is which packs are open, and every
+ * pack starts closed.
+ */
+export function CatalogueShelf({
+  catalogue,
+  lang,
+  reload,
+}: {
+  catalogue: readonly CatalogueRow[];
+  lang: Lang;
+  /** Re-read `/api/skills`; the shelf's counts come back with the rows. */
+  reload: () => void;
+}) {
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const { pending: installing } = useInstallState();
+  const sets = usePackState();
+  const removing = useRowRemoval();
+  const busy = installing !== null || removing !== null || sets.pending !== null;
+  const toggle = (pack: string): void =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(pack)) next.delete(pack);
+      else next.add(pack);
+      return next;
+    });
+  return (
+    <ul className="skset-packs">
+      {packGroups(catalogue).map((group) => (
+        <CataloguePack
+          key={group.pack}
+          group={group}
+          lang={lang}
+          open={open.has(group.pack)}
+          onToggle={() => toggle(group.pack)}
+          busy={busy}
+          pendingSet={sets.pending?.pack === group.pack ? sets.pending.action : null}
+          installingId={installing}
+          removingId={removing}
+          refused={sets.refused?.pack === group.pack ? sets.refused : null}
+          reload={reload}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/** A refused skill's reason: the two refusals the shelf can name get a line of
+ *  their own in both languages, anything else prints the server's sentence. */
+function refusalReason(refusal: InstallRefusal, lang: Lang): string {
+  if (refusal.status === 409 && refusal.root === "user") return t(lang, "skset.refusedTaken");
+  if (refusal.status === 409 && refusal.root === "project") return t(lang, "skset.refusedProject");
+  return refusal.reason;
+}
+
+/**
+ * One pack of the shelf (card 410): a header with the count and the two set
+ * buttons, and the pack's rows only while it is open. Hook-free, so a test can
+ * build it, find its buttons and call their handlers.
+ */
+export function CataloguePack({
+  group,
+  lang,
+  open,
+  onToggle,
+  busy,
+  pendingSet,
+  installingId,
+  removingId,
+  refused,
+  reload,
+}: {
+  group: PackGroup;
+  lang: Lang;
+  open: boolean;
+  onToggle: () => void;
+  /** A copy, a set or a row's removal is running, in this pack or another: every press waits. */
+  busy: boolean;
+  /** This pack's own set button while it runs, for its label. */
+  pendingSet: SetAction | null;
+  /** The catalogue id a single install is copying, for that row's tooltip. */
+  installingId: string | null;
+  /** The catalogue id a row's off switch is removing, for that row's tooltip. */
+  removingId: string | null;
+  /** This pack's last refused set. */
+  refused: PackRefusal | null;
+  reload: () => void;
+}) {
+  return (
+    <li className="skset-pack">
+      <div className="skset-pack-head">
+        <button type="button" className="skset-pack-toggle" aria-expanded={open} onClick={onToggle}>
+          <span className="skset-pack-caret" aria-hidden="true">
+            ▸
+          </span>
+          <span className="skset-name mono">{group.pack}</span>
+          <span className="skset-pack-count">
+            {t(lang, "skset.packCount", { installed: group.installed, total: group.total })}
+          </span>
+        </button>
+        {/* One group, so a narrow header moves both set buttons to the next
+            line together instead of splitting them. */}
+        <span className="skset-pack-sets">
+          <button
+            type="button"
+            className="skset-install skset-pack-install"
+            title={t(lang, "skset.packInstallTitle", { count: group.missing.length, pack: group.pack })}
+            disabled={busy || group.missing.length === 0}
+            onClick={() => void installSet(group.pack, group.missing, reload)}
+          >
+            {pendingSet === "install"
+              ? t(lang, "skset.installing")
+              : t(lang, "skset.packInstall", { count: group.missing.length })}
+          </button>
+          <button
+            type="button"
+            className="skset-del skset-pack-remove"
+            title={t(lang, "skset.packRemoveTitle", { count: group.removable.length, pack: group.pack })}
+            disabled={busy || group.removable.length === 0}
+            onClick={() => void removeSet(group.pack, group.removable, reload)}
+          >
+            {pendingSet === "remove"
+              ? t(lang, "skset.removing")
+              : t(lang, "skset.packRemove", { count: group.removable.length })}
+          </button>
+        </span>
+      </div>
+      {refused !== null && (
+        <div className="skset-pack-refused" role="alert">
+          <p className="settings-error">
+            {/* "Nothing was installed" holds only while the server took every
+                copy back; a leftover gets its own line below instead. */}
+            {refused.leftover !== undefined
+              ? t(lang, "skset.setStopped", { count: refused.refused.length })
+              : t(lang, refused.action === "install" ? "skset.setInstallRefused" : "skset.setRemoveRefused", {
+                  count: refused.refused.length,
+                })}
+          </p>
+          <ul className="skset-refused-list">
+            {refused.refused.map((r) => (
+              <li key={r.id} className="settings-error">
+                <span className="mono">{r.id}</span>: {refusalReason(r, lang)}
+              </li>
+            ))}
+          </ul>
+          {refused.leftover !== undefined && (
+            <>
+              <p className="settings-error">
+                {t(
+                  lang,
+                  refused.action === "install" ? "skset.setInstallLeftover" : "skset.setRemoveLeftover",
+                )}
+              </p>
+              <ul className="skset-refused-list">
+                {refused.leftover.map((id) => (
+                  <li key={id} className="settings-error">
+                    <span className="mono">{id}</span>
+                  </li>
+                ))}
+              </ul>
+              {refused.holding !== undefined && (
+                <p className="settings-error">
+                  {t(lang, "skset.setRemoveHolding", { path: refused.holding })}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      {open && (
+        <ul className="skset-list skset-pack-rows">
+          {group.rows.map((row) => (
+            <li key={row.id} className="skset-row">
+              <span className="skset-name mono">{row.name}</span>
+              {/* The pack is not decoration: it is half the name the agent
+                  calls, and the folder the copy lands in. */}
+              <span className="wsg-scope-tag">{row.pack}</span>
+              <span className="skset-desc" title={row.description}>
+                {row.description}
+              </span>
+              {/* On installs through the single install, off removes through
+                  the single DELETE, the two paths the shelf and the installed
+                  list already had. A project-root copy is the repo's, so its
+                  switch shows on and does not move. */}
+              <button
+                type="button"
+                className={`thinking-toggle${row.installed ? " thinking-toggle--on" : ""}`}
+                role="switch"
+                aria-checked={row.installed}
+                title={
+                  installingId === row.id
+                    ? t(lang, "skset.installing")
+                    : removingId === row.id
+                      ? t(lang, "skset.removing")
+                      : row.root === "project"
+                        ? t(lang, "skset.rowProjectTitle")
+                        : row.installed
+                          ? t(lang, "skset.rowRemoveTitle", { pack: row.pack })
+                          : t(lang, "skset.installTitle", { pack: row.pack, licence: row.licence })
+                }
+                disabled={busy || row.root === "project"}
+                onClick={() => {
+                  if (row.installed) {
+                    void removeSkill(row, reload);
+                  } else {
+                    void installSkill(row, reload);
+                  }
+                }}
+              >
+                <span className="thinking-toggle-track" aria-hidden="true">
+                  <span className="thinking-toggle-knob" />
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 

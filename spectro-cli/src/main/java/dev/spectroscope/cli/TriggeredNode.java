@@ -95,6 +95,7 @@ final class TriggeredNode {
                        List<TriggerSource> sources, SessionStore store, Consumer<String> log,
                        boolean askMode) {
         String topic = BusEnvelope.topicFor(spec.contextId());
+        // belt-names-only: reads Tool::name or size(), no budget applies (card 370)
         List<String> capabilities = StandardTools.all().stream().map(Tool::name).toList();
         NodeCard card = new NodeCard(spec.nodeId(), spec.role(), capabilities, topic,
                 triggers.describe());

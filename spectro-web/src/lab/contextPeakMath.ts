@@ -95,11 +95,13 @@
 // events and nothing else — there is no fallback-model parameter to hand one
 // in through.
 
-import { contextDenominator, type ContextDenominator } from "../components/contextRingMath";
+import { contextGauge, type ContextDenominator } from "../components/contextRingMath";
 import type { AgentDirectory } from "./agentDirectory";
+import type { ThresholdSource } from "../wire/thresholdSources";
 
-/** The harness's own CompactionThreshold.Source, as it rides the wire. */
-export type ThresholdSource = "override" | "window" | "model" | "fallback";
+/** The harness's own CompactionThreshold.Source, as it rides the wire; the one
+ *  list is wire/thresholdSources.ts, held to the Java enum (card 390). */
+export type { ThresholdSource };
 
 /** One agent's line on the panel. */
 export interface ContextPeakRow {
@@ -143,13 +145,34 @@ export interface ContextPeakRow {
  *                       card 366), which is the shape every cloud run has: no
  *                       loaded instance to ask about, and a window that is a
  *                       fixed property of the model id
+ * - `window`            the root divides by a window the frame stated (card
+ *                       377) and the source is not `model`; in practice that
+ *                       is `thresholdSource: "window"`. Raised in place of
+ *                       `measured`, whose sentence names the threshold, which
+ *                       is not what the row is a share of.
+ * - `modelWindow`       the root divides by a window and the source is
+ *                       `model`, the window the vendor publishes. Raised in
+ *                       place of `published` for the same reason.
+ * - `setWindow`         the root divides by a window and the source is
+ *                       `window_override`, the window the operator set for
+ *                       the session from the context ring (card 390). Raised
+ *                       in place of `window`, whose sentence says the backend
+ *                       stated it.
  * - `unknown`           neither — and so there is nothing to divide by at all.
  *                       The root prints its peak with no percent sign, exactly
  *                       as a child does; the panel does NOT fall to the 100,000
  *                       stand-in the header ring uses (rule 4)
  * - `childrenNoWindow`  a child is on the panel and prints no percentage
  */
-export type ContextPeakNote = "measured" | "fellBack" | "published" | "unknown" | "childrenNoWindow";
+export type ContextPeakNote =
+  | "measured"
+  | "fellBack"
+  | "published"
+  | "window"
+  | "modelWindow"
+  | "setWindow"
+  | "unknown"
+  | "childrenNoWindow";
 
 export interface ContextPeakTable {
   rows: ContextPeakRow[];
@@ -161,6 +184,11 @@ export interface ReportedThreshold {
   threshold: number;
   /** Absent on a pre-card-263 frame — which is not the same as "fallback". */
   source?: ThresholdSource;
+  /** The window the threshold was derived from, when the frame stated one.
+   *  Absent on every pre-card-366 recording, and on every frame whose backend
+   *  learned nothing. Card 377: this is what the panel divides by whenever it
+   *  is here and the provenance says the threshold came out of it. */
+  window?: number;
 }
 
 export interface ContextPeakInput {
@@ -204,21 +232,26 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
   // divide by different numbers. The provenance is kept aside for the words.
   const reportedThreshold = reported === null ? undefined : reported.threshold;
   const fellBack = reported !== null && reported.source === "fallback";
-  // NULL, and not a table lookup on the root's model name any more (card 366).
-  // The header ring passes the window its frame reported here; this panel has
-  // nothing to pass, because the window rides the SAME frame as the threshold
-  // and could therefore never win the tier above it. Threading it in to be
-  // ignored would be plumbing that looks like a decision. What the window does
-  // decide on this panel is the WORDS — `published` below — and that reads the
-  // provenance, which is the part that is not implied by the threshold.
+  // THE WINDOW IS PASSED IN NOW (card 377), and the null that stood here was
+  // the reason the lab and the ring were about to part company. The comment it
+  // carried was right for card 366 and wrong the moment the ring started
+  // dividing by the window: it argued the window "could never win the tier
+  // above it", which was true only while the threshold was the scale on both
+  // surfaces. It is not a tier any more: contextGauge asks whether the
+  // threshold was DERIVED from the window, and where it was, the window is
+  // what either surface divides by. Same function, same three arguments as
+  // ContextRing.tsx, which is the whole guarantee this import exists for.
   //
-  // …and because there is no second tier, there is no third one either: rule 4.
-  // The shared function still decides the number — same function, same argument
-  // as ContextRing.tsx — and this line only refuses its LAST answer, the
-  // constant nobody measured. `fallback` is the one `of` that means "I know
-  // nothing", so it is the one that becomes "nothing to divide by" here.
+  // Rule 4 is unchanged and is the line below: this panel refuses the shared
+  // function's LAST answer, the constant nobody measured. `fallback` is the one
+  // `of` that means "I know nothing", so it is the one that becomes "nothing to
+  // divide by" here. A transcript that states a window never reaches it.
   const rootDenominator: ContextDenominator | null = (() => {
-    const d = contextDenominator(reportedThreshold, null);
+    const d = contextGauge(
+      reportedThreshold,
+      reported === null ? undefined : reported.window,
+      reported === null ? undefined : reported.source,
+    ).denominator;
     return d.of === "fallback" ? null : d;
   })();
 
@@ -269,18 +302,32 @@ export function contextPeaks(input: ContextPeakInput): ContextPeakTable {
   // the harness derived from a PUBLISHED window is neither a measurement of a
   // running server nor a stand-in, and card 366 gave it its own name on the
   // wire — so the panel stops calling it "measured".
+  //
+  // SINCE CARD 377 THE NOTE NAMES THE DIVISOR. `measured` and `published` name
+  // the threshold; a frame that states its window makes the window the
+  // divisor, and a sentence about the threshold would describe a number the
+  // row is not a share of. The two new keys say what divides: the window the
+  // backend stated, or the one the vendor publishes.
   const published = reported !== null && reported.source === "model";
+  const setByHand = reported !== null && reported.source === "window_override";
   const notes: ContextPeakNote[] = [];
   const rootRow = rows.find((r) => r.root);
   if (rootRow !== undefined) {
-    // TWO shapes, and the third one that stood here is gone with the table it
-    // read. `of: "window"` could only ever have come from a lookup this module
-    // no longer does, so that arm was unreachable and pinned by nothing — a
-    // reviewer swapped its answer for "fellBack" and the whole web suite stayed
-    // green. Leaving it would have told the next reader the panel still has a
-    // window tier, eight lines under the comment explaining why it must not.
+    const dividesByWindow = rootRow.denominator?.of === "window";
     notes.push(
-      rootRow.denominator === null ? "unknown" : fellBack ? "fellBack" : published ? "published" : "measured",
+      rootRow.denominator === null
+        ? "unknown"
+        : dividesByWindow
+          ? published
+            ? "modelWindow"
+            : setByHand
+              ? "setWindow"
+              : "window"
+          : fellBack
+            ? "fellBack"
+            : published
+              ? "published"
+              : "measured",
     );
   }
   if (rows.some((r) => !r.root)) notes.push("childrenNoWindow");

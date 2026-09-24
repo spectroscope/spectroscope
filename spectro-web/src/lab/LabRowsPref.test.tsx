@@ -59,7 +59,6 @@ const render = (): string =>
       liveEvents={[]}
       running={false}
       onSend={() => {}}
-      onDecide={() => {}}
       onReturnToLive={() => {}}
       sendClient={() => true}
     />,

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { composerHeight, showsPlaceholder } from "./composerGrowth";
-
-const MAX = 240;
+// The cap is stated once, in the component that grows the element to it, and
+// the stylesheet's twin carries a keep-in-sync comment. A second literal here
+// would be a third copy nobody updates.
+import { TEXTAREA_MAX_HEIGHT_PX as MAX } from "./Chat";
 
 describe("how tall the composer has to be", () => {
   it("follows the typed text when nothing is being heard", () => {

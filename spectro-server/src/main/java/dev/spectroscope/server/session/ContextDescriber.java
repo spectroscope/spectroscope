@@ -34,11 +34,12 @@ final class ContextDescriber {
      * Assembles the full context answer, stateless and fresh per request — the
      * skill roots are re-scanned every call, so the answer tracks the disk.
      *
-     * @param config the boot config supplying MCP server names, thinking, provider and model
+     * @param boot the boot config: the chain without the workspace's own scope,
+     *             which this method adds before it describes anything
      * @param cwd the working directory the prompt quotes and the skill roots resolve against
      * @return the complete introspection payload the "System-Kontext" tab renders
      */
-    static ContextInfo describe(SpectroConfig config, Path cwd) {
+    static ContextInfo describe(SpectroConfig boot, Path cwd) {
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(cwd));
         // The endpoint is stateless (no session), so the prompt names the
         // configured workspace or the per-session pattern — the live prompt
@@ -46,9 +47,31 @@ final class ContextDescriber {
         // A configured workspace resolves to a real folder we can read AGENTS.md
         // from; a per-session temp folder does not exist yet (stateless endpoint),
         // so it has no AGENTS.md to append (loadAgentsMd tolerates the null).
-        Path configuredWorkspace = config.workspace() != null
-                ? WorkspaceResolver.locate(config.workspace(), null)
+        Path configuredWorkspace = boot.workspace() != null
+                ? WorkspaceResolver.locate(boot.workspace(), null)
                 : null;
+        // Card 370, criterion 3: the same chain the session's belt is built
+        // from. A session adds the workspace's own .spectro pair at the session
+        // moment (SessionConnection.adoptSessionConfig, loadForWorkspace), and
+        // this endpoint described its tools from a config resolved WITHOUT that
+        // scope. So a commandTimeoutSeconds saved in the workspace settings
+        // file, which is card 370's own scenario, reached every run and never
+        // the sentence this endpoint hands the operator. Two assertions that
+        // each knew the number were green over it; only comparing the two
+        // sentences found it.
+        //
+        // The fallback is the session's own: a workspace file carrying a
+        // process-global key is a refusal the session reports to its operator,
+        // not a reason for a stateless GET to fail.
+        SpectroConfig config = boot;
+        if (configuredWorkspace != null) {
+            try {
+                config = SpectroConfig.loadForWorkspace(
+                        SpectroConfig.Overrides.none(), cwd, configuredWorkspace);
+            } catch (IllegalArgumentException invalidWorkspaceScope) {
+                config = boot;
+            }
+        }
         String workspaceShown = configuredWorkspace != null
                 ? configuredWorkspace.toString()
                 : Path.of(System.getProperty("java.io.tmpdir"), "spectroscope-ws") + "/<session-id>";
@@ -56,7 +79,7 @@ final class ContextDescriber {
                 + SpectroConfig.loadProjectMd(cwd) + SpectroConfig.loadAgentsMd(configuredWorkspace)
                 + skills.systemPromptSection();
 
-        List<Tool> standardTools = StandardTools.all();
+        List<Tool> standardTools = StandardTools.all(config.commandTimeoutSeconds());
         List<String> mcpServerNames = config.mcpServers().stream()
                 .map(server -> server.name())
                 .toList();

@@ -62,6 +62,13 @@ public final class OllamaProvider implements LlmProvider {
      *  {@code /api/ps} before the first turn is a moment, not a verdict. */
     private volatile int contextWindow;
 
+    /** The window the backend publishes for this provider's model (card 391),
+     *  memoized for the life of the provider. One provider sends to one model
+     *  id, so this one field is the per-model cache. Null until the server has
+     *  given an answer; a failed question leaves it null, and the next call
+     *  asks again. */
+    private volatile Integer publishedWindow;
+
     /** Set once the server has denied the route outright — a 4xx, which an
      *  ollama old enough to predate {@code /api/ps} answers. That verdict does
      *  not expire; a timeout or a 5xx does not set it, because neither says
@@ -145,7 +152,9 @@ public final class OllamaProvider implements LlmProvider {
      * the trained figure would push compaction past the served window, which is
      * the one direction worse than the constant this card removes. {@code /ps}
      * states what is actually loaded: {@code models[].context_length}, 32,768
-     * for the same model on the same measurement.</p>
+     * for the same model on the same measurement. A CLOUD model has no loaded
+     * instance here to describe; its {@code /api/show} figure is read by
+     * {@link #publishedWindow()} (card 391), one rung below this one.</p>
      *
      * <p>The cost is that a fresh session, before its first turn, finds nothing
      * running and starts on the fallback. That is why only a POSITIVE answer is
@@ -168,6 +177,123 @@ public final class OllamaProvider implements LlmProvider {
             contextWindow = probed;
         }
         return probed;
+    }
+
+    /**
+     * The window ollama publishes for this model, when the model is a CLOUD
+     * model (card 391); 0 for a local one.
+     *
+     * <p>Two questions on the short-timeout client. {@code GET /api/tags}
+     * says whether the model is remote: its entry carries {@code remote_host}
+     * (measured on ollama 0.32.1 on 2026-09-24: 5 of 13 entries, all five
+     * cloud models, none of the 8 local ones). For a remote model,
+     * {@code POST /api/show} names the window in {@code model_info} under a key
+     * ending in {@code .context_length}: 1,048,576 for {@code glm-5.3:cloud},
+     * 512,000 for {@code minimax-m3:cloud}. A cloud model has no loaded
+     * instance on this machine, so this is the only figure there is. For a
+     * local model the same key is the TRAINED length, which is why
+     * {@link #contextWindow()} reads {@code /api/ps} instead and this method
+     * does not ask {@code /api/show} at all.</p>
+     *
+     * <p>The answer is remembered for the life of the provider once the
+     * server has given one: a window, a local model (0), or a remote model
+     * whose show answer names no window (0). A failed question (a refusal, a
+     * timeout, a body that is not JSON, a model the listing does not name)
+     * answers 0 and is asked again on the next call. Never throws.</p>
+     *
+     * @return the published context window in tokens, or 0 when nothing is known
+     */
+    @Override
+    public int publishedWindow() {
+        Integer known = publishedWindow;
+        if (known != null) {
+            return known;
+        }
+        Integer verdict = probePublishedWindow();
+        if (verdict == null) {
+            return 0;
+        }
+        publishedWindow = verdict;
+        return verdict;
+    }
+
+    /** The two questions behind {@link #publishedWindow()}, best effort.
+     *  @return the window, 0 for a verdict of "none", or null when the server
+     *          gave no usable answer */
+    private Integer probePublishedWindow() {
+        try {
+            String tags = capabilities.get().uri(baseUrl + "/api/tags")
+                    .retrieve().body(String.class);
+            if (tags == null) {
+                return null;
+            }
+            Locality where = locality(JSON.readTree(tags), model);
+            if (where == Locality.UNLISTED) {
+                return null;
+            }
+            if (where == Locality.LOCAL) {
+                return 0;
+            }
+            String show = capabilities.post().uri(baseUrl + "/api/show")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(JSON.writeValueAsString(Map.of("model", model)))
+                    .retrieve().body(String.class);
+            return show == null ? null : publishedContextLength(JSON.readTree(show));
+        } catch (Exception nothingLearned) {
+            return null;
+        }
+    }
+
+    /** Where {@code /api/tags} says a model runs. */
+    enum Locality { REMOTE, LOCAL, UNLISTED }
+
+    /**
+     * What {@code /api/tags} says about ONE model: remote when its entry
+     * carries a non-blank {@code remote_host}, local when the entry carries
+     * none, unlisted when no entry's {@code model} or {@code name} equals the
+     * id. The id is compared as sent, the way {@link #loadedWindow} compares it.
+     *
+     * @param tags  the parsed {@code /api/tags} body
+     * @param model the model id this provider sends to; null matches nothing
+     * @return where the model runs, or UNLISTED
+     */
+    static Locality locality(JsonNode tags, String model) {
+        if (tags == null || model == null) {
+            return Locality.UNLISTED;
+        }
+        for (JsonNode entry : tags.path("models")) {
+            if (model.equals(entry.path("model").asText(null))
+                    || model.equals(entry.path("name").asText(null))) {
+                String host = entry.path("remote_host").asText("");
+                return host.isBlank() ? Locality.LOCAL : Locality.REMOTE;
+            }
+        }
+        return Locality.UNLISTED;
+    }
+
+    /**
+     * The window a {@code /api/show} answer names: the value of the first
+     * {@code model_info} key that ends in {@code .context_length}, when it is
+     * a positive whole number that fits an int.
+     *
+     * @param show the parsed {@code /api/show} body
+     * @return the window in tokens, or 0 when the first such key holds no
+     *         positive whole number or there is no such key
+     */
+    static int publishedContextLength(JsonNode show) {
+        if (show == null) {
+            return 0;
+        }
+        for (Map.Entry<String, JsonNode> field : show.path("model_info").properties()) {
+            if (field.getKey().endsWith(".context_length")) {
+                JsonNode value = field.getValue();
+                if (value.isIntegralNumber() && value.canConvertToInt() && value.intValue() > 0) {
+                    return value.intValue();
+                }
+                return 0;
+            }
+        }
+        return 0;
     }
 
     /** One best-effort GET on the short-timeout client. Never throws: a

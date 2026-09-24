@@ -34,25 +34,65 @@ public final class StarterBundles {
      * test ({@code StarterVersionDriftTest}) remains to hold the stamp to the
      * build files on disk.
      */
-    public static final String VERSION = stampedVersion();
+    public static final String VERSION;
 
-    private static String stampedVersion() {
-        String path = "/starter/spectro-version.properties";
-        try (java.io.InputStream in = StarterBundles.class.getResourceAsStream(path)) {
-            if (in == null) {
-                throw new IllegalStateException(path + " is missing — the build no longer"
-                        + " stamps the module version (see processResources in"
-                        + " spectro-server/build.gradle.kts, card 143)");
-            }
+    /**
+     * The label of a test build (card 398), for example
+     * {@code 0.13.0-beta (merge-2026-09-24, a1b2c3d, 24.09. 14:05)}, or null on
+     * a build that was given none, which is every release build. It is shown
+     * next to {@link #VERSION} and never replaces it: the Maven coordinates
+     * above stay on the plain version.
+     */
+    public static final String BUILD_LABEL;
+
+    static {
+        Stamp stamp = stamped();
+        VERSION = stamp.version();
+        BUILD_LABEL = stamp.label();
+    }
+
+    /**
+     * What processResources wrote into {@code /starter/spectro-version.properties}:
+     * the module version, and the build label when the build was given one.
+     *
+     * @param version the module version, never blank
+     * @param label   the build label, or null when the stamp carries none
+     */
+    record Stamp(String version, String label) {
+
+        /**
+         * Reads a stamp. The file is UTF-8, because processResources writes it
+         * so and a branch name in the label may be outside ASCII.
+         *
+         * @param in   the stamp's bytes
+         * @param path where they came from, for the error message
+         * @return the stamp
+         * @throws java.io.IOException  when the stream cannot be read
+         * @throws IllegalStateException when the version was not expanded
+         */
+        static Stamp read(java.io.InputStream in, String path) throws java.io.IOException {
             java.util.Properties props = new java.util.Properties();
-            props.load(in);
+            props.load(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
             String version = props.getProperty("version", "").trim();
             if (version.isEmpty() || version.contains("${")) {
                 throw new IllegalStateException("unstamped version '" + version + "' in " + path
-                        + " — processResources must expand it; refusing to serve starter"
+                        + ": processResources must expand it; refusing to serve starter"
                         + " bundles with made-up Maven coordinates (card 143)");
             }
-            return version;
+            String label = props.getProperty("label", "").trim();
+            return new Stamp(version, label.isEmpty() ? null : label);
+        }
+    }
+
+    private static Stamp stamped() {
+        String path = "/starter/spectro-version.properties";
+        try (java.io.InputStream in = StarterBundles.class.getResourceAsStream(path)) {
+            if (in == null) {
+                throw new IllegalStateException(path + " is missing: the build no longer"
+                        + " stamps the module version (see processResources in"
+                        + " spectro-server/build.gradle.kts, card 143)");
+            }
+            return Stamp.read(in, path);
         } catch (java.io.IOException e) {
             throw new IllegalStateException("cannot read " + path, e);
         }

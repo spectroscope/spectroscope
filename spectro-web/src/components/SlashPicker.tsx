@@ -168,6 +168,15 @@ export function useSlashPicker(
                   onClick={() => pick(skill)}
                 >
                   <span className="slash-name mono">{skill.name}</span>
+                  {/* The pack is not decoration: it is half the name the agent
+                      calls. It shows on every packed row, not only where a name
+                      collides, because a label that comes and goes moves the
+                      layout under somebody who is still typing. */}
+                  {skill.pack === null ? null : (
+                    <span className="wsg-scope-tag" title={t(lang, "slash.namespace")}>
+                      {skill.pack}
+                    </span>
+                  )}
                   <span className="slash-desc" title={skill.description}>
                     {skill.description}
                   </span>

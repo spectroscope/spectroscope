@@ -3,9 +3,10 @@
 // (which rows exist, which one is dimmed, which one owns which action) can be
 // read off in a test instead of off a screenshot.
 //
-// One recipe serves nine rows: New chat, Scenarios and Starters at the top,
-// then the five segments, then Settings at the foot. Only the first eight live
-// here; the settings row has no state to decide and is written where it sits.
+// One recipe serves eight rows: New chat, Scenarios, Starters and Skills at
+// the top, then the three segments, then Settings at the foot. Only the first
+// seven live here; the settings row has no state to decide and is written
+// where it sits.
 
 /** Which glyph leads a row. Names, not paths — NavIcon owns the geometry. */
 export type NavIconId =
@@ -21,8 +22,8 @@ export type NavIconId =
  */
 export type NavTrailing = "import" | "spawn" | "count" | null;
 
-export type NavActionId = "newChat" | "scenarios" | "starters";
-export type NavSegmentId = "sessions" | "fleets" | "stategraph" | "skills";
+export type NavActionId = "newChat" | "scenarios" | "starters" | "skills";
+export type NavSegmentId = "sessions" | "fleets" | "stategraph";
 
 export interface NavRowSpec {
   id: string;
@@ -38,11 +39,19 @@ export interface NavRowSpec {
 }
 
 /**
- * The three things the rail opens with. Buttons until now; rows from here on,
+ * The things the rail opens with. Buttons until now; rows from here on,
  * because a rail of boxes competes with the list underneath it for attention
  * that the list should win.
+ *
+ * <p>Skills joined this group with card 409 (owner, 2026-09-24): a catalogue
+ * you open beside your work, the way Scenarios and Starters open, rather than
+ * a segment that takes the session list down with it. It is the one row here
+ * that can be active, because the view it opens stays on screen until the
+ * reader opens a place.
+ *
+ * @param input.skillsOpen the skills view is on screen
  */
-export function navActionRows(): NavRowSpec[] {
+export function navActionRows(input: { skillsOpen: boolean }): NavRowSpec[] {
   return [
     { id: "newChat", labelKey: "nav.newChat", icon: "plus", disabled: false, active: false, trailing: null },
     {
@@ -63,22 +72,31 @@ export function navActionRows(): NavRowSpec[] {
       active: false,
       trailing: null,
     },
+    {
+      id: "skills",
+      labelKey: "nav.skills",
+      icon: "skills",
+      // Not gated on the fleet lock: the view reads one endpoint and starts no
+      // process, the same reasoning that leaves the state graph open.
+      disabled: false,
+      active: input.skillsOpen,
+      trailing: null,
+    },
   ];
 }
 
 /**
- * The segments, as rows rather than as a segmented control.
+ * The segments, as rows rather than as a segmented control. Each one decides
+ * the list under the rail's head.
  *
  * <p>The browser row LEFT with card 228: the rail lists places you go, and the
  * browser is a thing a session has (card 218's own rule, applied to the last
  * surface that contradicted it). Its two doors are the session tab and the
  * workspace's browser card.
  *
- * <p>Skills closes the list (card 225, owner wish): the installed capabilities
- * one glance away, like Sessions and Fleets are — the others answer "what
- * runs"; a catalogue is a different kind of looking. Since card 228 the view
- * behind the row is the skills' one home: look, switch and install in the
- * same place.
+ * <p>Skills left with card 409: as a segment it swapped the session list for
+ * a note, so the reader's last session was two clicks away. It is an upper
+ * row now, in {@link navActionRows}.
  *
  * @param input.active       which segment is showing
  * @param input.fleetsLocked the ladder has not opened fleets yet
@@ -127,18 +145,6 @@ export function navSegmentRows(input: {
       // disk and starts no process, so a level has nothing to protect here.
       disabled: false,
       active: input.active === "stategraph",
-      trailing: null,
-    },
-    {
-      id: "skills",
-      labelKey: "nav.skills",
-      icon: "skills",
-      // Not gated on the fleet lock: the view reads one endpoint and starts no
-      // process — the same reasoning that leaves the state graph open. No
-      // trailing affordance: the view itself carries the switches and the
-      // install buttons since card 228, so the row needs no second one.
-      disabled: false,
-      active: input.active === "skills",
       trailing: null,
     },
   ];

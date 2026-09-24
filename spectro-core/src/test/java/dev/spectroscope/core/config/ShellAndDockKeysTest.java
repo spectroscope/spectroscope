@@ -45,7 +45,7 @@ class ShellAndDockKeysTest {
     /** Every key this record edit added, with the value it ships. */
     private static List<Object[]> added() {
         return List.of(
-                new Object[] {"commandTimeoutSeconds", 10},
+                new Object[] {"commandTimeoutSeconds", 900},
                 new Object[] {"chatReserveWidth", 360},
                 new Object[] {"dockMaxWidth", 1200});
     }

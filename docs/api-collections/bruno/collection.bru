@@ -1,5 +1,5 @@
 docs {
-  The whole REST surface of spectro-server — 75 endpoints in 19 folders, one per area.
+  The whole REST surface of spectro-server — 77 endpoints in 19 folders, one per area.
   
   Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.
   
@@ -45,6 +45,8 @@ docs {
   - **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.
   - **DELETE /api/skills/{pack}/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.
   - **POST /api/skills/install** — Copies files into ~/.spectro/skills. It never overwrites; a taken name answers 409.
+  - **POST /api/skills/install-set** — Copies files into ~/.spectro/skills. It never overwrites; one taken name refuses the whole set.
+  - **POST /api/skills/remove-set** — Deletion is permanent: the removed skills are gone from ~/.spectro/skills.
   - **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.
   - **POST /api/claude/transcripts/folders/open** — Opens a native file-manager window on the operator's screen.
   - **POST /api/claude/transcripts/gists** — Spends the operator key — one model call per transcript that is not already current.

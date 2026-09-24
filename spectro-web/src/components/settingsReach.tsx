@@ -124,6 +124,11 @@ export const SETTING_REACH = {
   // raising the cap mid-run would move a boundary the run has already counted
   // against.
   maxTurns: "next-session",
+  // Card 372: the floor of a child's run budget. SubagentManager is built
+  // inside buildAgentOnce() with the config active at that moment, and the
+  // budget re-derives its p50 per spawn but reads the floor it was built
+  // with, so a save lands with the next session.
+  subagentBudgetSeconds: "next-session",
   // Card 356: the three ask caps. Measured, not assumed — SessionConnection
   // registers AskUserQuestionTool inside buildAgentOnce() (the name is the
   // claim, and line 1105 is its only call), and the tool holds its caps as
@@ -131,14 +136,15 @@ export const SETTING_REACH = {
   questionsPerRun: "next-session",
   maxQuestionOptions: "next-session",
   maxQuestionChars: "next-session",
-  // Card 359: the wall-clock budget one run_command call gets. MEASURED at the
-  // call site rather than inferred from the neighbours it sits with on the
-  // page: SessionConnection.buildAgentOnce() calls StandardTools.all()
-  // (SessionConnection.java:1202) and registers what it returns, and
+  // Card 359, corrected by card 370: the wall-clock budget one run_command
+  // call gets. The measurement here was right about WHEN and never asked
+  // WHETHER: it quoted buildAgentOnce() calling StandardTools.all(), and that
+  // call took no argument, so the save reached no session at all. It now reads
+  // StandardTools.all(active.commandTimeoutSeconds()), and
   // StandardTools.runCommand CLOSES OVER the budget when it builds the tool.
   // There is no setter on the tool and nothing re-reads the config per call, so
   // a save reaches the next session and not this one. Same answer for the CLI
-  // and the headless runner, which build their belts the same way.
+  // and the headless runner, which pass their own config the same way.
   commandTimeoutSeconds: "next-session",
   // Card 364: the completion budget one provider call may spend. Measured the
   // same way maxTurns was, and it lands in the same place — Agent reads
@@ -163,6 +169,14 @@ export const SETTING_REACH = {
   // that gains one gets its promise in the SAME edit.
   chatReserveWidth: "live",
   dockMaxWidth: "live",
+  // Card 379. Live, and provably so: the session hands the filter a supplier
+  // over SessionConnection.liveConfig(), which re-reads the settings chain, and
+  // the filter asks it on every call rather than once when the agent is built.
+  // This is the first control in the composer popover that writes a SERVER
+  // setting at all (every other section there persists to localStorage), so
+  // the walker beside this file had to grow to see RtkFilterSection.tsx before
+  // this row could be guarded by anything.
+  rtkFilter: "live",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

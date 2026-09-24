@@ -550,11 +550,13 @@ export function toggleRightPanel(): void {
   const next = !state.rightPanelOpen;
   set({ rightPanelOpen: next, dockReturn: next });
 }
-/** Opens the panel if closed (idempotent) — the workspace announcement, the
- *  agent's browser cue and the v2 flip use it TRANSIENTLY: the open serves a
+/** Opens the panel if closed (idempotent). The agent's browser cue, the v2
+ *  flip and the chat's work chip call it without `remember`: the open serves a
  *  moment, not a standing layout, so it does not return on the next session
  *  (card 242). `remember` is for the explicit asks (the header panel icons):
- *  those also write the return memory. */
+ *  those also write the return memory. Every caller is listed in
+ *  panels/dockOpeners.drift.test.ts; a resolved workspace is not one of them
+ *  (card 402). */
 export function openRightPanel(remember = false): void {
   const patch: Partial<LayoutState> = {};
   if (!state.rightPanelOpen) patch.rightPanelOpen = true;
@@ -591,10 +593,10 @@ export function toggleDockCollapse(id: DockPanelId): void {
   set({ [field]: state[field] === "open" ? "collapsed" : "open" });
 }
 
-/** Opens (and unfolds) a panel, idempotently — the workspace announcement,
- *  the roster's agent pick and the chat's work chip land here. Seating is
- *  idempotent too: unfolding a collapsed panel finds it already seated and
- *  the arrangement string comes back byte-identical. */
+/** Opens (and unfolds) a panel, idempotently. Every caller is listed in
+ *  panels/dockOpeners.drift.test.ts. Seating is idempotent too: unfolding a
+ *  collapsed panel finds it already seated and the arrangement string comes
+ *  back byte-identical. */
 export function openDockPanel(id: DockPanelId): void {
   const field = DOCK_FIELD[id];
   if (state[field] === "open") return;

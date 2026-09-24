@@ -1,26 +1,37 @@
-// Card 245: tokens per second stands in the answer's meta row, beside the in
-// and out counts — the owner's words. The math itself is pinned in
-// format.test.ts; this file pins the CONSUMER, because a formatter nobody
-// renders is a feature that shipped dead (the sessionRowDensity lesson). No
-// DOM in this suite, and Chat cannot server-render (its input hooks touch
-// browser APIs), so the row is read off the source.
+// Card 245 put tokens per second on the answer's line. Card 374 gave that line
+// two readings, and the rate rides in extended only, so a source text assertion
+// that the rate is rendered would now be wider than the code. The promise and
+// the coverage are made the same width here: the rate is pinned through the
+// builder, in the mode where it appears, and the chat is pinned to render the
+// builder at all, because a formatter nobody renders is a feature that shipped
+// dead (the sessionRowDensity lesson). No DOM in this suite, and Chat cannot
+// server render, so the consumer half is read off the source.
 
 import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
+import { answerLineSegments, tokensPerSecond, type AnswerLineTurn } from "../format";
 
 const chat = stripComments(read("./Chat.tsx", import.meta.url));
 
-describe("the answer meta row — tokens per second rides beside in and out", () => {
-  it("computes the rate from the same turn's usage and measured duration", () => {
-    expect(chat).toContain("tokensPerSecond(turn.usage.outputTokens, turn.durationMs)");
+const TURN: AnswerLineTurn = {
+  usage: { inputTokens: 7498, outputTokens: 84 },
+  durationMs: 3300,
+  endTs: Date.UTC(2026, 8, 18, 9, 0, 3, 300),
+  model: "gpt-4o-mini",
+};
+
+describe("the answer line's rate, card 245 inside card 374's extended reading", () => {
+  it("computes the rate from this turn's output tokens and measured duration", () => {
+    const rate = answerLineSegments("extended", TURN).find((s) => s.kind === "rate");
+    expect(rate?.value).toBe(tokensPerSecond(84, 3300));
   });
 
-  it("renders the rate after the out count and before the wall clock", () => {
-    const outSegment = chat.indexOf("${turn.usage.outputTokens} out");
-    const speedSegment = chat.indexOf("${tps}");
-    const wallClock = chat.indexOf("clockTime(turn.endTs");
-    expect(outSegment).toBeGreaterThan(-1);
-    expect(speedSegment).toBeGreaterThan(outSegment);
-    expect(wallClock).toBeGreaterThan(speedSegment);
+  it("keeps the rate out of the everyday reading, which is three numbers", () => {
+    expect(answerLineSegments("normal", TURN).map((s) => s.kind)).toEqual(["in", "out", "duration"]);
+  });
+
+  it("renders the built segments instead of a hand assembled row", () => {
+    expect(chat).toContain("answerLineSegments(answerLine, turn, lang)");
+    expect(chat).not.toContain("tokensPerSecond(turn.usage.outputTokens, turn.durationMs)");
   });
 });

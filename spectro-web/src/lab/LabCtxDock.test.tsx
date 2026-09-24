@@ -28,8 +28,8 @@ import { ContextPeak } from "./ContextPeak";
 import { __resetForTests, toggleCtx } from "../state/layout";
 import { DOCK_TAB_STORAGE_KEY } from "./labDockTabs";
 import { __resetForTests as resetStepper, pushLive, seek } from "../state/stepper";
-import { t } from "../i18n/i18n";
-import { currentLang } from "../state/lang";
+import { t, type Lang } from "../i18n/i18n";
+import { currentLang, setLang } from "../state/lang";
 import type { RunEvent } from "../events";
 
 const lang = currentLang();
@@ -56,7 +56,6 @@ const render = (props: Partial<Parameters<typeof LabView>[0]> = {}): string =>
       liveEvents={[]}
       running={false}
       onSend={() => {}}
-      onDecide={() => {}}
       onReturnToLive={() => {}}
       sendClient={() => true}
       {...props}
@@ -120,7 +119,7 @@ const usage = (agentId: string, input: number): RunEvent =>
   ({ type: "usage", agentId, inputTokens: input, outputTokens: 1, ts: 3 }) as RunEvent;
 const spawn = (agentId: string, task: string): RunEvent =>
   ({ type: "agent_spawn", agentId, parentId: "main", task, ts: 2 }) as RunEvent;
-const ctxInfo = (threshold: number, source?: string): RunEvent =>
+const ctxInfo = (threshold: number, source?: string, contextWindow?: number): RunEvent =>
   ({
     type: "context_info",
     agentId: "main",
@@ -131,6 +130,7 @@ const ctxInfo = (threshold: number, source?: string): RunEvent =>
     parts: [],
     ts: 4,
     ...(source === undefined ? {} : { thresholdSource: source }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
   }) as RunEvent;
 
 describe("the panel says what its divisor is", () => {
@@ -195,7 +195,64 @@ describe("the panel says what its divisor is", () => {
     expect(html).toContain(t(lang, "lab.ctx.note.fellBack", { limit: "100k" }));
     expect(html).not.toContain(t(lang, "lab.ctx.note.unknown"));
   });
+
+  it("a run that stated its window is divided by the window, and the note says so", () => {
+    // The REAL wire shape since card 366: the frame states the window beside
+    // the threshold. The lab divides by the window (card 377, owner call 2),
+    // so the note may not call the divisor "the threshold this run reported"
+    // any more: that sentence names a number the panel is NOT dividing by,
+    // one line under a row divided by the window.
+    const events = [
+      rootStart("some-local-build"),
+      ctxInfo(175_257, "window", 250_368),
+      usage("main", 143_000),
+    ];
+    const html = panel(events);
+    expect(html).toContain(t(lang, "lab.ctx.share", { peak: "143k", limit: "250k", pct: 57 }));
+    expect(html).not.toContain(t(lang, "lab.ctx.note.measured", { limit: "250k" }).slice(0, 30));
+    // The note the panel does print, as literals in both languages. Soft, so a
+    // failure in one language still reports the other.
+    expect
+      .soft(plain(inLang("en", () => panel(events))))
+      .toContain(
+        "Divisor: 250k, the window this run's backend stated itself. This run compacts below it, not at it.",
+      );
+    expect
+      .soft(plain(inLang("de", () => panel(events))))
+      .toContain(
+        "Bezugsgröße: 250k, das Fenster, das das Backend dieses Laufes selbst angegeben hat. " +
+          "Dieser Lauf kompaktiert unterhalb davon, nicht bei diesem Wert.",
+      );
+  });
+
+  it("a run on a published window prints the published-window note, in both languages", () => {
+    const events = [rootStart("gpt-4o"), ctxInfo(700_000, "model", 1_000_000), usage("main", 350_000)];
+    expect(panel(events)).toContain(t(lang, "lab.ctx.share", { peak: "350k", limit: "1000k", pct: 35 }));
+    expect
+      .soft(plain(inLang("en", () => panel(events))))
+      .toContain("Divisor: 1000k, the window gpt-4o publishes. This run compacts below it, not at it.");
+    expect
+      .soft(plain(inLang("de", () => panel(events))))
+      .toContain(
+        "Bezugsgröße: 1000k, das Fenster, das gpt-4o veröffentlicht. " +
+          "Dieser Lauf kompaktiert unterhalb davon, nicht bei diesem Wert.",
+      );
+  });
 });
+
+/** Render in one UI language and put the previous one back. The expected
+ *  sentences above are literals rather than t() calls: t() fills the first
+ *  occurrence of a placeholder only, so an expectation built with t() would
+ *  carry the same raw "{limit}" as a template that names it twice. */
+function inLang<T>(l: Lang, draw: () => T): T {
+  const was = currentLang();
+  setLang(l);
+  try {
+    return draw();
+  } finally {
+    setLang(was);
+  }
+}
 
 describe("HONESTY — a child is printed without a percentage, and the panel says why", () => {
   it("the child's line carries no percent sign and the reason is on the panel", () => {

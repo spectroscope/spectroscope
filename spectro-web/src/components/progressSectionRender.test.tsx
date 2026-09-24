@@ -62,6 +62,15 @@ describe("the progress section on screen", () => {
     expect(stateOf(render(view({ continuationBudget: 0 })), "continuationBudget")).toBe("off");
   });
 
+  // Card 386: a legal zero stays legal. Questions per run carries its state on
+  // the field and has no chip; the neighbours sit in the opposite state (the
+  // leash armed before it at 0, the option cap off after it at 9), so a reading
+  // that strays into the next field goes red.
+  it("states questions per run as off at zero and armed above it", () => {
+    expect(stateOf(render(view({ questionsPerRun: 0 })), "questionsPerRun")).toBe("off");
+    expect(stateOf(render(view({ questionsPerRun: 9 })), "questionsPerRun")).toBe("armed");
+  });
+
   it("marks a negative as off, which a !== 0 reading would draw as armed", () => {
     const html = render(view({ progressGuardWrites: -1 }));
     expect(html).toContain('data-progress-field="progressGuardWrites"');

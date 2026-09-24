@@ -56,6 +56,9 @@ export function AppHeader(props: {
   /** Context gauge — appears with the first usage event of the view. */
   lastInputTokens: number;
   context: UiState["context"];
+  /** Sets (a number) or clears (null) the window for this session from the
+   *  ring's popover (card 390). Handed to the ring in the live view only. */
+  onWindowOverride: (tokens: number | null) => void;
   running: boolean;
   onAbort: () => void;
 }) {
@@ -267,7 +270,11 @@ export function AppHeader(props: {
       )}
 
       {props.lastInputTokens > 0 && (
-        <ContextRing lastInputTokens={props.lastInputTokens} context={props.context} />
+        <ContextRing
+          lastInputTokens={props.lastInputTokens}
+          context={props.context}
+          onWindowOverride={ringWindowOverride(props.viewingLive, props.onWindowOverride)}
+        />
       )}
 
       {props.viewingLive && props.running && (
@@ -280,4 +287,20 @@ export function AppHeader(props: {
       )}
     </header>
   );
+}
+
+/**
+ * What the ring may do with the window of this session (card 390): set and
+ * clear it in the live view, nothing in a replay. A replay reads a recorded
+ * session, and a set pressed there would go to whatever socket is live.
+ *
+ * @param viewingLive whether the header shows the live session
+ * @param handler     the live session's set-or-clear
+ * @return the handler in the live view, undefined in a replay
+ */
+export function ringWindowOverride(
+  viewingLive: boolean,
+  handler: (tokens: number | null) => void,
+): ((tokens: number | null) => void) | undefined {
+  return viewingLive ? handler : undefined;
 }
