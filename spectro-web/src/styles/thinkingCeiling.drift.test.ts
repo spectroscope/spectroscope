@@ -50,7 +50,7 @@ const hookSrc = stripComments(read("../components/thinkingCeiling.ts", import.me
  * @return the trimmed value, or undefined when the body does not declare it
  */
 function lastValue(body: string, prop: string): string | undefined {
-  const name = prop.replace(/[-]/g, "\\-");
+  const name = prop.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
   const found = [...body.matchAll(new RegExp(`(?:^|[;\\s])${name}\\s*:\\s*([^;]+)`, "g"))];
   return found.at(-1)?.[1].trim();
 }

@@ -83,8 +83,18 @@ function buttons(node: ReactNode): Btn[] {
 const byClass = (all: Btn[], cls: string): Btn[] =>
   all.filter((b) => (b.props.className ?? "").split(/\s+/).includes(cls));
 
-/** The text a button shows, for the label assertions. */
-const label = (b: Btn): string => renderToStaticMarkup(b).replace(/<[^>]+>/g, "");
+/**
+ * The text a button shows, for the label assertions. Tags are stripped until
+ * none is left, so a tag that only forms once an inner one is gone goes too.
+ */
+const label = (b: Btn): string => {
+  let text = renderToStaticMarkup(b);
+  for (let prev = ""; prev !== text;) {
+    prev = text;
+    text = text.replace(/<[^>]*>/g, "");
+  }
+  return text;
+};
 
 const count = (html: string, cls: string): number =>
   [...html.matchAll(/class="([^"]*)"/g)].filter((m) => (m[1] ?? "").split(/\s+/).includes(cls)).length;
