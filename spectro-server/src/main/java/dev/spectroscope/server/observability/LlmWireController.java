@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,17 +81,19 @@ public class LlmWireController {
     }
 
     /**
-     * The bodiless ledger: one object per exchange in file order, request and
-     * response lines paired by {@code xid} while STREAMING the file; bodies
-     * and stream lines are read past, counted and never returned, because one
-     * sidecar can be orders of magnitude bigger than the session it records.
-     * Each object carries exactly the {@code llm_exchange} frame's fields; a
-     * request still waiting for its response reports {@code status} null.
+     * The bodiless ledger: one object per exchange in request order, request
+     * and response lines paired by {@code xid}. {@link LlmWireIndex} reads the
+     * file in one pass and skips bodies and stream lines without holding them,
+     * because one sidecar can be orders of magnitude bigger than the session
+     * it records. Each object carries exactly the {@code llm_exchange} frame's
+     * fields; a request still waiting for its response reports {@code status}
+     * null.
      *
      * @param id      the session whose sidecar is indexed
      * @param request the servlet request, for the local fence
      * @return 200 with the exchange metadata array; 404 for a foreign caller,
-     *         a malformed id or a session without a wire record
+     *         a malformed id, a session without a wire record or a file that
+     *         cannot be read
      */
     @GetMapping("/api/sessions/{id}/llm-wire/index")
     public ResponseEntity<List<Map<String, Object>>> index(@PathVariable String id,
@@ -101,33 +102,11 @@ public class LlmWireController {
         if (file == null) {
             return ResponseEntity.status(404).build();
         }
-        // Insertion-ordered by xid: entries appear in request order, and a
-        // response landing later (parallel subagents interleave) finds its pair.
-        Map<String, Map<String, Object>> entries = new LinkedHashMap<>();
-        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                JsonNode node;
-                try {
-                    node = JSON.readTree(line);
-                } catch (IOException torn) {
-                    continue; // a torn tail line (crash mid-write) is not the ledger's problem
-                }
-                switch (node.path("type").asText()) {
-                    case "llm_request" -> entries.put(node.path("xid").asText(), openEntry(node));
-                    case "llm_response" -> {
-                        Map<String, Object> entry = entries.get(node.path("xid").asText());
-                        if (entry != null) {
-                            closeEntry(entry, node);
-                        }
-                    }
-                    default -> { } // the truncation marker carries no exchange
-                }
-            }
+        try {
+            return ResponseEntity.ok(LlmWireIndex.read(file));
         } catch (IOException unreadable) {
             return ResponseEntity.status(404).build();
         }
-        return ResponseEntity.ok(new ArrayList<>(entries.values()));
     }
 
     /**
@@ -199,63 +178,5 @@ public class LlmWireController {
         }
         Path file = LlmWireRecorder.fileFor(id);
         return Files.isRegularFile(file) ? file : null;
-    }
-
-    /**
-     * Starts an index entry from an {@code llm_request} line: the frame fields
-     * the request half owns, response-half fields at their unanswered defaults
-     * so every entry carries the full frame shape.
-     *
-     * @param node the parsed request line
-     * @return the mutable entry the paired response completes
-     */
-    private static Map<String, Object> openEntry(JsonNode node) {
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("xid", node.path("xid").asText());
-        entry.put("agentId", textOrNull(node, "agentId"));
-        entry.put("turn", node.hasNonNull("turn") ? node.get("turn").asInt() : null);
-        entry.put("kind", textOrNull(node, "kind"));
-        entry.put("provider", textOrNull(node, "provider"));
-        entry.put("model", textOrNull(node, "model"));
-        // The wire it used, so a reopened archive's rows describe themselves as
-        // exactly as a live one does.
-        entry.put("transport", textOrNull(node, "transport"));
-        entry.put("url", textOrNull(node, "url"));
-        entry.put("status", null);
-        entry.put("requestBytes", node.path("bodyBytes").asLong(0));
-        entry.put("responseBytes", 0L);
-        entry.put("responseLines", 0);
-        entry.put("aborted", false);
-        entry.put("fidelity", textOrNull(node, "fidelity"));
-        entry.put("durationMs", null);
-        entry.put("ts", node.path("ts").asLong(0));
-        return entry;
-    }
-
-    /**
-     * Completes an entry from its {@code llm_response} line. The line count
-     * comes from the lines array when the bodies still ride the file, from the
-     * recorded {@code lineCount} when the ceiling dropped them.
-     *
-     * @param entry the entry its request line opened
-     * @param node  the parsed response line
-     */
-    private static void closeEntry(Map<String, Object> entry, JsonNode node) {
-        entry.put("status", node.hasNonNull("status") ? node.get("status").asInt() : null);
-        entry.put("responseBytes", node.path("bodyBytes").asLong(0));
-        entry.put("responseLines", node.has("lines") && node.get("lines").isArray()
-                ? node.get("lines").size()
-                : node.path("lineCount").asInt(0));
-        entry.put("aborted", node.path("aborted").asBoolean(false));
-        entry.put("durationMs", node.hasNonNull("durationMs") ? node.get("durationMs").asLong() : null);
-        entry.put("ts", node.path("ts").asLong(0));
-    }
-
-    /** A field's text, or null when absent; the index never invents "".
-     *  @param node the parsed line
-     *  @param field the field name
-     *  @return the text value or null */
-    private static String textOrNull(JsonNode node, String field) {
-        return node.hasNonNull(field) ? node.get(field).asText() : null;
     }
 }

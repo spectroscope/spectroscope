@@ -163,6 +163,27 @@ export function ProgressGuardSettings({
           </label>
         </div>
       </ReachBlock>
+      {/* Card 394's token budget for one child. Its own block beside the time
+        budget, with the same reach: SessionConnection.buildAgentOnce() hands
+        active.subagentBudgetTokens() to the SubagentConfig it builds the
+        manager from, so a save reaches the next session. One child's spend and
+        one child's clock are two limits, and one sentence over both would read
+        as one. */}
+      <ReachBlock lang={lang} fields={["subagentBudgetTokens"]}>
+        <div className="settings-grid">
+          <label className="settings-field" data-progress-field="subagentBudgetTokens">
+            <span>{t(lang, "set.subagentBudgetTokens")}</span>
+            <NumberField view={view} field="subagentBudgetTokens" lang={lang} onSave={onSave} />
+            <p className="settings-note">{t(lang, "set.subagentBudgetTokensNote")}</p>
+            <OriginRow
+              view={view}
+              field="subagentBudgetTokens"
+              lang={lang}
+              onReset={() => onSave({ subagentBudgetTokens: null })}
+            />
+          </label>
+        </div>
+      </ReachBlock>
       {/* Card 364's completion budget. Its own block for the reason the shell
         clock below has one: it shares maxTurns' reach and bounds a different
         thing — how much ONE provider call may write, against how many calls a

@@ -474,7 +474,8 @@ export function foldWorkIndexed(events: readonly RunEvent[]): WorkFold {
         const item = itemOf(event.agentId);
         if (item === undefined) break;
         item.gatesAsked += 1;
-        item.gatePending = true;
+        // Card 399: a request stamped as already decided waits on nobody.
+        item.gatePending = event.decidedBy == null;
         stamp(item, event.ts, event);
         break;
       }

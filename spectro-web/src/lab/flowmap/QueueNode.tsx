@@ -49,10 +49,14 @@ export function QueueNode({ data }: NodeProps) {
           three entries and said nothing about the third would teach the reader
           to trust a list that is missing a third of itself. */}
       {d.unnamed > 0 && (
-        <p className="pf-queue__unnamed">{t(lang, "lab.queue.unnamed").replace("{n}", String(d.unnamed))}</p>
+        <p className="pf-queue__unnamed">
+          {t(lang, "lab.queue.unnamed").replace("{n}", () => String(d.unnamed))}
+        </p>
       )}
       {d.retired > 0 && (
-        <p className="pf-queue__retired">{t(lang, "lab.queue.retired").replace("{n}", String(d.retired))}</p>
+        <p className="pf-queue__retired">
+          {t(lang, "lab.queue.retired").replace("{n}", () => String(d.retired))}
+        </p>
       )}
     </div>
   );

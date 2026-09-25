@@ -10,11 +10,15 @@ import type { Dsl } from "../scenario/dsl";
 import { loc } from "../scenario/dsl";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { isOpen } from "../state/surfaces";
+import { useViewMode } from "../state/viewMode";
 
 type ScnTab = "chats" | "fleet";
 
 export function ScenarioDialog(props: { onPick: (dsl: Dsl) => void; onClose: () => void }) {
   const lang = useLang();
+  // Card 430: a mode without the fleets refuses a fleet scenario, so its tab is not offered.
+  const fleets = isOpen("fleets", useViewMode());
   const [tab, setTab] = useState<ScnTab>("chats");
 
   // Escape closes — the DoctorPanel pattern; all three picker dialogs lacked it.
@@ -28,7 +32,7 @@ export function ScenarioDialog(props: { onPick: (dsl: Dsl) => void; onClose: () 
   }, [onClose]);
 
   // A fleet scenario shows under the fleet tab; everything else under chats.
-  const shown = SCENARIOS.filter((s) => (tab === "fleet" ? s.fleet === true : s.fleet !== true));
+  const shown = SCENARIOS.filter((s) => (tab === "fleet" && fleets ? s.fleet === true : s.fleet !== true));
 
   return (
     <div className="modal-backdrop">
@@ -37,9 +41,9 @@ export function ScenarioDialog(props: { onPick: (dsl: Dsl) => void; onClose: () 
           <span className="eyebrow sand">{t(lang, "nav.scenarios")}</span>
         </div>
         <h2 id="scn-title">{t(lang, "scn.title")}</h2>
-        <p className="import-hint">{t(lang, "scn.hint")}</p>
+        <p className="import-hint">{t(lang, fleets ? "scn.hint" : "scn.hintLight")}</p>
         <div className="scn-tabs" role="tablist" aria-label={t(lang, "scn.title")}>
-          {(["chats", "fleet"] as const).map((id) => (
+          {(fleets ? (["chats", "fleet"] as const) : (["chats"] as const)).map((id) => (
             <button
               key={id}
               type="button"

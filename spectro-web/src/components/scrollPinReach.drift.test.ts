@@ -29,12 +29,24 @@ function scrollHandler(src: string): string {
  *  card removes) the next hook's array is the first one found, and the length
  *  guard says so instead of quietly widening the region. */
 function followEffect(src: string): string {
-  const from = src.indexOf("const newTurn = state.turns.length");
+  const from = src.indexOf("const how = followScroll(");
   expect(from).toBeGreaterThan(-1);
   const end = src.indexOf("\n  }, [", from);
   expect(end).toBeGreaterThan(from);
   expect(end - from).toBeLessThan(800);
   return src.slice(from, src.indexOf(");", end) + 2);
+}
+
+/** The hook whose body holds `landmark`: the name in front of the nearest
+ *  `Effect(() => {` above it, so "useEffect" or "useLayoutEffect". */
+function hookAround(src: string, landmark: string): string {
+  const at = src.indexOf(landmark);
+  expect(at).toBeGreaterThan(-1);
+  const open = src.lastIndexOf("Effect(() => {", at);
+  expect(open).toBeGreaterThan(-1);
+  const name = src.slice(src.lastIndexOf("use", open), open + "Effect".length);
+  expect(name.length).toBeLessThan(20);
+  return name;
 }
 
 /** The dependency ARRAY of the follow effect, and nothing from its body. The
@@ -133,7 +145,9 @@ describe("Chat asks scrollPin who scrolled, and what to do about it", () => {
   });
 
   it("the growth effect asks what to do instead of deciding inline", () => {
-    expect(followEffect(chat)).toContain("followScroll({ pinned: pinnedRef.current, newTurn })");
+    // Card 399: asked with the pin alone. Whether a whole new turn began no
+    // longer changes the answer, see "what a growth event may do".
+    expect(followEffect(chat)).toContain("followScroll({ pinned: pinnedRef.current })");
     expect(followEffect(chat)).toContain('if (el === null || how === "none") return;');
   });
 
@@ -270,11 +284,39 @@ describe("the deliberate controls own the pin outright", () => {
     // transcript. A live view opens at its edge; a record is read from the top.
     const swap = viewSwapEffect(chat);
     expect(swap).toContain('el.scrollTo({ top: liveView ? el.scrollHeight : 0, behavior: "auto" });');
-    // The two records that would otherwise carry the previous reading's numbers
-    // into this one: the last scroll position the handler compares against, and
-    // the turn count that decides what counts as a new turn.
+    // The record that would otherwise carry the previous reading's number into
+    // this one: the last scroll position the handler compares against. (The
+    // turn count that sat beside it went with card 399, which stopped asking
+    // whether a new turn began.)
     expect(swap).toContain("lastScrollTop.current = el.scrollTop;");
-    expect(swap).toContain("prevTurnCount.current = 0;");
+  });
+});
+
+describe("card 399: the live edge is followed before the frame is painted", () => {
+  // Measured in the browser on the integration head: with the follow in a
+  // passive effect, the frame after a tool card landed was painted with the
+  // old scroll position, so the working line sat 38 px lower, most of it below
+  // the box's bottom edge, and came back up one frame later
+  // (kanban/evidence/399/loop/h3a). A layout effect runs after React has
+  // written the DOM and before the browser paints it.
+  it("the growth follow is a layout effect", () => {
+    expect(hookAround(chat, "const how = followScroll(")).toBe("useLayoutEffect");
+  });
+
+  it("the view swap is a layout effect, not a passive one", () => {
+    // Layout effects all run before passive ones. Left passive, the swap would
+    // run after a layout follow that still held the previous view's pin, and an
+    // archive would be painted at its end for a frame before its reset. This
+    // case checks the hook kind only; the next one checks the order.
+    expect(hookAround(chat, "setPin(liveView);")).toBe("useLayoutEffect");
+  });
+
+  it("the view swap is declared above the follow", () => {
+    // React runs one component's layout effects in the order they are declared,
+    // so with both as layout effects (the case above) the swap's reset lands
+    // before the follow reads the pin. This case checks the source order only.
+    expect(chat.indexOf("setPin(liveView);")).toBeGreaterThan(-1);
+    expect(chat.indexOf("setPin(liveView);")).toBeLessThan(chat.indexOf("const how = followScroll("));
   });
 });
 

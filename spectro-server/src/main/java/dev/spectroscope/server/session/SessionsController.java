@@ -1,9 +1,12 @@
 package dev.spectroscope.server.session;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.events.RunEvent;
+import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.scheduler.JobState;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.web.WebSearchTiers;
@@ -16,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,13 +35,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
- * The REST endpoints alongside the socket. Read-only except ONE deliberate
- * mutation: deleting a stored session (the socket carries every run-time
- * mutation). The endpoints read the SAME JSONL store the CLI writes, so
- * file, socket and REST all speak the one RunEvent format.
+ * The REST endpoints alongside the socket. The session endpoints read the
+ * SAME JSONL store the CLI writes, so file, socket and REST all speak the one
+ * RunEvent format. They never write a session file: the one destructive call
+ * deletes a stored session, and since card 445 a session's title and pin are
+ * written to {@link SessionMetaStore}, beside the sessions (the socket carries
+ * every run-time mutation).
  *
  * <p>No {@code @CrossOrigin}: the production UI is served from this same jar
  * (same origin) and {@code spectro-web/vite.config.ts} proxies {@code /api} to
@@ -52,13 +59,189 @@ import java.util.regex.Pattern;
 public class SessionsController {
 
     /**
+     * One row of the sidebar list: the session's own facts from the JSONL
+     * store, and beside them what the operator said about the session (card
+     * 445). The session fields stay at the top level of the JSON, so every
+     * reader of the list from before this card reads it unchanged; the three
+     * new fields are left out when a session has none of them.
+     *
+     * @param info        the session's facts, folded from its JSONL file
+     * @param title       the title the row shows instead of the first prompt, or null
+     * @param titleSource {@code suggested} or {@code manual}, null without a title
+     * @param pinned      true for a pinned session, null otherwise
+     */
+    public record SessionRow(
+            @JsonUnwrapped SessionStore.SessionInfo info,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String title,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String titleSource,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean pinned) {}
+
+    private final SessionMetaStore meta;
+    private final SessionTitles titles;
+    private final Function<SpectroConfig, LlmProvider> providers;
+
+    /** Spring wiring: the shared meta store and the server's provider construction. */
+    public SessionsController() {
+        this(SessionMetaStore.shared(), SessionTitles.shared(), ServerProviders::build);
+    }
+
+    /**
+     * Seam for tests.
+     *
+     * @param meta      where titles and pins live
+     * @param titles    asks a model for a title
+     * @param providers builds a provider for a session's recorded provider and model
+     */
+    SessionsController(SessionMetaStore meta, SessionTitles titles,
+                       Function<SpectroConfig, LlmProvider> providers) {
+        this.meta = meta;
+        this.titles = titles;
+        this.providers = providers;
+    }
+
+    /**
      * The sidebar list.
      *
-     * @return every stored session's metadata, straight from the JSONL store
+     * @return every stored session's metadata, straight from the JSONL store,
+     *         with its title and pin from the meta store (card 445)
      */
     @GetMapping("/api/sessions")
-    public List<SessionStore.SessionInfo> sessions() {
-        return SessionStore.listSessions();
+    public List<SessionRow> sessions() {
+        Map<String, SessionMetaStore.Entry> said = meta.all();
+        return SessionStore.listSessions().stream()
+                .map(info -> {
+                    SessionMetaStore.Entry entry = said.get(info.id());
+                    return entry == null
+                            ? new SessionRow(info, null, null, null)
+                            : new SessionRow(info, entry.title(), entry.titleSource(),
+                                    entry.pinned() ? Boolean.TRUE : null);
+                })
+                .toList();
+    }
+
+    /**
+     * Card 445: renames or pins one stored session. The session file is not
+     * touched; the change goes to the meta store.
+     *
+     * <p>The body carries {@code title} (a string; blank clears a hand-set
+     * title, and the row falls back to the suggestion or the first prompt),
+     * {@code pinned} (a boolean), or both. Behind the host fence every
+     * {@code /api} path has ({@code ApiLocalFence}), plus the Origin check the
+     * other writing endpoints carry.</p>
+     *
+     * @param id      the session id, shape-checked before anything else
+     * @param body    the change
+     * @param request the servlet request, for the Origin check
+     * @return 200 with the session's {@code title}, {@code titleSource} and
+     *         {@code pinned} after the change; 400 for a malformed id or body;
+     *         404 for a foreign page or a session that is not stored
+     */
+    @PatchMapping(value = "/api/sessions/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> patchSession(@PathVariable String id,
+                                                            @RequestBody(required = false) JsonNode body,
+                                                            HttpServletRequest request) {
+        if (!LocalOrigin.originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!SESSION_ID.matcher(id).matches()) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (body == null || !body.isObject()) {
+            return ResponseEntity.badRequest().build();
+        }
+        JsonNode title = body.get("title");
+        JsonNode pinned = body.get("pinned");
+        boolean hasTitle = title != null && !title.isNull();
+        boolean hasPin = pinned != null && !pinned.isNull();
+        if ((!hasTitle && !hasPin) || (hasTitle && !title.isTextual()) || (hasPin && !pinned.isBoolean())) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (!isStored(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (hasTitle) {
+            meta.rename(id, title.asText());
+        }
+        if (hasPin) {
+            meta.pin(id, pinned.asBoolean());
+        }
+        return ResponseEntity.ok(said(meta.get(id)));
+    }
+
+    /**
+     * Card 445, criterion 8: asks the session's own provider and model for a
+     * title, once, from its first prompt. The menu offers it for sessions
+     * without a title; nothing calls it for the whole list.
+     *
+     * <p>The request is the one a new session's first run makes
+     * ({@link SessionTitles}), bounded by the same time limit. A session the
+     * operator named by hand is not sent to the model. A failure is no error:
+     * the answer says {@code suggested: false} and the row keeps what it had.</p>
+     *
+     * @param id      the session id, shape-checked before anything else
+     * @param request the servlet request, for the Origin check
+     * @return 200 with the session's title fields and {@code suggested}; 400 for
+     *         a malformed id; 404 for a foreign page or a session not stored
+     */
+    @PostMapping("/api/sessions/{id}/title/suggest")
+    public ResponseEntity<Map<String, Object>> suggestTitle(@PathVariable String id, HttpServletRequest request) {
+        if (!LocalOrigin.originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!SESSION_ID.matcher(id).matches()) {
+            return ResponseEntity.badRequest().build();
+        }
+        SessionStore.SessionInfo info = SessionStore.listSessions().stream()
+                .filter(row -> row.id().equals(id))
+                .findFirst()
+                .orElse(null);
+        if (info == null) {
+            return ResponseEntity.notFound().build();
+        }
+        SpectroConfig config = configFor(info);
+        java.util.Optional<SessionMetaStore.Entry> before = meta.get(id);
+        java.util.Optional<SessionMetaStore.Entry> after =
+                titles.suggestNow(id, info.firstPrompt(), () -> providers.apply(config));
+        Map<String, Object> out = said(after.isPresent() ? after : before);
+        boolean suggested = after.isPresent() && SessionMetaStore.SUGGESTED.equals(after.get().titleSource())
+                && !after.equals(before);
+        out.put("suggested", suggested);
+        return ResponseEntity.ok(out);
+    }
+
+    /**
+     * The config for a session's recorded provider and model; the server's own
+     * config when the session recorded none.
+     */
+    private static SpectroConfig configFor(SessionStore.SessionInfo info) {
+        String provider = info.provider();
+        if (provider == null || provider.isBlank() || "-".equals(provider)) {
+            return SpectroConfig.load(SpectroConfig.Overrides.none());
+        }
+        String model = info.model() == null || info.model().isBlank() ? null : info.model();
+        return SpectroConfig.load(new SpectroConfig.Overrides(provider, model, null, null, null, null));
+    }
+
+    /** Whether a session file exists for this (already shape-checked) id. */
+    private static boolean isStored(String id) {
+        try {
+            return Files.isRegularFile(SessionStore.sessionFile(id));
+        } catch (java.io.IOException outsideStore) {
+            return false;
+        }
+    }
+
+    /** The title fields of an entry as the PATCH and suggest answers carry them. */
+    private static Map<String, Object> said(java.util.Optional<SessionMetaStore.Entry> entry) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        entry.ifPresent(e -> {
+            if (e.title() != null) {
+                out.put("title", e.title());
+                out.put("titleSource", e.titleSource());
+            }
+        });
+        out.put("pinned", entry.map(SessionMetaStore.Entry::pinned).orElse(false));
+        return out;
     }
 
     /**
@@ -133,8 +316,9 @@ public class SessionsController {
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
 
     /**
-     * Deletes one stored session (its JSONL file and its blob folder) — the
-     * one deliberately destructive endpoint. Defense in depth: the id shape
+     * Deletes one stored session: its JSONL file, its blob folder, its
+     * sidecars, and since card 445 its title and pin. This is the one
+     * deliberately destructive endpoint. Defense in depth: the id shape
      * is checked here AND the store only deletes direct children of the
      * sessions directory. 204 on success, 404 for an unknown id, 400 for
      * anything that is not a session id.
@@ -161,7 +345,10 @@ public class SessionsController {
             // session must not leave it lying in the home folder.
             boolean hadBrowser = Files.deleteIfExists(
                     dev.spectroscope.core.wire.BrowserWireRecorder.fileFor(id));
-            if (!hadSession && !hadWire && !hadBrowser) {
+            // Card 445: the title and the pin are about this session and go
+            // with it.
+            boolean hadMeta = meta.remove(id);
+            if (!hadSession && !hadWire && !hadBrowser && !hadMeta) {
                 return ResponseEntity.notFound().build();
             }
             return ResponseEntity.noContent().build();

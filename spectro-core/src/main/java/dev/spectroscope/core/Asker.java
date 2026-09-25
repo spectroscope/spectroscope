@@ -19,11 +19,13 @@ import java.util.List;
  * denial that is a legitimate outcome. A question has exactly one non-answer,
  * and it is not "no".</p>
  *
- * <p><b>Null is the whole contract for absence.</b> Where nobody can be asked —
- * a cancelled run, a socket that went away, a permission mode that declared
- * "do not bother me" — implementations return {@code null} rather than
- * something that looks like a reply. An invented answer in a session file
- * cannot be told from a real one afterwards.</p>
+ * <p><b>Null is the whole contract for absence.</b> Where nobody can be asked
+ * (a cancelled run, a socket that went away, a face with nobody attached),
+ * implementations return {@code null} rather than something that looks like a
+ * reply. An invented answer in a session file cannot be told from a real one
+ * afterwards. The permission mode is not one of these: since card 427 the
+ * browser session's asker parks a question in {@code auto} and
+ * {@code readonly} as it does in {@code ask}.</p>
  */
 @FunctionalInterface
 public interface Asker {

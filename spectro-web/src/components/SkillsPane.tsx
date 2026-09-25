@@ -20,18 +20,21 @@ export function SkillsPane() {
   const lang = useLang();
   return (
     <div className="skills-pane">
-      <header className="skills-head">
-        <div>
-          <h2 className="skills-title">{t(lang, "nav.skills")}</h2>
-          <p className="skills-claim">{t(lang, "skv.claim")}</p>
-          {/* The install roads, both said: the catalogue button below is one,
-              a SKILL.md folder under a skills root is the other — the manual
-              road the CLI documents. A file-picker install has no server path
-              yet (card 228 records that half as new). */}
-          <p className="skills-claim skills-install-note">{t(lang, "skv.installNote")}</p>
-        </div>
-      </header>
-      <SkillsSettings headed={false} />
+      {/* Card 411: one column at the settings page's width, from the left. */}
+      <div className="skills-column">
+        <header className="skills-head">
+          <div>
+            <h2 className="skills-title">{t(lang, "nav.skills")}</h2>
+            <p className="skills-claim">{t(lang, "skv.claim")}</p>
+            {/* The install roads, both said: the catalogue button below is one,
+                a SKILL.md folder under a skills root is the other, the manual
+                road the CLI documents. A file-picker install has no server path
+                yet (card 228 records that half as new). */}
+            <p className="skills-claim skills-install-note">{t(lang, "skv.installNote")}</p>
+          </div>
+        </header>
+        <SkillsSettings headed={false} />
+      </div>
     </div>
   );
 }

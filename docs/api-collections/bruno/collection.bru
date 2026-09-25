@@ -1,5 +1,5 @@
 docs {
-  The whole REST surface of spectro-server — 77 endpoints in 19 folders, one per area.
+  The whole REST surface of spectro-server — 79 endpoints in 19 folders, one per area.
   
   Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.
   
@@ -40,6 +40,7 @@ docs {
   ## Handle with care
   
   - **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.
+  - **POST /api/sessions/{id}/title/suggest** — This spends one model call on the provider the session recorded, and sends it the session's first prompt.
   - **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.
   - **POST /api/settings/env** — Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.
   - **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.

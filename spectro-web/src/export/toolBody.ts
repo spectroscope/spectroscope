@@ -380,10 +380,19 @@ export const TOOL_HTML: Writers = {
     list(view.lines),
 
   command: (view, { lang }) =>
-    head(label(lang, "command")) +
+    head(
+      label(lang, "command"),
+      view.rewrite === null ? undefined : label(lang, "cmdRewritten", { by: view.rewrite.by }),
+    ) +
     `<pre class="x-tv-cmd"><code><span class="x-tv-prompt" aria-hidden="true">$ </span>` +
     // The same break the app draws — the export exists to BE the view.
     `${codeHtml(breakShellChain(view.command), "shell")}</code></pre>` +
+    // Card 416: the model's line under the one that ran, without a prompt and
+    // without the shell colouring, in the secondary colour, as the app draws it.
+    (view.rewrite === null
+      ? ""
+      : head(label(lang, "cmdAsWritten")) +
+        `<pre class="x-tv-cmd x-tv-cmd--written"><code>${escapeHtml(breakShellChain(view.rewrite.original))}</code></pre>`) +
     outputHtml(view.output, lang, `x-tv-term${view.failed ? " x-tv-term--failed" : ""}`) +
     // The other stream, on its own — the flattened text runs the two together.
     (view.stderr === null
@@ -562,6 +571,7 @@ export const TOOL_CSS = `
 .x-tv-item{padding:1px 0;color:var(--text-dim);overflow-wrap:anywhere}
 .x-tv-item--dir{color:var(--text)}
 .x-tv-prompt{color:var(--accent)}
+.x-tv-cmd--written{color:var(--text-dim)}
 .x-tv-term{color:var(--text-dim)}
 .x-tv-term--failed{color:var(--error)}
 .x-tv-prose{font-family:var(--font-ui);font-size:13px}

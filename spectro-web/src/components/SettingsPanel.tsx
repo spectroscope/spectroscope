@@ -82,6 +82,8 @@ import { OriginRow } from "./settingsOrigin";
 import { ProgressGuardSettings } from "./ProgressGuardSettings";
 import { dockerOffer, type DockerStatus } from "./dockerOffer";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
+import { settingsSectionOpen } from "../state/surfaces";
+import { useViewMode } from "../state/viewMode";
 
 function Switch({
   label,
@@ -274,6 +276,8 @@ export function SettingsPanel({
 }) {
   const { prefs } = useDesignPrefs();
   const lang = useLang();
+  // Card 430: a section the mode closes is neither drawn nor found.
+  const viewMode = useViewMode();
   const [savedFlash, setSavedFlash] = useState(false);
   const [resolved, setResolved] = useState<SettingsView | null>(null);
   const view = resolved;
@@ -637,7 +641,16 @@ export function SettingsPanel({
           lang={lang}
           query={query}
           onQuery={setQuery}
-          hits={query.trim() === "" ? null : matchSettings(buildSettingsManifest(lang, registry), query)}
+          hits={
+            query.trim() === ""
+              ? null
+              : matchSettings(
+                  buildSettingsManifest(lang, registry).filter((hit) =>
+                    settingsSectionOpen(hit.section, viewMode),
+                  ),
+                  query,
+                )
+          }
           onPick={pickHit}
         />
 
@@ -1219,8 +1232,11 @@ export function SettingsPanel({
           <SettingsTabPage tab="system" active={activeTab} hold={holdPage}>
             {view && (
               <>
-                {/* ---- Fleet: the two switches that were env-only (owner ask) ---- */}
-                <FleetSettings anchorId={sectionAnchorId("fleet")} />
+                {/* ---- Fleet: the two switches that were env-only (owner ask).
+                  Card 430: not in light, where the fleets are closed. ---- */}
+                {settingsSectionOpen("fleet", viewMode) && (
+                  <FleetSettings anchorId={sectionAnchorId("fleet")} />
+                )}
                 {/* ---- Observability: the OTLP exporter (Langfuse, Jaeger, …) ---- */}
                 <div className="settings-label" id={sectionAnchorId("observability")}>
                   {t(lang, "set.secObservability")}

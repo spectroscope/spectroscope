@@ -44,7 +44,7 @@
 .settings-page {
   display: flex;
   flex-direction: column;
-  width: min(680px, 94vw);
+  width: min(var(--settings-width), 94vw);
   /* Card 256: a fixed height, not a maximum. With tabs the surface may not
      resize under the reader — a short room would pull the tab row up the screen
      and a tall one push it back down, so the row a person is aiming at would

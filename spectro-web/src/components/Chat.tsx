@@ -78,6 +78,7 @@ import { chatTools } from "./chatTools";
 import { useTranslation } from "../state/translate";
 import { useChatWidth } from "../state/chatWidth";
 import { WorkspaceChooser } from "./WorkspaceChooser";
+import { beforeFirstPrompt } from "../workspace/chooserMode";
 import { reportCount, useSearch } from "../state/search";
 import { chatHits, markSegments } from "./chatSearch";
 import { skillTokenSegments } from "../state/skillTokens";
@@ -206,7 +207,6 @@ export function Chat(props: {
   // A live view follows the edge; an archive does not. An import is a record
   // you read from the beginning, so it must not open at its own end.
   const pinnedRef = useRef(props.liveView);
-  const prevTurnCount = useRef(0);
   // attachment intake (drag-and-drop, file picker, pending chips).
   // The drop zone is the chat ROOT — the hook only hands out the handlers.
   const attachments = useAttachments(liveView);
@@ -427,12 +427,15 @@ export function Chat(props: {
   // Seeding the pin ALONE left a hole: the follow effect stands down for a
   // disarmed reader, so an archive opened on whatever scrollTop the previous
   // view happened to have, clamped into an unrelated transcript. The position
-  // is therefore seeded too — a live view opens at its edge, a record is read
-  // from the top — along with the two records that would otherwise carry the
-  // previous reading's numbers into this one.
-  useEffect(() => {
+  // is therefore seeded too (a live view opens at its edge, a record is read
+  // from the top), along with the record that would otherwise carry the
+  // previous reading's number into this one.
+  //
+  // Card 399: a layout effect, declared above the follow, which is one too.
+  // React runs them in this order, so the follow reads the new view's pin, and
+  // both land before the browser paints the new view.
+  useLayoutEffect(() => {
     setPin(liveView);
-    prevTurnCount.current = 0;
     lastScrollTop.current = 0;
     const el = scrollRef.current;
     if (el === null) return;
@@ -467,7 +470,8 @@ export function Chat(props: {
   };
 
   // BEFORE the browser paints, and before the bottom-pin effect below runs
-  // (a layout effect always does): a reader who is reading keeps the chip where
+  // (both are layout effects, and React runs them in the order they are
+  // declared): a reader who is reading keeps the chip where
   // it was, and a reader pinned to the live edge is left to that effect
   // (foldScrollDelta returns zero for them, so the two rules never pull at the
   // same pixel). Card 257 absorbed this rule UNCHANGED: it still reads the pin
@@ -493,13 +497,19 @@ export function Chat(props: {
   // shape had no dependency array at all, so it re-asserted the bottom after
   // every render, including a keystroke in the composer; while a run streams
   // that is many per second, which left the reader about one frame to escape.
-  useEffect(() => {
+  //
+  // Card 399: a layout effect, so the scroll lands after React has written the
+  // new rows and before the browser paints them. As a passive effect it ran
+  // after the paint, and the frame in between showed the live edge's last row
+  // (the working line, when a tool card landed above it) one row lower, most
+  // of it below the box's bottom edge, before it came back up.
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    const newTurn = state.turns.length !== prevTurnCount.current;
-    prevTurnCount.current = state.turns.length;
-    const how = followScroll({ pinned: pinnedRef.current, newTurn });
+    const how = followScroll({ pinned: pinnedRef.current });
     if (el === null || how === "none") return;
     el.scrollTo({ top: el.scrollHeight, behavior: how });
+    // state is a dependency because a new state is what can grow the
+    // transcript; the body reads the box, not the state.
     // childFolds is a dependency because opening a fold grows the transcript as
     // surely as a token does — and card 271's rule stands aside for a pinned
     // reader precisely because THIS effect puts them back on the same render.
@@ -1018,13 +1028,6 @@ export function Chat(props: {
               </svg>
               {t(lang, "chat.emptyHint")}
             </p>
-            {liveView && props.onPickFolder && (
-              <WorkspaceChooser
-                sendClient={props.sendClient}
-                onPickFolder={props.onPickFolder}
-                workspace={state.workspace}
-              />
-            )}
           </div>
         ) : (
           <div className="history">
@@ -1178,6 +1181,19 @@ export function Chat(props: {
                 ? t(lang, "composer.historyAt", { n: readout.position, total: readout.total })
                 : null}
             </div>
+            {/* Card 389: the working folder, directly above the box. Card 428:
+                only until the first prompt starts a run (owner, 2026-09-25),
+                since the server refuses a change once its agent exists. A
+                refused prompt leaves an error line and no prompt, so the row
+                stays for the retry. */}
+            {props.onPickFolder && beforeFirstPrompt(state.turns) && (
+              <WorkspaceChooser
+                sendClient={props.sendClient}
+                onPickFolder={props.onPickFolder}
+                workspace={state.workspace}
+                canPick={!state.running}
+              />
+            )}
             <div className={attachments.dragOver ? "composer-inner drag-over" : "composer-inner"}>
               {/* Card 183: anchored to .composer-inner, which is why it is the
                   positioned ancestor. It opens UPWARD like the menus in the

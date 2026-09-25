@@ -82,7 +82,7 @@ describe("the live trace window reaches the screen honestly", () => {
   it("the fleet's rows really are the unwindowed fold the test above assumes", () => {
     // The premise of the pin, kept next to it: if this ever became a windowed
     // fold, the fleet pane would need a disclosure of its OWN, not none.
-    expect(app).toContain("traceFromEvents(shownEvents) : view.trace");
+    expect(app).toContain("traceFromEvents(shownEvents) : (shownRows ?? NO_ROWS)");
   });
 
   it("the pane counts the RECORD for its disclosure, not the list it draws", () => {
@@ -120,15 +120,23 @@ describe("the live trace window reaches the screen honestly", () => {
 });
 
 describe("card 246 — the live-trace switch reaches both live seams", () => {
+  // Card 430 moved both folds into state/modeWork.ts, where light skips the
+  // trace row altogether; the learn branch keeps card 246's rule word for word.
+  const work = readFileSync(fileURLToPath(new URL("./modeWork.ts", import.meta.url)), "utf8");
+
   it("the socket fold strips before it windows, asking the store", () => {
     expect(body("onEvents")).toContain(
-      "windowTrace(stripLiveTrace(reduceAll(s, batch), currentLiveTraceWanted()))",
+      "setLive((s) => foldLiveBatch(s, batch, mode, currentLiveTraceWanted()));",
     );
+    expect(work).toContain("return windowTrace(stripLiveTrace(reduceAll(state, batch), traceWanted));");
   });
 
   it("the outgoing fold strips by the same rule", () => {
     expect(body("sendClient")).toContain(
-      "windowTrace(stripLiveTrace(recordOutgoing(s, msg), currentLiveTraceWanted()))",
+      "setLive((s) => recordLiveOutgoing(s, msg, mode, currentLiveTraceWanted()));",
+    );
+    expect(work).toContain(
+      "return windowTrace(stripLiveTrace(recordOutgoing(state, message), traceWanted));",
     );
   });
 

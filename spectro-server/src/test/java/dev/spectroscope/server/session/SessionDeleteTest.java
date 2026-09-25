@@ -38,7 +38,7 @@ class SessionDeleteTest {
         assertThat(controller.deleteSession(id).getStatusCode().value()).isEqualTo(204);
 
         assertThat(Files.notExists(file)).isTrue();
-        assertThat(controller.sessions()).noneMatch(info -> info.id().equals(id));
+        assertThat(controller.sessions()).noneMatch(row -> row.info().id().equals(id));
     }
 
     @Test

@@ -63,8 +63,7 @@ class QuestionAdditivityTest {
 
     @Test
     void aReleasedQuestionSaysCancelledAndNeverInventsAnAnswer() throws Exception {
-        // Every release path (cancel, a closed socket, no asker, an unattended
-        // mode) lands here. One invented answer in a JSONL poisons the audit
+        // Every release path (cancel, a closed socket, no asker) lands here. One invented answer in a JSONL poisons the audit
         // trail permanently, so the empty list plus the flag IS the record.
         RunEvent.QuestionAnswered released =
                 new RunEvent.QuestionAnswered("call-2", List.of(), true, 12L, 13L);

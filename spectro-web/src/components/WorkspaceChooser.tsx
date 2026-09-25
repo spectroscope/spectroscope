@@ -1,91 +1,125 @@
-// The new-chat workspace chooser: where the agent works this session. Three
-// modes: random (a throwaway per-session temp folder), default (your configured
-// workspace, or ~/spectroscope-workspace when none is set), and set (pick a
-// folder). The backend resolves the actual path per mode
-// (SessionConnection.onSetWorkspace); "set" reuses the native folder picker.
+// The working folder row: where the agent works this session. It sits in the
+// live composer column, directly above the input box (card 389), and Chat
+// mounts it only until the chat's first prompt starts a run (card 428). It
+// draws three options:
 //
-// The selection follows the server's announcement rather than a constant. It
-// used to open on "random" while buildAgentOnce resolves `pinned != null ?
-// pinned : config.workspace()`, so with a configured workspace the empty chat
-// showed one answer and the first run used another. Clicking still applies, so
-// a configured default is never overridden silently; what changed is that the
-// unclicked state now reports the truth instead of a guess.
+//   - no folder: nothing chosen, a run gets a temporary folder of its own
+//     (the "random" mode on the wire);
+//   - default: the default working folder from the settings, or a fallback
+//     folder when none is set;
+//   - choose folder: the native folder picker.
+//
+// The server resolves the actual path per mode (SessionConnection.onSetWorkspace).
+// The marked option follows the server's announcement until a click, and a
+// click still applies, so a configured default is never overridden silently.
+// While canPick is false the row draws its options disabled, with the reason
+// the server gives for refusing a change as the tooltip.
 
 import { useState } from "react";
+import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import type { ClientMessage } from "../events";
 import type { WorkspaceInfo } from "../state/reducer";
-import { chooserFolder, preselectedMode } from "../workspace/chooserMode";
+import {
+  CHOOSER_OPTIONS,
+  chooserFolder,
+  chooserTitle,
+  clipName,
+  folderName,
+  preselectedOption,
+  type ChooserOption,
+} from "../workspace/chooserMode";
 
-type Mode = "random" | "default" | "set";
+/** The longest folder name the "is no longer there" sentence carries. */
+const GONE_NAME_MAX = 24;
+
+/** The text a template puts before and after its `{name}`. */
+function wordsAround(template: string): [string, string] {
+  const at = template.indexOf("{name}");
+  return at < 0 ? [template, ""] : [template.slice(0, at), template.slice(at + "{name}".length)];
+}
 
 export function WorkspaceChooser(props: {
   sendClient: (m: ClientMessage) => boolean;
   onPickFolder: () => void;
-  /** The prospective workspace announcement, what a run started now would use. */
+  /** The workspace announcement: prospective before a run, resolved after. */
   workspace: WorkspaceInfo | null;
+  /** False while a run streams; the server refuses a change once its agent exists. */
+  canPick: boolean;
 }) {
-  const de = useLang() === "de";
-  const [picked, setPicked] = useState<Mode | null>(null);
+  const lang = useLang();
+  const [picked, setPicked] = useState<ChooserOption | null>(null);
+  // The row stays mounted across "New chat" from a chat that had no prompt
+  // yet, and New chat resets the announcement to null. A click belongs to
+  // the chat it was made in, so the drop to null
+  // forgets it (state adjusted during render, the React idiom for this).
+  const [announced, setAnnounced] = useState(props.workspace !== null);
+  if (announced !== (props.workspace !== null)) {
+    setAnnounced(props.workspace !== null);
+    if (props.workspace === null) setPicked(null);
+  }
   // A click wins; until then the announcement speaks.
-  const chosen: Mode | null = picked ?? preselectedMode(props.workspace);
-  // The folder, named. The announcement has carried it all along and this
-  // screen printed only the word "default" — the one place that exists to say
-  // where the agent will work said everything but the folder.
-  const folder = picked === null || picked === chosen ? chooserFolder(props.workspace) : null;
+  const chosen: ChooserOption | null = picked ?? preselectedOption(props.workspace);
+  const title = chooserTitle(props.workspace);
+  const folder = chooserFolder(props.workspace);
+  // A folder named under the no-folder entry is the temporary one a run got.
+  const temporary = folder !== null && chosen === "random";
+  const unavailable = props.workspace?.unavailable ?? null;
+  const gone = unavailable === null ? null : clipName(folderName(unavailable) ?? unavailable, GONE_NAME_MAX);
+  // The name and the words around it are separate spans, so a narrow row can
+  // shorten the name and never the words that say it is gone.
+  const goneWords = wordsAround(t(lang, "workspace.unavailable"));
+  const locked = !props.canPick;
+  const fixed = t(lang, "workspace.fixed");
 
-  const pick = (mode: Mode): void => {
-    setPicked(mode);
-    if (mode === "set") props.onPickFolder();
-    else props.sendClient({ type: "set_workspace", mode });
+  const pick = (option: ChooserOption): void => {
+    if (locked) return;
+    setPicked(option);
+    if (option === "set") props.onPickFolder();
+    else props.sendClient({ type: "set_workspace", mode: option });
   };
 
-  const opts: { key: Mode; label: string; hint: string }[] = [
-    {
-      key: "random",
-      label: de ? "zufall" : "random",
-      hint: de ? "frischer temp-ordner pro chat" : "a fresh temp folder per chat",
-    },
-    {
-      key: "default",
-      label: de ? "standard" : "default",
-      hint: de
-        ? "dein default-workspace (oder ~/spectroscope-workspace)"
-        : "your default workspace (or ~/spectroscope-workspace)",
-    },
-    {
-      key: "set",
-      label: de ? "ordner wählen…" : "set folder…",
-      hint: de ? "einen bestimmten ordner picken" : "pick a specific folder",
-    },
-  ];
-
   return (
-    <div className="ws-chooser">
-      <span className="ws-chooser-label mono">{de ? "arbeitsordner" : "workspace"}</span>
-      <div className="ws-chooser-opts" role="radiogroup" aria-label={de ? "arbeitsordner" : "workspace"}>
-        {opts.map((o) => (
-          <button
-            key={o.key}
-            type="button"
-            role="radio"
-            aria-checked={chosen === o.key}
-            className={`ws-chooser-opt${chosen === o.key ? " ws-chooser-opt--on" : ""}`}
-            title={o.hint}
-            onClick={() => pick(o.key)}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-      {folder !== null && (
-        <span className="ws-chooser-folder mono" title={props.workspace?.path ?? undefined}>
-          {folder}
-          {props.workspace?.exists === false && (
-            <span className="ws-chooser-new"> · {de ? "wird angelegt" : "will be created"}</span>
+    <div className="ws-chooser" title={locked ? fixed : undefined}>
+      <div className="ws-chooser-line">
+        <span className="ws-chooser-label mono">{t(lang, "workspace.label")}</span>
+        <div className="ws-chooser-opts" role="radiogroup" aria-label={t(lang, "workspace.label")}>
+          {CHOOSER_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              data-option={option}
+              aria-checked={chosen === option}
+              className={`ws-chooser-opt${chosen === option ? " ws-chooser-opt--on" : ""}`}
+              title={locked ? fixed : t(lang, `workspace.hint.${option}`)}
+              disabled={locked}
+              onClick={() => pick(option)}
+            >
+              {t(lang, `workspace.opt.${option}`)}
+            </button>
+          ))}
+        </div>
+        {/* Drawn with nothing in it too: a narrow row keeps this line. */}
+        <span className="ws-chooser-where">
+          {folder !== null && (
+            <span className="ws-chooser-folder mono" title={title ?? undefined}>
+              {folder}
+              {temporary && <span className="ws-chooser-new"> · {t(lang, "workspace.temporary")}</span>}
+              {props.workspace?.exists === false && (
+                <span className="ws-chooser-new"> · {t(lang, "workspace.willCreate")}</span>
+              )}
+            </span>
+          )}
+          {gone !== null && unavailable !== null && (
+            <span className="ws-chooser-gone mono" title={unavailable}>
+              {goneWords[0] !== "" && <span className="ws-chooser-gone-words">{goneWords[0]}</span>}
+              <span className="ws-chooser-gone-name">{gone}</span>
+              {goneWords[1] !== "" && <span className="ws-chooser-gone-words">{goneWords[1]}</span>}
+            </span>
           )}
         </span>
-      )}
+      </div>
     </div>
   );
 }

@@ -13,7 +13,7 @@
 // import each other (one is a React component, the other must stay React-free),
 // and a component is not unit-testable in this suite.
 
-import { splitInput } from "./toolViews";
+import { describeTool, splitInput } from "./toolViews";
 import { compactJson } from "../format";
 
 /** Per-field cap. Wide enough for a repo-relative path, which is the value a
@@ -96,4 +96,38 @@ export function toolTeaser(name: string, input: unknown, lines: (n: number) => s
     cells.map(({ key, value }) => (value === "" ? `${key}:` : `${key}: ${value}`)).join(" · "),
     TEASER_CHARS,
   );
+}
+
+/** The answer of a question, twice: as the row shows it and as its tooltip. */
+export interface AskAnswer {
+  /** One line, clipped to the row's budget of 140 characters. */
+  text: string;
+  /** The same line, not clipped. */
+  full: string;
+}
+
+/**
+ * What the person answered, for the folded row of a question (card 427, loop
+ * wave H3b). Read through describeTool, the reader the open card uses, so the
+ * folded row and the open card name the same answer, and a native ask and an
+ * imported AskUserQuestion read alike.
+ *
+ * @param name   the tool's wire name
+ * @param input  the call's input
+ * @param output the tool result; undefined while the call is open
+ * @return the answers in the order the questions were asked, joined with " · "
+ *         on one line, once clipped to the row's budget and once whole; null
+ *         when the call is not a question, or when no question of it was
+ *         answered with an option or in the person's own words (still open,
+ *         released, dismissed)
+ */
+export function askAnswerTeaser(name: string, input: unknown, output: string | undefined): AskAnswer | null {
+  const view = describeTool(name, input, output, false);
+  if (view.kind !== "question") return null;
+  const answers = view.questions
+    .filter((q) => q.answered === "option" || q.answered === "text")
+    .map((q) => oneLine(q.answer ?? ""));
+  if (answers.length === 0) return null;
+  const full = answers.join(" · ");
+  return { text: clip(full, TEASER_CHARS), full };
 }

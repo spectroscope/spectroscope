@@ -410,14 +410,16 @@ public final class AnthropicProvider implements LlmProvider {
     /**
      * Neutral request → SDK params. Package-private and static so it is unit-tested
      * without a client (constructing one needs ANTHROPIC_API_KEY). With caching on it
-     * places two {@code cache_control} breakpoints (well within the SDK limit of 4):
-     * one after system+tools (the last tool), one on the last STABLE message — the
-     * message just before the current turn, which changes every request and is never
-     * cached. A moved/missing breakpoint after compaction is harmless: caching is
-     * best-effort and the index is recomputed fresh each call.
+     * places up to three {@code cache_control} breakpoints (the API allows 4): one on
+     * the system block, one on the last tool, and one on the last block of the last
+     * STABLE message: the message just before the current turn, which changes every
+     * request and is never cached. In a tool round that stable message is the model's
+     * own turn ending in a tool_use block (card 404). A moved/missing breakpoint after
+     * compaction is harmless: caching is best-effort and the index is recomputed fresh
+     * each call.
      *
      * @param model         the model id to request
-     * @param promptCaching true to place the two cache_control breakpoints
+     * @param promptCaching true to place the cache_control breakpoints
      * @param request       the neutral request to translate
      * @return the fully built SDK params for one streaming call
      */
@@ -515,7 +517,7 @@ public final class AnthropicProvider implements LlmProvider {
     }
 
     /**
-     * Adds a cache breakpoint to a content block (text / tool_result); other kinds pass through.
+     * Adds a cache breakpoint to a content block (text, tool_use, tool_result); other kinds pass through.
      *
      * @param block the block chosen as the last stable message's breakpoint
      * @return a copy carrying cache_control, or the block itself for unsupported kinds
@@ -528,12 +530,18 @@ public final class AnthropicProvider implements LlmProvider {
                     .cacheControl(cache)
                     .build());
         }
+        if (block.isToolUse()) {
+            // A tool round: the stable message is the model's own turn, and it ends in a call.
+            return ContentBlockParam.ofToolUse(block.asToolUse().toBuilder()
+                    .cacheControl(cache)
+                    .build());
+        }
         if (block.isToolResult()) {
             return ContentBlockParam.ofToolResult(block.asToolResult().toBuilder()
                     .cacheControl(cache)
                     .build());
         }
-        return block; // image / other: best-effort, skip the message breakpoint
+        return block; // image, document: returned unmarked, no message breakpoint this request
     }
 
     /**

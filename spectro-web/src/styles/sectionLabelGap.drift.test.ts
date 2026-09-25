@@ -731,8 +731,17 @@ function tagText(node: Tagged): string {
 }
 
 const isHost = (tag: string): boolean => /^[a-z]/.test(tag) && !tag.includes(".");
-/** React's own components that draw no box around their children. */
-const TRANSPARENT = new Set(["Fragment", "React.Fragment", "StrictMode", "React.StrictMode", "Suspense"]);
+/** React's own components that draw no box around their children, and
+ *  ChunkBoundary (card 430), a class this walk cannot read: it places its
+ *  children in a Suspense, or draws a notice instead of them. */
+const TRANSPARENT = new Set([
+  "Fragment",
+  "React.Fragment",
+  "StrictMode",
+  "React.StrictMode",
+  "Suspense",
+  "ChunkBoundary",
+]);
 
 /** Every string an expression can evaluate to, when it is built from string
  *  literals, templates and conditionals alone; null when it reads anything
@@ -1301,7 +1310,7 @@ describe("the resolver itself", () => {
   });
 
   it("follows a section component to where the page mounts it, through the tab panel wrapper", () => {
-    for (const site of ["components/DockWidthSettings.tsx:47", "components/SettingsPanel.tsx:711"]) {
+    for (const site of ["components/DockWidthSettings.tsx:47", "components/SettingsPanel.tsx:724"]) {
       const chains = chainsOf(site);
       expect(chains.length, site).toBeGreaterThan(0);
       for (const c of chains) {

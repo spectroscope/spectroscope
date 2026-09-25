@@ -43,6 +43,18 @@ async function post(path: string, body: unknown): Promise<LevelingSnapshot | nul
   }
 }
 
+/** Test seam: the snapshot a render starts from, before any fetch. Null in the app. */
+let initialForTests: LevelingSnapshot | null = null;
+
+/**
+ * Test seam for a suite without a DOM, where no effect runs and so no fetch
+ * lands: the snapshot the next render starts from. Card 430's guard renders
+ * App with the tutorial on and off through it.
+ */
+export function __setInitialLevelingForTests(snapshot: LevelingSnapshot | null): void {
+  initialForTests = snapshot;
+}
+
 /**
  * Reads the ladder once on mount and keeps it in step with the server.
  *
@@ -51,7 +63,7 @@ async function post(path: string, body: unknown): Promise<LevelingSnapshot | nul
  * booted without leveling, must never hide surfaces.
  */
 export function useLeveling(): Leveling {
-  const [snapshot, setSnapshot] = useState<LevelingSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<LevelingSnapshot | null>(() => initialForTests);
   const alive = useRef(true);
 
   useEffect(() => {

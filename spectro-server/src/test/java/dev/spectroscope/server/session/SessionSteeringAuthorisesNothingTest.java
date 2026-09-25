@@ -84,7 +84,11 @@ class SessionSteeringAuthorisesNothingTest {
         AtomicInteger calls = new AtomicInteger();
         mock = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         mock.createContext("/api/chat", exchange -> {
-            exchange.getRequestBody().readAllBytes();
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (TitleRequests.isTitleRequest(body)) {
+                TitleRequests.answer(exchange); // card 445: the title request is not one of the run's calls
+                return;
+            }
             int call = calls.incrementAndGet();
             String ndjson = call <= 2
                     ? """

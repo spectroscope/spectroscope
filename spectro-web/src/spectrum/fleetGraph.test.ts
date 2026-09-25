@@ -161,7 +161,7 @@ describe("buildFleetGraph", () => {
   });
 
   it("clears the ask when it was released without an answer", () => {
-    // A skip, a closed socket, an unattended mode: released, never answered. The
+    // A skip, a closed socket, a cancelled run: released, never answered. The
     // run is moving again either way, so the lane must stop claiming it waits.
     const released: FleetModel = {
       ...asked,

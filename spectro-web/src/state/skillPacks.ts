@@ -45,3 +45,57 @@ export function packGroups(rows: readonly CatalogueRow[]): PackGroup[] {
       };
     });
 }
+
+/** An installed skill as `/api/skills` lists it under `skills`. */
+export interface InstalledSkill {
+  /** As the agent reads it: `<pack>:<skill>` for a catalogue install, bare otherwise. */
+  name: string;
+  /** The skill's own folder; the display name is not a path. */
+  folder: string;
+  /** The pack folder, null for a skill installed at the top level. */
+  pack: string | null;
+  description: string;
+  source: "user" | "project";
+  disabled: boolean;
+}
+
+/** One namespace of the installed list, as its header needs it (card 411). */
+export interface InstalledNamespace {
+  /** The pack folder, or null for the skills installed at the top level. */
+  namespace: string | null;
+  /** The group's rows, in the order the server listed them. */
+  rows: InstalledSkill[];
+  /** Every row of the group, on or off, from either root. */
+  count: number;
+}
+
+/**
+ * The installed list read as groups (card 411; owner, 2026-09-25: "alle
+ * Skills, die ich installiert habe, möchte ich auch eingeklappt haben, so wie
+ * unten die Pakete"). Computed from the rows of the latest `/api/skills` read
+ * and from nothing else.
+ *
+ * @param rows the installed skills as the latest `/api/skills` read returned them
+ * @returns the skills without a namespace first when there are any, then one
+ *   group per namespace, sorted by name
+ */
+export function installedGroups(rows: readonly InstalledSkill[]): InstalledNamespace[] {
+  const bare: InstalledSkill[] = [];
+  const byNamespace = new Map<string, InstalledSkill[]>();
+  for (const row of rows) {
+    if (row.pack === null) {
+      bare.push(row);
+      continue;
+    }
+    const list = byNamespace.get(row.pack);
+    if (list === undefined) byNamespace.set(row.pack, [row]);
+    else list.push(row);
+  }
+  const named = [...byNamespace.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((namespace): InstalledNamespace => {
+      const groupRows = byNamespace.get(namespace) ?? [];
+      return { namespace, rows: groupRows, count: groupRows.length };
+    });
+  return bare.length === 0 ? named : [{ namespace: null, rows: bare, count: bare.length }, ...named];
+}

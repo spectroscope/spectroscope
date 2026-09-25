@@ -60,6 +60,8 @@ public final class CommandGoalCheck implements GoalCheck {
                 timeoutSeconds, context.signal(), GoalVerdict.MAX_OUTPUT_CHARS, true);
         long durationMs = System.currentTimeMillis() - startedAt;
         if (result.timedOut()) {
+            // Card 384: the output here is the end of what the check printed
+            // before the kill. It was always empty before that card.
             return new GoalVerdict(GoalVerdict.Outcome.UNTESTED, command, null, result.output(),
                     durationMs, null, null,
                     "untested: the check did not finish within " + timeoutSeconds + " s");

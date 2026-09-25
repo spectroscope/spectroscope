@@ -156,6 +156,22 @@ describe("foldWork", () => {
     expect(byId(foldWork(events), "worker-1").gatePending).toBe(true);
   });
 
+  it("card 399: a request the server stamped as already decided never shows the gate as pending", () => {
+    const stamped = {
+      type: "permission_request",
+      agentId: "worker-1",
+      callId: "g1",
+      name: "write_file",
+      input: {},
+      decidedBy: "mode:auto",
+      ts: 3000,
+    } as RunEvent;
+    const w = byId(foldWork([...fanOut(1), stamped]), "worker-1");
+    expect(w.gatePending).toBe(false);
+    // It was still a gate the broker was asked, so the count keeps it.
+    expect(w.gatesAsked).toBe(1);
+  });
+
   it("a failed result marks the lane failed and a later status cannot reopen it", () => {
     const events: RunEvent[] = [
       ...fanOut(1),

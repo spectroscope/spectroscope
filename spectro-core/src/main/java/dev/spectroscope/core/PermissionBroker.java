@@ -17,4 +17,24 @@ public interface PermissionBroker {
      * @return true to execute the tool, false to refuse (the model sees an ERROR result)
      */
     boolean decide(PermissionRequest request);
+
+    /**
+     * Card 399: who answers this request without asking a person, asked BEFORE
+     * the request is emitted, so the event can carry the answer in
+     * {@link PermissionRequest#decidedBy()} and a viewer does not open a window
+     * for a call that is already decided.
+     *
+     * <p>The loop still emits both events and still takes the verdict from
+     * {@link #decide}, which it hands the stamped request. A broker that returns
+     * a label here must answer that stamped request in {@code decide} without
+     * parking. The default returns null: the request goes out unstamped, as it
+     * did before this method existed.</p>
+     *
+     * @param request the call about to be emitted, not yet stamped
+     * @return the label the gate audit writes for the decider ({@code mode:auto},
+     *         {@code mode:readonly}, {@code allowlist}), or null when a person decides
+     */
+    default String decidedBy(PermissionRequest request) {
+        return null;
+    }
 }

@@ -496,6 +496,39 @@ class AgentGoalTest {
     }
 
     @Test
+    void theChecksGateCarriesTheBrokersEarlyAnswerLikeEveryOtherGate(@TempDir Path dir) {
+        // Card 399: the check's request is stamped the same way a tool's is, so
+        // an auto session does not open a window for the goal check either.
+        List<RunEvent.PermissionRequest> decided = new ArrayList<>();
+        PermissionBroker knowing = new PermissionBroker() {
+            @Override
+            public String decidedBy(RunEvent.PermissionRequest request) {
+                return "mode:readonly";
+            }
+
+            @Override
+            public boolean decide(RunEvent.PermissionRequest request) {
+                decided.add(request);
+                return false;
+            }
+        };
+        List<RunEvent> events = run(agent(new Recording(alwaysJustAnswers()),
+                goal(new CommandGoalCheck(), OUTCOME, "touch ran-anyway"),
+                new ContinuationLeash(0), dir, knowing, null));
+        List<String> stamps = events.stream()
+                .filter(RunEvent.PermissionRequest.class::isInstance)
+                .map(RunEvent.PermissionRequest.class::cast)
+                .filter(request -> Agent.GOAL_CHECK_GATE.equals(request.name()))
+                .map(RunEvent.PermissionRequest::decidedBy)
+                .toList();
+        assertEquals(List.of("mode:readonly"), stamps);
+        assertEquals(List.of("mode:readonly"),
+                decided.stream().map(RunEvent.PermissionRequest::decidedBy).toList(),
+                "decide receives the stamped request");
+        assertFalse(Files.exists(dir.resolve("ran-anyway")), "the denial still holds");
+    }
+
+    @Test
     void aDeniedCheckIsUntestedAndNeverFailed(@TempDir Path dir) {
         // "The operator would not let me look" is not "it did not pass". Only
         // untested keeps the two apart, and only untested refuses to spend the

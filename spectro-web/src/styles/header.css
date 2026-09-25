@@ -117,3 +117,33 @@
   flex: none;
   color: var(--accent);
 }
+
+/* Card 430: the learn and light switch. Two words in one chip, the checked one
+   filled; it sits beside the language toggle and shares its chip idiom. */
+.mode-switch {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  overflow: hidden;
+}
+.mode-switch__option {
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  padding: 3px var(--sp-2);
+  cursor: pointer;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.mode-switch__option:hover { color: var(--text); }
+.mode-switch__option--on {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.mode-switch__option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

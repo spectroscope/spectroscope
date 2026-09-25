@@ -10,14 +10,12 @@ import type { Connection, ConnectionStatus } from "./transport/ws";
 import {
   initialState,
   normalizeReplay,
-  recordOutgoing,
   recordResumeMarker,
-  reduceAll,
+  reduceAllUntraced,
   stripLiveTrace,
   traceFromEvents,
-  windowTrace,
 } from "./state/reducer";
-import type { UiState } from "./state/reducer";
+import type { TraceEntry, UiState } from "./state/reducer";
 import { currentLiveTraceWanted, useLiveTraceWanted } from "./state/liveTrace";
 import { fetchLlmWireIndex, mergeLlmExchanges } from "./wire/llmWire";
 import { windowOverrideFrame } from "./wire/windowOverride";
@@ -50,9 +48,17 @@ import {
   subscribeReportedViews,
 } from "./state/viewReport";
 import { SkillsPane } from "./components/SkillsPane";
-import { navDepth, navLanded, writeRoute, type NavCause, type NavIntent } from "./state/history";
+import {
+  navDepth,
+  navLanded,
+  stampBootEntry,
+  writeRoute,
+  type NavCause,
+  type NavIntent,
+} from "./state/history";
 import { canGoBack, canGoForward, NAV_START, type NavDepth } from "./state/navDepth";
 import {
+  createAddressReporter,
   createNavNonce,
   pinAfterNavigation,
   planRoute,
@@ -62,6 +68,19 @@ import {
   type Place,
 } from "./state/appRouter";
 import { DoctorPanel } from "./components/DoctorPanel";
+import { OpeningSurface } from "./components/OpeningSurface";
+import { TraceTabCount } from "./components/TraceTabCount";
+import { foldArchiveDeferred, foldArchiveDeferredSliced } from "./state/archiveFold";
+import {
+  createArchiveTrace,
+  traceProgress,
+  useArchiveRowCount,
+  useRecordedTrace,
+  type ArchiveTrace,
+} from "./state/archiveTrace";
+import { openProgress } from "./state/openProgress";
+import { openingAfterIssue, sessionTitleOf, type SessionOpening } from "./state/sessionOpening";
+import { deletionLeavesView } from "./state/sessionMeta";
 import { Keymap } from "./components/Keymap";
 import { SearchBox } from "./components/SearchBox";
 import { Onboarding } from "./components/Onboarding";
@@ -108,40 +127,43 @@ import {
   fitRowPanel,
   readDockWidths,
 } from "./state/rowWidths";
-import { TextView } from "./components/TextView";
 import { textExportViewKey } from "./components/textExportClaim";
-import { TraceView } from "./components/TraceView";
 import { traceOriginOf } from "./state/traceFace";
 import { useTraceWarm } from "./components/traceWarmup";
 import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
-import { GraphView } from "./graph/GraphView"; // the fifth consumer
-import { SCENARIOS, StateGraphPane, type LoadedRun } from "./stategraph/StateGraphPane";
+import { SCENARIOS, type LoadedRun } from "./stategraph/scenarios";
+// Card 430, criterion 9: the views of the surfaces light closes, each loaded
+// from a chunk of its own (the fifth consumer of the event stream, GraphView,
+// among them). Light never draws them, so it never asks for their chunks.
+import {
+  AgentFeed,
+  FleetBar,
+  FleetBus,
+  FleetHome,
+  FleetLab,
+  FleetLobby,
+  FleetSpawnForm,
+  GraphView,
+  LabView,
+  prefetchSurfaces,
+  SpectrumView,
+  StateGraphPane,
+  TextView,
+  TraceView,
+} from "./state/surfaceChunks";
+import { ChunkBoundary } from "./components/ChunkBoundary";
 import { onShellCommand } from "./state/shellCommands";
 import { runShellCommand, type ShellDeps } from "./state/shellCommandRouter";
 import { initialViewState, rememberOrientation, type StateGraphViewState } from "./stategraph/viewState";
 import type { PendingAttachment } from "./components/AttachmentPreview";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ParticleField } from "./components/ParticleField";
-import { LabView } from "./lab/LabView";
-import { FleetLab } from "./lab/FleetLab";
-import { SpectrumView } from "./spectrum/SpectrumView";
-import { FleetBus } from "./spectrum/FleetBus";
-import { FleetBar } from "./spectrum/FleetBar";
-import { AgentFeed } from "./spectrum/AgentFeed";
-import { FleetHome } from "./spectrum/FleetHome";
-import { FleetLobby } from "./spectrum/FleetLobby";
 import { loadSidecarAgents, NO_SIDECARS, type SidecarAgent, type SidecarIndex } from "./import/sidecarAgents";
 import { openFromStore, type StoreDoor } from "./import/storeDoor";
 import { reportBrowserError } from "./state/browserLog";
-import { FleetSpawnForm } from "./spectrum/FleetSpawn";
+import { backToLive as labBackToLive, resetLive as labResetLive } from "./state/stepper";
 import {
-  backToLive as labBackToLive,
-  pushLive as labPushLive,
-  resetLive as labResetLive,
-} from "./state/stepper";
-import {
-  fleetPushLive,
   fleetLoadScenario,
   hydrateFleet,
   knownFleet,
@@ -158,7 +180,13 @@ import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/
 import type { ImportKind, ImportSource } from "./import/detect";
 import type { SubagentTranscript } from "./import/subagentFile";
 import { attachSources, sourceStats } from "./state/traceSource";
-import { childrenNote, shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
+import {
+  conversationCounts,
+  importBarAbout,
+  shownImportBar,
+  type ImportBarState,
+} from "./components/importBar";
+import { ImportNoteBar } from "./components/ImportNoteBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
 import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
@@ -169,6 +197,24 @@ import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
 import { useLang } from "./state/lang";
+import { beforeFirstPrompt } from "./workspace/chooserMode";
+import { isOpen, shownTab, tabsShown, tutorialOn } from "./state/surfaces";
+import { currentViewMode, subscribeViewMode, useViewMode } from "./state/viewMode";
+import { fleetEntryAllowed, routeInMode, scenarioLanding } from "./state/modeRoute";
+import {
+  applyModeSwitch,
+  enterLight,
+  feedSurfaceStores,
+  fetchFleetRosterIn,
+  foldLiveBatch,
+  foldResume,
+  indexWanted,
+  recordLiveOutgoing,
+  returnToLearn,
+  traceReachableIn,
+  type ModeSwitchDeps,
+} from "./state/modeWork";
+import { storedCwdOf } from "./workspace/storedFolder";
 
 interface ConnState {
   status: ConnectionStatus;
@@ -192,15 +238,20 @@ interface Replay {
    *  trace offers — deriving a behavioural switch from a formatted string is
    *  the class of defect state/traceFace.ts's header argues against. */
   kind?: ImportKind;
+  /** Card 435: this record's trace, built when it is first needed. `state`
+   *  holds no trace rows; the rows come from `useRecordedTrace`. */
+  archiveTrace: ArchiveTrace;
 }
+
+/** What `traceEntries` falls back to while an archive's rows are not built.
+ *  No TraceView gets it: the session's trace mounts only once `shownRows`
+ *  exists, and the fleet's takes `traceFromEvents(shownEvents)`. */
+const NO_ROWS: TraceEntry[] = [];
 
 // The row's pixel vocabulary — the minima, the ceilings, the resizer's width
 // and the allocation itself — moved to state/rowWidths.ts with card 361. It
 // used to be two module constants here, and being HERE is what let the two
 // resize handlers below each subtract the same reserve from the same row.
-
-/** Fold a stored session's events into a ready-to-show archive state. */
-const foldArchive = (events: RunEvent[]) => normalizeReplay(reduceAll(initialState, events));
 
 export function App() {
   const [live, setLive] = useState<UiState>(initialState);
@@ -352,7 +403,9 @@ export function App() {
   // persists to localStorage.
   const dockBounds = useDockBounds();
   const layoutReset = useLayoutRecovered(); // card 241: a broken blob was replaced
-  const [tab, setTab] = useState<ViewTab>("chat"); // chat | spectrum | graph | trace | text | lab
+  // chat | spectrum | graph | trace | text | lab, as chosen. What the window
+  // shows is `tab` below, which asks the mode (card 430).
+  const [chosenTab, setTab] = useState<ViewTab>("chat");
   /* Variant B (0.7 A/B): while a fleet is entered, its OWN bar replaces the
      app tabs — "bus" or one agent id. Reset on every fleet change. */
   const [fleetTab, setFleetTab] = useState<string>("bus");
@@ -363,6 +416,14 @@ export function App() {
   // snapshot on render, never cached, so a mode flipped elsewhere cannot leave
   // a stale lock behind.
   const leveling = useLeveling();
+  // Card 430: learn or light, and whether the tutorial is on. What each opens
+  // is the surface table's answer (state/surfaces.ts).
+  const viewMode = useViewMode();
+  const tutorial = tutorialOn(leveling.snapshot);
+  // The tab on screen: the one chosen where the mode opens it, else the chat.
+  // Every reader below sees this one, so a tab the mode closes is never drawn,
+  // and never drawn as the ladder's teaser either (criterion 8).
+  const tab = shownTab(chosenTab, viewMode);
   // Held in a ref because onEvents is memoised with no dependencies; reading the
   // callback fresh here is the same stale-closure guard providerModelField uses.
   const refreshLeveling = useRef(leveling.refresh);
@@ -418,6 +479,14 @@ export function App() {
   const chatView = useChatView();
   const [workHighlight, setWorkHighlight] = useState<string | null>(null);
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]); // raw, for the graph
+  // Card 430: the same list at call time, for the switch back to learn, which
+  // runs outside a render and must see every batch received before it. Every
+  // write of the list goes through writeLiveEvents.
+  const liveEventsNow = useRef<RunEvent[]>([]);
+  const writeLiveEvents = useCallback((next: RunEvent[]): void => {
+    liveEventsNow.current = next;
+    setLiveEvents(next);
+  }, []);
   // Card 89: bumped per rAF batch that carried a disk-relevant event — the
   // Files tab refetches (throttled) instead of waiting for a manual reload.
   const [fsTick, setFsTick] = useState(0);
@@ -584,70 +653,78 @@ export function App() {
   // The same batch is kept raw — the graph tab is just another reducer.
   // This state is the one the socket grows without an end in sight, so it is
   // also the one whose trace is a window; every other fold here is finite.
-  const onEvents = useCallback((batch: RunEvent[]) => {
-    // Card 246: the live-trace switch strips BEFORE the window — an off trace
-    // holds nothing, and the recording is the server's job, not this array's.
-    setLive((s) => windowTrace(stripLiveTrace(reduceAll(s, batch), currentLiveTraceWanted())));
-    setLiveEvents((prev) => [...prev, ...batch]);
-    labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
-    fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
-    liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
-    browserCuePushLive(batch); // card 226: an agent drove the browser — the web view re-watches
-    browserRevealPushLive(batch); // card 241: …and the dock's browser panel reveals — the only door left
-    // A refused resume (another socket already drives that session). Drop the
-    // resume rather than let the transport retry it: the socket reconnects with
-    // the same URL, so a page that kept ?resume= would be refused every second
-    // for as long as the other window is open.
-    // Card 380: an older server answers the steering frame by name and has no
-    // other way to say so. One refusal turns the direct path off for this
-    // socket and puts the sentence back in the queue, where it sends after the
-    // run like it always did. Without the flag the page would draw one error
-    // row per submit at an operator who cannot do anything about it.
-    //
-    // Fix round 2026-09-24: the run's own steering_message line answers for
-    // the pending rows. Read, the row gives way to the drawn turn. Missed,
-    // because the run ended first on whichever exit, the sentence goes back
-    // into the same queue and starts the next run, which is owner call 3 as
-    // the card words it: exactly today's behaviour, nothing lost.
-    let steer = steering.current;
-    const giveBack: string[] = [];
-    for (const event of batch as unknown[]) {
-      const read = noteFrame(steer, event);
-      steer = read.next;
-      giveBack.push(...read.requeue);
-    }
-    if (steer !== steering.current) {
-      steering.current = steer;
-      setSteeringView(steer);
-    }
-    if (giveBack.length > 0) {
-      setQueue((q) => giveBack.reduce((line, text) => enqueue(line, text), q));
-    }
-    for (const event of batch as unknown[]) {
-      const refused = readSessionBusy(event);
-      if (refused !== null) {
-        setSessionBusy(refused);
-        setResumeId(null);
+  const onEvents = useCallback(
+    (batch: RunEvent[]) => {
+      // Card 246: the live-trace switch strips BEFORE the window — an off trace
+      // holds nothing, and the recording is the server's job, not this array's.
+      // Card 430: the mode is read at call time, so a batch after a switch folds
+      // in the new mode; in light the fold builds no trace rows (gate 1).
+      const mode = currentViewMode();
+      setLive((s) => foldLiveBatch(s, batch, mode, currentLiveTraceWanted()));
+      // The full list, in both modes: the chat's export and translate read it.
+      writeLiveEvents([...liveEventsNow.current, ...batch]);
+      // Card 430, gates 3 and 4: the Lab's dam and the fleet store (which splits
+      // out fleet_roster/fleet_event) are fed only where their surface is open.
+      feedSurfaceStores(batch, mode);
+      liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
+      browserCuePushLive(batch); // card 226: an agent drove the browser — the web view re-watches
+      browserRevealPushLive(batch); // card 241: …and the dock's browser panel reveals — the only door left
+      // A refused resume (another socket already drives that session). Drop the
+      // resume rather than let the transport retry it: the socket reconnects with
+      // the same URL, so a page that kept ?resume= would be refused every second
+      // for as long as the other window is open.
+      // Card 380: an older server answers the steering frame by name and has no
+      // other way to say so. One refusal turns the direct path off for this
+      // socket and puts the sentence back in the queue, where it sends after the
+      // run like it always did. Without the flag the page would draw one error
+      // row per submit at an operator who cannot do anything about it.
+      //
+      // Fix round 2026-09-24: the run's own steering_message line answers for
+      // the pending rows. Read, the row gives way to the drawn turn. Missed,
+      // because the run ended first on whichever exit, the sentence goes back
+      // into the same queue and starts the next run, which is owner call 3 as
+      // the card words it: exactly today's behaviour, nothing lost.
+      let steer = steering.current;
+      const giveBack: string[] = [];
+      for (const event of batch as unknown[]) {
+        const read = noteFrame(steer, event);
+        steer = read.next;
+        giveBack.push(...read.requeue);
       }
-    }
-    // Card 89: a tool result or a run end may have changed the workspace on
-    // disk — nudge the Files tab (it throttles + dedupes on its side).
-    if (
-      batch.some((e) => {
-        const type = (e as { type?: string }).type;
-        return type === "tool_result" || type === "run_end" || type === "workspace_info";
-      })
-    ) {
-      setFsTick((n) => n + 1);
-    }
-    // The ladder's server-side marks (a finished run settles first light) arrive
-    // without the client asking, so a run end is the moment to re-read it. Same
-    // shape as the Files nudge above, and cheaper than a socket frame nobody
-    // else needs.
-    if (batch.some((e) => (e as { type?: string }).type === "run_end")) {
-      refreshLeveling.current();
-    }
-  }, []);
+      if (steer !== steering.current) {
+        steering.current = steer;
+        setSteeringView(steer);
+      }
+      if (giveBack.length > 0) {
+        setQueue((q) => giveBack.reduce((line, text) => enqueue(line, text), q));
+      }
+      for (const event of batch as unknown[]) {
+        const refused = readSessionBusy(event);
+        if (refused !== null) {
+          setSessionBusy(refused);
+          setResumeId(null);
+        }
+      }
+      // Card 89: a tool result or a run end may have changed the workspace on
+      // disk — nudge the Files tab (it throttles + dedupes on its side).
+      if (
+        batch.some((e) => {
+          const type = (e as { type?: string }).type;
+          return type === "tool_result" || type === "run_end" || type === "workspace_info";
+        })
+      ) {
+        setFsTick((n) => n + 1);
+      }
+      // The ladder's server-side marks (a finished run settles first light) arrive
+      // without the client asking, so a run end is the moment to re-read it. Same
+      // shape as the Files nudge above, and cheaper than a socket frame nobody
+      // else needs.
+      if (batch.some((e) => (e as { type?: string }).type === "run_end")) {
+        refreshLeveling.current();
+      }
+    },
+    [writeLiveEvents],
+  );
 
   useEffect(() => {
     // A fresh socket is a fresh session — waiting chips, the drain latch and
@@ -669,7 +746,9 @@ export function App() {
         }),
     });
     connRef.current = connection;
-    void hydrateFleet(); // seed the roster from REST; live frames take over
+    // Seed the roster from REST; live frames take over. Card 430, gate 5: only
+    // where the fleets are open.
+    fetchFleetRosterIn(currentViewMode());
     return () => {
       connRef.current = null;
       connection.close();
@@ -723,7 +802,9 @@ export function App() {
       // Outbound rows land in the same growing array as inbound ones, so they
       // are windowed by the same rule — a chatty sender cannot outgrow it.
       // And stripped by the same switch (card 246): out rows are trace rows.
-      setLive((s) => windowTrace(stripLiveTrace(recordOutgoing(s, msg), currentLiveTraceWanted())));
+      // Card 430, gate 1: in light an outgoing frame builds no row either.
+      const mode = currentViewMode();
+      setLive((s) => recordLiveOutgoing(s, msg, mode, currentLiveTraceWanted()));
       // Leveling beacons ride here rather than in each component: this is the one
       // place every client message passes, so a gate answered from the window, the
       // lab or a fleet all report the same way, and a future sender gets it free.
@@ -1020,7 +1101,13 @@ export function App() {
   // The pure decisions live in state/appRouter (the facet diff, the nonce, the
   // settings-close verdict) and state/history (push/replace/none); here is
   // only the execution against this component's state.
-  const navNonce = useRef(createNavNonce()).current;
+  // Card 431: the loading sign of the session open in flight, or null. App
+  // state rather than a store, so the sign goes down in the same commit that
+  // shows the session. Every new ticket takes an older open's sign down.
+  const [opening, setOpening] = useState<SessionOpening | null>(null);
+  const navNonce = useRef(
+    createNavNonce((ticket) => setOpening((o) => openingAfterIssue(o, ticket))),
+  ).current;
   // The last route string this app DISPATCHED — set synchronously before any
   // async work, never derived from app state (which lags a fetch and would let
   // the hashchange+popstate double-fire of one back-press through twice).
@@ -1054,6 +1141,10 @@ export function App() {
   // the Files pane labels it as recorded and touches nothing on disk.
   const shownRecordedCwd =
     importedCwd !== null && importedCwd.sessionId === (replay?.id ?? null) ? importedCwd.cwd : null;
+  // The folder a stored session reopened from the sidebar ran in (card 421),
+  // read from its own run_start. Null for the live view, an import and a
+  // scenario; display only, like the import's above.
+  const shownStoredCwd = useMemo(() => storedCwdOf(replay), [replay]);
   /** The declared phases belonging to the session on screen, or none. */
   const shownDeclared =
     importedPhases !== null && importedPhases.sessionId === (replay?.id ?? null)
@@ -1106,25 +1197,31 @@ export function App() {
     const cause: NavCause = opts?.cause ?? "gesture";
     const ticket = navNonce.issue();
     const skillsTicket = skillsNonce.issue();
+    // Card 431: the sign is up in the frame after the click, over the old view.
+    setOpening({ ticket, sessionId: id, title: sessionTitleOf(id) });
     try {
-      // The llm-wire index rides along: its frames are socket-only, so a
-      // reopened file's fold has no exchange rows — the index brings them
-      // back, merged by ts and deduped by xid (wire/llmWire.ts). An empty
-      // answer (no sidecar, an older server) merges nothing and offers no link.
-      const [res, wire] = await Promise.all([
-        fetch(`/api/sessions/${encodeURIComponent(id)}/events`),
-        fetchLlmWireIndex(id),
-      ]);
+      // Card 435: the events alone. The llm-wire index is asked for once the
+      // chat has rendered (the effect on `archiveTrace` below): the chat does
+      // not need it, and the trace merges it when its rows are built.
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
       if (!res.ok) throw new Error(String(res.status));
       const events = (await res.json()) as RunEvent[];
       if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
-      const folded = foldArchive(events);
+      // Card 431: in slices that yield to the browser, so the window keeps
+      // drawing and the sign counts; a later navigation stops it between two.
+      // Card 435: and without trace rows; the trace builds them when needed.
+      const folded = await foldArchiveDeferredSliced(events, {
+        isCurrent: () => navNonce.isCurrent(ticket),
+        onProgress: (done, total) => openProgress.report(ticket, done, total),
+      });
+      if (folded === null) return; // a later navigation won during the fold
+      setOpening(null); // in the same update as the view below, so one commit swaps them
       setReplay({
         id,
-        state: wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
+        state: folded.state,
         events,
+        archiveTrace: createArchiveTrace(folded.recipe, id),
       });
-      setLlmWire(wire.length === 0 ? null : { sessionId: id, count: wire.length });
       setEnteredFleet(null);
       // Card 409: the session is what the surface shows now, unless Skills was
       // pressed while the fetch ran.
@@ -1162,6 +1259,7 @@ export function App() {
       // APPLIED address that named nothing real must not keep lying in the
       // bar, so it is corrected to the place actually shown.
       if (!navNonce.isCurrent(ticket)) return;
+      setOpening(null); // the sign goes, and the view under it was never touched
       if (cause === "apply") commitUrl(currentAppRoute(), "apply");
     }
   };
@@ -1203,6 +1301,8 @@ export function App() {
   // trace filter. A scenario fleet's contextId writes "#/" — replays have no
   // address, so the URL never carries a scenario:* id through the fleet door.
   const enterFleet = (contextId: string): void => {
+    // Card 430: a mode without the fleets refuses, and the chat stays.
+    if (!fleetEntryAllowed(currentViewMode())) return;
     applyFleet(contextId);
     beaconRef.current("fleet", contextId);
     commitUrl({ kind: "fleet", contextId }, "gesture");
@@ -1216,13 +1316,12 @@ export function App() {
   // is what keeps a zoom drag from burying the place a reader came from under
   // an entry per frame. Settings lie OVER the view, so nothing is written while
   // they are open or the panel's own address would be overwritten.
-  const lastReported = useRef<string>("");
+  // Card 433: seeded with the place of the first render, so the mount leaves a
+  // pasted address in the bar for the boot apply below to read.
+  const [addressReporter] = useState(() => createAddressReporter(placeRef.current));
   useEffect(() => {
-    if (settingsOpen) return;
-    const target = formatRoute(currentAppRoute());
-    if (target === lastReported.current) return;
-    lastReported.current = target;
-    commitUrl(currentAppRoute(), "gesture");
+    const route = addressReporter.report(placeRef.current);
+    if (route !== null) commitUrl(route, "gesture");
   });
 
   // A different transcript under the views: every reading is dropped. Row 12 of
@@ -1237,6 +1336,9 @@ export function App() {
   }, [shownIdentity]);
 
   const changeTab = (next: ViewTab): void => {
+    // Card 430: a tab the mode closes is not opened, whoever asks (the work
+    // panel's and the spectrum's hand-off to the trace included).
+    if (!isOpen(next, currentViewMode())) return;
     setTab(next);
     // routeOfPlace already knows every one of these cases, INCLUDING the import
     // one that this branch got wrong. Writing the rule twice is how they came
@@ -1359,7 +1461,7 @@ export function App() {
     openStoreTranscript(agent.path, `agent-${agent.agentId}`, "gesture");
   };
 
-  const openImport = (
+  const openImport = async (
     events: RunEvent[],
     label: string,
     kind: ImportKind,
@@ -1375,15 +1477,36 @@ export function App() {
     /** "gesture" pushes a history entry; "apply" replaces it, so following an
      *  address does not stack a second one on top of itself. */
     cause: NavCause = "gesture",
-  ): void => {
-    navNonce.issue(); // an import supersedes any in-flight session open
+  ): Promise<void> => {
+    const ticket = navNonce.issue(); // an import supersedes any in-flight session open
+    const sessionId = `import:${kind}:${label}`;
+    // Card 431: an import can be as large as a recorded session (the store
+    // serves up to 128 MiB), so its fold runs in slices under the same sign.
+    // The dialog closes first, or it would stand over the sign.
+    setOpening({ ticket, sessionId, title: label });
+    setImportOpen(false);
+    // Card 435: without trace rows, as a session opens.
+    const folded = await foldArchiveDeferredSliced(events, {
+      isCurrent: () => navNonce.isCurrent(ticket),
+      onProgress: (done, total) => openProgress.report(ticket, done, total),
+    }).catch((e: unknown) => {
+      // The dialog that used to show a failed fold is closed by now, so the
+      // failure goes to the ring the dialog also reports to.
+      reportBrowserError("import", e);
+      return null;
+    });
+    if (folded === null) {
+      // Superseded: the later navigation took the sign down. Failed: it goes now.
+      if (navNonce.isCurrent(ticket)) setOpening(null);
+      return;
+    }
+    setOpening(null); // in the same update as the view below
     // Card 177: ask what sits BESIDE the file, before anything is rendered.
     // One directory listing, no transcript read — the bodies come later, one
     // at a time, when a reader opens a row. A file with no address (a paste, a
     // picked file) has nothing to ask about and keeps the empty index, which
     // is also what every failure answers: a panel that cannot reach the store
     // must say what it always said, never that a session has no agents.
-    const sessionId = `import:${kind}:${label}`;
     setSidecars(NO_SIDECARS);
     setImportedPath(storePath === undefined ? null : { sessionId, path: storePath });
     // A run import's recorded folder, or nothing: a lone file must clear the
@@ -1397,15 +1520,16 @@ export function App() {
     if (storePath !== undefined) void loadSidecarAgents(storePath).then(setSidecars);
     setReplay({
       id: sessionId,
-      state: foldArchive(events),
+      state: folded.state,
       events,
+      // An import has no llm-wire sidecar on this server to ask.
+      archiveTrace: createArchiveTrace(folded.recipe, null),
       source,
       kind,
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
     setSkillsOpen(false); // card 409: and a session view closes the skills view
     applyDockReturn(); // card 242: an import is an entered session too
-    setImportOpen(false);
     // A file from the STORE is an address; a paste and a picked file are not,
     // and say so by carrying no path. That distinction stopped being academic
     // when a session's agents became openable (card 177): a reader opened a
@@ -1426,26 +1550,15 @@ export function App() {
       sessionId: `import:${kind}:${label}`,
       file: label,
       stats: sourceStats(source),
-      // Two different sentences, and a file can want both: the VS Code note is
-      // about a FORMAT's limits, the subagent note is about what THIS file is.
-      // Only one of them can ever apply at a time today, and joining them here
-      // keeps that an accident of the formats rather than a rule the bar
-      // depends on.
-      note:
-        [
-          kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
-          subagentNote(lang, subagent),
-          // Card 291: what a run import carried — "N children merged", and
-          // when some were skipped it says so.
-          childrenNote(lang, run),
-          // Card 318: and what it could NOT carry. A store row whose run is
-          // over the server's ceiling loads the session file instead, which is
-          // exactly what the old behaviour looked like — so the fall-back says
-          // so here, with both numbers, rather than passing for a normal load.
-          note ?? null,
-        ]
-          .filter((line): line is string => line !== null)
-          .join(" ") || null,
+      // Card 440: the bar counts the conversation as the chat shows it.
+      counts: conversationCounts(events),
+      // The VS Code note (a FORMAT's limits), the subagent note (what THIS
+      // file is), what a run import carried (card 291) and what it could NOT
+      // carry: a store row whose run is over the server's ceiling loads the
+      // session file instead, and says so rather than passing for a normal
+      // load (card 318). The same call says whether the file is one agent's
+      // transcript, so the bar does not call that file a session (card 152).
+      ...importBarAbout(lang, { kind, subagent, run, extra: note }),
     });
   };
 
@@ -1453,7 +1566,7 @@ export function App() {
   // language and ride the SAME replay path. Lands in the Lab, where the
   // stepper starts at event 0 — a scripted demo is for stepping, not for
   // reading its end state. Compiled content keeps its language afterwards,
-  // like every other session.
+  // like every other session. In light it lands in the chat (card 430).
   const [scenariosOpen, setScenariosOpen] = useState(false);
   const [startersOpen, setStartersOpen] = useState(false);
   const openScenario = (dsl: Dsl): void => {
@@ -1461,6 +1574,8 @@ export function App() {
     setScenariosOpen(false);
     setSkillsOpen(false); // card 409: either kind of scenario is a place
     if (dsl.fleet === true) {
+      // Card 430: refused before the fleet store is fed, in a mode without fleets.
+      if (!fleetEntryAllowed(currentViewMode())) return;
       // A fleet scenario: fold the compiled events into a replay fleet and enter
       // it like a live one — the fleet canvas shows the topology at a glance.
       const contextId = `scenario:${dsl.id}`;
@@ -1470,10 +1585,14 @@ export function App() {
     }
     navNonce.issue(); // a scenario supersedes any in-flight session open
     const sessionId = `scenario:${dsl.id}`;
+    // One task: a chat scenario compiles to at most 196 events (card 431's
+    // measurement, guarded by scenarioFoldSize.test.ts). No trace rows (card 435).
+    const folded = foldArchiveDeferred(events);
     setReplay({
       id: sessionId,
-      state: foldArchive(events),
+      state: folded.state,
       events,
+      archiveTrace: createArchiveTrace(folded.recipe, null),
     });
     // Card 302: a workflow-shaped scenario declares its columns the way a real
     // run's state file does, so the demo shows the DECLARED picture rather
@@ -1483,7 +1602,8 @@ export function App() {
     // header shows the scenario while every tab (the lab included) still
     // renders the fleet's events. Owner-found: dialog-load after a fleet.
     setEnteredFleet(null);
-    setTab("lab");
+    // Card 430: the lab in learn, the chat where the lab is closed.
+    setTab(scenarioLanding(currentViewMode()));
     // A scenario is a view, not an address (its id must never reach the bar).
     commitUrl({ kind: "live", tab: null }, "gesture");
   };
@@ -1492,7 +1612,7 @@ export function App() {
     // One socket connection = one session on the server, so a fresh chat
     // means a fresh connection.
     setLive(initialState);
-    setLiveEvents([]); // the graph starts empty too
+    writeLiveEvents([]); // the graph starts empty too
     setReplay(null);
     setEnteredFleet(null);
     setSkillsOpen(false); // card 409: a fresh chat is a place
@@ -1536,6 +1656,7 @@ export function App() {
     },
     setNav: pickSegment,
     fleetsLocked,
+    mode: viewMode,
     openLevelPanel: () => setLevelPanelOpen(true),
     changeTab,
     // Card 241: the shell's nav.browser (sent when the agent reaches for the
@@ -1548,6 +1669,38 @@ export function App() {
   };
   useEffect(() => onShellCommand((c) => runShellCommand(c, shellDeps.current)), []);
 
+  /*
+   * Card 430: the learn and light switch, from the header or another window.
+   * One listener on the mode store runs the switch the moment the store
+   * changes, before the next socket batch can arrive: it lands on the chat if
+   * the surface on screen closes, and frees or rebuilds what the new mode needs
+   * (state/modeWork.ts). The callbacks come through a ref, the shellDeps idiom
+   * above, so the listener subscribes once.
+   */
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  const modeSwitchDeps = useRef<ModeSwitchDeps>(null as unknown as ModeSwitchDeps);
+  modeSwitchDeps.current = {
+    place: () => placeRef.current,
+    nav: () => navRef.current,
+    land: (landing) => {
+      if (landing.leaveFleet) leaveToLiveCore();
+      if (landing.nav !== null) setNav(landing.nav);
+      if (landing.tab !== null) setTab(landing.tab);
+      // The reader switched a mode, not a place: the address is replaced.
+      if (landing.route !== null) commitUrl(landing.route, "apply");
+    },
+    liveEvents: () => liveEventsNow.current,
+    setLive,
+    traceWanted: currentLiveTraceWanted,
+    lab: { reset: labResetLive, backToLive: labBackToLive },
+    fetchFleetRoster: () => fetchFleetRosterIn(currentViewMode()),
+  };
+  useEffect(() => subscribeViewMode(() => applyModeSwitch(currentViewMode(), modeSwitchDeps.current)), []);
+  // Card 430, criterion 9: learn fetches the chunks of its surfaces once the
+  // browser is idle after the first render; light fetches none.
+  useEffect(() => prefetchSurfaces(viewMode, window), [viewMode]);
+
   // Resume a stored session AS the live session: seed the UI from its JSONL
   // (chat, graph, trace and Lab show the full history), then reconnect the
   // socket with ?resume=<id> so the SERVER reloads the same history into the
@@ -1557,38 +1710,62 @@ export function App() {
   const resumeSession = async (id: string): Promise<void> => {
     if (live.running) return; // never hijack a running live session
     const ticket = navNonce.issue();
+    setOpening({ ticket, sessionId: id, title: sessionTitleOf(id) }); // card 431, as in openSession
     try {
+      // Card 430: the mode at the start decides the fold and whether the index
+      // is asked for (gates 1 and 6). In light the resume waits for the events
+      // alone and folds them without trace rows.
+      const mode = currentViewMode();
       // Same rule as openSession: the recorded exchanges are socket-only, so
       // the seeded history has none — the index restores them, and the new
       // socket's own llm_exchange frames simply append behind (fresh xids).
       const [res, wire] = await Promise.all([
         fetch(`/api/sessions/${encodeURIComponent(id)}/events`),
-        fetchLlmWireIndex(id),
+        indexWanted(mode) ? fetchLlmWireIndex(id) : Promise.resolve([]),
       ]);
-      if (!res.ok) return;
+      if (!res.ok) throw new Error(String(res.status));
       const events = (await res.json()) as RunEvent[];
       if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
-      const folded = foldArchive(events);
-      const seeded = recordResumeMarker(
-        wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
-        // history carries the full re-uploaded JSONL: the trace detail's
-        // WIRE face shows it line by line, exactly as it rides along. (It was
-        // "Raw/Compact" here; raw was renamed to wire and compact retired on
-        // 2026-08-05.)
-        { sessionId: id, ...summarizeHistory(events), history: events },
-      );
+      const folded = await foldResume(events, mode, {
+        isCurrent: () => navNonce.isCurrent(ticket),
+        onProgress: (done, total) => openProgress.report(ticket, done, total),
+      });
+      if (folded === null) return; // a later navigation won during the fold
+      let seeded = isOpen("trace", mode)
+        ? recordResumeMarker(
+            wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
+            // history carries the full re-uploaded JSONL: the trace detail's
+            // WIRE face shows it line by line, exactly as it rides along. (It was
+            // "Raw/Compact" here; raw was renamed to wire and compact retired on
+            // 2026-08-05.)
+            { sessionId: id, ...summarizeHistory(events), history: events },
+          )
+        : folded;
+      // A switch made while the fetch ran: the state follows the mode it lands in.
+      const now = currentViewMode();
+      if (now !== mode) {
+        seeded = isOpen("trace", now)
+          ? returnToLearn(seeded, events, currentLiveTraceWanted())
+          : enterLight(seeded);
+      }
       // The fold above is finite and keeps every row; what it becomes is not.
+      setOpening(null); // in the same update as the live view below
       setLive(seedResumedLive(seeded));
-      setLiveEvents(events);
+      writeLiveEvents(events);
       setReplay(null);
       setImagesOpen(false);
-      labBackToLive(events); // the Lab dam holds the history; new events queue behind it
+      // The Lab dam holds the history and new events queue behind it; in light
+      // it is not fed (card 430, gate 3), and the return to learn seeds it.
+      if (isOpen("lab", now)) labBackToLive(events);
       setResumeId(id); // reconnects the socket with ?resume=<id>
       setConnNonce((n) => n + 1); // force a fresh connection even for the same id
       setTab("chat");
       commitUrl({ kind: "live", tab: null }, "gesture"); // resumed = the live view again
     } catch {
-      // server unreachable: stay in the replay view, nothing lost
+      // Server unreachable or a bad status: stay in the replay view, nothing
+      // lost, and the sign over it goes.
+      if (!navNonce.isCurrent(ticket)) return;
+      setOpening(null);
     }
   };
 
@@ -1604,14 +1781,22 @@ export function App() {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok) return; // 404/400: nothing deleted, stay in the view
-      setReplay(null); // back to the live view
-      setRefreshToken((n) => n + 1); // the sidebar list drops the entry
-      // The address named a session that no longer exists: correct the bar
-      // without minting an entry — a deletion is a fallback, not a navigation.
-      commitUrl({ kind: "live", tab: null }, "apply");
+      sessionDeleted(id);
     } catch {
       // server unreachable: nothing deleted, stay in the replay view
     }
+  };
+  // What a finished delete leaves of the view. The archive bar above deletes
+  // the session on screen; since card 445 a row menu in the sidebar can delete
+  // any stored session, and only the one on screen moves the view.
+  const sessionDeleted = (id: string): void => {
+    if (deletionLeavesView(replay, id)) {
+      setReplay(null); // back to the live view
+      // The address named a session that no longer exists: correct the bar
+      // without minting an entry — a deletion is a fallback, not a navigation.
+      commitUrl({ kind: "live", tab: null }, "apply");
+    }
+    setRefreshToken((n) => n + 1); // the sidebar list drops the entry
   };
   const canDelete = canResume && replay !== null && replay.id !== resumeId;
 
@@ -1713,7 +1898,10 @@ export function App() {
       // A popstate carries the entry's own stamp; a hashchange does not, and
       // reading history.state is right for both.
       if (event?.type === "popstate") setDepth(navLanded(window.history.state));
-      const route = parseAppRoute(window.location.hash);
+      const asked = parseAppRoute(window.location.hash);
+      // Card 430: an address into a surface the mode closes opens the chat of
+      // the same place, and the bar learns that address (replaced, not pushed).
+      const route = routeInMode(asked, currentViewMode());
       const key = formatRoute(route);
       // One back-press between hash entries fires hashchange AND popstate;
       // comparing the DISPATCHED route string — set synchronously, before any
@@ -1727,8 +1915,12 @@ export function App() {
         return;
       }
       lastApplied.current = key;
+      if (route !== asked) writeRoute(route, "apply");
       void applyRouteRef.current(route);
     };
+    // Card 433: a pasted address that opens as it stands is never written
+    // again, so the boot entry is stamped here or back and forward miscount it.
+    stampBootEntry();
     follow();
     window.addEventListener("hashchange", follow);
     window.addEventListener("popstate", follow);
@@ -1756,15 +1948,61 @@ export function App() {
     if (tab !== "chat" && openRef.current) beaconRef.current(tab, shownRef.current);
   }, [tab]);
   const recordedView = replay === null ? live : replay.state;
+  // Card 435: the trace rows of the record on screen come from the one
+  // accessor: the live fold's own rows, or an archive's once its lazy build has
+  // run, and null before that. Nothing else in App reads a `trace` field
+  // (archiveTraceWiring.drift.test.ts), except the resume's fold that becomes
+  // the live state.
+  const archiveTrace = replay?.archiveTrace ?? null;
+  const recordedRows = useRecordedTrace(live, archiveTrace);
+  // The count on the trace tab: the rows once there are rows, else the count
+  // an archive knows before it builds them (review finding 2, 2026-09-25).
+  const archiveRowCount = useArchiveRowCount(archiveTrace);
+  const traceCount = recordedRows !== null ? recordedRows.length : archiveRowCount;
+  // Card 435, owner call 3 at its default: an archive asks for its llm-wire
+  // index after the chat has rendered, never together with the events. The
+  // answer feeds the chat's sidecar link and the merge in the lazy build. The
+  // exchange frames are socket-only, so a reopened file's fold has no
+  // exchange rows: the index brings them back, merged by ts and deduped by xid
+  // (wire/llmWire.ts). An empty answer (no sidecar, an older server) merges
+  // nothing and offers no link. When the archive leaves the screen, its build
+  // runs no further slice.
+  //
+  // Card 430, gate 6: only where the trace is open. In light the index is not
+  // asked for; a return to learn asks for it then, once per archive, and the
+  // lazy build waits for it as it always did.
+  const wantIndex = indexWanted(viewMode);
+  // The archive's number, not the archive: a ref holding the object kept a
+  // left archive's built rows alive until the next one arrived.
+  const indexAsked = useRef<number | null>(null);
+  useEffect(() => {
+    if (archiveTrace === null || !wantIndex || indexAsked.current === archiveTrace.id) return;
+    indexAsked.current = archiveTrace.id;
+    const session = archiveTrace.indexSession;
+    if (session !== null) {
+      void fetchLlmWireIndex(session).then((wire) => {
+        if (replayRef.current?.archiveTrace !== archiveTrace) return; // the archive left the screen
+        archiveTrace.supplyIndex(wire);
+        setLlmWire(wire.length === 0 ? null : { sessionId: session, count: wire.length });
+      });
+    }
+  }, [archiveTrace, wantIndex]);
+  // When the archive leaves the screen, its build runs no further slice.
+  useEffect(() => {
+    if (archiveTrace === null) return undefined;
+    return () => archiveTrace.stop();
+  }, [archiveTrace]);
   // An import's trace rows learn which line of the file they came from. This
   // runs against the ORIGINAL stream and BEFORE the translation swap below:
   // swapTracePayloads spreads the row and replaces only its payload, so a field
   // on the row survives it. The other order attaches to payloads that are no
   // longer in the rows, and every frame silently loses its line.
-  const sourcedView = useMemo(() => {
-    if (replay === null || replay.source === undefined || enteredFleet !== null) return recordedView;
-    return { ...recordedView, trace: attachSources(recordedView.trace, replay.events, replay.source.origin) };
-  }, [recordedView, replay, enteredFleet]);
+  const sourcedRows = useMemo(() => {
+    if (recordedRows === null || replay === null || replay.source === undefined || enteredFleet !== null) {
+      return recordedRows;
+    }
+    return attachSources(recordedRows, replay.events, replay.source.origin);
+  }, [recordedRows, replay, enteredFleet]);
 
   // The tabs' flat event source, third-source duality: an entered fleet's events
   // win over the own live/replay session. The fold-tabs (spectrum/graph/text)
@@ -1810,14 +2048,17 @@ export function App() {
   // and everything App itself steers by — running, pending gates, the live
   // socket's provider — keeps reading `live`. A fleet is excluded because its
   // events are not this view's session at all.
+  // Card 435: the swapped rows are `shownRows` below, so this fold builds no
+  // trace rows; nothing reads the view's trace.
   const view = useMemo(() => {
-    if (!showingTranslation || enteredFleet !== null) return sourcedView;
-    const folded = reduceAll(initialState, shownEvents);
-    return {
-      ...(replay === null ? folded : normalizeReplay(folded)),
-      trace: swapTracePayloads(sourcedView.trace, tabEvents, shownEvents),
-    };
-  }, [showingTranslation, enteredFleet, sourcedView, replay, shownEvents, tabEvents]);
+    if (!showingTranslation || enteredFleet !== null) return recordedView;
+    const folded = reduceAllUntraced(initialState, shownEvents);
+    return replay === null ? folded : normalizeReplay(folded);
+  }, [showingTranslation, enteredFleet, recordedView, replay, shownEvents]);
+  const shownRows = useMemo(() => {
+    if (sourcedRows === null || !showingTranslation || enteredFleet !== null) return sourcedRows;
+    return swapTracePayloads(sourcedRows, tabEvents, shownEvents);
+  }, [sourcedRows, showingTranslation, enteredFleet, tabEvents, shownEvents]);
   // The lab is the one tab that does not fold on render: it STEPS a stream out
   // of a dam this app seeded. So it is handed the translated stream as the
   // stream it steps, which restarts its scrub. An archive re-seeds itself off
@@ -1867,6 +2108,9 @@ export function App() {
   // uses the SAME seam instead of a second one. Scope the trace to the event's
   // OWN agent so the focused row is never hidden by the filter.
   const focusInTrace = (agentId: string, event: RunEvent): void => {
+    // Card 430: no trace to hand to in a mode that closes it, so no pin and no
+    // focus is left waiting for the next trace either.
+    if (!isOpen("trace", currentViewMode())) return;
     const evAgent =
       typeof (event as { agentId?: unknown }).agentId === "string"
         ? (event as { agentId: string }).agentId
@@ -1907,10 +2151,12 @@ export function App() {
     // streamed batch, and re-seeding per batch would throw the reader back to
     // event 0 while they step. A finished run and a flipped toggle are the two
     // moments the lab is actually looking at different text.
-    if (!viewingLive || enteredFleet !== null || seededRef.current === labSeed) return;
+    // Card 430, gate 3: nor where the Lab is closed; the return to learn seeds it.
+    if (!viewingLive || enteredFleet !== null || seededRef.current === labSeed || !isOpen("lab", viewMode))
+      return;
     seededRef.current = labSeed;
     labBackToLive(labStreamRef.current);
-  }, [labSeed, viewingLive, enteredFleet]);
+  }, [labSeed, viewingLive, enteredFleet, viewMode]);
   // The entered fleet's parked permission gates (block 4), answered over REST
   // to the node (POST /api/fleet/{node}/gate) instead of the session socket.
   // Best-effort like stop — if the node left, its own close denies the gate, so
@@ -1989,20 +2235,19 @@ export function App() {
   // drift was a trace warming inside a fleet, where `traceEntries` is
   // `traceFromEvents(shownEvents)` on the render path and the fleet's own trace
   // tab already mounts a second TraceView.
-  const traceReachable =
-    // Both segment arms of the chain collapse into this one term under
-    // `enteredFleet === null`: only the sessions segment reaches the tabs at
-    // all, so the hidden trace must not survive a move to fleets or stategraph.
-    // Card 409: the rail stays on sessions under the skills view, which covers
-    // the tabs, so the flag is part of the term.
-    nav === "sessions" &&
-    !skillsOpen &&
-    enteredFleet === null &&
-    // The chain's leveling gate reads `tab !== "chat" && …`; under `tab ===
-    // "trace"` that term is already true, and the compiler says so. A surface
-    // the reader's level keeps closed is not warmed either: it would build a
-    // view they cannot reach.
-    !(leveling.snapshot && !isSurfaceOpen(leveling.snapshot, "trace"));
+  // Both segment arms of the chain collapse into one term under `enteredFleet
+  // === null`: only the sessions segment reaches the tabs at all, so the hidden
+  // trace must not survive a move to fleets or stategraph. Card 409: the rail
+  // stays on sessions under the skills view, which covers the tabs. A surface
+  // the reader's level keeps closed is not warmed either. Card 430, gate 2: nor
+  // is a trace the mode closes. The term is traceReachableIn (state/modeWork.ts).
+  const traceReachable = traceReachableIn({
+    mode: viewMode,
+    nav,
+    skillsOpen,
+    enteredFleet,
+    leveling: leveling.snapshot,
+  });
   const traceShowing = traceReachable && tab === "trace";
 
   // What the warm-up is keyed on: the record LOADED, not the name it shares
@@ -2023,9 +2268,34 @@ export function App() {
   // press mounts the view on the spot.
   const traceWarm = useTraceWarm(traceRecord, traceReachable);
 
+  // Card 435, owner call 2 at its default: an archive's rows are built when
+  // they are first needed, which is the press on the tab, or the warm-up
+  // above once the browser has been idle after the chat rendered. The build
+  // runs in the slices of card 431's fold, so the chat never waits for it.
+  useEffect(() => {
+    if (archiveTrace !== null && (traceShowing || traceWarm)) archiveTrace.request();
+  }, [archiveTrace, traceShowing, traceWarm]);
+
+  // Card 435, criterion 7: the press on the trace tab of an archive whose rows
+  // are still being built shows card 431's sign, counting the rows built.
+  const traceBuilding: SessionOpening | null =
+    traceShowing && replay !== null && recordedRows === null
+      ? {
+          ticket: replay.archiveTrace.id,
+          sessionId: replay.id,
+          title: sessionTitleOf(replay.id),
+          purpose: "trace",
+        }
+      : null;
+  // The sign over the main column: an open's while it runs, else the build's.
+  // One slot for both, so when an open lands on the trace tab of an archive
+  // without rows, React keeps the element and its finished fade-in, and the
+  // sign does not fade in a second time (review finding 1, 2026-09-25).
+  const sign = opening ?? traceBuilding;
+
   const traceEntries = useMemo(
-    () => (enteredFleet !== null ? traceFromEvents(shownEvents) : view.trace),
-    [enteredFleet, shownEvents, view.trace],
+    () => (enteredFleet !== null ? traceFromEvents(shownEvents) : (shownRows ?? NO_ROWS)),
+    [enteredFleet, shownEvents, shownRows],
   );
 
   // Where an expanded llm_exchange row may fetch its recorded bodies from: the
@@ -2073,12 +2343,14 @@ export function App() {
 
   // The per-session workspace picker: the SERVER opens the native folder
   // dialog (a browser cannot hand out absolute paths, spectroscope runs locally),
-  // the picked path travels back over the socket. Only before the first run —
-  // afterwards the sandbox and every subagent are anchored (server-enforced,
-  // the button just mirrors it). This pin is THIS session only; a permanent
-  // default for every future session lives in the Settings page's own
-  // workspace field (a user-scope setting the server resolves per connection).
-  const canPickWorkspace = viewingLive && !live.running && live.turns.length === 0;
+  // the picked path travels back over the socket. Open under the same rule as
+  // the working folder row above the composer (card 428): until the first
+  // prompt starts a run, and not while a run streams. An error line alone
+  // leaves it open; the server refuses a change only once its agent exists.
+  // This pin is THIS session only; a permanent default for every future
+  // session lives in the Settings page's own workspace field (a user-scope
+  // setting the server resolves per connection).
+  const canPickWorkspace = viewingLive && !live.running && beforeFirstPrompt(live.turns);
   const pickWorkspace = async (): Promise<void> => {
     try {
       const res = await fetch("/api/pick-workspace", { method: "POST" });
@@ -2199,6 +2471,7 @@ export function App() {
           refreshToken={refreshToken}
           onSelectLive={returnToLive}
           onSelectSession={(id) => void openSession(id)}
+          onSessionDeleted={sessionDeleted}
           onSettings={openSettingsPage}
           liveRunning={live.running}
           resumeId={resumeId}
@@ -2322,161 +2595,129 @@ export function App() {
         {/* The stategraph arm sits FIRST and asks nothing about a fleet: it
             carries its own header, and a reader who left a fleet entered must
             not get that fleet's bar over a graph the fleet has no part in. */}
-        {wholeSurface ? null : nav === "fleets" && enteredFleet === null ? null : enteredFleet !== null ? (
-          <FleetBar
-            model={enteredFleetModel}
-            active={fleetTab}
-            onPick={(next) => {
-              /* Picking an agent pins the trace filter with it — "trace per
+        {/* Card 430: the fleet bar loads from a chunk of its own; until it has
+            arrived the row stays empty, and if it does not arrive the
+            boundary's notice stands in the row. */}
+        <ChunkBoundary resetKey={enteredFleet ?? ""}>
+          {wholeSurface ? null : nav === "fleets" && enteredFleet === null ? null : enteredFleet !== null ? (
+            <FleetBar
+              model={enteredFleetModel}
+              active={fleetTab}
+              onPick={(next) => {
+                /* Picking an agent pins the trace filter with it — "trace per
                  agent" is one click away and already scoped (owner ask). */
-              if (next.startsWith("agent:")) setTraceAgent(next.slice("agent:".length));
-              setFleetTab(next);
-            }}
-            onSpawn={enteredFleet.startsWith("scenario:") ? undefined : () => setSpawnDialogOpen(true)}
-          />
-        ) : (
-          <nav className="tab-nav" role="tablist" aria-label="View">
-            {/* Back and forward, because the desktop shell has no URL bar and
+                if (next.startsWith("agent:")) setTraceAgent(next.slice("agent:".length));
+                setFleetTab(next);
+              }}
+              onSpawn={enteredFleet.startsWith("scenario:") ? undefined : () => setSpawnDialogOpen(true)}
+            />
+          ) : !isOpen("tabRow", viewMode, tutorial) ? null : (
+            <nav className="tab-nav" role="tablist" aria-label="View">
+              {/* Back and forward, because the desktop shell has no URL bar and
                 therefore no browser chrome to supply them. Dark when there is
                 genuinely nothing there — the app stamps every entry it writes
                 and counts, since the DOM reports no forward availability. */}
-            <span className="tab-nav-history">
-              <button
-                type="button"
-                className="tab-nav-step"
-                disabled={!canGoBack(depth)}
-                onClick={() => window.history.back()}
-                title={t(lang, "nav.back")}
-                aria-label={t(lang, "nav.back")}
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  width="13"
-                  height="13"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+              <span className="tab-nav-history">
+                <button
+                  type="button"
+                  className="tab-nav-step"
+                  disabled={!canGoBack(depth)}
+                  onClick={() => window.history.back()}
+                  title={t(lang, "nav.back")}
+                  aria-label={t(lang, "nav.back")}
                 >
-                  <path d="M10 3.5 5.5 8l4.5 4.5" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="tab-nav-step"
-                disabled={!canGoForward(depth)}
-                onClick={() => window.history.forward()}
-                title={t(lang, "nav.forward")}
-                aria-label={t(lang, "nav.forward")}
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  width="13"
-                  height="13"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="13"
+                    height="13"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M10 3.5 5.5 8l4.5 4.5" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="tab-nav-step"
+                  disabled={!canGoForward(depth)}
+                  onClick={() => window.history.forward()}
+                  title={t(lang, "nav.forward")}
+                  aria-label={t(lang, "nav.forward")}
                 >
-                  <path d="M6 3.5 10.5 8 6 12.5" />
-                </svg>
-              </button>
-            </span>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "chat"}
-              className={tab === "chat" ? "tab tab--active" : "tab"}
-              onClick={() => changeTab("chat")}
-            >
-              chat
-              {/* The Lab draws no gate window, so while it is on screen this is
-                  the one sign that a run waits on an answer, and where. */}
-              {gateShown === "notice" && (
-                <span className="fleet-gate-chip mono pulse" title={t(lang, "gate.waitingInChat")}>
-                  {t(lang, "sp.gateOpen")}
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="13"
+                    height="13"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 3.5 10.5 8 6 12.5" />
+                  </svg>
+                </button>
+              </span>
+              {/* Card 430: the tabs come from the surface table, in route order,
+                and only the ones open in this mode. */}
+              {tabsShown(viewMode, tutorial).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  data-surface={id}
+                  aria-selected={tab === id}
+                  className={tab === id ? "tab tab--active" : "tab"}
+                  onClick={() => changeTab(id)}
+                >
+                  {id}
+                  {/* The Lab draws no gate window, so while it is on screen this is
+                    the one sign that a run waits on an answer, and where. */}
+                  {id === "chat" && gateShown === "notice" && (
+                    <span className="fleet-gate-chip mono pulse" title={t(lang, "gate.waitingInChat")}>
+                      {t(lang, "sp.gateOpen")}
+                    </span>
+                  )}
+                  {/* Card 435: a stored session knows its count once its index is
+                    in; until then the chip holds its place, hidden. */}
+                  {id === "trace" && (
+                    <TraceTabCount count={traceCount} least={archiveTrace?.leastRows ?? 0} />
+                  )}
+                </button>
+              ))}
+              {/* The way back to the record on every lens of this row: the copy
+              that sat next to the translate trigger is gone (2026-08-03), the
+              sheet's own copy needs the sheet open. A reader on the trace or
+              the text feed must not have to leave the tab they are on to see
+              what was actually recorded. Rendered only once something IS
+              translated, since an always-present span would eat the auto
+              margin the level pill sits on. Deleting this one leaves no toggle
+              on screen while the row is drawn, which is why the drift test
+              counts it. Card 430: in light with the tutorial off the row is not
+              drawn and this toggle goes with it; there the way back is the
+              sheet's own copy, in the translation sheet of the chat's menu. */}
+              {translation.byId.size > 0 && (
+                <span className="tab-nav__translate">
+                  <TranslateToggle viewKey={viewKey} />
                 </span>
               )}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "spectrum"}
-              className={tab === "spectrum" ? "tab tab--active" : "tab"}
-              onClick={() => changeTab("spectrum")}
-            >
-              spectrum
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "trace"}
-              className={tab === "trace" ? "tab tab--active" : "tab"}
-              onClick={() => changeTab("trace")}
-            >
-              trace
-              {view.trace.length > 0 && (
-                <span className="tab-count tabular" aria-label={`${view.trace.length} frames`}>
-                  {view.trace.length}
+              {leveling.snapshot && leveling.snapshot.mode !== "off" && (
+                <span className="tab-nav__level">
+                  <LevelPill
+                    snapshot={leveling.snapshot}
+                    flareSlot={levelUp ? levelUp.level - 1 : -1}
+                    onOpen={() => setLevelPanelOpen(true)}
+                  />
                 </span>
               )}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "graph"}
-              className={tab === "graph" ? "tab tab--active" : "tab"}
-              onClick={() => changeTab("graph")}
-            >
-              graph
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "text"}
-              className={tab === "text" ? "tab tab--active" : "tab"}
-              onClick={() => changeTab("text")}
-            >
-              text
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "lab"}
-              className={tab === "lab" ? "tab tab--active" : "tab"}
-              onClick={() => changeTab("lab")}
-            >
-              lab
-            </button>
-            {/* The way back to the record, on EVERY lens, and the only always
-              visible one: the copy that sat next to the translate trigger is
-              gone (2026-08-03), the sheet's own copy needs the sheet open. A
-              reader on the trace or the text feed must not have to leave the
-              tab they are on to see what was actually recorded. Rendered only
-              once something IS translated, since an always-present span would
-              eat the auto margin the level pill sits on. Deleting this one
-              leaves no toggle on screen, which is why the drift test counts
-              it. */}
-            {translation.byId.size > 0 && (
-              <span className="tab-nav__translate">
-                <TranslateToggle viewKey={viewKey} />
-              </span>
-            )}
-            {leveling.snapshot && leveling.snapshot.mode !== "off" && (
-              <span className="tab-nav__level">
-                <LevelPill
-                  snapshot={leveling.snapshot}
-                  flareSlot={levelUp ? levelUp.level - 1 : -1}
-                  onOpen={() => setLevelPanelOpen(true)}
-                />
-              </span>
-            )}
-          </nav>
-        )}
+            </nav>
+          )}
+        </ChunkBoundary>
 
         {/* Find-in-view. One mount for every tab: the box positions itself
             against this wrapper, and each view reports its own hits. */}
@@ -2498,54 +2739,60 @@ export function App() {
             manager, look, switch and install in one place. Since card 409 it
             answers its own flag and sits ahead of every segment arm: the rail
             keeps its list while the view is open. */}
-        {skillsOpen ? (
-          <SkillsPane />
-        ) : nav === "stategraph" ? (
-          <StateGraphPane
-            run={stateGraphRun}
-            onRun={setStateGraphRun}
-            view={stateGraphView}
-            onView={changeStateGraphView}
-          />
-        ) : nav === "fleets" && enteredFleet === null ? (
-          <FleetLobby
-            fleetCount={fleets.length}
-            hubPort={fleetHubPort}
-            onSelectScenario={openScenario}
-            onSpawn={() => setSpawnDialogOpen(true)}
-          />
-        ) : enteredFleet !== null ? (
-          fleetTab === "bus" ? (
-            <FleetBus
-              model={enteredFleetModel}
-              events={shownEvents}
-              contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
+        {/* Card 430: the lazy views of this chain load from chunks of their
+            own; while one is on its way the surface stays empty. Learn has
+            usually fetched them on idle already. A chunk that does not arrive
+            puts the boundary's notice in the surface; the key clears it when
+            the reader moves to another view. */}
+        <ChunkBoundary resetKey={`${skillsOpen}|${nav}|${enteredFleet ?? ""}|${fleetTab}|${tab}`}>
+          {skillsOpen ? (
+            <SkillsPane />
+          ) : nav === "stategraph" ? (
+            <StateGraphPane
+              run={stateGraphRun}
+              onRun={setStateGraphRun}
+              view={stateGraphView}
+              onView={changeStateGraphView}
+            />
+          ) : nav === "fleets" && enteredFleet === null ? (
+            <FleetLobby
+              fleetCount={fleets.length}
               hubPort={fleetHubPort}
-              onStop={stopFleetNode}
-              onOpenTrace={(agentId) => {
-                setTraceAgent(agentId);
-                setFleetTab("trace");
-              }}
-              onFocusAgent={(agentId) => {
-                setTraceAgent(agentId);
-                setFleetTab(`agent:${agentId}`);
-              }}
+              onSelectScenario={openScenario}
+              onSpawn={() => setSpawnDialogOpen(true)}
             />
-          ) : fleetTab === "spectrum" ? (
-            /* Owner pick after the A/B: the fleet keeps its spectrum reading —
+          ) : enteredFleet !== null ? (
+            fleetTab === "bus" ? (
+              <FleetBus
+                model={enteredFleetModel}
+                events={shownEvents}
+                contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
+                hubPort={fleetHubPort}
+                onStop={stopFleetNode}
+                onOpenTrace={(agentId) => {
+                  setTraceAgent(agentId);
+                  setFleetTab("trace");
+                }}
+                onFocusAgent={(agentId) => {
+                  setTraceAgent(agentId);
+                  setFleetTab(`agent:${agentId}`);
+                }}
+              />
+            ) : fleetTab === "spectrum" ? (
+              /* Owner pick after the A/B: the fleet keeps its spectrum reading —
                same component, same props as the (now unreachable) app-tab twin. */
-            <SpectrumView
-              events={shownEvents}
-              running={enteredFleetModel.roster.some((node) => node.connected)}
-              onOpenTrace={(agentId) => {
-                setTraceAgent(agentId);
-                setFleetTab("trace");
-              }}
-              onFocusEvent={focusInTrace}
-              fleet={enteredFleetModel}
-            />
-          ) : fleetTab === "trace" ? (
-            /* And the trace stays mandatory, agent-filterable via its own bar.
+              <SpectrumView
+                events={shownEvents}
+                running={enteredFleetModel.roster.some((node) => node.connected)}
+                onOpenTrace={(agentId) => {
+                  setTraceAgent(agentId);
+                  setFleetTab("trace");
+                }}
+                onFocusEvent={focusInTrace}
+                fleet={enteredFleetModel}
+              />
+            ) : fleetTab === "trace" ? (
+              /* And the trace stays mandatory, agent-filterable via its own bar.
 
                No `droppedRows`: these rows are `traceFromEvents(shownEvents)`,
                a flat map over the fleet's own frames with seq from 1, no window
@@ -2555,255 +2802,264 @@ export function App() {
                4004 fell out of the live window", with a tooltip that said in the
                same breath that the record begins at seq 1. Both numbers were
                real; neither belonged to the pane they were printed on. */
-            <TraceView
-              entries={traceEntries}
-              agentFilter={traceAgent}
-              onAgentFilter={setTraceAgent}
-              focusEvent={focusEvent}
-              onFocusHandled={() => setFocusEvent(null)}
-              langfuseUrl={langfuseUrl}
-              otlpFailure={otlpFailure}
-              sourceLines={null}
-              origin={traceOriginOf(replay?.kind, enteredFleet)}
-            />
-          ) : (
-            <AgentFeed
-              agentId={fleetTab.slice("agent:".length)}
-              events={shownEvents}
-              card={enteredFleetModel.roster.find((node) => node.id === fleetTab.slice("agent:".length))}
-            />
-          )
-        ) : tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
-          /* A locked surface shows a teaser, never its content. The tab itself
+              <TraceView
+                entries={traceEntries}
+                agentFilter={traceAgent}
+                onAgentFilter={setTraceAgent}
+                focusEvent={focusEvent}
+                onFocusHandled={() => setFocusEvent(null)}
+                langfuseUrl={langfuseUrl}
+                otlpFailure={otlpFailure}
+                sourceLines={null}
+                origin={traceOriginOf(replay?.kind, enteredFleet)}
+              />
+            ) : (
+              <AgentFeed
+                agentId={fleetTab.slice("agent:".length)}
+                events={shownEvents}
+                card={enteredFleetModel.roster.find((node) => node.id === fleetTab.slice("agent:".length))}
+              />
+            )
+          ) : tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
+            /* A locked surface shows a teaser, never its content. The tab itself
              stays visible and clickable: a feature nobody can see is a feature
              nobody adopts. Chat is excluded by name because it opens at level 0,
              and the gate window below sits OUTSIDE this chain by construction, so
              no lock can ever cover a permission request. */
-          <LockedSurface
-            snapshot={leveling.snapshot}
-            surface={tab}
-            onOpenEverything={() => void leveling.setMode("checklist")}
-          />
-        ) : tab === "chat" ? (
-          enteredFleet !== null ? (
-            /* A fleet has no chat — show its home (getting-started + spawn), not
-               the stale session chat, so entering a fleet switches the pane. */
-            <FleetHome
-              contextId={enteredFleet}
-              nodeCount={enteredFleetModel.roster.length}
-              hubPort={fleetHubPort}
-              onSpawn={() => setSpawnDialogOpen(true)}
+            <LockedSurface
+              snapshot={leveling.snapshot}
+              surface={tab}
+              onOpenEverything={() => void leveling.setMode("checklist")}
             />
-          ) : (
-            /* Chat + gallery share the tab area; the graph tab is untouched.
+          ) : tab === "chat" ? (
+            enteredFleet !== null ? (
+              /* A fleet has no chat — show its home (getting-started + spawn), not
+               the stale session chat, so entering a fleet switches the pane. */
+              <FleetHome
+                contextId={enteredFleet}
+                nodeCount={enteredFleetModel.roster.length}
+                hubPort={fleetHubPort}
+                onSpawn={() => setSpawnDialogOpen(true)}
+              />
+            ) : (
+              /* Chat + gallery share the tab area; the graph tab is untouched.
              The right panel (agents + system context) docks on the far right. */
-            <div
-              className="chat-row"
-              data-reveal
-              ref={chatRowRef}
-              style={
-                {
-                  "--right-panel-w": `${layout.rightPanelW}px`,
-                  // Card 361: the render-time half of the reserve. tokens.css
-                  // carries the shipped 360 so the row is right before
-                  // /api/settings answers; this overrides it with the setting.
-                  "--chat-reserve": `${dockBounds.reserve}px`,
-                } as CSSProperties
-              }
-            >
-              {(() => {
-                // chat-v2 (PROTOTYPE): the two readings take the SAME props.
-                // v1 is the default and is passed nothing extra, so it renders
-                // exactly what it always rendered.
-                const chatProps = {
-                  state: view,
-                  events: tabEvents,
-                  sessionLabel: shownSessionId,
-                  storePath: shownStorePath,
-                  viewKey,
-                  liveView: viewingLive,
-                  onSend: send,
-                  onReturnToLive: returnToLive,
-                  onResume: canResume ? () => void resumeSession(replay!.id) : undefined,
-                  onDelete: canDelete ? () => void deleteSession(replay!.id) : undefined,
-                  exportId: canResume ? replay!.id : undefined,
-                  // The sidecar link, only when the index answered non-empty
-                  // for THIS session — an honest download offers no empty file.
-                  llmWireId:
-                    canResume && llmWire !== null && llmWire.sessionId === replay!.id && llmWire.count > 0
-                      ? replay!.id
-                      : undefined,
-                  sendClient,
-                  onPickFolder: pickWorkspace,
-                  queued: queue,
-                  onUnqueue: unqueue,
-                  steers: steeringView.understood && queue.length === 0,
-                  steerPending: steeringView.pending,
-                  onAbort: abort,
-                  stopRequested,
-                  // Card 224: the plus menu's Manage/Browse rows — the same
-                  // open-at-a-section move the onboarding sheet makes, history
-                  // manners included. Card 228: the skills rows point at the
-                  // rail's Skills view now — skills are a PLACE, and the
-                  // settings page no longer carries the section. Card 409:
-                  // the same opener as the rail's Skills row.
-                  onOpenSettingsSection: (section: SettingsSection) => {
-                    if (section === "skills" || section === "skills-catalogue") {
-                      openSkills();
-                      return;
-                    }
-                    setSettingsOpen(true);
-                    setSettingsSection(section);
-                    if (commitUrl({ kind: "settings", section }, "gesture") === "push") {
-                      settingsPushed.current = true;
-                    }
-                  },
-                };
-                return chatView === "v2" ? (
-                  <ChatV2
-                    {...chatProps}
-                    work={work}
-                    onOpenWork={(id) => {
-                      setWorkHighlight(id);
-                      openRightPanel();
-                      openDockPanel("work");
-                    }}
-                  />
-                ) : (
-                  <Chat {...chatProps} />
-                );
-              })()}
-              {imagesOpen && (
-                <>
-                  <Resizer
-                    collapsed={false}
-                    chevron="right"
-                    label={t(lang, "img.title")}
-                    onResize={resizeImages}
-                    onToggle={() => setImagesOpen(false)}
-                  />
-                  <ImagePanel
-                    images={view.images}
-                    provider={imageProvider}
-                    keys={imageKeys}
-                    width={layout.imagesW}
-                    onProviderChange={changeImageProvider}
-                    onClose={() => setImagesOpen(false)}
-                    sessionId={viewingLive ? live.workspace?.sessionId : undefined}
-                  />
-                </>
-              )}
-              {layout.rightPanelOpen && (
-                <>
-                  <Resizer
-                    collapsed={false}
-                    chevron="right"
-                    label="Panel"
-                    onResize={resizeRightPanel}
-                    onToggle={toggleRightPanel}
-                  />
-                  <RightPanel
-                    sessionId={shownSessionId}
-                    covered={dockCovered}
-                    agents={view.agents}
-                    analyze={
-                      /* Card 294: the imported-run surfaces offer the opt-in
+              <div
+                className="chat-row"
+                data-reveal
+                ref={chatRowRef}
+                style={
+                  {
+                    "--right-panel-w": `${layout.rightPanelW}px`,
+                    // Card 361: the render-time half of the reserve. tokens.css
+                    // carries the shipped 360 so the row is right before
+                    // /api/settings answers; this overrides it with the setting.
+                    "--chat-reserve": `${dockBounds.reserve}px`,
+                  } as CSSProperties
+                }
+              >
+                {(() => {
+                  // chat-v2 (PROTOTYPE): the two readings take the SAME props.
+                  // v1 is the default and is passed nothing extra, so it renders
+                  // exactly what it always rendered.
+                  const chatProps = {
+                    state: view,
+                    events: tabEvents,
+                    sessionLabel: shownSessionId,
+                    storePath: shownStorePath,
+                    viewKey,
+                    liveView: viewingLive,
+                    onSend: send,
+                    onReturnToLive: returnToLive,
+                    onResume: canResume ? () => void resumeSession(replay!.id) : undefined,
+                    onDelete: canDelete ? () => void deleteSession(replay!.id) : undefined,
+                    exportId: canResume ? replay!.id : undefined,
+                    // The sidecar link, only when the index answered non-empty
+                    // for THIS session — an honest download offers no empty file.
+                    // Card 430, owner call 8 at its default: light offers no sidecar link.
+                    llmWireId:
+                      wantIndex &&
+                      canResume &&
+                      llmWire !== null &&
+                      llmWire.sessionId === replay!.id &&
+                      llmWire.count > 0
+                        ? replay!.id
+                        : undefined,
+                    sendClient,
+                    onPickFolder: pickWorkspace,
+                    queued: queue,
+                    onUnqueue: unqueue,
+                    steers: steeringView.understood && queue.length === 0,
+                    steerPending: steeringView.pending,
+                    onAbort: abort,
+                    stopRequested,
+                    // Card 224: the plus menu's Manage/Browse rows — the same
+                    // open-at-a-section move the onboarding sheet makes, history
+                    // manners included. Card 228: the skills rows point at the
+                    // rail's Skills view now — skills are a PLACE, and the
+                    // settings page no longer carries the section. Card 409:
+                    // the same opener as the rail's Skills row.
+                    onOpenSettingsSection: (section: SettingsSection) => {
+                      if (section === "skills" || section === "skills-catalogue") {
+                        openSkills();
+                        return;
+                      }
+                      setSettingsOpen(true);
+                      setSettingsSection(section);
+                      if (commitUrl({ kind: "settings", section }, "gesture") === "push") {
+                        settingsPushed.current = true;
+                      }
+                    },
+                  };
+                  return chatView === "v2" ? (
+                    <ChatV2
+                      {...chatProps}
+                      work={work}
+                      onOpenWork={(id) => {
+                        setWorkHighlight(id);
+                        openRightPanel();
+                        openDockPanel("work");
+                      }}
+                    />
+                  ) : (
+                    <Chat {...chatProps} />
+                  );
+                })()}
+                {imagesOpen && (
+                  <>
+                    <Resizer
+                      collapsed={false}
+                      chevron="right"
+                      label={t(lang, "img.title")}
+                      onResize={resizeImages}
+                      onToggle={() => setImagesOpen(false)}
+                    />
+                    <ImagePanel
+                      images={view.images}
+                      provider={imageProvider}
+                      keys={imageKeys}
+                      width={layout.imagesW}
+                      onProviderChange={changeImageProvider}
+                      onClose={() => setImagesOpen(false)}
+                      sessionId={viewingLive ? live.workspace?.sessionId : undefined}
+                    />
+                  </>
+                )}
+                {layout.rightPanelOpen && (
+                  <>
+                    <Resizer
+                      collapsed={false}
+                      chevron="right"
+                      label="Panel"
+                      onResize={resizeRightPanel}
+                      onToggle={toggleRightPanel}
+                    />
+                    <RightPanel
+                      sessionId={shownSessionId}
+                      covered={dockCovered}
+                      agents={view.agents}
+                      analyze={
+                        /* Card 294: the imported-run surfaces offer the opt-in
                          analysis; live and scenario views offer nothing. */
-                      replay !== null && replay.id.startsWith("import:") ? (
-                        <AnalyzeRun viewKey={replay.id} events={shownEvents} />
-                      ) : undefined
-                    }
-                    plan={view.plan}
-                    onClose={toggleRightPanel}
-                    provider={curProvider}
-                    model={curModel}
-                    thinking={thinking}
-                    workspace={view.workspace}
-                    recordedCwd={shownRecordedCwd}
-                    onPickFolder={viewingLive ? pickWorkspace : undefined}
-                    canPickFolder={canPickWorkspace}
-                    fsRefreshSignal={viewingLive ? fsTick : undefined}
-                    work={chatView === "v2" ? work : undefined}
-                    sidecars={sidecars}
-                    onOpenAgent={openSidecarAgent}
-                    workHighlight={workHighlight}
-                    onFocusEvent={focusInTrace}
-                    liveView={viewingLive}
-                  />
-                </>
-              )}
-            </div>
-          )
-        ) : tab === "spectrum" ? (
-          <SpectrumView
-            events={shownEvents}
-            running={
-              enteredFleet !== null
-                ? enteredFleetModel.roster.some((node) => node.connected)
-                : viewingLive && live.running
-            }
-            onOpenTrace={(agentId) => {
-              setTraceAgent(agentId);
-              changeTab("trace");
-            }}
-            /* The seam is one function now (focusInTrace, above): an
+                        replay !== null && replay.id.startsWith("import:") ? (
+                          <AnalyzeRun viewKey={replay.id} events={shownEvents} />
+                        ) : undefined
+                      }
+                      plan={view.plan}
+                      onClose={toggleRightPanel}
+                      provider={curProvider}
+                      model={curModel}
+                      thinking={thinking}
+                      workspace={view.workspace}
+                      recordedCwd={shownRecordedCwd}
+                      storedCwd={shownStoredCwd}
+                      onPickFolder={viewingLive ? pickWorkspace : undefined}
+                      canPickFolder={canPickWorkspace}
+                      fsRefreshSignal={viewingLive ? fsTick : undefined}
+                      work={chatView === "v2" ? work : undefined}
+                      sidecars={sidecars}
+                      onOpenAgent={openSidecarAgent}
+                      workHighlight={workHighlight}
+                      onFocusEvent={focusInTrace}
+                      liveView={viewingLive}
+                    />
+                  </>
+                )}
+              </div>
+            )
+          ) : tab === "spectrum" ? (
+            <SpectrumView
+              events={shownEvents}
+              running={
+                enteredFleet !== null
+                  ? enteredFleetModel.roster.some((node) => node.connected)
+                  : viewingLive && live.running
+              }
+              onOpenTrace={(agentId) => {
+                setTraceAgent(agentId);
+                changeTab("trace");
+              }}
+              /* The seam is one function now (focusInTrace, above): an
                agent_spawn tick sits on the parent lane but carries the child's
                agentId, and events without an agentId stay visible under any
                filter, so the lane is a safe fallback there. */
-            onFocusEvent={focusInTrace}
-            /* In a fleet the lanes are hub nodes, so the view can name them:
+              onFocusEvent={focusInTrace}
+              /* In a fleet the lanes are hub nodes, so the view can name them:
                the roster carries each node's capabilities and its epoch. A
                plain session has no roster and passes nothing. */
-            fleet={enteredFleet !== null ? enteredFleetModel : undefined}
-          />
-        ) : tab === "graph" ? (
-          /* Variant B: an entered fleet never reaches this chain — the ESB
+              fleet={enteredFleet !== null ? enteredFleetModel : undefined}
+            />
+          ) : tab === "graph" ? (
+            /* Variant B: an entered fleet never reaches this chain — the ESB
              reading lives on the fleet bar's own "bus" tab above. */
-          <GraphView events={shownEvents} isReplay={!viewingLive} />
-        ) : tab === "text" ? (
-          <TextView
-            events={shownEvents}
-            label={shownSessionId}
-            // The tab is handed the SHOWN stream and holds no second copy, so
-            // its export sheet may read this view's translation — the
-            // provenance line, the language tag on the jsonl — only while that
-            // stream IS the translation. See textExportClaim.ts.
-            viewKey={textExportViewKey({ viewKey, showingTranslation })}
-            // Explain spends the server's BASE-config provider (that is what the
-            // endpoint builds, not a live-switched session provider) — offer it
-            // unless that provider explicitly reports needs-key; unknown maps
-            // stay open and the endpoint's readable 503 covers the rest.
-            explainReady={!serverCfg || !providerStatus || providerStatus[serverCfg.provider] !== "needs-key"}
-          />
-        ) : tab === "lab" ? (
-          enteredFleet !== null ? (
-            /* The fleet machine room (card 59): the entered fleet as ONE
+            <GraphView events={shownEvents} isReplay={!viewingLive} />
+          ) : tab === "text" ? (
+            <TextView
+              events={shownEvents}
+              label={shownSessionId}
+              // The tab is handed the SHOWN stream and holds no second copy, so
+              // its export sheet may read this view's translation — the
+              // provenance line, the language tag on the jsonl — only while that
+              // stream IS the translation. See textExportClaim.ts.
+              viewKey={textExportViewKey({ viewKey, showingTranslation })}
+              // Explain spends the server's BASE-config provider (that is what the
+              // endpoint builds, not a live-switched session provider) — offer it
+              // unless that provider explicitly reports needs-key; unknown maps
+              // stay open and the endpoint's readable 503 covers the rest.
+              explainReady={
+                !serverCfg || !providerStatus || providerStatus[serverCfg.provider] !== "needs-key"
+              }
+            />
+          ) : tab === "lab" ? (
+            enteredFleet !== null ? (
+              /* The fleet machine room (card 59): the entered fleet as ONE
                composed agent-system diagram — every node its own loop on the
                shared OS/LLM rails, with its own scrub/live transport. */
-            <FleetLab
-              model={enteredFleetModel}
-              running={enteredFleetModel.roster.some((node) => node.connected)}
-            />
-          ) : (
-            <LabView
-              replay={labReplay}
-              liveEvents={viewingLive ? shownEvents : liveEvents}
-              running={live.running}
-              provider={viewingLive ? curProvider : (view.provider ?? undefined)}
-              model={viewingLive ? curModel : undefined}
-              onSend={send}
-              onReturnToLive={returnToLive}
-              onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
-              onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
-              sendClient={sendClient}
-              /* Card 301: the dock's handover and file rows are clickable, and
+              <FleetLab
+                model={enteredFleetModel}
+                running={enteredFleetModel.roster.some((node) => node.connected)}
+              />
+            ) : (
+              <LabView
+                replay={labReplay}
+                liveEvents={viewingLive ? shownEvents : liveEvents}
+                running={live.running}
+                provider={viewingLive ? curProvider : (view.provider ?? undefined)}
+                model={viewingLive ? curModel : undefined}
+                onSend={send}
+                onReturnToLive={returnToLive}
+                onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
+                onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
+                sendClient={sendClient}
+                /* Card 301: the dock's handover and file rows are clickable, and
                  they use the SAME seam the work panel and the fleet use — a
                  fourth way to reach a trace row would be a fourth thing to
                  keep in step. */
-              onFocusEvent={focusInTrace}
-            />
-          )
-        ) : null}
+                onFocusEvent={focusInTrace}
+              />
+            )
+          ) : null}
+        </ChunkBoundary>
         {/* The trace is MOUNTED and hidden rather than unmounted (card 175), so
             a press finds a page that already exists instead of building 9,319
             rows again. Hiding costs the memory of that page; unmounting cost the
@@ -2832,42 +3088,52 @@ export function App() {
             that, a hidden mounted trace re-rendered all 9,320 rows on every
             frame batch of a live run, which would have broken the owner's own
             condition that the chat be provably no slower. */}
-        {(traceShowing || traceWarm) && (
+        {/* Card 435: an archive's rows exist once its lazy build has run. Until
+            then nothing mounts here, and the sign below stands over the tab: a
+            view mounted without its rows would clear a deep link's focus before
+            the event it looks for is there. */}
+        {/* Its own boundary: a trace warming behind the chat must never take
+            the chat's surface down while its chunk arrives. It sits inside the
+            div, so a warm-up whose chunk fails keeps its notice hidden until
+            the reader presses trace. */}
+        {(traceShowing || traceWarm) && shownRows !== null && (
           <div style={{ display: traceShowing ? "contents" : "none" }}>
-            <TraceView
-              entries={traceEntries}
-              /* Whether this is the surface the reader is looking at. Chat,
+            <ChunkBoundary>
+              <TraceView
+                entries={traceEntries}
+                /* Whether this is the surface the reader is looking at. Chat,
                text and trace share ONE search store (state/search.ts), and a
                view mounted behind another tab that reported its own hit count
                would overwrite the count of the view actually being searched —
                this one's effect runs after the chat's, so the chat lost. */
-              showing={traceShowing}
-              /* The count belongs to the record on screen, not to this browser's
+                showing={traceShowing}
+                /* The count belongs to the record on screen, not to this browser's
                socket: a stored session is folded whole and has dropped nothing,
                and reading `live` here made a complete archive announce the live
                window's losses as its own. Not `view` either — under a
                translation that is a fresh fold whose count is 0 while the rows
                beside it are still the windowed ones. */
-              droppedRows={recordedView.traceDropped}
-              /* Card 246: only the LIVE record can be "off" — an archive was
+                droppedRows={recordedView.traceDropped}
+                /* Card 246: only the LIVE record can be "off" — an archive was
                folded whole and owes the reader its full trace regardless. */
-              liveTraceOff={replay === null && !liveTraceWanted}
-              agentFilter={traceAgent}
-              onAgentFilter={setTraceAgent}
-              focusEvent={focusEvent}
-              onFocusHandled={() => setFocusEvent(null)}
-              langfuseUrl={langfuseUrl}
-              otlpFailure={otlpFailure}
-              storePath={shownStorePath}
-              sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
-              /* Read off the SAME two facts the line above is, so the pair
+                liveTraceOff={replay === null && !liveTraceWanted}
+                agentFilter={traceAgent}
+                onAgentFilter={setTraceAgent}
+                focusEvent={focusEvent}
+                onFocusHandled={() => setFocusEvent(null)}
+                langfuseUrl={langfuseUrl}
+                otlpFailure={otlpFailure}
+                storePath={shownStorePath}
+                sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
+                /* Read off the SAME two facts the line above is, so the pair
                cannot come apart: an entered fleet's rows are not the replay's
                rows, so its file is taken away and its origin with it. That
                pairing is what lets the source face promise a file whenever it
                is on offer at all. */
-              origin={traceOriginOf(replay?.kind, enteredFleet)}
-              llmWireSessionId={llmWireSessionId}
-            />
+                origin={traceOriginOf(replay?.kind, enteredFleet)}
+                llmWireSessionId={llmWireSessionId}
+              />
+            </ChunkBoundary>
           </div>
         )}
         {leveling.snapshot && !leveling.snapshot.introSeen && (
@@ -2952,6 +3218,13 @@ export function App() {
             slot as the gate, its own component — Escape must not answer. */}
         {askVisible && <AskBar pending={live.pendingAsks} onAnswer={answerQuestion} />}
         <UsageFooter state={view} connection={conn.status} />
+        {sign !== null && (
+          <OpeningSurface
+            lang={lang}
+            opening={sign}
+            progress={opening !== null ? openProgress : traceProgress}
+          />
+        )}
       </div>
 
       <SettingsPanel
@@ -2978,20 +3251,15 @@ export function App() {
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
       {shownBar !== null && (
-        <div className="import-note-bar" role="status">
-          <span>
-            {t(lang, "imp.bar", {
-              file: shownBar.file,
-              lines: shownBar.stats.lines,
-              frames: shownBar.stats.frames,
-              zero: shownBar.stats.zeroLines,
-            })}
-            {shownBar.note !== null && ` ${shownBar.note}`}
-          </span>
-          <button type="button" className="ghost" onClick={() => setImportBar(null)}>
-            {t(lang, "common.close")}
-          </button>
-        </div>
+        // Keyed by session (kind and file name): an import under another name
+        // opens with its details closed; the same name opened again while the
+        // bar shows keeps them as the reader left them.
+        <ImportNoteBar
+          key={shownBar.sessionId}
+          lang={lang}
+          bar={shownBar}
+          onClose={() => setImportBar(null)}
+        />
       )}
       {localNoticeOpen && (
         <LocalModelNotice model={live.providerInfo?.model} onDismiss={dismissLocalNotice} />
@@ -3053,11 +3321,13 @@ export function App() {
           onClick={() => setSpawnDialogOpen(false)}
         >
           <div className="fleet-spawn-modal" onClick={(e) => e.stopPropagation()}>
-            <FleetSpawnForm
-              contextId={enteredFleet ?? ""}
-              hubPort={fleetHubPort}
-              onClose={() => setSpawnDialogOpen(false)}
-            />
+            <ChunkBoundary>
+              <FleetSpawnForm
+                contextId={enteredFleet ?? ""}
+                hubPort={fleetHubPort}
+                onClose={() => setSpawnDialogOpen(false)}
+              />
+            </ChunkBoundary>
           </div>
         </div>
       )}

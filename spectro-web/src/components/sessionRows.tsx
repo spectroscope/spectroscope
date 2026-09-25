@@ -129,6 +129,20 @@ export function countLabel(lang: Lang, kind: CountKind, n: number, display: stri
 }
 
 /**
+ * Card 445: the words a row shows. The session's title when it has one (the
+ * server already chose between the operator's and the model's), else its first
+ * prompt, else the words for an empty session.
+ *
+ * @param meta the row's session
+ * @param lang the chrome language
+ */
+export function sessionDisplayTitle(meta: SessionMeta, lang: Lang): string {
+  const title = (meta.title ?? "").trim();
+  if (title !== "") return title;
+  return meta.firstPrompt !== "" ? meta.firstPrompt : t(lang, "nav.emptySession");
+}
+
+/**
  * The row's hover text: everything the glyph encodes, spelled out, plus the
  * facts that have no room in a rail this narrow.
  *
@@ -144,10 +158,11 @@ export function countLabel(lang: Lang, kind: CountKind, n: number, display: stri
  */
 export function sessionTitleLines(meta: SessionMeta, lang: Lang, now: number = Date.now()): string {
   const signal = sessionSignal(meta);
-  const lines: string[] = [
-    meta.firstPrompt !== "" ? meta.firstPrompt : t(lang, "nav.emptySession"),
-    new Date(meta.startedAt).toLocaleString(lang === "de" ? "de-DE" : "en-US"),
-  ];
+  const shown = sessionDisplayTitle(meta, lang);
+  // Card 445: a titled row keeps the words the operator typed one hover away.
+  const lines: string[] =
+    shown !== meta.firstPrompt && meta.firstPrompt !== "" ? [shown, meta.firstPrompt] : [shown];
+  lines.push(new Date(meta.startedAt).toLocaleString(lang === "de" ? "de-DE" : "en-US"));
 
   const model = sessionModelLabel(meta);
   if (model !== "") {

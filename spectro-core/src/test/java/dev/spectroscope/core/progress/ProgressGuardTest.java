@@ -440,15 +440,15 @@ class ProgressGuardTest {
      * inheriting it. This test replaces {@code nobodyToAskLeavesTheRunGoingAndNeverAsksTwice},
      * whose claim was wrong rather than merely unpinned: an unanswered strike
      * used to stand the detector down, so in permission mode {@code auto} or
-     * {@code readonly} — where {@code ParkingAsker} returns null before it parks
-     * — the owner's "warn AND pause" degraded to "warn ONCE, for the whole run",
-     * and the 31-copy loop this card was cut from would have produced a single
-     * line and then silence.
+     * {@code readonly}, where {@code ParkingAsker} answered null before it
+     * parked until card 427, the owner's "warn AND pause" degraded to "warn
+     * ONCE, for the whole run", and the 31-copy loop this card was cut from
+     * would have produced a single line and then silence.
      *
      * <p>The stand-down is what a PERSON's "carry on" buys, because a person
      * looked. Nobody at all buys a re-arm: the net stays up and the loop has to
      * earn a full N again before it speaks. The cost is stated rather than
-     * hidden — an unattended run that really does repeat itself writes a line
+     * hidden: an unattended run that really does repeat itself writes a line
      * every N events instead of one, which is a transcript that shows the loop
      * continuing instead of a transcript that mentions it once.</p>
      */

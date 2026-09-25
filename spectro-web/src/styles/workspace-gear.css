@@ -60,6 +60,22 @@
   color: var(--text-faint);
 }
 
+/* Card 416: the version rtk printed, in the rtk section head. It has the look
+   of the prototype tag (.wsg-proto) and a class of its own: at 390px the tag
+   shrank with the row and broke at its spaces. This chip neither shrinks nor
+   wraps, so the title beside it takes the second line when one is needed. */
+.wsg-version {
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: var(--sp-2);
+  padding: 0 0.3rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+}
+
 .wsg-scope-tag {
   font-family: var(--font-mono);
   font-size: var(--fs-11);

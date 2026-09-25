@@ -2,7 +2,7 @@
 // budget question — forty characters of a tool call, and which forty.
 
 import { describe, expect, it } from "vitest";
-import { toolTeaser } from "./toolTeaser";
+import { askAnswerTeaser, toolTeaser } from "./toolTeaser";
 
 /** The wording is the caller's (the card translates, the export carries its own
  *  labels); the tests read English. */
@@ -98,5 +98,96 @@ describe("toolTeaser", () => {
     expect(toolTeaser("Read", { path: "x", offset: 10, all: false }, lines)).toBe(
       "path: x · offset: 10 · all: false",
     );
+  });
+});
+
+// Card 427, loop wave H3b: a folded ask names what the person answered. Before
+// this, an answered question read `[{"question":"Which store?",…` beside
+// "waited 6.6 s for you", and the answer was one click away in the open card.
+describe("askAnswerTeaser", () => {
+  const STORE = {
+    questions: [{ question: "Which store?", options: [{ label: "Postgres" }, { label: "SQLite" }] }],
+  };
+  /** The prose our own tool returns, character for character (AskUserQuestionTool.reply). */
+  const answered = (question: string, answer: string): string =>
+    `The user answered: "${question}"="${answer}". Continue with that answer.`;
+
+  it("names the option chosen, off the result our own tool writes", () => {
+    expect(askAnswerTeaser("ask_user_question", STORE, answered("Which store?", "SQLite"))).toEqual({
+      text: "SQLite",
+      full: "SQLite",
+    });
+  });
+
+  it("names a reply in the person's own words as they wrote it", () => {
+    expect(
+      askAnswerTeaser("ask_user_question", STORE, answered("Which store?", "Neither, use DuckDB")),
+    ).toEqual({
+      text: "Neither, use DuckDB",
+      full: "Neither, use DuckDB",
+    });
+  });
+
+  it("joins the answers of an imported batch in the order the questions were asked", () => {
+    const a = "Which store?";
+    const b = "Ship it now?";
+    const input = {
+      questions: [
+        { question: a, options: [{ label: "Postgres" }, { label: "SQLite" }] },
+        { question: b, options: [{ label: "Yes" }, { label: "Later" }] },
+      ],
+    };
+    const out = `Your questions have been answered: "${b}"="Later", "${a}"="Postgres". You can now continue with these answers in mind.`;
+    expect(askAnswerTeaser("AskUserQuestion", input, out)).toEqual({
+      text: "Postgres · Later",
+      full: "Postgres · Later",
+    });
+  });
+
+  it("keeps an answer to one line and inside the row's budget", () => {
+    const long = `${"word ".repeat(40)}end`;
+    const got = askAnswerTeaser(
+      "ask_user_question",
+      STORE,
+      answered("Which store?", `first\nsecond ${long}`),
+    );
+    expect(got).not.toBeNull();
+    expect(got?.text).not.toContain("\n");
+    expect(got?.text.startsWith("first second word")).toBe(true);
+    expect(got?.text.length).toBeLessThanOrEqual(140);
+    expect(got?.text.endsWith("…")).toBe(true);
+  });
+
+  it("keeps the whole answer on one line beside the clipped one, for the row's tooltip", () => {
+    const long = `${"word ".repeat(40)}end`;
+    const got = askAnswerTeaser(
+      "ask_user_question",
+      STORE,
+      answered("Which store?", `first\nsecond ${long}`),
+    );
+    expect(got?.full).toBe(`first second ${long}`);
+    expect(got?.full.length).toBeGreaterThan(140);
+    expect(got?.text).toBe(`${got?.full.slice(0, 139)}…`);
+  });
+
+  it("has nothing to name while the question is open, released or dismissed", () => {
+    expect(askAnswerTeaser("ask_user_question", STORE, undefined)).toBeNull();
+    expect(askAnswerTeaser("ask_user_question", STORE, "")).toBeNull();
+    expect(
+      askAnswerTeaser(
+        "ask_user_question",
+        STORE,
+        "unanswered: nobody answered this question. State the assumption you are proceeding with and carry on.",
+      ),
+    ).toBeNull();
+    expect(
+      askAnswerTeaser("AskUserQuestion", STORE, answered("Which store?", "[User dismissed this question]")),
+    ).toBeNull();
+  });
+
+  it("has nothing to name for a tool that is not a question", () => {
+    expect(
+      askAnswerTeaser("run_command", { command: "echo SQLite" }, answered("Which store?", "SQLite")),
+    ).toBeNull();
   });
 });

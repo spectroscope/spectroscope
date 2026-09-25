@@ -455,7 +455,10 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
     case "command":
       return (
         <>
-          <Region label={t(lang, "tv.command")}>
+          <Region
+            label={t(lang, "tv.command")}
+            meta={view.rewrite === null ? undefined : t(lang, "tv.cmdRewritten", { by: view.rewrite.by })}
+          >
             <div className="tv-cmd mono">
               <span className="tv-prompt" aria-hidden="true">
                 $
@@ -467,6 +470,15 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
               {highlight(breakShellChain(view.command), "shell")}
             </div>
           </Region>
+          {/* Card 416: the line above is the one that ran. When rtk rewrote it,
+              the model's line stands here, without a prompt and without the
+              shell colouring, because it never ran: plain text in the
+              secondary colour, so only the executed line is coloured as shell. */}
+          {view.rewrite !== null && (
+            <Region label={t(lang, "tv.cmdAsWritten")}>
+              <div className="tv-cmd tv-cmd--written mono">{breakShellChain(view.rewrite.original)}</div>
+            </Region>
+          )}
           {view.output !== "" && (
             <Region label={t(lang, "tv.output")}>
               <pre className={`tv-well tv-term mono${view.failed ? " tv-term--failed" : ""}`}>

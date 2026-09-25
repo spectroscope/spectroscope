@@ -25,6 +25,11 @@ function stampOf(state: unknown): number | null {
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
 
+/** Whether an entry's `history.state` carries a stamp of ours. */
+export function hasStamp(state: unknown): boolean {
+  return stampOf(state) !== null;
+}
+
 /** How far back and forward the app can currently go. */
 export interface NavDepth {
   index: number;

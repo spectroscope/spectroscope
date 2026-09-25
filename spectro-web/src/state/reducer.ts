@@ -4,15 +4,20 @@
 // same mental figure as buildGraph.
 
 import type { AskedQuestionWire, ClientMessage, RunEvent } from "../events";
-import type { WorkspaceMode } from "../workspace/paneState";
+import { isWorkspaceMode, type WorkspaceMode } from "../workspace/paneState";
 
 import type { ToolResultDetail } from "../import/toolResultDetail";
 import type { ThresholdSource } from "../wire/thresholdSources";
+import { rtkRewriteOf } from "../wire/rtkRewrite";
 
 export interface ToolCard {
   callId: string;
   agentId: string;
   name: string;
+  /** The input the tool ran with. The tool_call's, except for a run_command
+   *  rtk rewrote (card 416): then the permission_request's, which is the
+   *  model's input with the executed line in `command` and the model's line in
+   *  `originalCommand`, so the card shows both. */
   input: unknown;
   status: "pending" | "ok" | "error";
   output?: string;
@@ -258,6 +263,9 @@ export interface WorkspaceInfo {
   mode: WorkspaceMode;
   /** Whether the named folder is already on disk. */
   exists?: boolean;
+  /** The folder a resumed session's record named that is no longer on disk;
+   *  the server fell back and says which folder it wanted. */
+  unavailable?: string;
 }
 
 /** The ACTIVE LLM backend — from the socket-only provider_info frame, sent on
@@ -375,6 +383,12 @@ export interface UiState {
   /** ts of the current assistant turn's first event, per agent — so the `usage`
    *  event can stamp each answer's duration. Transient bookkeeping, not shown. */
   assistantTurnStart: Record<string, number>;
+  /** Card 414: the agents whose model turn has written into an assistant turn
+   *  (a thinking_delta or text_delta) and has not had its `usage` yet. The
+   *  agent's turn_start and its usage take it off. A usage for an agent not
+   *  listed comes from a turn that wrote nothing (a tool call alone): it counts
+   *  toward the totals and stamps no answer. Transient bookkeeping, not shown. */
+  answerAwaitingUsage: string[];
 }
 
 export const initialState: UiState = {
@@ -409,6 +423,7 @@ export const initialState: UiState = {
   runModel: null,
   permissionMode: "ask",
   assistantTurnStart: {},
+  answerAwaitingUsage: [],
 };
 
 /**
@@ -641,6 +656,12 @@ export function liveThinkingTurns(
 const withoutThinking = (agents: string[], agentId: string): string[] =>
   agents.includes(agentId) ? agents.filter((id) => id !== agentId) : agents;
 
+const withAgent = (agents: string[], agentId: string): string[] =>
+  agents.includes(agentId) ? agents : [...agents, agentId];
+
+const withoutAgent = (agents: string[], agentId: string): string[] =>
+  agents.includes(agentId) ? agents.filter((id) => id !== agentId) : agents;
+
 // An append copies the trace, so a fold costs O(rows²): measured 6000 rows in
 // 16 ms / +5 MB, 50 000 in 2.7 s / +116 MB. A session's worth is cheap; anything
 // larger wants a batched append before it wants a bigger array.
@@ -689,7 +710,8 @@ export function stripLiveTrace(state: UiState, wanted: boolean): UiState {
 }
 
 /** Stamp usage + duration onto the LAST assistant turn of an agent (the answer
- *  the usage belongs to). No matching turn → the turns are returned unchanged. */
+ *  the usage belongs to). No matching turn → the turns are returned unchanged.
+ *  The `usage` case calls it only for an agent on answerAwaitingUsage (card 414). */
 function stampAssistantUsage(
   turns: Turn[],
   agentId: string,
@@ -742,25 +764,52 @@ export function traceFromEvents(events: RunEvent[]): TraceEntry[] {
   });
 }
 
-export function reduce(state: UiState, event: RunEvent): UiState {
-  // EVERY incoming frame lands in the trace first — known or unknown type
-  // alike. The switch below may ignore an event; the wire view must not,
-  // that is its whole point.
+/** The model a frame's trace row wears, read off the state before the frame.
+ *  Card 87: rows inside a run wear the run's model; the run_start row itself
+ *  uses its own stamp (the pre-apply state still holds the PREVIOUS run's). */
+export function rowModelOf(state: UiState, event: RunEvent): string | undefined {
+  return (event as { type: string }).type === "run_start"
+    ? ((event as { model?: string }).model ?? state.providerInfo?.model)
+    : (state.runModel ?? undefined);
+}
+
+/** The inbound trace row of a frame, without its seq: the row {@link reduce}
+ *  appends. `clock` is read only for a frame without a numeric ts. */
+export function traceRowOf(
+  event: RunEvent,
+  rowModel: string | undefined,
+  clock: () => number,
+): Omit<TraceEntry, "seq"> {
   const raw = event as { type: string; ts?: unknown; agentId?: unknown };
-  // Card 87: rows inside a run wear the run's model; the run_start row itself
-  // uses its own stamp (the pre-apply state still holds the PREVIOUS run's).
-  const rowModel =
-    raw.type === "run_start"
-      ? ((event as { model?: string }).model ?? state.providerInfo?.model)
-      : (state.runModel ?? undefined);
-  const traced = appendTrace(state, {
+  return {
     dir: "in",
-    ts: typeof raw.ts === "number" ? raw.ts : Date.now(),
+    ts: typeof raw.ts === "number" ? raw.ts : clock(),
     type: raw.type,
     agentId: typeof raw.agentId === "string" ? raw.agentId : undefined,
     ...(rowModel !== undefined && rowModel !== "" ? { model: rowModel } : {}),
     payload: event,
-  });
+  };
+}
+
+export function reduce(state: UiState, event: RunEvent): UiState {
+  // EVERY incoming frame lands in the trace first — known or unknown type
+  // alike. The switch below may ignore an event; the wire view must not,
+  // that is its whole point.
+  return applyFrame(appendTrace(state, traceRowOf(event, rowModelOf(state, event), Date.now)), event);
+}
+
+/** Card 435: {@link reduce} without the trace row. Every field but `trace` and
+ *  `traceDropped` comes out as `reduce` gives it; an archive's rows are built
+ *  later from the frames and {@link rowModelOf} (state/archiveFold.ts). */
+export function reduceUntraced(state: UiState, event: RunEvent): UiState {
+  return applyFrame(state, event);
+}
+
+/** Everything a frame does to the state apart from its trace row. `traced` is
+ *  the state the frame lands on, with the row already appended when
+ *  {@link reduce} built one. */
+function applyFrame(traced: UiState, event: RunEvent): UiState {
+  const raw = event as { type: string; ts?: unknown; agentId?: unknown };
   // The socket-only workspace_info frame is handled HERE, at the socket
   // boundary — the pure RunEvent switch below stays sealed to wire events.
   if (raw.type === "workspace_info") {
@@ -779,8 +828,13 @@ export function reduce(state: UiState, event: RunEvent): UiState {
         // An older server sends neither field; treating that frame as resolved
         // keeps the pane behaving as it always did against one.
         resolved: w.resolved !== false,
-        mode: w.mode ?? (w.configured === true ? "default" : "random"),
+        // A mode this client has no word for falls back exactly as a frame
+        // without the field does.
+        mode: isWorkspaceMode(w.mode) ? w.mode : w.configured === true ? "default" : "random",
         exists: w.exists,
+        ...(typeof w.unavailable === "string" && w.unavailable.trim() !== ""
+          ? { unavailable: w.unavailable }
+          : {}),
       },
     };
   }
@@ -933,9 +987,13 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       );
     }
 
-    case "turn_start":
+    case "turn_start": {
       // No UI element of its own — the next text_delta begins the block.
-      return state;
+      // Card 414: a new model turn has written nothing yet, so its usage must
+      // not reach an answer an earlier turn wrote and never billed.
+      const answerAwaitingUsage = withoutAgent(state.answerAwaitingUsage, event.agentId);
+      return answerAwaitingUsage === state.answerAwaitingUsage ? state : { ...state, answerAwaitingUsage };
+    }
 
     case "thinking_delta": {
       // Reasoning stream: appends to the agent's open assistant turn, creating
@@ -946,18 +1004,20 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       const thinkingAgents = state.thinkingAgents.includes(event.agentId)
         ? state.thinkingAgents
         : [...state.thinkingAgents, event.agentId];
+      const answerAwaitingUsage = withAgent(state.answerAwaitingUsage, event.agentId);
       const open = openAssistantTurn(state, event.agentId);
       const own = open >= 0 ? state.turns[open] : undefined;
       if (own !== undefined && own.kind === "assistant") {
         const turns = state.turns.slice();
         turns[open] = { ...own, thinking: own.thinking + event.text };
-        return { ...state, thinkingActive: true, thinkingAgents, turns };
+        return { ...state, thinkingActive: true, thinkingAgents, answerAwaitingUsage, turns };
       }
       return addTurn(
         {
           ...state,
           thinkingActive: true,
           thinkingAgents,
+          answerAwaitingUsage,
           assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
         },
         { kind: "assistant", agentId: event.agentId, text: "", thinking: event.text },
@@ -969,18 +1029,20 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       // the disclosure, but the live indicator stops). Joins the agent's open
       // assistant turn by the same rule as thinking_delta.
       const thinkingAgents = withoutThinking(state.thinkingAgents, event.agentId);
+      const answerAwaitingUsage = withAgent(state.answerAwaitingUsage, event.agentId);
       const open = openAssistantTurn(state, event.agentId);
       const own = open >= 0 ? state.turns[open] : undefined;
       if (own !== undefined && own.kind === "assistant") {
         const turns = state.turns.slice();
         turns[open] = { ...own, text: own.text + event.text };
-        return { ...state, thinkingActive: false, thinkingAgents, turns };
+        return { ...state, thinkingActive: false, thinkingAgents, answerAwaitingUsage, turns };
       }
       return addTurn(
         {
           ...state,
           thinkingActive: false,
           thinkingAgents,
+          answerAwaitingUsage,
           assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
         },
         { kind: "assistant", agentId: event.agentId, text: event.text, thinking: "" },
@@ -1021,9 +1083,21 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     }
 
     case "permission_request": {
+      // Card 416: when rtk rewrote a run_command line, this event is the only
+      // one carrying the line that runs (the model's line rides beside it), and
+      // the queue entry below is dropped at the decision. So the card takes this
+      // input now, before the stamp check: a stamped request queues nothing.
+      const seen =
+        rtkRewriteOf(event.name, event.input) === null
+          ? state
+          : patchCard(state, event.callId, { input: event.input });
+      // Card 399: the server stamped this request because its answer was known
+      // before it went out (the mode or the allowlist). Its decision follows
+      // without anyone being asked, so nothing is queued and no surface opens.
+      if (event.decidedBy != null) return seen;
       // Idempotent per callId — replay and live must not queue duplicates.
-      if (state.pendingPermissions.some((p) => p.callId === event.callId)) return state;
-      const next = patchCard(state, event.callId, { permission: "pending" });
+      if (seen.pendingPermissions.some((p) => p.callId === event.callId)) return seen;
+      const next = patchCard(seen, event.callId, { permission: "pending" });
       return {
         ...next,
         pendingPermissions: [
@@ -1295,25 +1369,32 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
 
     case "usage": {
       const start = state.assistantTurnStart[event.agentId];
+      // Card 414: only a model turn that wrote into an assistant turn has an
+      // answer to stamp. A turn that only called a tool is not on the list,
+      // and its tokens reach the totals below and no answer's line.
+      const stamps = state.answerAwaitingUsage.includes(event.agentId);
       return {
         ...state,
+        answerAwaitingUsage: withoutAgent(state.answerAwaitingUsage, event.agentId),
         // The per-message footer: this turn's token cost + how long it took.
         // The cache counts are spread in only when the provider sent them —
         // a synthesised zero would read as "nothing was cached", which is a
         // claim about a provider that said nothing at all.
-        turns: stampAssistantUsage(state.turns, event.agentId, {
-          usage: {
-            inputTokens: event.inputTokens,
-            outputTokens: event.outputTokens,
-            ...(event.cacheReadTokens !== undefined ? { cacheReadTokens: event.cacheReadTokens } : {}),
-            ...(event.cacheCreationTokens !== undefined
-              ? { cacheCreationTokens: event.cacheCreationTokens }
-              : {}),
-          },
-          durationMs: start !== undefined ? Math.max(0, event.ts - start) : undefined,
-          endTs: event.ts,
-          ...(state.runModel !== null ? { model: state.runModel } : {}),
-        }),
+        turns: stamps
+          ? stampAssistantUsage(state.turns, event.agentId, {
+              usage: {
+                inputTokens: event.inputTokens,
+                outputTokens: event.outputTokens,
+                ...(event.cacheReadTokens !== undefined ? { cacheReadTokens: event.cacheReadTokens } : {}),
+                ...(event.cacheCreationTokens !== undefined
+                  ? { cacheCreationTokens: event.cacheCreationTokens }
+                  : {}),
+              },
+              durationMs: start !== undefined ? Math.max(0, event.ts - start) : undefined,
+              endTs: event.ts,
+              ...(state.runModel !== null ? { model: state.runModel } : {}),
+            })
+          : state.turns,
         usage: {
           inputTokens: state.usage.inputTokens + event.inputTokens,
           outputTokens: state.usage.outputTokens + event.outputTokens,
@@ -1578,6 +1659,10 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
  *  fold is complete for both — a caller whose stream has no end windows the
  *  result, so forgetting costs memory rather than the start of a record. */
 export const reduceAll = (s: UiState, events: RunEvent[]): UiState => events.reduce(reduce, s);
+
+/** Card 435: {@link reduceAll} without trace rows. */
+export const reduceAllUntraced = (s: UiState, events: RunEvent[]): UiState =>
+  events.reduce(reduceUntraced, s);
 
 /** Normalize a replayed archive: nothing runs and no question is open — even
  *  if the stored session ended without a run_end (crash, abort, old file). */

@@ -11,6 +11,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "nav.live": { de: "Live-Session", en: "Live session" },
   "nav.liveSub": { de: "dieser Browser-Tab", en: "this browser tab" },
   "nav.emptySession": { de: "(leere Session)", en: "(empty session)" },
+  // Card 431: the loading sign over the main column while a session opens.
+  "open.line": { de: "Sitzung wird geöffnet", en: "Opening session" },
+  // Card 435: the same sign over the first build of an archive's trace.
+  "open.traceLine": { de: "Trace wird aufgebaut", en: "Building the trace" },
+  // How far the fold has got. The numbers arrive grouped for the language.
+  "open.count": { de: "{folded} von {total} Ereignissen", en: "{folded} of {total} events" },
+  "open.countOne": { de: "{folded} von {total} Ereignis", en: "{folded} of {total} event" },
   "nav.none": {
     de: "Noch keine gespeicherten Sessions. Beendete Läufe erscheinen hier.",
     en: "No stored sessions yet. Finished runs appear here.",
@@ -44,6 +51,31 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "That session is already open in another window. Close it there to continue it here.",
   },
   "nav.sessionBusyDismiss": { de: "verstanden", en: "got it" },
+  // Card 445: the menu at the right end of a stored session row, the pinned
+  // group, inline rename and the delete question.
+  "nav.pinned": { de: "Angeheftet", en: "Pinned" },
+  "nav.recent": { de: "Zuletzt", en: "Recent" },
+  "sess.menu.button": { de: "Aktionen für {title}", en: "Actions for {title}" },
+  "sess.menu.pin": { de: "Anheften", en: "Pin" },
+  "sess.menu.unpin": { de: "Nicht mehr anheften", en: "Unpin" },
+  "sess.menu.rename": { de: "Umbenennen", en: "Rename" },
+  "sess.menu.suggest": { de: "Titel vorschlagen", en: "Suggest a title" },
+  "sess.menu.delete": { de: "Löschen", en: "Delete" },
+  "sess.menu.deleteLive": {
+    de: "Beende oder schließe diese Session, bevor du sie löschst",
+    en: "Stop or close this session before you delete it",
+  },
+  "sess.rename.label": { de: "Titel der Session", en: "Session title" },
+  "sess.delete.title": { de: "Diese Session löschen?", en: "Delete this session?" },
+  "sess.delete.note": {
+    de: "Die Aufzeichnung und die Dateien daneben werden von diesem Rechner entfernt. Das lässt sich nicht rückgängig machen.",
+    en: "The recording and the files beside it are removed from this machine. This cannot be undone.",
+  },
+  "sess.delete.confirm": { de: "Löschen", en: "Delete" },
+  "sess.delete.failed": {
+    de: "Die Session konnte nicht gelöscht werden. Versuch es noch einmal.",
+    en: "The session could not be deleted. Try again.",
+  },
   // Card 241: the layout store replaced a blob it could not trust.
   "nav.layoutReset": {
     de: "Panel-Layout zurückgesetzt: der gespeicherte Zustand war ungültig. Sessions sind unberührt.",
@@ -324,12 +356,37 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Sprache der Oberfläche: Deutsch (Klick wechselt zu Englisch)",
     en: "UI language: English (click for German)",
   },
+  // The learn and light switch. The mode words stay lowercase and the same in
+  // both languages, like the brand; the tooltip says what each one shows.
+  "hdr.mode.label": { de: "Modus", en: "Mode" },
+  "hdr.mode.learn": { de: "learn", en: "learn" },
+  "hdr.mode.light": { de: "light", en: "light" },
+  "hdr.mode.learnTitle": {
+    de: "learn: alles ist an, auch die Tabs spectrum, trace, graph, text und lab, die Flotten und der State-Graph",
+    en: "learn: everything is on, including the tabs spectrum, trace, graph, text and lab, the fleets and the state graph",
+  },
+  "hdr.mode.lightTitle": {
+    de: "light: Chat, Arbeitsbereich, Sessions und Skills. Die Tabs spectrum, trace, graph, text und lab, die Flotten und der State-Graph sind aus und arbeiten nicht im Hintergrund",
+    en: "light: the chat, the workspace, sessions and skills. The tabs spectrum, trace, graph, text and lab, the fleets and the state graph are off and do no work in the background",
+  },
+
+  // Card 430: a lazy view whose chunk did not arrive (components/ChunkBoundary.tsx).
+  "chunk.failed": {
+    de: "Diese Ansicht wurde nicht geladen. Lade das Fenster neu, um sie noch einmal zu holen.",
+    en: "This view did not load. Reload the window to fetch it again.",
+  },
+  "chunk.reload": { de: "Fenster neu laden", en: "Reload the window" },
 
   // scenario dialog
   "scn.title": { de: "Szenario abspielen", en: "Play a scenario" },
   "scn.hint": {
     de: "Skriptgesteuerte Demo-Läufe — deterministisch kompiliert, ganz ohne LLM. Ein Chat-Lauf öffnet im Lab (Schritt für Schritt oder im Flow-Modus); ein Fleet-Lauf öffnet die Fleet-Ansicht, wo du die Topologie inspizierst.",
     en: "Scripted demo runs — deterministically compiled, no LLM involved. A chat run opens in the Lab (step through it, or auto-play in flow mode); a fleet run opens the fleet view, where you inspect the topology.",
+  },
+  // Card 430: the hint in light, where a chat run opens in the chat and no fleet runs.
+  "scn.hintLight": {
+    de: "Skriptgesteuerte Demo-Läufe, deterministisch kompiliert, ganz ohne LLM. In light öffnet ein Lauf im Chat; in learn gehst du ihn im Lab Schritt für Schritt durch.",
+    en: "Scripted demo runs, compiled deterministically with no LLM involved. In light a run opens in the chat; in learn you step through it in the Lab.",
   },
   "scn.tab.chats": { de: "chats / agenten", en: "chats / agents" },
   "scn.tab.fleet": { de: "fleet", en: "fleet" },
@@ -458,27 +515,34 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "{n} transcripts not read yet — they appear here as their facts arrive.",
   },
   "imp.close": { de: "Schließen", en: "Close" },
-  // Shown for EVERY import, not only the VS Code one. The counts are the file's
-  // own: how many lines arrived, how many frames this view is built from, and
-  // how many lines hold no part of the conversation (the pointer records a
-  // client keeps, the session name, the editing mode). The last sentence is the
-  // plain truth about where the file lives: an import is never written to disk,
-  // and cannot be resumed or deleted.
-  //
-  // The sentence used to end "produced no frame", which reads as loss and sent
-  // the owner looking for a parsing bug that was not there (card 141). The
-  // number is smaller now as well, because four of the kinds it counted became
-  // frames; what is left really does carry nothing.
-  // Card 152 corrected the last of it. "110 lines carry no conversation" is a
-  // claim about the FILE, and on a subagent transcript it was flatly false: all
-  // 110 of those lines held a conversation, and the importer could not
-  // attribute them. The number is a measurement of what this importer read, so
-  // the sentence says that instead. What the reader does with it is the same
-  // either way; what it no longer does is describe somebody else's file as
-  // empty.
-  "imp.bar": {
-    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, aus {zero} Zeilen wurde nichts gelesen. Nichts wurde auf die Platte geschrieben.",
-    en: "Imported from {file}. {lines} lines, {frames} frames, nothing read from {zero} of them. Nothing was written to disk.",
+  // The bar shown after EVERY import (card 440). The sentence counts the
+  // conversation the way a reader does: prompts are the turns the chat draws on
+  // the person's side (in a subagent transcript, what the parent agent sent),
+  // answers the main agent's responses. Lines and frames are the importer's
+  // units, so they sit behind the details control.
+  "imp.opened": {
+    de: "{file} geöffnet: {prompts}, {answers}. Die Sitzung wird nur angezeigt und nicht gespeichert.",
+    en: "Opened {file}: {prompts}, {answers}. The session is shown here only and not saved.",
+  },
+  // The same for a subagent transcript, whose note then says it is not a
+  // session (card 152). This sentence does not call it one either.
+  "imp.openedTranscript": {
+    de: "{file} geöffnet: {prompts}, {answers}. Das Transkript wird nur angezeigt und nicht gespeichert.",
+    en: "Opened {file}: {prompts}, {answers}. The transcript is shown here only and not saved.",
+  },
+  "imp.prompts": { de: "{n} Eingaben", en: "{n} prompts" },
+  "imp.promptsOne": { de: "{n} Eingabe", en: "{n} prompt" },
+  "imp.answers": { de: "{n} Antworten", en: "{n} answers" },
+  "imp.answersOne": { de: "{n} Antwort", en: "{n} answer" },
+  "imp.details": { de: "Details", en: "Details" },
+  // {zero} is the lines that produced no frame. Card 141: "produced no frame"
+  // read as a parsing bug. Card 152: on a subagent transcript those lines held
+  // the whole conversation, so the label says the import did not match them and
+  // never that they are empty. Owner call 2 on card 440 (option D) keeps this
+  // count here only, with no sentence in the bar.
+  "imp.detailsCounts": {
+    de: "Zeilen in der Datei: {lines} · Frames: {frames} · Nicht zugeordnet: {zero}",
+    en: "Lines in the file: {lines} · Frames: {frames} · Not matched: {zero}",
   },
   // What a standalone subagent transcript is, said in three clauses so that a
   // file which names only its agent says only that. See importBar.ts.
@@ -648,6 +712,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // The number card 111 wrote the second clock for and nobody ever drew. It
   // reads as WAITING, never as work: the tool's own badge sits right beside it.
   "ask.waited": { de: "{d} auf dich gewartet", en: "waited {d} for you" },
+  // Card 427, loop wave H3b: the folded row of an answered question names the answer.
+  "ask.answerLabel": { de: "Antwort:", en: "answer:" },
   "ask.notice": {
     de: "Deine Antwort steht im Transkript dieser Session. Keine Keys, keine Passwörter.",
     en: "Your answer goes into the transcript of this session. No keys, no passwords.",
@@ -1083,6 +1149,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "ws.recorded": {
     de: "Aufgezeichneter Arbeitsordner des importierten Laufs — nur Anzeige, auf dieser Maschine wird nichts gelesen oder angelegt.",
     en: "The imported run's recorded working folder — display only, nothing on this machine is read or created.",
+  },
+  // Card 421: a stored session reopened from the sidebar names the folder its
+  // own run_start recorded. It ran on this machine, so it is not worded as an
+  // import; the pane still only shows the path.
+  "ws.stored": {
+    de: "In diesem Ordner hat dieser Chat gearbeitet. Der Pfad stammt aus seiner eigenen Aufzeichnung, auf der Platte wird nichts gelesen.",
+    en: "This chat worked in this folder. The path comes from the chat's own record; nothing on disk is read.",
   },
 
   // plan tab
@@ -3151,6 +3224,29 @@ export const dict: Record<string, { de: string; en: string }> = {
   // sent. One based and newest first, so the first press reads 1 of n. The
   // German word is the owner's own, off his screenshot.
   "composer.historyAt": { de: "Verlauf {n}/{total}", en: "History {n}/{total}" },
+  // Card 389: the working folder row above the input box. The options are
+  // keyed by the mode a click sends; "random" is the entry for no folder.
+  // No string here names a folder spectroscope owns (criterion 11).
+  "workspace.label": { de: "Arbeitsordner", en: "Working folder" },
+  "workspace.opt.random": { de: "Kein Ordner", en: "No folder" },
+  "workspace.opt.default": { de: "Standard", en: "Default" },
+  "workspace.opt.set": { de: "Ordner wählen…", en: "Choose folder…" },
+  "workspace.hint.random": {
+    de: "Kein Ordner gewählt. Ein Lauf bekommt dann einen temporären Ordner für sich allein.",
+    en: "No folder chosen. A run then gets a temporary folder of its own.",
+  },
+  "workspace.hint.default": {
+    de: "Der Standard-Arbeitsordner aus den Einstellungen, ohne Eintrag dort ein Ersatzordner",
+    en: "The default working folder from the settings, or a fallback folder when none is set there",
+  },
+  "workspace.hint.set": { de: "Einen bestimmten Ordner wählen", en: "Pick a specific folder" },
+  "workspace.temporary": { de: "temporär", en: "temporary" },
+  "workspace.willCreate": { de: "wird angelegt", en: "will be created" },
+  "workspace.unavailable": { de: "{name} ist nicht mehr da", en: "{name} is no longer there" },
+  "workspace.fixed": {
+    de: "Der Arbeitsordner steht fest, sobald der Agent gelaufen ist. Für einen anderen Ordner einen neuen Chat beginnen.",
+    en: "The working folder is fixed once the agent has run. Start a new chat to use another folder.",
+  },
   "search.prev": { de: "Vorheriger Treffer", en: "Previous match" },
   "search.next": { de: "Nächster Treffer", en: "Next match" },
 
@@ -3348,6 +3444,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.subagentBudgetSecondsNote": {
     de: "Wie viele Sekunden ein Subagent arbeiten darf, gezählt ab seinem ersten Token; ab Werk zwei Stunden. Ein langsames Backend kann das Budget anheben, wenn der Wert unter dreißig Minuten liegt; die zwei Stunden ab Werk hebt es nie an. Wird ein Subagent abgebrochen, kommt der Text des Zuges zurück, in dem er abgebrochen wurde.",
     en: "How many seconds a subagent may work, counted from its first token; ships at two hours. A slow backend can raise the budget when the floor is under thirty minutes, and it never raises the shipped two hours. A subagent that is cut off hands back the text of the turn it was cut in.",
+  },
+  "set.subagentBudgetTokens": { de: "Tokens pro Subagent", en: "Tokens per subagent" },
+  "set.subagentBudgetTokensNote": {
+    de: "Wie viele Tokens ein Subagent verbrauchen darf, Eingabe plus Ausgabe, so wie das Backend sie meldet; ab Werk zehn Millionen. Hat sein Verbrauch diese Zahl überschritten, wird er abgebrochen, sobald er seinen nächsten Zug beginnt. Die Modellanfrage dieses Zuges wird beim Absenden abgebrochen; sie zählt nicht mit, und ein kostenpflichtiges Backend kann ihre Eingabe trotzdem berechnen. Was er in dem Zug geschrieben hat, der das Budget überschritten hat, kommt zurück. Tokens, die ein Prompt-Cache liest oder schreibt, zählen nicht mit.",
+    en: "How many tokens a subagent may spend, input plus output as the backend reports them; ships at ten million. Once its spend has passed this number, it is cut when it starts its next turn. The model request of that turn is cancelled as it goes out; it is not in the count, and a paid backend may still bill its input. Any text it wrote in the turn that passed the budget comes back. Tokens a prompt cache reads or writes are not counted.",
   },
   "set.maxTokens": { de: "Antwort-Budget pro Aufruf", en: "Reply budget per call" },
   "set.maxTokensNote": {
@@ -3651,6 +3752,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tv.listing": { de: "Verzeichnis", en: "Directory" },
   "tv.matches": { de: "Suche", en: "Search" },
   "tv.command": { de: "Kommando", en: "Command" },
+  // Card 416: a run_command rtk rewrote. The command region shows the line
+  // that ran; these two name the rewriter and head the model's own line.
+  "tv.cmdRewritten": { de: "umgeschrieben von {by}", en: "rewritten by {by}" },
+  "tv.cmdAsWritten": { de: "Wie das Modell es schrieb", en: "As the model wrote it" },
   "tv.output": { de: "Ausgabe", en: "Output" },
   "tv.input": { de: "Eingabe", en: "Input" },
   "tv.image": { de: "Bild", en: "Image" },
@@ -3758,6 +3863,18 @@ export const dict: Record<string, { de: string; en: string }> = {
   "skset.disable": { de: "ausschalten", en: "disable" },
   "skset.deleteTitle": { de: "Skill löschen (nur eigene)", en: "Delete skill (user skills only)" },
   "skset.deleteConfirm": { de: "wirklich?", en: "sure?" },
+  // card 411: the remove button's accessible name carries the skill it deletes;
+  // armed, it starts with the word the button shows
+  "skset.deleteLabel": { de: "{name} löschen", en: "delete {name}" },
+  "skset.deleteArmedLabel": { de: "wirklich? {name} löschen", en: "sure? delete {name}" },
+  // card 411: a row switch's accessible name says what its on state means and
+  // for which skill, the same in either state (aria-checked carries on or off),
+  // so an installed row and the catalogue row of one skill have two names
+  "skset.enableLabel": { de: "{name} einschalten", en: "enable {name}" },
+  "skset.installLabel": { de: "{name} installieren", en: "install {name}" },
+  // card 411: the installed list collapsed per namespace
+  "skset.installedCount": { de: "{count} installiert", en: "{count} installed" },
+  "skset.noNamespace": { de: "ohne Namespace", en: "no namespace" },
 
   // the bundled skill catalogue (card 182)
   "skset.catalogue": { de: "Katalog", en: "Catalogue" },
@@ -3881,9 +3998,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Fragt bei jedem gefährlichen Tool-Aufruf nach — außer eine Regel erlaubt ihn schon.",
     en: "Asks before every risky tool call — unless a rule already allows it.",
   },
+  // Card 427: auto skips the permission request, and only that. A question the
+  // agent asks still parks and reaches the operator, in auto as in every mode.
   "wsg.mode.auto.hint": {
-    de: "Erlaubt jeden Tool-Aufruf automatisch, ohne nachzufragen (Demo-Modus).",
-    en: "Allows every tool call automatically, no questions asked (demo mode).",
+    de: "Erlaubt jeden Tool-Aufruf automatisch, ohne Berechtigungsanfrage (Demo-Modus). Eigene Fragen des Agenten erreichen dich weiterhin.",
+    en: "Allows every tool call automatically, without a permission request (demo mode). The agent's own questions still reach you.",
   },
   "wsg.mode.readonly.hint": {
     de: "Lehnt jeden gefährlichen Tool-Aufruf automatisch ab — nichts verändert etwas.",
@@ -4835,7 +4954,9 @@ export function t(lang: Lang, key: string, vars?: Record<string, string | number
   const entry = dict[key];
   let s = entry ? entry[lang] : key;
   if (vars) {
-    for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
+    // A function replacement inserts the value as written; a string one would
+    // read $&, $`, $' and $$ in it as patterns.
+    for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, () => String(v));
   }
   return s;
 }

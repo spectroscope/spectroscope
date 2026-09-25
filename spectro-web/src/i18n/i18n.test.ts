@@ -384,26 +384,29 @@ describe("the hooks block does not promise more than the engine does", () => {
   });
 });
 
-// The import bar's own sentence. Card 141 opened on the owner reading it and
-// asking whether the importer had a parsing bug: "21 lines produced no frame"
-// describes deliberate behaviour in the vocabulary of failure. The bar was
-// right and the importer was right; only the wording was wrong.
+// The import bar's own sentences. Card 141 opened on the owner reading the old
+// one and asking whether the importer had a parsing bug: "21 lines produced no
+// frame" describes deliberate behaviour in the vocabulary of failure. Card 152
+// found "110 lines carry no conversation" false on a subagent transcript, whose
+// lines held a conversation the importer could not attribute. Card 440 moved
+// lines and frames out of the sentence and into a details control, and owner
+// call 2 (option D, the lead, 2026-09-25) dropped the sentence about unmatched
+// lines: the count is said only under Details, and its label keeps both lessons.
 describe("the import bar says what it means", () => {
-  it("no longer reports design as a defect, in either language", () => {
-    expect(dict["imp.bar"].en).not.toMatch(/produced no frame/);
-    expect(dict["imp.bar"].de).not.toMatch(/keinen Frame erzeugt/);
+  it("says the unmatched count only under Details, in both languages", () => {
+    expect(dict["imp.unmatched"]).toBeUndefined();
+    expect(dict["imp.unmatchedOne"]).toBeUndefined();
+    expect(dict["imp.detailsCounts"].en).toContain("Not matched: {zero}");
+    expect(dict["imp.detailsCounts"].de).toContain("Nicht zugeordnet: {zero}");
   });
 
-  // Card 152. "110 lines carry no conversation" was a claim about the FILE,
-  // and it was false: those 110 lines held a whole conversation, and the
-  // importer could not attribute them. The count is a measurement of what this
-  // importer read, so the sentence has to say that and not describe somebody
-  // else's file as empty.
-  it("says what was read rather than what the file contains", () => {
-    expect(dict["imp.bar"].en).not.toMatch(/carry no conversation/);
-    expect(dict["imp.bar"].de).not.toMatch(/tragen kein Gespräch/);
-    expect(dict["imp.bar"].en).toMatch(/read/);
-    expect(dict["imp.bar"].de).toMatch(/gelesen/);
+  it("labels the unmatched lines as not matched, never as empty or as a defect", () => {
+    expect(dict["imp.detailsCounts"].en).not.toMatch(
+      /carry no conversation|empty|nothing|produced no frame/i,
+    );
+    expect(dict["imp.detailsCounts"].de).not.toMatch(
+      /tragen kein Gespräch|leer|nichts|keinen Frame erzeugt/i,
+    );
   });
 
   it("names a subagent transcript for what it is, in both languages", () => {
@@ -414,11 +417,31 @@ describe("the import bar says what it means", () => {
     }
   });
 
-  it("still names all three counts, so the sentence stays checkable", () => {
+  it("keeps all three raw counts in its details, so the sentence stays checkable", () => {
     for (const lang of ["de", "en"] as const) {
-      for (const slot of ["{file}", "{lines}", "{frames}", "{zero}"]) {
-        expect(dict["imp.bar"][lang], `${lang} ${slot}`).toContain(slot);
+      for (const slot of ["{lines}", "{frames}", "{zero}"]) {
+        expect(dict["imp.detailsCounts"][lang], `${lang} ${slot}`).toContain(slot);
       }
+    }
+  });
+
+  it("opens with the file and the conversation, and names no lines or frames there", () => {
+    for (const lang of ["de", "en"] as const) {
+      for (const key of ["imp.opened", "imp.openedTranscript"]) {
+        for (const slot of ["{file}", "{prompts}", "{answers}"]) {
+          expect(dict[key][lang], `${lang} ${key} ${slot}`).toContain(slot);
+        }
+        expect(dict[key][lang], `${lang} ${key}`).not.toMatch(/\b(lines?|frames?|Zeilen?)\b/i);
+      }
+    }
+  });
+
+  // A subagent transcript is not a session (card 152), so the sentence its bar
+  // opens with does not call it one.
+  it("opens a subagent transcript's bar without calling it a session", () => {
+    for (const lang of ["de", "en"] as const) {
+      expect(dict["imp.openedTranscript"][lang], lang).not.toMatch(/session|Sitzung/i);
+      expect(dict["imp.openedTranscript"][lang], lang).toMatch(/transcript|Transkript/i);
     }
   });
 });
@@ -691,6 +714,15 @@ describe("t", () => {
 
   it("passes unknown keys through unchanged (a missing entry shows loudly)", () => {
     expect(t("de", "nope.missing")).toBe("nope.missing");
+  });
+
+  // Card 440: a string replacement reads $&, $`, $' and $$ as patterns, so a
+  // file name holding one of them came out changed in any sentence naming it.
+  it("fills a slot with the value exactly as written, dollar signs included", () => {
+    for (const name of ["a$&b.jsonl", "a$`b.jsonl", "a$'b.jsonl", "a$$b.jsonl", "a$1b.jsonl"]) {
+      expect(t("en", "imp.gist.wrote", { n: name }), name).toBe(`${name} written`);
+      expect(t("de", "imp.gist.wrote", { n: name }), name).toBe(`${name} geschrieben`);
+    }
   });
 });
 

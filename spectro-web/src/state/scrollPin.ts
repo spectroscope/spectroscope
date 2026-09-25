@@ -58,7 +58,7 @@ export type ScrollCause = "reader" | "app";
 export type ReaderPull = "away" | "toward" | "unknown" | "grab";
 
 /** What a growth event may do to the scroll position. */
-export type FollowScroll = "none" | "auto" | "smooth";
+export type FollowScroll = "none" | "auto";
 
 /**
  * How long the reader stays in charge after reaching for the transcript.
@@ -111,11 +111,14 @@ export function scrollCause(msSinceReaderIntent: number | null): ScrollCause {
  * app and the reader was carried back down with the pin still armed. Where the
  * box MOVED cannot be faked that way. Our own follow only ever travels toward
  * the live edge, so a box moving away from it under the reader's hand is the
- * reader leaving, and a smooth follow still gliding toward it is not.</p>
+ * reader leaving, and a glide of ours toward it (the jump to the end) is not.</p>
  *
  * @param input pinned — the pin as it stands; cause — who scrolled;
  *              movedUp — whether the box moved AWAY from the live edge;
  *              distanceFromBottom — scrollHeight - scrollTop - clientHeight
+ *              (atBottomPx, optional: how close counts as the bottom, with
+ *              AT_BOTTOM_PX when not given; card 400's thinking body passes
+ *              its own 32 px)
  * @return the pin after this event
  */
 export function pinAfterScroll(input: {
@@ -124,6 +127,7 @@ export function pinAfterScroll(input: {
   lastPull: ReaderPull;
   movedUp: boolean;
   distanceFromBottom: number;
+  atBottomPx?: number;
 }): boolean {
   if (input.cause === "app") return input.pinned;
   // Landing at the edge re-arms — unless the reader's last gesture was away
@@ -131,7 +135,8 @@ export function pinAfterScroll(input: {
   // started keeps travelling after the reader pulls out, reaches the bottom
   // inside the same gesture window, and would otherwise put the pin back on
   // for them.
-  if (input.lastPull !== "away" && input.distanceFromBottom <= AT_BOTTOM_PX) return true;
+  if (input.lastPull !== "away" && input.distanceFromBottom <= (input.atBottomPx ?? AT_BOTTOM_PX))
+    return true;
   if (input.movedUp) return false; // pulled away from it
   return input.pinned; // on the way down, or our glide: no news either way
 }
@@ -141,12 +146,14 @@ export function pinAfterScroll(input: {
  *
  * @param input pinned — the pin as it stands; pull — which way the gesture
  *              pulls; distanceFromBottom — where the box stands right now
+ *              (atBottomPx, optional: as in {@link pinAfterScroll})
  * @return the pin after this gesture
  */
 export function pinAfterGesture(input: {
   pinned: boolean;
   pull: ReaderPull;
   distanceFromBottom: number;
+  atBottomPx?: number;
 }): boolean {
   // A grab is a disarm on its own. Measured rather than assumed: a scrollbar
   // thumb drag delivers pointerdown and pointerup and NOTHING in between, so
@@ -158,23 +165,26 @@ export function pinAfterGesture(input: {
   // Toward the edge AND already at it: the way back for a reader whose last
   // pull was away. They are sitting at the bottom, so wheeling down moves
   // nothing and no scroll event would ever come to re-arm on.
-  if (input.pull === "toward" && input.distanceFromBottom <= AT_BOTTOM_PX) return true;
+  if (input.pull === "toward" && input.distanceFromBottom <= (input.atBottomPx ?? AT_BOTTOM_PX)) return true;
   return input.pinned;
 }
 
 /**
- * What a growth event does — new text, a new turn, a fold opening.
+ * What a growth event does: new text, a new turn, a fold opening.
  *
- * @param input pinned — whether the reader is at the live edge;
- *              newTurn — whether this growth is a whole new turn beginning
- * @return "none" to leave the reader alone, or how to move to the live edge
+ * <p>Always instant for a pinned reader. An animation per token is jitter, and
+ * card 399 dropped the glide a whole new turn used to get: a glide starts from
+ * the old position, so the rows the new turn pushed down were painted there
+ * first. Measured in the browser in four runs of a long pinned transcript: when
+ * the run started, the working line was first painted about 70 px below its
+ * place, under the box's bottom edge. In two of the four runs it then slid up
+ * over about 180 ms. In the other two it was in place one frame later.</p>
+ *
+ * @param input pinned: whether the reader is at the live edge
+ * @return "none" to leave the reader alone, or "auto" to move to the live edge
  */
-export function followScroll(input: { pinned: boolean; newTurn: boolean }): FollowScroll {
-  if (!input.pinned) return "none";
-  // Instant while a turn grows — an animation per token is jitter. A whole new
-  // turn is worth a glide, and the cause rule above keeps that animation's own
-  // scroll events from being read back as the reader disagreeing with it.
-  return input.newTurn ? "smooth" : "auto";
+export function followScroll(input: { pinned: boolean }): FollowScroll {
+  return input.pinned ? "auto" : "none";
 }
 
 /**

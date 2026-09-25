@@ -252,6 +252,9 @@ import java.util.function.Function;
  * @param rtkFilter             card 379: {@code "on"} sends the agent's shell
  *                              lines through the rtk proxy, {@code "off"} runs
  *                              them as the model wrote them. Ships off
+ * @param subagentBudgetTokens  the spend, input plus output as its usage
+ *                              reports them, past which ONE child agent is cut
+ *                              at its next turn (card 394)
  */
 public record SpectroConfig(
         String provider,
@@ -308,7 +311,80 @@ public record SpectroConfig(
         // Card 379: "off" or "on". Appended last, like every key since card 359:
         // FIELD_PROBES is pinned to this order and every positional caller
         // counts from the front.
-        String rtkFilter) {
+        String rtkFilter,
+        // Card 394: a child agent's token budget. Appended last, same rule.
+        int subagentBudgetTokens) {
+
+    /** Compat: the pre-card-394 arity, which knew no token budget for a child.
+     *  Every caller that built a config positionally keeps compiling and gets
+     *  the shipped {@link #DEFAULT_SUBAGENT_BUDGET_TOKENS}.
+     *
+     * @param provider              the LLM backend
+     * @param model                 the model id
+     * @param baseUrl               the legacy provider address
+     * @param compactionThreshold   input-token level that triggers compaction
+     * @param permissionMode        ask / auto / readonly
+     * @param autoApprove           the allowlist rules
+     * @param imageProvider         the image backend
+     * @param thinking              TRUE requests the reasoning stream
+     * @param mcpServers            the configured MCP servers
+     * @param maxRetries            provider retries
+     * @param promptCaching         TRUE asks the provider to cache the prompt
+     * @param hooks                 the configured shell hooks
+     * @param workspace             the workspace directory
+     * @param logLevel              file-diagnostics level
+     * @param imageModel            the image model id
+     * @param sttModel              the transcription model id
+     * @param sttProvider           auto / local / openai
+     * @param sttLanguage           auto or a language code
+     * @param chromeBinary          the browser binary
+     * @param otlpEndpoint          the trace endpoint
+     * @param otlpBasicAuth         the trace credentials
+     * @param ollamaBaseUrl         ollama's address
+     * @param lmstudioBaseUrl       LM Studio's address
+     * @param searxngUrl            the SearXNG instance
+     * @param allowLocalhost        TRUE lets the net fence dial loopback
+     * @param headlessMcp           TRUE mounts MCP servers in unattended runs
+     * @param progressGuardWrites   identical-write count that speaks
+     * @param progressGuardFailures failing-call count that speaks
+     * @param progressGuardPlanTurns planless turns that speak
+     * @param continuationBudget    continuations per run
+     * @param maxTurns              the runaway-loop brake
+     * @param llamacppBaseUrl       llama.cpp's address
+     * @param questionsPerRun       the ask budget
+     * @param maxQuestionOptions    options per question
+     * @param maxQuestionChars      characters per question
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth      pixels of chat the dock may never take
+     * @param dockMaxWidth          the dock's ceiling
+     * @param maxTokens             the completion budget
+     * @param subagentBudgetSeconds the child run budget floor
+     * @param rtkFilter             the rtk proxy switch */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds, int chatReserveWidth,
+                         int dockMaxWidth, int maxTokens, int subagentBudgetSeconds,
+                         String rtkFilter) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp, progressGuardWrites,
+                progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
+                llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, rtkFilter, DEFAULT_SUBAGENT_BUDGET_TOKENS);
+    }
 
     /** Compat: the pre-card-379 arity, which knew no rtk switch. Every caller
      *  that built a config positionally keeps compiling and gets the shipped
@@ -970,6 +1046,39 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.SECONDS, key = "subagentBudgetSeconds")
     public static final int DEFAULT_SUBAGENT_BUDGET_SECONDS = 7200;
 
+    /** The shipped {@code subagentBudgetTokens}: the spend, input plus
+     *  output as its usage events report them, past which the harness cuts
+     *  one child agent at its next turn. Ten million.
+     *
+     *  <p>Card 394. On 2026-09-23 four GLM children on Ollama spent 17,423,655
+     *  input tokens in about 340 s and handed back nothing; the 300 s wall
+     *  clock of that release was the only thing that ended them, and card 372
+     *  has since raised that clock to two hours. The owner's words of
+     *  2026-09-24: the smaller agents must be able to work, and a middle
+     *  ground has to be found.</p>
+     *
+     *  <p>DATED SNAPSHOT, 2026-09-25, from outside this repo. Length: over
+     *  8,963 Claude Code subagent transcripts on the owner's machine a
+     *  subagent makes a median of 16 round trips, p95 110, p99 173. Growth:
+     *  the four children of 2026-09-23 added 480 to 1,217 input tokens of
+     *  context per round trip (least-squares slope per child). Extended past
+     *  their 340 s, those four lines reach ten million after 119, 140, 180
+     *  and 198 round trips, all above the p95 length; at the average rate
+     *  each child showed over its 340 s, extended the same way, each would
+     *  have reached it 491 to 1,165 s into its run instead of running for
+     *  two hours. Both are extrapolations, not measurements. What the number
+     *  does not do: four children of one {@code spawn_agents} call can still
+     *  spend forty million together. The scripts and their output are in
+     *  {@code kanban/evidence/394/loop/} in the product home.</p>
+     *
+     *  <p>Cache reads and cache writes are reported apart and are not counted,
+     *  as the child's running sum never counted them. A backend without a
+     *  prompt cache reports the whole resent conversation as input, which is
+     *  where the budget binds. No upper bound is enforced, for the reason
+     *  {@link #DEFAULT_COMMAND_TIMEOUT_SECONDS} gives.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "subagentBudgetTokens")
+    public static final int DEFAULT_SUBAGENT_BUDGET_TOKENS = 10_000_000;
+
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
         mcpServers = mcpServers == null ? List.of() : List.copyOf(mcpServers);
@@ -1141,7 +1250,7 @@ public record SpectroConfig(
                 progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
-                subagentBudgetSeconds, value);
+                subagentBudgetSeconds, value, subagentBudgetTokens);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -1630,7 +1739,8 @@ public record SpectroConfig(
                         base.maxQuestionChars(),
                         base.commandTimeoutSeconds(), base.chatReserveWidth(),
                         base.dockMaxWidth(), base.maxTokens(),
-                        base.subagentBudgetSeconds(), base.rtkFilter());
+                        base.subagentBudgetSeconds(), base.rtkFilter(),
+                        base.subagentBudgetTokens());
             }
         }
         return base;
@@ -1708,7 +1818,9 @@ public record SpectroConfig(
             new FieldProbe("maxTokens", p -> p.maxTokens),
             // Card 372, appended last, same rule.
             new FieldProbe("subagentBudgetSeconds", p -> p.subagentBudgetSeconds),
-            new FieldProbe("rtkFilter", p -> p.rtkFilter));
+            new FieldProbe("rtkFilter", p -> p.rtkFilter),
+            // Card 394, appended last, same rule.
+            new FieldProbe("subagentBudgetTokens", p -> p.subagentBudgetTokens));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -2096,7 +2208,7 @@ public record SpectroConfig(
                 continuationBudget, maxTurns, llamacppBaseUrl,
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
-                subagentBudgetSeconds, rtkFilter);
+                subagentBudgetSeconds, rtkFilter, subagentBudgetTokens);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2985,6 +3097,8 @@ public record SpectroConfig(
         // Card 372: the child run budget floor, in seconds.
         public Integer subagentBudgetSeconds;
         public String rtkFilter;
+        // Card 394: a child agent's token budget.
+        public Integer subagentBudgetTokens;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -3049,6 +3163,8 @@ public record SpectroConfig(
             out.subagentBudgetSeconds = Optional.ofNullable(higher.subagentBudgetSeconds)
                     .orElse(subagentBudgetSeconds);
             out.rtkFilter = Optional.ofNullable(higher.rtkFilter).orElse(rtkFilter);
+            out.subagentBudgetTokens = Optional.ofNullable(higher.subagentBudgetTokens)
+                    .orElse(subagentBudgetTokens);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -3108,7 +3224,9 @@ public record SpectroConfig(
                     Optional.ofNullable(maxTokens).orElse(DEFAULTS.maxTokens()),
                     Optional.ofNullable(subagentBudgetSeconds)
                             .orElse(DEFAULTS.subagentBudgetSeconds()),
-                    Optional.ofNullable(rtkFilter).orElse(DEFAULTS.rtkFilter()));
+                    Optional.ofNullable(rtkFilter).orElse(DEFAULTS.rtkFilter()),
+                    Optional.ofNullable(subagentBudgetTokens)
+                            .orElse(DEFAULTS.subagentBudgetTokens()));
         }
 
         /**

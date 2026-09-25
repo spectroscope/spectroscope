@@ -213,7 +213,7 @@ export function composeDocument(request: DocumentRequest, streams: DocumentStrea
   const foot =
     views.includes("chat") && streams.original.length > 0
       ? chatBody(langs[0].events, { lang }).foot
-      : kindLabel(lang, "events").replace("{n}", String(streams.original.length));
+      : kindLabel(lang, "events").replace("{n}", () => String(streams.original.length));
 
   return shell({
     lang,

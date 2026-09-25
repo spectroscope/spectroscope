@@ -139,7 +139,7 @@ public final class SessionConnection {
      * is a legitimate verdict, while a released question is only ever
      * "nobody answered". Built once per connection, like the broker.
      */
-    private final ParkingAsker asker = new ParkingAsker(this::mode, this::runSignal);
+    private final ParkingAsker asker = new ParkingAsker(this::runSignal);
 
     /**
      * Session-scoped "always allow" rules (the web checkbox). Per-socket, never
@@ -219,14 +219,6 @@ public final class SessionConnection {
     private volatile CancelSignal signal;     // the running run's signal, or null
     /** Card 395: the running run's drain as a quit sees it, or null between runs. */
     private volatile RunDrain drain;
-
-    /** The live permission mode, for the asker's own short circuit — a method
-     *  reference rather than a field read, because the asker is built before both
-     *  fields exist and must see the CURRENT value on every question.
-     *  @return the session's mode ("ask", "auto" or "readonly") */
-    private String mode() {
-        return permissionMode;
-    }
 
     /** The running run's cancel signal, or null between runs.
      *  @return the signal the asker re-checks around its park */
@@ -417,6 +409,26 @@ public final class SessionConnection {
      */
     public void useBrowserBridge(dev.spectroscope.server.browser.SessionBrowserBridge bridge) {
         this.browserBridge = bridge;
+    }
+
+    /** Card 445: asks for a new session's title. Set additively, like the
+     *  browser above, so every existing caller keeps compiling. */
+    private SessionTitles titles = SessionTitles.shared();
+    /** Card 445: true once this connection minted its session's store. A
+     *  connection that resumes a session never sets it, so a resumed session
+     *  is not asked, whether it has a title or not. */
+    private boolean freshStore;
+    /** Card 445: true once the title request went out; one per session. */
+    private boolean titleAsked;
+
+    /**
+     * Points this connection at another title service; the wiring test uses it
+     * to keep the suggestion in its own folder.
+     *
+     * @param titles the service to use
+     */
+    void useTitles(SessionTitles titles) {
+        this.titles = titles;
     }
 
     /**
@@ -1126,6 +1138,7 @@ public final class SessionConnection {
     private void ensureStore() {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
+            freshStore = true;            // card 445: only a minted session gets a title asked for
             openSessionStack(0);          // a fresh file counts its ladder from zero
             // A fresh session becomes live the moment it has an id — that is
             // the first moment anything can be said about it. The claim stays
@@ -1235,6 +1248,7 @@ public final class SessionConnection {
         try {
             // Everything below is exactly what the CLI builds — nothing new in the core.
             buildAgentOnce();
+            suggestTitleOnce(text); // card 445: in the background, the run does not wait
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
             sendWorkspaceInfo();
             sendGoalInfo(); // card 267: what this run is for, where it is watched
@@ -1542,6 +1556,10 @@ public final class SessionConnection {
                 // Card 372: the floor of every child's run budget, the same
                 // number the settings page shows under "time per subagent"
                 .subagentBudgetSeconds(active.subagentBudgetSeconds())
+                // Card 394: the most tokens one child may spend before it is
+                // cut, the number the settings page shows under "tokens per
+                // subagent"
+                .subagentBudgetTokens(active.subagentBudgetTokens())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -1649,6 +1667,24 @@ public final class SessionConnection {
      *          prompt */
     Agent agent() {
         return agent;
+    }
+
+    /**
+     * Card 445: the first run of a session this connection minted asks the
+     * session's own provider and model for a title, on a virtual thread of its
+     * own. The run goes on at once; the answer lands in the meta store when it
+     * comes, and a failure leaves the row on its first prompt. A prompt with no
+     * text (attachments only) does not count as the first.
+     *
+     * @param prompt the prompt this run starts with
+     */
+    private void suggestTitleOnce(String prompt) {
+        if (!freshStore || titleAsked || prompt == null || prompt.isBlank()) {
+            return;
+        }
+        titleAsked = true;
+        SpectroConfig config = activeConfig.get();
+        titles.suggestInBackground(store.id(), prompt, () -> ServerProviders.build(config));
     }
 
     /** This session's id — the basename its JSONL, its llm-wire sidecar and its
@@ -2050,35 +2086,81 @@ public final class SessionConnection {
      * The web face's permission strategy: the broker parks a future instead of
      * asking y/N. The permission_request event goes out in PARALLEL over the
      * event stream (the sender loop); here we only wait for the response with
-     * the SAME callId. The live {@link #permissionMode} ("auto"/"readonly")
-     * decides first and short-circuits everything below it; "ask" (the
-     * default) falls through to {@link #allowlistNow()} (the session-scoped
-     * autoApprove rules plus the session's "always allow" rules); the core
-     * still emits permission_request/permission_decision regardless of who
-     * decided, so every decision stays auditable (mirrors the CLI broker's
-     * allowlist short-circuit).
+     * the SAME callId.
+     *
+     * <p>Card 399: the loop asks {@code decidedBy} before it emits the request.
+     * That call reads the live {@link #permissionMode} ("auto"/"readonly")
+     * first, then {@link #allowlistNow()} (the session-scoped autoApprove
+     * rules plus the session's "always allow" rules), and stamps the request
+     * with {@code mode:<mode>} or {@code allowlist} when either answers. A
+     * stamped request is answered in {@code decide} by its stamp and by the
+     * allowlist reading taken with it, not by the mode or the allowlist as they
+     * stand when {@code decide} runs. An unstamped request is decided in
+     * {@code decide} on one fresh reading, mode first, then allowlist, then a
+     * park. The core still emits permission_request/permission_decision
+     * whoever decided, so every decision stays auditable (mirrors the CLI
+     * broker's allowlist short-circuit).</p>
      */
     private PermissionBroker parkingBroker() {
-        return request -> {
-            // Card 199: one verdict, read once, so the gate audit line names the
-            // same tier and the same entry the decision was actually made on.
-            Allowlist.Verdict verdict = allowlistNow().decide(request);
-            Boolean byMode = PermissionModes.decide(permissionMode, request);
-            if (byMode != null) {
-                gateAudit().record(request, "mode:" + permissionMode, byMode, verdict);
-                return byMode;
+        // Card 399: the allowlist reading a stamp was taken on, by callId, until
+        // decide takes it back.
+        Map<String, Allowlist.Verdict> stampedOn = new ConcurrentHashMap<>();
+        return new PermissionBroker() {
+            @Override
+            public String decidedBy(PermissionRequest request) {
+                Allowlist.Verdict verdict = allowlistNow().decide(request);
+                String label = answeredWithoutAsking(request, verdict);
+                if (label != null) {
+                    stampedOn.put(request.callId(), verdict);
+                }
+                return label;
             }
-            if (verdict.approved()) {
-                gateAudit().record(request, "allowlist", true, verdict);
-                return true;
+
+            @Override
+            public boolean decide(PermissionRequest request) {
+                // Card 199: one verdict, read once, so the gate audit line names the
+                // same tier and the same entry the decision was actually made on.
+                // Card 399: for a stamped request that reading is the one decidedBy
+                // took; a request stamped by anyone else is read here.
+                Allowlist.Verdict carried = stampedOn.remove(request.callId());
+                Allowlist.Verdict verdict = request.decidedBy() != null && carried != null
+                        ? carried : allowlistNow().decide(request);
+                // Card 399: a stamped request is answered by its stamp, so the
+                // answer the run gets and the event the browser already holds
+                // cannot disagree, even when the mode was switched between the
+                // two calls.
+                String by = request.decidedBy() != null
+                        ? request.decidedBy() : answeredWithoutAsking(request, verdict);
+                Boolean early = PermissionModes.verdictOf(by);
+                if (early != null) {
+                    gateAudit().record(request, by, early, verdict);
+                    return early;
+                }
+                pendingRequests.put(request.callId(), request);
+                CompletableFuture<Boolean> future = new CompletableFuture<>();
+                pending.put(request.callId(), future);
+                boolean allowed = future.join();   // parks the agent's virtual thread, which is cheap
+                gateAudit().record(request, "user", allowed, verdict);
+                return allowed;
             }
-            pendingRequests.put(request.callId(), request);
-            CompletableFuture<Boolean> future = new CompletableFuture<>();
-            pending.put(request.callId(), future);
-            boolean allowed = future.join();   // parks the agent's virtual thread — cheap
-            gateAudit().record(request, "user", allowed, verdict);
-            return allowed;
         };
+    }
+
+    /**
+     * Card 399: who answers a gated call without a person, in the gate audit's
+     * own labels. The live mode first ({@code mode:auto}, {@code mode:readonly}),
+     * then the allowlist; null when the call has to park.
+     *
+     * @param request the gated call
+     * @param verdict the allowlist's reading of that call
+     * @return {@code "mode:<mode>"}, {@code "allowlist"}, or null
+     */
+    private String answeredWithoutAsking(PermissionRequest request, Allowlist.Verdict verdict) {
+        String mode = permissionMode;
+        if (PermissionModes.decide(mode, request) != null) {
+            return "mode:" + mode;
+        }
+        return verdict.approved() ? "allowlist" : null;
     }
 
     /** Card 199, criterion 8: every settings file in this session's chain is

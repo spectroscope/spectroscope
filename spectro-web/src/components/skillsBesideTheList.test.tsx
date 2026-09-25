@@ -287,7 +287,11 @@ describe("App: the view is a flag of its own, and every opened place closes it (
       const at = app.indexOf(`const ${name} =`);
       return app.slice(at, app.indexOf(";", at));
     };
-    expect(term("traceReachable")).toContain("!skillsOpen");
+    // Card 430 moved the trace's term into state/modeWork.ts; App hands it the flag.
+    expect(term("traceReachable")).toMatch(/traceReachableIn\(\{[\s\S]*\bskillsOpen,/);
+    const work = read("../state/modeWork.ts", import.meta.url);
+    const fn = work.slice(work.indexOf("export function traceReachableIn"));
+    expect(fn.slice(0, fn.indexOf("\n}\n"))).toContain("!input.skillsOpen");
     expect(term("labOnScreen")).toContain("!skillsOpen");
   });
 });

@@ -34,7 +34,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { blankBlockComments } from "../testkit/source";
+import { blankBlockComments, read } from "../testkit/source";
 
 const app = readFileSync(fileURLToPath(new URL("../App.tsx", import.meta.url)), "utf8");
 
@@ -58,7 +58,8 @@ describe("the trace is built while the reader is elsewhere, after the chat has p
     // Not `traceShowing` alone: that is the pre-card shape, and the press pays
     // the whole build. Not unconditional either: that is the August shape, and
     // the chat pays it.
-    expect(code).toMatch(/\{\(traceShowing \|\| traceWarm\) && \(/);
+    // Card 435 adds a third term: the rows exist (an archive builds them lazily).
+    expect(code).toMatch(/\{\(traceShowing \|\| traceWarm\) && shownRows !== null && \(/);
   });
 
   it("shows it on the press without waiting for idle", () => {
@@ -69,7 +70,8 @@ describe("the trace is built while the reader is elsewhere, after the chat has p
     // Matched loosely enough to survive the terms being SWAPPED, so this fails
     // on the order and says so, instead of losing its anchor and failing the
     // same way the test above already does.
-    const gate = /\{\((traceShowing|traceWarm) \|\| (traceShowing|traceWarm)\) && \(/.exec(code);
+    const gate =
+      /\{\((traceShowing|traceWarm) \|\| (traceShowing|traceWarm)\) && shownRows !== null && \(/.exec(code);
     expect(gate).not.toBeNull();
     expect(gate?.[1]).toBe("traceShowing");
     expect(gate?.[2]).toBe("traceWarm");
@@ -94,10 +96,15 @@ describe("the trace is built while the reader is elsewhere, after the chat has p
     // One term, two readers: `traceShowing` is this plus the tab, and the warm
     // gate is this alone. Written twice they drift, and the drift is finding 4
     // above — a trace warmed inside a fleet.
+    // Card 430 moved the term into state/modeWork.ts (traceReachableIn), where
+    // it also asks the mode; its cases are tested in modeWork.test.ts.
     const reachable = declaration("traceReachable");
     expect(reachable).not.toBeNull();
-    expect(reachable).toContain("enteredFleet === null");
-    expect(reachable).toContain('nav === "sessions"');
+    expect(reachable).toMatch(/traceReachableIn\(\{[\s\S]*\bnav,[\s\S]*\benteredFleet,/);
+    const work = blankBlockComments(read("../state/modeWork.ts", import.meta.url));
+    const fn = work.slice(work.indexOf("export function traceReachableIn"));
+    expect(fn.slice(0, fn.indexOf("\n}\n"))).toContain("input.enteredFleet === null");
+    expect(fn.slice(0, fn.indexOf("\n}\n"))).toContain('input.nav === "sessions"');
     expect(code).toMatch(/const traceShowing = traceReachable && tab === "trace"/);
   });
 

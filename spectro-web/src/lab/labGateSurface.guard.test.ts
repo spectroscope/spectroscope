@@ -88,10 +88,12 @@ describe("the chat asks in a window", () => {
   });
 
   it("the chat tab carries the notice while the Lab is on screen", () => {
-    const chatTab = app.slice(app.indexOf('onClick={() => changeTab("chat")}'));
-    const body = chatTab.slice(0, chatTab.indexOf("</button>"));
-    expect(body).toContain('gateShown === "notice"');
-    expect(body).toContain("sp.gateOpen");
+    // Card 430: the tab buttons are one map over the surface table, so the
+    // chip is found in that map's body, gated on the chat tab and the notice.
+    const row = app.slice(app.indexOf("{tabsShown(viewMode, tutorial).map((id) => ("));
+    const body = row.slice(0, row.indexOf("</button>"));
+    expect(body).toMatch(/\{id === "chat" && gateShown === "notice" && \(/);
+    expect(body.slice(body.indexOf('id === "chat" && gateShown'))).toContain("sp.gateOpen");
   });
 });
 

@@ -8,12 +8,14 @@ import { describe, expect, it } from "vitest";
 import { dict } from "../i18n/i18n";
 import type { TraceEntry } from "../state/reducer";
 import {
+  exchangeXidOf,
   fidelityKey,
   llmExchangeSummary,
   mergeLlmExchanges,
   readExchange,
   type LlmExchangeMeta,
   readExchangeDetail,
+  rowsMergedFrom,
   traceWithVoice,
   llmRequestSummary,
   withResponseRows,
@@ -174,6 +176,68 @@ describe("mergeLlmExchanges", () => {
   it("returns the rows untouched when the index brings nothing new", () => {
     const trace = [row(1, 500), row(2, 1500)];
     expect(mergeLlmExchanges(trace, [])).toBe(trace);
+  });
+});
+
+// Card 435: the trace tab of an archive shows its count before the rows are
+// built (review finding 2), so the count of what a merge adds must be the
+// merge's own, case by case.
+describe("the rows a merge adds, counted without merging", () => {
+  const held = (trace: TraceEntry[]): Set<string> =>
+    new Set(trace.map((r) => exchangeXidOf(r.type, r.payload)).filter((x): x is string => x !== null));
+  const recorded: TraceEntry = {
+    seq: 2,
+    dir: "in",
+    ts: 1200,
+    type: "llm_exchange",
+    payload: frame({ xid: "a", ts: 1200 }),
+  };
+  const cases: Array<{ name: string; trace: TraceEntry[]; index: LlmExchangeMeta[]; adds: number }> = [
+    { name: "an empty index", trace: [row(1, 500)], index: [], adds: 0 },
+    {
+      name: "an exchange with a duration, which brings its request row",
+      trace: [row(1, 500)],
+      index: [meta({ xid: "a", ts: 2000, durationMs: 700 })],
+      adds: 2,
+    },
+    {
+      name: "an exchange without a duration",
+      trace: [row(1, 500)],
+      index: [meta({ xid: "a", ts: 2000, durationMs: 0 })],
+      adds: 1,
+    },
+    {
+      name: "an exchange the trace already holds, beside a new one",
+      trace: [row(1, 500), recorded],
+      index: [meta({ xid: "a", ts: 1200 }), meta({ xid: "b", ts: 1300 })],
+      adds: 2,
+    },
+    {
+      name: "an exchange the index holds twice",
+      trace: [row(1, 500)],
+      index: [meta({ xid: "a" }), meta({ xid: "a" })],
+      adds: 2,
+    },
+  ];
+  for (const c of cases) {
+    it(`counts ${c.name} as the merge adds it`, () => {
+      const merged = mergeLlmExchanges(c.trace, c.index);
+      expect(merged.length - c.trace.length).toBe(c.adds);
+      expect(rowsMergedFrom(held(c.trace), c.index)).toBe(c.adds);
+    });
+  }
+
+  it("leaves the set of held exchanges it is handed as it was", () => {
+    const set = held([row(1, 500), recorded]);
+    rowsMergedFrom(set, [meta({ xid: "b" })]);
+    expect([...set]).toEqual(["a"]);
+  });
+
+  it("keys a row by its xid only when it is an exchange row", () => {
+    expect(exchangeXidOf("llm_exchange", { xid: "a" })).toBe("a");
+    expect(exchangeXidOf("llm_request", { xid: "a" })).toBeNull();
+    expect(exchangeXidOf("llm_exchange", { xid: 7 })).toBeNull();
+    expect(exchangeXidOf("llm_exchange", null)).toBeNull();
   });
 });
 

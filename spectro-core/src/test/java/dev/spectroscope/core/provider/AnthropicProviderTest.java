@@ -30,11 +30,17 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -190,6 +196,247 @@ class AnthropicProviderTest {
         var currentBlocks = params.messages().get(1).content().asBlockParams();
         assertFalse(currentBlocks.getLast().asText().cacheControl().isPresent(),
                 "the current turn is never cached (it changes every request)");
+    }
+
+    private static ProviderMessage user(ProviderContent... content) {
+        return new ProviderMessage(ProviderMessage.Role.USER, List.of(content));
+    }
+
+    private static ProviderMessage assistant(ProviderContent... content) {
+        return new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.of(content));
+    }
+
+    /**
+     * Every message block that carries cache_control, as "index:kind" plus the
+     * call id for tool blocks. Covers all five block kinds toAnthropicContent emits.
+     */
+    private static List<String> messageBreakpoints(MessageCreateParams params) {
+        List<String> marks = new ArrayList<>();
+        var messages = params.messages();
+        for (int i = 0; i < messages.size(); i++) {
+            for (ContentBlockParam block : messages.get(i).content().asBlockParams()) {
+                if (block.isText() && block.asText().cacheControl().isPresent()) {
+                    marks.add(i + ":text");
+                } else if (block.isToolUse() && block.asToolUse().cacheControl().isPresent()) {
+                    marks.add(i + ":tool_use:" + block.asToolUse().id());
+                } else if (block.isToolResult() && block.asToolResult().cacheControl().isPresent()) {
+                    marks.add(i + ":tool_result:" + block.asToolResult().toolUseId());
+                } else if (block.isImage() && block.asImage().cacheControl().isPresent()) {
+                    marks.add(i + ":image");
+                } else if (block.isDocument() && block.asDocument().cacheControl().isPresent()) {
+                    marks.add(i + ":document");
+                }
+            }
+        }
+        return marks;
+    }
+
+    /** All cache_control markers in the request: system blocks, tools and message blocks. */
+    private static int breakpointCount(MessageCreateParams params) {
+        int count = 0;
+        var system = params.system();
+        if (system.isPresent() && system.get().isTextBlockParams()) {
+            for (var block : system.get().asTextBlockParams()) {
+                if (block.cacheControl().isPresent()) {
+                    count++;
+                }
+            }
+        }
+        for (var tool : params.tools().orElse(List.of())) {
+            if (tool.isTool() && tool.asTool().cacheControl().isPresent()) {
+                count++;
+            }
+        }
+        return count + messageBreakpoints(params).size();
+    }
+
+    @Test
+    void aStableTurnEndingInAToolCallCarriesTheMessageBreakpointOnItsToolUseBlock() {
+        // Card 404, the owner's request 2: [user, assistant(tool call), user(tool result)].
+        // messages.size() - 2 is the assistant's tool-call turn.
+        var input = JSON.createObjectNode().put("name", "research");
+        var messages = List.of(
+                user(new TextContent("Hallo")),
+                assistant(new TextContent("Loading the skill."),
+                        new ToolCallContent("c1", "use_skill", input)),
+                user(new ToolResultContent("c1", "skill loaded", false)));
+
+        MessageCreateParams params = AnthropicProvider.buildParams(
+                "claude-sonnet-5", true, requestWith(messages));
+
+        var stable = params.messages().get(1).content().asBlockParams();
+        assertTrue(stable.getLast().isToolUse(), "the stable turn ends in its tool_use block");
+        var toolUse = stable.getLast().asToolUse();
+        assertTrue(toolUse.cacheControl().isPresent(),
+                "the tool_use block of the stable turn carries cache_control");
+        var plain = AnthropicProvider.buildParams("claude-sonnet-5", false, requestWith(messages))
+                .messages().get(1).content().asBlockParams().getLast().asToolUse();
+        assertFalse(plain.cacheControl().isPresent(), "without caching the block is unmarked");
+        assertEquals("c1", toolUse.id(), "the copy keeps the call id");
+        assertEquals("use_skill", toolUse.name(), "the copy keeps the tool name");
+        // The provider sets input as a raw JsonValue, so the raw field is what compares.
+        assertEquals(plain._input(), toolUse._input(), "the copy keeps the input");
+        assertEquals(com.anthropic.core.JsonValue.from(java.util.Map.of("name", "research")),
+                toolUse._input(), "the input still names the skill");
+        assertFalse(stable.getFirst().asText().cacheControl().isPresent(),
+                "only the last block of the stable turn is marked");
+        assertEquals(List.of("1:tool_use:c1"), messageBreakpoints(params),
+                "exactly one message breakpoint, on the stable turn, none on the current turn");
+    }
+
+    @Test
+    void aStableUserTurnEndingInAToolResultCarriesTheMessageBreakpoint() {
+        // Pins the existing tool_result case. The agent loop keeps roles
+        // alternating, so there this shape needs two user messages in a row.
+        var messages = List.of(
+                assistant(new ToolCallContent("c1", "read_file", JSON.createObjectNode())),
+                user(new ToolResultContent("c1", "class Main {}", false)),
+                user(new TextContent("And now?")));
+
+        MessageCreateParams params = AnthropicProvider.buildParams(
+                "claude-sonnet-5", true, requestWith(messages));
+
+        assertEquals(List.of("1:tool_result:c1"), messageBreakpoints(params));
+    }
+
+    @Test
+    void aScriptedToolLoopPlacesOneMessageBreakpointPerRoundOnTheNewestStableTurn() {
+        // Card 404: two tool rounds back to back, then a text answer and the
+        // operator's next prompt. buildParams runs once per round, no network.
+        ProviderMessage ask = user(new TextContent("What is in src?"));
+        ProviderMessage call1 = assistant(new TextContent("Let me look."),
+                new ToolCallContent("c1", "list_dir", JSON.createObjectNode().put("path", "src")));
+        ProviderMessage result1 = user(new ToolResultContent("c1", "Main.java", false));
+        ProviderMessage call2 = assistant(
+                new ToolCallContent("c2", "read_file", JSON.createObjectNode().put("path", "src/Main.java")));
+        ProviderMessage result2 = user(new ToolResultContent("c2", "class Main {}", false));
+        ProviderMessage answer = assistant(new TextContent("src holds one class, Main."));
+        ProviderMessage next = user(new TextContent("nochmal hallo"));
+
+        List<List<ProviderMessage>> rounds = List.of(
+                List.of(ask),
+                List.of(ask, call1, result1),
+                List.of(ask, call1, result1, call2, result2),
+                List.of(ask, call1, result1, call2, result2, answer, next));
+
+        List<List<String>> placed = new ArrayList<>();
+        List<Integer> totals = new ArrayList<>();
+        for (List<ProviderMessage> round : rounds) {
+            MessageCreateParams params = AnthropicProvider.buildParams(
+                    "claude-sonnet-5", true, requestWith(round));
+            placed.add(messageBreakpoints(params));
+            totals.add(breakpointCount(params));
+        }
+
+        assertEquals(List.of(
+                        List.of(),                // one message, nothing stable yet
+                        List.of("1:tool_use:c1"), // first tool round
+                        List.of("3:tool_use:c2"), // second tool round, the breakpoint moves on
+                        List.of("5:text")),       // the text answer, under the next prompt
+                placed);
+        // System block and last tool, plus the one message breakpoint: 3 of the API's 4.
+        assertEquals(List.of(2, 3, 3, 3), totals);
+    }
+
+    // ---- the guide's caching reference follows buildParams ----------------
+
+    /** The wire name of a message block, the name the guide's caching reference uses. */
+    private static String wireKind(ContentBlockParam block) {
+        if (block.isText()) {
+            return "text";
+        }
+        if (block.isToolUse()) {
+            return "tool_use";
+        }
+        if (block.isToolResult()) {
+            return "tool_result";
+        }
+        if (block.isImage()) {
+            return "image";
+        }
+        if (block.isDocument()) {
+            return "document";
+        }
+        throw new AssertionError("a block kind this test has no wire name for: " + block);
+    }
+
+    /** The wire names among the words of an HTML fragment, tags dropped. */
+    private static Set<String> kindsNamedIn(String fragment, Set<String> kinds) {
+        Set<String> named = new TreeSet<>();
+        for (String word : fragment.replaceAll("<[^>]+>", " ").split("[^A-Za-z_]+")) {
+            if (kinds.contains(word)) {
+                named.add(word);
+            }
+        }
+        return named;
+    }
+
+    /** Walks up to the directory holding the Gradle settings file, or null outside a checkout. */
+    private static Path repoRoot() {
+        for (Path candidate = Path.of("").toAbsolutePath();
+                candidate != null; candidate = candidate.getParent()) {
+            if (Files.isRegularFile(candidate.resolve("settings.gradle.kts"))) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    @Test
+    void theGuideNamesEveryBlockKindThatCarriesTheMessageBreakpointAndEveryKindThatPassesThrough()
+            throws IOException {
+        // Card 404 review: the reference chapter still said "only text and
+        // tool-result blocks can carry a breakpoint" after the tool_use case
+        // landed. Both lists are read off buildParams, one probe per content
+        // kind the provider maps, and held against the part and both editions.
+        List<ProviderContent> probes = List.of(
+                new TextContent("Earlier answer."),
+                new ToolCallContent("c1", "read_file", JSON.createObjectNode()),
+                new ToolResultContent("c1", "class Main {}", false),
+                new ImageContent("image/png", PNG_BASE64),
+                new LlmProvider.DocumentContent("application/pdf", "UERGQllURVM=", "paper.pdf"));
+        assertEquals(Set.of(ProviderContent.class.getPermittedSubclasses()),
+                probes.stream().map(Object::getClass).collect(Collectors.toSet()),
+                "one probe per content kind the provider maps");
+
+        Set<String> carry = new TreeSet<>();
+        Set<String> passThrough = new TreeSet<>();
+        for (ProviderContent probe : probes) {
+            ProviderMessage stable = probe instanceof ToolCallContent ? assistant(probe) : user(probe);
+            MessageCreateParams params = AnthropicProvider.buildParams("claude-sonnet-5", true,
+                    requestWith(List.of(stable, user(new TextContent("Next?")))));
+            String kind = wireKind(params.messages().get(0).content().asBlockParams().getLast());
+            boolean marked = messageBreakpoints(params).stream().anyMatch(mark -> mark.startsWith("0:"));
+            (marked ? carry : passThrough).add(kind);
+        }
+        assertTrue(carry.contains("tool_use"), "the stable tool_use block is marked: " + carry);
+        Set<String> kinds = new TreeSet<>(carry);
+        kinds.addAll(passThrough);
+
+        Path root = repoRoot();
+        assumeTrue(root != null, "not running from a source checkout");
+        for (String file : List.of("docs/guide-assets/parts/17-ref-loop.html",
+                "docs/USER-GUIDE.html", "docs/USER-GUIDE-LIGHT.html")) {
+            String html = Files.readString(root.resolve(file));
+            int heading = html.indexOf("id=\"ch-context-caching\"");
+            assertTrue(heading >= 0, file + " has no caching reference section");
+            int start = html.indexOf("<p>", heading);
+            String paragraph = html.substring(start, html.indexOf("</p>", start));
+            int claim = paragraph.indexOf("can carry a breakpoint");
+            assertTrue(claim >= 0, file + ": the caching reference no longer says which"
+                    + " blocks can carry a breakpoint");
+            int only = paragraph.lastIndexOf("only", claim);
+            int close = paragraph.indexOf(')', claim);
+            assertTrue(only >= 0 && close > claim, file + ": the claim lost its \"only ...\""
+                    + " list or its parenthesis naming the rest: " + paragraph);
+            assertEquals(carry, kindsNamedIn(paragraph.substring(only, claim), kinds),
+                    file + " names other block kinds as carrying a breakpoint than buildParams"
+                            + " marks. Fix the part, then rebuild both editions and reprint the"
+                            + " PDFs (docs/guide-assets/build_user_guide.py)");
+            assertEquals(passThrough, kindsNamedIn(paragraph.substring(claim, close + 1), kinds),
+                    file + " names other block kinds as passing through unmarked than"
+                            + " buildParams leaves unmarked");
+        }
     }
 
     @Test
@@ -430,6 +677,37 @@ class AnthropicProviderTest {
             assertEquals(" there", ((PTextDelta) events.get(1)).text());
             assertTrue(events.stream().anyMatch(event -> event instanceof PStop stop
                     && stop.reason() == PStop.StopReason.END_TURN));
+        }
+
+        @Test
+        void theToolUseBreakpointReachesThePostedBody() throws IOException {
+            // Card 404 on the wire: the loopback reads the bytes the SDK posts.
+            AnthropicProvider provider = new AnthropicProvider(
+                    "claude-opus-4-8", true, "test-key", baseUrl);
+            ProviderRequest request = new ProviderRequest("You are spectroscope.",
+                    List.of(new ProviderMessage(ProviderMessage.Role.USER,
+                                    List.of(new TextContent("Hallo"))),
+                            new ProviderMessage(ProviderMessage.Role.ASSISTANT,
+                                    List.of(new ToolCallContent("c1", "use_skill", JSON.createObjectNode()))),
+                            new ProviderMessage(ProviderMessage.Role.USER,
+                                    List.of(new ToolResultContent("c1", "skill loaded", false)))),
+                    List.of(), 512, ProviderRequest.Reasoning.DEFAULT, null,
+                    new CancelSignal(), null);
+            int events = 0;
+            for (ProviderEvent event : provider.stream(request)) {
+                events++;
+            }
+            assertTrue(events > 0, "the scripted stream was drained");
+
+            JsonNode posted = JSON.readTree(receivedBody.get());
+            JsonNode toolUse = posted.get("messages").get(1).get("content").get(0);
+            assertEquals("tool_use", toolUse.get("type").asText());
+            assertEquals("ephemeral", toolUse.path("cache_control").path("type").asText(),
+                    "the posted tool_use block carries cache_control");
+            JsonNode current = posted.get("messages").get(2).get("content").get(0);
+            assertEquals("tool_result", current.get("type").asText());
+            assertTrue(current.path("cache_control").isMissingNode(),
+                    "the current turn's tool_result is posted without cache_control");
         }
 
         @Test

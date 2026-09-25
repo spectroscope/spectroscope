@@ -26,6 +26,7 @@ import { SourceView } from "./SourceView";
 import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit, splitPctFromPointer } from "./wsSplit";
 import type { WorkspaceInfo } from "../state/reducer";
 import { listableBeforeTheFirstRun, paneState, recordedWorkspace } from "./paneState";
+import { storedWorkspace } from "./storedFolder";
 import type { FetchOutcome } from "./paneState";
 
 interface FileNode {
@@ -223,6 +224,7 @@ function SourcePane({
 export function WorkspaceTab({
   workspace,
   recordedCwd = null,
+  storedCwd = null,
   onPickFolder,
   canPickFolder,
   refreshSignal,
@@ -232,6 +234,9 @@ export function WorkspaceTab({
    *  recorded, where the pane would otherwise promise a first run. Display
    *  only — nothing on this machine is read or created from it. */
   recordedCwd?: string | null;
+  /** The folder a stored session's own run_start recorded (card 421): shown
+   *  where the pane would otherwise promise a first run. Display only. */
+  storedCwd?: string | null;
   /** Opens the native folder picker on the spectroscope machine (macOS dialog). */
   onPickFolder?: () => void;
   /** Bumped by App when the live run touched the disk (tool_result/run_end) —
@@ -379,9 +384,13 @@ export function WorkspaceTab({
     });
   };
 
-  // The recorded folder of an imported run wins over the pending wording, and
-  // nothing else: any live announcement makes recordedWorkspace defer.
-  const pane = recordedWorkspace(recordedCwd, workspace, lang) ?? paneState(workspace, outcome, lang);
+  // The recorded folder of an imported run, or of a stored session reopened
+  // from the sidebar (card 421), wins over the pending wording, and nothing
+  // else: any live announcement makes both defer.
+  const pane =
+    recordedWorkspace(recordedCwd, workspace, lang) ??
+    storedWorkspace(storedCwd, workspace, lang) ??
+    paneState(workspace, outcome, lang);
   const beforeTheRun = pane.kind === "tree" && pane.scope === "prospective";
   if (pane.kind === "unreachable") return <p className="ctx-empty">{t(lang, "ws.unreachable")}</p>;
   if (pane.kind === "loading") return <p className="ctx-empty">{pane.message}</p>;

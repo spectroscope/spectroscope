@@ -140,8 +140,10 @@ cheap, and introspection shows you both at work.</p>
 
 <h2 id="ch-context-caching">Prompt caching</h2>
 <p>Chapter 16 covered the two breakpoints (system + tools; the last stable message).
-The reference detail: only text and tool-result blocks can carry a breakpoint (others
-pass through, best effort); the index is recomputed fresh every call, so a history
+The reference detail: only <code>text</code>, <code>tool_use</code> and
+<code>tool_result</code> blocks can carry a breakpoint (when the stable message ends in an
+<code>image</code> or <code>document</code> block, that request has no message
+breakpoint); the index is recomputed fresh every call, so a history
 reshaped by compaction simply gets a new breakpoint; and the wire <code>usage</code>
 event never includes the fold — a cache hit must not change the bytes an old consumer
 sees.</p>

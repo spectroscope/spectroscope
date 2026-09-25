@@ -64,7 +64,7 @@ class SessionStoreTest {
                 StandardCharsets.UTF_8, StandardOpenOption.APPEND);
 
         List<RunEvent> events = SessionStore.readSessionEvents(store.id());
-        assertEquals(1, events.size(), "the torn line must be dropped silently");
+        assertEquals(1, events.size(), "the torn line must be dropped");
         assertInstanceOf(RunEvent.RunStart.class, events.getFirst());
     }
 

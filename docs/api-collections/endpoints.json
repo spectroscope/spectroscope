@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 77,
+    "endpointCount": 79,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -152,7 +152,7 @@
     {
       "id": "sessions",
       "name": "sessions",
-      "description": "The stored session JSONL store: list, read, export, delete."
+      "description": "The stored session JSONL store: list, read, export, delete, and a session's title and pin."
     },
     {
       "id": "config-onboarding",
@@ -299,7 +299,7 @@
       "path": "/api/sessions",
       "area": "sessions",
       "name": "list sessions",
-      "description": "List every stored session's metadata from the JSONL store (the sidebar list).",
+      "description": "List every stored session's metadata from the JSONL store (the sidebar list). A session with a title or pin also carries title, titleSource (suggested or manual) and pinned, read from ~/.spectro/session-meta.json.",
       "fence": "host",
       "writes": false,
       "pathVars": [],
@@ -361,10 +361,51 @@
       "path": "/api/sessions/{id}",
       "area": "sessions",
       "name": "delete session",
-      "description": "Delete one stored session (JSONL + blob folder). 204 success, 400 malformed id, 404 unknown.",
+      "description": "Delete one stored session (JSONL + blob folder, its wire sidecars, and its title and pin). 204 success, 400 malformed id, 404 unknown.",
       "fence": "host",
       "writes": true,
       "caution": "This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.",
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        }
+      ],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "sessions-patch",
+      "method": "PATCH",
+      "path": "/api/sessions/{id}",
+      "area": "sessions",
+      "name": "rename or pin a session",
+      "description": "Set a stored session's title, its pin, or both. A blank title drops the hand-set one, and the row falls back to the suggested title or the first prompt. Written to ~/.spectro/session-meta.json, never into the session JSONL. 200 {title?, titleSource?, pinned}, 400 malformed id or body, 404 fenced out or session not stored.",
+      "fence": "host+origin+json",
+      "writes": true,
+      "pathVars": [
+        {
+          "name": "id",
+          "variable": "sessionId"
+        }
+      ],
+      "query": [],
+      "body": {
+        "title": "Release 0.14.0",
+        "pinned": true
+      },
+      "bodyNote": "Either field alone is enough: title is a string, pinned a boolean."
+    },
+    {
+      "id": "sessions-title-suggest",
+      "method": "POST",
+      "path": "/api/sessions/{id}/title/suggest",
+      "area": "sessions",
+      "name": "suggest a session title",
+      "description": "Ask the session's recorded provider and model once for a title of three to five words from its first prompt (thinking off, 30 s limit). A session with a hand-set title is not sent. 200 {title?, titleSource?, pinned, suggested}, suggested false when no title came; 400 malformed id, 404 fenced out or session not stored.",
+      "fence": "host+origin",
+      "writes": true,
+      "caution": "This spends one model call on the provider the session recorded, and sends it the session's first prompt.",
       "pathVars": [
         {
           "name": "id",

@@ -23,6 +23,8 @@ import { RtkFilterSection } from "./RtkFilterSection";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { useRtkFilter } from "../state/rtkFilter";
+import { isOpen } from "../state/surfaces";
+import { useViewMode } from "../state/viewMode";
 
 export interface DisclosureMenuProps {
   /** The session tools' home (card 243, sole home since card 255): export, the
@@ -41,6 +43,8 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
   const answerLine = useAnswerLine();
   const chatView = useChatView();
   const liveTrace = useLiveTraceWanted();
+  // Card 430: the switch belongs to the trace, so light does not draw it.
+  const traceOpen = isOpen("liveTraceSwitch", useViewMode());
   const [open, setOpen] = useState(false);
   const rtk = useRtkFilter(open);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -262,29 +266,31 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
           {/* Card 246: the live-trace switch ("das spart speicher"). OFF stops
               the CLIENT retention only — the JSONL recording and the OTLP
               export are server-side and keep running; the hint says so. */}
-          <div className="wsg-section">
-            <div className="wsg-section-head">
-              <span>{t(lang, "trace.live.title")}</span>
-            </div>
-            <div className="wsg-modes" role="group" aria-label={t(lang, "trace.live.title")}>
-              <div
-                role="menuitemcheckbox"
-                aria-checked={liveTrace}
-                className={`wsg-mode-row${liveTrace ? " wsg-mode-row--active" : ""}`}
-                onClick={() => setLiveTraceWanted(!liveTrace)}
-              >
-                <span className="wsg-mode-marker" aria-hidden="true">
-                  {liveTrace ? "›" : ""}
-                </span>
-                <span className="wsg-mode-body">
-                  <span className="wsg-mode-name mono">
-                    {t(lang, liveTrace ? "trace.live.on" : "trace.live.off")}
+          {traceOpen && (
+            <div className="wsg-section">
+              <div className="wsg-section-head">
+                <span>{t(lang, "trace.live.title")}</span>
+              </div>
+              <div className="wsg-modes" role="group" aria-label={t(lang, "trace.live.title")}>
+                <div
+                  role="menuitemcheckbox"
+                  aria-checked={liveTrace}
+                  className={`wsg-mode-row${liveTrace ? " wsg-mode-row--active" : ""}`}
+                  onClick={() => setLiveTraceWanted(!liveTrace)}
+                >
+                  <span className="wsg-mode-marker" aria-hidden="true">
+                    {liveTrace ? "›" : ""}
                   </span>
-                  <span className="wsg-mode-hint">{t(lang, "trace.live.hint")}</span>
-                </span>
+                  <span className="wsg-mode-body">
+                    <span className="wsg-mode-name mono">
+                      {t(lang, liveTrace ? "trace.live.on" : "trace.live.off")}
+                    </span>
+                    <span className="wsg-mode-hint">{t(lang, "trace.live.hint")}</span>
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Card 379: the rtk switch, LAST. The owner asked for it "unten in
               den chat einstellungen", so it sits at the bottom of this menu

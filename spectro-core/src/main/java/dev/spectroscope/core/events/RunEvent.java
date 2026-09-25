@@ -284,11 +284,39 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param agentId the asking agent
      * @param callId  the tool invocation awaiting the verdict
      * @param name    the tool that wants to run
-     * @param input   exactly what would run, shown to the human verbatim
-     * @param ts      epoch millis of emission
+     * @param input     exactly what would run, shown to the human verbatim
+     * @param decidedBy additive (card 399): who answers this request without
+     *                  asking a person, known before the request went out, in
+     *                  the labels the gate audit writes ({@code mode:auto},
+     *                  {@code mode:readonly}, {@code allowlist}). Absent (null,
+     *                  omitted on the wire) when a person decides, when the
+     *                  broker cannot tell, and on every request recorded before
+     *                  this card, so those stay byte-identical and read as a
+     *                  real ask.
+     * @param ts        epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record PermissionRequest(String agentId, String callId, String name, JsonNode input, long ts) implements RunEvent {}
+    record PermissionRequest(String agentId, String callId, String name, JsonNode input,
+                             String decidedBy, long ts) implements RunEvent {
+        /** The pre-card-399 arity: nothing known in advance; Jackson keeps using the canonical.
+         *
+         * @param agentId the asking agent
+         * @param callId  the tool invocation awaiting the verdict
+         * @param name    the tool that wants to run
+         * @param input   exactly what would run
+         * @param ts      epoch millis of emission */
+        public PermissionRequest(String agentId, String callId, String name, JsonNode input, long ts) {
+            this(agentId, callId, name, input, null, ts);
+        }
+
+        /** The same request, stamped with who answers it in advance.
+         *
+         * @param label the decider's audit label, or null for a real ask
+         * @return a copy carrying {@code label}; every other component unchanged */
+        public PermissionRequest stamped(String label) {
+            return new PermissionRequest(agentId, callId, name, input, label, ts);
+        }
+    }
 
     /**
      * The verdict closing a {@link PermissionRequest}.
@@ -342,10 +370,12 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * Additive (card 265): the answer closing a {@link QuestionAsked} — or the
      * record that no answer ever came.
      *
-     * <p><b>Nothing here is ever invented.</b> Four independent paths release a
-     * parked question (a cancelled run, a socket that went away, an unattended
-     * permission mode, no asker at all) and every one of them lands here with
-     * {@code cancelled} true and an empty {@code answers} list. A fabricated
+     * <p><b>Nothing here is ever invented.</b> Three independent paths release a
+     * parked question (a cancelled run, a socket that went away, no asker at
+     * all) and every one of them lands here with {@code cancelled} true and an
+     * empty {@code answers} list. Sessions recorded before card 427 also carry
+     * it for every question asked in {@code auto} or {@code readonly} mode,
+     * which answered null without parking until then. A fabricated
      * answer in a session file cannot be told apart from a real one afterwards,
      * and the trace is the product.</p>
      *

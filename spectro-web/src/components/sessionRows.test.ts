@@ -5,7 +5,13 @@
 // The list is flat, so there is nothing left to group.
 import { describe, expect, it } from "vitest";
 import type { SessionMeta } from "../events";
-import { countLabel, sessionSignal, sessionModelLabel, sessionTitleLines } from "./sessionRows";
+import {
+  countLabel,
+  sessionDisplayTitle,
+  sessionSignal,
+  sessionModelLabel,
+  sessionTitleLines,
+} from "./sessionRows";
 
 function session(over: Partial<SessionMeta> = {}): SessionMeta {
   return {
@@ -169,5 +175,55 @@ describe("sessionTitleLines", () => {
   it("speaks German too", () => {
     const text = sessionTitleLines(session({ stopReason: "aborted" }), "de", 100_000);
     expect(text).toContain("vorzeitig gestoppt (aborted)");
+  });
+});
+
+// Card 445: the row reads the title the operator gave or the model suggested,
+// and the words the operator typed stay one hover away.
+describe("the title a row shows", () => {
+  it("prefers the stored title over the first prompt", () => {
+    const row = session({
+      firstPrompt: "hallo, kannst du mal",
+      title: "Release 0.14.0",
+      titleSource: "manual",
+    });
+    expect(sessionDisplayTitle(row, "en")).toBe("Release 0.14.0");
+  });
+
+  it("shows a suggested title the same way", () => {
+    const row = session({
+      firstPrompt: "lese die CLAUDE.md",
+      title: "Subagenten und Workflows Review",
+      titleSource: "suggested",
+    });
+    expect(sessionDisplayTitle(row, "de")).toBe("Subagenten und Workflows Review");
+  });
+
+  it("falls back to the first prompt without a title, and to the empty-session words without either", () => {
+    expect(sessionDisplayTitle(session({ firstPrompt: "report your pid" }), "en")).toBe("report your pid");
+    expect(sessionDisplayTitle(session({ firstPrompt: "report your pid", title: "  " }), "en")).toBe(
+      "report your pid",
+    );
+    expect(sessionDisplayTitle(session({ firstPrompt: "" }), "en")).toBe("(empty session)");
+  });
+
+  it("keeps the first prompt in the hover, under the title", () => {
+    const lines = sessionTitleLines(
+      session({
+        firstPrompt: "hallo, kannst du mal die release notes machen",
+        title: "Release notes",
+        titleSource: "suggested",
+      }),
+      "en",
+      100_000,
+    ).split("\n");
+    expect(lines[0]).toBe("Release notes");
+    expect(lines[1]).toBe("hallo, kannst du mal die release notes machen");
+  });
+
+  it("does not repeat the first prompt when there is no title", () => {
+    const lines = sessionTitleLines(session({ firstPrompt: "report your pid" }), "en", 100_000).split("\n");
+    expect(lines[0]).toBe("report your pid");
+    expect(lines.filter((line) => line === "report your pid")).toHaveLength(1);
   });
 });

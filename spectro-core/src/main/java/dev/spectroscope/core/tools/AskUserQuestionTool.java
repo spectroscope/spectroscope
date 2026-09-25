@@ -30,8 +30,8 @@ import java.util.List;
  * subtracts it, and the wait travels on {@code question_answered.waitMs}.</p>
  *
  * <p><b>Nothing here ever invents an answer.</b> A cancelled run, an asker that
- * returns null (a closed socket, an unattended permission mode, a face with
- * nobody attached) all produce the same honest outcome: a
+ * returns null (a closed socket, a face with nobody attached) all produce the
+ * same honest outcome: a
  * {@code question_answered} marked cancelled, and a result the model can act on
  * that carries no {@code ERROR:} prefix — a question nobody heard is not a tool
  * failure and must not invite a retry. Never throws.</p>
@@ -297,9 +297,9 @@ public final class AskUserQuestionTool implements Tool {
         context.emit().accept(question);
 
         // Release path 1, before anything parks: a run already cancelled must not
-        // reach a person at all. The remaining three live in the asker (a closed
-        // socket, an unattended mode, a face with nobody attached) and all of
-        // them arrive here as the same null.
+        // reach a person at all. The others live in the asker (a closed socket,
+        // a face with nobody attached) and all of them arrive here as the same
+        // null. The permission mode is not one of them (card 427).
         long parkedAt = System.currentTimeMillis();
         Asker.Answer answer = context.signal() != null && context.signal().isCancelled()
                 ? null
