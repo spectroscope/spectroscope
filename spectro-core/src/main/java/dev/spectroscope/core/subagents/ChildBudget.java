@@ -158,6 +158,13 @@ public final class ChildBudget {
     /** {@code run_end} stop reason of a child the backend never started on. */
     public static final String STOP_NO_FIRST_TOKEN = "child_no_first_token";
 
+    /** {@code run_end} stop reason of a child whose spend passed its token
+     *  budget, {@code subagentBudgetTokens} (card 394). A value of its own, so
+     *  a session file tells a child that ran out of tokens apart from one that
+     *  ran out of time. Not a clock of this class: {@code SubagentManager}
+     *  checks it against the child's running usage sum. */
+    public static final String STOP_TOKEN_BUDGET_EXHAUSTED = "child_token_budget_exhausted";
+
     private final ExchangeLatency latency;
     private final Long overrideMs;
     private final long floorMs;

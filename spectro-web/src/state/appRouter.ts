@@ -16,7 +16,7 @@
 // hydrated roster (an unknown fleet is not a place). Either failing falls
 // through to the live default, the same landing every unknown address gets.
 
-import type { Route, SettingsSection, ViewTab } from "./route";
+import { formatRoute, type Route, type SettingsSection, type ViewTab } from "./route";
 import type { ViewState } from "./viewState";
 import type { ReportingTab } from "./viewReport";
 
@@ -207,6 +207,41 @@ export function routeOfPlace(place: Place): Route {
   return { kind: "live", tab, ...view };
 }
 
+/** The step behind "the address keeps up with the reading" (card 181). */
+export interface AddressReporter {
+  /** The route to write for this place, or null when the bar needs nothing. */
+  report(place: Place): Route | null;
+}
+
+/**
+ * Hands back the address of the place whenever it differs from the address
+ * this reporter handed back last. The App writes it as a gesture, which
+ * navigationIntent turns into a replace for a view-only move. Nothing is
+ * reported while settings are open, because they lie over the view and the
+ * panel's own address must not be overwritten, and the last report is kept
+ * for the moment they close.
+ *
+ * Card 433: it starts from the address of the place the app mounted on. That
+ * place is the boot default, not a reading anybody took, and on mount the
+ * report effect runs before the effect that applies the boot address. Started
+ * from the empty string, the first report wrote "#/" over a pasted
+ * "#/session/<id>" on every fresh load, and the boot apply then read "#/" and
+ * opened nothing.
+ */
+export function createAddressReporter(mounted: Place): AddressReporter {
+  let last = formatRoute(routeOfPlace(mounted));
+  return {
+    report(place) {
+      if (place.settingsOpen) return null;
+      const route = routeOfPlace(place);
+      const target = formatRoute(route);
+      if (target === last) return null;
+      last = target;
+      return route;
+    },
+  };
+}
+
 /** Last-wins ordering for async navigations: a ticket is current only until
  *  the next one is issued, so a slow session fetch a later navigation overtook
  *  drops its result instead of committing a stale view. */
@@ -215,10 +250,19 @@ export interface NavNonce {
   isCurrent(ticket: number): boolean;
 }
 
-export function createNavNonce(): NavNonce {
+/**
+ * @param onIssue told each new ticket once it is current. Card 431 uses it to
+ *   take an earlier open's loading sign down at the navigation that
+ *   superseded it, whatever kind of navigation that was.
+ */
+export function createNavNonce(onIssue?: (ticket: number) => void): NavNonce {
   let current = 0;
   return {
-    issue: () => ++current,
+    issue: () => {
+      current += 1;
+      onIssue?.(current);
+      return current;
+    },
     isCurrent: (ticket) => ticket === current,
   };
 }

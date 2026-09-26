@@ -1979,9 +1979,9 @@ describe("card 246 — stripLiveTrace, the live-trace switch's fold", () => {
 //
 // All three printed beside each other in the CLI and all three fell into the
 // reducer's "everything else unknown is ignored" catch-all, so the web showed
-// nothing at all. The unattended case is the one the cards were cut from: in
-// auto and readonly the ask is queued and dequeued in the same frame batch, and
-// the line is the only thing that survives that.
+// nothing at all. The unattended case is the one the cards were cut from: until
+// card 427, in auto and readonly the ask was queued and dequeued in the same
+// frame batch, and the line was the only thing that survived that.
 describe("the run's self-reports are lines and not silence", () => {
   it("draws a guard firing as a warn line, attributed to the agent that stalled", () => {
     const state = reduce(initialState, {

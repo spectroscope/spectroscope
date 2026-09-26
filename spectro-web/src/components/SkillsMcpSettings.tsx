@@ -28,23 +28,19 @@ import {
   type PackRefusal,
   type SetAction,
 } from "../state/skillInstall";
-import { packGroups, type PackGroup } from "../state/skillPacks";
+import {
+  installedGroups,
+  packGroups,
+  type InstalledNamespace,
+  type InstalledSkill,
+  type PackGroup,
+} from "../state/skillPacks";
 import { mcpTarget } from "./plusMenu";
 import { ReachBlock } from "./settingsReach";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
-interface SkillRow {
-  /** As the agent reads it: `<pack>:<skill>` for a catalogue install, bare otherwise. */
-  name: string;
-  /** The skill's own folder — the display name is not a path. */
-  folder: string;
-  /** The pack folder, null for a skill installed at the top level. */
-  pack: string | null;
-  description: string;
-  source: "user" | "project";
-  disabled: boolean;
-}
+type SkillRow = InstalledSkill;
 
 /** An armed delete disarms after this long — the archive-delete pattern. */
 const DELETE_ARM_TIMEOUT_MS = 4000;
@@ -150,39 +146,7 @@ export function SkillsSettings({
         ) : skills.length === 0 ? (
           <p className="settings-note">{t(lang, "skset.empty")}</p>
         ) : (
-          <ul className="skset-list">
-            {skills.map((row) => (
-              <li key={`${row.source}:${row.name}`} className="skset-row">
-                <button
-                  type="button"
-                  className={`thinking-toggle${row.disabled ? "" : " thinking-toggle--on"}`}
-                  role="switch"
-                  aria-checked={!row.disabled}
-                  title={t(lang, row.disabled ? "skset.enable" : "skset.disable")}
-                  onClick={() => toggle(row)}
-                >
-                  <span className="thinking-toggle-track" aria-hidden="true">
-                    <span className="thinking-toggle-knob" />
-                  </span>
-                </button>
-                <span className="skset-name mono">{row.name}</span>
-                <span className="wsg-scope-tag">{row.source}</span>
-                <span className="skset-desc" title={row.description}>
-                  {row.description}
-                </span>
-                {row.source === "user" && (
-                  <button
-                    type="button"
-                    className={`skset-del${armed === row.name ? " skset-del--armed" : ""}`}
-                    title={t(lang, "skset.deleteTitle")}
-                    onClick={() => remove(row)}
-                  >
-                    {armed === row.name ? t(lang, "skset.deleteConfirm") : "✕"}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
+          <InstalledShelf skills={skills} lang={lang} armed={armed} onSwitch={toggle} onRemove={remove} />
         )}
       </ReachBlock>
       {catalogue !== null && (
@@ -200,6 +164,136 @@ export function SkillsSettings({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The installed list, one group per namespace (card 411; owner, 2026-09-25:
+ * "alle Skills, die ich installiert habe, möchte ich auch eingeklappt haben,
+ * so wie unten die Pakete"). The groups and their counts come from the rows
+ * of the latest `/api/skills` read on every render. The one thing held here
+ * is which groups are open, and every group starts closed.
+ */
+export function InstalledShelf({
+  skills,
+  lang,
+  armed,
+  onSwitch,
+  onRemove,
+}: {
+  skills: readonly InstalledSkill[];
+  lang: Lang;
+  /** The name whose remove button waits for its second press, or null. */
+  armed: string | null;
+  onSwitch: (row: InstalledSkill) => void;
+  onRemove: (row: InstalledSkill) => void;
+}) {
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  // The top level has no pack name, and a pack name is never empty.
+  const keyOf = (group: InstalledNamespace): string => group.namespace ?? "";
+  const toggle = (key: string): void =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  return (
+    <ul className="skset-packs skset-packs--installed">
+      {installedGroups(skills).map((group) => (
+        <InstalledGroup
+          key={keyOf(group)}
+          group={group}
+          lang={lang}
+          open={open.has(keyOf(group))}
+          onToggleOpen={() => toggle(keyOf(group))}
+          armed={armed}
+          onSwitch={onSwitch}
+          onRemove={onRemove}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * One namespace of the installed list (card 411): a header with the count, and
+ * the rows only while it is open. Each row carries its switch before its name
+ * and its remove button right after its text. Hook-free, so a test can build
+ * it, find its buttons and call their handlers.
+ */
+export function InstalledGroup({
+  group,
+  lang,
+  open,
+  onToggleOpen,
+  armed,
+  onSwitch,
+  onRemove,
+}: {
+  group: InstalledNamespace;
+  lang: Lang;
+  open: boolean;
+  onToggleOpen: () => void;
+  armed: string | null;
+  onSwitch: (row: InstalledSkill) => void;
+  onRemove: (row: InstalledSkill) => void;
+}) {
+  return (
+    <li className="skset-pack">
+      <div className="skset-pack-head">
+        <button type="button" className="skset-pack-toggle" aria-expanded={open} onClick={onToggleOpen}>
+          <span className="skset-pack-caret" aria-hidden="true">
+            ▸
+          </span>
+          {group.namespace === null ? (
+            <span className="skset-pack-label">{t(lang, "skset.noNamespace")}</span>
+          ) : (
+            <span className="skset-name mono">{group.namespace}</span>
+          )}
+          <span className="skset-pack-count">{t(lang, "skset.installedCount", { count: group.count })}</span>
+        </button>
+      </div>
+      {open && (
+        <ul className="skset-list skset-pack-rows">
+          {group.rows.map((row) => (
+            <li key={`${row.source}:${row.name}`} className="skset-row">
+              <button
+                type="button"
+                className={`thinking-toggle${row.disabled ? "" : " thinking-toggle--on"}`}
+                role="switch"
+                aria-checked={!row.disabled}
+                aria-label={t(lang, "skset.enableLabel", { name: row.name })}
+                title={t(lang, row.disabled ? "skset.enable" : "skset.disable")}
+                onClick={() => onSwitch(row)}
+              >
+                <span className="thinking-toggle-track" aria-hidden="true">
+                  <span className="thinking-toggle-knob" />
+                </span>
+              </button>
+              <span className="skset-name mono">{row.name}</span>
+              <span className="wsg-scope-tag">{row.source}</span>
+              <span className="skset-desc" title={row.description}>
+                {row.description}
+              </span>
+              {row.source === "user" && (
+                <button
+                  type="button"
+                  className={`skset-del${armed === row.name ? " skset-del--armed" : ""}`}
+                  aria-label={t(lang, armed === row.name ? "skset.deleteArmedLabel" : "skset.deleteLabel", {
+                    name: row.name,
+                  })}
+                  title={t(lang, "skset.deleteTitle")}
+                  onClick={() => onRemove(row)}
+                >
+                  {armed === row.name ? t(lang, "skset.deleteConfirm") : "✕"}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
@@ -380,22 +474,19 @@ export function CataloguePack({
         <ul className="skset-list skset-pack-rows">
           {group.rows.map((row) => (
             <li key={row.id} className="skset-row">
-              <span className="skset-name mono">{row.name}</span>
-              {/* The pack is not decoration: it is half the name the agent
-                  calls, and the folder the copy lands in. */}
-              <span className="wsg-scope-tag">{row.pack}</span>
-              <span className="skset-desc" title={row.description}>
-                {row.description}
-              </span>
               {/* On installs through the single install, off removes through
                   the single DELETE, the two paths the shelf and the installed
                   list already had. A project-root copy is the repo's, so its
-                  switch shows on and does not move. */}
+                  switch shows on and does not move. Since card 411 the switch
+                  stands before the name, and its accessible name is "install"
+                  with the name the agent calls, so it differs from the same
+                  skill's switch in the installed list. */}
               <button
                 type="button"
                 className={`thinking-toggle${row.installed ? " thinking-toggle--on" : ""}`}
                 role="switch"
                 aria-checked={row.installed}
+                aria-label={t(lang, "skset.installLabel", { name: `${row.pack}:${row.name}` })}
                 title={
                   installingId === row.id
                     ? t(lang, "skset.installing")
@@ -420,6 +511,13 @@ export function CataloguePack({
                   <span className="thinking-toggle-knob" />
                 </span>
               </button>
+              <span className="skset-name mono">{row.name}</span>
+              {/* The pack is not decoration: it is half the name the agent
+                  calls, and the folder the copy lands in. */}
+              <span className="wsg-scope-tag">{row.pack}</span>
+              <span className="skset-desc" title={row.description}>
+                {row.description}
+              </span>
             </li>
           ))}
         </ul>

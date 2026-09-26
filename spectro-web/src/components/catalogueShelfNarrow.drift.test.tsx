@@ -78,13 +78,13 @@ describe("an opened pack's row gives way in its name, not past the right edge", 
     expect(blockOf(css, ".skset-pack-rows .wsg-scope-tag")).toMatch(/flex:\s*none/);
   });
 
-  it("leaves the unscoped name alone, so the header and the installed list keep theirs whole", () => {
+  it("leaves the unscoped name alone, so a pack header and the settings page's rows keep theirs whole", () => {
     expect(blockOf(css, ".skset-name")).toMatch(/flex:\s*none/);
   });
 
-  it("the opened row still carries name, chip, description and switch in that order", () => {
+  it("the opened row carries switch, name, chip and description in that order (card 411)", () => {
     expect(packHtml(true)).toMatch(
-      /<li class="skset-row"><span class="skset-name mono">verification-before-completion<\/span><span class="wsg-scope-tag">superpowers<\/span><span class="skset-desc"[^>]*>verification-before-completion does one thing.<\/span><button[^>]*role="switch"/,
+      /<li class="skset-row"><button[^>]*role="switch"[^>]*>[\s\S]*?<\/button><span class="skset-name mono">verification-before-completion<\/span><span class="wsg-scope-tag">superpowers<\/span><span class="skset-desc"[^>]*>verification-before-completion does one thing.<\/span><\/li>/,
     );
   });
 });

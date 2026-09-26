@@ -4,7 +4,7 @@
 // overrides the level until it unmounts. The whole header row is the toggle
 // button. Status is always dot + text, never color alone.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { openImage } from "../state/imageViewer";
 import type { CSSProperties } from "react";
 import type { ToolCard as ToolCardModel } from "../state/reducer";
@@ -12,7 +12,7 @@ import { agentAccent, formatDuration } from "../format";
 import { defaultOpen, useDisclosure } from "../state/disclosure";
 import { TOOL_VIEW_MODES, setToolView, useToolView } from "../state/toolView";
 import { ToolViewBody } from "./ToolViewBody";
-import { toolTeaser } from "./toolTeaser";
+import { askAnswerTeaser, toolTeaser } from "./toolTeaser";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { beacon } from "../state/levelingBeacon";
@@ -78,6 +78,24 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
           ? agentAccent(card.agentId)
           : "var(--border)";
 
+  // Card 427, loop wave H3b: an answered question names its answer in the
+  // folded row, where the input teaser would otherwise stand. The row shows it
+  // clipped to 140 characters, the tooltip shows it whole.
+  const answer = useMemo(
+    () => askAnswerTeaser(card.name, card.input, card.output),
+    [card.name, card.input, card.output],
+  );
+  const teaser = useMemo(
+    () => toolTeaser(card.name, card.input, (n) => t(lang, "tv.lines", { n })),
+    [card.name, card.input, lang],
+  );
+  // Card 416, loop wave H3d: the row is one nowrap line with an ellipsis, and at
+  // 390px a rewritten call read `run_command c…`. The button's title holds the
+  // whole of what the preview slot prints, so it is the tooltip anywhere on the
+  // row and, since the button's name comes from its content, its accessible
+  // description (HTML-AAM 4.2). No title when there is nothing to name.
+  const rowTitle = answer !== null ? answer.full : teaser;
+
   const copyOutput = (): void => {
     if (card.output === undefined) return;
     void navigator.clipboard.writeText(card.output).then(() => {
@@ -90,8 +108,9 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
     <div className="tool-card" style={{ "--line-color": lineColor } as CSSProperties}>
       <button
         type="button"
-        className="tool-card-head"
+        className={`tool-card-head${answer !== null ? " tool-card-head--answered" : ""}`}
         aria-expanded={open}
+        title={rowTitle === "" ? undefined : rowTitle}
         onClick={() => {
           setManual(!open);
           // Expanding is the act the ladder watches; collapsing again is not.
@@ -109,10 +128,16 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
           </span>
         )}
         {/* One line, and the row's only clue while the card is folded: the
-            fields that identify the call, with any body named by its size. */}
-        <span className="tool-preview">
-          {toolTeaser(card.name, card.input, (n) => t(lang, "tv.lines", { n }))}
-        </span>
+            fields that identify the call, with any body named by its size. An
+            answered question shows its answer here instead (card 427). */}
+        {answer !== null ? (
+          <span className="tool-preview tool-answer" title={answer.full}>
+            <span className="tool-answer-label">{t(lang, "ask.answerLabel")}</span>{" "}
+            <span className="tool-answer-text">{answer.text}</span>
+          </span>
+        ) : (
+          <span className="tool-preview">{teaser}</span>
+        )}
         {/* The gate outcome, made visible: an allowed call is didactically
             different from a permission-free one — it went through the gate. */}
         {card.permission !== undefined && (

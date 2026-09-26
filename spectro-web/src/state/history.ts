@@ -16,7 +16,7 @@
 // plain Node with no jsdom and swaps in an in-memory bar).
 
 import { formatRoute, parseAppRoute, type Route } from "./route";
-import { afterPop, afterPush, NAV_START, stampFor, type NavDepth } from "./navDepth";
+import { afterPop, afterPush, hasStamp, NAV_START, stampFor, type NavDepth } from "./navDepth";
 
 /** What a navigation does to history. */
 export type NavIntent = "push" | "replace" | "none";
@@ -130,6 +130,34 @@ let hashReplace: (hash: string) => void = (hash) => {
   }
 };
 
+let stateGet: () => unknown = () => {
+  try {
+    return typeof history !== "undefined" ? history.state : null;
+  } catch {
+    return null;
+  }
+};
+let stampHere: (stamp: unknown) => void = (stamp) => {
+  if (typeof history !== "undefined") {
+    // No URL argument: the entry keeps its address, only its state changes.
+    history.replaceState(stamp, "");
+  }
+};
+
+/**
+ * Stamps the entry the app booted on when it carries no stamp yet (card 433).
+ *
+ * A pasted address that opens as it stands is never written again, so its
+ * entry kept a null state, and coming back to it counted as no move: back
+ * stayed lit with nothing of this app's behind it, and forward stayed dark
+ * with the next place ahead. Measured after a fresh deep link to a session,
+ * a click on a second session and the app's own back button.
+ */
+export function stampBootEntry(): void {
+  if (hasStamp(stateGet())) return;
+  stampHere(stampFor(depth));
+}
+
 /**
  * Writes a route to the bar, deciding push/replace/none against what the bar
  * reads right now. Returns the intent it executed.
@@ -159,22 +187,28 @@ export function writeRoute(next: Route, cause: NavCause): NavIntent {
   return intent;
 }
 
-const defaults = { hash: hashGet, push: hashPush, replace: hashReplace };
+const defaults = { hash: hashGet, push: hashPush, replace: hashReplace, state: stateGet, stamp: stampHere };
 
 /** Test-only: inject an in-memory bar (the suite has no jsdom), or reset it. */
 export function __setHistoryTestHooks(hooks: {
   hash?: () => string;
   push?: (hash: string) => void;
   replace?: (hash: string) => void;
+  state?: () => unknown;
+  stamp?: (stamp: unknown) => void;
   reset?: boolean;
 }): void {
   if (hooks.reset) {
     hashGet = defaults.hash;
     hashPush = defaults.push;
     hashReplace = defaults.replace;
+    stateGet = defaults.state;
+    stampHere = defaults.stamp;
     return;
   }
   if (hooks.hash) hashGet = hooks.hash;
   if (hooks.push) hashPush = hooks.push;
   if (hooks.replace) hashReplace = hooks.replace;
+  if (hooks.state) stateGet = hooks.state;
+  if (hooks.stamp) stampHere = hooks.stamp;
 }

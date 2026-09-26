@@ -64,7 +64,7 @@ describe("navSegmentRows", () => {
     // The owner spotted the contradiction in three words: the rail's browser
     // door opened a browser that belongs to NO session. The session tab
     // `browser` and the workspace's browser card are the doors that remain.
-    expect(at().some((r) => r.id === "browser")).toBe(false);
+    expect(at().some((r) => String(r.id) === "browser")).toBe(false);
   });
 
   it("gives every row a label key that exists in both languages", () => {
@@ -111,5 +111,32 @@ describe("navSegmentRows", () => {
       const rows = at({ active });
       expect(rows.filter((r) => r.active).map((r) => r.id)).toEqual([active]);
     }
+  });
+});
+
+// Card 430: the rows come from the surface table, so light leaves out what it closes.
+describe("the rows in light", () => {
+  it("keeps the four upper rows", () => {
+    expect(navActionRows({ skillsOpen: false, mode: "light" }).map((r) => r.id)).toEqual([
+      "newChat",
+      "scenarios",
+      "starters",
+      "skills",
+    ]);
+  });
+
+  it("keeps the sessions segment alone", () => {
+    const rows = navSegmentRows({ active: "sessions", fleetsLocked: false, fleetCount: 3, mode: "light" });
+    expect(rows.map((r) => r.id)).toEqual(["sessions"]);
+  });
+
+  it("keeps all three segments in learn, the mode a caller without one gets", () => {
+    const input = { active: "sessions" as const, fleetsLocked: false, fleetCount: 0 };
+    expect(navSegmentRows({ ...input, mode: "learn" }).map((r) => r.id)).toEqual([
+      "sessions",
+      "fleets",
+      "stategraph",
+    ]);
+    expect(navSegmentRows(input).map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph"]);
   });
 });

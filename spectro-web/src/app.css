@@ -36,6 +36,8 @@
    it one is in here. sheetReach.drift.test.ts holds the line now. */
 @import "./styles/settings.css";
 @import "./styles/skillspane.css"; /* The skills view: the catalogue as a whole-surface list (card 225) */
+@import "./styles/opening.css"; /* The loading sign while a session opens (card 431) */
+@import "./styles/session-menu.css"; /* A session row's menu, rename, pinned group, delete question (card 445) */
 
 /* Back and forward in the tab bar (card 179). The desktop shell draws no URL
    bar, so these are the only way back there. Same weight as a tab, set apart by

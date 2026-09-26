@@ -9,8 +9,25 @@
 
 import { t, type Lang } from "../i18n/i18n";
 
+/**
+ * Every mode the server can announce, one per `new WorkspacePick(...)` source
+ * in SessionConnection.workspacePick(). workspaceModes.drift.test.ts reads the
+ * Java literals and holds this list against them in both directions.
+ */
+export const WORKSPACE_MODES = ["set", "recorded", "default", "random"] as const;
+
 /** The mode a run started right now would use, mirrors the server's frame. */
-export type WorkspaceMode = "random" | "default" | "set";
+export type WorkspaceMode = (typeof WORKSPACE_MODES)[number];
+
+/**
+ * Whether a value from the wire is a mode this client can draw.
+ *
+ * @param value whatever the frame carried as `mode`
+ * @return true when it is one of WORKSPACE_MODES
+ */
+export function isWorkspaceMode(value: unknown): value is WorkspaceMode {
+  return typeof value === "string" && (WORKSPACE_MODES as readonly string[]).includes(value);
+}
 
 /**
  * The workspace_info frame. Sent on connect as PROSPECTIVE (resolved false:
@@ -27,6 +44,8 @@ export interface WorkspaceAnnouncement {
   path?: string;
   /** Whether the named folder is on disk already. */
   exists?: boolean;
+  /** The folder a resumed session's record named that is no longer on disk. */
+  unavailable?: string;
 }
 
 /** What came back from GET /api/files, kept separate from why. */

@@ -26,6 +26,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * out at once, and {@code subagentBudgetSeconds: 0} made the agent build throw.
  * The loader now skips a value below its key's floor, so the session starts on
  * the value of the layer below, which here is the shipped one.</p>
+ *
+ * <p>Card 394 adds {@code subagentBudgetTokens: 0} to the same file. A
+ * {@code SubagentConfig} refuses a token budget of zero by name, so a zero that
+ * got past the loader would take this agent build down.</p>
  */
 @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SessionBelowFloorTest {
@@ -65,7 +69,8 @@ class SessionBelowFloorTest {
             throws IOException {
         String previous = saveForUser("""
                 { "provider": "ollama", "model": "qwen3:latest",
-                  "commandTimeoutSeconds": 0, "subagentBudgetSeconds": 0 }
+                  "commandTimeoutSeconds": 0, "subagentBudgetSeconds": 0,
+                  "subagentBudgetTokens": 0 }
                 """);
         try {
             SessionConnection connection = sessionIn("ws-386-zero", workspace);

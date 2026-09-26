@@ -4,6 +4,7 @@
 // fields here; extend only additively, and let the reducer ignore unknown types.
 
 import type { ThresholdSource } from "./wire/thresholdSources";
+import type { ChooserOption } from "./workspace/chooserMode";
 
 // attachment REFERENCE — the bytes live in the blob store next to the
 // session file, never in the event (JSONL-FORMAT.md §7).
@@ -30,13 +31,31 @@ export type RunEvent =
        *  (RunEvent.java:65-66); this line is the browser finally reading it. */
       trigger?: string;
       attachments?: AttachmentRef[];
+      /** The folder this run worked in (additive, card 284), written when
+       *  Agent.java started the run with a cwd; card 421 reads it so a
+       *  reopened session can name its folder. Absent on runs recorded before
+       *  card 284, on runs started without a cwd, and on a triggered node's
+       *  run, whose re-stamped run_start drops it (card 439). */
+      workspace?: string;
       ts: number;
-    } // provider?, model?, attachments? all additive
+    } // provider?, model?, attachments?, workspace? all additive
   | { type: "turn_start"; agentId: string; turn: number; ts: number }
   | { type: "text_delta"; agentId: string; text: string; ts: number }
   | { type: "thinking_delta"; agentId: string; text: string; ts: number } // reasoning stream, additive
   | { type: "tool_call"; agentId: string; callId: string; name: string; input: unknown; ts: number }
-  | { type: "permission_request"; agentId: string; callId: string; name: string; input: unknown; ts: number }
+  | {
+      type: "permission_request";
+      agentId: string;
+      callId: string;
+      name: string;
+      input: unknown;
+      /** Who answers this request without asking a person (card 399, additive):
+       *  "mode:auto", "mode:readonly" or "allowlist", the labels the gate audit
+       *  writes. Absent when a person decides and on every request recorded
+       *  before the field; such a request is a real ask. */
+      decidedBy?: string | null;
+      ts: number;
+    }
   | { type: "permission_decision"; callId: string; allowed: boolean; ts: number }
   | {
       type: "tool_result";
@@ -433,7 +452,8 @@ export type RunEvent =
       /** One entry per question asked. Empty exactly when `cancelled`. */
       answers: string[];
       /** True when the question was released without an answer: a cancelled run,
-       *  a socket that went away, an unattended permission mode, a skip. Never a
+       *  a socket that went away, a skip. Sessions recorded before card 427 also
+       *  carry it for every question asked in auto or readonly mode. Never a
        *  fabricated reply — an invented answer in a session file cannot be told
        *  from a real one afterwards. */
       cancelled: boolean;
@@ -487,7 +507,7 @@ export type ClientMessage =
   | { type: "set_thinking"; enabled: boolean } // reasoning visibility toggle
   | { type: "set_reasoning"; mode: "on" | "off" | "default"; effort?: string } // picker reasoning control (card 88)
   | { type: "set_provider"; provider: string; model?: string } // switch the LLM backend mid-session
-  | { type: "set_workspace"; mode?: "random" | "default" | "set"; path?: string } // pin THIS session's workspace by mode (before the first run)
+  | { type: "set_workspace"; mode?: ChooserOption; path?: string } // pin THIS session's workspace by mode (before the first run)
   | { type: "set_permission_mode"; mode: string } // switch ask/auto/readonly mid-session (composer gear)
   // Card 390: the window for this session, from the context ring. null clears;
   // the server decides the range and answers with a `window_override` event.
@@ -530,4 +550,13 @@ export interface SessionMeta {
   denyCount?: number;
   /** The last event's timestamp — the span the session covers. */
   endedAt?: number;
+  /** Card 445: the title the row shows instead of the first prompt, from the
+   *  server's meta store beside the sessions (never from the session file).
+   *  Absent when the session has none; the server decides that a title the
+   *  operator typed wins over one the model suggested. */
+  title?: string;
+  /** Card 445: where the title came from. */
+  titleSource?: "suggested" | "manual";
+  /** Card 445: true for a pinned session, absent otherwise. */
+  pinned?: boolean;
 }

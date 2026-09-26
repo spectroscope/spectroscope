@@ -175,23 +175,33 @@ describe("the reader arms and disarms the pin, and nothing else does", () => {
 });
 
 describe("what a growth event may do", () => {
-  it("a disarmed reader is not moved, whatever arrives", () => {
-    expect(followScroll({ pinned: false, newTurn: false })).toBe("none");
+  // Card 399 took the question "did a whole new turn begin?" out of this rule.
+  // The glide the rule chose for a new turn painted the rows the turn pushed
+  // down at the old position first. In four browser runs of a long pinned
+  // transcript the working line appeared about 70 px below its place when a
+  // run started, and in two of them it slid up over about 180 ms
+  // (kanban/evidence/399/loop/h3a). The two cases below are asked the way Chat
+  // asked before that card, with the new turn named.
+  const asBefore = (pinned: boolean, newTurn: boolean) =>
+    ({ pinned, newTurn }) as Parameters<typeof followScroll>[0];
+
+  it("a disarmed reader is not moved", () => {
+    expect(followScroll({ pinned: false })).toBe("none");
   });
 
   it("not even a whole new turn moves a disarmed reader", () => {
     // The one that used to hurt most: an answer beginning is the moment the
     // reader is most likely to be reading something else.
-    expect(followScroll({ pinned: false, newTurn: true })).toBe("none");
+    expect(followScroll(asBefore(false, true))).toBe("none");
   });
 
-  it("a pinned reader follows the stream instantly while a turn grows", () => {
+  it("a pinned reader follows the stream instantly", () => {
     // Instant, not smooth: an animation per token is jitter.
-    expect(followScroll({ pinned: true, newTurn: false })).toBe("auto");
+    expect(followScroll({ pinned: true })).toBe("auto");
   });
 
-  it("a pinned reader glides to a new turn", () => {
-    expect(followScroll({ pinned: true, newTurn: true })).toBe("smooth");
+  it("a pinned reader is carried to a new turn instantly too, without a glide", () => {
+    expect(followScroll(asBefore(true, true))).toBe("auto");
   });
 });
 
@@ -431,5 +441,59 @@ describe("taking hold of the scrollbar is its own kind of gesture", () => {
     // scroll-event path — stated here so the limit is pinned rather than
     // discovered later.
     expect(onScrollbar(539, 0, 541)).toBe(false);
+  });
+});
+
+describe("a smaller box may name its own edge", () => {
+  // Card 400: the thinking body shares this rule and keeps its 32 px as the
+  // distance that still counts as its bottom (owner call 2, at its default).
+  // The transcript passes nothing and keeps the two pixels above.
+
+  it("a reader landing 20 px short of a box whose edge is 32 px re-arms it", () => {
+    expect(
+      pinAfterScroll({
+        pinned: false,
+        cause: "reader",
+        lastPull: "toward",
+        movedUp: false,
+        distanceFromBottom: 20,
+        atBottomPx: 32,
+      }),
+    ).toBe(true);
+  });
+
+  it("the same landing on the transcript's two-pixel edge does not", () => {
+    expect(
+      pinAfterScroll({
+        pinned: false,
+        cause: "reader",
+        lastPull: "toward",
+        movedUp: false,
+        distanceFromBottom: 20,
+      }),
+    ).toBe(false);
+  });
+
+  it("a wheel down within that edge re-arms the box too", () => {
+    expect(pinAfterGesture({ pinned: false, pull: "toward", distanceFromBottom: 20, atBottomPx: 32 })).toBe(
+      true,
+    );
+    expect(pinAfterGesture({ pinned: false, pull: "toward", distanceFromBottom: 20 })).toBe(false);
+  });
+
+  it("a wider edge still lets a pull away disarm", () => {
+    expect(pinAfterGesture({ pinned: true, pull: "away", distanceFromBottom: 10, atBottomPx: 32 })).toBe(
+      false,
+    );
+    expect(
+      pinAfterScroll({
+        pinned: true,
+        cause: "reader",
+        lastPull: "away",
+        movedUp: true,
+        distanceFromBottom: 10,
+        atBottomPx: 32,
+      }),
+    ).toBe(false);
   });
 });

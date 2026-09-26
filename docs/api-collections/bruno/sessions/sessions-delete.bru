@@ -11,7 +11,7 @@ delete {
 }
 
 docs {
-  Delete one stored session (JSONL + blob folder). 204 success, 400 malformed id, 404 unknown.
+  Delete one stored session (JSONL + blob folder, its wire sidecars, and its title and pin). 204 success, 400 malformed id, 404 unknown.
   
   CAUTION: This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.
   

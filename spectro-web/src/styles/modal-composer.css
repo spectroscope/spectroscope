@@ -136,8 +136,8 @@
   position: relative;
   border-top: 1px solid var(--border);
   /* CARD 383: the bottom drops a rung. Below it is the usage footer with its
-     own hairline and padding, not the window edge, so 16px here read as a
-     second margin on top of that one.
+     own padding and a 1px top edge (transparent since card 441), not the
+     window edge, so 16px here read as a second margin on top of that one.
      CARD 408: the top drops a rung too, the owner asked for less blank above
      the field. The bottom stays at --sp-3: composerRow.drift.test.ts reads it
      for card 383's reach math, and composerSlack.drift.test.ts pins it. */
@@ -707,8 +707,11 @@
   gap: var(--sp-4);
   /* Card 408: 4px above and below the one line of text, owner's request. */
   padding: var(--sp-1) var(--sp-4);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  /* Card 441: no background of its own and no visible line on top, so the
+     input area above and this line read as one piece (owner, 2026-09-25).
+     The edge stays 1px wide and transparent, so the composer above sits
+     where it sat. */
+  border-top: 1px solid transparent;
   font-size: var(--fs-12);
   color: var(--text-dim);
 }

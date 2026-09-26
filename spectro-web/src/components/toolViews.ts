@@ -12,6 +12,7 @@ import type { PatchHunk, ToolResultDetail } from "../import/toolResultDetail";
 import { hlLangForFence, hlLangForPath, tokenize, type HlLang } from "../workspace/highlight";
 import { formatDuration, formatTokens, prettyJson } from "../format";
 import { readWorkflowState } from "../lab/workflowGraph";
+import { rtkRewriteOf } from "../wire/rtkRewrite";
 
 /** One tool call, described as what it actually is. */
 export type ToolView =
@@ -56,6 +57,9 @@ export type ToolView =
        *  the record did not separate them — which is every live run and every
        *  transcript older than the field, so absent is the common case. */
       stderr: string | null;
+      /** The line the model wrote and who rewrote it, when `command` is not
+       *  that line (card 416: rtk rewrote a run_command). Null otherwise. */
+      rewrite: { original: string; by: string } | null;
     }
   | { kind: "image"; source: string | null; prompt: string | null; preview: string | null; result: string }
   | { kind: "skill"; name: string; body: string }
@@ -1581,12 +1585,14 @@ export function describeTool(
       // reminder the client appends to 46 blocks, which is a note to the model
       // rather than anything the command printed.
       const stdout = d?.stdout;
+      const rewrite = rtkRewriteOf(name, input);
       return {
         kind: "command",
         command,
         output: stdout === undefined || stdout === "" ? out : stdout,
         failed: isError,
         stderr: d?.stderr ?? null,
+        rewrite: rewrite === null ? null : { original: rewrite.original, by: rewrite.rewrittenBy },
       };
     }
 

@@ -3,8 +3,9 @@
 // never pushes (follow is a reader, not an author); a seek or scrub inside the
 // same session replaces (never an entry per tick); the same address twice is
 // nothing at all — that silence is what breaks the write/apply echo loop.
-import { beforeEach, describe, expect, it } from "vitest";
-import { __setHistoryTestHooks, navigationIntent, writeRoute } from "./history";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { __setHistoryTestHooks, navDepth, navigationIntent, stampBootEntry, writeRoute } from "./history";
+import { afterPop, canGoBack, canGoForward, NAV_START } from "./navDepth";
 import type { Route, ViewTab } from "./route";
 import type { ViewState } from "./viewState";
 
@@ -211,5 +212,50 @@ describe("writeRoute with no browser at all", () => {
   it("does not throw in plain Node: the default seam is guarded", () => {
     __setHistoryTestHooks({ reset: true });
     expect(() => writeRoute(LIVE, "boot")).not.toThrow();
+  });
+});
+
+// Card 433: a pasted address that opens as it stands is never written again,
+// so nothing stamped the entry the app booted on. Coming back to it then
+// counted as no move, and card 179's back and forward buttons lied about it.
+describe("stampBootEntry (card 433)", () => {
+  let state: unknown;
+  let stamps: unknown[];
+
+  beforeEach(() => {
+    stamps = [];
+    __setHistoryTestHooks({
+      state: () => state,
+      stamp: (s) => {
+        stamps.push(s);
+        state = s;
+      },
+    });
+  });
+
+  afterEach(() => {
+    __setHistoryTestHooks({ reset: true });
+  });
+
+  it("stamps an entry that carries no stamp with the depth the app boots at", () => {
+    state = null;
+    expect(navDepth()).toEqual(NAV_START);
+    stampBootEntry();
+    expect(stamps).toEqual([{ spectroNav: 0 }]);
+  });
+
+  it("makes coming back to the boot entry darken back and light forward", () => {
+    state = null;
+    stampBootEntry();
+    const back = afterPop({ index: 1, furthest: 1 }, state);
+    expect(canGoBack(back)).toBe(false);
+    expect(canGoForward(back)).toBe(true);
+  });
+
+  it("leaves an entry that already carries a stamp alone", () => {
+    state = { spectroNav: 2 };
+    stampBootEntry();
+    expect(stamps).toEqual([]);
+    expect(state).toEqual({ spectroNav: 2 });
   });
 });

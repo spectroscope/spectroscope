@@ -8,10 +8,9 @@
 // repeatedly, and the guard beside it demands coverage of all three rather
 // than checking a copy against itself.
 //
-// THREE TABLES ARE AUTHORED HERE, and it is worth saying exactly why that is
+// FOUR TABLES ARE AUTHORED HERE, and it is worth saying exactly why that is
 // not the same thing. None invents an entry; each answers a question no
-// existing data answers, and each has its COVERAGE demanded from a different
-// source:
+// existing data answers, and each is checked against a different source:
 //
 //  - SETTINGS_SECTION_LABEL_KEY: the heading a section draws. The seventeen
 //    headings use six different key shapes (`set.secDesign`,
@@ -33,13 +32,21 @@
 //    none of these keys. The guard demands that each named component draws
 //    the key and stands outside the page's imports, and that the page does
 //    not draw the key too.
+//  - SETTING_FIELD_LABEL_EXCEPTIONS (card 394, wave H3d): the name a field
+//    draws beside its control, for the fields where that name is not the dict
+//    key `set.<key>`, or where the field draws none. The name is drawn in JSX
+//    and no data carries it. settingsSearchNames.test.ts demands that every
+//    field of the placement table resolves through the rule or this table,
+//    that this table holds no entry the rule gives anyway, and that each name
+//    is drawn inside the reach block that names the field, read off the page
+//    source.
 //
 // A cross-room hit POINTS at a section, it does not narrow the page. The
 // limits room's old box removed rows from the DOM, which is a sensible thing
 // to do to a list on screen and the wrong thing to do to five rooms that are
 // not.
 
-import { t, type Lang } from "../i18n/i18n";
+import { dict, t, type Lang } from "../i18n/i18n";
 import {
   SETTINGS_TABS,
   SETTINGS_TAB_SECTIONS,
@@ -135,6 +142,7 @@ export const SECTION_SETTING_KEYS = {
     "progressGuardPlanTurns",
     "maxTurns",
     "subagentBudgetSeconds",
+    "subagentBudgetTokens",
     "maxTokens",
     "commandTimeoutSeconds",
     "continuationBudget",
@@ -146,6 +154,48 @@ export const SECTION_SETTING_KEYS = {
   workspace: ["workspace"],
   logging: ["logLevel"],
 } as const satisfies Partial<Record<PanelSection, readonly SettingKey[]>>;
+
+/** A settings key the page draws a field for. */
+type PageSettingKey = (typeof SECTION_SETTING_KEYS)[keyof typeof SECTION_SETTING_KEYS][number];
+
+/** Card 394, wave H3d: the fields whose name on the page is not `set.<key>`,
+ *  with the dict key of the name they draw. null: the field draws no name of
+ *  its own, and the section heading on its row is what the reader sees. */
+export const SETTING_FIELD_LABEL_EXCEPTIONS = {
+  // One address field stands under the provider, for the provider picked.
+  ollamaBaseUrl: "set.address",
+  lmstudioBaseUrl: "set.address",
+  llamacppBaseUrl: "set.address",
+  imageProvider: "set.imageBackend",
+  chromeBinary: "set.chrome",
+  otlpBasicAuth: "set.otlpAuth",
+  progressGuardWrites: "set.progress.progressGuardWrites",
+  progressGuardFailures: "set.progress.progressGuardFailures",
+  progressGuardPlanTurns: "set.progress.progressGuardPlanTurns",
+  headlessMcp: "mcpset.headlessLabel",
+  workspace: null,
+  autoApprove: null,
+  hooks: null,
+  skills: null,
+  mcpServers: null,
+} as const satisfies Partial<Record<PageSettingKey, string | null>>;
+
+/**
+ * The dict key of the name the page draws beside a field.
+ *
+ * @param key a settings key
+ * @return the listed name when the key is listed, else `set.<key>` when the
+ *         dictionary carries it; null when the field draws no name of its own;
+ *         undefined when neither answers, which settingsSearchNames.test.ts
+ *         refuses for every field of the page
+ */
+export function settingFieldLabelKey(key: string): string | null | undefined {
+  if (Object.hasOwn(SETTING_FIELD_LABEL_EXCEPTIONS, key)) {
+    return (SETTING_FIELD_LABEL_EXCEPTIONS as Record<string, string | null>)[key];
+  }
+  const rule = `set.${key}`;
+  return Object.hasOwn(dict, rule) ? rule : undefined;
+}
 
 /** Which component outside the settings page draws each saveable key the page
  *  does not. The manifest carries no field for these. */
@@ -192,6 +242,7 @@ export function buildSettingsManifest(lang: Lang, numbers: readonly GoverningNum
         number: null,
       });
       for (const key of keysOf[section] ?? []) {
+        const nameKey = settingFieldLabelKey(key);
         out.push({
           id: `field:${key}`,
           origin: "field",
@@ -199,7 +250,9 @@ export function buildSettingsManifest(lang: Lang, numbers: readonly GoverningNum
           section,
           labelKey,
           label,
-          title: key,
+          // Card 394, wave H3d: the name the page draws beside the field, in
+          // the reader's language, so the box finds what the reader sees.
+          title: typeof nameKey === "string" ? `${t(lang, nameKey)} · ${key}` : key,
           key,
           note: "",
           number: null,

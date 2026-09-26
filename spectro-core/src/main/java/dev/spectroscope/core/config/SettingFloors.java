@@ -80,6 +80,8 @@ public final class SettingFloors {
     private static final List<Floor> TABLE = List.of(
             new Floor("commandTimeoutSeconds", 1, null),
             new Floor("subagentBudgetSeconds", 1, null),
+            // Card 394: zero would cut every child at its first exchange.
+            new Floor("subagentBudgetTokens", 1, null),
             new Floor("maxTurns", 1, null),
             new Floor("maxTokens", 1, null),
             new Floor("maxQuestionOptions", 1, null),

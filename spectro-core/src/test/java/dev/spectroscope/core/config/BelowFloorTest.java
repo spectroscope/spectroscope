@@ -48,6 +48,8 @@ class BelowFloorTest {
         Map<String, Integer> table = new LinkedHashMap<>();
         table.put("commandTimeoutSeconds", 1);
         table.put("subagentBudgetSeconds", 1);
+        // Card 394: a child's token budget, with the floor 386 set for its sibling.
+        table.put("subagentBudgetTokens", 1);
         table.put("maxTurns", 1);
         table.put("maxTokens", 1);
         table.put("maxQuestionOptions", 1);

@@ -280,6 +280,16 @@
     "explanation" : "The shipped subagentBudgetSeconds: the floor of a child agent's run budget, in seconds. Two hours.\n\nCard 372, the owner's number of 2026-09-17: \"Die Subagenten-Runtime muss auf zwei Stunden hoch, oder drei, und alles einstellbar.\" Until this card the floor was a fixed 300 s constant inside ChildBudget, with no key above it; on 2026-09-16 it cut a planner child that was still streaming a 2,400-line plan. The floor is the operator's side of the derived budget, max(floor, min(30 min, 3 x p50)): the 30 minute ceiling caps the measured term only and never a number an operator typed, otherwise a setting of 3600 would silently have become 1800.\n\nThe price is the card's and the owner's: a child that wedges after its first token holds its parent for this long, plus up to 45 minutes of queue grace before that token. No upper bound is enforced, for the reason DEFAULT_COMMAND_TIMEOUT_SECONDS gives."
   },
   {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_SUBAGENT_BUDGET_TOKENS",
+    "value" : "10000000",
+    "expression" : "10_000_000",
+    "kind" : "SETTABLE",
+    "unit" : "TOKENS",
+    "key" : "subagentBudgetTokens",
+    "explanation" : "The shipped subagentBudgetTokens: the spend, input plus output as its usage events report them, past which the harness cuts one child agent at its next turn. Ten million.\n\nCard 394. On 2026-09-23 four GLM children on Ollama spent 17,423,655 input tokens in about 340 s and handed back nothing; the 300 s wall clock of that release was the only thing that ended them, and card 372 has since raised that clock to two hours. The owner's words of 2026-09-24: the smaller agents must be able to work, and a middle ground has to be found.\n\nDATED SNAPSHOT, 2026-09-25, from outside this repo. Length: over 8,963 Claude Code subagent transcripts on the owner's machine a subagent makes a median of 16 round trips, p95 110, p99 173. Growth: the four children of 2026-09-23 added 480 to 1,217 input tokens of context per round trip (least-squares slope per child). Extended past their 340 s, those four lines reach ten million after 119, 140, 180 and 198 round trips, all above the p95 length; at the average rate each child showed over its 340 s, extended the same way, each would have reached it 491 to 1,165 s into its run instead of running for two hours. Both are extrapolations, not measurements. What the number does not do: four children of one spawn_agents call can still spend forty million together. The scripts and their output are in kanban/evidence/394/loop/ in the product home.\n\nCache reads and cache writes are reported apart and are not counted, as the child's running sum never counted them. A backend without a prompt cache reports the whole resent conversation as input, which is where the budget binds. No upper bound is enforced, for the reason DEFAULT_COMMAND_TIMEOUT_SECONDS gives."
+  },
+  {
     "owner" : "dev.spectroscope.core.goal.CommandGoalCheck",
     "field" : "DEFAULT_TIMEOUT_SECONDS",
     "value" : "600",
@@ -1037,7 +1047,7 @@
     "kind" : "FIXED",
     "unit" : "MILLISECONDS",
     "key" : "",
-    "explanation" : "How long after child exit we wait for the drain to finish. Normally the exit closes the pipe instantly; a background grandchild holding the fd open must not hang the tool, so we take the partial snapshot instead."
+    "explanation" : "How long the drain is waited for once the child has exited, and after a time limit, once the killed processes are gone or REAP_GRACE_MS is over. Normally the end of the child closes the pipe at once. A background grandchild that holds the pipe open must not hang the tool, so after this wait the output read so far is taken."
   },
   {
     "owner" : "dev.spectroscope.core.tools.ShellCommand",
@@ -1048,6 +1058,26 @@
     "unit" : "NONE",
     "key" : "",
     "explanation" : "Exit code stand-in when the process never produced one (timeout/failure)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ShellCommand",
+    "field" : "REAP_GRACE_MS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a cut waits for the processes it killed to be gone. A time limit or a cancel kills the shell and the processes the census found below it, and the run waits until none of those is alive, or until this wait is over, before it takes the output."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ShellCommand",
+    "field" : "REAP_POLL_MS",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "PLUMBING",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How often a cut looks again whether the processes it killed are gone."
   },
   {
     "owner" : "dev.spectroscope.core.tools.StandardTools",

@@ -1,0 +1,32 @@
+meta {
+  name: rename or pin a session
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Release 0.14.0",
+    "pinned": true
+  }
+}
+
+docs {
+  Set a stored session's title, its pin, or both. A blank title drops the hand-set one, and the row falls back to the suggested title or the first prompt. Written to ~/.spectro/session-meta.json, never into the session JSONL. 200 {title?, titleSource?, pinned}, 400 malformed id or body, 404 fenced out or session not stored.
+  
+  Body: Either field alone is enough: title is a string, pinned a boolean.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

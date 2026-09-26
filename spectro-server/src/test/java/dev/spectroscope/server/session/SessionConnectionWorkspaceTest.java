@@ -2,6 +2,7 @@ package dev.spectroscope.server.session;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.session.SessionStore;
 import org.junit.jupiter.api.Test;
@@ -199,6 +200,94 @@ class SessionConnectionWorkspaceTest {
                 .isEqualTo(vanished.toString());
         assertThat(Path.of(frame.path("path").asText()).toRealPath())
                 .as("and it falls back to the configured folder")
+                .isEqualTo(configured.toRealPath());
+    }
+
+    /** Writes the user settings file and returns what it held before, or null. */
+    private static String saveForUser(String json) throws IOException {
+        Path file = SettingsWriter.userSettingsFile();
+        String previous = Files.exists(file) ? Files.readString(file) : null;
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, json);
+        return previous;
+    }
+
+    /** Puts back what {@link #saveForUser} replaced. */
+    private static void restoreUserSettings(String previous) throws IOException {
+        Path file = SettingsWriter.userSettingsFile();
+        if (previous == null) {
+            Files.deleteIfExists(file);
+        } else {
+            Files.writeString(file, previous);
+        }
+    }
+
+    /** The first workspace frame that names a resolved folder, if any. */
+    private static Optional<JsonNode> resolvedWorkspaceFrame(FakeSocket socket) {
+        synchronized (socket) {
+            for (String frame : socket.text) {
+                try {
+                    JsonNode node = JSON.readTree(frame);
+                    if ("workspace_info".equals(node.path("type").asText())
+                            && node.path("resolved").asBoolean(false)) {
+                        return Optional.of(node);
+                    }
+                } catch (Exception notJson) {
+                    // provider_info and friends are all JSON; anything else is not ours
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Card 428, criterion 7: the working folder row shows only until the first
+     * prompt starts a run, so a pick made in it must still decide that run.
+     * Picking "default" pins the configured folder, the agent the first prompt
+     * builds works there, and a change after that is refused.
+     */
+    @Test
+    void aDefaultPickedBeforeTheFirstPromptIsTheFolderTheRunGets(@TempDir Path configured)
+            throws IOException {
+        // The session moment reads the user settings, not the constructor's
+        // overrides, so the provider the agent is built with comes from there:
+        // a local one, which needs no key to build.
+        String previous = saveForUser("{\"provider\": \"ollama\", \"model\": \"qwen3:latest\"}");
+        try {
+            pickDefaultThenBuild(configured);
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
+
+    /** The test above, run while the user settings name the local provider. */
+    private static void pickDefaultThenBuild(Path configured) throws IOException {
+        FakeSocket socket = new FakeSocket("ws-428-default", "ws://localhost/ws");
+        SessionConnection connection = new SessionConnection(socket, JSON, configuredAt(configured), null);
+        connection.start();
+
+        connection.onSetWorkspace("default", null);
+        JsonNode picked = resolvedWorkspaceFrame(socket)
+                .orElseThrow(() -> new AssertionError("the pick was answered with no resolved workspace"));
+        assertThat(Path.of(picked.path("path").asText()).toRealPath())
+                .as("the default pick names the configured folder")
+                .isEqualTo(configured.toRealPath());
+        String sessionId = picked.path("sessionId").asText("");
+        assertThat(sessionId).as("the pick minted the session it pins").isNotEmpty();
+
+        // The first prompt builds the agent: the session moment.
+        connection.buildAgentOnce();
+        assertThat(connection.agent()).as("the agent the first prompt builds").isNotNull();
+        assertThat(Path.of(SessionWorkspaces.resolvedPath(sessionId)).toRealPath())
+                .as("the run resolves the folder the row picked")
+                .isEqualTo(configured.toRealPath());
+
+        connection.onSetWorkspace("random", null);
+        assertThat(socket.textJoined())
+                .as("a change after the first run is refused in words")
+                .contains("fixed once the agent has run");
+        assertThat(Path.of(SessionWorkspaces.resolvedPath(sessionId)).toRealPath())
+                .as("and the refused change moved nothing")
                 .isEqualTo(configured.toRealPath());
     }
 }

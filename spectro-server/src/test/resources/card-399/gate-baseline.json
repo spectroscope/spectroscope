@@ -1,0 +1,181 @@
+{
+  "auto" : [ {
+    "ledger" : {
+      "type" : "gate_decision",
+      "ts" : 0,
+      "callId" : "<call>",
+      "agentId" : "main",
+      "tool" : "run_command",
+      "tier" : "eval-execute",
+      "tierSource" : "builtin",
+      "mapVersion" : "2026-09-01.1",
+      "decision" : "allow",
+      "decidedBy" : "mode:auto"
+    },
+    "request" : {
+      "type" : "permission_request",
+      "agentId" : "main",
+      "callId" : "<call>",
+      "name" : "run_command",
+      "input" : {
+        "command" : "echo stamp-399"
+      },
+      "ts" : 0
+    },
+    "decision" : {
+      "type" : "permission_decision",
+      "callId" : "<call>",
+      "allowed" : true,
+      "ts" : 0
+    }
+  }, {
+    "ledger" : {
+      "type" : "gate_decision",
+      "ts" : 0,
+      "callId" : "<call>",
+      "agentId" : "main",
+      "tool" : "run_command",
+      "tier" : "eval-execute",
+      "tierSource" : "builtin",
+      "mapVersion" : "2026-09-01.1",
+      "decision" : "allow",
+      "decidedBy" : "mode:auto"
+    },
+    "request" : {
+      "type" : "permission_request",
+      "agentId" : "main",
+      "callId" : "<call>",
+      "name" : "run_command",
+      "input" : {
+        "command" : "echo stamp-399"
+      },
+      "ts" : 0
+    },
+    "decision" : {
+      "type" : "permission_decision",
+      "callId" : "<call>",
+      "allowed" : true,
+      "ts" : 0
+    }
+  } ],
+  "readonly" : [ {
+    "ledger" : {
+      "type" : "gate_decision",
+      "ts" : 0,
+      "callId" : "<call>",
+      "agentId" : "main",
+      "tool" : "run_command",
+      "tier" : "eval-execute",
+      "tierSource" : "builtin",
+      "mapVersion" : "2026-09-01.1",
+      "decision" : "deny",
+      "decidedBy" : "mode:readonly"
+    },
+    "request" : {
+      "type" : "permission_request",
+      "agentId" : "main",
+      "callId" : "<call>",
+      "name" : "run_command",
+      "input" : {
+        "command" : "echo stamp-399"
+      },
+      "ts" : 0
+    },
+    "decision" : {
+      "type" : "permission_decision",
+      "callId" : "<call>",
+      "allowed" : false,
+      "ts" : 0
+    }
+  }, {
+    "ledger" : {
+      "type" : "gate_decision",
+      "ts" : 0,
+      "callId" : "<call>",
+      "agentId" : "main",
+      "tool" : "run_command",
+      "tier" : "eval-execute",
+      "tierSource" : "builtin",
+      "mapVersion" : "2026-09-01.1",
+      "decision" : "deny",
+      "decidedBy" : "mode:readonly"
+    },
+    "request" : {
+      "type" : "permission_request",
+      "agentId" : "main",
+      "callId" : "<call>",
+      "name" : "run_command",
+      "input" : {
+        "command" : "echo stamp-399"
+      },
+      "ts" : 0
+    },
+    "decision" : {
+      "type" : "permission_decision",
+      "callId" : "<call>",
+      "allowed" : false,
+      "ts" : 0
+    }
+  } ],
+  "ask" : [ {
+    "ledger" : {
+      "type" : "gate_decision",
+      "ts" : 0,
+      "callId" : "<call>",
+      "agentId" : "main",
+      "tool" : "run_command",
+      "tier" : "eval-execute",
+      "tierSource" : "builtin",
+      "mapVersion" : "2026-09-01.1",
+      "decision" : "allow",
+      "decidedBy" : "user"
+    },
+    "request" : {
+      "type" : "permission_request",
+      "agentId" : "main",
+      "callId" : "<call>",
+      "name" : "run_command",
+      "input" : {
+        "command" : "echo stamp-399"
+      },
+      "ts" : 0
+    },
+    "decision" : {
+      "type" : "permission_decision",
+      "callId" : "<call>",
+      "allowed" : true,
+      "ts" : 0
+    }
+  }, {
+    "ledger" : {
+      "type" : "gate_decision",
+      "ts" : 0,
+      "callId" : "<call>",
+      "agentId" : "main",
+      "tool" : "run_command",
+      "tier" : "eval-execute",
+      "tierSource" : "builtin",
+      "mapVersion" : "2026-09-01.1",
+      "entry" : "run_command#eval-execute:echo*",
+      "entryCeiling" : "eval-execute",
+      "decision" : "allow",
+      "decidedBy" : "allowlist"
+    },
+    "request" : {
+      "type" : "permission_request",
+      "agentId" : "main",
+      "callId" : "<call>",
+      "name" : "run_command",
+      "input" : {
+        "command" : "echo stamp-399"
+      },
+      "ts" : 0
+    },
+    "decision" : {
+      "type" : "permission_decision",
+      "callId" : "<call>",
+      "allowed" : true,
+      "ts" : 0
+    }
+  } ]
+}

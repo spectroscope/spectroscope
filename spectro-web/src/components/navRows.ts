@@ -8,6 +8,9 @@
 // seven live here; the settings row has no state to decide and is written
 // where it sits.
 
+import { isOpen } from "../state/surfaces";
+import type { ViewMode } from "../state/viewMode";
+
 /** Which glyph leads a row. Names, not paths — NavIcon owns the geometry. */
 export type NavIconId =
   "plus" | "play" | "stack" | "sessions" | "fleets" | "stategraph" | "browser" | "skills" | "gear";
@@ -26,7 +29,8 @@ export type NavActionId = "newChat" | "scenarios" | "starters" | "skills";
 export type NavSegmentId = "sessions" | "fleets" | "stategraph";
 
 export interface NavRowSpec {
-  id: string;
+  /** The row's entry in the surface table (state/surfaces.ts, card 430). */
+  id: NavActionId | NavSegmentId;
   /** i18n key for the visible label. */
   labelKey: string;
   /** i18n key for the hover text, when the row has more to say than its label. */
@@ -50,9 +54,11 @@ export interface NavRowSpec {
  * reader opens a place.
  *
  * @param input.skillsOpen the skills view is on screen
+ * @param input.mode       the window's mode; a row the surface table closes in it
+ *                          is left out (card 430). Learn when absent.
  */
-export function navActionRows(input: { skillsOpen: boolean }): NavRowSpec[] {
-  return [
+export function navActionRows(input: { skillsOpen: boolean; mode?: ViewMode }): NavRowSpec[] {
+  const rows: NavRowSpec[] = [
     { id: "newChat", labelKey: "nav.newChat", icon: "plus", disabled: false, active: false, trailing: null },
     {
       id: "scenarios",
@@ -83,6 +89,7 @@ export function navActionRows(input: { skillsOpen: boolean }): NavRowSpec[] {
       trailing: null,
     },
   ];
+  return rows.filter((row) => isOpen(row.id, input.mode ?? "learn"));
 }
 
 /**
@@ -101,13 +108,16 @@ export function navActionRows(input: { skillsOpen: boolean }): NavRowSpec[] {
  * @param input.active       which segment is showing
  * @param input.fleetsLocked the ladder has not opened fleets yet
  * @param input.fleetCount   how many fleets the store holds
+ * @param input.mode         the window's mode; a segment the surface table
+ *                           closes in it is left out (card 430). Learn when absent.
  */
 export function navSegmentRows(input: {
   active: NavSegmentId;
   fleetsLocked: boolean;
   fleetCount: number;
+  mode?: ViewMode;
 }): NavRowSpec[] {
-  return [
+  const rows: NavRowSpec[] = [
     {
       id: "sessions",
       labelKey: "nav.sessions",
@@ -148,4 +158,5 @@ export function navSegmentRows(input: {
       trailing: null,
     },
   ];
+  return rows.filter((row) => isOpen(row.id, input.mode ?? "learn"));
 }

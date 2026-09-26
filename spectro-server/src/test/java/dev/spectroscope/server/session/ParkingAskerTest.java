@@ -1,11 +1,15 @@
 package dev.spectroscope.server.session;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.Asker;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.events.RunEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -16,8 +20,10 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Card 265, criterion 4: the four independent releases of a parked question,
- * and <b>no path may ever invent an answer.</b>
+ * Card 265, criterion 4: the three independent releases of a parked question,
+ * and <b>no path may ever invent an answer.</b> Card 427 removed a fourth, the
+ * short circuit that answered null in {@code auto} and {@code readonly}; its
+ * replacement here asserts that a question parks in both modes.
  *
  * <p>The web face parks the agent's own virtual thread on a person with no
  * timeout, exactly as the permission gate does. That is only survivable because
@@ -35,6 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @Timeout(value = 15, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class ParkingAskerTest {
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private static RunEvent.QuestionAsked question(String callId) {
         return new RunEvent.QuestionAsked("main", callId, List.of(
@@ -64,7 +72,7 @@ class ParkingAskerTest {
     @Test
     void anAnswerFromTheBrowserUnparksTheRun() throws Exception {
         CancelSignal run = new CancelSignal();
-        ParkingAsker asker = new ParkingAsker(() -> "ask", () -> run);
+        ParkingAsker asker = new ParkingAsker(() -> run);
         CountDownLatch parked = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Asker.Answer> answer = parkOn(asker, "c1", parked, done);
@@ -86,7 +94,7 @@ class ParkingAskerTest {
         // denial and a legitimate verdict. A question has no such verdict: the
         // only honest release is "nobody answered".
         CancelSignal run = new CancelSignal();
-        ParkingAsker asker = new ParkingAsker(() -> "ask", () -> run);
+        ParkingAsker asker = new ParkingAsker(() -> run);
         CountDownLatch parked = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Asker.Answer> answer = parkOn(asker, "c1", parked, done);
@@ -103,7 +111,7 @@ class ParkingAskerTest {
     void aRunCancelledBeforeTheParkNeverReachesAPerson() {
         CancelSignal run = new CancelSignal();
         run.cancel();
-        ParkingAsker asker = new ParkingAsker(() -> "ask", () -> run);
+        ParkingAsker asker = new ParkingAsker(() -> run);
         assertThat(asker.ask(question("c1"))).isNull();
         assertThat(asker.pending()).as("nothing was ever published").isZero();
     }
@@ -123,22 +131,46 @@ class ParkingAskerTest {
             }
             return run;
         };
-        ParkingAsker asker = new ParkingAsker(() -> "ask", staged);
+        ParkingAsker asker = new ParkingAsker(staged);
 
         assertThat(asker.ask(question("c1"))).isNull();
         assertThat(asker.pending()).isZero();
     }
 
     @Test
-    void anUnattendedModeAnswersUnansweredWithoutParkingAtAll() {
-        // A person who set "auto" or "readonly" declared "do not bother me". A
-        // question is a bother, so it must not park — and must not be answered
-        // on their behalf either.
-        CancelSignal run = new CancelSignal();
+    void inAutoAndReadonlyTheSessionsOwnAskerParksUntilTheBrowserAnswers(@TempDir Path workspace)
+            throws Exception {
+        // Card 427, criterion 2. The owner, 2026-09-25: a question has to reach
+        // him in auto mode too, not only in ask. The asker is taken from a real
+        // session, because SessionConnection is the one place it is built, and
+        // the mode is set the way the composer sets it.
         for (String mode : List.of("auto", "readonly")) {
-            ParkingAsker asker = new ParkingAsker(() -> mode, () -> run);
-            assertThat(asker.ask(question("c1"))).as("mode %s", mode).isNull();
-            assertThat(asker.pending()).as("mode %s parked nothing", mode).isZero();
+            SessionConnection connection = new SessionConnection(
+                    new FakeSocket("ws-427-" + mode, "ws://localhost/ws"), JSON,
+                    SpectroConfig.load(new SpectroConfig.Overrides(
+                            null, null, null, null, null, workspace.toString())),
+                    null);
+            connection.start();
+            connection.onSetPermissionMode(mode);
+            ParkingAsker asker = connection.asker();
+            CountDownLatch parked = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(1);
+            AtomicReference<Asker.Answer> answer = parkOn(asker, "c-" + mode, parked, done);
+            parked.await();
+            awaitPark(asker);
+
+            assertThat(asker.pending()).as("mode %s: the question is parked", mode).isEqualTo(1);
+            assertThat(done.await(300, TimeUnit.MILLISECONDS))
+                    .as("mode %s: the run waits for the person instead of carrying on", mode)
+                    .isFalse();
+
+            asker.answer("c-" + mode, new Asker.Answer(List.of("Postgres")));
+
+            assertThat(done.await(5, TimeUnit.SECONDS)).as("mode %s: the answer unparks", mode).isTrue();
+            assertThat(answer.get()).as("mode %s", mode).isNotNull();
+            assertThat(answer.get().answers()).as("mode %s", mode).containsExactly("Postgres");
+            assertThat(asker.pending()).as("mode %s: settled", mode).isZero();
+            connection.onClose();
         }
     }
 
@@ -146,7 +178,7 @@ class ParkingAskerTest {
     void aLateOrUnknownAnswerIsANoOp() {
         // A late frame must not throw on the socket thread: one bad answer there
         // would strand the whole session's reader.
-        ParkingAsker asker = new ParkingAsker(() -> "ask", () -> new CancelSignal());
+        ParkingAsker asker = new ParkingAsker(() -> new CancelSignal());
         asker.answer("never-parked", new Asker.Answer(List.of("Postgres")));
         asker.releaseAllPending();
         assertThat(asker.pending()).isZero();

@@ -1,6 +1,9 @@
 package dev.spectroscope.core.goal;
 
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.tools.MarkedProcesses;
+import dev.spectroscope.core.tools.ShellCommand;
+import dev.spectroscope.core.tools.ThreadedCall;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -62,6 +65,29 @@ class CommandGoalCheckTest {
         assertEquals(GoalVerdict.Outcome.UNTESTED, verdict.outcome());
         assertNull(verdict.exitCode());
         assertTrue(verdict.evidence().contains("did not finish"), verdict.evidence());
+    }
+
+    @Test
+    void aCheckCutByItsLimitHandsBackTheEndOfWhatItPrinted(@TempDir Path dir) {
+        // Card 384: the verdict of a cut check carried an empty output, whatever
+        // the check had printed. A suite is read from the bottom, so the part
+        // that comes back is the end.
+        String command = "awk 'BEGIN { for (i = 1; i <= 3000; i++)"
+                + " printf \"ok %d - a passing case\\n\", i }';"
+                + " echo 'ran 3000 of 5000 cases before the hang'; exec sleep 10";
+        GoalVerdict verdict = new CommandGoalCheck(1)
+                .run(new RunGoal("the suite is green", command), context(dir));
+
+        assertEquals(GoalVerdict.Outcome.UNTESTED, verdict.outcome());
+        assertNull(verdict.exitCode());
+        assertTrue(verdict.evidence().contains("did not finish"), verdict.evidence());
+        assertTrue(verdict.output().endsWith("ok 3000 - a passing case\n"
+                        + "ran 3000 of 5000 cases before the hang\n"),
+                "the cut check handed back no end of its output: '"
+                        + verdict.output().substring(Math.max(0, verdict.output().length() - 80))
+                        + "'");
+        assertTrue(verdict.output().length() <= GoalVerdict.MAX_OUTPUT_CHARS,
+                "the check's cap has to hold on the cut too, got " + verdict.output().length());
     }
 
     @Test
@@ -133,5 +159,30 @@ class CommandGoalCheckTest {
                 .run(new RunGoal("it works", "echo 'two lines'; echo 'and no more'; exit 1"),
                         context(dir));
         assertEquals("two lines\nand no more\n", verdict.output());
+    }
+
+    @Test
+    void aCheckCutByItsLimitLeavesNoSurvivorCountedFromOutside(@TempDir Path dir)
+            throws InterruptedException {
+        // Card 385: the check runs through the same ShellCommand as run_command,
+        // so a check cut by its limit ends with both ends of its pipe.
+        String marker = MarkedProcesses.fresh();
+        try {
+            ThreadedCall<GoalVerdict> call = ThreadedCall.start(() -> new CommandGoalCheck(1)
+                    .run(new RunGoal("it works", "sleep " + marker + " | grep -v " + marker),
+                            context(dir)));
+            assertTrue(MarkedProcesses.awaitRunning(marker, 5_000, "sleep", "grep"),
+                    "the check's pipe was never seen running, so a count of zero"
+                            + " afterwards would prove nothing");
+            GoalVerdict verdict = call.join(10_000);
+
+            assertEquals(GoalVerdict.Outcome.UNTESTED, verdict.outcome());
+            List<ProcessHandle> survivors =
+                    MarkedProcesses.survivorsAfter(marker, ShellCommand.REAP_GRACE_MS);
+            assertTrue(survivors.isEmpty(), "a check cut by its limit left processes alive: "
+                    + MarkedProcesses.describe(survivors));
+        } finally {
+            MarkedProcesses.reap(marker);
+        }
     }
 }

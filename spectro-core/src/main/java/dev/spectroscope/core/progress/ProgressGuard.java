@@ -60,13 +60,14 @@ import java.util.function.Consumer;
  * can disagree about who is waiting.</p>
  *
  * <p><b>Nobody to ask is not a licence to abort, and it is not a "carry on"
- * either.</b> An asker that answers {@code null} — a closed socket, an
- * unattended permission mode, a face with no person — leaves the run going:
- * stopping a run on nobody's word would be the silent abort criterion 3 forbids.
- * But the detector stays UP and only its memory is cleared. Treating an absent
- * person as an approving one turned the owner's "warn AND pause" into "warn once
- * and go deaf" in permission mode {@code auto} — plausibly the mode the measured
- * loop ran in — so an hour of copies would have left ONE line. The cost is
+ * either.</b> An asker that answers {@code null} (a closed socket, a skipped
+ * question, a face with no person) leaves the run going: stopping a run on
+ * nobody's word would be the silent abort criterion 3 forbids. But the
+ * detector stays UP and only its memory is cleared. Treating an absent person
+ * as an approving one turned the owner's "warn AND pause" into "warn once and
+ * go deaf" in permission mode {@code auto}, which answered every question with
+ * null until card 427 and was plausibly the mode the measured loop ran in, so
+ * an hour of copies would have left ONE line. The cost is
  * stated: an unattended run that really does repeat itself writes a line every N
  * events rather than one, which is a transcript that shows the loop continuing.</p>
  *
@@ -467,8 +468,8 @@ public final class ProgressGuard {
                 strike.detector().wireName(), response.intervention().name(), standsDown,
                 System.currentTimeMillis()));
         if (answer == null) {
-            // NOBODY was there — a closed socket, an unattended permission mode,
-            // a face with no person. That is not somebody saying "carry on", and
+            // NOBODY answered: a closed socket, a skipped question, a face with
+            // no person. That is not somebody saying "carry on", and
             // treating it as one turned "warn AND pause" into "warn once and go
             // deaf" in exactly the mode the measured loop plausibly ran in. The
             // net stays up and the memory goes, so the loop has to earn a full N

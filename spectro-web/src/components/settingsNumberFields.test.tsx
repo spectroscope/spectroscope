@@ -5,6 +5,9 @@
 // two components return, and each is typed into with an empty value through
 // the handler the field built. A field that still saved a zero turns this red
 // by name.
+//
+// Card 394 adds a fourteenth, subagentBudgetTokens, with the floor of its
+// sibling subagentBudgetSeconds.
 
 import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
@@ -15,10 +18,12 @@ import { OriginRow } from "./settingsOrigin";
 import { drive, typeInto } from "../testkit/driveComponent";
 import type { SettingsView } from "../state/serverSettings";
 
-/** The card's thirteen keys with their floors, as the server sends them. */
+/** The card's thirteen keys and card 394's one with their floors, as the
+ *  server sends them. */
 const FLOORS: Record<string, number> = {
   commandTimeoutSeconds: 1,
   subagentBudgetSeconds: 1,
+  subagentBudgetTokens: 1,
   maxTurns: 1,
   maxTokens: 1,
   maxQuestionOptions: 1,
@@ -79,7 +84,7 @@ function page(saved: Record<string, unknown>[]): ReactElement<Props>[] {
   ];
 }
 
-describe("the thirteen number fields of the settings page", () => {
+describe("the fourteen number fields of the settings page", () => {
   it("are drawn by the one number field, each under its own key", () => {
     const fields = page([])
       .filter((el) => el.type === NumberField)

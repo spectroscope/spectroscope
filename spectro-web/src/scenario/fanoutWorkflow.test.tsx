@@ -308,6 +308,9 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     parentId: null,
     trigger: null,
     attachments: null,
+    // Card 421: read by the Files pane of a reopened session, printed by none
+    // of the four renderers (grep "workspace" over them finds nothing).
+    workspace: null,
     ts: null,
   },
   turn_start: { type: "LabTrace.tsx:88", turn: "LabTrace.tsx:28-29", agentId: null, ts: null },
@@ -334,6 +337,9 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     input: null,
     agentId: null,
     callId: null,
+    // Card 399: a label the reducer reads to leave the gate queue alone; no
+    // renderer named here prints it.
+    decidedBy: null,
     ts: null,
   },
   permission_decision: {

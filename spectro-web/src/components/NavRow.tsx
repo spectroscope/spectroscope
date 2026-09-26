@@ -25,10 +25,13 @@ export function NavRow(props: {
   disabled?: boolean;
   role?: "tab";
   ariaSelected?: boolean;
+  /** The row's entry in the surface table (card 430), for the guard that reads the markup. */
+  surface?: string;
 }) {
   return (
     <button
       type="button"
+      data-surface={props.surface}
       role={props.role}
       aria-selected={props.role === "tab" ? props.ariaSelected === true : undefined}
       aria-disabled={props.disabled === true ? true : undefined}

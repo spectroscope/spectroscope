@@ -45,6 +45,13 @@ public final class StandardTools {
     @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
 
+    /** The line between a timed out command's error line and what the command
+     *  had printed before the cut (card 384). Below it stands the end of the
+     *  output, at most {@link ToolOutput#MAX_OUTPUT_CHARS} chars, with an
+     *  ellipsis in front when its start was dropped. */
+    public static final String CUT_OUTPUT_MARKER =
+            "--- what the command printed before its time limit cut it, unfinished ---";
+
     /** How many paths one {@code glob} answer carries. No argument for this
      *  particular value is recorded here. */
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
@@ -804,7 +811,13 @@ public final class StandardTools {
                         RtkFilter.shellEnvFor(input), context.cwd(),
                         timeoutSeconds, context.signal(), MAX_OUTPUT_CHARS);
                 if (result.timedOut()) {
-                    return "ERROR: command timed out after " + timeoutSeconds + " s.";
+                    // Card 384. The first words stay as they were; the key is named
+                    // the way card 372 names subagentBudgetSeconds. Blank output is
+                    // nothing printed and gets no marker.
+                    String error = "ERROR: command timed out after " + timeoutSeconds
+                            + " s. Raise commandTimeoutSeconds if the command needs longer.";
+                    return result.output().isBlank() ? error
+                            : error + "\n" + CUT_OUTPUT_MARKER + "\n" + result.output();
                 }
                 if (result.failure() != null) {
                     return "interrupted".equals(result.failure())

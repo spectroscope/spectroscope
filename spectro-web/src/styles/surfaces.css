@@ -350,14 +350,25 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-1) 0;
+  padding: var(--sp-1) var(--sp-2);
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-12);
 }
 .skset-row:last-child { border-bottom: none; }
+/* Card 411: a row is one unit under the pointer and under the keyboard, from
+   its left edge to its right edge, whatever the length of its text. */
+.skset-row:hover,
+.skset-row:focus-within { background: var(--surface-2); }
 .skset-name { flex: none; color: var(--text); }
+/* Card 411: the description grows no wider than its text, so a remove button
+   after it sits right after the text, not at the row's edge. The zero basis of
+   flex: 1 stays: in a narrow row the description gives way first and ends in
+   an ellipsis. The name keeps its width until the description has none left.
+   Past that, a name in an opened group (.skset-pack-rows, below) shrinks and
+   wraps; any other .skset-name is flex: none and does not shrink. */
 .skset-desc {
   flex: 1;
+  max-width: max-content;
   min-width: 0;
   color: var(--text-faint);
   overflow: hidden;
@@ -436,6 +447,9 @@
 .skset-pack-caret { flex: none; color: var(--text-faint); }
 .skset-pack-toggle[aria-expanded="true"] .skset-pack-caret { transform: rotate(90deg); }
 .skset-pack-count { flex: none; color: var(--text-faint); }
+/* The installed list's group for the skills without a namespace (card 411):
+   a word, not a pack name, so it is not set in mono. */
+.skset-pack-label { flex: none; color: var(--text); }
 /* The two set buttons wrap as one piece: when the header has no room beside
    the count, both move to the next line, at the right edge. */
 .skset-pack-sets { flex: none; display: flex; gap: var(--sp-2); margin-left: auto; }

@@ -1,0 +1,106 @@
+/* Card 431: the loading sign of a session open (components/OpeningSurface.tsx).
+
+   It covers the main column, dimmed, over the view it may replace: a failed
+   open takes it down and the old view is still there, untouched (owner call 2).
+
+   It is in the DOM from the click and fades in after 150 ms (owner call 1), so
+   an open that finishes sooner never shows it. The fade animates opacity and
+   the spinner animates transform. Chromium can run both on the compositor
+   thread, so the delay can elapse and the spinner can turn while the main
+   thread is busy with a long task; the card measured this in Chrome. */
+
+.opening-surface {
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-dropdown) - 1);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: var(--scrim);
+  /* The count inside changes several times a second; containment keeps that
+     change from invalidating layout outside the surface. */
+  contain: layout paint style;
+  animation-name: opening-fade;
+  animation-duration: 160ms;
+  animation-timing-function: var(--ease);
+  animation-delay: 150ms;
+  animation-fill-mode: both;
+}
+
+.opening-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  width: min(440px, 100%);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.opening-spinner {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  will-change: transform;
+  animation-name: opening-spin;
+  animation-duration: 900ms;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.opening-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.opening-line {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+.opening-title {
+  font-size: var(--fs-14);
+  line-height: 1.4;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.opening-count {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+@keyframes opening-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes opening-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The global switch in tokens.css shortens every animation to 0.01ms, which
+   would make an infinite spin flicker. The spinner stops instead, and the
+   line and the title carry the state. The fade keeps its delay. */
+@media (prefers-reduced-motion: reduce) {
+  .opening-spinner {
+    animation-name: none;
+  }
+}

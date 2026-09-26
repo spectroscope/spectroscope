@@ -365,6 +365,11 @@ public final class SubagentManager {
         // "finished normally" from "out of budget".
         long graceMs = budget.firstTokenGraceMs();
         long runBudgetMs = budget.runBudgetMs();
+        // Card 394: the third brake, and not a clock. It is read against the
+        // running usage sum in the forwarder loop below and cuts through the
+        // same child signal the two clocks use.
+        long tokenBudget = config.subagentBudgetTokens();
+        String writtenBeforeTheTokenCut = "";
         CancelSignal childSignal = new CancelSignal();
         parentSignal.onCancel(childSignal::cancel);
         AtomicReference<String> stoppedBy = new AtomicReference<>();
@@ -417,8 +422,8 @@ public final class SubagentManager {
                 .build());
 
         StringBuilder lastTurnText = new StringBuilder();
-        int inputTokens = 0;
-        int outputTokens = 0;
+        long inputTokens = 0;
+        long outputTokens = 0;
         try (EventStream childEvents = child.run(task, new RunOptions(childSignal, List.of()))) {
             // Forwarder loop — THE merge: drain the child's EventStream and put
             // every event into the PARENT queue. The for-each blocks between
@@ -439,7 +444,23 @@ public final class SubagentManager {
                     }, runBudgetMs, TimeUnit.MILLISECONDS));
                 }
                 switch (event) {
-                    case RunEvent.TurnStart ignored -> lastTurnText.setLength(0); // last turn = final answer
+                    case RunEvent.TurnStart ignored -> {
+                        // Card 394: a child whose spend has passed its budget is
+                        // cut as it starts another exchange. The check reads the
+                        // running sum below, and it sits on the turn start rather
+                        // than on the usage event for two reasons: a child whose
+                        // passing exchange was its last keeps its answer, and the
+                        // words of that exchange are still in the buffer to hand
+                        // back. A child the parent already cancelled is left to
+                        // that cancel, so its result keeps saying who stopped it.
+                        if (inputTokens + outputTokens > tokenBudget && !childSignal.isCancelled()
+                                && stoppedBy.compareAndSet(null,
+                                        ChildBudget.STOP_TOKEN_BUDGET_EXHAUSTED)) {
+                            writtenBeforeTheTokenCut = lastTurnText.toString();
+                            childSignal.cancel(ChildBudget.STOP_TOKEN_BUDGET_EXHAUSTED);
+                        }
+                        lastTurnText.setLength(0); // last turn = final answer
+                    }
                     case RunEvent.TextDelta delta -> lastTurnText.append(delta.text());
                     case RunEvent.Usage usage -> {
                         inputTokens += usage.inputTokens();
@@ -469,14 +490,17 @@ public final class SubagentManager {
             // path only, and a cut threw it away. A 2,400-line plan was lost that way
             // on 2026-09-16. Hand it back, marked as unfinished.
             //
-            // Blank, not empty, and stripped on the way out: the same two calls the
-            // normal-answer path below makes. A model that opens its answer with a
-            // newline and is cut there has a buffer that is non-empty and holds
-            // nothing a reader can use, and isEmpty() printed the marker over it.
-            if (lastTurnText.toString().isBlank()) {
-                return error;
-            }
-            return error + "\n" + PARTIAL_OUTPUT_MARKER + "\n" + lastTurnText.toString().strip();
+            return withWhatItHadWritten(error, lastTurnText.toString());
+        }
+        if (ChildBudget.STOP_TOKEN_BUDGET_EXHAUSTED.equals(stoppedBy.get())) {
+            // Card 394: the spend named with its budget and its key, and the
+            // words of the exchange that passed the budget handed back the way
+            // card 371 hands back a child that ran out of time.
+            return withWhatItHadWritten("ERROR: [" + childId + "] out of tokens: "
+                    + (inputTokens + outputTokens) + " spent (" + inputTokens + " in / "
+                    + outputTokens + " out), past its budget of " + tokenBudget
+                    + " (subagentBudgetTokens). Raise subagentBudgetTokens in the settings,"
+                    + " or cut the subtask smaller.", writtenBeforeTheTokenCut);
         }
         if (ChildBudget.STOP_NO_FIRST_TOKEN.equals(stoppedBy.get())) {
             return "ERROR: [" + childId + "] never produced a token within " + graceMs / 1000
@@ -492,6 +516,25 @@ public final class SubagentManager {
         // Report the usage sum per child: delegation should visibly cost something.
         return "[" + childId + "] result (tokens: " + inputTokens + " in / " + outputTokens + " out):\n"
                 + lastTurnText.toString().strip();
+    }
+
+    /**
+     * A cut child's error, followed by what its last turn had written (card 371).
+     *
+     * <p>Blank, not empty, and stripped on the way out: the same two calls the
+     * normal-answer path makes. A model that opens its answer with a newline and
+     * is cut there has a buffer that is non-empty and holds nothing a reader can
+     * use, and isEmpty() printed the marker over it.</p>
+     *
+     * @param error   the "ERROR: " sentence that names the cut
+     * @param written the text the child had written, possibly blank
+     * @return the error alone when nothing was written, else error, marker and text
+     */
+    private static String withWhatItHadWritten(String error, String written) {
+        if (written.isBlank()) {
+            return error;
+        }
+        return error + "\n" + PARTIAL_OUTPUT_MARKER + "\n" + written.strip();
     }
 
     /**

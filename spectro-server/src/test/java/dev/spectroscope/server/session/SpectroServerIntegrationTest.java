@@ -1130,7 +1130,11 @@ class SpectroServerIntegrationTest {
     /** The first recorded /api/chat body whose messages carry the marker text. */
     private static JsonNode bodyContaining(String marker) throws IOException {
         for (String body : requestedBodies) {
-            if (body.contains(marker)) {
+            // Card 445: the first run of a session also sends a title request
+            // that carries the first prompt, with thinking off. It is not the
+            // chat request this lookup is for, and which of the two is
+            // recorded first depends on timing.
+            if (body.contains(marker) && !body.contains(SessionTitles.INSTRUCTION)) {
                 return JSON.readTree(body);
             }
         }

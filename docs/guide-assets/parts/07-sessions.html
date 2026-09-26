@@ -110,9 +110,13 @@ and it says so when that cap fired — a bigger store is never quietly reported 
 hundred. The content endpoint serves at most 128&thinsp;MiB, so a transcript above that is
 disabled before the click, with the reason on the row rather than a status code after it. A
 refusal you still get means the file grew between the render and the press, and the server names
-both numbers. Nothing about an import is written to disk, and the bar over the replay says so
-along with the file's own counts: how many lines arrived, how many frames the view is built from,
-and how many lines nothing was read from.</p>
+both numbers. Nothing about an import is written to disk, and the bar over the replay says so.
+It names the file and counts the conversation in prompts and answers. The file's own counts sit
+behind the bar's Details control: how many lines arrived, how many frames the view is built from,
+and how many lines were not matched. On a Claude Code transcript the last number is almost never
+zero, and the bar does not warn about it. Those files also hold records that belong to no
+conversation, such as titles and reminders the client adds, and the importer skips them on
+purpose.</p>
 
 <!--MERMAID:12-import-flow|Detection scans past the metadata records for the first line that names a format: spectroscope JSONL replays verbatim, a Claude Code transcript runs through the adapter, and both feed the same replay path as a stored session. The picture predates the VS Code branch, which sits beside the Claude Code one.-->
 

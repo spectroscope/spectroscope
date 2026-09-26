@@ -116,6 +116,10 @@
   --sidebar-w: 280px;
   --content-max: 860px; /* reading width of the chat history */
   --content-max-wide: 1118px; /* the "wide" setting: 30% more room (owner) */
+  --settings-width: 680px; /* the settings page (settings-trace.css .settings-page) */
+  /* Card 411: the settings page's content box, its width less its 1px border
+     and the body's padding on each side (646px). The Skills view reads at it. */
+  --settings-measure: calc(var(--settings-width) - 2 * 1px - 2 * var(--sp-4));
   /* Card 242: the chat's reserved floor beside the dock — the RENDER-time half
      of it. The old min(…, 60%) cap was proportional and let a 1150px window
      squeeze the chat to 356px (measured 2026-08-15).

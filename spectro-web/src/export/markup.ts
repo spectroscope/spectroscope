@@ -102,6 +102,9 @@ const LABELS: Record<Lang, Record<string, string>> = {
     matches: "search",
     hits: "{n} hits",
     command: "command",
+    // Card 416: a run_command rtk rewrote, as the app draws it.
+    cmdRewritten: "rewritten by {by}",
+    cmdAsWritten: "as the model wrote it",
     image: "image",
     noImage: "not embedded: the picture stays in the app's image store",
     skill: "skill",
@@ -187,6 +190,8 @@ const LABELS: Record<Lang, Record<string, string>> = {
     matches: "Suche",
     hits: "{n} Treffer",
     command: "Kommando",
+    cmdRewritten: "umgeschrieben von {by}",
+    cmdAsWritten: "wie das Modell es schrieb",
     image: "Bild",
     noImage: "nicht eingebettet: das Bild bleibt im Bildspeicher der App",
     skill: "Skill",
@@ -249,6 +254,7 @@ const LABELS: Record<Lang, Record<string, string>> = {
  */
 export function label(lang: Lang, key: string, vars?: Record<string, string | number>): string {
   let s = LABELS[lang][key] ?? key;
-  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
+  // A function replacement inserts the value as written (see t() in i18n.ts).
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, () => String(v));
   return s;
 }

@@ -10,6 +10,8 @@
 
 import { VIEW_TABS, type ViewTab } from "./route";
 import { SHELL_COMMAND_IDS, type ShellCommand, type ShellCommandId } from "./shellCommands";
+import { isOpen } from "./surfaces";
+import type { ViewMode } from "./viewMode";
 
 /** Everything a menu command may reach. All of it already exists in App.tsx. */
 export interface ShellDeps {
@@ -22,6 +24,8 @@ export interface ShellDeps {
   setNav(n: "sessions" | "fleets" | "stategraph"): void;
   /** Whether the leveling ladder still has the fleets surface closed. */
   fleetsLocked: boolean;
+  /** Card 430: the window's mode. A command into a surface it closes is refused. */
+  mode: ViewMode;
   openLevelPanel(): void;
   changeTab(t: ViewTab): void;
   /** Card 241: opens the dock's browser panel if closed, raises it if folded —
@@ -69,8 +73,9 @@ export function runShellCommand(c: ShellCommand, d: ShellDeps): void {
       return;
     case "stategraph.demo":
       // A row with no source behind it must not switch the segment to an empty
-      // pane and call that a load.
-      if (!c.arg) return;
+      // pane and call that a load. Card 430: nor may a mode without the state
+      // graph load one where it cannot be drawn.
+      if (!c.arg || !isOpen("stategraph", d.mode)) return;
       d.loadStateGraphDemo(c.arg);
       // The state graph segment is deliberately not addressable, so loading a
       // run without showing the segment draws it where nobody can see it.
@@ -83,11 +88,14 @@ export function runShellCommand(c: ShellCommand, d: ShellDeps): void {
     case "nav.fleets":
       // The sidebar's fleets button silently no-ops while the surface is
       // locked. A menu item must not: it opens the ladder and teaches what is
-      // missing instead of swallowing the click.
+      // missing instead of swallowing the click. Card 430: a mode without the
+      // fleets refuses first, and the chat stays; the mode wins over the ladder.
+      if (!isOpen("fleets", d.mode)) return;
       if (d.fleetsLocked) d.openLevelPanel();
       else d.setNav("fleets");
       return;
     case "nav.stategraph":
+      if (!isOpen("stategraph", d.mode)) return;
       d.setNav("stategraph");
       return;
     case "nav.browser":
@@ -102,7 +110,7 @@ export function runShellCommand(c: ShellCommand, d: ShellDeps): void {
       d.revealBrowserPanel();
       return;
     case "tab.set":
-      if (c.arg === undefined || !isViewTab(c.arg)) return;
+      if (c.arg === undefined || !isViewTab(c.arg) || !isOpen(c.arg, d.mode)) return;
       // The six view tabs are only on screen in the sessions segment — the
       // state graph takes the whole surface and the fleet lobby draws no tab
       // row — so picking one from the menu has to come back first. Entering a

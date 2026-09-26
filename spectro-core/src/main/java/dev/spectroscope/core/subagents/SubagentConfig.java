@@ -89,6 +89,10 @@ import java.util.List;
  *                      a child compacts against the window the operator stated
  *                      and sees a change from its next turn (nullable: the
  *                      children derive their window as before)
+ * @param subagentBudgetTokens the spend, input plus output as its usage events
+ *                      report them, past which {@code SubagentManager} cuts ONE
+ *                      child at its next turn (card 394). Nullable: the
+ *                      shipped default. Zero or less is refused here, by name
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -105,7 +109,8 @@ public record SubagentConfig(
         Integer maxTokens,
         Boolean thinking,
         Integer subagentBudgetSeconds,
-        dev.spectroscope.core.session.SessionWindow sessionWindow) {
+        dev.spectroscope.core.session.SessionWindow sessionWindow,
+        Integer subagentBudgetTokens) {
 
     /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
      *  and an absent budget to the derived one over an unfed window. The
@@ -121,6 +126,44 @@ public record SubagentConfig(
         budget = budget == null
                 ? ChildBudget.derivedFrom(new dev.spectroscope.core.provider.ExchangeLatency(), floorMs)
                 : budget.withFloorMs(floorMs);
+        // Card 394. The settings path cannot bring a zero here: SettingFloors
+        // refuses it on save and skips it on load. What can is code that builds
+        // this record with its own number, and that code gets the key's name.
+        if (subagentBudgetTokens == null) {
+            subagentBudgetTokens =
+                    dev.spectroscope.core.config.SpectroConfig.DEFAULT_SUBAGENT_BUDGET_TOKENS;
+        } else if (subagentBudgetTokens <= 0) {
+            throw new IllegalArgumentException(
+                    "subagentBudgetTokens must be positive, got " + subagentBudgetTokens);
+        }
+    }
+
+    /** The pre-card-394 arity, kept so a caller that does not carry a token
+     *  budget still compiles; its children run on the shipped one.
+     *  @param provider      the provider the children run on
+     *  @param cwd           sandbox root, same as the parent's
+     *  @param parentAgentId agentId of the parent agent
+     *  @param onPermission  the same blocking broker the parent uses
+     *  @param baseTools     the belt a child inherits, WITHOUT the spawn tools
+     *  @param hooks         the parent's hooks (nullable → none)
+     *  @param llmWire       the session's recorder (nullable → children record nothing)
+     *  @param webTools      the parent's web tools (nullable → none)
+     *  @param budget        what a child may spend in time (nullable → derived)
+     *  @param compactionThreshold the parent's explicit threshold (nullable → derived)
+     *  @param maxTurns      the parent's turn ceiling (nullable → the default)
+     *  @param maxTokens     the parent's completion budget (nullable → the default)
+     *  @param thinking      whether reasoning is surfaced (nullable → the provider's default)
+     *  @param subagentBudgetSeconds the operator's floor (nullable → the shipped one)
+     *  @param sessionWindow the parent session's window holder (nullable → children derive) */
+    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
+                          PermissionBroker onPermission, List<Tool> baseTools,
+                          HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
+                          ChildBudget budget, Integer compactionThreshold, Integer maxTurns,
+                          Integer maxTokens, Boolean thinking, Integer subagentBudgetSeconds,
+                          dev.spectroscope.core.session.SessionWindow sessionWindow) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
+                webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
+                subagentBudgetSeconds, sessionWindow, null);
     }
 
     /** The pre-card-390 arity, kept so a caller that does not carry a session
@@ -251,6 +294,7 @@ public record SubagentConfig(
         private Boolean thinking;               // nullable -> the provider's default
         private Integer subagentBudgetSeconds;   // nullable -> the shipped floor
         private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable -> children derive
+        private Integer subagentBudgetTokens;    // nullable -> the shipped budget
 
         private Builder() {
         }
@@ -347,11 +391,21 @@ public record SubagentConfig(
             return this;
         }
 
+        /** @param value the operator's {@code subagentBudgetTokens}, the most
+         *               tokens one child may spend (card 394); null means the
+         *               shipped default
+         *  @return this builder */
+        public Builder subagentBudgetTokens(Integer value) {
+            this.subagentBudgetTokens = value;
+            return this;
+        }
+
         /** @return the finished config, normalized by the canonical constructor */
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
                     baseTools, hooks, llmWire, webTools, budget, compactionThreshold,
-                    maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow);
+                    maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow,
+                    subagentBudgetTokens);
         }
     }
 }

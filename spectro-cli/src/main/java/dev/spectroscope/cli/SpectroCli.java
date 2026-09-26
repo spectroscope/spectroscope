@@ -701,6 +701,8 @@ public final class SpectroCli implements Runnable {
                 // card 372: the floor of every child's run budget, the operator's
                 // own number rather than the one this class used to imply
                 .subagentBudgetSeconds(config.subagentBudgetSeconds())
+                // card 394: the most tokens one child may spend before it is cut
+                .subagentBudgetTokens(config.subagentBudgetTokens())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);

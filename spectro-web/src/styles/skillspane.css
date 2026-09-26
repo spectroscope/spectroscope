@@ -11,6 +11,13 @@
   padding: 0 22px 22px;
 }
 
+/* Card 411 (owner, 2026-09-25: "so wie in den Settings", "es kann auch
+   linksbündig sein"): the view reads at the settings page's content width and
+   starts at the pane's left edge. */
+.skills-column {
+  max-width: var(--settings-measure);
+}
+
 .skills-head {
   display: flex;
   align-items: flex-start;

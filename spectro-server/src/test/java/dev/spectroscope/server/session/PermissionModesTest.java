@@ -38,6 +38,23 @@ class PermissionModesTest {
     }
 
     @Test
+    void eachEarlyLabelStandsForTheVerdictItsPathGives() {
+        // Card 399: a stamped request is answered by its stamp, so every label
+        // SessionConnection can stamp must map back to the verdict of its path.
+        assertEquals(Boolean.TRUE, PermissionModes.verdictOf("mode:auto"));
+        assertEquals(Boolean.FALSE, PermissionModes.verdictOf("mode:readonly"));
+        assertEquals(Boolean.TRUE, PermissionModes.verdictOf("allowlist"));
+    }
+
+    @Test
+    void aLabelWithoutAVerdictOfItsOwnParks() {
+        assertNull(PermissionModes.verdictOf(null));
+        assertNull(PermissionModes.verdictOf("user"));
+        assertNull(PermissionModes.verdictOf("mode:ask"));
+        assertNull(PermissionModes.verdictOf("mode:"));
+    }
+
+    @Test
     void unknownOrNullModeFallsThrough() {
         assertNull(PermissionModes.decide(null, request("write_file")));
         assertNull(PermissionModes.decide("garbage", request("write_file")));

@@ -4,11 +4,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.HookConfig;
+import dev.spectroscope.core.tools.MarkedProcesses;
+import dev.spectroscope.core.tools.ShellCommand;
+import dev.spectroscope.core.tools.ThreadedCall;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -111,6 +116,50 @@ class HookRunnerTest {
                 "head -c 200000 /dev/zero | tr '\\0' x; exit 1", null)));
         assertTrue(runner.preToolUse("run_command", INPUT, CWD, new CancelSignal()).blocked(),
                 "a guard must not be bypassed by printing more than the pipe buffer");
+    }
+
+    @Test
+    void aHookCutByItsLimitFailsOpenWhateverItPrintedBeforeTheCut() {
+        // Card 384 hands a cut command's output back to every caller of the
+        // shell runner. For a pre_tool_use hook that output is not a verdict:
+        // a block it printed before it hung does not block, the run is recorded
+        // as timed out with no reason, and the call proceeds.
+        HookRunner runner = HookRunner.load(List.of(new HookConfig("*", "pre_tool_use",
+                "printf '{\"decision\":\"block\",\"reason\":\"printed before the hang\"}\\n';"
+                        + " exec sleep 10", 1)));
+        HookRunner.HookOutcome outcome = runner.preToolUse("run_command", INPUT, CWD,
+                new CancelSignal());
+        assertFalse(outcome.blocked(),
+                "a hook cut by its limit blocked on what it printed before the cut");
+        assertEquals(1, outcome.runs().size());
+        assertEquals(HookRunner.Verdict.TIMED_OUT, outcome.runs().get(0).verdict());
+        assertEquals(null, outcome.runs().get(0).reason());
+    }
+
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void aHookCutByItsLimitLeavesNoSurvivorCountedFromOutside() throws InterruptedException {
+        // Card 385: the hook runner is the same ShellCommand as run_command,
+        // so a hook cut by its limit takes its sleep with it.
+        String marker = MarkedProcesses.fresh();
+        try {
+            HookRunner runner = HookRunner.load(List.of(new HookConfig("*", "pre_tool_use",
+                    "sleep " + marker + " && echo done", 1)));
+            ThreadedCall<HookRunner.HookOutcome> call = ThreadedCall.start(
+                    () -> runner.preToolUse("run_command", INPUT, CWD, new CancelSignal()));
+            assertTrue(MarkedProcesses.awaitRunning(marker, 5_000, "sleep"),
+                    "the hook's sleep was never seen running, so a count of zero"
+                            + " afterwards would prove nothing");
+            HookRunner.HookOutcome outcome = call.join(10_000);
+
+            assertEquals(HookRunner.Verdict.TIMED_OUT, outcome.runs().get(0).verdict());
+            List<ProcessHandle> survivors =
+                    MarkedProcesses.survivorsAfter(marker, ShellCommand.REAP_GRACE_MS);
+            assertTrue(survivors.isEmpty(), "a hook cut by its limit left processes alive: "
+                    + MarkedProcesses.describe(survivors));
+        } finally {
+            MarkedProcesses.reap(marker);
+        }
     }
 
     @Test

@@ -129,6 +129,10 @@ export const SETTING_REACH = {
   // budget re-derives its p50 per spawn but reads the floor it was built
   // with, so a save lands with the next session.
   subagentBudgetSeconds: "next-session",
+  // Card 394: the token budget of one child. buildAgentOnce() hands
+  // active.subagentBudgetTokens() to the SubagentConfig the manager keeps for
+  // the session, so a save lands with the next session.
+  subagentBudgetTokens: "next-session",
   // Card 356: the three ask caps. Measured, not assumed — SessionConnection
   // registers AskUserQuestionTool inside buildAgentOnce() (the name is the
   // claim, and line 1105 is its only call), and the tool holds its caps as

@@ -54,7 +54,14 @@ public final class QuitDuringBacklogChild {
         CountDownLatch held = new CountDownLatch(1);
         HttpServer backend = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         backend.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-        backend.createContext("/api/chat", exchange -> answer(exchange, requests.incrementAndGet(), held));
+        backend.createContext("/api/chat", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (TitleRequests.isTitleRequest(body)) {
+                TitleRequests.answer(exchange); // card 445: the title request is not one of the run's turns
+                return;
+            }
+            answer(exchange, requests.incrementAndGet(), held);
+        });
         backend.start();
         String baseUrl = "http://127.0.0.1:" + backend.getAddress().getPort();
 
@@ -79,7 +86,6 @@ public final class QuitDuringBacklogChild {
 
     private static void answer(HttpExchange exchange, int request, CountDownLatch held)
             throws IOException {
-        exchange.getRequestBody().readAllBytes();
         exchange.getResponseHeaders().add("Content-Type", "application/x-ndjson");
         exchange.sendResponseHeaders(200, 0);
         OutputStream out = exchange.getResponseBody();

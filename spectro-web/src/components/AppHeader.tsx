@@ -12,6 +12,7 @@ import { t } from "../i18n/i18n";
 import { toggleLang, useLang } from "../state/lang";
 import { replayEyebrow } from "./replayEyebrow";
 import { DockHeaderControls } from "../panels/headerPanelControls";
+import { ModeSwitch } from "./ModeSwitch";
 
 /** Shown as the provider chip until a real provider name is known. */
 const FALLBACK_PROVIDER_LABEL = "spectroscope";
@@ -159,6 +160,9 @@ export function AppHeader(props: {
       {/* The thinking toggle moved into the provider picker (card 88): it is
           a per-model control now, driven by the capability record — a header
           switch could offer what the active model cannot do. */}
+
+      {/* Card 430: learn or light, in every nav state. */}
+      <ModeSwitch />
 
       {/* UI language toggle — chrome only; chats keep their own language. */}
       <button

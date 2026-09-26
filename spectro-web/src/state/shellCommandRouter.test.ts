@@ -24,6 +24,7 @@ function spyDeps(over?: Partial<ShellDeps>): { deps: ShellDeps; touched: string[
     loadStateGraphDemo: mark("loadStateGraphDemo"),
     setNav: mark("setNav"),
     fleetsLocked: false,
+    mode: "learn",
     openLevelPanel: mark("openLevelPanel"),
     changeTab: mark("changeTab"),
     revealBrowserPanel: mark("revealBrowserPanel"),
@@ -124,5 +125,58 @@ describe("what a menu command does to the app", () => {
     // Nor may a known id with an argument it cannot use guess one.
     runShellCommand({ id: "tab.set", arg: "spectrogram" }, deps);
     expect(touched).toEqual([]);
+  });
+});
+
+// Card 430, criterion 4, row 5: in light a menu command into a surface light
+// closes is refused, and the chat stays. The learn twin is the table above,
+// whose deps run in learn.
+describe("what a menu command does in light", () => {
+  /** Runs one command in light and says what it moved and where it sent the nav and the tab. */
+  function inLight(command: ShellCommand): { touched: string[]; navs: string[]; tabs: string[] } {
+    const navs: string[] = [];
+    const tabs: string[] = [];
+    const { deps, touched } = spyDeps({
+      mode: "light",
+      setNav: (n) => {
+        navs.push(n);
+      },
+      changeTab: (t) => {
+        tabs.push(t);
+      },
+    });
+    runShellCommand(command, deps);
+    return { touched, navs, tabs };
+  }
+
+  it("refuses nav.fleets, nav.stategraph and stategraph.demo", () => {
+    for (const command of [
+      { id: "nav.fleets" },
+      { id: "nav.stategraph" },
+      { id: "stategraph.demo", arg: "crag.graph.jsonl" },
+    ] as ShellCommand[]) {
+      expect(inLight(command), command.id).toEqual({ touched: [], navs: [], tabs: [] });
+    }
+  });
+
+  it("refuses nav.fleets in light even where the ladder would have opened the level panel", () => {
+    const { deps, touched } = spyDeps({ mode: "light", fleetsLocked: true });
+    runShellCommand({ id: "nav.fleets" }, deps);
+    expect(touched).toEqual([]);
+  });
+
+  it("refuses a tab light closes, and still opens the chat", () => {
+    for (const tab of ["spectrum", "trace", "graph", "text", "lab"]) {
+      expect(inLight({ id: "tab.set", arg: tab }), tab).toEqual({ touched: [], navs: [], tabs: [] });
+    }
+    expect(inLight({ id: "tab.set", arg: "chat" })).toEqual({
+      touched: [],
+      navs: ["sessions"],
+      tabs: ["chat"],
+    });
+  });
+
+  it("still goes to the sessions", () => {
+    expect(inLight({ id: "nav.sessions" }).navs).toEqual(["sessions"]);
   });
 });

@@ -1,0 +1,167 @@
+/* Card 445: the three-dots menu on a stored session row, inline rename, the
+   pinned group's headings and the delete question. The menu and the question
+   are portalled to the body (see SessionRowMenu.tsx), so their rules name no
+   rail ancestor. */
+
+/* ---------- the row and its button ---------- */
+
+.session-item {
+  position: relative;
+}
+
+/* Room for the button at the right end, reserved whether the button shows or
+   not: a title that grows narrower under the pointer would jump. */
+.session-item .session-row {
+  padding-right: 28px;
+}
+
+.session-menu-btn {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+.session-item:hover .session-menu-btn,
+.session-item:focus-within .session-menu-btn,
+.session-menu-btn[aria-expanded="true"] {
+  opacity: 1;
+}
+.session-menu-btn:hover,
+.session-menu-btn[aria-expanded="true"] {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.session-menu-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* No hover below 768 px, and none on a touch screen: the button is always there. */
+@media (max-width: 767px), (hover: none) {
+  .session-menu-btn {
+    opacity: 1;
+  }
+}
+
+/* A suggestion on its way: the name waits, quietly. */
+.session-item[aria-busy="true"] .session-name {
+  opacity: 0.55;
+}
+
+/* ---------- rename in place ---------- */
+
+.session-rename {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px var(--sp-2) 7px 9px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-13);
+  outline: none;
+}
+/* Below 16 px an iPhone zooms the page to the field. */
+@media (max-width: 767px) {
+  .session-rename {
+    font-size: var(--fs-16);
+  }
+}
+
+/* ---------- the pinned group ---------- */
+
+.session-group-eyebrow {
+  margin: var(--sp-1) 0 0;
+}
+.session-list > .session-group-eyebrow:first-child {
+  margin-top: 0;
+}
+
+/* ---------- the open menu ---------- */
+
+.row-menu-pop {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  min-width: 190px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+.row-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+.row-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-13);
+  text-align: left;
+  white-space: nowrap;
+}
+.row-menu-item:hover,
+.row-menu-item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.row-menu-item--danger {
+  color: var(--error);
+}
+.row-menu-item[aria-disabled="true"] {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+.row-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+/* ---------- the delete question ---------- */
+
+.session-delete-modal {
+  width: min(440px, calc(100vw - var(--sp-6)));
+}
+.session-delete-name {
+  margin: 0 0 var(--sp-2);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.session-delete-note {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--text-dim);
+}
+.session-delete-failed {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-13);
+  color: var(--error);
+}
+.session-delete-confirm {
+  color: var(--error);
+  border-color: var(--error);
+}
+.session-delete-confirm:hover:not(:disabled) {
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+}

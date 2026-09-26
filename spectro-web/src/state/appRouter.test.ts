@@ -10,8 +10,9 @@
 //   - Closing settings goes history.back() only for the entry we pushed.
 //   - The trace's agent pin belongs to the view it was taken in (card 147):
 //     a new shown identity clears it, a re-render does not.
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  createAddressReporter,
   createNavNonce,
   pinAfterNavigation,
   planRoute,
@@ -20,7 +21,8 @@ import {
   viewIdentity,
   type Place,
 } from "./appRouter";
-import { formatRoute, type Route } from "./route";
+import { __setHistoryTestHooks, writeRoute } from "./history";
+import { formatRoute, parseAppRoute, type Route } from "./route";
 
 const openGuards = { fleetsLocked: false, fleetKnown: true };
 
@@ -371,5 +373,88 @@ describe("the address of an imported transcript", () => {
       eventIndex: null,
       tab: "trace",
     });
+  });
+});
+
+// Card 433: a pasted address on a FRESH load. The report effect and the effect
+// that applies the boot address both run on mount, the report first. The
+// report must leave the pasted address in the bar, or the boot apply reads the
+// live default and opens nothing. Each case below plays the mount in that
+// order: first report on the mounted place, then the boot apply's plan.
+describe("the address report on a fresh load (card 433)", () => {
+  let bar: string;
+  let calls: Array<{ op: "push" | "replace"; hash: string }>;
+
+  beforeEach(() => {
+    calls = [];
+    __setHistoryTestHooks({
+      hash: () => bar,
+      push: (h) => {
+        calls.push({ op: "push", hash: h });
+        bar = h;
+      },
+      replace: (h) => {
+        calls.push({ op: "replace", hash: h });
+        bar = h;
+      },
+    });
+  });
+
+  afterEach(() => {
+    __setHistoryTestHooks({ reset: true });
+  });
+
+  /** The mount: one report on the mounted place, written as the App writes it. */
+  const mount = (address: string) => {
+    bar = address;
+    const mounted = at();
+    const reporter = createAddressReporter(mounted);
+    const route = reporter.report(mounted);
+    if (route !== null) writeRoute(route, "gesture");
+    return { reporter, bootPlan: planRoute(parseAppRoute(bar), mounted, openGuards) };
+  };
+
+  it("leaves a pasted session address for the boot apply, which then opens it", () => {
+    const { bootPlan } = mount("#/session/x");
+    expect(bar).toBe("#/session/x");
+    expect(calls).toEqual([]);
+    expect(bootPlan.actions).toEqual([
+      { kind: "open-session", sessionId: "x", eventIndex: null, tab: "chat" },
+    ]);
+  });
+
+  it("leaves an event address for the boot apply, which opens the session at that event", () => {
+    const { bootPlan } = mount("#/session/x@12");
+    expect(bar).toBe("#/session/x@12");
+    expect(bootPlan.actions).toEqual([
+      { kind: "open-session", sessionId: "x", eventIndex: 12, tab: "trace" },
+    ]);
+  });
+
+  it("leaves a settings address for the boot apply, which opens the page", () => {
+    const { bootPlan } = mount("#/settings/design");
+    expect(bar).toBe("#/settings/design");
+    expect(bootPlan.actions).toEqual([{ kind: "open-settings", section: "design" }]);
+  });
+
+  it("writes nothing new once the opened session lands on the address it came from", () => {
+    const { reporter } = mount("#/session/x");
+    const landed = reporter.report(at({ replayId: "x" }));
+    expect(landed).toEqual({ kind: "session", sessionId: "x", eventIndex: null, tab: null });
+    expect(writeRoute(landed as Route, "gesture")).toBe("none");
+    expect(bar).toBe("#/session/x");
+    expect(calls).toEqual([]);
+  });
+
+  it("still reports a reading that changes after the mount", () => {
+    const { reporter } = mount("#/");
+    expect(reporter.report(at({ tab: "trace" }))).toEqual({ kind: "live", tab: "trace" });
+    expect(reporter.report(at({ tab: "trace" }))).toBeNull();
+  });
+
+  it("reports nothing while settings are open and catches up when they close", () => {
+    const { reporter } = mount("#/");
+    expect(reporter.report(at({ tab: "trace", settingsOpen: true }))).toBeNull();
+    expect(reporter.report(at({ tab: "trace" }))).toEqual({ kind: "live", tab: "trace" });
   });
 });

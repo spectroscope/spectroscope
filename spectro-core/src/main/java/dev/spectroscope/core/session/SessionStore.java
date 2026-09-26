@@ -9,9 +9,15 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,6 +42,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 
 /**
@@ -55,8 +62,24 @@ public final class SessionStore {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    private static final Logger LOG = LoggerFactory.getLogger(SessionStore.class);
+
+    /**
+     * One lock per session file in this process (card 406).
+     *
+     * <p>{@code Files.writeString} hands a line to the file in writes of 8,192
+     * bytes, so a second writer's line can land between two writes of a longer
+     * one. Two threads do append to one file: the run's drainer through
+     * {@code JsonlSink}, and the provider thread closing an {@code llm_exchange}.
+     * Keyed by the file rather than held by the instance, so two stores opened
+     * on the same id in one process take the same lock. A second process
+     * writing the same file is not covered.</p>
+     */
+    private static final Map<Path, ReentrantLock> APPEND_LOCKS = new ConcurrentHashMap<>();
+
     private final String id;
     private final Path file;
+    private final ReentrantLock appendLock;
 
     /** New session with a freshly minted id (headless runs). */
     public SessionStore() {
@@ -78,6 +101,7 @@ public final class SessionStore {
             // I/O failure — refused before anything is created or appended to.
             throw new IllegalArgumentException("Not a session id: " + id, outsideStore);
         }
+        this.appendLock = APPEND_LOCKS.computeIfAbsent(this.file, path -> new ReentrantLock());
         try {
             Files.createDirectories(SESSIONS_DIR);
         } catch (IOException failure) {
@@ -125,8 +149,13 @@ public final class SessionStore {
     }
 
     /**
-     * Appends one event as a single JSONL line. One write per event: crash-safe,
-     * no flush problem, no open handle. Serialization failures are a programming
+     * Appends one event as a single JSONL line: the file is opened, written and
+     * closed per event, so no handle stays open. The write holds the file's
+     * lock (card 406), so two threads of this process that append to one
+     * session file cannot interleave their lines. The lock covers this
+     * process only: a second process appending to the same file, such as a
+     * headless run in the CLI, scheduled or not, does not take it and can
+     * still tear a line. Serialization failures are a programming
      * error (an event that is not JSON-serializable) and may throw.
      *
      * @param event the RunEvent to persist as the file's next line
@@ -134,8 +163,13 @@ public final class SessionStore {
     public void append(RunEvent event) {
         try {
             String line = JSON.writeValueAsString(event) + "\n";
-            Files.writeString(file, line, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            appendLock.lock();
+            try {
+                Files.writeString(file, line, StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } finally {
+                appendLock.unlock();
+            }
         } catch (IOException failure) {
             throw new UncheckedIOException("Cannot append to " + file, failure);
         }
@@ -289,9 +323,9 @@ public final class SessionStore {
      * How many event lines a stored session already holds.
      *
      * <p>Counted through {@link #readSessionEvents} on purpose, even though the
-     * caller only wants a position: that reader skips blanks and discards a line
-     * torn by a crash, and any other counting rule would disagree with it by one
-     * on exactly those files. The client addresses events by their index in that
+     * caller only wants a position: that reader skips blank lines and lines
+     * that do not parse, and any other counting rule would disagree with it on
+     * exactly those files. The client addresses events by their index in that
      * same list, so the two must agree or a receipt points at the wrong line.
      * A missing or unreadable file answers 0, because "start at the beginning"
      * is the safe wrong answer.</p>
@@ -327,18 +361,23 @@ public final class SessionStore {
             if (!Files.isRegularFile(path)) {
                 return null;
             }
-            for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
-                if (line.isBlank() || !line.contains("\"run_start\"")) {
+            for (SessionLine line : readLines(path)) {
+                if (line.text().isBlank() || !line.text().contains("\"run_start\"")) {
+                    continue;
+                }
+                if (!line.utf8()) {
+                    reportUnreadable(id, line);
                     continue;
                 }
                 try {
-                    RunEvent event = JSON.readValue(line, RunEvent.class);
+                    RunEvent event = JSON.readValue(line.text(), RunEvent.class);
                     if (event instanceof RunEvent.RunStart start
                             && start.workspace() != null && !start.workspace().isBlank()) {
                         return start.workspace();
                     }
                 } catch (IOException torn) {
-                    // A truncated line is not an answer; keep looking.
+                    // A torn line is not an answer; keep looking.
+                    reportUnreadable(id, line);
                 }
             }
         } catch (IOException unreadable) {
@@ -356,8 +395,8 @@ public final class SessionStore {
      * line by line like {@link #recordedWorkspace}, and only lines naming the
      * type are parsed; a {@code context_info} line that names the source in its
      * {@code thresholdSource} is skipped by the same filter. A torn line is
-     * skipped, so a crash in the middle of a write leaves the line before it in
-     * force.</p>
+     * skipped and logged, so a crash in the middle of a write leaves the line
+     * before it in force.</p>
      *
      * @param id the session id to read
      * @return the window in tokens, or null when the file names none, the last
@@ -370,16 +409,21 @@ public final class SessionStore {
             if (!Files.isRegularFile(path)) {
                 return null;
             }
-            for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
-                if (!line.contains("\"type\":\"window_override\"")) {
+            for (SessionLine line : readLines(path)) {
+                if (!line.text().contains("\"type\":\"window_override\"")) {
+                    continue;
+                }
+                if (!line.utf8()) {
+                    reportUnreadable(id, line);
                     continue;
                 }
                 try {
-                    if (JSON.readValue(line, RunEvent.class) instanceof RunEvent.WindowOverride choice) {
+                    if (JSON.readValue(line.text(), RunEvent.class) instanceof RunEvent.WindowOverride choice) {
                         last = choice.tokens() != null && choice.tokens() > 0 ? choice.tokens() : null;
                     }
                 } catch (IOException torn) {
-                    // A truncated line is not a choice; the one before it stands.
+                    // A torn line is not a choice; the one before it stands.
+                    reportUnreadable(id, line);
                 }
             }
         } catch (IOException unreadable) {
@@ -389,9 +433,15 @@ public final class SessionStore {
     }
 
     /**
-     * Reads a session's events. A truncated last line (crash mid-write) is
-     * discarded: each line is parsed in its own try/catch. The id goes through
-     * {@link #sessionFile(String)} first — a traversal id never reaches the
+     * Reads a session's events. The file is decoded line by line and each
+     * line is parsed on its own, so a line whose bytes are not valid UTF-8, or
+     * that does not parse, is skipped and the rest of the file is still read;
+     * the skipped line is logged at WARN by session id and line number.
+     * A crash can cut the last line short. Two writers can tear a line in
+     * the middle: before card 406 two threads of this process could, and a
+     * second process appending to the same file still can, because the
+     * append lock covers this process only. The id goes through
+     * {@link #sessionFile(String)} first, so a traversal id never reaches the
      * file system.
      *
      * @param id the session id whose file is read
@@ -402,17 +452,91 @@ public final class SessionStore {
     public static List<RunEvent> readSessionEvents(String id) throws IOException {
         Path path = sessionFile(id);
         List<RunEvent> events = new ArrayList<>();
-        for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
-            if (line.isBlank()) {
+        for (SessionLine line : readLines(path)) {
+            if (line.text().isBlank()) {
+                continue;
+            }
+            if (!line.utf8()) {
+                reportUnreadable(id, line);
                 continue;
             }
             try {
-                events.add(JSON.readValue(line, RunEvent.class));
+                events.add(JSON.readValue(line.text(), RunEvent.class));
             } catch (IOException torn) {
-                // Truncated trailing line after a crash — discard silently.
+                reportUnreadable(id, line);
             }
         }
         return events;
+    }
+
+    /**
+     * One physical line of a session file, split on the newline byte (card 406).
+     *
+     * @param number the line's number in the file, counting from 1
+     * @param text   the line decoded as UTF-8; where {@code utf8} is false the
+     *               bytes that form no character are replaced by U+FFFD, which
+     *               is good enough for a reader's type filter and nothing more
+     * @param utf8   whether the line's bytes are valid UTF-8
+     * @param bytes  the line's length in bytes, without the newline
+     */
+    private record SessionLine(int number, String text, boolean utf8, int bytes) {}
+
+    /**
+     * Reads a session file as bytes and decodes it line by line (card 406).
+     *
+     * <p>A tear lands at a byte offset, and that offset can fall inside a
+     * character that takes more than one byte. Decoding the whole file at
+     * once fails on the first such byte and loses every line with it.
+     * Decoding each line on its own confines the damage to the lines that
+     * hold it: the newline byte never occurs inside a UTF-8 sequence, so
+     * splitting on it before decoding cuts no character that was whole.</p>
+     *
+     * @param path the session file
+     * @return every physical line, blank ones included, in file order
+     * @throws IOException when the file cannot be read
+     */
+    private static List<SessionLine> readLines(Path path) throws IOException {
+        byte[] bytes = Files.readAllBytes(path);
+        CharsetDecoder strict = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        List<SessionLine> lines = new ArrayList<>();
+        int start = 0;
+        int number = 0;
+        while (start < bytes.length) {
+            int end = start;
+            while (end < bytes.length && bytes[end] != '\n') {
+                end++;
+            }
+            number++;
+            int length = end - start;
+            String text;
+            boolean utf8;
+            try {
+                text = strict.decode(ByteBuffer.wrap(bytes, start, length)).toString();
+                utf8 = true;
+            } catch (CharacterCodingException notUtf8) {
+                text = new String(bytes, start, length, StandardCharsets.UTF_8);
+                utf8 = false;
+            }
+            lines.add(new SessionLine(number, text, utf8, length));
+            start = end + 1;
+        }
+        return lines;
+    }
+
+    /**
+     * Logs one session line a reader skipped (card 406), by session id and
+     * 1-based line number: a line whose bytes are not valid UTF-8, or that
+     * does not parse as an event. Only the length in bytes is logged, never
+     * the content: a line carries the session's prompts and tool output.
+     *
+     * @param id   the session whose file was read
+     * @param line the line as read
+     */
+    private static void reportUnreadable(String id, SessionLine line) {
+        LOG.warn("Session {} line {} could not be read as an event and was skipped ({} bytes)",
+                id, line.number(), line.bytes());
     }
 
     /**

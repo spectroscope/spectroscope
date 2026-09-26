@@ -119,14 +119,39 @@
   flex-shrink: 0;
 }
 
-/* New-chat workspace chooser (random | default | set folder). */
+/* Card 389: the working folder row, in the live composer column directly
+   above the box (no folder | default | choose folder, then the folder name).
+   The row is its own container, because the column's width follows the side
+   panels and not the window. A wide row is one line; a narrow one (the query
+   below) is two: the options, then the folder. Either way the lines never
+   wrap and their height is reserved with min-height, so a long path or a
+   notice cannot push the box down. A max-height would be a lid, not a
+   reservation (card 319).
+   Card 428: the options sit in the middle of the row, which spans the
+   composer. On one line the label and the folder take equal shares on either
+   side, so the options stay put when the folder name changes; on two lines
+   each line is centred.
+   Card 441: the row sits in the middle between the composer's top line and
+   the input box. Above it are the composer's --sp-2 padding and the 16px walk
+   counter slot, 24px together, so the room below is --sp-5, also 24px.
+   composerSlack.drift.test.ts adds up both sides from the sheets. */
 .ws-chooser {
+  container: wschooser / inline-size;
+  min-width: 0;
+  margin: 0 0 var(--sp-5);
+}
+.ws-chooser-line {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  min-width: 0;
+  min-height: 30px;
 }
 .ws-chooser-label {
+  flex: 1 1 0;
+  text-align: right;
+  white-space: nowrap;
   font-size: var(--fs-11);
   color: var(--text-faint);
   text-transform: uppercase;
@@ -134,6 +159,7 @@
 }
 .ws-chooser-opts {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 3px;
   border: 1px solid var(--border);
   border-radius: var(--radius-chip);
@@ -146,15 +172,63 @@
   color: var(--text-faint);
   font: inherit;
   font-size: var(--fs-12);
+  white-space: nowrap;
   padding: 3px var(--sp-2);
   cursor: pointer;
 }
-.ws-chooser-opt:hover {
+.ws-chooser-opt:not(:disabled):hover {
   color: var(--text);
+}
+.ws-chooser-opt:disabled {
+  cursor: not-allowed;
+}
+/* Once the agent has run: the marked option stays legible, the rest recede. */
+.ws-chooser-opt:disabled:not(.ws-chooser-opt--on) {
+  opacity: 0.6;
 }
 .ws-chooser-opt--on {
   background: var(--accent-soft);
   color: var(--accent);
+}
+/* The folder in use and the gone notice. Drawn empty when there is nothing
+   to name, so the narrow row's second line is there before the first frame. */
+.ws-chooser-where {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 18px;
+  line-height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* A narrow row: the label goes (the radiogroup keeps it as its accessible
+   name) and the folder takes a line of its own under the options. One line
+   with the options in the middle, the label on one side and the folder at its
+   floor plus the gone notice at its floor on the other needs the options,
+   two gaps and twice the wider side. Snapshot of 2026-09-25, headless Chrome
+   on stub pages of the live chat with these stylesheets: 726.94 px in German
+   and 710.70 px in English. Card 428 has the readings. */
+@container wschooser (max-width: 760px) {
+  .ws-chooser-label {
+    display: none;
+  }
+  .ws-chooser-line {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .ws-chooser-opts {
+    align-self: center;
+  }
+  .ws-chooser-where {
+    flex: none;
+  }
+  .ws-chooser-folder {
+    text-align: center;
+  }
 }
 
 /* User turn: a flat bubble on the RIGHT (owner 2026-07-25). One solid mid
@@ -754,13 +828,41 @@
 }
 
 /* The workspace chooser names the folder it is about (card 179). Basename as
-   text, full path in the title: the pattern the Files pane already uses. */
+   text, full path in the title: the pattern the Files pane already uses.
+   Card 389: the folder takes what the line has left, never less than its
+   floor, and truncates. */
 .ws-chooser-folder {
+  flex: 1 1 0;
+  min-width: 8ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-11);
   color: var(--text-dim);
 }
 .ws-chooser-new {
   color: var(--text-faint);
+}
+/* A resumed session's recorded folder that is no longer on disk. The name
+   shortens down to its floor; the words around it never shrink, and
+   white-space: pre keeps their leading space. */
+.ws-chooser-gone {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.ws-chooser-gone-name {
+  flex: 0 1 auto;
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-chooser-gone-words {
+  flex: none;
+  white-space: pre;
 }
 
 /* Pictures a tool RETURNED, carried out of an imported transcript (card 179).

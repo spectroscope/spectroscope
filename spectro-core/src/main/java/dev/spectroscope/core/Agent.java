@@ -1187,10 +1187,10 @@ public final class Agent {
             return remembered;
         }
         String callId = UUID.randomUUID().toString();
-        PermissionRequest request = new PermissionRequest(agentId, callId, GOAL_CHECK_GATE,
+        PermissionRequest request = gateRequest(new PermissionRequest(agentId, callId, GOAL_CHECK_GATE,
                 com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
                         .put("command", command),
-                now());
+                now()));
         emit.accept(request);
         long parkedAt = now();
         // Blocking on purpose, exactly as runGuarded blocks: this virtual thread
@@ -1355,8 +1355,8 @@ public final class Agent {
         }
         Long gateWaitMs = null;
         if (tool.needsPermission()) {
-            PermissionRequest request = new PermissionRequest(
-                    agentId, call.callId(), call.name(), call.input(), now());
+            PermissionRequest request = gateRequest(new PermissionRequest(
+                    agentId, call.callId(), call.name(), call.input(), now()));
             emit.accept(request);
             // Blocking on purpose: this virtual thread pauses until the human decided.
             long parkedAt = now();
@@ -1399,6 +1399,27 @@ public final class Agent {
         Tool.FileChange change = reported.get();
         return new GuardedResult(output, durationMs, gateWaitMs,
                 change == null ? null : change.wireName());
+    }
+
+    /**
+     * Card 399: the request as it goes on the wire, stamped with the broker's
+     * early answer when it has one. The broker is asked before the event is
+     * emitted, so a viewer reading the stamp never queues a call that is
+     * already decided. A broker whose early answer throws is treated as one
+     * that has none: the request goes out unstamped and {@code decide} runs
+     * exactly as it did before this card.
+     *
+     * @param bare the request as the gate built it, not yet stamped
+     * @return {@code bare} itself, or a copy carrying the broker's label
+     */
+    private PermissionRequest gateRequest(PermissionRequest bare) {
+        String label;
+        try {
+            label = options.onPermission().decidedBy(bare);
+        } catch (RuntimeException noEarlyAnswer) {
+            label = null;
+        }
+        return label == null ? bare : bare.stamped(label);
     }
 
     /**

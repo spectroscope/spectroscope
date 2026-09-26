@@ -3,16 +3,15 @@
 //
 // The file is the one SessionStore.append writes: SteeringJsonlRoundTripTest
 // (spectro-core) pins the writer's bytes to this same fixture. Here it goes
-// through the page's JSONL import (detectAndLoad) and the reducer, folded the
-// way App's foldArchive folds an import: normalizeReplay(reduceAll(...)).
-// That one line is repeated here, not imported, because foldArchive is local
-// to App.tsx.
+// through the page's JSONL import (detectAndLoad) and the reducer, folded by
+// the archive fold App's opens use (state/archiveFold.ts). App folds an import
+// with the sliced variant, which returns the same state (archiveFold.test.ts).
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { detectAndLoad } from "../import/detect";
-import { initialState, normalizeReplay, reduceAll } from "./reducer";
+import { foldArchive } from "./archiveFold";
 
 const FIXTURE = "spectro-core/src/test/resources/steering/steered-session.jsonl";
 
@@ -23,7 +22,7 @@ const MISSED = "skip the slow ones";
 
 describe("a steering sentence in a session file (card 380, criterion 6)", () => {
   const loaded = detectAndLoad(text);
-  const state = normalizeReplay(reduceAll(initialState, loaded.events));
+  const state = foldArchive(loaded.events);
 
   it("imports as a spectroscope session with every line as an event", () => {
     expect(loaded.kind).toBe("spectroscope");

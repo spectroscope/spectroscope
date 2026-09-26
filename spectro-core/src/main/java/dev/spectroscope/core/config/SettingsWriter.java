@@ -84,7 +84,9 @@ public final class SettingsWriter {
             // Card 372: the floor of a child agent's run budget, in seconds.
             "subagentBudgetSeconds",
             // Card 379: the rtk proxy switch, off or on.
-            "rtkFilter");
+            "rtkFilter",
+            // Card 394: the most tokens one child agent may spend.
+            "subagentBudgetTokens");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is

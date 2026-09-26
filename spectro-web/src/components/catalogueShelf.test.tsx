@@ -375,9 +375,11 @@ describe("criterion 6: expanded, each skill keeps its own switch", () => {
 
     expect(count(html, "skset-row")).toBe(4);
     expect(switches.map((s) => s.props["aria-checked"])).toEqual([true, true, false, false]);
-    // The row keeps the shape card 411 builds on: name, pack chip, description, control.
+    // Card 411 moved the control to the row's left edge (owner, 2026-09-25:
+    // "Mach den Button vielleicht auch einfach nach links"): switch, name,
+    // pack chip, description.
     expect(html).toMatch(
-      /<li class="skset-row"><span class="skset-name mono">a1<\/span><span class="wsg-scope-tag">alpha<\/span><span class="skset-desc"[^>]*>a1 does one thing.<\/span><button/,
+      /<li class="skset-row"><button[^>]*role="switch"[^>]*>[\s\S]*?<\/button><span class="skset-name mono">a1<\/span><span class="wsg-scope-tag">alpha<\/span><span class="skset-desc"[^>]*>a1 does one thing.<\/span><\/li>/,
     );
   });
 

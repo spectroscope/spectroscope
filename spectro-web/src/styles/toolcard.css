@@ -361,6 +361,8 @@
    so a 200-character path still wraps inside the card rather than widening it. */
 .tv-cmd { font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; white-space: pre-wrap; }
 .tv-prompt { color: var(--accent); margin-right: var(--sp-2); }
+/* Card 416: the model's line under the one rtk ran, in the secondary text colour. */
+.tv-cmd--written { color: var(--text-dim); }
 .tv-term { color: var(--text-dim); }
 .tv-term--failed { color: var(--error); }
 
@@ -562,3 +564,17 @@
    for it. Violet, the "waiting on you" colour the gate bar's line uses, so the
    two readings of one card are told apart by more than their position. */
 .tool-waited { color: var(--ev-pending); }
+
+/* Card 427, loop wave H3b: an answered question names its answer in the folded
+   row, in the slot the input teaser takes on every other card. The answer keeps
+   a floor of width, and the row may wrap: in a narrow chat whatever no longer
+   fits after the answer moves to a second line instead of pushing the answer
+   down to zero width (at 390 px: the two clocks and the chevron). */
+.tool-card-head--answered { flex-wrap: wrap; row-gap: 2px; }
+.tool-answer {
+  flex: 1 1 14ch;
+  min-width: min(14ch, 100%);
+  font-family: var(--font-ui);
+  color: var(--text-dim);
+}
+.tool-answer-text { color: var(--text); }

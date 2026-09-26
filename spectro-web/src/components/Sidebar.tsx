@@ -16,10 +16,42 @@
 
 import { useEffect, useState } from "react";
 import type { SessionMeta } from "../events";
+import { rememberSessionTitles } from "../state/sessionOpening";
+import {
+  TITLE_POLL_MS,
+  deleteStoredSession,
+  orderSessions,
+  pinSession,
+  renameSession,
+  suggestSessionTitle,
+  titlePending,
+  withTitleFields,
+  withoutSession,
+  type SessionTitleFields,
+} from "../state/sessionMeta";
+import { SessionGroups } from "./SessionGroups";
+import { SessionRowMenu } from "./SessionRowMenu";
+import { SessionRenameField } from "./SessionRenameField";
+import { SessionDeleteDialog } from "./SessionDeleteDialog";
+import {
+  renameOpening,
+  renameRequest,
+  rowMenuItems,
+  type RenameOpening,
+  type RowMenuEntry,
+  type RowMenuItemId,
+} from "./rowMenuItems";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
-import { SessionSigil, countLabel, sessionModelLabel, sessionSignal, sessionTitleLines } from "./sessionRows";
+import {
+  SessionSigil,
+  countLabel,
+  sessionDisplayTitle,
+  sessionModelLabel,
+  sessionSignal,
+  sessionTitleLines,
+} from "./sessionRows";
 import { NavIcon, NavRow } from "./NavRow";
 import { navActionRows, navSegmentRows, type NavSegmentId } from "./navRows";
 import { RunDot } from "./RunDot";
@@ -28,9 +60,10 @@ import { useLiveSessions } from "../state/liveSessions";
 import { SessionListOptions } from "./SessionListOptions";
 import { rowParts, useDensity, type RowParts } from "../state/density";
 import { useFleets } from "../state/fleetStore";
+import { useViewMode } from "../state/viewMode";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
-import { ScenarioRail, type LoadedRun } from "../stategraph/StateGraphPane";
+import { ScenarioRail, type LoadedRun } from "../stategraph/scenarios";
 import { loc, type Dsl } from "../scenario/dsl";
 
 export function Sidebar(props: {
@@ -93,11 +126,26 @@ export function Sidebar(props: {
   /** Fold the sidebar away. Offered here as well as in the header because the
    *  header's own control is the first thing a narrow window takes away. */
   onCollapse?: () => void;
+  /** Card 445: a row menu deleted this stored session. App falls back the way
+   *  the archive bar's delete does when the session was open. */
+  onSessionDeleted?: (id: string) => void;
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // Card 445: the row menu's state. One rename, one delete question and any
+  // number of suggestions can be under way; the poll tick refetches the list
+  // while a fresh session waits for its suggested title. The rename is held as
+  // what its field opened with (renameOpening), so a title that lands while
+  // the field is open changes neither the field nor what counts as unchanged.
+  const [renaming, setRenaming] = useState<RenameOpening | null>(null);
+  const [deleting, setDeleting] = useState<{ row: SessionMeta; busy: boolean; failed: boolean } | null>(null);
+  const [suggesting, setSuggesting] = useState<ReadonlySet<string>>(new Set());
+  const [focusMenuOf, setFocusMenuOf] = useState<string | null>(null);
+  const [pollTick, setPollTick] = useState(0);
   const nav = props.nav;
   const lang = useLang();
+  // Card 430: a row the surface table closes in this mode is not drawn.
+  const mode = useViewMode();
   const fleets = useFleets();
   // Card 212: which sessions are live ON THIS SERVER, not merely on this page.
   // Pushed over the socket and polled underneath — see state/liveSessions.ts.
@@ -108,8 +156,8 @@ export function Sidebar(props: {
   // a session that is already listed changes no row's metadata.
   const liveIds = liveSessions.map((session) => session.id).join(",");
   // How much a row says. Read once for the whole list: switching it re-renders
-  // what is already in hand and touches no endpoint — the fetch below hangs off
-  // props.refreshToken and nothing else.
+  // what is already in hand and touches no endpoint. The density is not a
+  // dependency of the fetch below.
   const parts = rowParts(useDensity());
   // Attention-first: a fleet with a pending gate floats to the top, then by
   // most recent activity — a manager sees who is blocked on them.
@@ -125,6 +173,8 @@ export function Sidebar(props: {
         if (!res.ok) throw new Error(String(res.status));
         const list = (await res.json()) as SessionMeta[];
         if (!alive) return;
+        // Card 431: an open names the session with its row's words, found by id.
+        rememberSessionTitles(list);
         setSessions([...list].sort((a, b) => b.startedAt - a.startedAt));
         setFailed(false);
       } catch {
@@ -137,7 +187,108 @@ export function Sidebar(props: {
     return () => {
       alive = false;
     };
-  }, [props.refreshToken, liveIds]);
+  }, [props.refreshToken, liveIds, pollTick]);
+
+  // Card 445: a new session's title is asked for in the background when its
+  // first run starts, and lands a few seconds later. While a young row still
+  // shows its first prompt, look again every TITLE_POLL_MS; titlePending stops
+  // this once every row has its title or is past TITLE_WAIT_MS.
+  useEffect(() => {
+    if (sessions === null || !titlePending(sessions, Date.now())) return;
+    const timer = setTimeout(() => setPollTick((n) => n + 1), TITLE_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [sessions]);
+
+  // Card 445: a pin moves the row to the other group, which draws it anew, so
+  // the three-dots button the keyboard was on is a new element. Give focus back
+  // to that row's button once it is drawn.
+  useEffect(() => {
+    if (focusMenuOf === null) return;
+    const button = document.querySelector<HTMLButtonElement>(
+      `[data-session-id="${CSS.escape(focusMenuOf)}"] .session-menu-btn`,
+    );
+    button?.focus();
+    setFocusMenuOf(null);
+  }, [focusMenuOf, sessions]);
+
+  /** Applies a server answer (or an optimistic guess) to one row. */
+  const applyFields = (id: string, fields: SessionTitleFields): void => {
+    setSessions((list) => (list === null ? list : withTitleFields(list, id, fields)));
+  };
+
+  const pickFromMenu = (row: SessionMeta, item: RowMenuItemId): void => {
+    if (item === "pin" || item === "unpin") {
+      const pinned = item === "pin";
+      const before: SessionTitleFields = {
+        title: row.title,
+        titleSource: row.titleSource,
+        pinned: row.pinned,
+      };
+      applyFields(row.id, { ...before, pinned });
+      setFocusMenuOf(row.id);
+      void pinSession(row.id, pinned).then((answer) => applyFields(row.id, answer ?? before));
+    } else if (item === "rename") {
+      setRenaming(renameOpening(row, lang));
+    } else if (item === "suggest") {
+      setSuggesting((set) => new Set(set).add(row.id));
+      setFocusMenuOf(row.id);
+      void suggestSessionTitle(row.id).then((answer) => {
+        if (answer !== null) applyFields(row.id, answer.fields);
+        setSuggesting((set) => {
+          const next = new Set(set);
+          next.delete(row.id);
+          return next;
+        });
+      });
+    } else {
+      setDeleting({ row, busy: false, failed: false });
+    }
+  };
+
+  /**
+   * @param row    the row as it is when the field closes (id, pin, and the
+   *               fields to put back when the server refuses)
+   * @param opened what the field opened with; the typed text is compared with it
+   */
+  const finishRename = (
+    row: SessionMeta,
+    opened: RenameOpening,
+    typed: string | null,
+    by: "key" | "blur",
+  ): void => {
+    setRenaming(null);
+    // After Enter or Escape the keyboard goes back to the row's button. After a
+    // blur the operator has already put focus somewhere else, and it stays there.
+    if (by === "key") setFocusMenuOf(row.id);
+    if (typed === null) return;
+    const title = renameRequest({ typed, shown: opened.shown, hasTitle: opened.hasTitle });
+    if (title === null) return;
+    const before: SessionTitleFields = { title: row.title, titleSource: row.titleSource, pinned: row.pinned };
+    // Shown at once; the answer then says what the server kept (for an emptied
+    // field, the suggestion or nothing).
+    if (title !== "") applyFields(row.id, { title, titleSource: "manual", pinned: row.pinned });
+    void renameSession(row.id, title).then((answer) => applyFields(row.id, answer ?? before));
+  };
+
+  const confirmDelete = (): void => {
+    if (deleting === null) return;
+    const row = deleting.row;
+    setDeleting({ row, busy: true, failed: false });
+    void deleteStoredSession(row.id).then((outcome) => {
+      if (outcome === "failed") {
+        setDeleting({ row, busy: false, failed: true });
+        return;
+      }
+      setDeleting(null);
+      setSessions((list) => (list === null ? list : withoutSession(list, row.id)));
+      props.onSessionDeleted?.(row.id);
+    });
+  };
+
+  const cancelDelete = (): void => {
+    if (deleting !== null) setFocusMenuOf(deleting.row.id);
+    setDeleting(null);
+  };
 
   const actionPress: Record<string, () => void> = {
     newChat: props.onNewChat,
@@ -254,9 +405,10 @@ export function Sidebar(props: {
           path; owner may retire it). Skills is the fourth since card 409, and
           like the other three it leaves the list below alone. */}
         <div className="sidebar-nav">
-          {navActionRows({ skillsOpen: props.skillsOpen }).map((row) => (
+          {navActionRows({ skillsOpen: props.skillsOpen, mode }).map((row) => (
             <NavRow
               key={row.id}
+              surface={row.id}
               active={row.active}
               icon={<NavIcon id={row.icon} />}
               label={t(lang, row.labelKey)}
@@ -283,9 +435,11 @@ export function Sidebar(props: {
               active: nav,
               fleetsLocked: props.fleetsLocked === true,
               fleetCount: orderedFleets.length,
+              mode,
             }).map((row) => (
               <NavRow
                 key={row.id}
+                surface={row.id}
                 role="tab"
                 ariaSelected={row.active}
                 active={row.active}
@@ -329,43 +483,68 @@ export function Sidebar(props: {
         {nav === "sessions" ? (
           <>
             <nav className="session-list" aria-label="Sessions">
-              {/* The live row wears the same dot as every other row. It is THIS
-                page's socket — no longer the only row that may say "running",
-                only the one that says it about the session you are in. */}
-              <button
-                type="button"
-                className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}
-                onClick={props.onSelectLive}
-              >
-                <span className="session-title">
-                  <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
-                  {t(lang, "nav.live")}
-                </span>
-                {/* The live row's subline goes quiet with the rest of the list: it
-                  is in the same list, under the same control, and "this browser
-                  tab" is the one thing the row's own name already says. */}
-                {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
-              </button>
-
-              {(sessions ?? []).map((s) => (
-                <SessionRow
-                  key={s.id}
-                  s={s}
-                  parts={parts}
-                  lang={lang}
-                  active={props.activeId === s.id && props.activeFleet === null}
+              {/* Card 445: pinned sessions head the list under their own
+                  heading; the rest follow, the live row first as before. */}
+              <SessionGroups
+                lang={lang}
+                groups={orderSessions(sessions ?? [])}
+                live={
+                  /* The live row wears the same dot as every other row. It is THIS
+                    page's socket — no longer the only row that may say "running",
+                    only the one that says it about the session you are in. */
+                  <button
+                    type="button"
+                    className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}
+                    onClick={props.onSelectLive}
+                  >
+                    <span className="session-title">
+                      <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
+                      {t(lang, "nav.live")}
+                    </span>
+                    {/* The live row's subline goes quiet with the rest of the list: it
+                      is in the same list, under the same control, and "this browser
+                      tab" is the one thing the row's own name already says. */}
+                    {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
+                  </button>
+                }
+                row={(s) => {
                   /* Card 212 owns the rule and card 214 owns the drawing: the whole
                    live decision stays in storedRunState, where it is tested
                    without a DOM, and the row receives a finished state. */
-                  state={storedRunState({
+                  const state = storedRunState({
                     row: s,
                     live: liveSessions,
                     resumeId: props.resumeId,
                     liveRunning: props.liveRunning,
-                  })}
-                  onSelect={() => props.onSelectSession(s.id)}
-                />
-              ))}
+                  });
+                  return (
+                    <SessionRow
+                      key={s.id}
+                      s={s}
+                      parts={parts}
+                      lang={lang}
+                      active={props.activeId === s.id && props.activeFleet === null}
+                      state={state}
+                      onSelect={() => props.onSelectSession(s.id)}
+                      menu={{
+                        items: rowMenuItems({
+                          pinned: s.pinned === true,
+                          hasTitle: (s.title ?? "").trim() !== "" || suggesting.has(s.id),
+                          // A socket holds a live row; the archive bar keeps the
+                          // same rule for the session this page resumes.
+                          deletable: state !== "running" && state !== "live",
+                        }),
+                        onPick: (item) => pickFromMenu(s, item),
+                      }}
+                      renameFrom={renaming !== null && renaming.id === s.id ? renaming.shown : undefined}
+                      onRename={(typed, by) => {
+                        if (renaming !== null) finishRename(s, renaming, typed, by);
+                      }}
+                      suggesting={suggesting.has(s.id)}
+                    />
+                  );
+                }}
+              />
             </nav>
 
             {sessions !== null && sessions.length === 0 && !failed && (
@@ -518,6 +697,17 @@ export function Sidebar(props: {
       <div className="sidebar-foot">
         <NavRow icon={<NavIcon id="gear" />} label={t(lang, "hdr.settings")} onClick={props.onSettings} />
       </div>
+
+      {deleting !== null && (
+        <SessionDeleteDialog
+          lang={lang}
+          title={sessionDisplayTitle(deleting.row, lang)}
+          busy={deleting.busy}
+          failed={deleting.failed}
+          onCancel={cancelDelete}
+          onConfirm={confirmDelete}
+        />
+      )}
     </aside>
   );
 }
@@ -548,50 +738,81 @@ export function SessionRow(props: {
   /** The dot's state, already decided by storedRunState at the list level. */
   state: RunState;
   onSelect: () => void;
+  /** Card 445: the row's three-dots menu. Absent, the row has none (the
+   *  density tests draw rows without one). */
+  menu?: { items: RowMenuEntry[]; onPick: (item: RowMenuItemId) => void };
+  /** Card 445: while the title is a rename field, the text the field opened
+   *  with, noted by the list when Rename was picked. Absent otherwise. */
+  renameFrom?: string;
+  /** Card 445: the rename field closed, with the typed text or null for
+   *  cancel, and whether a key or a blur closed it. */
+  onRename?: (typed: string | null, by: "key" | "blur") => void;
+  /** Card 445: a suggestion for this row is on its way. */
+  suggesting?: boolean;
 }) {
   const { s, parts, lang } = props;
+  const shown = sessionDisplayTitle(s, lang);
   return (
-    <button
-      type="button"
-      className={`session-row${props.active ? " active" : ""}`}
-      /* ONE hover string, at either density. In normal the hover is the only
-         place the cut facts live, and a density-aware second one would be a
-         second thing to keep in step with the DTO. */
-      title={sessionTitleLines(s, lang)}
-      onClick={props.onSelect}
+    <div
+      className={`session-item${props.active ? " active" : ""}`}
+      data-session-id={s.id}
+      aria-busy={props.suggesting === true ? true : undefined}
     >
-      <span className="session-title session-title-line">
-        {/* A stored row is no longer limited to what its file says: the server
-            reports the live set (card 212), so a session another window drives
-            wears the same dot that window shows. The rule is storedRunState,
-            applied by the list; this row only draws the answer.
+      {props.renameFrom !== undefined ? (
+        <SessionRenameField
+          lang={lang}
+          initial={props.renameFrom}
+          onDone={(typed, by) => props.onRename?.(typed, by)}
+        />
+      ) : (
+        <button
+          type="button"
+          className={`session-row${props.active ? " active" : ""}`}
+          /* ONE hover string, at either density. In normal the hover is the only
+             place the cut facts live, and a density-aware second one would be a
+             second thing to keep in step with the DTO. */
+          title={sessionTitleLines(s, lang)}
+          onClick={props.onSelect}
+        >
+          <span className="session-title session-title-line">
+            {/* A stored row is no longer limited to what its file says: the server
+                reports the live set (card 212), so a session another window drives
+                wears the same dot that window shows. The rule is storedRunState,
+                applied by the list; this row only draws the answer.
 
-            The dot survives every density: with the metadata line gone it is the
-            only thing left in the row that can say a session is running, and it
-            carries its state as a word as well as a hue. */}
-        <RunDot state={props.state} lang={lang} />
-        {/* The comb is a SECOND glyph, not the dot, so it goes with the metadata
-            line: "the session name and the state dot, and nothing else" leaves no
-            room for it. It is not deleted — extended draws it exactly as before. */}
-        {parts.sigil && <SessionSigil signal={sessionSignal(s)} />}
-        <span className="session-name">
-          {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
-        </span>
-      </span>
-      {parts.meta && (
-        <span className="session-meta session-meta-line tabular">
-          <span className="session-facts">
-            {relativeTime(s.startedAt, Date.now(), lang)}
-            {(s.turnCount ?? 0) > 0 && (
-              <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
-            )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
+                The dot survives every density: with the metadata line gone it is the
+                only thing left in the row that can say a session is running, and it
+                carries its state as a word as well as a hue. */}
+            <RunDot state={props.state} lang={lang} />
+            {/* The comb is a SECOND glyph, not the dot, so it goes with the metadata
+                line: "the session name and the state dot, and nothing else" leaves no
+                room for it. It is not deleted — extended draws it exactly as before. */}
+            {parts.sigil && <SessionSigil signal={sessionSignal(s)} />}
+            {/* Card 445: the title when the row has one, else the first prompt. */}
+            <span className="session-name">{shown}</span>
           </span>
-          {/* The model only earns a place once the rail is wide enough to spell
-              it out — see the container query. Truncated to "claude-s…" it answers
-              nothing, and it would be answering it with the token count's space. */}
-          {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
-        </span>
+          {parts.meta && (
+            <span className="session-meta session-meta-line tabular">
+              <span className="session-facts">
+                {relativeTime(s.startedAt, Date.now(), lang)}
+                {(s.turnCount ?? 0) > 0 && <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>}{" "}
+                &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
+              </span>
+              {/* The model only earns a place once the rail is wide enough to spell
+                  it out — see the container query. Truncated to "claude-s…" it answers
+                  nothing, and it would be answering it with the token count's space. */}
+              {sessionModelLabel(s) !== "" && (
+                <span className="session-model mono">{sessionModelLabel(s)}</span>
+              )}
+            </span>
+          )}
+        </button>
       )}
-    </button>
+      {/* Card 445: at the row's right end, a sibling of the row button (a
+          button inside a button is invalid markup). Hidden while renaming. */}
+      {props.menu !== undefined && props.renameFrom === undefined && (
+        <SessionRowMenu lang={lang} title={shown} items={props.menu.items} onPick={props.menu.onPick} />
+      )}
+    </div>
   );
 }

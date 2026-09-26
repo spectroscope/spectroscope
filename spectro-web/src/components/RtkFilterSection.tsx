@@ -33,7 +33,7 @@ export function RtkFilterSection({ lang, rtk }: RtkFilterSectionProps) {
       <div className="wsg-section-head">
         <span>{t(lang, "rtk.title")}</span>
         {rtk.available && rtk.version !== "" && (
-          <span className="wsg-proto">{t(lang, "rtk.version", { v: rtk.version })}</span>
+          <span className="wsg-version">{t(lang, "rtk.version", { v: rtk.version })}</span>
         )}
       </div>
       <ReachBlock lang={lang} fields={["rtkFilter"]}>

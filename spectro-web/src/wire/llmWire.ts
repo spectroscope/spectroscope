@@ -143,16 +143,10 @@ export function mergeLlmExchanges(trace: TraceEntry[], exchanges: readonly LlmEx
   // xid alone would fold the group back into one on every archive reopen.
   const seen = new Set<string>();
   for (const row of trace) {
-    if (row.type !== "llm_exchange") continue;
-    const xid = (row.payload as { xid?: unknown } | null)?.xid;
-    if (typeof xid === "string") seen.add(xid);
+    const xid = exchangeXidOf(row.type, row.payload);
+    if (xid !== null) seen.add(xid);
   }
-  const fresh: LlmExchangeMeta[] = [];
-  for (const x of exchanges) {
-    if (seen.has(x.xid)) continue;
-    seen.add(x.xid);
-    fresh.push(x);
-  }
+  const fresh = freshExchanges(seen, exchanges);
   if (fresh.length === 0) return trace;
   const out: Omit<TraceEntry, "seq">[] = [...trace];
   const place = (row: Omit<TraceEntry, "seq">): void => {
@@ -160,37 +154,71 @@ export function mergeLlmExchanges(trace: TraceEntry[], exchanges: readonly LlmEx
     while (at > 0 && out[at - 1].ts > row.ts) at--;
     out.splice(at, 0, row);
   };
-  for (const x of fresh) {
-    // The request row an archive has to get back. Its moment is derivable and
-    // exact: the recorder's durationMs IS close minus send, so ts - durationMs
-    // is the instant the POST left — the one the live frame carries directly.
-    if (x.durationMs > 0) {
-      place({
-        dir: "out",
-        ts: x.ts - x.durationMs,
-        type: "llm_request",
-        ...(x.agentId !== "" ? { agentId: x.agentId } : {}),
-        ...(x.model !== "" ? { model: x.model } : {}),
-        payload: {
-          type: "llm_request",
-          xid: x.xid,
-          agentId: x.agentId,
-          turn: x.turn,
-          kind: x.kind,
-          provider: x.provider,
-          model: x.model,
-          transport: x.transport,
-          method: "POST",
-          url: x.url,
-          requestBytes: x.requestBytes,
-          fidelity: x.fidelity,
-          ts: x.ts - x.durationMs,
-        },
-      });
-    }
-    place(entryOf(x));
-  }
+  for (const x of fresh) for (const row of rowsOfExchange(x)) place(row);
   return out.map((row, i) => ({ ...row, seq: i + 1 }));
+}
+
+/**
+ * How many rows {@link mergeLlmExchanges} adds to a trace whose exchange rows
+ * carry the xids in `held`, counted without merging. Card 435 shows an
+ * archive's count on the trace tab before its rows are built.
+ */
+export function rowsMergedFrom(held: ReadonlySet<string>, exchanges: readonly LlmExchangeMeta[]): number {
+  let added = 0;
+  for (const x of freshExchanges(new Set(held), exchanges)) added += rowsOfExchange(x).length;
+  return added;
+}
+
+/** The key the merge dedupes a trace row by: the xid of an `llm_exchange` row,
+ *  null for every other row. */
+export function exchangeXidOf(type: string, payload: unknown): string | null {
+  if (type !== "llm_exchange") return null;
+  const xid = (payload as { xid?: unknown } | null)?.xid;
+  return typeof xid === "string" ? xid : null;
+}
+
+/** The exchanges of an index that a trace holding the xids in `held` lacks,
+ *  each once, in index order. Their xids are added to `held`. */
+function freshExchanges(held: Set<string>, exchanges: readonly LlmExchangeMeta[]): LlmExchangeMeta[] {
+  const fresh: LlmExchangeMeta[] = [];
+  for (const x of exchanges) {
+    if (held.has(x.xid)) continue;
+    held.add(x.xid);
+    fresh.push(x);
+  }
+  return fresh;
+}
+
+/** The rows one exchange of an index adds to a trace, in the order they are
+ *  placed: its request row when it has a measured duration, then its own. */
+function rowsOfExchange(x: LlmExchangeMeta): Omit<TraceEntry, "seq">[] {
+  if (!(x.durationMs > 0)) return [entryOf(x)];
+  // The request row an archive has to get back. Its moment is derivable and
+  // exact: the recorder's durationMs IS close minus send, so ts - durationMs
+  // is the instant the POST left, the one the live frame carries directly.
+  const request: Omit<TraceEntry, "seq"> = {
+    dir: "out",
+    ts: x.ts - x.durationMs,
+    type: "llm_request",
+    ...(x.agentId !== "" ? { agentId: x.agentId } : {}),
+    ...(x.model !== "" ? { model: x.model } : {}),
+    payload: {
+      type: "llm_request",
+      xid: x.xid,
+      agentId: x.agentId,
+      turn: x.turn,
+      kind: x.kind,
+      provider: x.provider,
+      model: x.model,
+      transport: x.transport,
+      method: "POST",
+      url: x.url,
+      requestBytes: x.requestBytes,
+      fidelity: x.fidelity,
+      ts: x.ts - x.durationMs,
+    },
+  };
+  return [request, entryOf(x)];
 }
 
 /** The `llm_request` frame: what is known the moment a call LEAVES. Deliberately

@@ -36,7 +36,7 @@ export function VoiceNotice(props: {
 
   const say = (key: string, value?: string): string => {
     const s = t(lang, key);
-    return value === undefined ? s : s.replace("{v}", value);
+    return value === undefined ? s : s.replace("{v}", () => value);
   };
 
   return (

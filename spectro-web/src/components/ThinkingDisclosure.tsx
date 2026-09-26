@@ -5,14 +5,13 @@
 // While the model is still thinking the header pulses ("thinking…") — that IS
 // the live indicator, no separate element. Once settled it shows a char count.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { defaultOpen, useDisclosure } from "../state/disclosure";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { beacon } from "../state/levelingBeacon";
-
-/** This close to the body's bottom edge counts as "following the stream". */
-const FOLLOW_PIN_THRESHOLD_PX = 32;
+import { isReaderScrollKey, keyPull, onScrollbar, touchPull, wheelPull } from "../state/scrollPin";
+import { followsTheText, thinkingFollow } from "../state/thinkingFollow";
 
 export function ThinkingDisclosure(props: { text: string; active: boolean }) {
   const level = useDisclosure();
@@ -22,17 +21,70 @@ export function ThinkingDisclosure(props: { text: string; active: boolean }) {
 
   // Card 78 #5: while the block is OPEN and still STREAMING, the body follows
   // the live edge (the owner's "nach 20 Zeilen essig": the box has a ceiling
-  // and used to just stop there). Same pinning as the chat scroll: the position decides,
-  // recomputed on every scroll event — a programmatic jump lands at the bottom
-  // and stays pinned, a reader scrolling up releases it, returning re-engages.
+  // and used to just stop there). Card 400: who moved the body decides, by the
+  // transcript's rule (state/thinkingFollow.ts on top of state/scrollPin.ts).
+  // A reader's wheel, touch, press or scrolling key is heard as a gesture; a
+  // scroll event with no gesture behind it is this component's own jump and
+  // leaves the follow as it is.
   const bodyRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef(true);
+  const [follow] = useState(() => thinkingFollow(() => performance.now()));
 
   const handleScroll = (): void => {
     const el = bodyRef.current;
-    if (el === null) return;
-    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_PIN_THRESHOLD_PX;
+    if (el !== null) follow.scrolled(el);
   };
+  const onWheel = (e: React.WheelEvent<HTMLDivElement>): void => {
+    follow.gesture(e.currentTarget, wheelPull(e.deltaY));
+  };
+  /** Where the finger was at the last touchmove, so the next one has a direction. */
+  const lastTouchY = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>): void => {
+    lastTouchY.current = e.touches[0]?.clientY ?? null;
+    follow.gesture(e.currentTarget, "unknown");
+  };
+  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>): void => {
+    const y = e.touches[0]?.clientY ?? null;
+    const from = lastTouchY.current;
+    lastTouchY.current = y;
+    follow.gesture(e.currentTarget, from === null || y === null ? "unknown" : touchPull(y - from));
+  };
+  /** Whether the reader's last press landed in this body: the keys scroll the
+   *  box the last press sits in, and the body takes no focus of its own. */
+  const pressedInside = useRef(false);
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const el = e.currentTarget;
+    pressedInside.current = true;
+    const grabbed = onScrollbar(e.clientX, el.getBoundingClientRect().left, el.clientWidth);
+    follow.gesture(el, grabbed ? "grab" : "unknown");
+  };
+
+  // The keys, while the follow matters: a press elsewhere hands them back, and
+  // a press from before the stream started does not count.
+  useEffect(() => {
+    if (!open || !props.active) return;
+    pressedInside.current = false;
+    const onDown = (e: PointerEvent): void => {
+      const el = bodyRef.current;
+      if (el === null || !(e.target instanceof Node) || !el.contains(e.target)) pressedInside.current = false;
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      const el = bodyRef.current;
+      if (el === null || !pressedInside.current) return;
+      const target = e.target as HTMLElement | null;
+      // A key aimed at a focused control (a button, the composer) scrolls
+      // nothing here, as Chat's own key rule reads it for the transcript.
+      const aimed = target === null || target === document.body || el.contains(target);
+      const inEditable =
+        target !== null && (target.isContentEditable || /^(input|textarea|select)$/i.test(target.tagName));
+      if (aimed && isReaderScrollKey(e.key, inEditable)) follow.gesture(el, keyPull(e.key));
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, props.active, follow]);
 
   // Opened mid-stream: start at the live edge (a settled block opens at the
   // top for reading — only the active stream jumps). Guarded on the OPEN
@@ -45,16 +97,20 @@ export function ThinkingDisclosure(props: { text: string; active: boolean }) {
     const justOpened = open && !prevOpen.current;
     prevOpen.current = open;
     if (!justOpened || !props.active || el === null) return;
-    pinnedRef.current = true;
-    el.scrollTop = el.scrollHeight;
-  }, [open, props.active]);
+    follow.opened(el);
+  }, [open, props.active, follow]);
 
-  // Follow growth while streaming — instant, no smooth (no scroll jitter).
-  useEffect(() => {
+  // Follow growth while streaming, and on the change that ends the stream.
+  // Instant, no smooth (no scroll jitter). A layout effect, as Chat's follow
+  // is since card 399: the jump lands before the browser paints the new lines.
+  const wasActive = useRef(false);
+  useLayoutEffect(() => {
     const el = bodyRef.current;
-    if (!open || !props.active || !pinnedRef.current || el === null) return;
-    el.scrollTop = el.scrollHeight;
-  }, [props.text, open, props.active]);
+    const answered = followsTheText({ open, active: props.active, wasActive: wasActive.current });
+    wasActive.current = props.active;
+    if (!answered || el === null) return;
+    follow.grew(el);
+  }, [props.text, open, props.active, follow]);
 
   return (
     <div className={`thinking${props.active ? " thinking--active" : ""}`}>
@@ -109,7 +165,15 @@ export function ThinkingDisclosure(props: { text: string; active: boolean }) {
         </svg>
       </button>
       {open && (
-        <div className="thinking-body" ref={bodyRef} onScroll={handleScroll}>
+        <div
+          className="thinking-body"
+          ref={bodyRef}
+          onScroll={handleScroll}
+          onWheel={onWheel}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onPointerDown={onPointerDown}
+        >
           {props.text}
         </div>
       )}
