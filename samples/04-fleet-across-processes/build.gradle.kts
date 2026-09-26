@@ -7,8 +7,8 @@ repositories {
 }
 
 dependencies {
-    implementation("dev.spectroscope:spectro-core:0.13.0")
-    implementation("dev.spectroscope:spectro-orchestrator:0.13.0")
+    implementation("dev.spectroscope:spectro-core:0.14.0")
+    implementation("dev.spectroscope:spectro-orchestrator:0.14.0")
     runtimeOnly("org.slf4j:slf4j-simple:2.0.18")
 }
 
