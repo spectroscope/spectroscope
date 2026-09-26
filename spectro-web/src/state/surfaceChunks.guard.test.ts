@@ -126,7 +126,9 @@ describe("every chunked module has a loader, and App draws the lazy one", () => 
     const app = stripComments(read("../App.tsx", import.meta.url));
     for (const { module } of CHUNKED) {
       const spec = `./${module.slice("src/".length).replace(/\.tsx?$/, "")}`;
-      expect(app, spec).not.toMatch(new RegExp(`import \\{[^}]*\\} from "${spec.replace(/\//g, "\\/")}"`));
+      expect(app, spec).not.toMatch(
+        new RegExp(`import \\{[^}]*\\} from "${spec.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&")}"`),
+      );
     }
   });
 });

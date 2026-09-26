@@ -9,6 +9,19 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TraceTabCount } from "./TraceTabCount";
 
+/**
+ * The markup's text for the assertions. Tags are stripped until none is left,
+ * so a tag that only forms once an inner one is gone goes too.
+ */
+function stripTags(markup: string): string {
+  let text = markup;
+  for (let prev = ""; prev !== text;) {
+    prev = text;
+    text = text.replace(/<[^>]*>/g, "");
+  }
+  return text;
+}
+
 const render = (count: number | null, least: number): string =>
   renderToStaticMarkup(<TraceTabCount count={count} least={least} />);
 
@@ -29,9 +42,9 @@ describe("the count on the trace tab", () => {
     const markup = render(null, 91_956);
     expect(markup).toBe('<span class="tab-count tabular tab-count--pending" aria-hidden="true">00000</span>');
     // The same characters in the same mono face as the number that replaces it.
-    const held = markup.replace(/<[^>]+>/g, "");
+    const held = stripTags(markup);
     expect(held).toHaveLength(String(91_957).length);
-    expect(render(null, 7).replace(/<[^>]+>/g, "")).toBe("0");
+    expect(stripTags(render(null, 7))).toBe("0");
   });
 
   it("holds no place when the record has no rows to count", () => {

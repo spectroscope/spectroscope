@@ -8,6 +8,19 @@ import { dict } from "../i18n/i18n";
 import type { SessionOpening } from "../state/sessionOpening";
 import { createOpenProgress, type OpenProgress } from "../state/openProgress";
 
+/**
+ * The markup's text for the assertions. Tags are stripped until none is left,
+ * so a tag that only forms once an inner one is gone goes too.
+ */
+function stripTags(markup: string): string {
+  let text = markup;
+  for (let prev = ""; prev !== text;) {
+    prev = text;
+    text = text.replace(/<[^>]*>/g, "");
+  }
+  return text;
+}
+
 const OPEN: SessionOpening = { ticket: 7, sessionId: "20260923-145313-ada4053d", title: "fix the build" };
 
 const html = (
@@ -26,7 +39,7 @@ function reading(ticket: number, folded: number, total: number): OpenProgress {
 /** The text of the first element carrying `cls`, tags stripped. */
 function textOf(markup: string, cls: string): string | null {
   const m = markup.match(new RegExp(`<[a-z]+[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)</[a-z]+>`));
-  return m === null ? null : m[1].replace(/<[^>]+>/g, "");
+  return m === null ? null : stripTags(m[1]);
 }
 
 describe("the loading surface of a session open", () => {

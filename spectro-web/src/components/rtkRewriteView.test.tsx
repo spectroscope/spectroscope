@@ -17,6 +17,19 @@ import { setLang } from "../state/lang";
 
 afterEach(() => setLang("en"));
 
+/**
+ * The markup's text for the assertions. Tags are stripped until none is left,
+ * so a tag that only forms once an inner one is gone goes too.
+ */
+function stripTags(markup: string): string {
+  let text = markup;
+  for (let prev = ""; prev !== text;) {
+    prev = text;
+    text = text.replace(/<[^>]*>/g, "");
+  }
+  return text;
+}
+
 const REWRITTEN = { command: "rtk ls -la", originalCommand: "ls -la", rewrittenBy: "rtk" };
 const PLAIN = { command: "ls -la" };
 const OUTPUT = "755  .spectro/\n644  notes.txt  4B\n";
@@ -37,8 +50,7 @@ function chatCard(input: unknown, lang: Lang = "en", name = "run_command"): stri
 
 /** The markup as a reader sees it: tags gone, entities decoded. */
 function text(markup: string): string {
-  return markup
-    .replace(/<[^>]+>/g, "")
+  return stripTags(markup)
     .replace(/&quot;/g, '"')
     .replace(/&#x27;/g, "'")
     .replace(/&amp;/g, "&");
