@@ -19,8 +19,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.io.PipedReader;
-import java.io.PipedWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -365,14 +363,14 @@ class McpResultToModelTest {
                     Path.of("."), new CancelSignal(), "main", "call-1",
                     events::add, attachments::add);
             String output = tool.execute(JSON.createObjectNode(), context);
-            // Name what actually went wrong: the previous message stringified the
-            // throwable, and a CI log that truncates left three red builds saying
-            // only "AssertionFailedError at line 362".
+            // Name what actually went wrong on the first line: Gradle's console shows
+            // only the exception type and the line of the assertion, so the class and
+            // message of the server's failure lead, and the stack follows.
             Throwable serverFailure = failure.get();
             if (serverFailure != null) {
                 StringWriter trace = new StringWriter();
                 serverFailure.printStackTrace(new PrintWriter(trace));
-                assertTrue(false, "the scripted server thread threw:\n" + trace);
+                assertTrue(false, "the scripted server thread threw " + serverFailure + "\n" + trace);
             }
             return new Called(output, attachments, events);
         } finally {
@@ -451,12 +449,10 @@ class McpResultToModelTest {
                           BufferedReader serverIn, BufferedWriter serverOut) {}
 
     private static Wiring pipes() throws IOException {
-        PipedWriter clientOut = new PipedWriter();
-        PipedReader serverIn = new PipedReader(clientOut);
-        PipedWriter serverOut = new PipedWriter();
-        PipedReader clientIn = new PipedReader(serverOut);
-        return new Wiring(new BufferedReader(clientIn), new BufferedWriter(clientOut),
-                new BufferedReader(serverIn), new BufferedWriter(serverOut));
+        InMemoryPipe toServer = InMemoryPipe.open();
+        InMemoryPipe toClient = InMemoryPipe.open();
+        return new Wiring(toClient.reader(), toServer.writer(),
+                toServer.reader(), toClient.writer());
     }
 
     /**
