@@ -175,7 +175,7 @@ export function DoctorPanel(props: {
     },
     {
       key: "doc.mode",
-      verdict: props.permissionMode === "auto" ? "warn" : "ok",
+      verdict: props.permissionMode === "auto" || props.permissionMode === "extended" ? "warn" : "ok",
       value: props.permissionMode,
     },
   ];

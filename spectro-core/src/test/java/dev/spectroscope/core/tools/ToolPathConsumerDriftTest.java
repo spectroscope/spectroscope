@@ -11,17 +11,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Card 251: the two consumers of the PATH policy, held textually so the pin
- * survives a machine that happens not to need the enrichment.
+ * The production wiring of the PATH policy's consumers, held as text.
  *
- * <p>The behavioural tests next door are the real proof, but both of them are
- * only as sharp as the difference between this host's PATH and the policy's
- * output. On a machine whose login shell already exports every directory the
- * policy knows — which is the machine this was written on — deleting the
- * enrichment leaves them green. So the wiring itself is asserted: that
- * {@link ShellCommand}'s spawn routes its environment through
- * {@code applyEnvironment}, and that doctor asks {@code ToolPath} rather than
- * reading {@code System.getenv("PATH")} back out on its own.
+ * <p>Card 251: {@link ShellCommand}'s spawn routes its environment through
+ * {@code applyEnvironment}, and doctor's PATH line asks {@code ToolPath}
+ * rather than reading {@code System.getenv("PATH")} back out on its own. The
+ * behavioural tests for these two are only as sharp as the difference between
+ * this host's PATH and the policy's output. On a machine whose login shell
+ * already exports every directory the policy knows, which is the machine this
+ * was written on, deleting the enrichment leaves them green.
+ *
+ * <p>Card 449: the three voice consumers of {@code ToolPath.locate}, which are
+ * the STT status, the process runner the transcriber and the recorder use, and
+ * doctor's voice line. Their behavioural tests hand them a lookup of their own.
+ * The runner's tests that use its production constructor start {@code sh},
+ * which the inherited PATH finds as well. So no behavioural test notices a
+ * production constructor that searches the inherited PATH again.
  *
  * <p>Comments are stripped before matching so a sentence quoting a call cannot
  * stand in for the call.
@@ -53,6 +58,46 @@ class ToolPathConsumerDriftTest {
                         + " policy that hands it to them");
         assertTrue(source.contains("toolPathLines("),
                 "the line is assembled by the testable builder, not inline in call()");
+    }
+
+    /**
+     * Card 449: voice input looked for {@code whisper-cli} on the inherited PATH
+     * in three places. The status, the runner the transcriber uses, and the
+     * doctor now ask {@code ToolPath.locate}; none of them reads the PATH itself.
+     */
+    @Test
+    void theSttStatusAsksTheLookup() throws IOException {
+        String source = stripComments(read("spectro-server/src/main/java/dev/spectroscope/server/"
+                + "llm/SttController.java"));
+
+        assertTrue(source.contains("ToolPath::locate"),
+                "the production status must look whisper-cli up where the tools find programs");
+        assertFalse(source.contains("System.getenv(\"PATH\")"),
+                "the status reads the inherited PATH on its own again");
+    }
+
+    @Test
+    void theVoiceRunnerStartsWhatTheLookupFound() throws IOException {
+        String source = stripComments(read("spectro-cli/src/main/java/dev/spectroscope/cli/"
+                + "voice/ProcessCommandRunner.java"));
+
+        assertTrue(source.contains("this(ToolPath::locate)"),
+                "the production runner must resolve programs through the lookup");
+        assertTrue(source.contains("new ProcessBuilder(argv)"),
+                "the child must be started from the resolved argv");
+        assertFalse(source.contains("new ProcessBuilder(command)"),
+                "a bare name handed to ProcessBuilder is searched on the JVM's own PATH");
+    }
+
+    @Test
+    void doctorsVoiceLineAsksTheLookup() throws IOException {
+        String source = stripComments(read("spectro-cli/src/main/java/dev/spectroscope/cli/"
+                + "DoctorCommand.java"));
+
+        assertTrue(source.contains("ToolPath.locate(\"whisper-cli\")"),
+                "doctor must report whisper-cli from the lookup the status and the runner use");
+        assertFalse(source.contains("System.getenv(\"PATH\")"),
+                "doctor reads the inherited PATH on its own again");
     }
 
     /**

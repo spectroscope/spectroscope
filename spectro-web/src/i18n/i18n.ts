@@ -764,6 +764,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Modus readonly: schreibende Tools pausieren. {name} zählt als schreibend.",
     en: "Mode readonly: writing tools pause. {name} counts as writing.",
   },
+  "explain.why.extended": {
+    de: "Modus extended war aktiv, der Server hat diesen Call trotzdem pausiert. Eine Regel oder ein Server-Default verlangte die Entscheidung.",
+    en: "Mode extended was active, yet the server paused this call. A rule or a server default demanded the decision.",
+  },
   "explain.why.unknown": {
     de: "Der Modus zur Frage-Zeit steckt nicht in diesem Stream (gespeicherte Sessions tragen keine Modus-Frames). Der Server-Default ist ask.",
     en: "The mode at ask time is not in this stream (stored sessions carry no mode frames). The server default is ask.",
@@ -1592,6 +1596,15 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Gemeint ist eine Instanz, die DU betreibst. Öffentliche Instanzen liefern fast nie JSON: von 75 erreichbaren am 2026-08-12 hat genau eine application/json geantwortet.",
     en: "This means an instance YOU run. Public instances almost never serve JSON: of 75 reachable ones on 2026-08-12, exactly one answered application/json.",
   },
+  // Card 448. The second sentence is the remedy, and it is the same words as
+  // the second sentence of info.searxngHtmlOnly, the line the transcript shows
+  // the first time an instance refuses JSON (WebSearchSettings.test.tsx holds
+  // the two together). "Does not change with the page layout" is measured:
+  // the results markup changed between releases 2026.8.12 and 2026.9.25.
+  "set.searxngHtmlOnly": {
+    de: "Eine Instanz, die nur HTML liefert, antwortet trotzdem: web_search liest dann ihre HTML-Ergebnisseite. Schaltest du json unter search.formats in der settings.yml der Instanz ein, nutzt web_search die JSON-API von SearXNG, die sich nicht ändert, wenn ein Release das Seitenlayout ändert. samples/09-searxng/install.sh richtet eine Instanz ein, die sie hat.",
+    en: "An instance that serves HTML only still answers: web_search then reads its HTML results page. Switching on json under search.formats in the instance's settings.yml gives web_search SearXNG's JSON API, which does not change when a release changes the page layout. samples/09-searxng/install.sh sets up an instance that has it.",
+  },
   "set.searxngDockerAbsent": {
     de: "Docker ist auf diesem Rechner nicht installiert. SearXNG läuft als Container, also brauchst du Docker zuerst.",
     en: "Docker is not installed on this machine. SearXNG runs as a container, so Docker comes first.",
@@ -1600,9 +1613,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Docker läuft. Dieser Befehl startet eine lokale SearXNG-Instanz, die JSON beantwortet:",
     en: "Docker is running. This command starts a local SearXNG instance that answers JSON:",
   },
+  // Card 448 rewrote this. It used to say a bare docker run is not enough,
+  // because a stock instance answered web_search with nothing; web_search now
+  // reads such an instance's HTML results page, so the plain container answers.
   "set.searxngCost": {
-    de: "Das startet einen Container. Ein bloßes „docker run searxng/searxng\" reicht nicht: ab Werk steht nur html unter search.formats, und auf format=json antwortet SearXNG dann mit 403. Das Skript schreibt genau diese Einstellung, wartet auf eine echte JSON-Antwort und legt die Adresse in ~/.spectro/.env ab. spectroscope führt den Befehl nicht aus, du führst ihn aus.",
-    en: "That starts one container. A bare \"docker run searxng/searxng\" is not enough: out of the box only html is listed under search.formats, and SearXNG answers format=json with 403. The script writes exactly that setting, waits for a real JSON answer, and puts the address into ~/.spectro/.env. spectroscope does not run the command, you do.",
+    de: "Das startet einen Container. Ein bloßes „docker run searxng/searxng\" beantwortet web_search auch, über seine HTML-Ergebnisseite, weil ab Werk nur html unter search.formats steht. Das Skript schaltet json ein, wartet auf eine echte JSON-Antwort und legt die Adresse in ~/.spectro/.env ab. spectroscope führt den Befehl nicht aus, du führst ihn aus.",
+    en: "That starts one container. A bare \"docker run searxng/searxng\" also answers web_search, from its HTML results page, because out of the box only html is listed under search.formats. The script switches json on, waits for a real JSON answer, and puts the address into ~/.spectro/.env. spectroscope does not run the command, you do.",
   },
   "set.searchKeyedHint": {
     de: "Oder ein Anbieter mit Schlüssel. Beide werden nur benutzt, wenn oben keine Instanz steht — der Schlüssel landet in ~/.spectro/.env (0600) und wird nie zurückgelesen.",
@@ -2260,6 +2276,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.sttPresent": { de: "da", en: "present" },
   "set.sttAbsent": { de: "fehlt", en: "absent" },
   "set.sttMissing": { de: "nicht gefunden", en: "not found" },
+  "set.sttSearched": { de: "{name} gesucht in:", en: "Looked for {name} in:" },
   "set.sttDownload": { de: "Modell laden ({size})", en: "download the model ({size})" },
   "set.sttDownloading": { de: "lädt … {done} von {total}", en: "downloading … {done} of {total}" },
   "set.sttBinaryHint": {
@@ -3591,6 +3608,14 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Goal check: {outcome} ({command}).",
   },
 
+  // Card 448: drawn once per session, the first time a web_search result says
+  // it was read from a SearXNG instance's HTML results page (state/searxngHtmlNote.ts).
+  // spectro doctor prints the English one, address filled in, when its probe
+  // of the instance is refused JSON.
+  "info.searxngHtmlOnly": {
+    de: "searxng unter {addr} liefert nur HTML, also liest web_search die HTML-Ergebnisseite. Schaltest du json unter search.formats in der settings.yml der Instanz ein, nutzt web_search die JSON-API von SearXNG, die sich nicht ändert, wenn ein Release das Seitenlayout ändert. samples/09-searxng/install.sh richtet eine Instanz ein, die sie hat.",
+    en: "searxng at {addr} serves HTML only, so web_search reads its HTML results page. Switching on json under search.formats in the instance's settings.yml gives web_search SearXNG's JSON API, which does not change when a release changes the page layout. samples/09-searxng/install.sh sets up an instance that has it.",
+  },
   "info.imagesWithheld": {
     de: "{n} Bilder nicht gesendet: Dieses Modell kann keine Bilder sehen. Sie bleiben im Verlauf.",
     en: "{n} images not sent: this model cannot see images. They stay in the record.",
@@ -4003,6 +4028,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "wsg.mode.auto.hint": {
     de: "Erlaubt jeden Tool-Aufruf automatisch, ohne Berechtigungsanfrage (Demo-Modus). Eigene Fragen des Agenten erreichen dich weiterhin.",
     en: "Allows every tool call automatically, without a permission request (demo mode). The agent's own questions still reach you.",
+  },
+  // Card 453: like auto, and the file tools leave the working folder.
+  "wsg.mode.extended.hint": {
+    de: "Wie auto, und der Agent liest und schreibt Dateien ohne zu fragen überall, wo dein Benutzerkonto es darf. Hier gewählt, gilt es, bis sich dieses Fenster neu verbindet. Dauerhaft setzt du es in deinen Benutzereinstellungen.",
+    en: "Like auto, and the agent reads and writes files anywhere your user account can, without asking. Picked here, it holds until this window reconnects. To keep it, set it in your user settings.",
   },
   "wsg.mode.readonly.hint": {
     de: "Lehnt jeden gefährlichen Tool-Aufruf automatisch ab — nichts verändert etwas.",

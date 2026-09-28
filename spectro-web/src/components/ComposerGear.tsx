@@ -1,5 +1,5 @@
 // The composer gear (settings-productization Task 16): a compact, Claude-
-// Code-style popover on the composer row — the three permission modes as a
+// Code-style popover on the composer row — the four permission modes as a
 // keyboard-navigable text list (always live via set_permission_mode; also
 // persisted to the workspace's project settings file once a real workspace
 // is pinned) and, only for a pinned workspace, the project scope's
@@ -30,6 +30,7 @@ import {
   buildGearModel,
   formatOverrideValue,
   MODES,
+  persistsToProject,
   overridableFields,
   overrideSupport,
   parseBlockJson,
@@ -208,10 +209,11 @@ export function ComposerGear({
   }, [open]);
 
   // Mode selection is ALWAYS live (works even for an unpinned session that
-  // cannot persist it); it's only written to the project file when pinned.
+  // cannot persist it); it's only written to the project file when pinned,
+  // and never for extended, which a workspace file may not hold (card 453).
   const chooseMode = (mode: string): void => {
     sendClient({ type: "set_permission_mode", mode });
-    if (model.pinned && sessionId !== undefined) {
+    if (model.pinned && sessionId !== undefined && persistsToProject(mode)) {
       putSettings("project", { permissionMode: mode }, sessionId)
         .then(setView)
         .catch(() => {});
@@ -342,7 +344,7 @@ export function ComposerGear({
   };
 
   return (
-    <div className="wsg-anchor" ref={ref}>
+    <div className="wsg-anchor gear-anchor" ref={ref}>
       <button
         type="button"
         className="icon-button attach-button"
@@ -377,7 +379,7 @@ export function ComposerGear({
       </button>
 
       {open && (
-        <div className="wsg-pop" role="dialog" aria-label={t(lang, "wsg.header")}>
+        <div className="wsg-pop gear-pop" role="dialog" aria-label={t(lang, "wsg.header")}>
           <div className="wsg-head">
             <span className="wsg-head-title">
               {model.workspaceName !== "" ? `${model.workspaceName} — ` : ""}

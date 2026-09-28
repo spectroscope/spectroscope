@@ -265,6 +265,15 @@ public final class SettingsWriter {
             JsonNode value = entry.getValue();
             if (value != null && !value.isNull()) {
                 checkKnownValue(key, value);
+                // Card 453: a value the workspace may not hold for a key it may set.
+                String refused = SpectroConfig.workspaceScopeForbiddenValues().get(key);
+                if (scope != Scope.USER && refused != null && refused.equals(value.asText())) {
+                    throw new IllegalArgumentException("\"" + key + "\": \"" + refused
+                            + "\" is not allowed in a workspace scope; set it in the user settings,"
+                            + " the mode switch or with --permissions " + refused + "."
+                            + " Nothing in this patch was written; in a file that already holds it,"
+                            + " \"" + key + "\" alone is skipped and the file's other keys apply");
+                }
             }
         });
         ObjectNode probe = patch.deepCopy();

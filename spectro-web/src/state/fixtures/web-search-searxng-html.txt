@@ -1,0 +1,5 @@
+Results (searxng at http://box.local:8888, read from its HTML results page) for "gradle kotlin dsl":
+
+1. Gradle Kotlin DSL Primer
+   https://docs.gradle.org/current/userguide/kotlin_dsl.html
+   Kotlin DSL Plugin · Applies the Kotlin Plugin, which adds support for compiling Kotlin source files. · Adds the kotlin-stdlib , kotlin-reflect , and ...

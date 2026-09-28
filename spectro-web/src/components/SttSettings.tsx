@@ -20,15 +20,11 @@ import { formatBytes } from "../workspace/preview";
 import { liveReading, type LiveRoute } from "./liveTranscription";
 import { ReachBlock } from "./settingsReach";
 import { setLiveWanted, useLiveWanted } from "../state/liveWanted";
-
-interface BinaryState {
-  found: boolean;
-  path: string | null;
-}
+import { SttSearchedNotes, type SttBinaryState } from "./SttSearchedNotes";
 
 interface SttStatus {
   model: { file: string; path: string; present: boolean; bytes: number; expectedBytes: number };
-  binaries: Record<string, BinaryState>;
+  binaries: Record<string, SttBinaryState>;
   /** The LOCAL route's readiness — model and binary both here. */
   ready: boolean;
   binaryHint: string | null;
@@ -230,6 +226,8 @@ export function SttSettings({
         </p>
       )}
       {status.download?.error ? <p className="settings-note">{status.download.error}</p> : null}
+      {/* Where the server looked, for a binary it did not find (card 449). */}
+      <SttSearchedNotes binaries={status.binaries} lang={lang} />
       {/* A sentence, not a button: this app does not run a package manager. */}
       {status.binaryHint !== null && (
         <p className="settings-note">

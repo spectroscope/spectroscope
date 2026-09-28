@@ -130,10 +130,12 @@ class SpectroServerIntegrationTest {
                 out.write(body);
             }
         });
-        // the vision capability probe — the mock model can see, so an
-        // attached image passes the OllamaProvider's fail-fast check.
+        // the capability probe: the mock model can see, so an attached image
+        // passes the OllamaProvider's fail-fast check, and it can think, as
+        // qwen3 does, so a request that asks for thinking keeps its think field
+        // (card 447 drops the field for a model whose list lacks "thinking").
         ollamaMock.createContext("/api/show", exchange -> {
-            byte[] body = "{\"capabilities\":[\"completion\",\"vision\"]}"
+            byte[] body = "{\"capabilities\":[\"completion\",\"vision\",\"thinking\"]}"
                     .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, body.length);

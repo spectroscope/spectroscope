@@ -151,6 +151,25 @@ public final class WebSearchTiers {
     }
 
     /**
+     * The sentence the model reads about a SearXNG instance that serves HTML
+     * only (card 448). A stock instance answers {@code format=json} with 403,
+     * and before card 448 that 403 ended the search. The tool now answers from
+     * the instance's HTML page, and this sentence says that such an answer is a
+     * normal answer and not an error. {@link WebSearchTool#description()} reads
+     * it from here, the one place that speaks about tiers.
+     *
+     * @param tier the active tier
+     * @return the sentence with a trailing space for {@link #SEARXNG}, "" for
+     *         every other tier
+     */
+    static String htmlOnlyNote(String tier) {
+        return SEARXNG.equals(tier)
+                ? "The search also answers when the instance serves HTML only: the results then "
+                        + "come from its HTML results page, which is a normal answer and not an error. "
+                : "";
+    }
+
+    /**
      * The tier as a reader should see it — the same words in the tool
      * description, the result header and the doctor. Only the scrape carries an
      * apology, and it carries it everywhere: criterion 4 of the card asks for

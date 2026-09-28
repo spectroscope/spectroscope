@@ -784,11 +784,13 @@ public final class SessionConnection {
      * The composer gear's live mode switch. In-memory + immediate; persistence
      * is the client's separate PUT to the settings API.
      *
-     * @param mode "ask", "auto" or "readonly" — anything else is refused with an error event
+     * @param mode one of {@link SpectroConfig#knownPermissionModes()}; anything
+     *             else is refused with an error event
      */
     public void onSetPermissionMode(String mode) {
-        if (!Set.of("ask", "auto", "readonly").contains(mode)) {
-            sendError("Unknown permission mode: \"" + mode + "\" (allowed: ask, auto, readonly).");
+        if (!SpectroConfig.knownPermissionModes().contains(mode)) {
+            sendError("Unknown permission mode: \"" + mode + "\" (allowed: "
+                    + String.join(", ", SpectroConfig.knownPermissionModes()) + ").");
             return;
         }
         this.permissionMode = mode;
@@ -2142,6 +2144,12 @@ public final class SessionConnection {
                 boolean allowed = future.join();   // parks the agent's virtual thread, which is cheap
                 gateAudit().record(request, "user", allowed, verdict);
                 return allowed;
+            }
+
+            @Override
+            public boolean reachesOutsideTheWorkingDirectory() {
+                // Card 453: the live mode, read once per tool call.
+                return SpectroConfig.PERMISSION_MODE_EXTENDED.equals(permissionMode);
             }
         };
     }

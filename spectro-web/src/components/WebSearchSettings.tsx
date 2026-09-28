@@ -268,6 +268,9 @@ export function WebSearchSettings({
           </label>
         </div>
         <p className="settings-note">{t(lang, "set.searxngOwnInstance")}</p>
+        {/* Card 448: a stock instance answers too, and the remedy is the same
+            sentence the transcript shows when one refuses JSON. */}
+        <p className="settings-note">{t(lang, "set.searxngHtmlOnly")}</p>
         <SearxngOfferBlock status={docker} lang={lang} />
 
         {/* ---- 2. The two keyed providers ---- */}

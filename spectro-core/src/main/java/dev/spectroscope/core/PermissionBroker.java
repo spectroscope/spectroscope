@@ -37,4 +37,18 @@ public interface PermissionBroker {
     default String decidedBy(PermissionRequest request) {
         return null;
     }
+
+    /**
+     * Card 453: whether the file tools may reach paths outside the working
+     * directory on the NEXT call. Asked once per tool call, so a mode switched
+     * mid-session applies to the call after the switch, and a child agent that
+     * shares its parent's broker follows the parent's current mode.
+     *
+     * <p>The default is false: the fence stays where it always was.</p>
+     *
+     * @return true only while the {@code extended} permission mode is in force
+     */
+    default boolean reachesOutsideTheWorkingDirectory() {
+        return false;
+    }
 }

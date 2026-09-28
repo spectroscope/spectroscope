@@ -285,7 +285,14 @@ public final class DoctorCommand implements Callable<Integer> {
         // address was saved in settings rather than exported. browse_page is
         // decided by an installed Chrome. Neither is unhealthy when absent:
         // both tools explain themselves readably.
-        emit(webSearchLine(dev.spectroscope.core.web.WebSearchTiers.forConfig(config)));
+        var searchTier = dev.spectroscope.core.web.WebSearchTiers.forConfig(config);
+        emit(webSearchLine(searchTier));
+        if (dev.spectroscope.core.web.WebSearchTiers.SEARXNG.equals(searchTier.tier())) {
+            // Card 448: a stock instance serves HTML only; say so, and how to
+            // switch JSON on, in the words the transcript uses.
+            emit(searxngProbeLines(searchTier.searxngUrl(),
+                    status(searxngProbeUrl(searchTier.searxngUrl()))));
+        }
         dev.spectroscope.core.web.BrowsePageTool.findChrome(config.chromeEnv()).ifPresentOrElse(
                 chrome -> report(true, "browse_page: chrome at " + chrome),
                 () -> info("browse_page: no Chrome/Chromium found — the tool answers a"
@@ -354,18 +361,8 @@ public final class DoctorCommand implements Callable<Integer> {
         // config.sttModel() already folds the settings hierarchy AND SPECTRO_STT_MODEL;
         // the source name (settings vs SPECTRO_STT_MODEL vs default) is presentation only.
         Path sttModel = sttModelPath(config);
-        String sttSource = sttModelSource(config);
-        boolean whisper = onPath("whisper-cli");
-        boolean sttReady = whisper && Files.exists(sttModel);
-        if (sttReady) {
-            report(true, "voice input: whisper-cli + " + sttModel.getFileName()
-                    + " ready (source: " + sttSource + ") (/voice)");
-        } else {
-            info("voice input: " + (whisper ? "whisper-cli present" : "whisper-cli missing")
-                    + " · model (source: " + sttSource + ") "
-                    + (Files.exists(sttModel) ? "present" : "missing")
-                    + " — run bash scripts/setup-stt.sh to enable /voice");
-        }
+        emit(List.of(voiceInputLine(ToolPath.locate("whisper-cli"), sttModel,
+                Files.exists(sttModel), sttModelSource(config))));
 
         // Voice output — TTS is optional infrastructure: info when absent.
         Path piperBin = userHome().resolve(".spectro").resolve("models").resolve("piper").resolve("piper");
@@ -520,6 +517,36 @@ public final class DoctorCommand implements Callable<Integer> {
     }
 
     /**
+     * The voice input line (card 449): {@code whisper-cli} looked up with
+     * {@link ToolPath#locate(String)}, the lookup the STT status and the voice
+     * runner use, plus the model file.
+     *
+     * <p>When the binary is missing the line names every folder searched. A
+     * reader who installed it and still reads "missing" can then see whether
+     * the folder it went into was one of them.
+     *
+     * @param whisper      where {@code whisper-cli} was found, and where it was looked for
+     * @param sttModel     the effective model path
+     * @param modelPresent whether that file exists
+     * @param sttSource    where the model path came from: settings,
+     *                     {@code SPECTRO_STT_MODEL} or default
+     * @return a verdict when both are there, otherwise a note
+     */
+    static Line voiceInputLine(ToolPath.Lookup whisper, Path sttModel, boolean modelPresent,
+                               String sttSource) {
+        if (whisper.isFound() && modelPresent) {
+            return new Line(Kind.PASS, "voice input: whisper-cli + " + sttModel.getFileName()
+                    + " ready (source: " + sttSource + ") (/voice)");
+        }
+        String binary = whisper.isFound()
+                ? "whisper-cli present"
+                : "whisper-cli missing (searched " + String.join(", ", whisper.searched()) + ")";
+        return new Line(Kind.INFO, "voice input: " + binary
+                + " · model (source: " + sttSource + ") " + (modelPresent ? "present" : "missing")
+                + "; run bash scripts/setup-stt.sh to enable /voice");
+    }
+
+    /**
      * The OpenAI-compatible endpoint's two questions, kept apart: is something
      * answering there, and can we actually call it.
      *
@@ -589,6 +616,54 @@ public final class DoctorCommand implements Callable<Integer> {
         boolean configured = !dev.spectroscope.core.web.WebSearchTiers.DUCKDUCKGO.equals(choice.tier());
         String message = "web search: " + dev.spectroscope.core.web.WebSearchTiers.describe(choice);
         return List.of(new Line(configured ? Kind.PASS : Kind.INFO, message));
+    }
+
+    /**
+     * What the doctor says about a SearXNG instance that serves HTML only
+     * (card 448). The same English sentence the transcript shows the first time
+     * such an instance answers a search ({@code info.searxngHtmlOnly} in the web
+     * app's dictionary); {@code DoctorSearxngProbeTest} holds the two equal.
+     * {@code {addr}} stands for the instance address.
+     */
+    static final String SEARXNG_HTML_ONLY = "searxng at {addr} serves HTML only, so web_search reads "
+            + "its HTML results page. Switching on json under search.formats in the instance's "
+            + "settings.yml gives web_search SearXNG's JSON API, which does not change when a release "
+            + "changes the page layout. samples/09-searxng/install.sh sets up an instance that has it.";
+
+    /**
+     * The line the probe of a SearXNG instance adds, if any.
+     *
+     * <p>Only the refusal speaks. A 403 to {@code format=json} is what a stock
+     * instance answers (measured 2026-09-26 on releases 2025.3.19, 2026.8.12 and
+     * 2026.9.25); an instance with json switched on answers the query-less probe
+     * 400. Every other answer, a dead address included, adds nothing here: the
+     * tier line above stands, and web_search names such a failure itself when it
+     * meets it.</p>
+     *
+     * @param address the instance as configured
+     * @param status  the probe's HTTP status, 0 when nothing answered
+     * @return one INFO line for a refusal, otherwise none
+     */
+    static List<Line> searxngProbeLines(String address, int status) {
+        if (status != 403) {
+            return List.of();
+        }
+        return List.of(new Line(Kind.INFO, "web search: " + SEARXNG_HTML_ONLY.replace("{addr}", address)));
+    }
+
+    /**
+     * The probe address: the instance's search endpoint asking for JSON and
+     * for no query, so the instance searches nothing.
+     *
+     * @param address the instance as configured
+     * @return e.g. {@code http://localhost:8888/search?format=json}
+     */
+    static String searxngProbeUrl(String address) {
+        String trimmed = address.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed + "/search?format=json";
     }
 
     /**
@@ -994,25 +1069,6 @@ public final class DoctorCommand implements Callable<Integer> {
             return "default";
         }
         return configured.equals(System.getenv("SPECTRO_STT_MODEL")) ? "SPECTRO_STT_MODEL" : "settings";
-    }
-
-    /**
-     * True when {@code command} resolves on the PATH (used for the STT binary check).
-     *
-     * @param command the binary name to look for in every PATH entry
-     * @return true when an executable of that name exists on the PATH
-     */
-    private static boolean onPath(String command) {
-        String path = System.getenv("PATH");
-        if (path == null) {
-            return false;
-        }
-        for (String dir : path.split(java.io.File.pathSeparator)) {
-            if (!dir.isBlank() && Files.isExecutable(Path.of(dir, command))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

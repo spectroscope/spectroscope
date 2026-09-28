@@ -18,14 +18,15 @@ export const SEARXNG_SAMPLE_PATH = "samples/09-searxng";
 /**
  * The command handed to an operator whose daemon is ready.
  *
- * <p>It is not a `docker run` line, and it cannot be one. Stock SearXNG lists
- * only `html` under `search.formats` and answers HTTP 403 to every request for
- * a format that is not on that list — so the obvious one-liner produces a
- * perfectly good search page and an API that hands this product nothing back
- * (measured against the real image, 2026-08-13). The shipped installer writes
- * the settings file that turns `json` on, generates the instance's secret key,
- * and then waits for a real `format=json` query to come back with results
- * rather than for the port to open.</p>
+ * <p>It is not a `docker run` line. Stock SearXNG lists only `html` under
+ * `search.formats` and answers HTTP 403 to every request for a format that is
+ * not on that list (measured against the real image, 2026-08-13 and again on
+ * 2026-09-26). Since card 448 web_search then reads the instance's HTML
+ * results page, so the one-liner does answer, but that page's markup changes
+ * between SearXNG releases and the JSON API's fields do not. The shipped
+ * installer writes the settings file that turns `json` on, generates the
+ * instance's secret key, and then waits for a real `format=json` query to come
+ * back with results rather than for the port to open.</p>
  *
  * <p>Same shape as the Langfuse offer beside it, deliberately: the operator
  * gets a repository they can read before anything executes, and the script they

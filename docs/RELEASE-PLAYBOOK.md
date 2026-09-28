@@ -275,6 +275,31 @@ gh release create v<v> --title "spectroscope v<v>" --notes-file <notes>.md build
 gh release upload v<v> build/release-assets/* --clobber
 ```
 
+Every release also carries each file under a name without the version, so
+`https://github.com/spectroscope/spectroscope/releases/latest/download/<name>`
+always resolves to the newest release. The download button on
+spectroscope.ai links these names, so a release without them breaks it.
+Upload the macOS and JVM copies here, the Linux copies after step 8c:
+
+```bash
+A=$(mktemp -d)
+cp build/release-assets/spectroscope-<v>-arm64.dmg  "$A/spectroscope-arm64.dmg"
+cp build/release-assets/spectro-server-<v>.jar      "$A/spectro-server.jar"
+cp build/release-assets/spectro-<v>.zip             "$A/spectro.zip"
+cp build/release-assets/spectro-mcp-notes-<v>.zip   "$A/spectro-mcp-notes.zip"
+gh release upload v<v> "$A"/*
+# after 8c: download, check SHA256SUMS.linux, then upload the copies
+gh release download v<v> -p 'spectroscope-<v>-x86_64.AppImage' -p 'spectroscope_<v>_amd64.deb' -p SHA256SUMS.linux -D "$A"
+(cd "$A" && shasum -a 256 -c SHA256SUMS.linux \
+  && cp spectroscope-<v>-x86_64.AppImage spectroscope-x86_64.AppImage \
+  && cp spectroscope_<v>_amd64.deb spectroscope_amd64.deb \
+  && gh release upload v<v> spectroscope-x86_64.AppImage spectroscope_amd64.deb)
+curl -sIL -o /dev/null -w '%{http_code}\n' https://github.com/spectroscope/spectroscope/releases/latest/download/spectroscope-arm64.dmg
+```
+
+The sizes shown in the download block are written by hand in the website
+source and are measured again from `gh release view v<v> --json assets`.
+
 ### 8b. Bump the Homebrew tap
 
 The cask at github.com/spectroscope/homebrew-tap serves

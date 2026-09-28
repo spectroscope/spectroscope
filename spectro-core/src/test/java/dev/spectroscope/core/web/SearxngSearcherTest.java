@@ -191,7 +191,12 @@ class SearxngSearcherTest {
     }
 
     @Test
-    void a403NamesTheAddressAndTheSettingThatIsMissing() throws IOException {
+    void anInstanceThatRefusesJsonAndItsHtmlPageNamesBothRefusals() throws IOException {
+        // Replaced by card 448. The test before it held that a 403 to
+        // format=json ends the search with a sentence about settings.yml; the
+        // card reads the same instance's HTML page instead (SearxngHtmlPageTest),
+        // so a 403 here only ends the search when the page is refused too. This
+        // mock answers every request with 403, which is that case.
         String baseUrl = start(403, "text/html", "<html>Forbidden</html>", ref(), ref(), headerRef());
 
         RuntimeException failure = assertThrows(RuntimeException.class,
@@ -199,9 +204,8 @@ class SearxngSearcherTest {
 
         String message = failure.getMessage();
         assertTrue(message.contains(baseUrl), "names the address it tried, got: " + message);
-        assertTrue(message.contains("403"), "names the status, got: " + message);
-        assertTrue(message.contains("settings.yml"), "names the file to edit, got: " + message);
-        assertTrue(message.contains("search.formats"), "names the key to edit, got: " + message);
+        assertTrue(message.contains("format=json"), "names the first refusal, got: " + message);
+        assertTrue(message.contains("HTTP 403 instead of results"), "and the second, got: " + message);
     }
 
     @Test
