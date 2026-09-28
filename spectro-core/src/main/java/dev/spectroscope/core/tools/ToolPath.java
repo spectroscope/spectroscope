@@ -63,7 +63,10 @@ import java.util.function.Predicate;
  *
  * <p><b>Where this is applied, and where it is not.</b> {@link ShellCommand}
  * sets it on every child it spawns, which is {@code run_command} and every
- * hook, and {@code spectro doctor} prints it. Other PATH readers still read the
+ * hook, and {@code spectro doctor} prints it. {@link #locate(String)} searches
+ * it for one program; voice input asks it for {@code whisper-cli} in the STT
+ * status, in the process runner the transcriber and the recorder use, and in
+ * the doctor's voice line (card 449). Other PATH readers still read the
  * raw environment: {@code LlamaServerBinary}, {@code BrowsePageTool}'s Chrome
  * search, and {@code DockerPing}, which solved this same launchd problem for
  * itself in 0.5.0 with its own well-known-directory list. The interactive
@@ -108,6 +111,107 @@ public final class ToolPath {
     public record Result(String path, List<String> added) {
     }
 
+    /**
+     * Where a program sits on the tool PATH, and every folder the search looked
+     * in (card 449).
+     *
+     * <p>{@code searched} is kept whether or not the program was found, so a
+     * caller that reports "missing" can say where it looked. That was the
+     * question a Finder-launched app could not answer: it said
+     * {@code whisper-cli} was missing while the file sat in
+     * {@code /opt/homebrew/bin}, a folder it never searched.
+     *
+     * @param name     the program asked for, a bare name such as {@code whisper-cli}
+     * @param found    the absolute path of the first executable regular file of
+     *                 that name, or null when there is none
+     * @param searched the folders searched, in search order, each once
+     */
+    public record Lookup(String name, String found, List<String> searched) {
+
+        /**
+         * Copies {@code searched} so a caller cannot change the record afterwards.
+         *
+         * @param name     the program asked for
+         * @param found    where it was found, or null
+         * @param searched the folders searched
+         */
+        public Lookup {
+            searched = List.copyOf(searched);
+        }
+
+        /**
+         * Whether the search found the program.
+         *
+         * @return true when {@code found} holds a path
+         */
+        public boolean isFound() {
+            return found != null;
+        }
+    }
+
+    /**
+     * Where {@code name} sits on the PATH a tool shell of this JVM gets: the
+     * inherited PATH with the toolchain folders of {@link #resolve()} in front.
+     *
+     * <p>Recomputed per call, like {@link #resolve()}: a program installed
+     * while the app runs is found by the next call.
+     *
+     * @param name a bare program name
+     * @return where it was found, and the folders searched
+     * @throws IllegalArgumentException when {@code name} is blank or contains a
+     *                                  path separator
+     */
+    public static Lookup locate(String name) {
+        return locate(name, System.getenv("PATH"),
+                Path.of(System.getProperty("user.home", "")), TOOLCHAIN_DIRS);
+    }
+
+    /**
+     * The lookup over given inputs: the seam for callers in other modules that
+     * test a Finder launch with a temporary folder in place of a package-manager
+     * prefix.
+     *
+     * <p>The folders searched are the entries of
+     * {@code resolve(inherited, home, toolchainDirs)} in order, each once, with
+     * blank and relative entries skipped. A relative entry names a different
+     * folder for every working directory, and the path returned here is meant to
+     * be run as it is.
+     *
+     * @param name          a bare program name
+     * @param inherited     the PATH as inherited, may be null or blank
+     * @param home          the home the per-user folders resolve against
+     * @param toolchainDirs the absolute package-manager folders to put in front
+     *                      when they exist; {@link #locate(String)} passes
+     *                      {@code /opt/homebrew/bin}, {@code /opt/homebrew/sbin},
+     *                      {@code /usr/local/bin} and {@code /usr/local/sbin}
+     * @return where it was found, and the folders searched
+     * @throws IllegalArgumentException when {@code name} is blank or contains a
+     *                                  path separator
+     */
+    public static Lookup locate(String name, String inherited, Path home, List<String> toolchainDirs) {
+        if (name == null || name.isBlank() || name.indexOf('/') >= 0
+                || name.indexOf(File.separatorChar) >= 0) {
+            throw new IllegalArgumentException("a bare program name is required, got: " + name);
+        }
+        String toolPath = resolve(inherited, home, toolchainDirs, Files::isDirectory).path();
+        Set<String> searched = new LinkedHashSet<>();
+        for (String entry : toolPath.split(File.pathSeparator, -1)) {
+            String folder = normalize(entry);
+            if (!folder.isBlank() && isAbsoluteFolder(folder)) {
+                searched.add(folder);
+            }
+        }
+        String found = null;
+        for (String folder : searched) {
+            Path candidate = Path.of(folder, name);
+            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                found = candidate.toString();
+                break;
+            }
+        }
+        return new Lookup(name, found, List.copyOf(searched));
+    }
+
     /** Static utility — no instances. */
     private ToolPath() {
     }
@@ -137,6 +241,22 @@ public final class ToolPath {
      * @return the effective PATH and the directories added to build it
      */
     static Result resolve(String inherited, Path home, Predicate<Path> isDirectory) {
+        return resolve(inherited, home, TOOLCHAIN_DIRS, isDirectory);
+    }
+
+    /**
+     * The policy with the package-manager folders given rather than fixed, so a
+     * test can put a temporary folder where {@code /opt/homebrew/bin} would be.
+     *
+     * @param inherited     the PATH as inherited, may be null or blank
+     * @param home          the home directory the per-user dirs resolve against
+     * @param toolchainDirs the absolute package-manager folders to prepend when
+     *                      they exist, in resolution order
+     * @param isDirectory   existence check, injected so a test needs no real dirs
+     * @return the effective PATH and the directories added to build it
+     */
+    static Result resolve(String inherited, Path home, List<String> toolchainDirs,
+                          Predicate<Path> isDirectory) {
         List<String> inheritedEntries = inherited == null || inherited.isBlank()
                 ? List.of()
                 : List.of(inherited.split(File.pathSeparator, -1));
@@ -149,7 +269,7 @@ public final class ToolPath {
             }
         }
 
-        List<String> candidates = new ArrayList<>(TOOLCHAIN_DIRS);
+        List<String> candidates = new ArrayList<>(toolchainDirs);
         // Only against an absolute home. This repo really does start JVMs with
         // an empty -Duser.home (the fresh-user tests), and a relative entry on a
         // PATH resolves against whatever directory a tool happens to run in —
@@ -193,6 +313,20 @@ public final class ToolPath {
             result.add(name);
         }
         return result;
+    }
+
+    /**
+     * Whether a PATH entry names one fixed folder.
+     *
+     * @param folder a non-blank PATH entry
+     * @return true for an absolute path the filesystem can parse
+     */
+    private static boolean isAbsoluteFolder(String folder) {
+        try {
+            return Path.of(folder).isAbsolute();
+        } catch (java.nio.file.InvalidPathException unparsable) {
+            return false;
+        }
     }
 
     /**

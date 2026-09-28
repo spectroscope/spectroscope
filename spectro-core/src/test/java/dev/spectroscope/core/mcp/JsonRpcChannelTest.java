@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Test;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.PipedReader;
-import java.io.PipedWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.time.Duration;
@@ -23,9 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Framing and id-correlation of {@link JsonRpcChannel} driven over in-memory
- * {@link PipedReader}/{@link PipedWriter} pairs and a fake responder thread —
- * no process, no I/O, no binary.
+ * Framing and id-correlation of {@link JsonRpcChannel} driven over two
+ * {@link InMemoryPipe}s and a fake responder thread: no process, no binary.
  */
 class JsonRpcChannelTest {
 
@@ -39,17 +36,10 @@ class JsonRpcChannelTest {
                           BufferedReader serverIn, BufferedWriter serverOut) {}
 
     private static Wiring pipes() throws IOException {
-        // channel -> server
-        PipedWriter cOut = new PipedWriter();
-        PipedReader sIn = new PipedReader(cOut);
-        // server -> channel
-        PipedWriter sOut = new PipedWriter();
-        PipedReader cIn = new PipedReader(sOut);
-        return new Wiring(
-                new BufferedReader(cIn),
-                new BufferedWriter(cOut),
-                new BufferedReader(sIn),
-                new BufferedWriter(sOut));
+        InMemoryPipe toServer = InMemoryPipe.open();
+        InMemoryPipe toClient = InMemoryPipe.open();
+        return new Wiring(toClient.reader(), toServer.writer(),
+                toServer.reader(), toClient.writer());
     }
 
     /** A responder that echoes one canned response per request, correlating on the request id. */

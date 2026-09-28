@@ -1,6 +1,7 @@
 package dev.spectroscope.server.llm;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.tools.ToolPath;
 import dev.spectroscope.server.fleet.FleetController;
 import dev.spectroscope.server.localmodel.LocalModelDownload;
 import dev.spectroscope.server.web.LocalOrigin;
@@ -20,6 +21,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * What speech-to-text needs, whether it is here, and the one half of it this app
@@ -40,6 +42,13 @@ import java.util.Map;
  *       Never a button that cannot keep its promise; the same answer card 100
  *       reached for `llama-server`.</li>
  * </ul>
+ *
+ * <p><b>Where the binary is looked for</b> (card 449): on the PATH the agent's
+ * tool shells get, through {@link ToolPath#locate(String)}. An app started from
+ * the Finder or the Dock inherits launchd's {@code /usr/bin:/bin:/usr/sbin:/sbin},
+ * and Homebrew puts {@code whisper-cli} in {@code /opt/homebrew/bin} or
+ * {@code /usr/local/bin}; the inherited PATH alone reported it missing. The
+ * status names the folders searched, found or not.</p>
  */
 @RestController
 public final class SttController {
@@ -57,7 +66,8 @@ public final class SttController {
     static final String[] BINARIES = {"whisper-cli"};
 
     private final Path modelsDir;
-    private final String path;
+    /** Where a program sits and which folders were searched, asked per call. */
+    private final Function<String, ToolPath.Lookup> locator;
     private final LocalModelDownload download;
     /** The {@code sttProvider} setting, read per call. */
     private final java.util.function.Supplier<String> configured;
@@ -68,29 +78,32 @@ public final class SttController {
 
     public SttController() {
         this(Path.of(System.getProperty("user.home"), ".spectro", "models"),
-                System.getenv("PATH"), SttController::httpFetch,
+                ToolPath::locate, SttController::httpFetch,
                 () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttProvider(),
                 () -> SpectroConfig.hasApiKey(HostedTranscriber.KEY_ENV),
                 () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttLanguage());
     }
 
-    /** Seam for tests: a models dir, a PATH to search, and the HTTP leg. */
-    SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher) {
-        this(modelsDir, path, fetcher, () -> SttRoute.AUTO, () -> false);
+    /** Seam for tests: a models dir, the program lookup, and the HTTP leg. */
+    SttController(Path modelsDir, Function<String, ToolPath.Lookup> locator,
+                  LocalModelDownload.Fetcher fetcher) {
+        this(modelsDir, locator, fetcher, () -> SttRoute.AUTO, () -> false);
     }
 
     /** Seam for tests: also what the settings say and whether a hosted key exists. */
-    SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher,
+    SttController(Path modelsDir, Function<String, ToolPath.Lookup> locator,
+                  LocalModelDownload.Fetcher fetcher,
                   java.util.function.Supplier<String> configured,
                   java.util.function.BooleanSupplier keyPresent) {
-        this(modelsDir, path, fetcher, configured, keyPresent, () -> "auto");
+        this(modelsDir, locator, fetcher, configured, keyPresent, () -> "auto");
     }
 
     /**
      * The full seam: also what the settings say and whether a hosted key exists.
      *
      * @param modelsDir where the whisper model lives
-     * @param path the PATH to search for the binary
+     * @param locator where a program sits: {@link ToolPath#locate(String)} in
+     *                production, a lookup over given folders in a test
      * @param fetcher the HTTP leg of the model download
      * @param configured reads {@code sttProvider} — a supplier, because it can
      *                   change while the server runs and this pane must not
@@ -99,42 +112,18 @@ public final class SttController {
      * @param language reads {@code sttLanguage} — a supplier for the same
      *                 reason {@code configured} is one
      */
-    SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher,
+    SttController(Path modelsDir, Function<String, ToolPath.Lookup> locator,
+                  LocalModelDownload.Fetcher fetcher,
                   java.util.function.Supplier<String> configured,
                   java.util.function.BooleanSupplier keyPresent,
                   java.util.function.Supplier<String> language) {
         this.modelsDir = modelsDir;
-        this.path = path == null ? "" : path;
+        this.locator = locator;
         this.download = new LocalModelDownload(modelsDir, MODEL_FILE, MODEL_SHA256, MODEL_BYTES,
                 fetcher, MODEL_URL);
         this.configured = configured;
         this.keyPresent = keyPresent;
         this.language = language;
-    }
-
-    /**
-     * Where an executable really sits, searched the way a shell searches.
-     *
-     * <p>Visible for tests, and pure on purpose: the honest answer to "can this
-     * machine transcribe" is three file checks, and a probe that guessed from
-     * the operating system rather than looking would be the invention this whole
-     * card exists to remove.</p>
-     *
-     * @param name the executable
-     * @param path the PATH to search, colon-separated
-     * @return the path it was found at, or null
-     */
-    static String onPath(String name, String path) {
-        for (String dir : path.split(":")) {
-            if (dir.isBlank()) {
-                continue;
-            }
-            Path candidate = Path.of(dir, name);
-            if (Files.isExecutable(candidate)) {
-                return candidate.toString();
-            }
-        }
-        return null;
     }
 
     /**
@@ -186,12 +175,15 @@ public final class SttController {
         Map<String, Object> bins = new LinkedHashMap<>();
         boolean allBins = true;
         for (String name : BINARIES) {
-            String at = onPath(name, path);
+            ToolPath.Lookup at = locator.apply(name);
             Map<String, Object> one = new LinkedHashMap<>();
-            one.put("found", at != null);
-            one.put("path", at);
+            one.put("found", at.isFound());
+            one.put("path", at.found());
+            // Where it looked, found or not: a reader told "missing" after an
+            // install needs the folder list to see which one was never searched.
+            one.put("searched", at.searched());
             bins.put(name, one);
-            allBins &= at != null;
+            allBins &= at.isFound();
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -220,8 +212,13 @@ public final class SttController {
         return out;
     }
 
-    /** The install line for the binary, per platform — a sentence, not a button. */
-    private static String hintFor(String osName) {
+    /**
+     * The install line for the binary, per platform: a sentence, not a button.
+     *
+     * @param osName the {@code os.name} property
+     * @return the one command that installs it on that platform
+     */
+    static String hintFor(String osName) {
         return osName.toLowerCase(java.util.Locale.ROOT).contains("mac")
                 ? "brew install whisper-cpp"
                 : "build whisper.cpp and put build/bin/whisper-cli on the PATH";

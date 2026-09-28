@@ -42,10 +42,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * bound was not merely exceeded, it was unreachable.
  *
  * <p>Everything here runs against a <b>real spawned process</b>
- * ({@link MuteMcpServerFixture}) over real pipes. The in-memory {@code Piped}
- * tests next door cannot stage this and never could: {@code PipedReader.read}
- * gives up on its own after a couple of one-second waits and it honours an
- * interrupt, so its lock is always released. A process pipe does neither.
+ * ({@link MuteMcpServerFixture}) over real pipes. The in-memory tests next door
+ * cannot stage this and never could: a read on an {@link InMemoryPipe} returns on
+ * an interrupt, because its source channel is interruptible, so its lock is
+ * always released. A process pipe does not.
  *
  * <p>Every test carries {@code @Timeout} on {@link Timeout.ThreadMode#SEPARATE_THREAD}
  * deliberately. The default mode sets its deadline by <b>interrupt</b>, and this

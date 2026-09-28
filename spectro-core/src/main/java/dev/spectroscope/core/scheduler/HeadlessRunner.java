@@ -86,6 +86,8 @@ public final class HeadlessRunner {
      *  {@link McpServerRegistry#load(List, Path)}, tests inject an in-memory
      *  transport so no process is spawned and no timeout is real. */
     private final McpLoader mcpLoader;
+    /** Card 453: the extended mode's reach; false keeps the working-directory fence. */
+    private final boolean reachOutside;
 
     /** The registry-loading seam. Package-private on purpose: only tests
      *  replace it — every production face pays the real spawn cost or none. */
@@ -119,13 +121,13 @@ public final class HeadlessRunner {
      */
     HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride) {
         this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null, null, null,
-                null, McpServerRegistry::load);
+                null, McpServerRegistry::load, false);
     }
 
     private HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
                            String agentId, TracingPort auxiliaryPort, CancelSignal externalSignal,
                            PermissionBroker externalBroker, String trigger,
-                           Boolean mcpOverride, McpLoader mcpLoader) {
+                           Boolean mcpOverride, McpLoader mcpLoader, boolean reachOutside) {
         this.mapper = mapper;
         this.config = config;
         this.providerOverride = providerOverride;
@@ -136,6 +138,7 @@ public final class HeadlessRunner {
         this.trigger = trigger;
         this.mcpOverride = mcpOverride;
         this.mcpLoader = mcpLoader;
+        this.reachOutside = reachOutside;
     }
 
     /**
@@ -149,7 +152,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withIdentity(String agentId) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
     }
 
     /**
@@ -166,7 +169,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withAuxiliaryPort(TracingPort port) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, port,
-                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
     }
 
     /**
@@ -181,7 +184,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withCancelSignal(CancelSignal signal) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                signal, externalBroker, trigger, mcpOverride, mcpLoader);
+                signal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
     }
 
     /**
@@ -196,7 +199,19 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withBroker(PermissionBroker broker) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, broker, trigger, mcpOverride, mcpLoader);
+                externalSignal, broker, trigger, mcpOverride, mcpLoader, reachOutside);
+    }
+
+    /**
+     * Card 453: a copy of this runner whose file tools may reach outside the
+     * run's working directory (the {@code extended} permission mode).
+     *
+     * @param reach true to lift the working-directory fence for this runner's runs
+     * @return the copy; this instance is unchanged
+     */
+    public HeadlessRunner withOutsideReach(boolean reach) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reach);
     }
 
     /**
@@ -212,7 +227,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withTrigger(String trigger) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
     }
 
     /**
@@ -233,7 +248,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withMcp(Boolean mcp) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcp, mcpLoader);
+                externalSignal, externalBroker, trigger, mcp, mcpLoader, reachOutside);
     }
 
     /**
@@ -246,7 +261,7 @@ public final class HeadlessRunner {
      */
     HeadlessRunner withMcpLoader(McpLoader loader) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcpOverride, loader);
+                externalSignal, externalBroker, trigger, mcpOverride, loader, reachOutside);
     }
 
     /**
@@ -409,12 +424,24 @@ public final class HeadlessRunner {
         dev.spectroscope.core.permission.Allowlist noAllowlist =
                 dev.spectroscope.core.permission.Allowlist.fromEntries(java.util.List.of());
         PermissionBroker policy = externalBroker != null ? externalBroker : (request -> autoApprove);
-        PermissionBroker broker = request -> {
-            boolean allowed = policy.decide(request);
-            gateAudit.record(request, externalBroker != null ? "node-broker"
-                    : (autoApprove ? "policy:auto" : "policy:readonly"),
-                    allowed, noAllowlist.decide(request));
-            return allowed;
+        // Card 453 review: extended implies auto. The reach alone never opens a
+        // readonly run or a run whose gate an outside broker decides.
+        boolean reaches = reachOutside && autoApprove && externalBroker == null;
+        String label = externalBroker != null ? "node-broker"
+                : !autoApprove ? "policy:readonly"
+                : reaches ? "policy:extended" : "policy:auto";
+        PermissionBroker broker = new PermissionBroker() {
+            @Override
+            public boolean decide(dev.spectroscope.core.events.RunEvent.PermissionRequest request) {
+                boolean allowed = policy.decide(request);
+                gateAudit.record(request, label, allowed, noAllowlist.decide(request));
+                return allowed;
+            }
+
+            @Override
+            public boolean reachesOutsideTheWorkingDirectory() {
+                return reaches; // card 453: fixed for the run, set at launch
+            }
         };
 
         Agent agent = lastAgent = new Agent(AgentOptions.builder()
@@ -580,8 +607,10 @@ public final class HeadlessRunner {
             notify("spectroscope: " + job.id() + " failed", state.stopReason(), log);
             return state;
         }
-        boolean autoApprove = Job.AUTO.equals(job.permissions());
-        Outcome outcome = runOnce(job.prompt(), Path.of(job.cwd()), autoApprove, null, null, log);
+        boolean extended = Job.EXTENDED.equals(job.permissions());
+        boolean autoApprove = extended || Job.AUTO.equals(job.permissions());
+        Outcome outcome = withOutsideReach(extended)
+                .runOnce(job.prompt(), Path.of(job.cwd()), autoApprove, null, null, log);
 
         String preview = preview(outcome.finalText());
         JobState state = new JobState(startedAt,

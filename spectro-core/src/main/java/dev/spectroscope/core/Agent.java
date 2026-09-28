@@ -1384,9 +1384,13 @@ public final class Agent {
         // reports nothing and is timed exactly as before.
         java.util.concurrent.atomic.AtomicLong humanWaitMs = new java.util.concurrent.atomic.AtomicLong();
         long startedAt = now();
+        // Card 453: the broker's live mode, read per call, decides the file fence.
+        boolean reachOutside = options.onPermission() != null
+                && options.onPermission().reachesOutsideTheWorkingDirectory();
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
-                        planLedger(emit), attach, reported::set, humanWaitMs::addAndGet));
+                        planLedger(emit), attach, reported::set, humanWaitMs::addAndGet,
+                        reachOutside));
         long durationMs = Math.max(0, now() - startedAt - humanWaitMs.get());
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is

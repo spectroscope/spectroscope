@@ -233,7 +233,7 @@
             "description": "Set a stored session's title, its pin, or both. A blank title drops the hand-set one, and the row falls back to the suggested title or the first prompt. Written to ~/.spectro/session-meta.json, never into the session JSONL. 200 {title?, titleSource?, pinned}, 400 malformed id or body, 404 fenced out or session not stored.\n\nBody: Either field alone is enough: title is a string, pinned a boolean.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Release 0.14.0\",\n  \"pinned\": true\n}",
+              "raw": "{\n  \"title\": \"Release notes draft\",\n  \"pinned\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"

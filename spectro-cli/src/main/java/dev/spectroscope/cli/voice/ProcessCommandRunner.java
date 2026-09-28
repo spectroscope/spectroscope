@@ -1,20 +1,73 @@
 package dev.spectroscope.cli.voice;
 
+import dev.spectroscope.core.tools.ToolPath;
+
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 /**
  * The production {@link CommandRunner}: recording and transcription run as
  * {@code ProcessBuilder} child processes — no audio library enters the project.
  * Blocking style, as everywhere in this codebase: the recorder blocks on the REPL's
  * reader until Enter, whisper-cli's stdout is drained before {@code waitFor()}.
+ *
+ * <p><b>Which program runs</b> (card 449). A bare name such as
+ * {@code whisper-cli} is looked up with {@link ToolPath#locate(String)}, the
+ * same lookup the STT status and {@code spectro doctor} use, and the child is
+ * started at the absolute path that lookup found. {@code ProcessBuilder} would
+ * otherwise search the JVM's own PATH, which for an app started from the Finder
+ * is launchd's four folders without Homebrew. A command whose first element
+ * already contains a separator is started as given.</p>
  */
 public final class ProcessCommandRunner implements CommandRunner {
+
+    /** Where a bare program name sits, and the folders searched for it. */
+    private final Function<String, ToolPath.Lookup> locator;
+
+    /** Production: programs are looked up on the tool shell's PATH. */
+    public ProcessCommandRunner() {
+        this(ToolPath::locate);
+    }
+
+    /**
+     * Seam for tests: the lookup over given folders.
+     *
+     * @param locator where a bare program name sits
+     */
+    ProcessCommandRunner(Function<String, ToolPath.Lookup> locator) {
+        this.locator = locator;
+    }
+
+    /**
+     * The command with its program replaced by the absolute path the lookup
+     * found. A program that is already a path is left alone.
+     *
+     * @param command the argv, element 0 the program
+     * @return the argv to start
+     * @throws IOException when the program is not found, naming the folders
+     *                     searched and the setup script
+     */
+    private List<String> resolved(List<String> command) throws IOException {
+        String program = command.getFirst();
+        if (program.indexOf('/') >= 0 || program.indexOf(File.separatorChar) >= 0) {
+            return command;
+        }
+        ToolPath.Lookup lookup = locator.apply(program);
+        if (!lookup.isFound()) {
+            throw new IOException(program + " not found in " + String.join(", ", lookup.searched())
+                    + ". Run bash scripts/setup-stt.sh.");
+        }
+        List<String> argv = new ArrayList<>(command);
+        argv.set(0, lookup.found());
+        return argv;
+    }
 
     /**
      * Starts the recorder as a child process (stderr folded into stdout), blocks on the
@@ -29,9 +82,10 @@ public final class ProcessCommandRunner implements CommandRunner {
     @Override
     public long record(List<String> command, BufferedReader stopSignal)
             throws IOException, InterruptedException {
+        List<String> argv = resolved(command);
         Process process;
         try {
-            process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            process = new ProcessBuilder(argv).redirectErrorStream(true).start();
         } catch (IOException notFound) {
             // The first arg is the recorder binary (ffmpeg) — name it in the hint.
             throw new IOException(command.getFirst()
@@ -66,9 +120,10 @@ public final class ProcessCommandRunner implements CommandRunner {
     @Override
     public List<String> runCapturingOutput(List<String> command)
             throws IOException, InterruptedException {
+        List<String> argv = resolved(command);
         Process process;
         try {
-            process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            process = new ProcessBuilder(argv).redirectErrorStream(true).start();
         } catch (IOException notFound) {
             throw new IOException(command.getFirst()
                     + " not found — run bash scripts/setup-stt.sh.", notFound);

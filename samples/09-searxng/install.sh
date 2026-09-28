@@ -13,8 +13,9 @@
 # Why a script and not a docker line: stock SearXNG lists only `html` under
 # `search.formats`, and asks for an unlisted format are answered 403. A bare
 # `docker run searxng/searxng` therefore gives a browsable search page and an
-# API that hands spectroscope nothing. The settings file below is the whole
-# difference, and generating a secret key per machine is the other half.
+# API that answers nothing; web_search falls back to reading that page (card
+# 448), whose markup changes between SearXNG releases. The settings file below
+# turns the API on, and generating a secret key per machine is the other half.
 #
 # Nothing in spectroscope runs this for you. The app prints the command; you
 # read it and start the container.

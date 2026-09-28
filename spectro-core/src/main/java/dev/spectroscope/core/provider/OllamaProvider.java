@@ -75,6 +75,23 @@ public final class OllamaProvider implements LlmProvider {
      *  anything about whether the route exists. */
     private volatile boolean capabilityRouteAbsent;
 
+    /** The parsed {@code /api/show} answer for this provider's model, kept
+     *  once the server has given one. The published window (card 391) and the
+     *  thinking question (card 447) both read it, so a session asks the route
+     *  once. A failed question leaves it null and the next reader asks again. */
+    private volatile JsonNode showAnswer;
+
+    /** What this provider knows about its model's thinking (card 447). */
+    enum Thinking { UNASKED, UNKNOWN, THINKS, CANNOT }
+
+    /** The answer about this model's thinking, kept for the life of the
+     *  provider, which serves one model. It comes from {@code /api/show}, asked
+     *  once and only by a request that asks the model to think, or from
+     *  ollama's refusal of such a request, which sets CANNOT whatever the
+     *  question said. UNKNOWN is kept as well, so a server that could not
+     *  answer is not asked on every turn; the refusal path still teaches. */
+    private volatile Thinking thinking = Thinking.UNASKED;
+
     /** A SECOND client for capability questions only, with a read timeout the
      *  chat client must never have — that one streams NDJSON, and a deadline on
      *  it would cut long answers off mid-sentence. */
@@ -234,11 +251,33 @@ public final class OllamaProvider implements LlmProvider {
             if (where == Locality.LOCAL) {
                 return 0;
             }
+            JsonNode show = showAnswer();
+            return show == null ? null : publishedContextLength(show);
+        } catch (Exception nothingLearned) {
+            return null;
+        }
+    }
+
+    /** The {@code /api/show} answer for this provider's model, asked on the
+     *  short-timeout client and kept once the server has given a JSON body.
+     *  Never throws.
+     *  @return the parsed answer, or null when the server gave no usable one */
+    private JsonNode showAnswer() {
+        JsonNode known = showAnswer;
+        if (known != null) {
+            return known;
+        }
+        try {
             String show = capabilities.post().uri(baseUrl + "/api/show")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(JSON.writeValueAsString(Map.of("model", model)))
                     .retrieve().body(String.class);
-            return show == null ? null : publishedContextLength(JSON.readTree(show));
+            if (show == null) {
+                return null;
+            }
+            JsonNode parsed = JSON.readTree(show);
+            showAnswer = parsed;
+            return parsed;
         } catch (Exception nothingLearned) {
             return null;
         }
@@ -373,7 +412,14 @@ public final class OllamaProvider implements LlmProvider {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ChatRequest(String model, boolean stream, List<WireMessage> messages,
-                       List<WireTool> tools, WireOptions options, Object think) {}
+                       List<WireTool> tools, WireOptions options, Object think) {
+
+        /** The same request with the think field omitted (card 447).
+         *  @return a copy whose {@code think} is null */
+        ChatRequest withoutThink() {
+            return new ChatRequest(model, stream, messages, tools, options, null);
+        }
+    }
 
     /**
      * One chat message on Ollama's wire.
@@ -469,29 +515,49 @@ public final class OllamaProvider implements LlmProvider {
 
     /**
      * Classifies an HTTP error status into the exception the caller should
-     * throw — a pure decision table, four ways out:
+     * throw. A pure decision table, five ways out:
      * <ul>
+     *   <li>a 4xx that mentions thinking and not images, on a request that
+     *       carried a think field, is {@link ThinkingRefused}: the iterator
+     *       sends the request once more without the field (card 447). Checked
+     *       before the vision arm, because ollama answers a think field on a
+     *       model without thinking with a 400, and on an image request the
+     *       vision arm would read that 400 as a model that cannot see;</li>
+     *   <li>the same refusal of a request that carried no think field is
+     *       terminal, with ollama's own words;</li>
      *   <li>a 400 (or an error naming images/vision) on a vision request means
-     *       "this model cannot see" — terminal, with the actionable hint;</li>
-     *   <li>a 4xx that mentions thinking means the model does not support it —
-     *       Ollama's terse error becomes an actionable one;</li>
+     *       "this model cannot see", terminal, with the actionable hint;</li>
      *   <li>a retryable status (per {@link RetryPolicy}) is transient;</li>
-     *   <li>everything else (404 model not pulled, 401, 422 ...) is terminal —
+     *   <li>everything else (404 model not pulled, 401, 422 ...) is terminal,
      *       deliberately NOT an IO type, because RetryPolicy classifies
      *       IOExceptions transient and re-sending an identical doomed request
      *       would only add latency.</li>
      * </ul>
+     * The keywords are matched with the echoed model id taken out of ollama's
+     * words (see {@code withoutModelId}), so a model called
+     * {@code llama3.2-vision} or {@code qwen3:4b-thinking} does not turn every
+     * error about it into a vision or thinking refusal.
      *
-     * @param status    the HTTP status Ollama answered with
-     * @param detail    the response body text (Ollama puts its reason there)
-     * @param hasImages whether the failed request carried image content
-     * @return the exception to throw — transient or terminal, never null
+     * @param status       the HTTP status Ollama answered with
+     * @param detail       the response body text (Ollama puts its reason there)
+     * @param hasImages    whether the failed request carried image content
+     * @param carriedThink whether the failed request carried a think field
+     * @return the exception to throw, transient or terminal, never null
      */
-    private RuntimeException classifyHttpFailure(int status, String detail, boolean hasImages) {
-        String lowered = detail.toLowerCase(Locale.ROOT);
-        if (hasImages && (status == 400
-                || lowered.contains("image") || lowered.contains("vision")
-                || lowered.contains("multimodal"))) {
+    private RuntimeException classifyHttpFailure(int status, String detail, boolean hasImages,
+                                                 boolean carriedThink) {
+        String lowered = withoutModelId(detail.toLowerCase(Locale.ROOT), model);
+        boolean namesImages = lowered.contains("image") || lowered.contains("vision")
+                || lowered.contains("multimodal");
+        if (status >= 400 && status < 500 && lowered.contains("think") && !namesImages) {
+            if (carriedThink) {
+                return new ThinkingRefused(detail);
+            }
+            return new RuntimeException("Model \"" + model + "\" does not support thinking, "
+                    + "and Ollama refused the request even without the think field. "
+                    + "Ollama said: " + detail);
+        }
+        if (hasImages && (status == 400 || namesImages)) {
             // Card 252: remember it. When /api/show said nothing (an older
             // ollama), the chat call's own refusal is the only capability fact
             // there is — and unremembered it would arrive again on every turn,
@@ -499,17 +565,43 @@ public final class OllamaProvider implements LlmProvider {
             vision = Vision.BLIND;
             return new IllegalStateException(noVisionMessage());
         }
-        if (status >= 400 && status < 500 && lowered.contains("think")) {
-            return new RuntimeException("Model \"" + model + "\" does not support "
-                    + "thinking — disable it (config thinking:false / "
-                    + "SPECTRO_THINKING=0) or use a reasoning model like qwen3 / "
-                    + "deepseek-r1.");
-        }
         String message = "Ollama HTTP " + status + (detail.isBlank() ? "" : ": " + detail);
         if (RetryPolicy.retryableStatus(status)) {
             return new TransientProviderException(message);
         }
         return new IllegalStateException(message);
+    }
+
+    /**
+     * Ollama's error text without the model id it echoes (card 447). Ollama
+     * names the requested model before its reason: {@code "<id>" does not
+     * support thinking}, {@code model '<id>' not found},
+     * {@code registry.ollama.ai/library/<id> does not support tools} (measured
+     * 2026-09-26 on ollama 0.32.1). The first occurrence of the id is therefore
+     * the echo, and only that one is removed, so an id that is itself a
+     * keyword ({@code thinking}) still leaves the reason readable. Text that
+     * does not contain the id comes back unchanged.
+     *
+     * @param lowered the response body, lower-cased
+     * @param model   the model id this provider sends
+     * @return the text with the first occurrence of the lower-cased id removed
+     */
+    private static String withoutModelId(String lowered, String model) {
+        if (model == null || model.isEmpty()) {
+            return lowered;
+        }
+        String id = model.toLowerCase(Locale.ROOT);
+        int at = lowered.indexOf(id);
+        return at < 0 ? lowered : lowered.substring(0, at) + lowered.substring(at + id.length());
+    }
+
+    /** Ollama refused a request because of its think field (card 447). Never
+     *  leaves this class: the iterator catches it and sends the request again
+     *  without the field. */
+    private static final class ThinkingRefused extends RuntimeException {
+        ThinkingRefused(String detail) {
+            super("Ollama refused the think field: " + detail);
+        }
     }
 
     /**
@@ -526,7 +618,9 @@ public final class OllamaProvider implements LlmProvider {
         /** The status the server actually answered — endWire records it, never a literal. */
         private final int httpStatus;
         // The open llm-wire exchange, or null when the request carries no tap.
-        private final LlmWireTap.Exchange wire;
+        // Reassigned once when a refused think field is sent again (card 447):
+        // each request that goes out is its own exchange on the record.
+        private LlmWireTap.Exchange wire;
         /** One end() per exchange, whatever path closes it — the HTTP-error
          *  path ends inside the callback AND rethrows into the transport
          *  catch, and a record with two closings would lie twice. */
@@ -565,20 +659,51 @@ public final class OllamaProvider implements LlmProvider {
             if (hasImages) {
                 assertVisionModel();
             }
+            OpenResponse open;
+            try {
+                open = post(request, body, hasImages);
+            } catch (ThinkingRefused refused) {
+                // Card 447: ollama refused the think field, so this model
+                // cannot think. The refusal came before any byte of an answer,
+                // so nothing has streamed and the same request goes out once
+                // more without the field. The answer is kept: later requests
+                // omit the field from the start. A second refusal carries no
+                // think field and ends in the terminal message.
+                thinking = Thinking.CANNOT;
+                open = post(request, body.withoutThink(), hasImages);
+            }
+            this.httpStatus = open.status();
+            this.lines = open.reader();
+            this.closeResponse = open.close();
+            if (signal != null) {
+                signal.onCancel(this.closeResponse::run);
+            }
+        }
+
+        /**
+         * Posts one chat request and opens its response for line-by-line reads,
+         * as one exchange on the llm-wire record.
+         *
+         * @param request   the neutral request, for its tap
+         * @param body      the wire body to post
+         * @param hasImages whether the request carries image content
+         * @return the open response
+         */
+        private OpenResponse post(ProviderRequest request, ChatRequest body, boolean hasImages) {
             // The body is serialized HERE and posted as that exact string; the
             // tap records the same string, so recorded == posted by construction
             // and the record's "bytes" fidelity is true, not asserted.
             String bodyJson = toJson(body);
-            LlmWireTap.Exchange wire = request.tap() == null ? null
+            boolean carriedThink = body.think() != null;
+            this.wire = request.tap() == null ? null
                     : request.tap().begin(new LlmWireTap.WireRequest("ollama", model,
                             "http", "POST", baseUrl + "/api/chat", requestHeaders(),
                             "bytes", bodyJson, System.currentTimeMillis()));
-            this.wire = wire;
+            this.wireEnded = false;
             // exchange(..., false): WE own the response lifecycle — required for
             // streaming reads; every terminal path below calls closeResponse.
-            final OpenResponse open;
             try {
-                open = http.post()
+                return http.post()
                     .uri("/api/chat")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(bodyJson)
@@ -590,8 +715,8 @@ public final class OllamaProvider implements LlmProvider {
                             endWireOnce(new LlmWireTap.WireOutcome(
                                     clientResponse.getStatusCode().value(), "bytes",
                                     detail, false, null, System.currentTimeMillis()));
-                            throw classifyHttpFailure(
-                                    clientResponse.getStatusCode().value(), detail, hasImages);
+                            throw classifyHttpFailure(clientResponse.getStatusCode().value(),
+                                    detail, hasImages, carriedThink);
                         }
                         // The close handle is the RAW body stream, NEVER the Spring
                         // response: Spring's close() DRAINS the remaining body first,
@@ -614,12 +739,6 @@ public final class OllamaProvider implements LlmProvider {
                 endWireOnce(new LlmWireTap.WireOutcome(null, "bytes", null, false,
                         failure.toString(), System.currentTimeMillis()));
                 throw failure;
-            }
-            this.httpStatus = open.status();
-            this.lines = open.reader();
-            this.closeResponse = open.close();
-            if (signal != null) {
-                signal.onCancel(this.closeResponse::run);
             }
         }
 
@@ -821,7 +940,63 @@ public final class OllamaProvider implements LlmProvider {
                         new WireFunctionSpec(spec.name(), spec.description(), spec.inputSchema())))
                 .toList();
         return new ChatRequest(model, true, toWireMessages(request), tools,
-                new WireOptions(request.maxTokens()), thinkWireValue(model, request));
+                new WireOptions(request.maxTokens()), thinkFor(request));
+    }
+
+    /**
+     * The {@code think} value for one request, once the model's own answer
+     * about thinking is known (card 447). A value that asks the model to think
+     * ({@code true} or a level) is first checked against {@code /api/show},
+     * asked once for the life of the provider; a model whose capabilities do
+     * not list {@code thinking} gets no field. A value that does not ask
+     * ({@code false}, or no field) goes out without the question:
+     * {@code think:false} and an omitted field are both accepted by a model
+     * that cannot think (measured 2026-09-26, ollama 0.32.1, qwen2.5:7b).
+     *
+     * @param request the neutral request carrying reasoning mode and effort
+     * @return Boolean, level String, or null to omit the field
+     */
+    private Object thinkFor(ProviderRequest request) {
+        Object wanted = thinkWireValue(model, request, thinking == Thinking.CANNOT);
+        if (wanted == null || Boolean.FALSE.equals(wanted)) {
+            return wanted;
+        }
+        if (thinking == Thinking.UNASKED) {
+            thinking = probeThinking();
+        }
+        return thinking == Thinking.CANNOT ? null : wanted;
+    }
+
+    /** The thinking verdict from the shared {@code /api/show} answer.
+     *  Never throws: a capability question may not fail a run.
+     *  @return THINKS, CANNOT, or UNKNOWN on any refusal, timeout or surprise */
+    private Thinking probeThinking() {
+        JsonNode show = showAnswer();
+        return show == null ? Thinking.UNKNOWN : thinkingFrom(show);
+    }
+
+    /**
+     * What a {@code /api/show} answer says about thinking: THINKS when its
+     * {@code capabilities} list names {@code thinking}, CANNOT when the list
+     * has entries and none of them is {@code thinking}, UNKNOWN when there is
+     * no such list or it is empty. Measured 2026-09-26 on ollama 0.32.1:
+     * {@code qwen2.5:7b} lists completion and tools, {@code glm-5.3:cloud}
+     * lists completion, thinking and tools.
+     *
+     * @param show the parsed {@code /api/show} body
+     * @return what the answer says
+     */
+    static Thinking thinkingFrom(JsonNode show) {
+        JsonNode listed = show == null ? null : show.get("capabilities");
+        if (listed == null || !listed.isArray() || listed.isEmpty()) {
+            return Thinking.UNKNOWN;
+        }
+        for (JsonNode capability : listed) {
+            if ("thinking".equals(capability.asText())) {
+                return Thinking.THINKS;
+            }
+        }
+        return Thinking.CANNOT;
     }
 
     /**
@@ -840,11 +1015,19 @@ public final class OllamaProvider implements LlmProvider {
      * (eval_count 512, done_reason "length") and the answer never started;
      * with think:false, zero reasoning and the answer in 0.9 s.</p>
      *
-     * @param model   the model the request runs
-     * @param request the neutral request carrying reasoning mode and effort
+     * <p>A model known not to think gets no field in any mode (card 447):
+     * ollama refuses {@code think:true} and a level for it with a 400, and it
+     * has no thinking for {@code think:false} to switch off.</p>
+     *
+     * @param model       the model the request runs
+     * @param request     the neutral request carrying reasoning mode and effort
+     * @param cannotThink true when this model is known not to think
      * @return Boolean, level String, or null to omit the field
      */
-    static Object thinkWireValue(String model, ProviderRequest request) {
+    static Object thinkWireValue(String model, ProviderRequest request, boolean cannotThink) {
+        if (cannotThink) {
+            return null;
+        }
         ReasoningCapability cap = ReasoningCapabilities.resolve("ollama", model);
         if (request.effort() != null && cap.efforts().contains(request.effort())
                 && request.reasoning() != ProviderRequest.Reasoning.OFF) {

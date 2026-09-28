@@ -33,12 +33,20 @@ export interface GearModel {
   view: SettingsView | null;
 }
 
-/** The three permission modes, in the order the listbox presents them. */
-export const MODES: { id: "ask" | "auto" | "readonly" }[] = [
+/** The four permission modes, in the order the listbox presents them. Held
+ *  against SpectroConfig.PERMISSION_MODES by permissionModes.drift.test.ts. */
+export const MODES: { id: "ask" | "auto" | "readonly" | "extended" }[] = [
   { id: "ask" },
   { id: "auto" },
   { id: "readonly" },
+  { id: "extended" },
 ];
+
+/** Card 453: whether picking `mode` is also written to the project scope. A
+ *  workspace file may not hold `extended`, so that mode applies live only. */
+export function persistsToProject(mode: string): boolean {
+  return mode !== "extended";
+}
 
 /** The project scope's own autoApprove list, defensively narrowed — a
  *  malformed or absent field (an unpinned session, a view mid-load) reads as

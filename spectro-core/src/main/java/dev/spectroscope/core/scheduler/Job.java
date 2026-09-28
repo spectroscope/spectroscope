@@ -9,14 +9,19 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * @param cron        5-field UNIX cron expression, e.g. "0 8 * * *"
  * @param prompt      the task text handed to the headless agent
  * @param cwd         working directory = the tools' path sandbox for this job
- * @param permissions "readonly" (default) or "auto" — the headless policy
+ * @param permissions "readonly" (default), "auto" or "extended": the headless policy
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record Job(String id, String cron, String prompt, String cwd, String permissions) {
 
-    /** The two permitted headless policies; the wire values are pinned. */
+    /** The permitted headless policies; the wire values are pinned. */
     public static final String READONLY = "readonly";
     public static final String AUTO = "auto";
+    /** Card 453: approves like auto and lets the file tools leave {@code cwd}. */
+    public static final String EXTENDED = "extended";
+    /** The values {@code permissions} accepts: every known mode except ask,
+     *  because a scheduled run has nobody to ask. */
+    public static final java.util.List<String> PERMISSIONS = java.util.List.of(READONLY, AUTO, EXTENDED);
 
     /**
      * Validates one job and fills the default policy. Never trusts the file: a
@@ -32,9 +37,9 @@ public record Job(String id, String cron, String prompt, String cwd, String perm
         if (permissions == null || permissions.isBlank()) {
             permissions = READONLY; // headless default
         }
-        if (!READONLY.equals(permissions) && !AUTO.equals(permissions)) {
+        if (!PERMISSIONS.contains(permissions)) {
             throw new IllegalArgumentException(
-                    "job \"" + id + "\": permissions must be \"readonly\" or \"auto\".");
+                    "job \"" + id + "\": permissions must be \"readonly\", \"auto\" or \"extended\".");
         }
     }
 

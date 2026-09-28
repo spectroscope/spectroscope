@@ -13,8 +13,8 @@ final class PermissionModes {
     private PermissionModes() { }
 
     static Boolean decide(String mode, PermissionRequest request) {
-        if ("auto".equals(mode)) {
-            return Boolean.TRUE;
+        if ("auto".equals(mode) || "extended".equals(mode)) {
+            return Boolean.TRUE; // card 453: extended approves exactly like auto
         }
         if ("readonly".equals(mode)) {
             return Boolean.FALSE;

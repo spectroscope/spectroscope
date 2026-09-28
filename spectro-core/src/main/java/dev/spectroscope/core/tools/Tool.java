@@ -53,13 +53,35 @@ public interface Tool {
      *                   return value, and hence the loop providing it. Generic on
      *                   purpose: any later tool that waits on a person gets
      *                   honest numbers for free.</p>
+     * @param reachOutside card 453: true when the file tools may resolve a path
+     *                   outside {@code cwd} for this call (the {@code extended}
+     *                   permission mode). False keeps the working-directory fence.
      */
     record ToolContext(Path cwd, CancelSignal signal,
                        String agentId, String callId,          // from additive
                        Consumer<RunEvent> emit,                // from additive
                        Consumer<Attachment> attach,            // view_image/view_file, additive
                        Consumer<FileChange> report,            // card 269, additive
-                       LongConsumer waitReport) {              // human wait, additive (card 265)
+                       LongConsumer waitReport,                // human wait, additive (card 265)
+                       boolean reachOutside) {                 // extended mode, additive (card 453)
+
+        /**
+         * The shape before card 453: the working-directory fence stays closed.
+         *
+         * @param cwd        the sandbox root every path tool resolves against
+         * @param signal     the run's cancel signal
+         * @param agentId    the calling agent
+         * @param callId     the tool_call id
+         * @param emit       sink into the run's event stream
+         * @param attach     sink for images/documents the model should SEE
+         * @param report     sink for what a mutating file tool did to its file
+         * @param waitReport sink for milliseconds spent parked on a person
+         */
+        public ToolContext(Path cwd, CancelSignal signal, String agentId, String callId,
+                           Consumer<RunEvent> emit, Consumer<Attachment> attach,
+                           Consumer<FileChange> report, LongConsumer waitReport) {
+            this(cwd, signal, agentId, callId, emit, attach, report, waitReport, false);
+        }
 
         /**
          * The pre-bonus-4 shape: agentId "main", no callId, a no-op emit sink.

@@ -1161,7 +1161,11 @@
 }
 /* The device picker's caret, a step quieter than the glyph it hangs off: it
    picks a device, it does not record. */
-.mic-anchor { position: relative; display: inline-flex; }
+.mic-anchor { display: inline-flex; }
+/* CARD 446: the anchor is not the menu's frame, the composer row is (see
+   .composer-actions in modal-composer.css). Compound, because .wsg-anchor
+   loads later and would put `relative` back. */
+.wsg-anchor.mic-anchor { position: static; }
 .mic-menu-button { position: relative; width: 16px; min-width: 16px; height: 24px; padding: 0; color: var(--text-faint); }
 /* CARD 383: the caret's own reach, and its height. It is as tall as the row's
    other controls (24px, .attach-button in attachments-voice.css), so the row
@@ -1171,6 +1175,22 @@
 .mic-menu-button::before { content: ""; position: absolute; inset: -4px 0; }
 .mic-menu-button:hover { color: var(--text); }
 /* Both pinned like .disc-pop, for the reason that file documents: a later
-   sheet's bottom-pin would otherwise win the cascade and squash the popover. */
-.wsg-pop.mic-pop { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; min-width: 240px; }
+   sheet's bottom-pin would otherwise win the cascade and squash the popover.
+   CARD 446: it hangs from the caret's RIGHT edge and grows to the left. The
+   caret stands near the right end of the row, and hung from its left edge the
+   menu ran past the window (the owner: "Die Mikrofonoptionen sollten nach
+   links aufgehen"). Its frame is the composer row, so its sides are the
+   row's: the right one stands the gear's 24px box in from the row's end,
+   which is the caret's right edge, and the max-width ends it at the row's
+   left end in any window, beside any docked panel and in the lab's narrowest
+   chat column. No min-width: a floor wider than the row would beat the
+   max-width and push the menu past the row's left end.
+   composerPopoverSides.drift.test.ts derives both from the sheets. */
+.wsg-pop.mic-pop {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: auto;
+  right: 24px;
+  max-width: calc(100% - 24px);
+}
 .mic-pop-note { padding: var(--sp-2); margin: 0; }

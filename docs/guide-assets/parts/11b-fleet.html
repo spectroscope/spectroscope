@@ -62,7 +62,7 @@ bus topic derives from it) and is required; <code>--hub host:port</code>
 <code>--id</code> (default <code>node-&lt;pid&gt;</code>),
 <code>--role</code> (default worker),
 <code>--permissions</code> (<code>readonly</code> by default,
-<code>auto</code>, or <code>ask</code>), <code>--max-turns</code>, and
+<code>auto</code>, <code>ask</code>, or <code>extended</code>), <code>--max-turns</code>, and
 <code>--linger</code>. The local session JSONL stays the durability
 anchor, so a dead or stalled hub never blocks the run: events past the
 buffers are dropped from the <em>bus view</em> only, counted and warned

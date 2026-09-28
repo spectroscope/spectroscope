@@ -572,6 +572,12 @@
      floors the chat at 360px). Since card 383 the row needs 136px: five 24px
      boxes, the 16px device caret, no gap. */
   flex-wrap: wrap;
+  /* Card 446: the frame of the two menus at the row's right end, the
+     microphone's and the gear's. Framed by their own 16px and 24px anchors
+     they could not know how far left the row goes, and beside a docked panel
+     they ran past the window's left edge; framed by the row they end at its
+     left end. The other menus keep their own anchors. */
+  position: relative;
 }
 .composer-actions .mic-button { margin-left: auto; }
 /* CARD 383: the field and the icon row under it read as one control, so the

@@ -48,6 +48,15 @@ public final class WebSearchTool implements Tool {
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
     static final int MAX_MAX_RESULTS = 10;
 
+    /**
+     * What the result header adds when a SearXNG instance served its HTML
+     * results page instead of JSON (card 448). The web app draws its
+     * once-per-session note from a header carrying these words; the line it
+     * expects is {@code spectro-web/src/state/fixtures/web-search-searxng-html.txt},
+     * and {@code SearxngHtmlPageTest} holds this class to it.
+     */
+    static final String HTML_PAGE_NOTE = "read from its HTML results page";
+
     private final Supplier<WebSearcher> searcher;
 
     /**
@@ -122,6 +131,7 @@ public final class WebSearchTool implements Tool {
         return "Searches the web via " + WebSearchTiers.describe(new WebSearchTiers.Choice(
                 active.tier(), addressOf(active)))
                 + " and returns titles, URLs and snippets. "
+                + WebSearchTiers.htmlOnlyNote(active.tier())
                 + "Network egress — guarded by permission.";
     }
 
@@ -175,12 +185,26 @@ public final class WebSearchTool implements Tool {
         // The whole downstream sits in one guard (the WebFetchTool pattern):
         // a throwing seam surfaces as an ERROR string, never as an exception.
         try {
-            List<WebSearcher.Hit> hits = active.search(query, maxResults);
+            List<WebSearcher.Hit> hits;
+            String source = "";
+            if (active instanceof SearxngSearcher searxng) {
+                // Card 448: the header says when the hits came from the
+                // instance's HTML page, so the reader of the result knows.
+                SearxngSearcher.Answer answer = searxng.answer(query, maxResults);
+                hits = answer.hits();
+                if (answer.fromHtmlPage()) {
+                    source = " at " + searxng.address() + ", " + HTML_PAGE_NOTE;
+                }
+            } else {
+                hits = active.search(query, maxResults);
+            }
             if (hits == null || hits.isEmpty()) {
+                // The same words whichever answer carried nothing (card 448,
+                // criterion 3): an empty page is not a different kind of empty.
                 return "No results for \"" + query + "\" ("
                         + WebSearchTiers.label(active.tier()) + ").";
             }
-            return ToolOutput.clip(format(query, hits, active), MAX_OUTPUT_CHARS);
+            return ToolOutput.clip(format(query, hits, active, source), MAX_OUTPUT_CHARS);
         } catch (RuntimeException failure) {
             return "ERROR: web_search failed: " + failure.getMessage();
         }
@@ -194,11 +218,14 @@ public final class WebSearchTool implements Tool {
      * @param active the backend that produced them — passed in rather than
      *               re-resolved, so the header can only ever name the machine
      *               that actually answered
+     * @param source what follows the tier name inside the parentheses: empty,
+     *               or the address and {@link #HTML_PAGE_NOTE} when a SearXNG
+     *               instance answered with its HTML page
      * @return the readable result block
      */
-    private String format(String query, List<WebSearcher.Hit> hits, WebSearcher active) {
+    private String format(String query, List<WebSearcher.Hit> hits, WebSearcher active, String source) {
         StringBuilder out = new StringBuilder(
-                "Results (" + WebSearchTiers.label(active.tier()) + ") for \"" + query + "\":\n");
+                "Results (" + WebSearchTiers.label(active.tier()) + source + ") for \"" + query + "\":\n");
         for (int i = 0; i < hits.size(); i++) {
             WebSearcher.Hit hit = hits.get(i);
             out.append('\n').append(i + 1).append(". ").append(hit.title()).append('\n')

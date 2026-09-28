@@ -15,9 +15,14 @@ search:
 
 and a request for a format that is not on that list is answered **HTTP 403**.
 So `docker run searxng/searxng` gives you a perfectly good search page in a
-browser and an API that hands spectroscope nothing back. Every "just run this
-one line" writeup of SearXNG-as-an-API is describing an instance whose owner
-edited that file at some point and forgot.
+browser and an API that answers nothing. Every "just run this one line"
+writeup of SearXNG-as-an-API is describing an instance whose owner edited that
+file at some point and forgot.
+
+spectroscope's `web_search` copes with such an instance: when the API refuses,
+it reads the same instance's HTML results page. That page is a theme, though,
+and its markup changed between SearXNG releases 2026.8.12 and 2026.9.25, while
+the JSON API kept its fields. The setup here gives `web_search` the API.
 
 The settings file below is the entire difference, and a generated secret key is
 the other half — SearXNG refuses to start on the placeholder it ships with.

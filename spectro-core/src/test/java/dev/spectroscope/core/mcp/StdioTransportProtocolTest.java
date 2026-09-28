@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Test;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.PipedReader;
-import java.io.PipedWriter;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -31,12 +29,10 @@ class StdioTransportProtocolTest {
                           BufferedReader serverIn, BufferedWriter serverOut) {}
 
     private static Wiring pipes() throws IOException {
-        PipedWriter cOut = new PipedWriter();
-        PipedReader sIn = new PipedReader(cOut);
-        PipedWriter sOut = new PipedWriter();
-        PipedReader cIn = new PipedReader(sOut);
-        return new Wiring(new BufferedReader(cIn), new BufferedWriter(cOut),
-                new BufferedReader(sIn), new BufferedWriter(sOut));
+        InMemoryPipe toServer = InMemoryPipe.open();
+        InMemoryPipe toClient = InMemoryPipe.open();
+        return new Wiring(toClient.reader(), toServer.writer(),
+                toServer.reader(), toClient.writer());
     }
 
     /** A minimal MCP server: answers initialize/tools-list/tools-call, records the methods it saw. */

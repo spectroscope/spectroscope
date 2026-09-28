@@ -27,7 +27,7 @@ import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 
 /**
- * spectroscope run -p "..." [--json] [--max-turns N] [--permissions readonly|auto] [--image path] [--speak]
+ * spectroscope run -p "..." [--json] [--max-turns N] [--permissions readonly|auto|extended] [--image path] [--speak]
  *
  * <p>Runs one prompt headless and prints the final result — or, with --json, every
  * RunEvent as one NDJSON line on stdout. Exit code 0 only on a regular end_turn;
@@ -58,7 +58,8 @@ public final class RunCommand implements Callable<Integer> {
     private Integer maxTurns;
 
     @Option(names = "--permissions", defaultValue = "readonly",
-            description = "Headless policy: readonly (default) or auto.")
+            description = "Headless policy: readonly (default), auto, or extended "
+                    + "(like auto, and the file tools may read and write outside the working folder).")
     private String permissions;
 
     @Option(names = "--verbose", description = "Trace the agent<->provider protocol on stderr (cyan).")
@@ -128,10 +129,25 @@ public final class RunCommand implements Callable<Integer> {
      * @return 0 only on a regular {@code end_turn}; 1 for invalid flags, a bad image,
      *         a missing key, or any other stop reason (named on stderr with the session id)
      */
+    /** The values {@code --permissions} accepts: every known mode except
+     *  {@code ask}, because a headless run has nobody to ask. */
+    static final List<String> PERMISSIONS = List.of("readonly", "auto", "extended");
+
+    /** Checks one {@code --permissions} value.
+     *  @param value the flag as typed
+     *  @return null when accepted, else the one-line refusal */
+    static String permissionsError(String value) {
+        if (PERMISSIONS.contains(value)) {
+            return null;
+        }
+        return "--permissions must be \"readonly\", \"auto\" or \"extended\" (headless default: readonly).";
+    }
+
     @Override
     public Integer call() {
-        if (!"readonly".equals(permissions) && !"auto".equals(permissions)) {
-            System.err.println("--permissions must be \"readonly\" or \"auto\" (headless default: readonly).");
+        String refusal = permissionsError(permissions);
+        if (refusal != null) {
+            System.err.println(refusal);
             return 1;
         }
         if (maxTurns != null && maxTurns < 1) {
@@ -143,7 +159,7 @@ public final class RunCommand implements Callable<Integer> {
         SpectroConfig.ensureSeeded(System.getenv()); // first boot: materialize the env base once
         SpectroConfig config = SpectroConfig.load(effectiveOverrides());
         LogSetup.apply(config.logLevel()); // config-effective level onto the root
-        boolean autoApprove = "auto".equals(permissions);
+        boolean autoApprove = HeadlessPermissions.approves(permissions);
 
         // The store is minted HERE (not left to the runner): the auto workspace is
         // keyed by the session id, and blobs live under the session's own
@@ -211,7 +227,8 @@ public final class RunCommand implements Callable<Integer> {
                             ProviderFactory.providerFromConfig(config),
                             config.provider() + " · " + config.model()))
                     : new HeadlessRunner(mapper, config))
-                    .withMcp(mcp);
+                    .withMcp(mcp)
+                    .withOutsideReach(HeadlessPermissions.reachesOutside(permissions));
             outcome = runner.runOnce(
                     prompt, workspace, autoApprove, maxTurns,
                     onEvent,

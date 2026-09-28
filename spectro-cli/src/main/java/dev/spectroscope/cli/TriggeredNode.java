@@ -196,6 +196,7 @@ final class TriggeredNode {
                     if (broker != null) {
                         runner = runner.withBroker(broker);
                     }
+                    runner = runner.withOutsideReach(spec.reachOutside()); // card 453
                     HeadlessRunner.Outcome outcome = runner.runOnce(
                             spec.prompt() + "\n\n" + fire.contextBlock(fireNo),
                             spec.workspace(), spec.autoApprove(), spec.maxTurns(),

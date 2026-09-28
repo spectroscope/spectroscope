@@ -1130,9 +1130,24 @@ public record SpectroConfig(
     public static final Set<String> KNOWN_STT_LANGUAGES = Set.of("auto", "de", "en");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
-    /** {@code permissionMode}'s known values — the single source for both the
-     *  load-time check below and {@link SettingsWriter}'s write-time check. */
-    static final Set<String> KNOWN_PERMISSION_MODES = Set.of("ask", "auto", "readonly");
+    /** {@code permissionMode}'s known values in the order the mode switch
+     *  lists them. The single source for the load-time check below,
+     *  {@link SettingsWriter}'s write-time check, the server's live switch, the
+     *  command line and the web list (held by drift tests). */
+    private static final List<String> PERMISSION_MODES = List.of("ask", "auto", "readonly", "extended");
+    /** {@link #PERMISSION_MODES} as a set, for the membership checks. */
+    static final Set<String> KNOWN_PERMISSION_MODES = Set.copyOf(PERMISSION_MODES);
+
+    /** Card 453: the mode that lifts the file tools' working-directory fence.
+     *  A workspace scope may not set it. */
+    public static final String PERMISSION_MODE_EXTENDED = "extended";
+
+    /** The permission modes a session, a settings file and the command line
+     *  accept, in the order the mode switch lists them.
+     *  @return the known modes, immutable */
+    public static List<String> knownPermissionModes() {
+        return PERMISSION_MODES;
+    }
 
     /** {@code rtkFilter} off: the agent's shell line runs as the model wrote it. */
     public static final String RTK_FILTER_OFF = "off";
@@ -1573,8 +1588,8 @@ public record SpectroConfig(
         scopes.add(new Scope("env", PartialConfig.envLayer(env)));
         scopes.add(new Scope("user", readFloored(CONFIG_PATH, "user", belowFloor)
                 .overriddenBy(readFloored(USER_SETTINGS_PATH, "user", belowFloor))));
-        scopes.add(new Scope("launch-dir",
-                readFloored(projectDir.resolve(PROJECT_SETTINGS), "launch-dir", belowFloor)));
+        Path launchFile = projectDir.resolve(PROJECT_SETTINGS);
+        PartialConfig launchDir = readFloored(launchFile, "launch-dir", belowFloor);
         // Built here rather than appended below because the refusal's cost
         // reading (card 354) needs the whole ALLOWED chain, and flags are part
         // of it — a --workspace on the command line carries the key the folder
@@ -1582,6 +1597,13 @@ public record SpectroConfig(
         // unchanged.
         Scope flags = new Scope("flags", PartialConfig.fromOverrides(overrides));
         List<ScopeReport> reports = new ArrayList<>();
+        // Card 453 review: the launch dir is a folder too, often a checked-in
+        // repository. It keeps its process-global keys, but not the forbidden values.
+        List<Scope> aboveLaunchDir = new ArrayList<>(scopes);
+        aboveLaunchDir.add(flags);
+        reports.add(stripForbidden(launchDir, launchFile, aboveLaunchDir,
+                WORKSPACE_SCOPE_FORBIDDEN_VALUES));
+        scopes.add(new Scope("launch-dir", launchDir));
         if (workspace != null) {
             Path wsProjectFile = workspace.resolve(PROJECT_SETTINGS);
             Path wsLocalFile = workspace.resolve(WS_LOCAL_SETTINGS);
@@ -1707,7 +1729,7 @@ public record SpectroConfig(
         // reasoning that already covered provider/imageProvider/logLevel now
         // covers permissionMode too (it used to load unchecked).
         validateKnown("permissionMode", base.permissionMode(), KNOWN_PERMISSION_MODES,
-                "ask, auto, readonly");
+                String.join(", ", PERMISSION_MODES));
         validateKnown("sttProvider", base.sttProvider(), KNOWN_STT_PROVIDERS,
                 "auto, local, openai");
         validateKnown("sttLanguage", base.sttLanguage(), KNOWN_STT_LANGUAGES,
@@ -1924,6 +1946,30 @@ public record SpectroConfig(
                             + "a folder the agent writes into — a workspace that can set them "
                             + "to zero can disarm the guard watching it."));
 
+    /**
+     * Card 453: values a workspace scope may not hold for a key it otherwise
+     * may set. {@code permissionMode: "extended"} lifts the fence around the
+     * folder the agent writes into, so the folder cannot grant it to itself;
+     * {@code ask}, {@code auto} and {@code readonly} stay workspace-settable.
+     * Dropped per key and reported like {@link #WORKSPACE_SCOPE_FORBIDDEN}, and
+     * also from the launch dir's settings file, which is a folder the same way.
+     */
+    private static final List<ProcessGlobal> WORKSPACE_SCOPE_FORBIDDEN_VALUES = List.of(
+            new ProcessGlobal("permissionMode",
+                    p -> PERMISSION_MODE_EXTENDED.equals(p.permissionMode) ? p.permissionMode : null,
+                    p -> p.permissionMode = null,
+                    "may not be \"" + PERMISSION_MODE_EXTENDED + "\" in a folder's settings file",
+                    "extended lets the agent read and write outside its working folder; choose it"
+                            + " in the app's mode switch, in ~/.spectro/settings.json or with"
+                            + " --permissions extended, not in a folder the agent writes into."));
+
+    /** Card 453: the key and value pairs a workspace scope may not hold, for
+     *  the doc guard and the settings writer.
+     *  @return key to the one value refused for it */
+    static Map<String, String> workspaceScopeForbiddenValues() {
+        return Map.of("permissionMode", PERMISSION_MODE_EXTENDED);
+    }
+
     /** The keys a workspace scope may not hold, by name. Exists for the doc
      *  guard: a key added to the list above without a word in the published
      *  config reference is a refusal an operator meets with nowhere to look it
@@ -1973,8 +2019,21 @@ public record SpectroConfig(
      *          per dropped key */
     private static ScopeReport stripProcessGlobals(PartialConfig scope, Path file,
             List<Scope> allowed) {
+        List<ProcessGlobal> checked = new ArrayList<>(WORKSPACE_SCOPE_FORBIDDEN);
+        checked.addAll(WORKSPACE_SCOPE_FORBIDDEN_VALUES);
+        return stripForbidden(scope, file, allowed, checked);
+    }
+
+    /** {@link #stripProcessGlobals} over an explicit list of forbidden entries.
+     *  @param scope   the parsed scope, cleared of what {@code checked} forbids
+     *  @param file    the file it was read from, named in the report
+     *  @param allowed the layers allowed to carry these keys, ascending
+     *  @param checked the entries to strip
+     *  @return what the scope gave up and kept */
+    private static ScopeReport stripForbidden(PartialConfig scope, Path file,
+            List<Scope> allowed, List<ProcessGlobal> checked) {
         List<ProcessGlobal> present = new ArrayList<>();
-        for (ProcessGlobal forbidden : WORKSPACE_SCOPE_FORBIDDEN) {
+        for (ProcessGlobal forbidden : checked) {
             if (forbidden.get().apply(scope) != null) {
                 present.add(forbidden);
             }

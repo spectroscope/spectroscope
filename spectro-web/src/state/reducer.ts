@@ -9,6 +9,8 @@ import { isWorkspaceMode, type WorkspaceMode } from "../workspace/paneState";
 import type { ToolResultDetail } from "../import/toolResultDetail";
 import type { ThresholdSource } from "../wire/thresholdSources";
 import { rtkRewriteOf } from "../wire/rtkRewrite";
+import { t } from "../i18n/i18n";
+import { SEARXNG_HTML_NOTE_KEY, searxngHtmlAddress } from "./searxngHtmlNote";
 
 export interface ToolCard {
   callId: string;
@@ -375,7 +377,7 @@ export interface UiState {
   /** The current (or last) run's model id — run_start.model wins, provider_info
    *  is the live fallback; the trace rows and answer footers read it (card 87). */
   runModel: string | null;
-  /** The active permission mode ("ask" | "auto" | "readonly") — from the
+  /** The active permission mode ("ask" | "auto" | "readonly" | "extended") — from the
    *  socket-only permission_mode_info frame, sent on connect and after every
    *  switch. Defaults to "ask" so a state built without ever seeing the frame
    *  (e.g. a bare initialState in a test) still matches the server's default. */
@@ -602,6 +604,37 @@ const GOAL_OUTCOMES: ReadonlySet<string> = new Set(["met", "unmet", "unknown"]);
 import { CLEAN_FINISHES, stopReasonKey } from "./stopReason";
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
+
+/**
+ * Card 448: the first web_search result of a session that was read from a
+ * SearXNG instance's HTML results page adds one info line saying so, with the
+ * way to switch the instance's JSON output on. Once per session: the line is
+ * looked for among the turns, so a replay and a duplicate event draw it once.
+ *
+ * @param state    the state with the result already on its card
+ * @param event    the tool result
+ * @param toolName the name the matching tool_call carried, if one was seen
+ * @returns the state, with the line added when this result is the first one
+ */
+function withSearxngHtmlNote(
+  state: UiState,
+  event: { output: string; isError: boolean },
+  toolName: string | undefined,
+): UiState {
+  if (toolName !== "web_search" || event.isError) return state;
+  const addr = searxngHtmlAddress(event.output);
+  if (addr === null) return state;
+  if (state.turns.some((turn) => turn.kind === "info" && turn.infoKey === SEARXNG_HTML_NOTE_KEY)) {
+    return state;
+  }
+  return addTurn(state, {
+    kind: "info",
+    text: t("en", SEARXNG_HTML_NOTE_KEY, { addr }),
+    tone: "neutral",
+    infoKey: SEARXNG_HTML_NOTE_KEY,
+    infoVars: { addr },
+  });
+}
 
 /** Which agent a flat turn belongs to, the way threads.ts ownerOf assigns it:
  *  an assistant turn by its agentId, a tool turn by its card, a line by its
@@ -1146,8 +1179,8 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
     }
 
-    case "tool_result":
-      return {
+    case "tool_result": {
+      const next: UiState = {
         ...patchCard(state, event.callId, {
           output: event.output,
           durationMs: event.durationMs,
@@ -1161,6 +1194,8 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         // only thing that ever says the decision was made.
         pendingAsks: state.pendingAsks.filter((a) => a.callId !== event.callId),
       };
+      return withSearxngHtmlNote(next, event, state.cards[event.callId]?.name);
+    }
 
     case "agent_spawn":
       return addTurn(state, {

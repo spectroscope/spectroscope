@@ -20,6 +20,8 @@ function whyKey(mode: string | null): string {
       return "explain.why.auto";
     case "readonly":
       return "explain.why.readonly";
+    case "extended":
+      return "explain.why.extended";
     default:
       return "explain.why.unknown";
   }

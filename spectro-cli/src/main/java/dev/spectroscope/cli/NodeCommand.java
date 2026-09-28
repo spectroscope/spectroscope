@@ -76,8 +76,9 @@ public final class NodeCommand implements Callable<Integer> {
     String role;
 
     @Option(names = "--permissions", defaultValue = "readonly",
-            description = "Headless policy: readonly (default), auto, or ask "
-                    + "(park each tool for an operator to answer over the hub).")
+            description = "Headless policy: readonly (default), auto, ask "
+                    + "(park each tool for an operator to answer over the hub), or extended "
+                    + "(like auto, and the file tools may read and write outside the working folder).")
     String permissions;
 
     @Option(names = "--max-turns",
@@ -173,7 +174,29 @@ public final class NodeCommand implements Callable<Integer> {
      */
     record NodeSpec(String hubHost, int hubPort, String nodeId, long epoch, String contextId,
                     String role, String prompt, Path workspace, boolean autoApprove,
-                    Integer maxTurns) {
+                    Integer maxTurns, boolean reachOutside) {
+
+        /** The shape before card 453: the working-directory fence stays closed. */
+        NodeSpec(String hubHost, int hubPort, String nodeId, long epoch, String contextId,
+                 String role, String prompt, Path workspace, boolean autoApprove,
+                 Integer maxTurns) {
+            this(hubHost, hubPort, nodeId, epoch, contextId, role, prompt, workspace,
+                    autoApprove, maxTurns, false);
+        }
+    }
+
+    /** The values {@code --permissions} accepts. */
+    static final List<String> PERMISSIONS = List.of("readonly", "auto", "ask", "extended");
+
+    /** Checks one {@code --permissions} value.
+     *  @param value the flag as typed
+     *  @return null when accepted, else the one-line refusal */
+    static String permissionsError(String value) {
+        if (PERMISSIONS.contains(value)) {
+            return null;
+        }
+        return "--permissions must be \"readonly\", \"auto\", \"ask\" or \"extended\" "
+                + "(headless default: readonly).";
     }
 
     /**
@@ -279,6 +302,7 @@ public final class NodeCommand implements Callable<Integer> {
             if (gateBroker != null) {
                 runner = runner.withBroker(gateBroker); // ask mode replaces the fixed policy
             }
+            runner = runner.withOutsideReach(spec.reachOutside()); // card 453
             HeadlessRunner.Outcome outcome = runner.runOnce(spec.prompt(), spec.workspace(),
                     spec.autoApprove(), spec.maxTurns(), null, log, store, List.of());
 
@@ -332,10 +356,9 @@ public final class NodeCommand implements Callable<Integer> {
      */
     @Override
     public Integer call() {
-        if (!"readonly".equals(permissions) && !"auto".equals(permissions)
-                && !"ask".equals(permissions)) {
-            System.err.println("--permissions must be \"readonly\", \"auto\" or \"ask\" "
-                    + "(headless default: readonly).");
+        String refusal = permissionsError(permissions);
+        if (refusal != null) {
+            System.err.println(refusal);
             return 1;
         }
         if (maxTurns != null && maxTurns < 1) {
@@ -394,7 +417,8 @@ public final class NodeCommand implements Callable<Integer> {
                             config.provider() + " · " + config.model())
                     : null;
             NodeSpec spec = new NodeSpec(address.host(), address.port(), nodeId, epoch, context,
-                    role, prompt, workspace, "auto".equals(permissions), maxTurns);
+                    role, prompt, workspace, HeadlessPermissions.approves(permissions), maxTurns,
+                    HeadlessPermissions.reachesOutside(permissions));
             if (triggers != null) {
                 // Any trigger flag routes to the standing loop; --linger is
                 // implied (accepted redundantly). The frozen single-shot path

@@ -459,7 +459,11 @@ public final class AnthropicProvider implements LlmProvider {
                 builder.thinking(ThinkingConfigDisabled.builder().build());
             }
         } else {
-            if (request.thinking()) {
+            // Card 447: a row that says control "none" (claude-2, and claude-3
+            // before 3.7) has no thinking knob, so the thinking setting sends
+            // nothing to it. An id the table does not name falls to the
+            // catch-all toggle row and is asked to think, as before.
+            if (request.thinking() && !"none".equals(cap.control())) {
                 if (usesLegacyThinkingBudget(model)) {
                     int budget = thinkingBudget(request.maxTokens());
                     if (budget > 0) {

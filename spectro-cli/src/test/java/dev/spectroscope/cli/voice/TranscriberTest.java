@@ -186,9 +186,9 @@ class TranscriberTest {
     @Test
     void aMissingWhisperBinarySurfacesTheRunnersReadableError(@TempDir Path dir) throws Exception {
         FakeRunner runner = new FakeRunner();
-        // What ProcessCommandRunner throws when the binary is not on the PATH.
-        runner.transcribeFailure =
-                new IOException("whisper-cli not found — run bash scripts/setup-stt.sh.");
+        // What ProcessCommandRunner throws when the lookup does not find the binary.
+        runner.transcribeFailure = new IOException(
+                "whisper-cli not found in /opt/homebrew/bin, /usr/bin. Run bash scripts/setup-stt.sh.");
         Transcriber transcriber = new Transcriber(runner, presentModel(dir));
 
         IOException failure = assertThrows(IOException.class,

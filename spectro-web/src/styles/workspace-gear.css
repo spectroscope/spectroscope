@@ -29,6 +29,19 @@
   box-shadow: var(--shadow-modal);
 }
 
+/* CARD 446: the gear's own menu. It hangs from the gear's right edge, the
+   row's right end, and at a 390px window its 380px ran 6px past the left edge
+   (measured 2026-09-26). Its frame is the composer row (see .composer-actions
+   in modal-composer.css), so the max-width ends it at the row's left end.
+   composerPopoverSides.drift.test.ts reads both from the sheets. */
+.wsg-anchor.gear-anchor {
+  position: static;
+}
+
+.wsg-pop.gear-pop {
+  max-width: 100%;
+}
+
 .wsg-head-title {
   font-size: var(--fs-13);
   color: var(--text);

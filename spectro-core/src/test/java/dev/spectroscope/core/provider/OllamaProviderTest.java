@@ -405,15 +405,26 @@ class OllamaProviderTest {
     }
 
     @Test
-    void a4xxMentioningThinkingBecomesAReadableError() {
+    void a4xxMentioningThinkingThatRepeatsWithoutThinkBecomesAReadableError() {
+        // Card 447: the first refusal is sent again without think, so the
+        // terminal error only reaches a request that carried no think field.
+        // Switching thinking off cannot help there, so the message no longer
+        // advises it; it names the model and carries ollama's own words.
         scriptedStatus = 400;
         scriptedErrorBody = "{\"error\":\"\\\"think\\\" is not supported by this model\"}";
         RuntimeException error = assertThrows(RuntimeException.class,
                 () -> collect(thinkingRequest(oneUser("Reason about this."))));
-        assertTrue(error.getMessage().contains("does not support"),
-                "the error must explain the model does not support thinking");
-        assertTrue(error.getMessage().contains("SPECTRO_THINKING=0"),
-                "the error must point at the way to disable thinking");
+        assertTrue(error.getMessage().contains("\"qwen3\" does not support thinking"),
+                "the error must explain the model does not support thinking: " + error.getMessage());
+        assertTrue(error.getMessage().contains("is not supported by this model"),
+                "the error must carry the server's own words: " + error.getMessage());
+        JsonNode retried;
+        try {
+            retried = JSON.readTree(lastChatBody.get());
+        } catch (IOException unreadable) {
+            throw new AssertionError(unreadable);
+        }
+        assertTrue(retried.get("think") == null, "the last request went out without think: " + retried);
     }
 
     @Test

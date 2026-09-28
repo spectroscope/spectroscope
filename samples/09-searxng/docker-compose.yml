@@ -4,10 +4,12 @@
 # Stock SearXNG does NOT answer an API client. Its shipped settings.yml lists
 # only `html` under `search.formats`, and a request for an unlisted format is
 # answered 403 — so a bare `docker run searxng/searxng` gives a perfectly good
-# search page and an API that hands the product nothing back. That is the whole
-# reason this directory exists instead of a one-line command in the settings
-# page: install.sh writes a settings.yml that turns `json` on (and generates
-# this machine's own secret key), and THIS file mounts it.
+# search page and an API that answers nothing. web_search then reads that
+# search page instead (card 448), but the page's markup changes between SearXNG
+# releases and the API's fields do not. That is the reason this directory
+# exists instead of a one-line command in the settings page: install.sh writes
+# a settings.yml that turns `json` on (and generates this machine's own secret
+# key), and THIS file mounts it.
 #
 # Four deliberate choices, each one a thing that bites otherwise:
 #

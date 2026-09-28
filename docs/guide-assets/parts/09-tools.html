@@ -36,7 +36,15 @@ Every model-supplied path passes the sandbox. Every mutation passes the gate.</p
   read or written <em>through</em> to a file outside it &mdash; a link that stays inside
   still works, because the rule is about leaving and not about links. Tree-walking tools
   apply the same test to every hit and never enter <code>.git</code>, <code>build</code>,
-  <code>node_modules</code>, <code>target</code>.</p>
+  <code>node_modules</code>, <code>target</code>. The one exception is the
+  <code>extended</code> permission mode (chapter 13): there <code>view_file</code>,
+  <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>,
+  <code>edit_file</code>, <code>glob</code> and <code>grep</code> also accept a path outside
+  the working directory, still resolved through its real path. <code>view_image</code> stays
+  fenced. In <code>extended</code> the launch file refusal is wider than in the other modes:
+  <code>write_file</code> and <code>edit_file</code> refuse <code>.spectro/launch.json</code> and
+  <code>.claude/launch.json</code> in any folder, subfolders of the working directory included,
+  where the other modes refuse only the working directory's own.</p>
 </div>
 <div class="card">
   <h4>The caps</h4>

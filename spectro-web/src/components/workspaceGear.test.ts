@@ -9,6 +9,7 @@ import {
   rulesWith,
   rulesWithout,
   MODES,
+  persistsToProject,
 } from "./workspaceGear";
 import { PROVIDERS } from "./providerPickerMode";
 import { IMAGE_MODELS } from "./imageModels";
@@ -48,8 +49,17 @@ describe("workspaceGear model", () => {
     expect(rulesWithout(["a", "b"], "a")).toEqual(["b"]);
   });
 
-  it("exposes exactly the three modes in order", () => {
-    expect(MODES.map((m) => m.id)).toEqual(["ask", "auto", "readonly"]);
+  it("exposes exactly the four modes in order", () => {
+    expect(MODES.map((m) => m.id)).toEqual(["ask", "auto", "readonly", "extended"]);
+  });
+
+  // Card 453: a workspace file may not hold extended, so the switch applies it
+  // live and never writes it into the project scope.
+  it("persists every mode to the project scope except extended", () => {
+    expect(persistsToProject("ask")).toBe(true);
+    expect(persistsToProject("auto")).toBe(true);
+    expect(persistsToProject("readonly")).toBe(true);
+    expect(persistsToProject("extended")).toBe(false);
   });
 });
 

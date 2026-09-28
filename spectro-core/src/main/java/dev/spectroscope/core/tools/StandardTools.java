@@ -144,7 +144,7 @@ public final class StandardTools {
             /** Attaches the sandboxed PDF; failures as "ERROR: ". */
             public String execute(JsonNode input, ToolContext context) {
                 try {
-                    Path file = resolveInside(context.cwd(), input.path("path").asText());
+                    Path file = resolveInside(context, input.path("path").asText());
                     String fileName = file.getFileName().toString();
                     if (!fileName.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
                         return "ERROR: view_file reads pdf documents only — use read_file"
@@ -293,7 +293,21 @@ public final class StandardTools {
      * @throws IOException when it escapes, does not exist, or cannot be resolved
      */
     private static Path resolveInside(Path cwd, String relative) throws IOException {
-        return resolveInside(cwd, relative, false);
+        return resolveInside(cwd, relative, false, false);
+    }
+
+    /**
+     * Card 453: the read rule as the call's context asks for it. In the
+     * {@code extended} mode ({@link ToolContext#reachOutside()}) the path may
+     * leave cwd; it still resolves against cwd and through {@code toRealPath}.
+     *
+     * @param context  the call's context: its cwd and whether it may reach out
+     * @param relative the path string exactly as the model sent it
+     * @return the canonical absolute path
+     * @throws IOException when it escapes a closed fence, does not exist, or cannot be resolved
+     */
+    private static Path resolveInside(ToolContext context, String relative) throws IOException {
+        return resolveInside(context.cwd(), relative, false, context.reachOutside());
     }
 
     /**
@@ -305,14 +319,15 @@ public final class StandardTools {
      * creates the directories above them, so what has to be proven inside cwd is
      * the DIRECTORY the write will land in.</p>
      *
-     * @param cwd      the sandbox root (the agent's working directory)
+     * @param context  the call's context: its cwd and whether it may reach out
      * @param relative the path string exactly as the model sent it
      * @return the canonical absolute path of an existing file, or the planned
      *         path of a new one, either way proven inside cwd
      * @throws IOException when it escapes or cannot be placed
      */
-    private static Path resolveInsideForWrite(Path cwd, String relative) throws IOException {
-        return resolveInside(cwd, relative, true);
+    private static Path resolveInsideForWrite(ToolContext context, String relative)
+            throws IOException {
+        return resolveInside(context.cwd(), relative, true, context.reachOutside());
     }
 
     /**
@@ -322,14 +337,17 @@ public final class StandardTools {
      * @param relative     the path string exactly as the model sent it
      * @param mayBeCreated true for the write path, where a path that does not
      *                     resolve is a file about to be made rather than a miss
-     * @return the path, proven inside cwd by REAL paths on both sides
+     * @param reachOutside true in the {@code extended} mode: both fence checks
+     *                     are skipped, the resolution is not (card 453)
+     * @return the path, proven inside cwd by REAL paths on both sides unless
+     *         {@code reachOutside}
      * @throws IOException when it escapes, does not exist, or cannot be resolved
      */
-    private static Path resolveInside(Path cwd, String relative, boolean mayBeCreated)
-            throws IOException {
+    private static Path resolveInside(Path cwd, String relative, boolean mayBeCreated,
+            boolean reachOutside) throws IOException {
         Path base = cwd.toAbsolutePath().normalize();
         Path lexical = base.resolve(relative).normalize();
-        if (!lexical.equals(base) && !lexical.startsWith(base)) {
+        if (!reachOutside && !lexical.equals(base) && !lexical.startsWith(base)) {
             throw outsideTheSandbox(relative);
         }
         Path realBase = base.toRealPath();
@@ -342,7 +360,7 @@ public final class StandardTools {
             }
             real = plannedPlaceOf(lexical, doesNotResolve);
         }
-        if (!real.equals(realBase) && !real.startsWith(realBase)) {
+        if (!reachOutside && !real.equals(realBase) && !real.startsWith(realBase)) {
             throw outsideTheSandbox(relative);
         }
         return real;
@@ -457,6 +475,22 @@ public final class StandardTools {
                 + " Ask him for the entry you want; every other file here is yours.";
     }
 
+    /** Card 453: the launch file refusal for the call's context. Outside cwd,
+     *  which only the extended mode reaches, any folder's launch file is refused.
+     *  @param context the call's context
+     *  @param file    the resolved path about to be written
+     *  @param tool    the tool's name, for the sentence
+     *  @return the refusal, or null when the path is not a launch file */
+    private static String refuseLaunchFile(ToolContext context, Path file, String tool) {
+        String inCwd = refuseLaunchFile(context.cwd(), file, tool);
+        if (inCwd != null || !context.reachOutside()) {
+            return inCwd;
+        }
+        Path parent = file.getParent();
+        Path root = parent == null ? null : parent.getParent();
+        return root == null ? null : refuseLaunchFile(root, file, tool);
+    }
+
     /**
      * A minimal JSON-Schema object with one required string property.
      *
@@ -492,7 +526,7 @@ public final class StandardTools {
             /** Lists the resolved directory — sorted, directories marked with a trailing slash; failures as "ERROR: ". */
             public String execute(JsonNode input, ToolContext context) {
                 try {
-                    Path dir = resolveInside(context.cwd(), input.path("path").asText());
+                    Path dir = resolveInside(context, input.path("path").asText());
                     try (Stream<Path> entries = Files.list(dir)) {
                         String listing = entries
                                 .map(entry -> Files.isDirectory(entry)
@@ -548,7 +582,7 @@ public final class StandardTools {
             /** Whole file or paged window after the sandbox and size checks; failures as "ERROR: ". */
             public String execute(JsonNode input, ToolContext context) {
                 try {
-                    Path file = resolveInside(context.cwd(), input.path("path").asText());
+                    Path file = resolveInside(context, input.path("path").asText());
                     int offset = input.path("offset").asInt(0);
                     int limit = input.path("limit").asInt(0);
                     if (offset <= 0 && limit <= 0) {
@@ -702,8 +736,8 @@ public final class StandardTools {
                 try {
                     String relative = input.path("path").asText();
                     String content = input.path("content").asText();
-                    Path file = resolveInsideForWrite(context.cwd(), relative); // path sandbox
-                    String launch = refuseLaunchFile(context.cwd(), file, "write_file");
+                    Path file = resolveInsideForWrite(context, relative); // path sandbox
+                    String launch = refuseLaunchFile(context, file, "write_file");
                     if (launch != null) {
                         return launch;
                     }
@@ -874,8 +908,8 @@ public final class StandardTools {
                     if (oldString.isEmpty()) {
                         return "ERROR: old_string must be non-empty (use write_file to create a file).";
                     }
-                    Path file = resolveInside(context.cwd(), relative); // path sandbox
-                    String launch = refuseLaunchFile(context.cwd(), file, "edit_file");
+                    Path file = resolveInside(context, relative); // path sandbox
+                    String launch = refuseLaunchFile(context, file, "edit_file");
                     if (launch != null) {
                         return launch;
                     }
@@ -968,7 +1002,7 @@ public final class StandardTools {
                     if (pattern.isBlank()) {
                         return "ERROR: pattern must be a non-empty string.";
                     }
-                    Path root = resolveInside(context.cwd(), input.path("path").asText("."));
+                    Path root = resolveInside(context, input.path("path").asText("."));
                     PathMatcher matcher = root.getFileSystem().getPathMatcher("glob:" + pattern);
                     List<String> matches = walkMatches(root, matcher, MAX_GLOB_RESULTS);
                     return matches.isEmpty() ? "(no matches)" : String.join("\n", matches);
@@ -1087,7 +1121,7 @@ public final class StandardTools {
                     } catch (PatternSyntaxException invalid) {
                         return "ERROR: invalid regex: " + invalid.getMessage();
                     }
-                    Path root = resolveInside(context.cwd(), input.path("path").asText("."));
+                    Path root = resolveInside(context, input.path("path").asText("."));
                     String glob = input.path("glob").asText("");
                     PathMatcher matcher = glob.isBlank() ? null
                             : root.getFileSystem().getPathMatcher("glob:" + glob);
