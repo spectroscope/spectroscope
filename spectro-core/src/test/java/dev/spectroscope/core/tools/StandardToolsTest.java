@@ -589,7 +589,7 @@ class StandardToolsTest {
         assertEquals("spectroscope", tools(10).get("read_file")
                 .execute(input("path", "note.txt"), contextIn(cwd)));
 
-        Files.write(cwd.resolve("big.bin"), new byte[50_001]);
+        Files.write(cwd.resolve("big.bin"), new byte[(int) ReadBudget.FUSE_BYTES + 1]);
         String tooBig = tools(10).get("read_file").execute(input("path", "big.bin"), contextIn(cwd));
         assertTrue(tooBig.startsWith("ERROR: file too large"));
     }
@@ -737,20 +737,23 @@ class StandardToolsTest {
 
     @Test
     void readFilePagingUnlocksFilesOverTheWholeFileCap(@TempDir Path cwd) throws IOException {
-        // 60 kB of lines: whole-file reads refuse (the 50 kB cap), a paged
-        // window reads fine — that is the point of paging.
+        // 60 kB of lines under a window whose share cannot hold them: the
+        // whole-file read refuses, a paged window reads fine. That is the
+        // point of paging (card 456 moved the bound onto the window).
         StringBuilder content = new StringBuilder();
         for (int line = 1; line <= 3_000; line++) {
             content.append("x".repeat(19)).append(' ').append(line).append('\n');
         }
         Files.writeString(cwd.resolve("big.txt"), content.toString());
 
-        String whole = tools(10).get("read_file").execute(input("path", "big.txt"), contextIn(cwd));
+        ToolContext small = new ToolContext(cwd, new CancelSignal(), "main", "c1", event -> { },
+                attachment -> { }, change -> { }, millis -> { }, false, 8_192);
+        String whole = tools(10).get("read_file").execute(input("path", "big.txt"), small);
         assertTrue(whole.startsWith("ERROR: "), "whole-file read keeps the cap, got: " + whole);
 
         ObjectNode paged = input("path", "big.txt");
         paged.put("offset", 2_999).put("limit", 10);
-        String window = tools(10).get("read_file").execute(paged, contextIn(cwd));
+        String window = tools(10).get("read_file").execute(paged, small);
         assertFalse(window.startsWith("ERROR: "), window);
         assertTrue(window.contains("2999") && window.contains("3000"),
                 "the tail window is readable, got: " + window);

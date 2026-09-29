@@ -98,8 +98,10 @@ export function LabView(props: {
   model?: string;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
   onReturnToLive: () => void;
-  /** Present only for resumable archives — passed through to the Lab's chat. */
-  onResume?: () => void;
+  /** Card 458: a stored session the first message continues — passed through to the Lab's chat. */
+  continuable?: boolean;
+  /** Card 458: why an archive is read-only — passed through to the Lab's chat. */
+  readOnlyNote?: string;
   /** Present only for deletable archives — passed through to the Lab's chat. */
   onDelete?: () => void;
   /** Passed through to the Lab's own Chat — its composer gear needs it too. */
@@ -269,7 +271,8 @@ export function LabView(props: {
         liveView={viewingLive}
         onSend={props.onSend}
         onReturnToLive={props.onReturnToLive}
-        onResume={props.onResume}
+        continuable={props.continuable}
+        readOnlyNote={props.readOnlyNote}
         onDelete={props.onDelete}
         sendClient={props.sendClient}
       />

@@ -25,7 +25,7 @@ is the whole consumption model.
 ./gradlew build
 ```
 
-The dependency is `dev.spectroscope:spectro-core:0.14.1` from Maven Central.
+The dependency is `dev.spectroscope:spectro-core:0.14.2` from Maven Central.
 Java 21 or newer.
 
 ## Run (cloud)

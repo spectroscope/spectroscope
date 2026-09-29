@@ -5,7 +5,7 @@
 the backend actually posted to a model and what came back, verbatim. One NDJSON sidecar per
 session, written at send time — a crash mid-generation still leaves the request on record.</p>
 
-<!--SVG:22-llm-wire|One exchange end to end: the request line written the moment the call leaves, the stream lines buffered as they arrive, the response line appended at close, the two halves joined by xid — and the three places a reader meets that pair again, the trace rows, the second spectrum baseline and the download in the archive bar.-->
+<!--SVG:22-llm-wire|One exchange end to end: the request line written the moment the call leaves, the stream lines buffered as they arrive, the response line appended at close, the two halves joined by xid, and the three places a reader meets that pair again, the trace rows, the second spectrum baseline and the download link of a stored session.-->
 
 <h2 id="ch-llmwire-file">The sidecar file</h2>
 
@@ -197,11 +197,13 @@ The two tracks stay apart on purpose: the app protocol and the conversation with
 stories about one moment. A lane whose agent never called a model is empty rather than absent, and
 a mark is coloured by what was measured and nothing else — it came back, or it never answered.</p>
 
-<p>The whole file downloads from the archive bar of a stored session, as a plain link labelled
-<code>llm wire</code> next to <code>export</code>, saving as
-<code>&lt;session-id&gt;.llm.jsonl</code>. It is offered only when the index answered non-empty, so
-the link never names an empty file, and it is offered only there — a live session shows no download
-button, so open the stored session first or read the route directly.</p>
+<p>The whole file downloads as a plain link labelled <code>llm wire</code> next to
+<code>download .jsonl</code>, saving as <code>&lt;session-id&gt;.llm.jsonl</code>. It is offered
+only when the index answered non-empty, so the link never names an empty file. Both links sit
+on the bar of a stored session that opens read-only, which happens while another window is
+working in it. A session you can type in shows the composer instead and has no download
+links. For such a session, read the route directly
+(<code>GET /api/sessions/{id}/llm-wire</code>, below).</p>
 
 <h2 id="ch-llmwire-rest">The three reads</h2>
 

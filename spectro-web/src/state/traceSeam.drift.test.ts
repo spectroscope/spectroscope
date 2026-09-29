@@ -40,7 +40,8 @@ function traceMounts(): string[] {
 
 describe("the live trace window reaches the screen honestly", () => {
   it("a resumed archive is bounded before the socket starts appending to it", () => {
-    expect(body("resumeSession")).toContain("setLive(seedResumedLive(seeded))");
+    // Card 458: the seeded state becomes a record of the session set.
+    expect(body("resumeSession")).toContain("state: seedResumedLive(seeded),");
   });
 
   it("has exactly the two trace mounts this file knows about", () => {
@@ -123,17 +124,18 @@ describe("card 246 — the live-trace switch reaches both live seams", () => {
   // Card 430 moved both folds into state/modeWork.ts, where light skips the
   // trace row altogether; the learn branch keeps card 246's rule word for word.
   const work = readFileSync(fileURLToPath(new URL("./modeWork.ts", import.meta.url)), "utf8");
+  // Cards 458 and 459: the two live seams run per record in the session set.
+  const set = readFileSync(fileURLToPath(new URL("./sessionSet.ts", import.meta.url)), "utf8");
 
   it("the socket fold strips before it windows, asking the store", () => {
-    expect(body("onEvents")).toContain(
-      "setLive((s) => foldLiveBatch(s, batch, mode, currentLiveTraceWanted()));",
-    );
+    expect(set).toContain("foldLiveBatch(before.state, batch, this.deps.mode(), this.deps.traceWanted())");
+    expect(app).toContain("traceWanted: currentLiveTraceWanted,");
     expect(work).toContain("return windowTrace(stripLiveTrace(reduceAll(state, batch), traceWanted));");
   });
 
   it("the outgoing fold strips by the same rule", () => {
-    expect(body("sendClient")).toContain(
-      "setLive((s) => recordLiveOutgoing(s, msg, mode, currentLiveTraceWanted()));",
+    expect(set).toContain(
+      "recordLiveOutgoing(record.slot.state, msg, this.deps.mode(), this.deps.traceWanted())",
     );
     expect(work).toContain(
       "return windowTrace(stripLiveTrace(recordOutgoing(state, message), traceWanted));",
@@ -142,7 +144,8 @@ describe("card 246 — the live-trace switch reaches both live seams", () => {
 
   it("flipping the switch off frees what is already held", () => {
     // The seams only run on the NEXT frame; the effect runs on the flip.
-    expect(app).toContain("setLive((s) => stripLiveTrace(s, false))");
+    // In every record, not only the one on screen.
+    expect(app).toContain("sessions.updateAll((held) => stripLiveTrace(held.state, false))");
   });
 
   it("the sessions pane is told when the live trace is off — the fleet is not", () => {

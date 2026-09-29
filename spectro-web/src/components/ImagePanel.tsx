@@ -1,7 +1,9 @@
-// the image gallery — a right-hand column next to the chat. Every
-// image_generated event becomes a card (newest first); the bytes themselves
-// are fetched lazily from GET /api/images/<file>, never pushed over the
-// socket. The provider select switches the generation backend server-side.
+// The image gallery, the body of the dock's images panel (card 443; until
+// 0.14.2 it was a column of its own beside the dock). Every image_generated
+// event becomes a card (newest first); the bytes themselves are fetched
+// lazily from GET /api/images/<file>, never pushed over the socket. The
+// provider select switches the generation backend server-side. The dock card
+// around it carries the name, the count, full screen and close.
 
 import { useState } from "react";
 import type { GeneratedImage } from "../state/reducer";
@@ -21,10 +23,7 @@ export function ImagePanel(props: {
   /** Key PRESENCE per backend (from /api/config); null until known. A
    *  keyless backend stays selectable but says so in its option label. */
   keys: { gemini: boolean; openai: boolean } | null;
-  /** Panel width in px (persisted layout state; the resizer drives it). */
-  width?: number;
   onProviderChange: (provider: string) => void;
-  onClose: () => void;
   /** The live session whose workspace receives copies — absent hides the button (replays). */
   sessionId?: string;
 }) {
@@ -61,15 +60,8 @@ export function ImagePanel(props: {
   };
 
   return (
-    <aside
-      className="image-panel"
-      style={props.width !== undefined ? { width: props.width } : undefined}
-      aria-label={t(lang, "img.aria")}
-    >
-      <div className="image-panel-head">
-        <span className="eyebrow">{t(lang, "img.title")}</span>
-        <span className="badge tabular">{props.images.length}</span>
-
+    <div className="image-dock">
+      <div className="image-dock-head">
         <label className="image-provider">
           <span className="image-provider-label">Provider</span>
           <select value={props.provider} onChange={(e) => props.onProviderChange(e.target.value)}>
@@ -81,31 +73,11 @@ export function ImagePanel(props: {
             </option>
           </select>
         </label>
-
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={t(lang, "img.close")}
-          onClick={props.onClose}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
       </div>
 
-      <div className="image-panel-scroll">
+      <div className="image-dock-list" role="group" aria-label={t(lang, "img.aria")}>
         {newestFirst.length === 0 ? (
-          <p className="image-panel-empty">{t(lang, "img.empty")}</p>
+          <p className="image-dock-empty">{t(lang, "img.empty")}</p>
         ) : (
           newestFirst.map((image) => {
             const url = imageUrl(image.blobPath);
@@ -143,6 +115,6 @@ export function ImagePanel(props: {
           })
         )}
       </div>
-    </aside>
+    </div>
   );
 }

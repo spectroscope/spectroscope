@@ -13,7 +13,7 @@ model the Flow map paints, and a strict Petri marking. The invariant is literal:
 state always equals “fold of everything applied so far”. Because the server genuinely waits on
 permission futures, a token sitting at the gate is the real system state, not a simulation.</p>
 
-<!--SHOT:03-lab-flow-start|A freshly loaded scenario: the dam holds every event (the “now” band reads “ready to run · 61 waiting”) and the Flow map shows the idle system, waiting for the first step.-->
+<!--SHOT:03-lab-flow-start|A freshly loaded scenario: the dam holds every event (the “now” band reads “ready to run” and “32 waiting”) and the map shows the idle system, waiting for the first step.-->
 
 <h2 id="ch-lab-transport">The transport</h2>
 <p>Two things frame the map. Above it floats the <strong>“now” band</strong>: a plain-language line
@@ -70,7 +70,7 @@ strip, so both grains are one click away.</p>
 
 <h2 id="ch-lab-flow">The Flow map (React Flow)</h2>
 
-<!--SHOT:04-lab-flow-mid|Mid-run: the coral packet sits on the Agent hub, its tool belt below the Loop and Permission-gate rows, the OS band under that, the LLM zone to the right, with live disclosures on every node.-->
+<!--SHOT:04-lab-flow-mid|Step 10 of 32: the Agent hub with its Loop and Permission-gate rows and the tool belt below them, the current build_plan call beside them, the OS band underneath and the LLM on the right.-->
 
 <p>The centre is a literal systems map. On the left, the <strong>AGENT SYSTEM · YOUR MAC</strong>
 zone: the user, the <strong>Agent hub</strong> (live activity line, the Loop row, the
@@ -86,7 +86,7 @@ network and the MCP server.</p>
 re-places it beyond a dashed <strong>network boundary</strong>, live, because the layout follows the
 selected provider.</p>
 
-<!--SHOT:04b-lab-flow-subagents|Parallel subagents: each child gets its own loop card inside the machine zone with its own coral packet, two dots flying to the shared LLM, real parallelism made visible.-->
+<!--SHOT:04b-lab-flow-subagents|A subagent at work, step 24 of 32: the planner child has its own loop card inside the machine zone, wired to the same LLM as its parent, whose card carries the reasoning of both.-->
 
 <p>Every node carries disclosures with the real data. The Agent hub now shows a <strong>tool belt</strong>:
 the chips <code>read_file</code>, <code>write_file</code>, <code>list_dir</code>,

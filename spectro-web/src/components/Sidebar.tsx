@@ -1,8 +1,8 @@
 // Session navigation. The rail is a nav LIST: New chat, Scenarios and Starters
 // are rows rather than buttons, the three segments are rows rather than a
-// segmented control, and Settings is pinned to the foot. The Live row returns
-// to the current socket session; every stored session below it opens as a
-// replay through the same reducer as the live stream.
+// segmented control, and Settings is pinned to the foot. Every session is one
+// row (card 458): the ones this page holds a socket to are merged into the
+// stored list by id, and there is no separate "Live session" row any more.
 //
 // The list is flat. It used to fold look-alike rows into a pile with a count
 // and a chevron; the owner cut it, and the reason it existed — 229 files from
@@ -55,7 +55,8 @@ import {
 import { NavIcon, NavRow } from "./NavRow";
 import { navActionRows, navSegmentRows, type NavSegmentId } from "./navRows";
 import { RunDot } from "./RunDot";
-import { runState, storedRunState, type RunState } from "./runIndicator";
+import { storedRunState, type RunState } from "./runIndicator";
+import { deleteQuestion, heldRunState, mergeHeldRows, type HeldRow } from "../state/sessionRows";
 import { useLiveSessions } from "../state/liveSessions";
 import { SessionListOptions } from "./SessionListOptions";
 import { rowParts, useDensity, type RowParts } from "../state/density";
@@ -71,25 +72,24 @@ export function Sidebar(props: {
    *  stays visible and dimmed rather than vanishing: a feature nobody can see
    *  is a feature nobody adopts. */
   fleetsLocked?: boolean;
-  /** null = the live socket session is shown. */
+  /** The session on screen, held or stored; null for a fresh chat, a fleet or a demo. */
   activeId: string | null;
   /** Bump to refetch the list (e.g. after a run finished). */
   refreshToken: number;
-  onSelectLive: () => void;
+  /** A click on a session row. App decides what it opens (state/sessionRows.ts). */
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
   /** Opens the settings overlay — the same door the header gear opens. Two
    *  doors on purpose: the header's is the first thing a narrow window takes
    *  away, and the rail is where a reader looks for the app's own switches. */
   onSettings: () => void;
-  /** True while THIS page's socket has a run in flight. It drives the rail's
-   *  own live row, and it is the FALLBACK for the resumed stored row when
-   *  nothing reports a live set (a server from before card 212). Every other
-   *  row now reads {@link useLiveSessions} instead. */
-  liveRunning: boolean;
-  /** The stored session this page's socket is continuing, when it is
-   *  continuing one. */
-  resumeId: string | null;
+  /** Card 458: the sessions this page holds a socket to. Each is merged into
+   *  the list by id, and its dot comes from its own record. A server from before
+   *  card 212 reports no live set, so this is also the fallback there. */
+  held: readonly HeldRow[];
+  /** Card 459: lets a held session go (stopping it first when it runs) before
+   *  its row menu deletes it. Absent, a held row cannot be deleted. */
+  onReleaseHeld?: (id: string) => Promise<void>;
   /** Opens the session-import dialog (spectroscope JSONL or Claude Code transcript). */
   onImport: () => void;
   /** Opens the scenario picker modal — kept alongside the inline scenario rows
@@ -274,15 +274,23 @@ export function Sidebar(props: {
     if (deleting === null) return;
     const row = deleting.row;
     setDeleting({ row, busy: true, failed: false });
-    void deleteStoredSession(row.id).then((outcome) => {
-      if (outcome === "failed") {
-        setDeleting({ row, busy: false, failed: true });
-        return;
-      }
-      setDeleting(null);
-      setSessions((list) => (list === null ? list : withoutSession(list, row.id)));
-      props.onSessionDeleted?.(row.id);
-    });
+    // Card 459: a session this page holds lets its socket go first (a running
+    // one is stopped and given until its run_end), so no run appends to the
+    // file after it is deleted.
+    const held = props.held.some((h) => h.id === row.id);
+    const released =
+      held && props.onReleaseHeld !== undefined ? props.onReleaseHeld(row.id) : Promise.resolve();
+    void released
+      .then(() => deleteStoredSession(row.id))
+      .then((outcome) => {
+        if (outcome === "failed") {
+          setDeleting({ row, busy: false, failed: true });
+          return;
+        }
+        setDeleting(null);
+        setSessions((list) => (list === null ? list : withoutSession(list, row.id)));
+        props.onSessionDeleted?.(row.id);
+      });
   };
 
   const cancelDelete = (): void => {
@@ -487,35 +495,20 @@ export function Sidebar(props: {
                   heading; the rest follow, the live row first as before. */}
               <SessionGroups
                 lang={lang}
-                groups={orderSessions(sessions ?? [])}
-                live={
-                  /* The live row wears the same dot as every other row. It is THIS
-                    page's socket — no longer the only row that may say "running",
-                    only the one that says it about the session you are in. */
-                  <button
-                    type="button"
-                    className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}
-                    onClick={props.onSelectLive}
-                  >
-                    <span className="session-title">
-                      <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
-                      {t(lang, "nav.live")}
-                    </span>
-                    {/* The live row's subline goes quiet with the rest of the list: it
-                      is in the same list, under the same control, and "this browser
-                      tab" is the one thing the row's own name already says. */}
-                    {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
-                  </button>
-                }
+                groups={orderSessions(mergeHeldRows(sessions ?? [], props.held))}
                 row={(s) => {
                   /* Card 212 owns the rule and card 214 owns the drawing: the whole
                    live decision stays in storedRunState, where it is tested
-                   without a DOM, and the row receives a finished state. */
-                  const state = storedRunState({
-                    row: s,
-                    live: liveSessions,
-                    resumeId: props.resumeId,
-                    liveRunning: props.liveRunning,
+                   without a DOM, and the row receives a finished state. A row
+                   this page holds reads its own record first (card 458). */
+                  const mine = props.held.find((h) => h.id === s.id);
+                  const state =
+                    mine !== undefined
+                      ? heldRunState(mine)
+                      : storedRunState({ row: s, live: liveSessions, resumeId: null, liveRunning: false });
+                  const question = deleteQuestion(s.id, {
+                    held: props.held,
+                    liveElsewhere: liveSessions.map((row) => row.id),
                   });
                   return (
                     <SessionRow
@@ -525,14 +518,18 @@ export function Sidebar(props: {
                       lang={lang}
                       active={props.activeId === s.id && props.activeFleet === null}
                       state={state}
+                      attention={mine?.attention ?? null}
                       onSelect={() => props.onSelectSession(s.id)}
                       menu={{
                         items: rowMenuItems({
                           pinned: s.pinned === true,
                           hasTitle: (s.title ?? "").trim() !== "" || suggesting.has(s.id),
-                          // A socket holds a live row; the archive bar keeps the
-                          // same rule for the session this page resumes.
-                          deletable: state !== "running" && state !== "live",
+                          // Card 459: a session this page holds is let go first
+                          // (stopped when it runs, after asking); one another
+                          // window holds is not deleted from here.
+                          deletable:
+                            question === "plain" ||
+                            (question !== "refused" && props.onReleaseHeld !== undefined),
                         }),
                         onPick: (item) => pickFromMenu(s, item),
                       }}
@@ -702,6 +699,7 @@ export function Sidebar(props: {
         <SessionDeleteDialog
           lang={lang}
           title={sessionDisplayTitle(deleting.row, lang)}
+          running={props.held.some((h) => h.id === deleting.row.id && h.running)}
           busy={deleting.busy}
           failed={deleting.failed}
           onCancel={cancelDelete}
@@ -737,6 +735,8 @@ export function SessionRow(props: {
   active: boolean;
   /** The dot's state, already decided by storedRunState at the list level. */
   state: RunState;
+  /** Card 459: what the held session asks of the reader, drawn after its name. */
+  attention?: HeldRow["attention"];
   onSelect: () => void;
   /** Card 445: the row's three-dots menu. Absent, the row has none (the
    *  density tests draw rows without one). */
@@ -752,6 +752,7 @@ export function SessionRow(props: {
 }) {
   const { s, parts, lang } = props;
   const shown = sessionDisplayTitle(s, lang);
+  const hover = sessionTitleLines(s, lang);
   return (
     <div
       className={`session-item${props.active ? " active" : ""}`}
@@ -771,7 +772,7 @@ export function SessionRow(props: {
           /* ONE hover string, at either density. In normal the hover is the only
              place the cut facts live, and a density-aware second one would be a
              second thing to keep in step with the DTO. */
-          title={sessionTitleLines(s, lang)}
+          title={hover}
           onClick={props.onSelect}
         >
           <span className="session-title session-title-line">
@@ -790,6 +791,12 @@ export function SessionRow(props: {
             {parts.sigil && <SessionSigil signal={sessionSignal(s)} />}
             {/* Card 445: the title when the row has one, else the first prompt. */}
             <span className="session-name">{shown}</span>
+            {props.attention === "answer" && (
+              <span className="session-wait session-wait--answer">{t(lang, "nav.waitingForYou")}</span>
+            )}
+            {props.attention === "model" && (
+              <span className="session-wait">{t(lang, "nav.waitingForModel")}</span>
+            )}
           </span>
           {parts.meta && (
             <span className="session-meta session-meta-line tabular">

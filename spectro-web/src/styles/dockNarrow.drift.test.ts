@@ -50,20 +50,17 @@ describe("the chat keeps its floor beside the dock (cards 242, 361)", () => {
     expect(app).toMatch(/"--chat-reserve":\s*`\$\{dockBounds\.reserve\}px`/);
   });
 
-  it("both resize handlers hand the allocator what the OTHER panel takes", () => {
-    // The pure allocator is bitten in rowWidths.test.ts; this pins the CALL,
-    // which no test in a DOM-less suite can reach. An `occupied: 0` in either
-    // handler is the two-allocator defect back in a shape that reads as wired.
+  // Card 443 REPLACED the case that stood here. It pinned two resize handlers,
+  // the dock's and the image area's, each charging the other's width. The
+  // image area is a dock panel now, so its handler is gone and the premise
+  // with it; the replacement pins what is true after the card.
+  it("the row has one resize handler, and nothing else shares the row with the dock", () => {
     const app = stripComments(read("../App.tsx"));
     const calls = [...app.matchAll(/fitRowPanel\(\{([\s\S]*?)\}\)/g)].map((m) => m[1]);
-    expect(calls, "the row has two resize handlers and both must allocate").toHaveLength(2);
-    const [dock, gallery] = calls;
-    // Each names the other's stored width, and each is conditional: a closed
-    // neighbour costs the row nothing.
-    expect(dock).toMatch(/occupied:[^,]*layout\.imagesW/);
-    expect(dock).toMatch(/occupied:[^,]*\?/);
-    expect(gallery).toMatch(/occupied:[^,]*layout\.rightPanelW/);
-    expect(gallery).toMatch(/occupied:[^,]*\?/);
+    expect(calls, "the dock's drag still allocates through fitRowPanel").toHaveLength(1);
+    expect(calls[0]).toMatch(/occupied:\s*0\b/);
+    expect(calls[0]).toMatch(/reserve:\s*dockBounds\.reserve/);
+    expect(app).not.toMatch(/layout\.imagesW/);
   });
 
   it("the resizer's width is ONE number, in three places that agree", () => {

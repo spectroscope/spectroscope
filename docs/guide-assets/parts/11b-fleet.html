@@ -148,8 +148,8 @@ tab.</p>
 
 <p>Picking an agent tab pins the trace filter with it, so the trace for
 one agent is one click away and already scoped. There is no way off the
-bar itself: leaving a fleet is a sidebar move, to a session, to the live
-row, or to another fleet. The back and forward chevrons are absent here,
+bar itself: leaving a fleet is a sidebar move, to a session, to a new
+chat, or to another fleet. The back and forward chevrons are absent here,
 because the fleet bar stands where they live, though ⌘← and ⌘→ still
 walk your history.</p>
 
@@ -288,11 +288,10 @@ SIGTERM is the ultimate backstop.</p>
 <p><strong>Answer a gate.</strong> A node started with
 <code>--permissions ask</code> parks each gated tool instead of denying
 it. The parked gate surfaces on the node's card, on its lane in the
-fleet's spectrum, and in the same gate bar you use for your own session,
-docked above the footer — on every tab of the entered fleet, the agent
-tabs included, because that bar sits outside the view chain by
-construction. Approve or deny inline and the answer travels to the node
-over the hub. There is no “remember” here: a remote node keeps its own
+fleet's spectrum, and in the same permission dialog you use for your own
+session, over every tab of the entered fleet, the agent tabs included,
+because the dialog sits outside the view chain by construction. Approve
+or deny there and the answer travels to the node over the hub. There is no “remember” here: a remote node keeps its own
 allowlist, not yours. Like stop it is best-effort; if the node left
 first, its own close denies the orphaned gate, so the gate clears either
 way.</p>

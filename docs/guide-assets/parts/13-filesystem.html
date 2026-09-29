@@ -144,7 +144,7 @@ and <code>run_command</code> runs in. Unless a <code>workspace</code> is configu
 └── <span class="d">20260716-204419-39b41a29/</span>      not in the repo you started spectroscope in
 </pre>
 
-<p>The key is the session id, so a <strong>resume finds its files again</strong>; a New
+<p>The key is the session id, so a <strong>continued session finds its files again</strong>; a New
 chat means a fresh desk. The web server announces the folder over the socket
 (<code>workspace_info</code> — a UI-only frame, never in the JSONL) and the Files tab
 follows it (chapter 6). The launch dir stays anchored: skills, MCP servers, SPECTRO.md and
@@ -179,13 +179,14 @@ auto-allow gates that would otherwise ask (chapter 30). Pinning a cloned or othe
 foreign folder as your workspace means reviewing its <code>.spectro/</code> first — the same
 way you would review its build scripts before running them.</p>
 
-<h2 id="ch-fs-lifecycle">Lifecycle: create, resume, delete</h2>
+<h2 id="ch-fs-lifecycle">Lifecycle: create, continue, delete</h2>
 <ul>
   <li><strong>Created</strong> on the first prompt of a connection (web) or at REPL start;
       headless and cron runs write the same files.</li>
-  <li><strong>Resumed</strong> by <code>spectroscope --resume &lt;id&gt;</code> or the web Resume
-      button — the history is reconstructed from the file, new events append.</li>
-  <li><strong>Deleted</strong> only by the guarded two-step (chapter 8):
+  <li><strong>Continued</strong> by <code>spectroscope --resume &lt;id&gt;</code>, or in the web UI
+      by opening the session's row and sending a message. The history is reconstructed from
+      the file, and new events append.</li>
+  <li><strong>Deleted</strong> only from the row menu, after a confirmation dialog (chapter 8):
       <code>SessionStore.deleteSession</code> removes the JSONL and the blob folder — and
       only for ids resolving to a direct child of the sessions directory. Nothing else in
       spectroscope ever deletes or rewrites a session line.</li>

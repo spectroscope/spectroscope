@@ -77,7 +77,7 @@ function railControl(src: string, label: string): string {
 
 /** The effect that starts a reading over when the view is swapped. */
 function viewSwapEffect(src: string): string {
-  const from = src.indexOf("setPin(liveView);");
+  const from = src.indexOf("setPin(composerOpen);");
   expect(from).toBeGreaterThan(-1);
   const end = src.indexOf("}, [", from);
   expect(end).toBeGreaterThan(from);
@@ -274,7 +274,7 @@ describe("the deliberate controls own the pin outright", () => {
     // WHEN it runs is the whole content of the decision, so the dependency line
     // is named here. Written as a file-wide search for the call, this stayed
     // green with the array emptied and the re-seed silently never happening.
-    expect(viewSwapEffect(chat)).toContain("}, [props.viewKey, liveView]);");
+    expect(viewSwapEffect(chat)).toContain("}, [props.viewKey, composerOpen]);");
   });
 
   it("swapping the view also decides where the reader STANDS in it", () => {
@@ -283,7 +283,7 @@ describe("the deliberate controls own the pin outright", () => {
     // scrollTop the previous view happened to have, clamped into an unrelated
     // transcript. A live view opens at its edge; a record is read from the top.
     const swap = viewSwapEffect(chat);
-    expect(swap).toContain('el.scrollTo({ top: liveView ? el.scrollHeight : 0, behavior: "auto" });');
+    expect(swap).toContain('el.scrollTo({ top: composerOpen ? el.scrollHeight : 0, behavior: "auto" });');
     // The record that would otherwise carry the previous reading's number into
     // this one: the last scroll position the handler compares against. (The
     // turn count that sat beside it went with card 399, which stopped asking
@@ -308,15 +308,15 @@ describe("card 399: the live edge is followed before the frame is painted", () =
     // run after a layout follow that still held the previous view's pin, and an
     // archive would be painted at its end for a frame before its reset. This
     // case checks the hook kind only; the next one checks the order.
-    expect(hookAround(chat, "setPin(liveView);")).toBe("useLayoutEffect");
+    expect(hookAround(chat, "setPin(composerOpen);")).toBe("useLayoutEffect");
   });
 
   it("the view swap is declared above the follow", () => {
     // React runs one component's layout effects in the order they are declared,
     // so with both as layout effects (the case above) the swap's reset lands
     // before the follow reads the pin. This case checks the source order only.
-    expect(chat.indexOf("setPin(liveView);")).toBeGreaterThan(-1);
-    expect(chat.indexOf("setPin(liveView);")).toBeLessThan(chat.indexOf("const how = followScroll("));
+    expect(chat.indexOf("setPin(composerOpen);")).toBeGreaterThan(-1);
+    expect(chat.indexOf("setPin(composerOpen);")).toBeLessThan(chat.indexOf("const how = followScroll("));
   });
 });
 

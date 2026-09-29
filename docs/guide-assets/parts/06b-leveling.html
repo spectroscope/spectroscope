@@ -11,9 +11,32 @@ same instrument. You do not tick a checkbox to say you have read a trace. You
 read one, and the engine sees it in the events the interface was
 rendering anyway.</p>
 
-<h2 id="leveling-intro">the first question</h2>
+<h2 id="leveling-mode">learn or light</h2>
 
-<p>A home that has never been used opens with one screen and one
+<p>Before anything else, a new window asks “How much of spectroscope do you
+want to see?”. It shows the two modes side by side with the same weight,
+and neither is suggested. <b>learn</b> opens every part of the app: the
+chat, the workspace, sessions and skills, and also the spectrum, trace,
+graph, text and lab tabs, the state graph and the fleets. <b>light</b> keeps
+the chat, the workspace, sessions and skills. The app does not load the
+rest, and those parts do no work in the background. Each choice carries a
+small picture of the window in that mode, drawn from the same table the app
+uses to decide what a mode shows.</p>
+
+<!--SHOT:68-mode-intro|The first question of a new window: learn and light with the same weight, each with a short explanation, where to switch later, and a picture of the window in that mode.-->
+
+<p>Learn goes on to the tutorial question below. Light skips it and turns
+the tutorial off, because light keeps closed the parts the tutorial would
+open. The learn and light switch at the top right of the window changes the
+mode later. After a switch to learn, you turn the tutorial on in the
+settings. The answer is kept per window type, so the desktop app and a
+browser tab each ask once. An installation that was in use before this
+question existed sees it once as well: its mode stays as it was until you choose, and a
+tutorial question it already answered is not asked again.</p>
+
+<h2 id="leveling-intro">the tutorial question</h2>
+
+<p>After learn, a home that has never been used asks for one more
 decision: grow into it, or open everything now. There is no silent
 default in either direction, the question is asked exactly once, and the
 answer lives in the settings afterwards. A home that already has
@@ -21,15 +44,15 @@ sessions or a settings file is never asked at all and never sees a lock.
 If you have been using spectroscope, nothing about this changes for
 you.</p>
 
-<!--SHOT:33-leveling-intro|The one screen a fresh install opens with: what the tutorial is, and a real choice with no default.-->
+<!--SHOT:33-leveling-intro|The question that follows learn on a fresh install: what the tutorial is, and a real choice with no default.-->
 
-<p>It is also the <em>only</em> screen at that moment. A first run has a
-second thing to say — that spectroscope needs a backend and which ones
-are free — and two welcome dialogs on top of each other is the wall this
-whole wave exists to remove. So the backend sheet waits until the tutorial
-question has been answered, and then takes the screen alone.</p>
+<p>Each of the two questions is the <em>only</em> screen at its moment. A first run has a
+third thing to say: that spectroscope needs a backend and which ones
+are free. Two welcome dialogs on top of each other would be exactly the
+wall the tutorial tries to remove, so the backend sheet waits until the questions
+before it have been answered, and then takes the screen alone.</p>
 
-<!--SHOT:35-leveling-backend-next|What follows, once the first question is answered: the backend sheet, on its own. The two never stack.-->
+<!--SHOT:35-leveling-backend-next|What follows once the questions are answered: the backend sheet, on its own. They never stack.-->
 
 <h2 id="leveling-rungs">the seven states</h2>
 
@@ -115,7 +138,7 @@ that congratulates you at length is a tutorial standing in your way.</p>
 <b>Checklist</b> locks nothing but still tracks and celebrates, which is
 what every existing home gets. <b>Off</b> removes the pill and the panel
 and stops recording entirely. The same block restarts the tutorial from the
-dark frame; restarting does not ask the first question again.</p>
+dark frame; restarting does not ask the tutorial question again.</p>
 
 <!--SHOT:41-leveling-settings|Two controls and no ceremony: which mode the tutorial runs in, and one button back to the dark frame.-->
 

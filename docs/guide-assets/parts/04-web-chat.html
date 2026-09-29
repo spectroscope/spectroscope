@@ -2,21 +2,23 @@
 <h1 data-ch="5" id="ch-chat"><span class="ch-num">Chapter 5</span>The web face: Chat</h1>
 
 <p class="lead">One Spring Boot jar serves everything: the built React UI, a handful of
-REST endpoints, and a single WebSocket that carries RunEvents in one direction and a
-small set of client frames in the other. Open <code>http://localhost:8080</code> after
+REST endpoints, and one WebSocket per open session that carries RunEvents in one direction
+and a small set of client frames in the other. Open <code>http://localhost:8080</code> after
 <code>./spectro-app web</code> and you are looking at the chat.</p>
 
-<!--SHOT:01-home-empty|The empty app: sidebar with the session archive, header with thinking toggle · language toggle · design drawer · provider chip, the six tabs, and the composer waiting. “Ask spectroscope.”-->
+<!--SHOT:01-home-empty|The empty app: the rail with its actions and one row per stored session, the header with the learn and light switch, the language toggle, settings and the provider chip, the six tabs, and the composer waiting. “Ask spectroscope.”-->
 
 <h2 id="ch-chat-anatomy">The anatomy of the screen</h2>
 <ul>
   <li><strong>Sidebar</strong> (left, resizable, collapsible): “New chat”, the
-      <strong>Scenarios</strong> button (chapter 7), the session archive with an Import
-      button (chapter 8). The first row is always the live session of this browser tab.</li>
-  <li><strong>Header</strong>: session title (the first prompt), image-gallery toggle
-      (appears once images exist), right-panel toggle, the <strong>Thinking</strong> switch,
-      the <strong>DE/EN</strong> toggle, the design drawer, the <strong>provider picker</strong>
-      chip, the <strong>context ring</strong> (appears once tokens flow) and the Stop button
+      <strong>Scenarios</strong> row (chapter 7), and the session list with an Import
+      button (chapter 8). The list has one row per session. A new chat gets its own row
+      once it has started, and a session that is running keeps pulsing while you look at
+      another one.</li>
+  <li><strong>Header</strong>: session title (the first prompt), the images button (it
+      opens the Images panel of the dock, chapter 6), right-panel toggle, the learn and light
+      switch, the <strong>DE/EN</strong> toggle, the settings, the <strong>provider picker</strong>
+      chip (which also holds the <strong>Thinking</strong> level), the <strong>context ring</strong> (appears once tokens flow) and the Stop button
       while a run is active.</li>
   <li><strong>Tab bar</strong>: chat · spectrum · trace · graph · text · lab — six lowercase lenses over the same state (the labels are wire vocabulary; trace carries a live frame count). Entering a fleet swaps the whole row for the fleet's own bar — chapter 15b.</li>
   <li><strong>Footer</strong>: run and session token totals in tabular numerals, a run status
@@ -29,7 +31,7 @@ folded by one pure reducer into an immutable <code>UiState</code>. Live stream a
 archived replay produce the same state shape from the same code — which is why every
 view in this chapter works identically for both.</p>
 
-<!--MERMAID:01-pipeline|The state pipeline: one socket, one rAF batch, one pure reducer — every tab is a lens over the same UiState.-->
+<!--MERMAID:01-pipeline|The state pipeline of the session in view: its socket, one rAF batch, one pure reducer. Every tab is a lens over the same UiState.-->
 
 <h2 id="ch-chat-conversation">The conversation</h2>
 
@@ -125,7 +127,7 @@ because the lines came in with them.</p>
   <div class="co-title">what the pictures do not do</div>
   <p>Nothing reads what is <em>in</em> a picture: no OCR, no caption, no search by what a
   screenshot shows, and the viewer neither zooms nor pans. Generated images (chapter 17) keep
-  their own gallery and stay out of this walk — handed over and painted here are different
+  their own Images panel in the dock and stay out of this walk. Handed over and painted here are different
   provenances, and the app refuses to blur them. And the frame is import-only by construction,
   so all three JSONL formats an export can write drop every picture; only the HTML export
   carries the bytes out.</p>
@@ -152,44 +154,43 @@ because the lines came in with them.</p>
 <h2 id="ch-chat-permission">The permission gate</h2>
 
 <p>When the agent wants to run a gated tool and no allowlist rule covers it, the run
-genuinely pauses — the agent's virtual thread parks on a future server-side — and a
-<strong>gate bar</strong> rises at the foot of the chat. A bar rather than a modal, on
-purpose: the pending request is first-class UI, the conversation it is about stays
-readable behind it, and the run waits either way.</p>
+genuinely pauses (the agent's virtual thread parks on a future server-side) and the
+<strong>permission dialog</strong> opens over the window. The scrim never closes it, so
+the decision has to be deliberate.</p>
 
-<!--SHOT:23-permission-dialog|The serious moment: run_command wants to run pwd. The bar names the gate, the agent that asked and the call; the card above it stands at “gate: waiting …” with its timer running, and Deny sits left of Allow.-->
+<!--SHOT:23-permission-dialog|The serious moment: run_command wants to execute pwd. The dialog names the command, the working directory it would run in and the input in full. Deny sits left of Allow and holds the focus.-->
 
 <ul>
-  <li>The row itself is a glance — the tool and its input as one compact line, the whole of
-      it in the title. The chevron opens the <strong>read</strong>: the input in full as
-      pretty JSON, unclipped, in a box that scrolls with the buttons above it, so no payload
-      can push them anywhere. You approve what you see, never a summary.</li>
-  <li>Neither button is preselected and the bar takes no focus of its own — a decision has to
-      be made deliberately, and the rest of the app stays usable while the run waits.</li>
-  <li>The agent that asked wears its own colour beside the word <code>gate</code>, so a
-      subagent's request is never read as the main agent's.</li>
-  <li>Further requests queue behind the one on screen and say so: <code>+2 waiting</code>.</li>
-  <li>Opened, the bar also keeps the <strong>record</strong> — the last six decisions of this
-      session, newest first, each as allowed or denied with its tool and its agent.</li>
+  <li>The dialog leads with what the call reaches for: the command, a path, a URL, a server's
+      tool or a skill. Below that stands the working directory and the input in full, as
+      pretty JSON with every multi-line field as its own block. The box scrolls and the text
+      is never clipped. You approve what you see, never a summary.</li>
+  <li>Deny is the safe default: it holds the initial focus, and Esc denies too. Tab stays
+      inside the dialog while the run waits.</li>
+  <li>A subagent's request says who asked: “requested by” its id, the agent that spawned
+      it and the task it was handed, so it is never read as the main agent's.</li>
+  <li>Further requests queue behind the one on screen and say so: <code>1 of 3</code>.</li>
+  <li>The dialog also keeps the <strong>record</strong>: the last six decisions of this
+      session, each as allowed or denied with its tool and its agent.</li>
 </ul>
 
 <p>The two checkboxes appear one behind the other:</p>
 
-<!--SHOT:23b-permission-dialog-remember|Opened, with “always allow (session)” ticked — which is what makes “save to project” appear beside it — and the input standing underneath in full. Only Allow carries the flags.-->
+<!--SHOT:23b-permission-dialog-remember|With “Always allow: run_command (this session)” ticked, the second box appears beside it: persist the rule in the project settings. Only Allow carries the two flags.-->
 
-<p><strong>always allow (session)</strong> remembers the approval for this browser
-tab only. <strong>save to project</strong>, which appears once the first is ticked and only
-for a session that has a workspace, appends the rule to that workspace's
-<code>.spectro/settings.json</code> — the same <code>autoApprove</code> list the CLI reads,
+<p><strong>Always allow (this session)</strong> remembers the approval for this session
+only. <strong>Persist</strong>, which appears once the first is ticked and only for a
+session that has a real workspace, appends the rule to that workspace's
+<code>.spectro/settings.json</code>. That is the same <code>autoApprove</code> list the CLI reads,
 so a web decision is honored by the terminal on its next run. Remembered rules are
 <strong>prefix-scoped</strong> for risky tools (a <code>git status</code> approval becomes
-<code>run_command:git*</code>, never “all commands”) — chapter 13 has the exact rules.
+<code>run_command:git*</code>, never “all commands”); chapter 13 has the exact rules.
 A denied call returns <code>ERROR: the user denied the execution.</code> to the model,
 which reads it and adapts.</p>
 
 <h2 id="ch-chat-live">Live indicators</h2>
 
-<!--SHOT:22-thinking-live|A live run against local Ollama: the model's reasoning streams into the pulsing Thinking disclosure while the header shows the provider chip and the context ring.-->
+<!--SHOT:22-thinking-live|A live run against a local model through ollama: the reasoning streams into the Thinking disclosure, which reads “thinking …” while it lasts. The header shows the provider chip and the Stop button.-->
 
 <ul>
   <li>The <strong>context ring</strong> in the header fills with the last reported input

@@ -180,6 +180,7 @@ The content, which is also what the script writes:
   <key>com.apple.security.cs.allow-jit</key><true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
   <key>com.apple.security.cs.disable-library-validation</key><true/>
+  <key>com.apple.security.device.audio-input</key><true/>
 </dict>
 </plist>
 ```
@@ -187,6 +188,13 @@ The content, which is also what the script writes:
 - `allow-jit` + `allow-unsigned-executable-memory` — the JVM JIT-compiles.
 - `disable-library-validation` — lets the app process load the JRE's dylibs
   (they're signed by *you*, not Apple, once you re-sign them below).
+- `device.audio-input` — voice input records in the Electron renderer
+  (`getUserMedia`). Without this key the hardened runtime denies the
+  microphone silently: no macOS prompt, and no spectroscope entry under
+  Privacy & Security, Microphone. Added 2026-09-29 (card 457); the three
+  measurements above predate it. The prompt text comes from
+  `NSMicrophoneUsageDescription`, set in `spectro-desktop/package.json`
+  under `build.mac.extendInfo`.
 
 ## 5. Sign — the app **and** every bundled binary set
 

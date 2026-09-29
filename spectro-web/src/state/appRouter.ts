@@ -290,7 +290,7 @@ export function settingsCloseDecision(hashIsSettings: boolean, pushedByUs: boole
  * "live" while every event on screen belongs to a different session — the
  * connection nonce catches that.
  */
-export function viewIdentity(connNonce: number, viewKey: string): string {
+export function viewIdentity(connNonce: number | string, viewKey: string): string {
   return `${connNonce}·${viewKey}`;
 }
 

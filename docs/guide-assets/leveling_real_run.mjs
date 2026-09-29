@@ -22,7 +22,7 @@ const PROMPT =
   process.env.PROMPT ||
   "Write a file called hello.txt containing the single word hi, then say you are done.";
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage();
 await page.goto(BASE, { waitUntil: "domcontentloaded" });
 

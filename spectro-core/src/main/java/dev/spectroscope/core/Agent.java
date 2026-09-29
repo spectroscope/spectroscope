@@ -945,6 +945,7 @@ public final class Agent {
                         }
                     }
                     GuardedResult outcome = executeToolCall(call, agentId, signal, emit,
+                            toolWindow(compaction),
                             attachment -> attachedContent.add(switch (attachment) {
                                 case Tool.AttachedImage image -> new ImageContent(
                                         image.mediaType(), image.dataBase64());
@@ -1300,13 +1301,28 @@ public final class Agent {
      * @param agentId the agent the call runs under, stamped on the emitted events
      * @param signal  cooperative cancellation, passed through to hooks and the tool
      * @param emit    sink for permission events and tool-emitted domain events
+     * @param window  the context window handed to the tool, see {@link #toolWindow}
      * @return the timed outcome; an unknown tool "ran" for 0 ms and saw no gate
      */
     private GuardedResult executeToolCall(PToolCall call, String agentId, CancelSignal signal,
-                                          Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
+                                          Consumer<RunEvent> emit, int window,
+                                          Consumer<Tool.Attachment> attach) {
         return options.registry().get(call.name())
-                .map(tool -> runGuarded(tool, call, agentId, signal, emit, attach))
+                .map(tool -> runGuarded(tool, call, agentId, signal, emit, window, attach))
                 .orElse(new GuardedResult("ERROR: unknown tool: " + call.name(), 0, null));
+    }
+
+    /**
+     * Card 456: the window a tool judges a whole-file read against. The
+     * window behind this turn's compaction threshold when one is known;
+     * otherwise the threshold itself, which is then the fallback or the
+     * operator's explicit setting, the only statement about room the run has.
+     *
+     * @param compaction the threshold derived for this turn
+     * @return the window in tokens, always positive
+     */
+    static int toolWindow(CompactionThreshold.Derived compaction) {
+        return compaction.window() > 0 ? compaction.window() : compaction.tokens();
     }
 
     /**
@@ -1320,11 +1336,13 @@ public final class Agent {
      * @param agentId the agent the call runs under
      * @param signal  cooperative cancellation, handed to hooks and the tool
      * @param emit    sink for the permission events and tool-emitted domain events
+     * @param window  the context window handed to the tool, see {@link #toolWindow}
      * @return the timed outcome — output, execution time, and the gate wait when one parked the call
      */
     private GuardedResult runGuarded(Tool tool, PToolCall originalCall, String agentId,
                                      CancelSignal signal,
-                                     Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
+                                     Consumer<RunEvent> emit, int window,
+                                     Consumer<Tool.Attachment> attach) {
         // Card 379, Owner call 1: rtk is asked what a line could BECOME, never
         // whether it may run. The rewrite therefore happens HERE, above the
         // gate, so the gate and the shell decide and act on one string; gating
@@ -1390,7 +1408,7 @@ public final class Agent {
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
                         planLedger(emit), attach, reported::set, humanWaitMs::addAndGet,
-                        reachOutside));
+                        reachOutside, window));
         long durationMs = Math.max(0, now() - startedAt - humanWaitMs.get());
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is

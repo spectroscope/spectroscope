@@ -170,7 +170,20 @@ same-origin request), and it needs a provider with a key set — otherwise the b
 <!--SHOT:30-text-explain|The explain panel over the text feed: a model's reading of a real run, honestly labelled as an interpretation of the recording — not a window into the model's internals. The deterministic gates view lives in the Trace tab, untouched.-->
 
 <h2 id="ch-tabs-panel">The right panel</h2>
-<p>The header's panel button docks a resizable panel into the Chat tab with four tabs.</p>
+<p>The header's panel button opens the dock, a resizable panel beside the chat. Its strip
+lists the panels: Work, Agents, Plan, System context, Files, Terminal, Browser and Images.
+By default the panels sit side by side, and each click on the strip opens or closes one of
+them.</p>
+
+<p>The <strong>Tabs</strong> checkbox at the top of the dock shows one panel at a time
+instead. A click on Files then shows only Files, a click on Plan shows only Plan, and the
+dock keeps its width. A terminal keeps its shell and a browser keeps its page when you
+switch to another tab and back. The choice is kept per browser, and side by side is the
+default. In a narrow window the dock opens on top of the chat instead of squeezing both.</p>
+
+<!--SHOT:69-dock-tabs|The dock with Tabs checked: the strip reads like a row of tabs, only Files is open, and the dock has the same width it had side by side.-->
+
+<p>The sections below take the panels one at a time.</p>
 
 <h3 id="ch-tabs-agents">Agents</h3>
 
@@ -183,7 +196,7 @@ Selecting a card jumps to the System context tab for that agent.</p>
 
 <h3 id="ch-tabs-plan">Plan</h3>
 
-<!--SHOT:21-panel-plan-live|The agent's published plan, live: three steps in the three states (done / running… / open). This capture is from a real local-model run — note the first update_plan attempt errored on a wrong field name and the model self-corrected on the second call.-->
+<!--SHOT:21-panel-plan-live|The agent's published plan, live: three steps in the three states (done, running …, open). The capture is from a real run against a local model through ollama, with one update_plan call.-->
 
 <p>The read-only, latest-wins snapshot of the agent's plan, fed by the permission-free
 <code>update_plan</code> tool: each step with a status dot and badge — <em>done</em>,
@@ -226,11 +239,11 @@ absolute paths, but spectroscope runs locally), and the picked path travels back
 <code>set_workspace</code> socket message. Only before the first run — once the agent ran,
 the sandbox and every subagent are anchored, the button locks and a new chat is the way to
 a different folder. The pin is shared server state, so the tree you browse and the sandbox
-the tools see are always the same folder, and a resume in the same server process finds
-the picked folder again. And the browser <strong>remembers your pick</strong>: every new
+the tools see are always the same folder, and a continued session in the same server process
+finds the picked folder again. And the browser <strong>remembers your pick</strong>: every new
 chat lands on the same desk with zero clicks (a dashed “↺ folder” chip shows the memory;
-clicking it forgets — the next chat gets its per-session temp folder again. Resumes are
-never touched).
+clicking it forgets, and the next chat gets its per-session temp folder again. A continued
+session keeps its own folder).
 Hidden entries and build folders (<code>.git</code>, <code>build</code>,
 <code>node_modules</code>, <code>target</code>, <code>dist</code>, <code>out</code>) are
 skipped, depth and entry count are capped honestly (“list truncated” note). Clicking a
@@ -241,8 +254,10 @@ through the shared component, images inline, everything else as text. Binary ans
 API key answers 404 <em>even by direct URL</em>, because every path segment is re-checked
 server-side against the hidden/ignored rule.</p>
 
-<h2 id="ch-tabs-gallery">The image gallery</h2>
-<p>When the agent generates images (chapter 17), a gallery column opens next to the chat:
+<h2 id="ch-tabs-gallery">Images</h2>
+<p>When the agent generates images (chapter 17), they collect in the <strong>Images</strong>
+panel of the dock. It opens from the images button in the header, from the dock's strip, or
+from View &gt; Images in the desktop app, and it stays open after a reload. The panel shows
 cards newest-first with the prompt as caption, provider and model badges, full-size link,
 and a provider dropdown (<code>gemini</code> / <code>openai</code>) that switches the image
 backend for the next generation. Only generated images live here: a picture an imported
@@ -250,6 +265,8 @@ transcript carried belongs to the message or the tool card it came with (chapter
 two provenances are kept apart on purpose. Bytes never cross the socket — cards load from
 <code>GET /api/images/&lt;sha256&gt;.&lt;ext&gt;</code>, where the content address doubles as
 the traversal guard (64 hex chars or 400, before any filesystem access).</p>
+
+<!--SHOT:70-dock-images|The Images panel in the dock, opened from the header's images button on the image generation scenario: the pictures as cards, newest first, with the image backend above them.-->
 
 <p>Each card also carries <strong>“→ Workspace”</strong>: it copies the image from the
 global store into <em>this session's workspace</em> — you pick the file name (keep the

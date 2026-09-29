@@ -12,12 +12,10 @@
      but the chat's floor and the one resizer between them (--row-resizer,
      .lab-resizer's flex-basis — without it the handle eats the floor:
      measured 352px), and a narrow window shrinks the panel first.
-     WHAT THIS CAP CANNOT SEE, said out loud because card 361 measured it: the
-     percentage resolves against the whole row, so with the gallery ALSO open
-     this rule leaves the chat its floor minus the gallery. Sharing the row
-     between two panels is fitRowPanel's job (state/rowWidths.ts) and it runs
-     on every drag; this rule is the last-resort guard for a window that
-     shrinks with nobody dragging anything. */
+     Since card 443 the images are a dock panel, so the dock is the only
+     panel beside the chat. This rule is the last-resort guard for a window
+     that shrinks with nobody dragging anything; the drag itself is
+     fitRowPanel's (state/rowWidths.ts). */
   width: min(var(--right-panel-w, 360px), calc(100% - var(--chat-reserve) - var(--row-resizer)));
   min-width: 0;
   min-height: 0;
@@ -601,17 +599,6 @@
   font-size: var(--fs-11);
   line-height: 1.5;
   padding: 0 var(--sp-2);
-}
-
-/* Narrow viewports: the gallery overlays from the right instead of
-   squeezing the chat column. */
-@media (max-width: 900px) {
-  .image-panel {
-    position: absolute;
-    inset: 0 0 0 auto;
-    z-index: var(--z-dropdown);
-    box-shadow: var(--shadow-modal);
-  }
 }
 
 /* React Flow chrome on Ebony ground. */

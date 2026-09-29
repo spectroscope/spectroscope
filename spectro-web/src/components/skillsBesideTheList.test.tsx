@@ -34,12 +34,10 @@ function rail(nav: Segment, skillsOpen: boolean): string {
     <Sidebar
       activeId={null}
       refreshToken={0}
-      onSelectLive={() => {}}
       onSelectSession={() => {}}
       onNewChat={() => {}}
       onSettings={() => {}}
-      liveRunning={false}
-      resumeId={null}
+      held={[]}
       onImport={() => {}}
       onScenarios={() => {}}
       onStarters={() => {}}
@@ -129,9 +127,11 @@ describe("Skills sits in the upper group (criterion 4)", () => {
 });
 
 describe("the session list survives opening Skills (criteria 1 and 2)", () => {
-  it("keeps the live row and the session list on screen while the view is open", () => {
+  it("keeps the session list on screen while the view is open", () => {
     const open = rail("sessions", true);
-    expect(open).toContain("live-row");
+    // Card 458: there is no hardwired live row any more; a held session is a
+    // row of the list itself.
+    expect(open).not.toContain("live-row");
     expect(open).toContain('<nav class="session-list"');
     expect(open).toContain("scenario-list");
   });
@@ -241,7 +241,9 @@ describe("App: the view is a flag of its own, and every opened place closes it (
     const shown = body.indexOf("setReplay({");
     expect(shown).toBeGreaterThan(-1);
     expect(body.indexOf("setSkillsOpen(false)")).toBeGreaterThan(shown);
-    expect(app).toMatch(/onSelectSession=\{\(id\) => void openSession\(id\)\}/);
+    // Card 458: the rail's click goes through selectSession, which opens.
+    expect(app).toMatch(/onSelectSession=\{selectSession\}/);
+    expect(app).toMatch(/const selectSession = [\s\S]*?void openSession\(id\);/);
   });
 
   it("guards openSession's late close with a ticket that a later Skills press outdates", () => {

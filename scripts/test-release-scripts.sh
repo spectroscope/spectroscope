@@ -179,6 +179,20 @@ if [ -s "$D/from-doc.xml" ] && cmp -s "$D/from-doc.xml" "$ENT"; then
 else
   bad "the script and docs/DESKTOP-SIGNING.md no longer write the same bytes"
 fi
+# Card 457: under the hardened runtime a missing audio-input entitlement makes
+# macOS deny the microphone without a prompt and without a Settings entry.
+# plistlib, not plutil -extract: plutil reads the dots in the key as a key path.
+if python3 -c "import plistlib,sys;sys.exit(0 if plistlib.load(open(sys.argv[1],'rb')).get('com.apple.security.device.audio-input') is True else 1)" "$ENT" 2>/dev/null; then
+  ok "the entitlements grant the microphone (device.audio-input)"
+else
+  bad "no com.apple.security.device.audio-input: the desktop app can never record"
+fi
+# The prompt macOS shows names the app and the reason, not Electron's default text.
+MIC_TEXT="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['build']['mac'].get('extendInfo',{}).get('NSMicrophoneUsageDescription',''))" "$HARNESS/spectro-desktop/package.json")"
+case "$MIC_TEXT" in
+  *spectroscope*voice*|*spectroscope*Voice*) ok "the microphone prompt names spectroscope and voice input" ;;
+  *) bad "build.mac.extendInfo.NSMicrophoneUsageDescription does not name spectroscope and voice input: '$MIC_TEXT'" ;;
+esac
 
 echo "== the playbook sends the reader to the artifact list, not the exit code =="
 PB="$HARNESS/docs/RELEASE-PLAYBOOK.md"

@@ -133,9 +133,14 @@ export function Chat(props: {
   liveView: boolean;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
   onReturnToLive: () => void;
-  /** Present only for resumable archives (real stored sessions): picks the
-   *  session back up as the live one, history re-uploaded on the next prompt. */
-  onResume?: () => void;
+  /** Card 458: a stored session that the first message continues. The live
+   *  composer stands under its history instead of the archive bar, and the
+   *  view opens at its end like a live one. */
+  continuable?: boolean;
+  /** Card 458: the one line an archive that cannot be continued shows where
+   *  the composer would be (an import, a scenario, a session another window
+   *  holds). Absent, the bar says it is an archive. */
+  readOnlyNote?: string;
   /** Present only for deletable archives: removes the stored session for
    *  good (JSONL + blobs). The button arms on the first click and only the
    *  second click within a few seconds actually deletes. */
@@ -191,6 +196,9 @@ export function Chat(props: {
   renderChip?: (workIds: string[], index: number, fold: ChildFoldControls) => ReactNode;
 }) {
   const { state, liveView } = props;
+  // Card 458: the composer stands under the live view and under a stored
+  // session the first message continues.
+  const composerOpen = liveView || props.continuable === true;
   const lang = useLang();
   const chatWidth = useChatWidth(); // the reading width, from the disclosure menu
   // How many passages are translated for this view. Read here so the tools row
@@ -206,10 +214,10 @@ export function Chat(props: {
   useThinkingCeiling(scrollRef);
   // A live view follows the edge; an archive does not. An import is a record
   // you read from the beginning, so it must not open at its own end.
-  const pinnedRef = useRef(props.liveView);
+  const pinnedRef = useRef(composerOpen);
   // attachment intake (drag-and-drop, file picker, pending chips).
   // The drop zone is the chat ROOT — the hook only hands out the handlers.
-  const attachments = useAttachments(liveView);
+  const attachments = useAttachments(composerOpen);
   // microphone wiring — the transcript lands IN THE INPUT (never
   // straight at the agent), appended to whatever is already drafted.
   // Card 187 step 7: the three facts before the first failure, not after it.
@@ -435,13 +443,13 @@ export function Chat(props: {
   // React runs them in this order, so the follow reads the new view's pin, and
   // both land before the browser paints the new view.
   useLayoutEffect(() => {
-    setPin(liveView);
+    setPin(composerOpen);
     lastScrollTop.current = 0;
     const el = scrollRef.current;
     if (el === null) return;
-    el.scrollTo({ top: liveView ? el.scrollHeight : 0, behavior: "auto" });
+    el.scrollTo({ top: composerOpen ? el.scrollHeight : 0, behavior: "auto" });
     lastScrollTop.current = el.scrollTop;
-  }, [props.viewKey, liveView]);
+  }, [props.viewKey, composerOpen]);
 
   // The view this render belongs to — "live", a replay id, a fleet room.
   // Lifted above the fold state (card 271): the fold is remembered per VIEW,
@@ -640,7 +648,7 @@ export function Chat(props: {
     if (el !== null) requestAnimationFrame(() => el.setSelectionRange(at, at));
     return true;
   };
-  const slash = useSlashPicker(draft, caret, liveView, (text, nextCaret) => {
+  const slash = useSlashPicker(draft, caret, composerOpen, (text, nextCaret) => {
     setDraft(text);
     setCaret(nextCaret);
     const el = textareaRef.current;
@@ -666,7 +674,7 @@ export function Chat(props: {
 
   const submit = (): void => {
     const text = draft.trim();
-    if (text === "" || !liveView) return;
+    if (text === "" || !composerOpen) return;
     // Sending is the reader asking for an answer, so the view goes back to
     // watching for it — the same deliberate act the jump-to-end button is.
     setPin(true);
@@ -1109,7 +1117,7 @@ export function Chat(props: {
         )}
       </div>
 
-      {liveView ? (
+      {composerOpen ? (
         <div className="composer">
           {jumpRail}
           <div className="composer-column">
@@ -1475,17 +1483,7 @@ export function Chat(props: {
                   row, so the hand goes to the same place on both screens. */}
               {discMenu}
               {toolsRow}
-              <span className="archive-note">{t(lang, "lab.viewingArchive")}</span>
-              {props.onResume !== undefined && (
-                <button
-                  type="button"
-                  className="soft-primary resume-btn"
-                  title={t(lang, "arch.resumeTitle")}
-                  onClick={props.onResume}
-                >
-                  {t(lang, "arch.resume")}
-                </button>
-              )}
+              <span className="archive-note">{props.readOnlyNote ?? t(lang, "lab.viewingArchive")}</span>
               {/* Card 95: export is the mirror of the import — the stored JSONL,
                   verbatim, as a download. A plain link so the browser handles the
                   save dialog; same-origin, so the local fence sees no Origin. */}

@@ -7,6 +7,9 @@ import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
 
 const app = stripComments(read("../App.tsx", import.meta.url));
+// Cards 458 and 459: the fold, the event list and the outgoing trace row moved
+// into the session set, one record per socket. App still routes the side effects.
+const set = stripComments(read("./sessionSet.ts", import.meta.url));
 
 /** The body of `const name = ...` in App, up to its closing line. */
 function fn(name: string, close = "\n  };\n"): string {
@@ -16,12 +19,18 @@ function fn(name: string, close = "\n  };\n"): string {
 }
 
 describe("the socket batch (gates 1, 3 and 4)", () => {
-  const onEvents = fn("onEvents", "\n  }, [");
+  const sinkAt = app.indexOf("  batchSink.current = ");
+  const sink = app.slice(sinkAt, app.indexOf("\n  };\n", sinkAt));
+  const setBatch = set.slice(set.indexOf("private onEvents("), set.indexOf("private drain("));
 
-  it("reads the mode once, at call time, and folds and feeds with it", () => {
-    expect(onEvents).toMatch(/const mode = currentViewMode\(\);/);
-    expect(onEvents).toContain("setLive((s) => foldLiveBatch(s, batch, mode, currentLiveTraceWanted()));");
-    expect(onEvents).toContain("feedSurfaceStores(batch, mode);");
+  it("reads the mode at call time, and folds and feeds with it", () => {
+    expect(app).toContain("mode: currentViewMode,");
+    expect(app).toContain("traceWanted: currentLiveTraceWanted,");
+    expect(setBatch).toContain(
+      "foldLiveBatch(before.state, batch, this.deps.mode(), this.deps.traceWanted())",
+    );
+    expect(sink).toMatch(/const mode = currentViewMode\(\);/);
+    expect(sink).toContain("feedSurfaceStores(batch, mode, {");
   });
 
   it("feeds the Lab and the fleet store nowhere else", () => {
@@ -31,12 +40,12 @@ describe("the socket batch (gates 1, 3 and 4)", () => {
 
   it("keeps the full event list in both modes, for export and translate (criterion 6)", () => {
     // Unconditional: no mode test stands between the batch and the list.
-    expect(onEvents).toContain("writeLiveEvents([...liveEventsNow.current, ...batch]);");
-    const before = onEvents.slice(0, onEvents.indexOf("writeLiveEvents("));
-    expect(before).not.toMatch(/\bif \(/);
-    // Every write of the list goes through the one writer, so the switch sees it.
-    expect(app.split("setLiveEvents(").length - 1).toBe(1);
-    expect(fn("writeLiveEvents", "\n  }, [")).toContain("setLiveEvents(next);");
+    expect(setBatch).toContain("events: [...before.events, ...batch],");
+    const before = setBatch.slice(0, setBatch.indexOf("events: [...before.events"));
+    expect(before).not.toMatch(/\bif \(\s*this\.deps\.mode/);
+    // App keeps no second copy of the list: it reads the record's.
+    expect(app).toContain("const liveEvents = slot.events;");
+    expect(app).not.toMatch(/setLiveEvents\(/);
     // And the chat, whose export and translate read it, is handed that list.
     expect(app).toMatch(/viewingLive \? liveEvents : \(replay\?\.events \?\? \[\]\)/);
     expect(app).toMatch(/events: tabEvents,/);
@@ -45,10 +54,16 @@ describe("the socket batch (gates 1, 3 and 4)", () => {
 
 describe("a frame this window sends (gate 1)", () => {
   it("records its row through the mode's fold", () => {
-    const send = fn("sendClient", "\n  }, [");
-    expect(send).toMatch(/const mode = currentViewMode\(\);/);
-    expect(send).toContain("setLive((s) => recordLiveOutgoing(s, msg, mode, currentLiveTraceWanted()));");
+    const send = set.slice(
+      set.indexOf("sendClient(key: string, msg: ClientMessage)"),
+      set.indexOf("sendNow("),
+    );
+    expect(send).toContain(
+      "recordLiveOutgoing(record.slot.state, msg, this.deps.mode(), this.deps.traceWanted())",
+    );
+    expect(fn("sendClient", "\n  );\n")).toContain("sessions.sendClient(sessions.view().key, msg)");
     expect(app).not.toMatch(/\brecordOutgoing\(/);
+    expect(set).not.toMatch(/\brecordOutgoing\(/);
   });
 });
 
@@ -92,7 +107,7 @@ describe("the resume", () => {
 
   it("seeds the Lab only where it is open (gate 3)", () => {
     expect(resume).toContain('if (isOpen("lab", now)) labBackToLive(events);');
-    expect(resume).toContain("writeLiveEvents(events);");
+    expect(resume).toMatch(/sessions\.open\(\{[\s\S]*?\n\s*events,\n/);
   });
 });
 
@@ -114,7 +129,7 @@ describe("the switch (criteria 4 and 7)", () => {
       app.indexOf("modeSwitchDeps.current = {"),
       app.indexOf("\n  };\n", app.indexOf("modeSwitchDeps.current = {")),
     );
-    expect(deps).toContain("liveEvents: () => liveEventsNow.current,");
+    expect(deps).toContain("liveEvents: () => sessions.view().events,");
     expect(deps).toContain("lab: { reset: labResetLive, backToLive: labBackToLive },");
     expect(deps).toContain("fetchFleetRoster: () => fetchFleetRosterIn(currentViewMode()),");
     expect(deps).toContain('if (landing.route !== null) commitUrl(landing.route, "apply");');

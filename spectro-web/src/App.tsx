@@ -5,8 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 import type { ClientMessage, RunEvent } from "./events";
-import { connect } from "./transport/ws";
-import type { Connection, ConnectionStatus } from "./transport/ws";
+import type { ConnectionStatus } from "./transport/ws";
 import {
   initialState,
   normalizeReplay,
@@ -27,7 +26,7 @@ import { isFlipIntoV2, useChatView } from "./state/chatView";
 import type { ChatViewMode } from "./state/chatView";
 import { foldWork } from "./state/work";
 import { ConnectionBanner } from "./components/ConnectionBanner";
-import { ImagePanel } from "./components/ImagePanel";
+import { imagesShown, revealImagesPanel, toggleImagesPanel } from "./state/imagesPanel";
 import { backendWithAKey } from "./components/imageBackend";
 import { ImportDialog } from "./components/ImportDialog";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -37,6 +36,7 @@ import { LevelPill } from "./components/LevelPill";
 import { LevelingPanel } from "./components/LevelingPanel";
 import { LockedSurface } from "./components/LockedSurface";
 import { LevelingIntro } from "./components/LevelingIntro";
+import { ModeIntro } from "./components/ModeIntro";
 import { useLeveling } from "./state/useLeveling";
 import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
 import { setBeaconSink } from "./state/levelingBeacon";
@@ -103,15 +103,14 @@ import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
 import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
 import { useReasoningCapability } from "./components/ReasoningControl";
-import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
-import { initialSteering, noteFrame, routeSubmit } from "./state/steering";
+import { SessionSet, type BatchInfo } from "./state/sessionSet";
+import { openDecision, readOnlyKey, replayComposer } from "./state/sessionRows";
 import {
   applyDockReturn,
   dismissLayoutRecovered,
   openDockPanel,
   openRightPanel,
   setDockBounds,
-  setImagesW,
   setRightPanelW,
   setSidebarW,
   toggleRightPanel,
@@ -119,14 +118,7 @@ import {
   useLayout,
   useLayoutRecovered,
 } from "./state/layout";
-import {
-  IMAGES_MAX_PX,
-  IMAGES_MIN_PX,
-  RIGHT_PANEL_MIN_PX,
-  ROW_RESIZER_PX,
-  fitRowPanel,
-  readDockWidths,
-} from "./state/rowWidths";
+import { RIGHT_PANEL_MIN_PX, fitRowPanel, readDockWidths } from "./state/rowWidths";
 import { textExportViewKey } from "./components/textExportClaim";
 import { traceOriginOf } from "./state/traceFace";
 import { useTraceWarm } from "./components/traceWarmup";
@@ -162,7 +154,11 @@ import { ParticleField } from "./components/ParticleField";
 import { loadSidecarAgents, NO_SIDECARS, type SidecarAgent, type SidecarIndex } from "./import/sidecarAgents";
 import { openFromStore, type StoreDoor } from "./import/storeDoor";
 import { reportBrowserError } from "./state/browserLog";
-import { backToLive as labBackToLive, resetLive as labResetLive } from "./state/stepper";
+import {
+  backToLive as labBackToLive,
+  pushLive as labPushLive,
+  resetLive as labResetLive,
+} from "./state/stepper";
 import {
   fleetLoadScenario,
   hydrateFleet,
@@ -171,11 +167,12 @@ import {
   useFleetHubPort,
   useFleets,
   fleetPending,
+  fleetPushLive,
   removeFleet,
 } from "./state/fleetStore";
 import { browserCuePushLive } from "./state/browserCue";
 import { browserRevealPushLive, revealBrowserPanel } from "./state/browserReveal";
-import { liveSessionsPushLive, readSessionBusy, startLiveSessionsPoll } from "./state/liveSessions";
+import { liveSessionsPushLive, startLiveSessionsPoll, useLiveSessions } from "./state/liveSessions";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportKind, ImportSource } from "./import/detect";
 import type { SubagentTranscript } from "./import/subagentFile";
@@ -199,17 +196,23 @@ import { t } from "./i18n/i18n";
 import { useLang } from "./state/lang";
 import { beforeFirstPrompt } from "./workspace/chooserMode";
 import { isOpen, shownTab, tabsShown, tutorialOn } from "./state/surfaces";
-import { currentViewMode, subscribeViewMode, useViewMode } from "./state/viewMode";
+import {
+  chooseViewMode,
+  currentViewMode,
+  subscribeViewMode,
+  useModeChosen,
+  useViewMode,
+} from "./state/viewMode";
+import { firstStartDialog, lightTutorialAnswer } from "./state/firstStart";
 import { fleetEntryAllowed, routeInMode, scenarioLanding } from "./state/modeRoute";
+import { headerBackend } from "./state/headerBackend";
 import {
   applyModeSwitch,
   enterLight,
   feedSurfaceStores,
   fetchFleetRosterIn,
-  foldLiveBatch,
   foldResume,
   indexWanted,
-  recordLiveOutgoing,
   returnToLearn,
   traceReachableIn,
   type ModeSwitchDeps,
@@ -254,7 +257,26 @@ const NO_ROWS: TraceEntry[] = [];
 // resize handlers below each subtract the same reserve from the same row.
 
 export function App() {
-  const [live, setLive] = useState<UiState>(initialState);
+  // Cards 458 and 459: the sockets this page holds, one record each, and the
+  // one in view. `live` and everything beside it below is that record's.
+  const batchSink = useRef<(key: string, batch: RunEvent[], info: BatchInfo) => void>(() => {});
+  const busySink = useRef<(sessionId: string) => void>(() => {});
+  const [sessions] = useState(() => {
+    const set = new SessionSet({
+      mode: currentViewMode,
+      traceWanted: currentLiveTraceWanted,
+      onBatch: (key, batch, info) => batchSink.current(key, batch, info),
+      onBusy: (sessionId) => busySink.current(sessionId),
+      // Card 459: the socket that carries the fleet frames went away, so the
+      // roster is read again rather than trusted across the gap.
+      onCarrierChange: () => fetchFleetRosterIn(currentViewMode()),
+    });
+    set.start();
+    return set;
+  });
+  const slot = useSyncExternalStore(sessions.subscribe, sessions.view, sessions.view);
+  const heldRows = useSyncExternalStore(sessions.subscribe, sessions.heldRows, sessions.heldRows);
+  const live: UiState = slot.state;
   const [replay, setReplay] = useState<Replay | null>(null);
   // The third event source (parallel to replay): a contextId when a fleet is
   // entered, feeding the tabs that fleet's events instead of the own session.
@@ -378,20 +400,12 @@ export function App() {
   // rather than closing over the first one.
   const depthRef = useRef(depth);
   depthRef.current = depth;
-  const [conn, setConn] = useState<ConnState>({ status: "connecting", retryAt: null });
-  // Queue-while-running (card 78 #3): messages submitted during a run wait
-  // here as chips and auto-send on run_end. Session-local — a new chat or a
-  // resume clears it with the fresh socket.
-  const [queue, setQueue] = useState<QueuedMessage[]>([]);
-  // Stop feedback (card 78 #2): true from the stop click until the root
-  // run_end flips running off — the button reads "stopping …" meanwhile.
-  const [stopRequested, setStopRequested] = useState(false);
-  // True from an accepted user_message until its run_start (or an error event)
-  // arrives — the drain's re-entry guard for the tiny accepted-but-not-started
-  // gap. A ref, not state: it flips inside the send path mid-commit.
-  const awaitingRunStart = useRef(false);
-  const [connNonce, setConnNonce] = useState(0); // bumped by "New chat" to force a fresh socket session
-  const [resumeId, setResumeId] = useState<string | null>(null); // non-null: the socket continues this stored session
+  const conn: ConnState = slot.conn;
+  // Queue-while-running (card 78 #3) and the stop feedback (card 78 #2) are the
+  // record's own now (state/sessionSet.ts): every socket has its own line.
+  const queue = slot.queue;
+  const stopRequested = slot.stopRequested;
+  const resumeId = slot.resumeId; // non-null: the socket continues this stored session
   // The session another window is driving, when this page was refused one
   // (card 212). Cleared by the notice's own dismiss and by starting anything.
   const [sessionBusy, setSessionBusy] = useState<string | null>(null);
@@ -419,6 +433,15 @@ export function App() {
   // Card 430: learn or light, and whether the tutorial is on. What each opens
   // is the surface table's answer (state/surfaces.ts).
   const viewMode = useViewMode();
+  const modeChosen = useModeChosen();
+  // Card 455: which first-start question is up, if any (state/firstStart.ts).
+  // The backend sheet's turn is decided in its own effect below.
+  const questionUp = firstStartDialog({
+    modeChosen,
+    viewMode,
+    snapshot: leveling.snapshot,
+    backendDue: false,
+  });
   const tutorial = tutorialOn(leveling.snapshot);
   // The tab on screen: the one chosen where the mode opens it, else the chat.
   // Every reader below sees this one, so a tab the mode closes is never drawn,
@@ -435,8 +458,7 @@ export function App() {
   // because onEvents is memoised with no dependencies, and in state as well
   // because the send button's label and the pending rows read off it. One
   // truth, two readers: every write sets both, ref first.
-  const steering = useRef(initialSteering);
-  const [steeringView, setSteeringView] = useState(initialSteering);
+  const steeringView = slot.steering;
   // Components too deep for a prop report through the module beacon; the app is
   // the only thing that knows where those reports should go.
   useEffect(() => {
@@ -478,15 +500,7 @@ export function App() {
   // transcript's chip is pointing at.
   const chatView = useChatView();
   const [workHighlight, setWorkHighlight] = useState<string | null>(null);
-  const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]); // raw, for the graph
-  // Card 430: the same list at call time, for the switch back to learn, which
-  // runs outside a render and must see every batch received before it. Every
-  // write of the list goes through writeLiveEvents.
-  const liveEventsNow = useRef<RunEvent[]>([]);
-  const writeLiveEvents = useCallback((next: RunEvent[]): void => {
-    liveEventsNow.current = next;
-    setLiveEvents(next);
-  }, []);
+  const liveEvents = slot.events; // raw, for the graph
   // Card 89: bumped per rAF batch that carried a disk-relevant event — the
   // Files tab refetches (throttled) instead of waiting for a manual reload.
   const [fsTick, setFsTick] = useState(0);
@@ -502,7 +516,6 @@ export function App() {
   // right panel's context line); its control moved into the model picker
   // (card 88), which mirrors the server's visibility coupling on send.
   const [imageProvider, setImageProvider] = useState("gemini");
-  const [imagesOpen, setImagesOpen] = useState(false); // gallery panel
   const [thinking, setThinking] = useState(true); // reasoning visibility (on by default)
   const [settingsOpen, setSettingsOpen] = useState(false); // design drawer
   const [doctorOpen, setDoctorOpen] = useState(false); // calibration/status page
@@ -576,35 +589,12 @@ export function App() {
   // settings-hydration effect below must never clobber the user's choice,
   // even across a reconnect.
   const controlsTouched = useRef(false);
-  const connRef = useRef<Connection | null>(null);
   const chatRowRef = useRef<HTMLDivElement>(null); // anchor for the right-panel resizer math
 
-  // Card 361: BOTH handlers go through fitRowPanel, and each one hands over
-  // what the OTHER panel already takes. That "occupied" argument is the whole
-  // fix — before it, the two clamps below each held the same reserve alone and
-  // the chat computed to −318px with both dragged out on a 1030px row.
-  //
-  // The other panel's width is read from the STORE and not from the DOM: the
-  // store is what the other allocator will ask for next, and a rendered width
-  // that the stylesheet has already shrunk would let the pair creep wider on
-  // every drag.
-  //
-  // ONE DISCLOSED EXCEPTION (review 2026-09-01). Below a 900px viewport
-  // `panels.css` takes the gallery out of flow (`.image-panel { position:
-  // absolute; inset: 0 0 0 auto }`), so there it costs the chat row nothing —
-  // and `occupied` charges the dock for it anyway. The band where that changes
-  // an answer is a row of roughly 628-936px: at a 900px row with the gallery
-  // at its default 300, the ceiling computes to 900 - 360 - 308 - 8 = 224 and
-  // `fitRowPanel` returns the 260 floor, where charging nothing would have
-  // allowed up to 540. So on a narrow window with the gallery open, the dock
-  // drag stops at its floor earlier than it has to.
-  //
-  // Left as it is on purpose, and said out loud rather than left to be
-  // rediscovered: gating the term would put the stylesheet's 900px breakpoint
-  // into TypeScript as a second copy of a number the sheet owns, which is the
-  // very shape card 361's criterion 3 exists to forbid and which the same
-  // review caught one file over in `layout.ts`. Over-reserving is also the
-  // safe direction — the pair never computes wider than the row.
+  // Card 361 made the row's widths one allocator, fitRowPanel. Until card 443
+  // a second handler, the image area's, shared the row and each told the
+  // other what it took. The images are a dock panel now, so the dock is the
+  // only panel beside the chat and it has nothing to share.
 
   // The right-docked panel (agents + system context) is resized from its left
   // edge: width = distance from the pointer to the row's right edge.
@@ -615,30 +605,11 @@ export function App() {
       fitRowPanel({
         row: r.width,
         desired: r.right - clientX,
-        occupied: imagesOpen ? layout.imagesW + ROW_RESIZER_PX : 0,
+        // Card 443: the images live in the dock, so nothing else shares the row.
+        occupied: 0,
         reserve: dockBounds.reserve,
         min: RIGHT_PANEL_MIN_PX,
         max: dockBounds.max,
-      }),
-    );
-  };
-
-  // The gallery resizes from its left edge too (owner 2026-07-20): width =
-  // distance from the pointer to the panel's own right edge — the edge is
-  // stable during the drag (whatever sits right of the gallery is fixed).
-  const resizeImages = (clientX: number): void => {
-    const panel = chatRowRef.current?.querySelector(".image-panel");
-    const row = chatRowRef.current?.getBoundingClientRect();
-    const r = panel?.getBoundingClientRect();
-    if (!r || !row) return;
-    setImagesW(
-      fitRowPanel({
-        row: row.width,
-        desired: r.right - clientX,
-        occupied: layout.rightPanelOpen ? layout.rightPanelW + ROW_RESIZER_PX : 0,
-        reserve: dockBounds.reserve,
-        min: IMAGES_MIN_PX,
-        max: IMAGES_MAX_PX,
       }),
     );
   };
@@ -649,261 +620,111 @@ export function App() {
   useScrollReveal(designPrefs.scroll);
   const lang = useLang(); // UI-chrome language; chat content keeps its own
 
-  // One setState per animation-frame batch: n events, one React render.
-  // The same batch is kept raw — the graph tab is just another reducer.
-  // This state is the one the socket grows without an end in sight, so it is
-  // also the one whose trace is a window; every other fold here is finite.
-  const onEvents = useCallback(
-    (batch: RunEvent[]) => {
-      // Card 246: the live-trace switch strips BEFORE the window — an off trace
-      // holds nothing, and the recording is the server's job, not this array's.
-      // Card 430: the mode is read at call time, so a batch after a switch folds
-      // in the new mode; in light the fold builds no trace rows (gate 1).
-      const mode = currentViewMode();
-      setLive((s) => foldLiveBatch(s, batch, mode, currentLiveTraceWanted()));
-      // The full list, in both modes: the chat's export and translate read it.
-      writeLiveEvents([...liveEventsNow.current, ...batch]);
-      // Card 430, gates 3 and 4: the Lab's dam and the fleet store (which splits
-      // out fleet_roster/fleet_event) are fed only where their surface is open.
-      feedSurfaceStores(batch, mode);
-      liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
+  // The side effects of a batch, after the record it belongs to has folded it
+  // (state/sessionSet.ts: the fold, the steering read, the refused resume and
+  // the queue drain live there, per record). What reaches the rest of the page
+  // is routed here: the stores that draw the view (the Lab's dam, the Files
+  // nudge, the browser cue) take only the record on screen, so one session's
+  // frames never show up in another's view. The fleet frames reach every
+  // socket, so only the one record that carries them feeds the fleet store.
+  batchSink.current = (key: string, batch: RunEvent[], info: BatchInfo): void => {
+    saveConfirmedProvider(key, batch); // card 459: only the session that asked saves its pair
+    // Card 430: the mode is read at call time, so a batch after a switch feeds
+    // in the new mode (gates 3 and 4).
+    const mode = currentViewMode();
+    feedSurfaceStores(batch, mode, {
+      lab: info.inView ? labPushLive : () => {},
+      fleet: info.carrier ? fleetPushLive : () => {},
+    });
+    liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
+    if (info.inView) {
       browserCuePushLive(batch); // card 226: an agent drove the browser — the web view re-watches
       browserRevealPushLive(batch); // card 241: …and the dock's browser panel reveals — the only door left
-      // A refused resume (another socket already drives that session). Drop the
-      // resume rather than let the transport retry it: the socket reconnects with
-      // the same URL, so a page that kept ?resume= would be refused every second
-      // for as long as the other window is open.
-      // Card 380: an older server answers the steering frame by name and has no
-      // other way to say so. One refusal turns the direct path off for this
-      // socket and puts the sentence back in the queue, where it sends after the
-      // run like it always did. Without the flag the page would draw one error
-      // row per submit at an operator who cannot do anything about it.
-      //
-      // Fix round 2026-09-24: the run's own steering_message line answers for
-      // the pending rows. Read, the row gives way to the drawn turn. Missed,
-      // because the run ended first on whichever exit, the sentence goes back
-      // into the same queue and starts the next run, which is owner call 3 as
-      // the card words it: exactly today's behaviour, nothing lost.
-      let steer = steering.current;
-      const giveBack: string[] = [];
-      for (const event of batch as unknown[]) {
-        const read = noteFrame(steer, event);
-        steer = read.next;
-        giveBack.push(...read.requeue);
-      }
-      if (steer !== steering.current) {
-        steering.current = steer;
-        setSteeringView(steer);
-      }
-      if (giveBack.length > 0) {
-        setQueue((q) => giveBack.reduce((line, text) => enqueue(line, text), q));
-      }
-      for (const event of batch as unknown[]) {
-        const refused = readSessionBusy(event);
-        if (refused !== null) {
-          setSessionBusy(refused);
-          setResumeId(null);
-        }
-      }
-      // Card 89: a tool result or a run end may have changed the workspace on
-      // disk — nudge the Files tab (it throttles + dedupes on its side).
-      if (
-        batch.some((e) => {
-          const type = (e as { type?: string }).type;
-          return type === "tool_result" || type === "run_end" || type === "workspace_info";
-        })
-      ) {
-        setFsTick((n) => n + 1);
-      }
-      // The ladder's server-side marks (a finished run settles first light) arrive
-      // without the client asking, so a run end is the moment to re-read it. Same
-      // shape as the Files nudge above, and cheaper than a socket frame nobody
-      // else needs.
-      if (batch.some((e) => (e as { type?: string }).type === "run_end")) {
-        refreshLeveling.current();
-      }
-    },
-    [writeLiveEvents],
-  );
-
+    }
+    // Card 89: a tool result or a run end may have changed the workspace on
+    // disk — nudge the Files tab (it throttles + dedupes on its side).
+    if (
+      info.inView &&
+      batch.some((e) => {
+        const type = (e as { type?: string }).type;
+        return type === "tool_result" || type === "run_end" || type === "workspace_info";
+      })
+    ) {
+      setFsTick((n) => n + 1);
+    }
+    // The ladder's server-side marks (a finished run settles first light) arrive
+    // without the client asking, so a run end is the moment to re-read it. And
+    // a finished run has a file the rail should list, whichever record ran it.
+    if (batch.some((e) => (e as { type?: string }).type === "run_end")) {
+      refreshLeveling.current();
+      setRefreshToken((n) => n + 1);
+    }
+  };
+  // A continuation the server refused (card 212): another socket already drives
+  // that session. The record is gone (the set closed it); the session opens
+  // read-only, and the banner says why.
+  busySink.current = (sessionId: string): void => {
+    setSessionBusy(sessionId);
+    void openSessionRef.current(sessionId);
+  };
+  // Seed the roster from REST; live frames take over. Card 430, gate 5: only
+  // where the fleets are open.
   useEffect(() => {
-    // A fresh socket is a fresh session — waiting chips, the drain latch and
-    // the stop feedback belong to the old one (card 78). Harmless on mount.
-    setQueue([]);
-    setStopRequested(false);
-    awaitingRunStart.current = false;
-    // A fresh socket may well be a newer server, so the refusal flag goes back
-    // with the rest of the old session's state (card 380).
-    steering.current = initialSteering;
-    setSteeringView(initialSteering);
-    const connection = connect({
-      onEvents,
-      resume: resumeId ?? undefined, // ?resume=<id>: the server reloads the JSONL history
-      onStatus: (status, retryDelayMs) =>
-        setConn({
-          status,
-          retryAt: status === "closed" && retryDelayMs !== undefined ? Date.now() + retryDelayMs : null,
-        }),
-    });
-    connRef.current = connection;
-    // Seed the roster from REST; live frames take over. Card 430, gate 5: only
-    // where the fleets are open.
+    sessions.activate(); // the sockets open here, never during a render
     fetchFleetRosterIn(currentViewMode());
-    return () => {
-      connRef.current = null;
-      connection.close();
-    };
-  }, [connNonce, resumeId, onEvents]);
+    return () => sessions.dispose();
+  }, [sessions]);
 
   // The floor under the live-session push (card 212). The socket frame is the
   // fast path; this is what bounds staleness for a page whose socket was down
   // while something started or finished — LIVE_POLL_MS, stated in the module.
   useEffect(() => startLiveSessionsPoll(), []);
-
-  // When a run finishes, a new JSONL file exists — refresh the sidebar list.
-  const running = live.running;
+  const liveSet = useLiveSessions();
 
   // Card 246: the seams above only strip on the NEXT frame — flipping the
-  // switch off frees what the state already holds, right now.
+  // switch off frees what the state already holds, right now, in every record.
   const liveTraceWanted = useLiveTraceWanted();
   useEffect(() => {
-    if (!liveTraceWanted) setLive((s) => stripLiveTrace(s, false));
-  }, [liveTraceWanted]);
-  useEffect(() => {
-    if (!running) setRefreshToken((n) => n + 1);
-  }, [running]);
-
-  // Card 78: run transitions release the stop feedback and the drain latch.
-  useEffect(() => {
-    if (running) {
-      awaitingRunStart.current = false; // run_start arrived — the send gap is closed
-    } else {
-      setStopRequested(false); // run_end arrived (or nothing runs) — stop visibly took
-    }
-  }, [running]);
-  // An error event releases the latch too: a send the server refused (or a run
-  // that died before run_start) must not jam the queue until a reload. The
-  // latch is a ref (synchronous reads in the send path), so the release alone
-  // would not re-run the drain effect — the kick state makes it reactive
-  // (review find F2: a queued chip stalled until some unrelated dep changed).
-  const [drainKick, setDrainKick] = useState(0);
-  const errorTurns = live.turns.reduce((n, turn) => (turn.kind === "error" ? n + 1 : n), 0);
-  useEffect(() => {
-    awaitingRunStart.current = false;
-    setDrainKick((k) => k + 1);
-  }, [errorTurns]);
+    if (!liveTraceWanted) sessions.updateAll((held) => stripLiveTrace(held.state, false));
+  }, [liveTraceWanted, sessions]);
 
   // The ONE place client frames leave the app: every outgoing ClientMessage
-  // is traced (dir "out") — but only when it actually hit the wire; send()
-  // returns false while the socket is down and dropped frames never crossed.
-  const sendClient = useCallback((msg: ClientMessage): boolean => {
-    const sent = connRef.current?.send(msg) === true;
-    if (sent) {
-      // Outbound rows land in the same growing array as inbound ones, so they
-      // are windowed by the same rule — a chatty sender cannot outgrow it.
-      // And stripped by the same switch (card 246): out rows are trace rows.
-      // Card 430, gate 1: in light an outgoing frame builds no row either.
-      const mode = currentViewMode();
-      setLive((s) => recordLiveOutgoing(s, msg, mode, currentLiveTraceWanted()));
-      // Leveling beacons ride here rather than in each component: this is the one
-      // place every client message passes, so a gate answered from the window, the
-      // lab or a fleet all report the same way, and a future sender gets it free.
-      // Both acts are things the event stream cannot tell apart on its own — the
-      // core emits the same permission events for an allowlist auto-approval.
-      if (msg.type === "permission_response") beaconRef.current("gate");
-      if (msg.type === "set_permission_mode") beaconRef.current("permission-mode");
-    }
-    return sent;
-  }, []);
-
-  // the frame carries the bytes ({ mediaType, dataBase64 }); the
-  // thumbnails are parked in the state and picked up by the run_start case —
-  // the reducer builds the user bubble, so there is no local echo turn.
-  const sendNow = useCallback(
-    (text: string, attachments?: PendingAttachment[]): boolean => {
-      const sent = sendClient({
-        type: "user_message",
-        text,
-        ...(attachments !== undefined && attachments.length > 0
-          ? { attachments: attachments.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 })) }
-          : {}),
-      });
-      if (sent && attachments !== undefined && attachments.length > 0) {
-        const parked = attachments.map(({ name, mediaType, dataBase64 }) => ({
-          name,
-          mediaType,
-          dataBase64,
-        }));
-        setLive((s) => ({ ...s, outboxAttachments: parked }));
-      }
+  // goes to the record in view and is traced there (dir "out"), but only when
+  // it actually hit the wire (state/sessionSet.ts).
+  const sendClient = useCallback(
+    (msg: ClientMessage): boolean => {
+      const sent = sessions.sendClient(sessions.view().key, msg);
       if (sent) {
-        // Latched until the server's run_start (or an error event) — the drain
-        // must not fire again in the accepted-but-not-yet-started gap.
-        awaitingRunStart.current = true;
+        // Leveling beacons ride here rather than in each component: this is the one
+        // place every client message passes, so a gate answered from the window, the
+        // lab or a fleet all report the same way, and a future sender gets it free.
+        // Both acts are things the event stream cannot tell apart on its own — the
+        // core emits the same permission events for an allowlist auto-approval.
+        if (msg.type === "permission_response") beaconRef.current("gate");
+        if (msg.type === "set_permission_mode") beaconRef.current("permission-mode");
       }
       return sent;
     },
-    [sendClient],
+    [sessions],
   );
-  // Queue-while-running (card 78 #3): the composer never locks. A submit
-  // during a run (or while the socket is down, or while a queued send is in
-  // flight) waits in the queue; the drain effect below sends it the moment
-  // the session is free. Order is preserved — the queue is the only waiting
-  // line, the direct path exists just to keep idle sends chip-flash-free.
+
+  // Queue-while-running (card 78 #3) and steering (card 380): the composer
+  // never locks, and the record decides whether a submit steers the running
+  // turn, waits in the queue or goes now (state/sessionSet.ts). A stored
+  // session on screen that can be continued takes its first message through
+  // the resume below (card 458).
   const send = (text: string, attachments?: PendingAttachment[]): void => {
-    // Card 380: while a run is up the message no longer waits by default, it
-    // goes to the turn that is running. Only with the queue EMPTY, because a
-    // message that overtook waiting chips would break the order invariant the
-    // comment above states, and only on a socket that has not refused the
-    // frame. The queue stays as the fallback for both of those and for
-    // attachments, which steering does not carry.
-    if (live.running && !awaitingRunStart.current && conn.status === "open" && queue.length === 0) {
-      const routed = routeSubmit(steering.current, text, attachments);
-      if (routed.action === "drop") {
-        return;
-      }
-      if (routed.action === "steer" && sendClient(routed.frame)) {
-        steering.current = routed.next;
-        setSteeringView(routed.next);
-        return;
-      }
-      // A frame that never hit the wire falls through to the queue rather than
-      // vanishing: send() returns false on a flapped socket.
-    }
-    // queue.length in the guard: while chips wait, a new submit must join the
-    // line, never jump it (review find F2 — order stays submission order).
-    if (live.running || awaitingRunStart.current || conn.status !== "open" || queue.length > 0) {
-      setQueue((q) => enqueue(q, text, attachments));
+    if (replay !== null) {
+      if (continuable) void resumeSession(replay.id, { text, attachments });
       return;
     }
-    sendNow(text, attachments);
+    sessions.send(sessions.view().key, text, attachments);
   };
   const abort = (): void => {
-    // The visible half of stop (card 78 #1/#2): the button disarms to
-    // "stopping …" until the root run_end actually flips running off — but
-    // ONLY when the abort frame actually hit the wire. A flapped socket
-    // drops the frame (send() returns false) and a latched "stopping …"
-    // would disarm the button forever (review find F1).
-    const sent = sendClient({ type: "abort" });
-    if (sent && live.running) {
-      setStopRequested(true);
-    }
+    sessions.abort(sessions.view().key);
   };
-  // The queue drain: the moment the session is free (and the socket open), the
-  // next waiting message goes out. The latch guards the accepted-but-not-yet-
-  // started gap; a failed send keeps its chip for the next attempt.
-  const connOpen = conn.status === "open";
-  useEffect(() => {
-    if (!connOpen || live.running || awaitingRunStart.current || queue.length === 0) {
-      return;
-    }
-    const next = queue[0];
-    if (sendNow(next.text, next.attachments)) {
-      setQueue((q) => removeQueued(q, next.id));
-    }
-  }, [connOpen, live.running, queue, sendNow, drainKick]);
   const unqueue = (id: number): void => {
-    setQueue((q) => removeQueued(q, id));
+    sessions.unqueue(sessions.view().key, id);
   };
   // Card 265: the answer to a parked question. Its own frame and its own sender —
   // a question is not a permission, and answering one consents to nothing, so
@@ -966,21 +787,26 @@ export function App() {
   // the CONFIRMED switch (the frame after our own request) is written back to
   // the user settings, fire-and-forget — the frame itself stays the session
   // truth regardless of whether that write lands.
-  const providerSavePending = useRef(false);
+  // Card 459: the switch belongs to the session that asked. A view switch
+  // before the answer must not save the other session's pair as the default.
+  const providerSavePending = useRef<string | null>(null);
   const changeProvider = (provider: string, model: string): void => {
-    providerSavePending.current = true;
+    providerSavePending.current = sessions.view().key;
     sendClient({ type: "set_provider", provider, ...(model ? { model } : {}) });
   };
-  const confirmedProviderInfo = live.providerInfo;
-  useEffect(() => {
-    if (providerSavePending.current && confirmedProviderInfo !== null) {
-      providerSavePending.current = false;
-      putSettings("user", {
-        provider: confirmedProviderInfo.provider,
-        model: confirmedProviderInfo.model,
-      }).catch(() => {});
-    }
-  }, [confirmedProviderInfo]);
+  // The confirmation is the provider_info frame on the socket of the session
+  // that asked, read where the batches arrive (batchSink above).
+  const saveConfirmedProvider = (key: string, batch: RunEvent[]): void => {
+    if (providerSavePending.current !== key) return;
+    const info = [...batch].reverse().find((e) => (e as { type?: string }).type === "provider_info") as
+      { provider?: unknown; model?: unknown } | undefined;
+    if (info === undefined || typeof info.provider !== "string") return;
+    providerSavePending.current = null;
+    putSettings("user", {
+      provider: info.provider,
+      model: typeof info.model === "string" ? info.model : "",
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     if (shouldShowLocalNotice(readLocalNoticeSeen(), live.providerInfo?.provider ?? null)) {
@@ -1029,13 +855,26 @@ export function App() {
   // saving a key auto-dismisses it. Readiness-gated because the localStorage flag
   // alone is fragile (per-origin, blocked in the desktop shell).
   useEffect(() => {
-    // The ladder's intro asks first. Two welcome dialogs stacked on a first run
-    // is the wall this wave exists to remove, so the backend sheet waits its turn.
-    const introPending = leveling.snapshot ? !leveling.snapshot.introSeen : false;
+    // The mode screen and the ladder's intro ask first (card 455). Two welcome
+    // dialogs stacked on a first run is the wall this wave exists to remove, so
+    // the backend sheet waits its turn.
+    const backendDue = shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus);
     setOnboardingOpen(
-      !introPending && shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus),
+      firstStartDialog({ modeChosen, viewMode, snapshot: leveling.snapshot, backendDue }) === "backend",
     );
-  }, [onboardingDismissed, serverCfg, providerStatus, leveling.snapshot]);
+  }, [onboardingDismissed, serverCfg, providerStatus, leveling.snapshot, modeChosen, viewMode]);
+
+  // Card 455: a window outside learn never asks the tutorial question; it
+  // answers it with off, once, so a fresh home's ladder does not open the tab
+  // row and the level pill in light. A home that already answered is left alone.
+  const lightAnswerSent = useRef(false);
+  const { setMode: setLevelingMode } = leveling;
+  useEffect(() => {
+    const answer = lightTutorialAnswer({ modeChosen, viewMode, snapshot: leveling.snapshot });
+    if (answer === null || lightAnswerSent.current) return;
+    lightAnswerSent.current = true;
+    void setLevelingMode(answer);
+  }, [modeChosen, viewMode, leveling.snapshot, setLevelingMode]);
 
   // Settings hydration: the thinking toggle and the image-backend picker seed
   // from a hardcoded fallback (see the useState calls above) until the
@@ -1195,6 +1034,15 @@ export function App() {
     opts?: { tab?: ViewTab | null; cause?: NavCause },
   ): Promise<void> => {
     const cause: NavCause = opts?.cause ?? "gesture";
+    // Card 458: a session this page holds a socket to is selected, never opened
+    // a second time beside itself (card 208, criterion 7).
+    const held = sessions.findBySession(id);
+    if (held !== undefined) {
+      sessions.select(held.key);
+      leaveToLiveCore();
+      commitUrl({ kind: "live", tab: null }, cause);
+      return;
+    }
     const ticket = navNonce.issue();
     const skillsTicket = skillsNonce.issue();
     // Card 431: the sign is up in the frame after the click, over the old view.
@@ -1610,19 +1458,16 @@ export function App() {
 
   const newChat = (): void => {
     // One socket connection = one session on the server, so a fresh chat
-    // means a fresh connection.
-    setLive(initialState);
-    writeLiveEvents([]); // the graph starts empty too
+    // means a fresh connection: a new record (state/sessionSet.ts), whose
+    // state, events, queue and steering all start empty. Card 459: it is added
+    // beside the others, and a running session keeps its socket.
+    sessions.newChat();
     setReplay(null);
     setEnteredFleet(null);
     setSkillsOpen(false); // card 409: a fresh chat is a place
-    setResumeId(null); // a fresh chat never carries an old session along
-    setImagesOpen(false); // the gallery re-opens with the first new image
     // No provider state to reset: the fresh connection announces its backend
     // itself (provider_info frame) and the chip follows that.
-    labResetLive(); // the Lab's dam starts empty too
     setTab("chat"); // a fresh chat STARTS in the chat — leaving a fleet's lab/graph behind
-    setConnNonce((n) => n + 1);
     navNonce.issue(); // a fresh chat supersedes any in-flight session open
     commitUrl({ kind: "live", tab: null }, "gesture");
   };
@@ -1664,7 +1509,7 @@ export function App() {
     revealBrowserPanel,
     openDoctor: () => setDoctorOpen(true),
     openKeymap: () => setKeymapOpen(true),
-    toggleImages: () => setImagesOpen((open) => !open),
+    toggleImages: toggleImagesPanel,
     abort,
   };
   useEffect(() => onShellCommand((c) => runShellCommand(c, shellDeps.current)), []);
@@ -1690,25 +1535,58 @@ export function App() {
       // The reader switched a mode, not a place: the address is replaced.
       if (landing.route !== null) commitUrl(landing.route, "apply");
     },
-    liveEvents: () => liveEventsNow.current,
-    setLive,
+    liveEvents: () => sessions.view().events,
+    setLive: (update) => sessions.update(sessions.view().key, update),
     traceWanted: currentLiveTraceWanted,
     lab: { reset: labResetLive, backToLive: labBackToLive },
     fetchFleetRoster: () => fetchFleetRosterIn(currentViewMode()),
   };
   useEffect(() => subscribeViewMode(() => applyModeSwitch(currentViewMode(), modeSwitchDeps.current)), []);
+  // Card 459: the sessions in the background take the same switch, each from
+  // its own events. The one in view went through applyModeSwitch above.
+  useEffect(
+    () =>
+      subscribeViewMode(() => {
+        const mode = currentViewMode();
+        const inView = sessions.view().key;
+        sessions.updateAll((held) =>
+          held.key === inView
+            ? held.state
+            : isOpen("trace", mode)
+              ? returnToLearn(held.state, held.events, currentLiveTraceWanted())
+              : enterLight(held.state),
+        );
+      }),
+    [sessions],
+  );
+  // Card 459: the Lab steps the session in view. A switch to another held
+  // session seeds its dam from that session's events, so the Lab never shows
+  // one session's run under another's name.
+  const lastLabSlot = useRef(slot.key);
+  useEffect(() => {
+    if (lastLabSlot.current === slot.key) return;
+    lastLabSlot.current = slot.key;
+    if (!isOpen("lab", currentViewMode())) return;
+    const events = sessions.view().events;
+    if (events.length === 0) labResetLive();
+    else labBackToLive(events);
+  }, [slot.key, sessions]);
   // Card 430, criterion 9: learn fetches the chunks of its surfaces once the
   // browser is idle after the first render; light fetches none.
   useEffect(() => prefetchSurfaces(viewMode, window), [viewMode]);
 
-  // Resume a stored session AS the live session: seed the UI from its JSONL
-  // (chat, graph, trace and Lab show the full history), then reconnect the
-  // socket with ?resume=<id> so the SERVER reloads the same history into the
-  // agent and appends new events to the same file. The didactic payoff: the
-  // next prompt re-uploads the whole history as messages[] — watch the
+  // Continue a stored session (card 458): the first message typed into it
+  // seeds a record from its JSONL (chat, graph, trace and Lab show the full
+  // history) on a socket with ?resume=<id>, so the SERVER reloads the same
+  // history into the agent and appends new events to the same file. The
+  // message waits in that record's queue until the socket is open. There is no
+  // Resume button any more; typing is the gesture. The didactic payoff stays:
+  // the prompt re-uploads the whole history as messages[] — watch the
   // session_resume trace marker, then the context_info/usage jump.
-  const resumeSession = async (id: string): Promise<void> => {
-    if (live.running) return; // never hijack a running live session
+  const resumeSession = async (
+    id: string,
+    first: { text: string; attachments?: PendingAttachment[] },
+  ): Promise<void> => {
     const ticket = navNonce.issue();
     setOpening({ ticket, sessionId: id, title: sessionTitleOf(id) }); // card 431, as in openSession
     try {
@@ -1750,17 +1628,20 @@ export function App() {
       }
       // The fold above is finite and keeps every row; what it becomes is not.
       setOpening(null); // in the same update as the live view below
-      setLive(seedResumedLive(seeded));
-      writeLiveEvents(events);
+      // A record on its own socket with ?resume=<id>, the message in its queue.
+      sessions.open({
+        resumeId: id,
+        state: seedResumedLive(seeded),
+        events,
+        firstMessage: first, // card 459: beside the running sessions, never in their place
+      });
       setReplay(null);
-      setImagesOpen(false);
       // The Lab dam holds the history and new events queue behind it; in light
       // it is not fed (card 430, gate 3), and the return to learn seeds it.
       if (isOpen("lab", now)) labBackToLive(events);
-      setResumeId(id); // reconnects the socket with ?resume=<id>
-      setConnNonce((n) => n + 1); // force a fresh connection even for the same id
-      setTab("chat");
-      commitUrl({ kind: "live", tab: null }, "gesture"); // resumed = the live view again
+      // The same session, now continued: the address is replaced, not pushed,
+      // so Back does not lead to a read-only copy of what is on screen.
+      commitUrl({ kind: "live", tab: tab === "chat" ? null : tab }, "apply");
     } catch {
       // Server unreachable or a bad status: stay in the replay view, nothing
       // lost, and the sign over it goes.
@@ -1772,20 +1653,45 @@ export function App() {
   // Only real stored sessions can be resumed (scenarios and imports have no
   // JSONL on this server to append to).
   const canResume = replay !== null && !replay.id.startsWith("scenario:") && !replay.id.startsWith("import:");
-
-  // Delete the selected stored session for good (JSONL + blobs). The button
-  // itself carries the two-step confirm; here only the irreversible call.
-  // The session the live socket is RESUMING stays deletable-proof: the server
-  // would happily append to a recreated file, so the UI does not offer it.
-  const deleteSession = async (id: string): Promise<void> => {
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!res.ok) return; // 404/400: nothing deleted, stay in the view
-      sessionDeleted(id);
-    } catch {
-      // server unreachable: nothing deleted, stay in the replay view
+  // Card 458: what stands where the composer would be. A stored session gets
+  // the composer and continues on the first message; an import, a scenario
+  // and a session another window holds (card 212) say why they are read-only.
+  const ownIds = heldRows.map((row) => row.id);
+  const shownComposer =
+    replay === null
+      ? null
+      : replayComposer(replay.id, {
+          liveElsewhere: liveSet.map((row) => row.id).filter((id) => !ownIds.includes(id)),
+        });
+  const continuable = shownComposer !== null && shownComposer.kind === "continue";
+  const readOnlyNote =
+    shownComposer !== null && shownComposer.kind === "readOnly"
+      ? t(lang, readOnlyKey(shownComposer.reason))
+      : undefined;
+  // A click on a session row. A session this page holds is selected and its
+  // socket left alone (card 459); any other one opens ready to continue.
+  const selectSession = (id: string): void => {
+    const decision = openDecision(id, { held: heldRows });
+    const held = decision.kind === "select" ? sessions.findBySession(id) : undefined;
+    if (held !== undefined) {
+      sessions.select(held.key);
+      returnToLive();
+      return;
     }
+    void openSession(id);
   };
+  // Card 459: a delete from the row menu lets a held session go first.
+  const releaseHeld = (id: string): Promise<void> => {
+    const held = sessions.findBySession(id);
+    return held === undefined ? Promise.resolve() : sessions.release(held.key);
+  };
+  // Card 459: a session in the background that waits for an answer is said
+  // out loud from any view, with a way to go there.
+  const waitingElsewhere = heldRows.find(
+    (row) =>
+      row.attention === "answer" && !(replay === null && enteredFleet === null && row.id === slot.sessionId),
+  );
+
   // What a finished delete leaves of the view. The archive bar above deletes
   // the session on screen; since card 445 a row menu in the sidebar can delete
   // any stored session, and only the one on screen moves the view.
@@ -1798,7 +1704,6 @@ export function App() {
     }
     setRefreshToken((n) => n + 1); // the sidebar list drops the entry
   };
-  const canDelete = canResume && replay !== null && replay.id !== resumeId;
 
   // Deep links: the whole address book (card 131) — #/{tab}, #/session/{id}
   // [@{n}][/{tab}], #/fleet/{contextId}, #/settings[/{section}], grown around
@@ -2022,14 +1927,16 @@ export function App() {
   // translated or the reader asked for the original, so the untranslated app
   // recomputes exactly nothing. The recorded array itself is never touched —
   // it stays the thing the translate sheet plans and exports from.
-  const viewKey = enteredFleet ?? replay?.id ?? "live";
+  // Card 459: each held session is its own view, so a translation or a
+  // search of one never shows up in another.
+  const viewKey = enteredFleet ?? replay?.id ?? `live:${slot.key}`;
   // Card 147: the trace's agent pin belongs to the view it was taken in. When
   // another session, a fleet, a scenario, an import, or a fresh/resumed chat
   // takes the screen, the pin does not ride along — it would filter the new
   // stream with the chip row hidden by the one-agent guard (measured: 2 of
   // 1575 rows visible, no message, no control). The identity carries the
   // connection nonce, so a new chat clears it even though the key stays "live".
-  const pinIdentity = viewIdentity(connNonce, viewKey);
+  const pinIdentity = viewIdentity(slot.key, viewKey);
   const prevPinIdentity = useRef(pinIdentity);
   useEffect(() => {
     const previous = prevPinIdentity.current;
@@ -2340,6 +2247,15 @@ export function App() {
   // Deliberately no optimistic layer — a refused switch sends no frame.
   const curProvider = live.providerInfo?.provider ?? view.provider ?? serverCfg?.provider ?? undefined;
   const curModel = live.providerInfo?.model ?? serverCfg?.model ?? undefined;
+  // 0.14.2 D1: the header chip names one pair from one source. A stored
+  // session read from its record shows the pair it ran on, not the model the
+  // window saved last; a continued one shows it until the server's frame.
+  const chip = headerBackend({
+    viewingLive,
+    recorded: { provider: view.provider, model: view.runModel },
+    wire: live.providerInfo,
+    boot: serverCfg,
+  });
 
   // The per-session workspace picker: the SERVER opens the native folder
   // dialog (a browser cannot hand out absolute paths, spectroscope runs locally),
@@ -2378,7 +2294,7 @@ export function App() {
     seenImages.current = imageCount;
     // null means this view was just mounted or switched: whatever it holds, it
     // held before we looked, so it is not an arrival.
-    if (before !== null && imageCount > before) setImagesOpen(true);
+    if (before !== null && imageCount > before) revealImagesPanel();
   }, [imageCount]);
   // A view change resets the baseline, so the next count is a starting point
   // rather than a jump from the previous session's total.
@@ -2467,14 +2383,13 @@ export function App() {
           onNav={pickSegment}
           onCollapse={() => setSidebarOpen(false)}
           fleetsLocked={leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false}
-          activeId={replay === null ? null : replay.id}
+          activeId={replay === null ? slot.sessionId : replay.id}
           refreshToken={refreshToken}
-          onSelectLive={returnToLive}
-          onSelectSession={(id) => void openSession(id)}
+          held={heldRows}
+          onReleaseHeld={releaseHeld}
+          onSelectSession={selectSession}
           onSessionDeleted={sessionDeleted}
           onSettings={openSettingsPage}
-          liveRunning={live.running}
-          resumeId={resumeId}
           stateGraphSource={stateGraphRun?.source ?? null}
           onStateGraphScenario={(run) => {
             // The rail swaps the run UNDER the lifted view: cursor and pick
@@ -2523,12 +2438,14 @@ export function App() {
         <AppHeader
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen((o) => !o)}
-          replayId={replay === null ? null : replay.id}
-          resumed={resumeId !== null}
+          /* Card 458: a stored session that the next message continues is
+             not called an archive; only what stays read-only is. */
+          replayId={replay === null || continuable ? null : replay.id}
+          resumed={replay === null && resumeId !== null}
           title={title}
           imageCount={view.images.length}
-          imagesOpen={imagesOpen}
-          onToggleImages={() => setImagesOpen((o) => !o)}
+          imagesOpen={imagesShown(layout)}
+          onToggleImages={toggleImagesPanel}
           showPanelToggle={tab === "chat"}
           panelOpen={layout.rightPanelOpen}
           onTogglePanel={toggleRightPanel}
@@ -2539,11 +2456,11 @@ export function App() {
           onToggleDoctor={() => setDoctorOpen((o) => !o)}
           onOpenKeymap={() => setKeymapOpen(true)}
           viewingLive={viewingLive}
-          provider={curProvider}
+          provider={chip.provider}
           providerStatus={providerStatus ?? undefined}
           providerAddress={providerAddress ?? undefined}
-          model={curModel}
-          archiveProvider={view.provider ?? undefined}
+          model={chip.model}
+          archiveProvider={chip.provider}
           status={conn.status}
           onApplyProvider={changeProvider}
           lastInputTokens={view.lastInputTokens}
@@ -2557,7 +2474,7 @@ export function App() {
           <ConnectionBanner
             status={conn.status}
             retryAt={conn.retryAt}
-            onRetry={() => connRef.current?.reconnectNow()}
+            onRetry={() => sessions.reconnectNow(slot.key)}
           />
         )}
 
@@ -2571,6 +2488,25 @@ export function App() {
             <span>{t(lang, "nav.sessionBusy")}</span>
             <button type="button" className="link" onClick={() => setSessionBusy(null)}>
               {t(lang, "nav.sessionBusyDismiss")}
+            </button>
+          </div>
+        )}
+
+        {/* Card 459: a session in the background waits on a question or a
+            permission. Said from every view, with the way there. */}
+        {waitingElsewhere !== undefined && (
+          <div className="conn-banner" role="status">
+            <span className="dot accent pulse" aria-hidden="true" />
+            <span>
+              {t(lang, "nav.waitingBanner", {
+                title:
+                  waitingElsewhere.firstPrompt === ""
+                    ? t(lang, "nav.emptySession")
+                    : waitingElsewhere.firstPrompt,
+              })}
+            </span>
+            <button type="button" className="link" onClick={() => selectSession(waitingElsewhere.id)}>
+              {t(lang, "nav.waitingGo")}
             </button>
           </div>
         )}
@@ -2871,8 +2807,8 @@ export function App() {
                     liveView: viewingLive,
                     onSend: send,
                     onReturnToLive: returnToLive,
-                    onResume: canResume ? () => void resumeSession(replay!.id) : undefined,
-                    onDelete: canDelete ? () => void deleteSession(replay!.id) : undefined,
+                    continuable,
+                    readOnlyNote,
                     exportId: canResume ? replay!.id : undefined,
                     // The sidecar link, only when the index answered non-empty
                     // for THIS session — an honest download offers no empty file.
@@ -2925,26 +2861,6 @@ export function App() {
                     <Chat {...chatProps} />
                   );
                 })()}
-                {imagesOpen && (
-                  <>
-                    <Resizer
-                      collapsed={false}
-                      chevron="right"
-                      label={t(lang, "img.title")}
-                      onResize={resizeImages}
-                      onToggle={() => setImagesOpen(false)}
-                    />
-                    <ImagePanel
-                      images={view.images}
-                      provider={imageProvider}
-                      keys={imageKeys}
-                      width={layout.imagesW}
-                      onProviderChange={changeImageProvider}
-                      onClose={() => setImagesOpen(false)}
-                      sessionId={viewingLive ? live.workspace?.sessionId : undefined}
-                    />
-                  </>
-                )}
                 {layout.rightPanelOpen && (
                   <>
                     <Resizer
@@ -2982,6 +2898,11 @@ export function App() {
                       workHighlight={workHighlight}
                       onFocusEvent={focusInTrace}
                       liveView={viewingLive}
+                      images={view.images}
+                      imageProvider={imageProvider}
+                      imageKeys={imageKeys}
+                      onImageProviderChange={changeImageProvider}
+                      imageSessionId={viewingLive ? live.workspace?.sessionId : undefined}
                     />
                   </>
                 )}
@@ -3048,8 +2969,8 @@ export function App() {
                 model={viewingLive ? curModel : undefined}
                 onSend={send}
                 onReturnToLive={returnToLive}
-                onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
-                onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
+                continuable={continuable}
+                readOnlyNote={readOnlyNote}
                 sendClient={sendClient}
                 /* Card 301: the dock's handover and file rows are clickable, and
                  they use the SAME seam the work panel and the fleet use — a
@@ -3136,10 +3057,15 @@ export function App() {
             </ChunkBoundary>
           </div>
         )}
-        {leveling.snapshot && !leveling.snapshot.introSeen && (
-          /* Asked once per home, and only for a home that has never been used —
+        {questionUp === "mode" && (
+          /* Card 455: asked once per origin, before the tutorial question, and
+             once more by every install that never saw it. */
+          <ModeIntro onChoose={chooseViewMode} />
+        )}
+        {leveling.snapshot && !leveling.snapshot.introSeen && questionUp === "tutorial" && (
+          /* Asked once per home, and only for a home that has never been used:
              an existing operator is grandfathered into checklist by the server
-             and never meets this screen. */
+             and never meets this screen. Only learn asks it (card 455). */
           <LevelingIntro onChoose={(mode) => void leveling.setMode(mode)} />
         )}
         {/* Card 387. The mode is named at the render, not left to the pill that

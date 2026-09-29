@@ -63,7 +63,8 @@ for (const name of ["openSession", "resumeSession"]) {
     it("lowers it after the last await, with no await between it and the view", () => {
       const lower = tried.indexOf("setOpening(null);");
       expect(lower).toBeGreaterThan(tried.lastIndexOf("await "));
-      const shows = name === "openSession" ? "setReplay({" : "setLive(seedResumedLive(seeded));";
+      // Card 458: a continued session shows as a new record of the session set.
+      const shows = name === "openSession" ? "setReplay({" : "sessions.open({";
       const view = tried.indexOf(shows);
       expect(view).toBeGreaterThan(lower);
       expect(tried.slice(lower, view)).not.toContain("await");

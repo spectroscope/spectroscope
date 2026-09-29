@@ -37,3 +37,22 @@ export interface Press {
 export function dismissesMenu(press: Press): boolean {
   return !press.inAnchor && !press.inModal;
 }
+
+/** A scroll somewhere on the page, as a row menu sees it. */
+export interface ScrollSeen {
+  /** The scroll happened inside the menu or its button. */
+  inAnchor: boolean;
+  /** The scrolled box (or the document) contains the menu's button. */
+  holdsAnchor: boolean;
+}
+
+/**
+ * Whether a scroll closes a row menu. The menu is placed against its button,
+ * so only a scroll that moves the button leaves it standing in the wrong
+ * place. A chat that follows its live edge scrolls on every batch (card 459:
+ * the session in view may be running), and that must not close a menu in the
+ * rail.
+ */
+export function scrollDismissesMenu(scroll: ScrollSeen): boolean {
+  return !scroll.inAnchor && scroll.holdsAnchor;
+}

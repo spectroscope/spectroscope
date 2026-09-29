@@ -13,7 +13,17 @@ import { DOCK_ORDER, dockLabelKey, normalizeDockMode } from "./dockModel";
 
 describe("the dock's vocabulary", () => {
   it("names every panel exactly once, in a stable order", () => {
-    expect(DOCK_ORDER).toEqual(["work", "agents", "plan", "context", "files", "terminal", "browser"]);
+    // Card 443 added the images at the end.
+    expect(DOCK_ORDER).toEqual([
+      "work",
+      "agents",
+      "plan",
+      "context",
+      "files",
+      "terminal",
+      "browser",
+      "images",
+    ]);
     expect(new Set(DOCK_ORDER).size).toBe(DOCK_ORDER.length);
   });
 

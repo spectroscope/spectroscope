@@ -28,7 +28,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SessionRow, Sidebar } from "./Sidebar";
 import { storedRunState } from "./runIndicator";
 import { rowParts, setDensity, __resetForTests, __setTestHooks, type Density } from "../state/density";
-import { t } from "../i18n/i18n";
 import type { SessionMeta } from "../events";
 
 // The store never touches a real localStorage in this suite.
@@ -167,12 +166,10 @@ describe("the rail asks the store how much to say", () => {
       <Sidebar
         activeId={null}
         refreshToken={0}
-        onSelectLive={() => {}}
         onSelectSession={() => {}}
         onNewChat={() => {}}
         onSettings={() => {}}
-        liveRunning={false}
-        resumeId={null}
+        held={[{ id: "s-held", firstPrompt: "held one", startedAt: 1_000, running: false, attention: null }]}
         onImport={() => {}}
         onScenarios={() => {}}
         onStarters={() => {}}
@@ -189,10 +186,13 @@ describe("the rail asks the store how much to say", () => {
       />,
     );
 
-  const sub = t("en", "nav.liveSub");
+  // Card 458: the live row and its "this browser tab" subline are gone; a held
+  // session is a row of the list, and its metadata line obeys the density.
+  const sub = "session-meta-line";
 
   it("goes quiet when the store says normal", () => {
     setDensity("normal");
+    expect(rail()).toContain("held one");
     expect(rail()).not.toContain(sub);
   });
 

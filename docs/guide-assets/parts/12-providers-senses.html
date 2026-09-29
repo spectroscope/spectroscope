@@ -398,10 +398,10 @@ mid-sentence with no ghost audio. Ollama + piper is a fully offline agent that t
 <p>The <code>generate_image</code> tool sits behind its own provider port with two
 backends — Gemini (<code>gemini-2.5-flash-image</code>, <code>GEMINI_API_KEY</code>) and
 OpenAI (<code>gpt-image-1</code>, <code>OPENAI_API_KEY</code>) — selected by
-<code>imageProvider</code> / <code>SPECTRO_IMAGE_PROVIDER</code> or live from the gallery's
-dropdown. Results land content-addressed under <code>~/.spectro/images/</code> (same bytes
+<code>imageProvider</code> / <code>SPECTRO_IMAGE_PROVIDER</code> or live from the dropdown
+in the dock's Images panel. Results land content-addressed under <code>~/.spectro/images/</code> (same bytes
 = same file, shared across sessions); the additive <code>image_generated</code> event
-feeds the gallery panel; the model itself only sees a short confirmation string. Gated,
+feeds the Images panel; the model itself only sees a short confirmation string. Gated,
 because it is a paid cloud call. A missing key returns a readable
 <code>ERROR:</code> the model can relay — never a crash.</p>
 

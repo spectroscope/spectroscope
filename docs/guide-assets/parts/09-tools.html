@@ -48,7 +48,8 @@ Every model-supplied path passes the sandbox. Every mutation passes the gate.</p
 </div>
 <div class="card">
   <h4>The caps</h4>
-  <p>Files: 50&thinsp;kB read/edit ceiling. Output: 10&thinsp;000 chars shared clamp
+  <p>Files: a whole read may take 25&thinsp;% of the run&rsquo;s context window, estimated at
+  3 bytes per token; no file over the 2&thinsp;MiB fuse is read, edited or searched. Output: 10&thinsp;000 chars shared clamp
   (surrogate-safe truncation). Glob: 200 results. Shell: 900&thinsp;s timeout, pipe drained
   on a background thread — a timeout means “genuinely hung”, never “output too large”.
   Web: 512&thinsp;kB streamed body cap before the text clip.</p>
@@ -57,8 +58,15 @@ Every model-supplied path passes the sandbox. Every mutation passes the gate.</p
 
 <h2 id="ch-tools-files">Files &amp; search</h2>
 
-<div class="ref"><div class="ref-head"><code class="name">read_file</code><span class="chip free">free</span><span class="meta">input: { path }</span></div>
-<div class="ref-body"><p>Reads a UTF-8 text file (≤ 50&thinsp;kB) relative to the working directory.
+<div class="ref"><div class="ref-head"><code class="name">read_file</code><span class="chip free">free</span><span class="meta">input: { path, offset?, limit? }</span></div>
+<div class="ref-body"><p>Reads a UTF-8 text file relative to the working directory. The file comes back
+whole when its estimated size (3 bytes per token) fits a quarter of the context window the
+run has and it is under the 2&thinsp;MiB fuse. The window is the one compaction is derived
+from; when the backend states none, the compaction threshold stands in for it. A larger
+file is refused with its size, its estimated tokens, the window and the share, and can be
+read in pages with <code>offset</code> (1-based line) and <code>limit</code> (line count);
+a page is counted in bytes against the same bound. <code>read_skill_file</code>, which reads
+the files that ship beside a skill, follows the same rule.
 <em>Try: “Read build.gradle.kts and tell me the dependencies.”</em></p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">list_dir</code><span class="chip free">free</span><span class="meta">input: { path }</span></div>
@@ -73,7 +81,8 @@ subagents. <em>Try: “Find every *.test.ts file under spectro-web.”</em></p><
 <div class="ref"><div class="ref-head"><code class="name">grep</code><span class="chip free">free</span><span class="meta">input: { pattern, path?, glob? }</span></div>
 <div class="ref-body"><p>Searches file contents by Java regex, returning <code>path:line:text</code> hits —
 no shell involved, so it works even where <code>run_command</code> is denied. Skips
-oversized and binary files; invalid regex answers <code>ERROR: invalid regex: …</code>.
+binary files and files over the 2&thinsp;MiB fuse, and names each file it skipped for its
+size at the end of the answer; invalid regex answers <code>ERROR: invalid regex: …</code>.
 <em>Try: “Search for TODO across the Java sources.”</em></p></div></div>
 
 <h2 id="ch-tools-mutation">Mutation &amp; shell</h2>
@@ -121,7 +130,7 @@ skills are installed; children get it too, so dev-tool workers can load their ro
 <div class="ref"><div class="ref-head"><code class="name">generate_image</code><span class="chip gated">gated</span><span class="meta">input: { prompt }</span></div>
 <div class="ref-body"><p>Generates an image via the configured image provider (chapter 17). Gated because it
 is a paid cloud call. The image lands content-addressed under <code>~/.spectro/images/</code>;
-the model sees only a short confirmation — the user sees the gallery.</p></div></div>
+the model sees only a short confirmation, and the user sees the picture in the Images panel.</p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">spawn_agent</code> / <code class="name">spawn_agents</code><span class="chip free">free · parent only</span><span class="meta">input: { type, task } / { agents: […] }</span></div>
 <div class="ref-body"><p>Starts one subagent (or up to four in parallel) and waits for the result —

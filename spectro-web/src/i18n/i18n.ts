@@ -8,8 +8,14 @@ export type Lang = "de" | "en";
 export const dict: Record<string, { de: string; en: string }> = {
   // sidebar / navigation
   "nav.newChat": { de: "Neuer Chat", en: "New chat" },
-  "nav.live": { de: "Live-Session", en: "Live session" },
-  "nav.liveSub": { de: "dieser Browser-Tab", en: "this browser tab" },
+  // Card 459: what a session row asks of the reader while another is in view.
+  "nav.waitingForYou": { de: "wartet auf dich", en: "waiting for you" },
+  "nav.waitingForModel": { de: "wartet auf das Modell", en: "waiting for the model" },
+  "nav.waitingBanner": {
+    de: "Die Session „{title}“ wartet auf deine Antwort.",
+    en: 'The session "{title}" is waiting for your answer.',
+  },
+  "nav.waitingGo": { de: "öffnen", en: "open it" },
   "nav.emptySession": { de: "(leere Session)", en: "(empty session)" },
   // Card 431: the loading sign over the main column while a session opens.
   "open.line": { de: "Sitzung wird geöffnet", en: "Opening session" },
@@ -72,6 +78,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The recording and the files beside it are removed from this machine. This cannot be undone.",
   },
   "sess.delete.confirm": { de: "Löschen", en: "Delete" },
+  // Card 459, owner call 2: a delete of a session that still runs asks first.
+  "sess.delete.runningTitle": {
+    de: "Diese Session läuft noch. Stoppen und löschen?",
+    en: "This session is still running. Stop it and delete?",
+  },
+  "sess.delete.stopConfirm": { de: "Stoppen und löschen", en: "Stop and delete" },
   "sess.delete.failed": {
     de: "Die Session konnte nicht gelöscht werden. Versuch es noch einmal.",
     en: "The session could not be deleted. Try again.",
@@ -1067,9 +1079,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the dock (card 219): the right panel as independent panels
   "rp.terminal": { de: "Terminal", en: "Terminal" },
   "rp.browser": { de: "Browser", en: "Browser" },
+  "rp.images": { de: "Bilder", en: "Images" },
   // Card 228: the header's ⋮ overflow — every panel as a check row.
   "hdr.panelsMenu": { de: "Alle Panels", en: "All panels" },
   "dock.strip": { de: "Panels", en: "Panels" },
+  "dock.tabs": { de: "Reiter", en: "Tabs" },
+  "dock.tabsTitle": {
+    de: "Nur ein Panel auf einmal zeigen. Ein Klick auf einen Reiter wechselt zu diesem Panel.",
+    en: "Show one panel at a time. Clicking a tab switches to that panel.",
+  },
   "dock.collapse": { de: "Panel einklappen", en: "Fold panel" },
   "dock.expand": { de: "Panel ausklappen", en: "Unfold panel" },
   "dock.closePanel": { de: "Dieses Panel schließen", en: "Close this panel" },
@@ -1198,7 +1216,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Show every JSONL line (no windowing)",
   },
   "lab.viewingArchive": { de: "Archiv-Ansicht · nur lesen", en: "Viewing archive · read-only" },
-  "lab.returnLive": { de: "Zurück zu Live", en: "Return to live" },
+  "lab.returnLive": { de: "Zurück", en: "Back" },
 
   // lab toolbar (part 2: titles, waiting, captions)
   "lab.grainCoarseTitle": {
@@ -2225,8 +2243,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The local route only writes once the recording is complete — it reads a finished file. Live runs over the provider route.",
   },
   "voice.live.upstream": {
-    de: "Der Anbieter hat die Live-Sitzung abgelehnt oder abgebrochen. Gesprochen wurde, angekommen ist nichts Verwertbares.",
-    en: "The provider refused or dropped the live session. You spoke, but nothing usable arrived.",
+    de: "Der Anbieter hat die Live-Transkription abgelehnt oder abgebrochen. Gesprochen wurde, angekommen ist nichts Verwertbares.",
+    en: "The provider refused or dropped the live transcription. You spoke, but nothing usable arrived.",
   },
   "voice.live.closed": {
     de: "Die Verbindung endete, bevor der Text fertig war. Der blasse Teil ist alles, was gehört wurde.",
@@ -2381,8 +2399,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // never coming. The list below is rendered from state/work.ts's own
   // WORK_KINDS, and every line says where its kind comes FROM.
   "work.emptyLive": {
-    de: "Noch nichts. Eine Live-Session füllt dieses Panel aus ihren eigenen Fan-outs. Die übrigen Arten erreichen es von woanders.",
-    en: "Nothing yet. A live session fills this panel from its own fan-outs. The other kinds reach it from somewhere else.",
+    de: "Noch nichts. Eine laufende Session füllt dieses Panel aus ihren eigenen Fan-outs. Die übrigen Arten erreichen es von woanders.",
+    en: "Nothing yet. A running session fills this panel from its own fan-outs. The other kinds reach it from somewhere else.",
   },
   "work.emptyKinds": {
     de: "Was dieses Panel aus dem Strom faltet:",
@@ -4197,9 +4215,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "conn.retryNow": { de: "Jetzt neu verbinden", en: "Reconnect now" },
 
   // image gallery
-  "img.title": { de: "Bilder", en: "Images" },
   "img.aria": { de: "Generierte Bilder", en: "Generated images" },
-  "img.close": { de: "Bild-Panel schließen", en: "Close image panel" },
   "img.copy": { de: "→ Workspace", en: "→ Workspace" },
   "img.copied": { de: "✓ Kopiert", en: "✓ Copied" },
   "img.copyTitle": {
@@ -4246,11 +4262,20 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Delete this session for good (JSONL file + attachments) — a second click confirms",
   },
 
-  // session resume
-  "arch.resume": { de: "Session fortsetzen", en: "Resume session" },
-  "arch.resumeTitle": {
-    de: "Diese Session wieder aufnehmen: der ganze Verlauf wird beim nächsten Prompt wieder ans LLM hochgeladen",
-    en: "Pick this session back up: the whole history is re-uploaded to the LLM with your next prompt",
+  // Card 458: a stored session opens ready to type, and the first message
+  // continues it. What cannot be continued says why, in one line where the
+  // composer would be.
+  "arch.readOnly.import": {
+    de: "Importierte Sessions lassen sich nur lesen. Auf diesem Rechner gibt es keine Datei, in die weitergeschrieben wird.",
+    en: "Imported sessions are read-only. This machine has no file to continue them in.",
+  },
+  "arch.readOnly.scenario": {
+    de: "Szenarien sind Demos und lassen sich nur lesen.",
+    en: "Scenarios are demos and read-only.",
+  },
+  "arch.readOnly.elsewhere": {
+    de: "Ein anderes Fenster arbeitet in dieser Session, deshalb lässt sie sich hier nur lesen.",
+    en: "Another window is working in this session, so it is read-only here.",
   },
   "hdr.resumed": { de: "Fortgesetzt", en: "Resumed" },
   // An import is not an archive. It came from another tool's file and lives
@@ -4436,6 +4461,33 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.teaser.unlocks": { de: "Öffnet sich, sobald: {what}", en: "Opens once you have: {what}" },
   "leveling.levelUp.title": { de: "Neue Stufe: {name}", en: "Level reached: {name}" },
   "leveling.levelUp.opened": { de: "Neu offen: {surfaces}", en: "Now open: {surfaces}" },
+  // Card 455: the first-start mode screen, before the tutorial question.
+  "mode.intro.title": {
+    de: "Wie viel von spectroscope möchtest du sehen?",
+    en: "How much of spectroscope do you want to see?",
+  },
+  "mode.intro.lead": {
+    de: "Wähle einen Modus für dieses Fenster. Deine Chats und Sessions werden in beiden gleich gespeichert.",
+    en: "Choose a mode for this window. Your chats and sessions are saved the same way in both.",
+  },
+  "mode.intro.learn.name": { de: "learn", en: "learn" },
+  "mode.intro.learn.body": {
+    de: "Alle Teile der App sind offen: Chat, Arbeitsbereich, Sessions und Skills, dazu die Tabs spectrum, trace, graph, text und lab, der State-Graph und die Flotten. Danach kannst du ein Tutorial wählen, das sie nach und nach öffnet.",
+    en: "Every part of the app is open: the chat, the workspace, sessions and skills, and also the spectrum, trace, graph, text and lab tabs, the state graph and the fleets. After this you can choose a tutorial that opens them one at a time.",
+  },
+  "mode.intro.learn.switch": {
+    de: "Zu light wechselst du später mit dem Schalter learn und light oben rechts im Fenster.",
+    en: "You can switch to light later with the learn and light switch at the top right of the window.",
+  },
+  "mode.intro.light.name": { de: "light", en: "light" },
+  "mode.intro.light.body": {
+    de: "Du bekommst Chat, Arbeitsbereich, Sessions und Skills. Die übrigen Tabs, den State-Graph und die Flotten lädt die App nicht, und sie arbeiten auch nicht im Hintergrund. Light hat kein Tutorial.",
+    en: "You get the chat, the workspace, sessions and skills. The app does not load the other tabs, the state graph or the fleets, and they do no work in the background. Light has no tutorial.",
+  },
+  "mode.intro.light.switch": {
+    de: "Zu learn wechselst du später mit dem Schalter learn und light oben rechts im Fenster. Das Tutorial schaltest du dann in den Einstellungen ein.",
+    en: "You can switch to learn later with the learn and light switch at the top right of the window. You can then turn the tutorial on in the settings.",
+  },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
   "leveling.intro.body": {
     de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Das Tutorial macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.",

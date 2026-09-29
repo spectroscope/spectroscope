@@ -277,17 +277,49 @@ class ReadSkillFileToolTest {
                 tool.execute(input("tdd", "references"), context()));
     }
 
+    /** A context carrying the window the loop derived for the run (card 456). */
+    private ToolContext windowed(int window) throws IOException {
+        ToolContext plain = context();
+        return new ToolContext(plain.cwd(), new CancelSignal(), "main", "c1", event -> { },
+                attachment -> { }, change -> { }, millis -> { }, false, window);
+    }
+
     @Test
-    void aFileOverTheCapIsRefusedRatherThanPouredIntoTheContext() throws IOException {
-        // ui-styling ships 97 siblings and the fattest catalogue skill is 5.8 MB;
-        // the same 50 kB ceiling read_file uses keeps one of them from eating a turn.
+    void aSiblingFollowsTheSameWindowRuleAsReadFile() throws IOException {
+        // Card 456. The ceiling here was the same 50 kB read_file had, on
+        // purpose, so an operator meets one rule. The rule moved; it moves here too.
         Path root = tempDir.resolve("skills");
         Path skill = skillIn(root, "ui-styling", "body");
-        Files.writeString(skill.resolve("huge.md"), "x".repeat(50_001));
+        String text = "x".repeat(55_999) + "\n";
+        Files.writeString(skill.resolve("guide.md"), text);
         Tool tool = SkillLibrary.load(List.of(root)).readSkillFileTool();
 
-        String result = tool.execute(input("ui-styling", "huge.md"), context());
+        assertEquals(text, tool.execute(input("ui-styling", "guide.md"), windowed(250_368)),
+                "a 56 kB sibling reads whole under the window the owner loaded");
 
-        assertTrue(result.startsWith("ERROR: file too large (50001 bytes, limit 50000)"), result);
+        String refused = tool.execute(input("ui-styling", "guide.md"), windowed(32_768));
+        assertTrue(refused.startsWith("ERROR: "), refused);
+        assertTrue(refused.contains("56000 bytes"), refused);
+        assertTrue(refused.contains(dev.spectroscope.core.tools.ReadBudget.estimatedTokens(56_000)
+                + " tokens"), refused);
+        assertTrue(refused.contains("32768 tokens"), refused);
+        assertTrue(refused.contains("ui-styling") && refused.contains("guide.md"), refused);
+    }
+
+    @Test
+    void aSiblingAboveTheFuseIsRefusedUnderAnyWindow() throws IOException {
+        // ui-styling ships 97 siblings and the fattest catalogue skill is 5.8 MB.
+        Path root = tempDir.resolve("skills");
+        Path skill = skillIn(root, "ui-styling", "body");
+        long size = dev.spectroscope.core.tools.ReadBudget.FUSE_BYTES + 1;
+        Files.write(skill.resolve("huge.md"), new byte[(int) size]);
+        Tool tool = SkillLibrary.load(List.of(root)).readSkillFileTool();
+
+        String result = tool.execute(input("ui-styling", "huge.md"), windowed(Integer.MAX_VALUE));
+
+        assertTrue(result.startsWith("ERROR: "), result);
+        assertTrue(result.contains(size + " bytes"), result);
+        assertTrue(result.contains(String.valueOf(dev.spectroscope.core.tools.ReadBudget.FUSE_BYTES)),
+                result);
     }
 }

@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { openDockPanel, openRightPanel, toggleDockPanel, useLayout } from "../state/layout";
+import { getLayout, openDockPanel, openRightPanel, toggleDockPanel, useLayout } from "../state/layout";
 import type { DockPanelId } from "../state/layout";
 import { DOCK_ORDER, dockLabelKey, dockModes } from "./dockModel";
 import { t } from "../i18n/i18n";
@@ -40,6 +40,21 @@ const GLYPHS: Partial<Record<DockPanelId, ReactNode>> = {
     </>
   ),
 };
+
+/** One press, either door: opening reveals the workspace too, closing
+ *  leaves the workspace as it is (the strip behaves the same way). The open
+ *  REMEMBERS (card 242): a header icon is the user's explicit ask, so the
+ *  dock returns on the next entered session — unlike the agent's cue. In tabs
+ *  mode (card 444) the store's toggle shows or hides the dock for the shown
+ *  panel instead of closing it. */
+export function pressDockPanel(id: DockPanelId): void {
+  if (dockModes(getLayout())[id] === "closed") {
+    openDockPanel(id);
+    openRightPanel(true);
+  } else {
+    toggleDockPanel(id);
+  }
+}
 
 export function DockHeaderControls({
   workOffered,
@@ -72,18 +87,7 @@ export function DockHeaderControls({
     };
   }, [menuOpen]);
 
-  /** One press, either door: opening reveals the workspace too, closing
-   *  leaves the workspace as it is (the strip behaves the same way). The open
-   *  REMEMBERS (card 242): a header icon is the user's explicit ask, so the
-   *  dock returns on the next entered session — unlike the agent's cue. */
-  const press = (id: DockPanelId): void => {
-    if (modes[id] === "closed") {
-      openDockPanel(id);
-      openRightPanel(true);
-    } else {
-      toggleDockPanel(id);
-    }
-  };
+  const press = pressDockPanel;
 
   const offered = DOCK_ORDER.filter((id) => id !== "work" || workOffered);
 

@@ -36,6 +36,9 @@
     "mac": {
       "icon": "icon.icns",
       "hardenedRuntime": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "spectroscope uses the microphone for voice input. What you say is transcribed into the chat."
+      },
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
