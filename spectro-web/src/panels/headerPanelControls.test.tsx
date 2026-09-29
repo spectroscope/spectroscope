@@ -1,100 +1,162 @@
-// Card 228, criterion 7 — the header's panel toggles, the reference shape:
-// one icon per panel (files, terminal, browser) with a pressed state, plus an
-// overflow menu listing EVERY panel with a check row. The owner asked five
-// times; this file is what makes it a criterion instead of a memory.
+// Card 442 (owner, 2026-09-25 and 2026-09-29): the header keeps its menu and
+// nothing else with an icon. Every panel, the side panel itself, the keyboard
+// shortcuts and spectro doctor are rows of the ⋮ menu, each with its icon and
+// its name; the tools stand apart at the bottom.
 //
-// The load-bearing rule: the icons are the SECOND door to the same
-// `spectroscope:layout` truth the dock strip reads — aria-pressed and the
-// check rows come from the store, never from a copy. renderToStaticMarkup
-// against the real store pins that; the click wiring (static markup drops
-// handlers) is read at the source, the dockSeparation idiom.
+// Card 228's rule still holds: the rows are the SECOND door to the same
+// `spectroscope:layout` truth the dock strip reads. renderToStaticMarkup
+// against the real store pins that; the click wiring is read at the source.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DockHeaderControls, HEADER_ICON_PANELS } from "./headerPanelControls";
+import { HeaderMenu, HEADER_MENU_TOOLS, menuRows, nextMenuIndex } from "./headerPanelControls";
 import { __resetForTests, toggleDockPanel } from "../state/layout";
 import { DOCK_ORDER } from "./dockModel";
-import { dict } from "../i18n/i18n";
+import { blockOf, read as readSource } from "../testkit/source";
 
 beforeEach(() => __resetForTests());
 
 const read = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
-function render(workOffered = false): string {
-  return renderToStaticMarkup(<DockHeaderControls workOffered={workOffered} />);
+const noop = (): void => {};
+
+function render(over: Partial<Parameters<typeof HeaderMenu>[0]> = {}): string {
+  return renderToStaticMarkup(
+    <HeaderMenu
+      showDock
+      workOffered={false}
+      imageCount={0}
+      doctorOpen={false}
+      onToggleDoctor={noop}
+      onOpenKeymap={noop}
+      menuOpenForTest
+      {...over}
+    />,
+  );
 }
 
 function count(html: string, needle: string): number {
   return html.split(needle).length - 1;
 }
 
-describe("one icon per panel, the reference set", () => {
-  it("offers exactly files, terminal and browser as header icons", () => {
-    expect([...HEADER_ICON_PANELS]).toEqual(["files", "terminal", "browser"]);
-    const html = render();
-    expect(count(html, "hdr-panel-icon")).toBe(3);
-  });
+/** The rows of the open menu, in order, as their data-menu-row ids. */
+function rowIds(html: string): string[] {
+  return [...html.matchAll(/data-menu-row="([^"]+)"/g)].map((m) => m[1]);
+}
 
-  it("wears the store's truth as its pressed state", () => {
-    // Default layout: agents open, the three icon panels closed.
-    const closed = render();
-    expect(count(closed, 'class="icon-button hdr-panel-icon"')).toBe(3);
-    expect(count(closed, "hdr-panel-icon icon-button--on")).toBe(0);
-    toggleDockPanel("terminal");
-    const open = render();
-    // Exactly one icon lights up, and it is the terminal's.
-    expect(open).toMatch(/hdr-panel-icon icon-button--on"[^>]*aria-label="Terminal"/);
-  });
-
-  it("names each icon by its panel's own label, both languages carried", () => {
-    for (const id of HEADER_ICON_PANELS) {
-      expect(dict[`rp.${id}`], id).toBeDefined();
-      expect(render()).toContain(`aria-label="${dict[`rp.${id}`].en}"`);
-    }
-  });
-});
-
-describe("the overflow menu lists every panel with a check row", () => {
-  it("lists all offered panels as menuitemcheckbox rows, checked off the store", () => {
-    toggleDockPanel("plan");
-    const html = renderToStaticMarkup(<DockHeaderControls workOffered={false} menuOpenForTest />);
-    // Every panel but work (card 443 added the images, so the number is
-    // derived from the vocabulary instead of typed); agents and plan are open.
-    expect(count(html, 'role="menuitemcheckbox"')).toBe(DOCK_ORDER.length - 1);
-    expect(html).toContain('data-menu-panel="images"');
-    expect(count(html, 'aria-checked="true"')).toBe(2);
+describe("the menu holds everything the header used to show", () => {
+  it("lists every offered panel, then the tools, in that order; the side panel toggle is outside", () => {
+    expect(rowIds(render())).toEqual([...DOCK_ORDER.filter((id) => id !== "work"), ...HEADER_MENU_TOOLS]);
   });
 
   it("offers the work row only when the v2 reading offers the panel", () => {
-    const without = renderToStaticMarkup(<DockHeaderControls workOffered={false} menuOpenForTest />);
-    const withWork = renderToStaticMarkup(<DockHeaderControls workOffered menuOpenForTest />);
-    expect(count(withWork, 'role="menuitemcheckbox"')).toBe(count(without, 'role="menuitemcheckbox"') + 1);
+    expect(rowIds(render({ workOffered: true }))).toContain("work");
+    expect(rowIds(render({ workOffered: false }))).not.toContain("work");
   });
 
-  it("covers the whole dock vocabulary — a new panel cannot ship without a row", () => {
-    const html = renderToStaticMarkup(<DockHeaderControls workOffered menuOpenForTest />);
-    for (const id of DOCK_ORDER) {
-      expect(html, id).toContain(`data-menu-panel="${id}"`);
+  it("keeps the tools off the chat tab, where the dock does not exist", () => {
+    expect(rowIds(render({ showDock: false }))).toEqual([...HEADER_MENU_TOOLS]);
+  });
+
+  it("puts the keyboard shortcuts and spectro doctor behind a separator", () => {
+    expect([...HEADER_MENU_TOOLS]).toEqual(["keymap", "doctor"]);
+    const html = render();
+    const sep = html.indexOf('role="separator"');
+    expect(sep).toBeGreaterThan(0);
+    expect(html.indexOf('data-menu-row="images"')).toBeLessThan(sep);
+    expect(html.indexOf('data-menu-row="keymap"')).toBeGreaterThan(sep);
+    expect(html.indexOf('data-menu-row="doctor"')).toBeGreaterThan(sep);
+  });
+
+  it("draws every row with its icon and its name, so no row is an icon alone", () => {
+    const html = render({ workOffered: true });
+    const rows = [...html.matchAll(/<button[^>]*data-menu-row="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g)];
+    expect(rows.length).toBe(rowIds(html).length);
+    for (const [, id, body] of rows) {
+      expect(body, id).toContain("<svg");
+      expect(body.replace(/<[^>]+>/g, "").trim().length, id).toBeGreaterThan(1);
     }
+  });
+
+  it("builds the rows from one table, the same one the markup is drawn from", () => {
+    expect(menuRows({ showDock: true, workOffered: true }).map((row) => row.id)).toEqual(
+      rowIds(render({ workOffered: true })),
+    );
   });
 });
 
-describe("both doors, one truth", () => {
-  const source = read("./headerPanelControls.tsx");
-  const header = read("../components/AppHeader.tsx");
-
-  it("writes through the layout store's own verbs, never a copy", () => {
-    expect(source).toContain("useLayout()");
-    expect(source).toContain("toggleDockPanel(");
-    // Opening a panel from the header must also reveal the workspace, or the
-    // press changes state nobody can see.
-    expect(source).toContain("openRightPanel(");
-    expect(source).toContain("openDockPanel(");
+describe("the checks read the stores, never a copy", () => {
+  it("checks the panels the layout store has open", () => {
+    toggleDockPanel("plan");
+    const html = render();
+    // Default layout: agents open; plan opened above.
+    expect(html).toMatch(/data-menu-row="agents"[^>]*aria-checked="true"/);
+    expect(html).toMatch(/data-menu-row="plan"[^>]*aria-checked="true"/);
+    expect(html).toMatch(/data-menu-row="files"[^>]*aria-checked="false"/);
   });
 
-  it("is mounted by the header exactly once, beside the workspace toggle", () => {
-    expect(count(header, "<DockHeaderControls")).toBe(1);
+  it("checks doctor from its prop", () => {
+    expect(render({ doctorOpen: true })).toMatch(/data-menu-row="doctor"[^>]*aria-checked="true"/);
+    // The shortcuts open an overlay; they have no state to check.
+    expect(render()).toMatch(/role="menuitem"[^>]*data-menu-row="keymap"/);
+  });
+
+  it("carries the image count on the images row", () => {
+    expect(render({ imageCount: 3 })).toMatch(/data-menu-row="images"[\s\S]*?hdr-menu-count[^>]*>3</);
+  });
+});
+
+describe("the keyboard walks the menu", () => {
+  it("moves down and up, wraps at both ends and jumps to the ends", () => {
+    expect(nextMenuIndex(0, "ArrowDown", 5)).toBe(1);
+    expect(nextMenuIndex(4, "ArrowDown", 5)).toBe(0);
+    expect(nextMenuIndex(0, "ArrowUp", 5)).toBe(4);
+    expect(nextMenuIndex(2, "Home", 5)).toBe(0);
+    expect(nextMenuIndex(2, "End", 5)).toBe(4);
+    expect(nextMenuIndex(2, "a", 5)).toBe(2);
+  });
+
+  it("returns the focus to the ⋮ button when Escape closes the menu", () => {
+    const source = read("./headerPanelControls.tsx");
+    expect(source).toMatch(/Escape[\s\S]{0,200}\.focus\(\)/);
+  });
+});
+
+describe("the menu hangs under the header and stays in the window", () => {
+  const css = readSource("../styles/header.css", import.meta.url);
+
+  it("opens downward from the right edge of the ⋮ button", () => {
+    // A compound selector: `.wsg-pop` is imported later with the same
+    // weight, and a single class lost the cascade (the owner's screenshot of
+    // 2026-09-29: a 34 px strip that showed only "Work").
+    const block = blockOf(css, ".wsg-pop.hdr-menu-pop");
+    expect(block).toMatch(/top:\s*calc\(100% \+ 6px\)/);
+    expect(block).toMatch(/bottom:\s*auto/);
+    expect(block).toMatch(/right:\s*0/);
+  });
+
+  it("never grows wider or taller than the window", () => {
+    const block = blockOf(css, ".wsg-pop.hdr-menu-pop");
+    expect(block).toMatch(/max-width:\s*calc\(100vw - /);
+    expect(block).toMatch(/max-height:\s*calc\(100vh - /);
+  });
+});
+
+describe("the header", () => {
+  const header = read("../components/AppHeader.tsx");
+
+  it("mounts the menu exactly once, after the learn and light switch", () => {
+    expect(count(header, "<HeaderMenu")).toBe(1);
+    expect(header.indexOf("<ModeSwitch")).toBeLessThan(header.indexOf("<HeaderMenu"));
+  });
+
+  it("writes through the layout store's own verbs, never a copy", () => {
+    const source = read("./headerPanelControls.tsx");
+    expect(source).toContain("useLayout()");
+    expect(source).toContain("toggleDockPanel(");
+    expect(source).toContain("openRightPanel(");
+    expect(source).toContain("openDockPanel(");
   });
 });

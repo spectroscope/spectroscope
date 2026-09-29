@@ -462,12 +462,16 @@
   margin-left: 1px;
 }
 
+/* Card 463: under the composer, so it opens upward and hangs from the row's
+   right end (the anchors in .composer-meta are static). */
 .provider-pop {
   position: absolute;
-  top: calc(100% + 6px);
+  top: auto;
+  bottom: calc(100% + 8px);
   right: 0;
   z-index: var(--z-dropdown);
   width: 260px;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);

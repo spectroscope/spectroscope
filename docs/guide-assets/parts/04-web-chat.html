@@ -6,20 +6,33 @@ REST endpoints, and one WebSocket per open session that carries RunEvents in one
 and a small set of client frames in the other. Open <code>http://localhost:8080</code> after
 <code>./spectro-app web</code> and you are looking at the chat.</p>
 
-<!--SHOT:01-home-empty|The empty app: the rail with its actions and one row per stored session, the header with the learn and light switch, the language toggle, settings and the provider chip, the six tabs, and the composer waiting. “Ask spectroscope.”-->
+<!--SHOT:01-home-empty|The empty app: the rail with its actions, the session list under its own head row and Settings at its foot, the header with the title, the working folder chip, the learn and light switch, the side panel toggle and the ⋮ menu, the six tabs, and the composer waiting with the model and the thinking level under it. “Ask spectroscope.”-->
 
 <h2 id="ch-chat-anatomy">The anatomy of the screen</h2>
 <ul>
   <li><strong>Sidebar</strong> (left, resizable, collapsible): “New chat”, the
-      <strong>Scenarios</strong> row (chapter 7), and the session list with an Import
-      button (chapter 8). The list has one row per session. A new chat gets its own row
+      <strong>Scenarios</strong> row (chapter 7), and the session list. A head row above the
+      list shows “Sessions”, the Import button (chapter 8) and the list options. The list has
+      one row per session. A new chat gets its own row
       once it has started, and a session that is running keeps pulsing while you look at
-      another one.</li>
-  <li><strong>Header</strong>: session title (the first prompt), the images button (it
-      opens the Images panel of the dock, chapter 6), right-panel toggle, the learn and light
-      switch, the <strong>DE/EN</strong> toggle, the settings, the <strong>provider picker</strong>
-      chip (which also holds the <strong>Thinking</strong> level), the <strong>context ring</strong> (appears once tokens flow) and the Stop button
-      while a run is active.</li>
+      another one. Settings sits at the foot of the sidebar, behind the gear.</li>
+  <li><strong>Header</strong>: the sidebar toggle, the session title (the first prompt),
+      the <strong>working folder</strong> chip, the learn and light switch, the side panel
+      toggle and the <strong>⋮ menu</strong>. The folder chip names the folder the session
+      works in. Its menu shows the folder in Finder, copies its path, changes it (only before
+      the first message) or opens Terminal there. Finder and Terminal work on macOS, once
+      the session has started. The ⋮ menu lists every panel of the dock (Work in the v2 chat
+      view, Agents, Plan, System context, Files, Terminal, Browser and Images), each with its
+      icon, its name and a check mark while it is open. Below a separator it offers
+      Keyboard shortcuts and spectro doctor. You set the language in Settings, on the General
+      tab.</li>
+  <li><strong>Under the message box</strong>: on the left the plus menu, the view menu (⋮),
+      the image button, the microphone with its device menu and the gear for the permission
+      mode. On the right the <strong>model chip</strong> (provider and model), the
+      <strong>thinking</strong> chip with its levels and the <strong>context ring</strong>,
+      which appears once tokens flow. Every menu in this row opens upward. A saved session
+      that opens read-only shows its model and its ring in the bar at the bottom, without a
+      menu.</li>
   <li><strong>Tab bar</strong>: chat · spectrum · trace · graph · text · lab — six lowercase lenses over the same state (the labels are wire vocabulary; trace carries a live frame count). Entering a fleet swaps the whole row for the fleet's own bar — chapter 15b.</li>
   <li><strong>Footer</strong>: run and session token totals in tabular numerals, a run status
       dot, and the connection dot.</li>
@@ -35,7 +48,7 @@ view in this chapter works identically for both.</p>
 
 <h2 id="ch-chat-conversation">The conversation</h2>
 
-<!--SHOT:43-chat-answer|A real two-turn run against local Ollama: your prompt as a flat bubble on the right, the answer as bare text on the left, the finished reasoning collapsed to its character count, and each call as a hairline — read_file plain, run_command carrying “gate: allowed”. The faint line under every turn is what it cost: tokens in and out, duration, the clock and the model that served it.-->
+<!--SHOT:43-chat-answer|A real two-turn run against local Ollama: your prompt as a flat bubble on the right, the answer as bare text on the left, the finished reasoning collapsed to its character count, and each call as a hairline: read_file plain, run_command carrying “gate: allowed”. The faint line under every turn is what it cost: tokens in and out and the duration.-->
 
 <ul>
   <li><strong>Markdown answers.</strong> Assistant turns render through a dependency-free
@@ -45,8 +58,9 @@ view in this chapter works identically for both.</p>
       untrusted end to end.</li>
   <li><strong>Thinking, apart from the answer.</strong> While a reasoning model thinks, a
       pulsing “thinking …” dot is the live indicator; the finished reasoning collapses into
-      a disclosure above the answer showing its size. The header switch turns the stream off
-      for the next run (<code>set_thinking</code>).</li>
+      a disclosure above the answer showing its size. The thinking chip under the message box
+      sets the level for the next prompt, including off when the model has an off switch
+      (<code>set_reasoning</code>).</li>
   <li><strong>Tool cards.</strong> One collapsed card per call: status dot + name + input
       preview + <strong>gate chip</strong> + duration. The gate chip is the didactic point —
       <em>Gate: allowed / denied / waiting</em> appears only for permission-gated calls, so
@@ -136,8 +150,8 @@ because the lines came in with them.</p>
 <h2 id="ch-chat-composer">The composer</h2>
 <ul>
   <li><strong>Enter sends, Shift+Enter breaks the line</strong> — the only shortcut. The
-      textarea autosizes up to 150&nbsp;px; the Send button reads “Running …” while a run is
-      active (one run at a time per connection).</li>
+      textarea autosizes up to 150&nbsp;px; while a run streams and the box is empty,
+      the Send button becomes the stop button (one run at a time per connection).</li>
   <li><strong>Image attachments.</strong> The image button opens a file picker
       (jpeg/png/webp/gif, multiple); dragging files anywhere onto the chat works too. Every
       image is downscaled in the browser before sending (longest edge 1568&nbsp;px, JPEG
@@ -190,19 +204,19 @@ which reads it and adapts.</p>
 
 <h2 id="ch-chat-live">Live indicators</h2>
 
-<!--SHOT:22-thinking-live|A live run against a local model through ollama: the reasoning streams into the Thinking disclosure, which reads “thinking …” while it lasts. The header shows the provider chip and the Stop button.-->
+<!--SHOT:22-thinking-live|A live run against a local model through ollama: the reasoning streams into the Thinking disclosure, which reads “thinking …” while it lasts. The stop button sits in the message box while the run lasts, and the model and the thinking level sit in the row under it.-->
 
 <ul>
-  <li>The <strong>context ring</strong> in the header fills with the last reported input
+  <li>The <strong>context ring</strong> at the right end of the row under the message box fills with the last reported input
       tokens against the compaction threshold (green &lt; 70%, amber ≤ 90%, red above);
-      clicking it opens the introspection popover — chapter 28.</li>
+      clicking it opens the introspection popover above the ring (chapter 28).</li>
   <li>The <strong>usage footer</strong> counts run and session tokens live in tabular
       numerals; the status dot switches “run active → ready” and names any non-regular stop
       reason.</li>
   <li>The <strong>connection banner</strong> appears under the header when the socket drops,
       with a reconnect countdown (exponential backoff 1→15&nbsp;s) and a “Reconnect now”
       action. Sessions survive: the JSONL file is the state, the socket is just transport.</li>
-  <li>The <strong>Stop button</strong> sends <code>abort</code>, which fires the run's
+  <li>The <strong>stop button</strong> in the message box sends <code>abort</code>, which fires the run's
       CancelSignal — the run ends with <code>stopReason: "aborted"</code>, tools and children
       included.</li>
 </ul>

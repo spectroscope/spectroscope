@@ -6,6 +6,8 @@
 // -> thumbnails on the sent turn) and useVoiceInput (MediaRecorder -> POST /api/transcribe
 // -> the transcript lands IN THE INPUT, never straight at the agent).
 
+import { ComposerMeta } from "./ComposerMeta";
+import type { ConnectionStatus } from "../transport/ws";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ClientMessage, RunEvent } from "../events";
@@ -148,6 +150,18 @@ export function Chat(props: {
   /** The one place client frames leave the app (App.tsx) — the composer
    *  gear uses it directly to send set_permission_mode. */
   sendClient: (msg: ClientMessage) => boolean;
+  /** Card 463: the model picker's inputs for the block under the composer. */
+  composerMeta?: {
+    provider?: string;
+    model?: string;
+    status: ConnectionStatus;
+    providerStatus?: Record<string, string>;
+    providerAddress?: Record<string, string>;
+    onApplyProvider: (provider: string, model: string) => void;
+    onOpenSettings?: () => void;
+  };
+  /** Card 390: sets or clears the window of this session from the ring. */
+  onWindowOverride?: (tokens: number | null) => void;
   /** Card 224: opens the settings page scrolled to a section, with App's
    *  history manners — the plus menu's Manage/Browse rows call it. Absent in
    *  hosts without a settings page (the Lab), which also drops the menu. */
@@ -1017,8 +1031,8 @@ export function Chat(props: {
               {t(lang, "chat.emptyTitle")}
             </h1>
             <p>{t(lang, "chat.emptyTag")}</p>
-            {/* The little sign (owner 2026-07-20): the gear up top holds the
-                design switch (spectro white included) and the particle dials. */}
+            {/* The little sign (owner 2026-07-20): Settings, at the foot of the
+                sidebar since card 442, hold the design switch and the particle dials. */}
             <p className="empty-hint">
               <svg
                 viewBox="0 0 24 24"
@@ -1466,6 +1480,17 @@ export function Chat(props: {
                   permissionMode={state.permissionMode}
                   sendClient={props.sendClient}
                 />
+                {/* Card 463: the model, the thinking level and the context
+                    ring, at the right end of the row, the ring last. */}
+                {props.composerMeta !== undefined && (
+                  <ComposerMeta
+                    {...props.composerMeta}
+                    liveView={props.liveView}
+                    lastInputTokens={state.lastInputTokens}
+                    context={state.context}
+                    onWindowOverride={props.onWindowOverride}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -1516,6 +1541,16 @@ export function Chat(props: {
               <button type="button" className="link" onClick={props.onReturnToLive}>
                 {t(lang, "lab.returnLive")}
               </button>
+              {/* Card 463: what ran this session and how much of its window it
+                  used, read-only, at the bar's right end. */}
+              {props.composerMeta !== undefined && (
+                <ComposerMeta
+                  {...props.composerMeta}
+                  liveView={false}
+                  lastInputTokens={state.lastInputTokens}
+                  context={state.context}
+                />
+              )}
             </div>
           </div>
         </div>

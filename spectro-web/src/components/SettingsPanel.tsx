@@ -987,8 +987,8 @@ export function SettingsPanel({
                     </label>
                   </div>
                 </ReachBlock>
-                {/* Card 88: the same capability-driven seg as the header picker —
-                  one shared component, one truth. Not a server settings field
+                {/* Card 88: the capability-driven seg; the thinking menu under the
+                  composer (card 463) draws the same cells from the same brain. Not a server settings field
                   (the choice is per model, browser-kept), hence no OriginRow —
                   and hence NOT inside either block: it is neither saved with
                   the fields above nor bound like them. onSetReasoning replays

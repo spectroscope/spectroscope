@@ -476,16 +476,6 @@ function only(component: string, wanted: string): Jsx {
   return found[0];
 }
 
-/** The width of the gear's box, the one control right of the microphone caret. */
-function gearBox(vw: number): number {
-  const gear = read("ComposerGear.tsx");
-  const cls = /<div className="wsg-anchor[^"]*"[^>]*>\s*<button[\s\S]*?className="([^"]+)"/.exec(gear);
-  if (!cls) throw new Error("ComposerGear.tsx no longer opens its anchor with a button");
-  const width = computed(cls[1].split(/\s+/), "width", vw);
-  if (width === undefined) throw new Error(`the gear's button (${cls[1]}) declares no width`);
-  return length(width, vw);
-}
-
 /** The tags Chat.tsx puts in the composer row after the microphone's menu. */
 function afterTheCaret(): string[] {
   const chat = readFileSync(join(SRC, "components", "Chat.tsx"), "utf8");
@@ -556,8 +546,10 @@ describe("the composer row", () => {
     expect(unweighed(["composer"], PADDING, ["padding", "padding-left", "padding-right"])).toEqual([]);
   });
 
-  it("ends with the microphone's menu and then the gear, and nothing after the gear", () => {
-    expect(afterTheCaret()).toEqual(["ComposerGear"]);
+  it("ends with the microphone's menu, the gear, and then the block of the model, thinking and ring", () => {
+    // Card 463 (owner, 2026-09-29): "ganz rechts außen soll der Kontext drin
+    // sein". The block holds the ring last; composerMeta.test.tsx pins that.
+    expect(afterTheCaret()).toEqual(["ComposerGear", "ComposerMeta"]);
   });
 });
 
@@ -578,12 +570,14 @@ describe("the microphone menu", () => {
     expect(unweighed(anchor, ["position", ...FRAMERS])).toEqual([]);
   });
 
-  it.each(WIDTHS)("hangs from its caret's right edge and grows to the left at %i px", (width) => {
-    // The row ends at the gear's right edge, and the gear's box stands between
-    // that end and the caret, so the caret's right edge is the gear's box in.
+  it.each(WIDTHS)("hangs from the row's left end, beside its controls, at %i px", (width) => {
+    // Card 463 (owner, 2026-09-29, after Claude Code's composer): the
+    // microphone and the gear join the left group, and the right end belongs
+    // to the model, thinking and ring. The menu hangs from the row's left end,
+    // which is where its caret now stands, and grows to the right.
     for (const row of rowWidths(width)) {
-      expect(side(pop, "right", width, row)).toBe(gearBox(width));
-      expect(side(pop, "left", width, row)).toBe("auto");
+      expect(side(pop, "left", width, row)).toBe(0);
+      expect(side(pop, "right", width, row)).toBe("auto");
     }
   });
 
@@ -592,11 +586,11 @@ describe("the microphone menu", () => {
     expect(computed(pop, "bottom", width)).toMatch(/^calc\(100% \+ \d+px\)$/);
   });
 
-  it.each(WIDTHS)("ends inside the row on its left at every row width of a %i px window", (width) => {
+  it.each(WIDTHS)("ends inside the row at every row width of a %i px window", (width) => {
     for (const row of rowWidths(width)) {
-      const right = side(pop, "right", width, row);
-      if (right === "auto") throw new Error("the microphone menu has no right side");
-      expect(row - right - usedWidth(pop, width, row), `row ${row}px`).toBeGreaterThanOrEqual(0);
+      const left = side(pop, "left", width, row);
+      if (left === "auto") throw new Error("the microphone menu has no left side");
+      expect(row - left - usedWidth(pop, width, row), `row ${row}px`).toBeGreaterThanOrEqual(0);
     }
   });
 
@@ -625,14 +619,15 @@ describe("the gear's menu", () => {
     expect(unweighed(anchor, ["position", ...FRAMERS])).toEqual([]);
   });
 
-  it.each(WIDTHS)("hangs from the gear's right edge and opens upward at %i px", (width) => {
-    expect(computed(pop, "right", width)).toBe("0");
-    expect(computed(pop, "left", width) ?? "auto").toBe("auto");
+  it.each(WIDTHS)("hangs from the row's left end, beside the gear, and opens upward at %i px", (width) => {
+    // Card 463: the gear stands in the left group now (see the microphone's).
+    expect(computed(pop, "left", width)).toBe("0");
+    expect(computed(pop, "right", width) ?? "auto").toBe("auto");
     expect(computed(pop, "top", width) ?? "auto").toBe("auto");
     expect(computed(pop, "bottom", width)).toMatch(/^calc\(100% \+ \d+px\)$/);
   });
 
-  it.each(WIDTHS)("ends inside the row on its left at every row width of a %i px window", (width) => {
+  it.each(WIDTHS)("ends inside the row at every row width of a %i px window", (width) => {
     for (const row of rowWidths(width)) {
       expect(row - usedWidth(pop, width, row), `row ${row}px`).toBeGreaterThanOrEqual(0);
     }

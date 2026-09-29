@@ -1,6 +1,6 @@
 // The UI-chrome language — a tiny external store (à la layout/designPrefs)
-// persisted to localStorage. Default English; the header toggle flips it
-// live (de ships as the second locale). Stamps <html lang> so the browser
+// persisted to localStorage. Default English; the Settings page sets it
+// live (de ships as the second locale; card 442 took the header toggle out). Stamps <html lang> so the browser
 // hyphenates and screen-readers pronounce the chrome correctly. Chat content
 // is NEVER affected — a session keeps its own language.
 

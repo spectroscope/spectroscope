@@ -56,6 +56,10 @@ await ctx.addInitScript(([design]) => {
     );
     // The first-run backend sheet has nothing to do with the chat.
     localStorage.setItem("spectroscope:onboarded", "1");
+    // 0.14.2 (card 455): the learn-or-light question comes first on a new
+    // origin. These plates show the full app, so it counts as answered: learn.
+    localStorage.setItem("spectroscope:mode", "learn");
+    localStorage.setItem("spectroscope:mode-chosen", "1");
   } catch {}
 }, [DESIGN]);
 const page = await ctx.newPage();
@@ -99,6 +103,7 @@ async function panel(open) {
  *  denies the call and the plate ends up showing a refused command and a model
  *  apologising for it. `shotAtGate` photographs the bar first, because a run
  *  parked on a decision is one of the better frames this product has. */
+const GATE_ALLOW = ".modal--gate .modal-actions .soft-primary";
 async function say(text, { shotAtGate = null } = {}) {
   await page.locator(".composer-inner textarea").fill(text);
   // The send button lost its text and its classes on 2026-08-09: it is an icon
@@ -122,13 +127,15 @@ async function say(text, { shotAtGate = null } = {}) {
   const deadline = Date.now() + 240_000;
   let sawGate = false;
   while (Date.now() < deadline) {
-    if (await page.locator("button.gate-allow").count()) {
+    // The gate is a modal since 0.13.0; its Allow is the soft-primary button.
+    // `button.gate-allow` belonged to the old gate bar and matched nothing.
+    if (await page.locator(GATE_ALLOW).count()) {
       if (!sawGate && shotAtGate) {
         await hideSidebar();
         await shoot(shotAtGate);
       }
       sawGate = true;
-      await page.locator("button.gate-allow").first().click().catch(() => {});
+      await page.locator(GATE_ALLOW).first().click().catch(() => {});
       await page.waitForTimeout(500);
     }
     const busy = await page.evaluate(() =>
@@ -146,7 +153,9 @@ async function say(text, { shotAtGate = null } = {}) {
 
 /** Pick a row out of the disclosure popover by its label. */
 async function disclosure(section, row) {
-  await page.locator(".composer-inner button.icon-button.attach-button").first().click();
+  // The plus menu (card 224) wears the same `.icon-button.attach-button` and
+  // stands first in the row, so the view menu is named by its own anchor.
+  await page.locator(".composer-inner .disc-anchor > button").first().click();
   await page.waitForSelector(".disc-pop", { timeout: 4000 });
   await page.evaluate(([sec, want]) => {
     const pop = document.querySelector(".disc-pop");

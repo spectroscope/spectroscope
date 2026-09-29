@@ -1,0 +1,31 @@
+meta {
+  name: open Terminal in workspace
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/workspace/terminal
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "sessionId": "{{sessionId}}"
+  }
+}
+
+docs {
+  Open a Terminal.app window in a live session's working folder on the server machine (card 462). Same body, lookup and answers as POST /api/workspace/reveal: 204, 400, 404, 501, 500.
+  
+  CAUTION: Opens a Terminal window on the server machine; exclude it from automated replays.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: no
+}

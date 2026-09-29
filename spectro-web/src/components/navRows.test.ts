@@ -86,9 +86,9 @@ describe("navSegmentRows", () => {
     expect(locked.find((r) => r.id === "stategraph")?.disabled).toBe(false);
   });
 
-  it("hands Import to the sessions row and + node to the fleets row", () => {
+  it("hands + node to the fleets row; Import left the sessions row for the list's head (card 464)", () => {
     const onSessions = at({ active: "sessions" });
-    expect(onSessions.find((r) => r.id === "sessions")?.trailing).toBe("import");
+    expect(onSessions.find((r) => r.id === "sessions")?.trailing).toBeNull();
     expect(onSessions.find((r) => r.id === "fleets")?.trailing).not.toBe("spawn");
 
     const onFleets = at({ active: "fleets", fleetCount: 3 });

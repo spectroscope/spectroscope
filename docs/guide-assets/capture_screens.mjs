@@ -142,16 +142,29 @@ async function pickScenario(tab, name) {
   await jsClickByText(".scn-row", name);
 }
 
+// 0.14.3 (card 442): the header keeps one panel toggle, marked
+// data-header-icon="panel"; the per-panel icons this used to reach for by an
+// "agent" label are rows of the ⋮ menu now.
 const openRightPanel = async () => {
   const open = await page.evaluate(() => !!document.querySelector(".right-panel"));
   if (open) return;
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll(".icon-button")]
-      .find(x => /agent/i.test(x.getAttribute("aria-label") || ""));
-    if (!b) throw new Error("no panel toggle");
+    const b = document.querySelector('[data-header-icon="panel"]');
+    if (!b) throw new Error("no side panel toggle ([data-header-icon=panel])");
     b.click();
   });
   await page.waitForSelector(".right-panel");
+};
+/** One row of the header's ⋮ menu (card 442): open the menu, press the row. */
+const headerMenuRow = async (id) => {
+  await page.evaluate(() => {
+    const b = document.querySelector('[data-header-icon="menu"]');
+    if (!b) throw new Error("no header menu ([data-header-icon=menu])");
+    if (b.getAttribute("aria-expanded") !== "true") b.click();
+  });
+  await page.waitForSelector(`.hdr-menu-pop [data-menu-row="${id}"]`, { timeout: 5000 });
+  await jsClick(`.hdr-menu-pop [data-menu-row="${id}"]`);
+  await page.waitForTimeout(300);
 };
 // The dock's strip. It was `.rp-tab` until the dock became arrangeable panels
 // (0.9.0); the old selector threw inside step(), so the panel plates kept their
@@ -293,11 +306,9 @@ await step(async () => {
   await pickScenario("chats / agents", "Image generation");
   await page.waitForTimeout(1500);
   await jsClickByText('.tab-nav [role="tab"]', "chat");
-  await page.evaluate(() => {
-    const b = document.querySelector(".icon-button.image-toggle");
-    if (!b) throw new Error("no images button (.image-toggle)");
-    if (b.getAttribute("aria-expanded") !== "true") b.click();
-  });
+  // 0.14.3: the header's images button became the Images row of the ⋮ menu.
+  await headerMenuRow("images");
+  await jsClick('[data-header-icon="menu"]');   // a panel row leaves the menu open
   await page.waitForSelector('.right-panel [data-panel="images"]', { timeout: 8000 });
   await clickPanelTab("images");
   await page.waitForTimeout(1500);
@@ -379,10 +390,10 @@ await step(async () => {
 
 // ---------- settings page: the three designs ----------
 await step(async () => {
+  // 0.14.3: Settings left the header; it is the gear row at the sidebar's foot.
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll(".icon-button")]
-      .find(x => /setting/i.test(x.getAttribute("aria-label") || ""));
-    if (!b) throw new Error("no settings toggle");
+    const b = document.querySelector(".sidebar-foot .nav-row");
+    if (!b) throw new Error("no settings row (.sidebar-foot .nav-row)");
     b.click();
   });
   await page.waitForSelector(".settings-page");

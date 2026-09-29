@@ -16,8 +16,7 @@ knowable at that moment — before a node has run, before a token has moved. The
 the topology before the compile call even returns. What the event stream adds afterwards is
 light, not shape: nodes as they enter and leave, edges as they are taken, values as they are
 written. The header of a loaded view states the whole idea in one line, on every frame:
-“The topology is fixed at compile(), before the first token — so the graph is drawn first and
-the event stream only lights it up. Observe without touching.”</p>
+“Topology fixed at compile(); the event stream lights it up.”</p>
 
 <p>The runtime lives in <code>spectro-core</code>, in the published library, not in the app.
 The app never runs your graph and never asks a server for one; it reads two files your run

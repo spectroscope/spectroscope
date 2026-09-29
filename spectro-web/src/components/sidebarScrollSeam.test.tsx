@@ -6,10 +6,10 @@
 // belonged to `.sidebar`, so it measured the brand, six nav rows and the
 // settings foot as well as the sessions it actually moves.
 //
-// Both answers are structural. The control moves onto the LAST nav row's line,
-// placed against that group's own bottom edge rather than given a row; and the
-// segment content moves into `.sidebar-list`, which owns the overflow, so the
-// bar spans the rows and nothing else.
+// Both answers are structural. The segment content moves into `.sidebar-list`,
+// which owns the overflow, so the bar spans the rows and nothing else. The
+// control rode the last nav row's line until card 464 (owner, 2026-09-29) gave
+// the list a head row of its own: Sessions, Import, the options.
 //
 // What this file cannot see is a browser: the numbers are measured live on a
 // freshly built jar and reported on the card. Its job is to stop the shape
@@ -102,67 +102,56 @@ function divBlock(html: string, cls: string): string {
 
 const sessions = rail("sessions");
 
-describe("the options control shares the last nav row's line", () => {
-  it("draws it on the segment group's line instead of a row of its own", () => {
-    // The whole first ask. The line box holds the segment group AND the
-    // control; the control is placed against the group's bottom edge, which IS
-    // the last row's bottom edge, so no row is added for one glyph.
-    const line = divBlock(sessions, "sidebar-nav-seg-line");
-    expect(line).toContain('role="tablist"');
-    expect(line).toContain('class="sess-opts-btn"');
+describe("the session list has a head row (card 464)", () => {
+  // Owner, 2026-09-29: "dass Sessions links steht, Import in der Mitte und
+  // diese kleinen Einstellungen rechts". Card 217 had put the options control
+  // on the last nav row's line; there it lay over IMPORT on the sessions row in
+  // light and beside "State graph" in learn. The list gets a head row of its
+  // own above the rows, like the day heading of Claude Code's list.
+  const head = (): string => divBlock(sessions, "session-list-head");
+
+  it("puts Sessions on the left, Import in the middle and the options on the right", () => {
+    const row = head();
+    const caption = row.indexOf('class="session-list-caption"');
+    const importAt = row.indexOf('class="sidebar-import"');
+    const options = row.indexOf('class="sess-opts-btn"');
+    expect(caption).toBeGreaterThan(-1);
+    expect(importAt).toBeGreaterThan(caption);
+    expect(options).toBeGreaterThan(importAt);
+    expect(row).toContain(">Sessions<");
   });
 
-  it("leaves no options row behind, in the markup or in the stylesheet", () => {
-    // `.session-list-head` was a whole row of the block that never moves. It is
-    // gone, and gone means the rule too — an orphan rule is invisible, which is
-    // the lesson the deleted pile left in sidebarShape.drift.test.ts.
-    expect(sessions).not.toContain("session-list-head");
-    expect(rules.some((r) => r.selector.includes(".session-list-head"))).toBe(false);
+  it("lays the three out as left, centre and right", () => {
+    const decls = declsOf(".session-list-head");
+    expect(decls).toMatch(/display:\s*grid/);
+    expect(decls).toMatch(/grid-template-columns:\s*1fr auto 1fr/);
+    expect(declsOf(".session-list-head > .sess-opts")).toMatch(/justify-self:\s*end/);
   });
 
-  it("keeps the tablist owning tabs and nothing else", () => {
-    // The control rides the same LINE as the last tab, not the same LIST. A
-    // button inside `role="tablist"` is an owned element that is not a tab,
-    // which is exactly what the role forbids — so the wrapper goes around the
-    // group rather than inside it.
+  it("leaves the sessions nav row with nothing on its right", () => {
     const tablist = divBlock(sessions, "sidebar-nav sidebar-nav-seg");
+    expect(tablist).not.toContain("sidebar-import");
     expect(tablist).not.toContain("sess-opts");
     expect(tablist).toContain('role="tab"');
   });
 
   it("still rides the block that does not scroll (card 216)", () => {
-    // The move must not undo the fix it is built on: the control is reachable
-    // at every scroll position because it is inside `.sidebar-head`, and now
-    // also because the rows scroll in their own box underneath it.
-    expect(divBlock(sessions, "sidebar-head")).toContain('class="sess-opts-btn"');
+    expect(divBlock(sessions, "sidebar-head")).toContain('class="session-list-head"');
+    expect(divBlock(sessions, "sidebar-list")).not.toContain("session-list-head");
   });
 
-  it("offers it on the sessions segment only", () => {
-    // The line is drawn on every segment — it wraps the segment group — but
-    // options for a list nobody is looking at are noise.
+  it("is drawn on the sessions segment only", () => {
     for (const nav of SEGMENTS) {
       const html = rail(nav);
-      expect(html, nav).toContain("sidebar-nav-seg-line");
+      expect(html.includes("session-list-head"), nav).toBe(nav === "sessions");
       expect(html.includes("sess-opts-btn"), nav).toBe(nav === "sessions");
     }
   });
 
-  it("places the control against the group's bottom edge, not a row's name", () => {
-    // Which row is last is a fact about `navSegmentRows()`, and it has already
-    // changed once (card 201 made Browser the fourth). So the placement names
-    // no row: the group's bottom edge is the last row's bottom edge, whichever
-    // row that is and however many rows come before it.
-    expect(declsOf(".sidebar-nav-seg-line")).toMatch(/position:\s*relative/);
-    const opts = declsOf(".sidebar-nav-seg-line > .sess-opts");
-    expect(opts).toMatch(/position:\s*absolute/);
-    expect(opts).toMatch(/bottom:\s*var\(--nav-row-pad-y\)/);
-  });
-
   it("reads the row's own padding rather than a second copy of it", () => {
-    // The offset that lands the control on the row's line is the row's own
-    // vertical padding. Written twice it is a pair that drifts the day the
-    // rows get roomier — and the drift is silent, because a control 6px off
-    // its row still looks like a control. Declared once, read twice.
+    // The rows' vertical padding is one property, declared once on the rail;
+    // card 217 read it a second time to place the options control, which
+    // card 464 moved into the list's head row.
     expect(css.match(/--nav-row-pad-y:/g) ?? []).toHaveLength(1);
     expect(declsOf(".sidebar")).toMatch(/--nav-row-pad-y:/);
     expect(declsOf(".nav-row")).toMatch(/padding:\s*var\(--nav-row-pad-y\)/);

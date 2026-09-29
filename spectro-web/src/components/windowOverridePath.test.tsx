@@ -4,7 +4,8 @@
 // ContextRingWindowOverride.test.tsx pins the row's own presses, with handlers
 // the test builds itself. The lines that join the row to the session were
 // pinned by nothing: the popover's onSet and onClear, the ring handing its
-// handler to the popover, and the header handing App's handler to the ring.
+// handler to the popover, and the composer block (card 463; the header before it) handing App's handler to
+// the ring.
 // With all of them dropped or made no-ops, and App's frame built but not
 // sent, tsc and all 463 files stayed green (evidence 390/fix-2026-09-24/round2,
 // 01-gap-mutations.diff and 03-gap-full-suite.log). The App.tsx line is pinned
@@ -28,7 +29,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { isValidElement, useState, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AppHeader } from "./AppHeader";
+import { ComposerMeta } from "./ComposerMeta";
 import { ContextPopover, ContextRing, WindowOverrideRow } from "./ContextRing";
 import { contextGauge } from "./contextRingMath";
 import type { ContextSnapshot } from "../state/reducer";
@@ -173,37 +174,23 @@ const ring = (context: ContextSnapshot, handler: Handler | undefined) => (
   <ContextRing lastInputTokens={42_063} context={context} onWindowOverride={handler} />
 );
 
-const header = (viewingLive: boolean, handler: Handler) => (
-  <AppHeader
-    sidebarOpen={false}
-    onToggleSidebar={() => {}}
-    replayId={viewingLive ? null : "a-recorded-session"}
-    title="a session"
-    imageCount={0}
-    imagesOpen={false}
-    onToggleImages={() => {}}
-    showPanelToggle={false}
-    panelOpen={false}
-    onTogglePanel={() => {}}
-    settingsOpen={false}
-    onToggleSettings={() => {}}
-    doctorOpen={false}
-    onToggleDoctor={() => {}}
-    onOpenKeymap={() => {}}
-    viewingLive={viewingLive}
+// Card 463: the ring sits in the block under the composer now.
+const meta = (liveView: boolean, handler: Handler) => (
+  <ComposerMeta
+    provider="ollama"
+    model=""
     status="open"
     onApplyProvider={() => {}}
+    liveView={liveView}
     lastInputTokens={42_063}
     context={SET}
     onWindowOverride={handler}
-    running={false}
-    onAbort={() => {}}
   />
 );
 
-/** The popover the header's ring opens, as the ring builds it. */
-function openedFromHeader(viewingLive: boolean, handler: Handler): El {
-  return only(drive(header(viewingLive, handler), [AppHeader, ContextRing], [openRing]), ContextPopover);
+/** The popover the composer block's ring opens, as the ring builds it. */
+function openedFromMeta(liveView: boolean, handler: Handler): El {
+  return only(drive(meta(liveView, handler), [ComposerMeta, ContextRing], [openRing]), ContextPopover);
 }
 
 describe("the popover's buttons call the popover's handler (ContextPopover)", () => {
@@ -246,22 +233,22 @@ describe("the ring hands its handler to the popover it opens (ContextRing)", () 
   });
 });
 
-describe("the header hands App's handler to the ring in the live view only (AppHeader)", () => {
-  it("a Set pressed in the header's ring reaches the handler App passed", () => {
+describe("the composer block hands App's handler to the ring in the live view only (ComposerMeta)", () => {
+  it("a Set pressed in the ring reaches the handler App passed", () => {
     const r = recorder();
-    drive(openedFromHeader(true, r.handler), POPOVER, [type("512000"), press("context-override-apply")]);
+    drive(openedFromMeta(true, r.handler), POPOVER, [type("512000"), press("context-override-apply")]);
     expect(r.calls).toEqual([512_000]);
   });
 
-  it("a Clear pressed in the header's ring reaches it too", () => {
+  it("a Clear pressed in the ring reaches it too", () => {
     const r = recorder();
-    drive(openedFromHeader(true, r.handler), POPOVER, [press("context-override-clear")]);
+    drive(openedFromMeta(true, r.handler), POPOVER, [press("context-override-clear")]);
     expect(r.calls).toEqual([null]);
   });
 
   it("a replay opens the same popover with no row in it", () => {
     const r = recorder();
-    const opened = openedFromHeader(false, r.handler);
+    const opened = openedFromMeta(false, r.handler);
     expect(opened.props.onWindowOverride).toBeUndefined();
     const inside = drive(opened, POPOVER, []);
     expect(one(inside, "p", { className: "context-line tabular" }).props.children).toBeDefined();

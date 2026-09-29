@@ -9,10 +9,12 @@
   position: relative;
 }
 
-/* Room for the button at the right end, reserved whether the button shows or
-   not: a title that grows narrower under the pointer would jump. */
+/* Card 464 (owner, 2026-09-29): the title runs to the row's own padding.
+   Reserving 28px for a button that shows only under the pointer ended every
+   title early; the button stands over the title's end instead, on a ground of
+   its own, so the title does not jump either. */
 .session-item .session-row {
-  padding-right: 28px;
+  padding-right: var(--sp-2);
 }
 
 .session-menu-btn {
@@ -37,6 +39,9 @@
 .session-menu-btn[aria-expanded="true"] {
   opacity: 1;
 }
+.session-item:hover .session-menu-btn:not(:hover):not([aria-expanded="true"]) {
+  background: var(--surface-2);
+}
 .session-menu-btn:hover,
 .session-menu-btn[aria-expanded="true"] {
   background: var(--surface-3);
@@ -46,10 +51,15 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-/* No hover below 768 px, and none on a touch screen: the button is always there. */
+.session-item:focus-within .session-menu-btn:not(:hover) {
+  background: var(--surface-2);
+}
+/* No hover below 768 px, and none on a touch screen: the button is always
+   there, with its ground, so it does not sit on the title's last letters. */
 @media (max-width: 767px), (hover: none) {
   .session-menu-btn {
     opacity: 1;
+    background: var(--surface-2);
   }
 }
 

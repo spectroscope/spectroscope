@@ -124,9 +124,9 @@ export function navSegmentRows(input: {
       icon: "sessions",
       disabled: false,
       active: input.active === "sessions",
-      // Import belongs to the list it imports into, so it is only offered
-      // while that list is the one on screen.
-      trailing: input.active === "sessions" ? "import" : null,
+      // Card 464: Import sits in the list's own head row now, beside the
+      // list it imports into, not on this row.
+      trailing: null,
     },
     {
       id: "fleets",

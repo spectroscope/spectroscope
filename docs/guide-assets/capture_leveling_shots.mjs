@@ -268,7 +268,8 @@ if (MODE === "fresh") {
   await shootStrip("39-leveling-strip-deep");
 
   // ---- plate 9: the way out ----
-  await page.locator('button[aria-label="Settings"]').first().click();
+  // 0.14.3: Settings left the header; it is the gear row at the sidebar's foot.
+  await page.locator(".sidebar-foot .nav-row").first().click();
   await page.waitForSelector(".settings-page", { timeout: 5_000 });
   // The block only renders once the tutorial snapshot has arrived, so wait for it
   // rather than racing the fetch.

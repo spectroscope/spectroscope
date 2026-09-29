@@ -128,24 +128,12 @@ describe("the switch sits in the header", () => {
           replayId={viewingLive ? null : "a-recorded-session"}
           title="a session"
           imageCount={0}
-          imagesOpen={false}
-          onToggleImages={() => {}}
           showPanelToggle={false}
           panelOpen={false}
           onTogglePanel={() => {}}
-          settingsOpen={false}
-          onToggleSettings={() => {}}
           doctorOpen={false}
           onToggleDoctor={() => {}}
           onOpenKeymap={() => {}}
-          viewingLive={viewingLive}
-          status="open"
-          onApplyProvider={() => {}}
-          lastInputTokens={0}
-          context={null}
-          onWindowOverride={() => {}}
-          running={false}
-          onAbort={() => {}}
         />,
       );
       expect(html, String(viewingLive)).toMatch(/role="radiogroup"/);

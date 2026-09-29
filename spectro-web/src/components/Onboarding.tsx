@@ -135,8 +135,8 @@ export function Onboarding(props: {
                   <a href="https://lmstudio.ai" target="_blank" rel="noreferrer">
                     LM Studio
                   </a>
-                  , lade ein Modell, starte den Server (<code>:1234</code>) und wähl oben den Anbieter{" "}
-                  <code>lmstudio</code>.
+                  , lade ein Modell, starte den Server (<code>:1234</code>) und wähl in der Modellauswahl
+                  unter dem Nachrichtenfeld den Anbieter <code>lmstudio</code>.
                 </>
               ) : (
                 <>
@@ -145,7 +145,7 @@ export function Onboarding(props: {
                     LM Studio
                   </a>
                   , load a model, start its server (<code>:1234</code>), then pick provider{" "}
-                  <code>lmstudio</code> in the header.
+                  <code>lmstudio</code> in the model menu under the message box.
                 </>
               )
             }
@@ -161,9 +161,10 @@ export function Onboarding(props: {
                   <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noreferrer">
                     llama.cpp
                   </a>
-                  , starte <code>llama-server -m dein-modell.gguf</code> (Port <code>:8080</code>) und wähl
-                  oben den Anbieter <code>llamacpp</code>. Er bedient genau das Modell, mit dem er gestartet
-                  wurde — der Name oben ist eine Beschriftung, keine Auswahl.
+                  , starte <code>llama-server -m dein-modell.gguf</code> (Port <code>:8080</code>) und wähl in
+                  der Modellauswahl unter dem Nachrichtenfeld den Anbieter <code>llamacpp</code>. Er bedient
+                  genau das Modell, mit dem er gestartet wurde. Der Name oben ist eine Beschriftung, keine
+                  Auswahl.
                 </>
               ) : (
                 <>
@@ -172,8 +173,8 @@ export function Onboarding(props: {
                     llama.cpp
                   </a>
                   , run <code>llama-server -m your-model.gguf</code> (it listens on <code>:8080</code>), then
-                  pick provider <code>llamacpp</code> in the header. It serves the one model it was started
-                  with — the name above is a label, not a chooser.
+                  pick provider <code>llamacpp</code> in the model menu under the message box. It serves the
+                  one model it was started with. The name above is a label, not a chooser.
                 </>
               )
             }
@@ -236,8 +237,8 @@ export function Onboarding(props: {
         <div className="ob-foot">
           <p className="ob-foot-note">
             {de
-              ? "du kannst das jederzeit oben am Anbieter-Chip ändern."
-              : "you can change this any time from the provider chip in the header."}
+              ? "du kannst das jederzeit in der Modellauswahl unter dem Nachrichtenfeld ändern."
+              : "you can change this any time in the model menu under the message box."}
           </p>
           <button type="button" className="soft-primary" onClick={props.onClose}>
             {de ? "los geht's" : "got it"}

@@ -67,8 +67,8 @@ needs no install either:</p>
 (<code>OPENAI_API_KEY</code>), <code>openrouter</code> (<code>OPENROUTER_API_KEY</code>) and
 <code>gemini</code> (<code>GEMINI_API_KEY</code>).
 Set the provider in <code>~/.spectro/settings.json</code>, through
-<code>SPECTRO_PROVIDER</code>, with a <code>--provider</code> flag, or from the header
-picker. The CLI tour is the guided path: <code>spectro tour</code> → Settings
+<code>SPECTRO_PROVIDER</code>, with a <code>--provider</code> flag, or from the model
+chip under the message box. The CLI tour is the guided path: <code>spectro tour</code> → Settings
 <code>[s]</code> picks a provider, takes the key hidden, and can save it to
 <code>./.env</code> for you.</p>
 
@@ -93,9 +93,9 @@ same file — chapter 17.</p>
 
 <h2 id="ch-providers-switch">Switching mid-session</h2>
 
-<!--SHOT:17-provider-picker|The header picker: provider select plus a real model dropdown — Ollama's list is live from the server, cloud lists are curated, and a custom model is always typeable.-->
+<!--SHOT:17-provider-picker|The model picker under the message box, opened upward: provider select plus a real model dropdown. Ollama's list is live from the server, cloud lists are curated, and a custom model is always typeable.-->
 
-<p>The header chip opens the picker, and it offers every provider id in the table at the
+<p>The model chip under the message box opens the picker, and it offers every provider id in the table at the
 top of this chapter — the cloud backends, the OpenAI-compatible endpoints and the built-in
 model alike. Nothing has to be chosen in settings to be reachable from there;
 <code>SPECTRO_PROVIDER</code>, <code>~/.spectro/settings.json</code> and the

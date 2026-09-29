@@ -21,6 +21,7 @@
 // flatly refuses even though this machine's case-insensitive filesystem
 // tolerates it.
 
+import { GearGlyph } from "./gearGlyph";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEventHandler } from "react";
 import type { ClientMessage } from "../events";
@@ -353,15 +354,7 @@ export function ComposerGear({
         title={t(lang, "wsg.title")}
         onClick={() => setOpen((o) => !o)}
       >
-        {/* Card 383: a 16 unit box at 16px, so a viewBox unit is one CSS
-            pixel. Lucide draws its gear on a 24 unit grid and this rendered it
-            at 16px, mapping 1.5 units to the pixel and putting every
-            coordinate the glyph was drawn on at an offset its author never
-            saw. The geometry below is that same Lucide gear with every
-            coordinate multiplied by 2/3 and rounded to four decimals, so what
-            reaches the screen is unchanged: the largest departure from an
-            exact scale is 0.000033px. The stroke follows the same factor,
-            1.6 x 2/3, and therefore still renders at 1.07px as it did. */}
+        {/* Card 383 and card 442: the gear lives in gearGlyph.tsx. */}
         <svg
           viewBox="0 0 16 16"
           width="16"
@@ -373,8 +366,7 @@ export function ComposerGear({
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          <circle cx="8" cy="8" r="2" />
-          <path d="M12.9333 10 a1.1 1.1 0 0 0 0.22 1.2133 l0.04 0.04 a1.3333 1.3333 0 0 1 0 1.8867 1.3333 1.3333 0 0 1 -1.8867 0 l-0.04 -0.04 a1.1 1.1 0 0 0 -1.2133 -0.22 1.1 1.1 0 0 0 -0.6667 1.0067 V14 a1.3333 1.3333 0 0 1 -1.3333 1.3333 1.3333 1.3333 0 0 1 -1.3333 -1.3333 v-0.06 A1.1 1.1 0 0 0 6 12.9333 a1.1 1.1 0 0 0 -1.2133 0.22 l-0.04 0.04 a1.3333 1.3333 0 0 1 -1.8867 0 1.3333 1.3333 0 0 1 0 -1.8867 l0.04 -0.04 a1.1 1.1 0 0 0 0.22 -1.2133 1.1 1.1 0 0 0 -1.0067 -0.6667 H2 a1.3333 1.3333 0 0 1 -1.3333 -1.3333 1.3333 1.3333 0 0 1 1.3333 -1.3333 h0.06 A1.1 1.1 0 0 0 3.0667 6 a1.1 1.1 0 0 0 -0.22 -1.2133 l-0.04 -0.04 a1.3333 1.3333 0 0 1 0 -1.8867 1.3333 1.3333 0 0 1 1.8867 0 l0.04 0.04 a1.1 1.1 0 0 0 1.2133 0.22 H6 a1.1 1.1 0 0 0 0.6667 -1.0067 V2 a1.3333 1.3333 0 0 1 1.3333 -1.3333 1.3333 1.3333 0 0 1 1.3333 1.3333 v0.06 a1.1 1.1 0 0 0 0.6667 1.0067 1.1 1.1 0 0 0 1.2133 -0.22 l0.04 -0.04 a1.3333 1.3333 0 0 1 1.8867 0 1.3333 1.3333 0 0 1 0 1.8867 l-0.04 0.04 a1.1 1.1 0 0 0 -0.22 1.2133 V6 a1.1 1.1 0 0 0 1.0067 0.6667 H14 a1.3333 1.3333 0 0 1 1.3333 1.3333 1.3333 1.3333 0 0 1 -1.3333 1.3333 h-0.06 a1.1 1.1 0 0 0 -1.0067 0.6667 z" />
+          <GearGlyph />
         </svg>
       </button>
 

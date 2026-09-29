@@ -1,0 +1,31 @@
+meta {
+  name: show workspace in Finder
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/workspace/reveal
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "sessionId": "{{sessionId}}"
+  }
+}
+
+docs {
+  Show a live session's working folder in Finder on the server machine (card 462). The body names the session only; the server takes the folder the socket resolved for it, the path the workspace_info frame carries, and realises it before opening. 204 opened, 400 missing or malformed sessionId, 404 unknown session or no directory there, 501 non-macOS, 500 the program could not start.
+  
+  CAUTION: Opens a Finder window on the server machine; exclude it from automated replays.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: no
+}

@@ -10,6 +10,7 @@
 // and its rows keep role="tab" with aria-selected. Losing the button box must
 // not lose the semantics.
 
+import { GearGlyph } from "./gearGlyph";
 import type { ReactNode } from "react";
 import type { NavIconId } from "./navRows";
 
@@ -118,12 +119,6 @@ const PATHS: Record<NavIconId, ReactNode> = {
   // stack (Starters wears it) and not the gear: skills are what the product
   // CAN do, and the glyph family says that with one closed stroke.
   skills: <path d="M8 1.6 9.7 6.3 14.4 8 9.7 9.7 8 14.4 6.3 9.7 1.6 8 6.3 6.3z" />,
-  // The same gear the header wears, redrawn in this box: one door's icon must
-  // not be a different picture from the other's.
-  gear: (
-    <>
-      <circle cx="8" cy="8" r="2.1" />
-      <path d="M8 1.4v1.8M8 12.8v1.8M1.4 8h1.8M12.8 8h1.8M3.3 3.3l1.3 1.3M11.4 11.4l1.3 1.3M12.7 3.3l-1.3 1.3M4.6 11.4l-1.3 1.3" />
-    </>
-  ),
+  // Card 442: the composer's gear, from the one module both doors draw from.
+  gear: <GearGlyph />,
 };

@@ -1,21 +1,19 @@
-// The app header, extracted from App.tsx (clean-code night job): sidebar
-// toggle, eyebrow + title, and the right-side control cluster (gallery,
-// right panel, thinking, language, design drawer, provider picker/chip,
-// context ring, stop). Pure presentation — every piece of state stays in
-// App and arrives as props; the component only knows how the header looks.
+// The app header: sidebar toggle, eyebrow and title, the learn and light
+// switch and the ⋮ menu (card 442). A run stops from the composer's own stop
+// seat. Pure presentation: every piece of state stays in App and arrives as
+// props.
 
-import { ContextRing } from "./ContextRing";
-import { ProviderPicker } from "./ProviderPicker";
-import type { ConnectionStatus } from "../transport/ws";
-import type { UiState } from "../state/reducer";
 import { t } from "../i18n/i18n";
-import { toggleLang, useLang } from "../state/lang";
+import { useLang } from "../state/lang";
 import { replayEyebrow } from "./replayEyebrow";
-import { DockHeaderControls } from "../panels/headerPanelControls";
+import { HeaderMenu } from "../panels/headerPanelControls";
 import { ModeSwitch } from "./ModeSwitch";
+import { WorkspaceChip } from "./WorkspaceChip";
+import type { WorkspaceInfo } from "../state/reducer";
 
-/** Shown as the provider chip until a real provider name is known. */
-const FALLBACK_PROVIDER_LABEL = "spectroscope";
+/** Card 442: the only icon buttons the header may draw, in their order. The
+ *  rest lives in the ⋮ menu; appHeaderIcons.test.tsx counts against this. */
+export const HEADER_ICONS = ["sidebar", "panel", "menu"] as const;
 
 export function AppHeader(props: {
   sidebarOpen: boolean;
@@ -25,43 +23,24 @@ export function AppHeader(props: {
   /** True while the live view continues a stored session (resume). */
   resumed?: boolean;
   title: string;
-  /** Gallery: the toggle is always visible; the count badge appears once
-   *  images exist (owner 2026-07-20 — discoverable even in an empty chat). */
+  /** Generated images so far; the images row of the menu shows the count. */
   imageCount: number;
-  imagesOpen: boolean;
-  onToggleImages: () => void;
-  /** The right panel toggle shows only on the chat tab. */
+  /** The dock exists only on the chat tab; the menu lists its panels there. */
   showPanelToggle: boolean;
   panelOpen: boolean;
   onTogglePanel: () => void;
-  /** Whether the v2 reading offers the work panel — forwarded to the header's
-   *  panel icons (card 228), the same gate the dock itself applies. */
+  /** Whether the v2 reading offers the work panel, forwarded to the menu. */
   workPanelOffered?: boolean;
-  settingsOpen: boolean;
-  onToggleSettings: () => void;
   doctorOpen: boolean;
   onToggleDoctor: () => void;
   /** Opens the ? keymap overlay (edu port). */
   onOpenKeymap: () => void;
-  /** Live: the interactive picker. Replay: a static chip with the view's provider. */
-  viewingLive: boolean;
-  provider?: string;
-  /** Per-provider onboarding status from /api/config, forwarded to the picker. */
-  providerStatus?: Record<string, string>;
-  /** Card 193: per-provider addresses from /api/config, forwarded to the picker. */
-  providerAddress?: Record<string, string>;
-  model?: string;
-  archiveProvider?: string;
-  status: ConnectionStatus;
-  onApplyProvider: (provider: string, model: string) => void;
-  /** Context gauge — appears with the first usage event of the view. */
-  lastInputTokens: number;
-  context: UiState["context"];
-  /** Sets (a number) or clears (null) the window for this session from the
-   *  ring's popover (card 390). Handed to the ring in the live view only. */
-  onWindowOverride: (tokens: number | null) => void;
-  running: boolean;
-  onAbort: () => void;
+  /** Card 462: the live session's working folder, null before any frame. */
+  workspace?: WorkspaceInfo | null;
+  /** Opens the system folder dialog (the chip's "Change folder"). */
+  onPickFolder?: () => void;
+  /** Whether the folder may change now (card 428: before the first message, not during a run). */
+  canPickFolder?: boolean;
 }) {
   const lang = useLang();
 
@@ -70,6 +49,7 @@ export function AppHeader(props: {
       <button
         type="button"
         className="icon-button"
+        data-header-icon="sidebar"
         aria-label={props.sidebarOpen ? t(lang, "hdr.sidebarHide") : t(lang, "hdr.sidebarShow")}
         aria-expanded={props.sidebarOpen}
         onClick={props.onToggleSidebar}
@@ -98,40 +78,28 @@ export function AppHeader(props: {
         {props.title}
       </h1>
 
-      <button
-        type="button"
-        className="icon-button image-toggle"
-        aria-label={props.imagesOpen ? t(lang, "hdr.imagesHide") : t(lang, "hdr.imagesShow")}
-        aria-expanded={props.imagesOpen}
-        onClick={props.onToggleImages}
-      >
-        <svg
-          viewBox="0 0 16 16"
-          width="16"
-          height="16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect x="2" y="3" width="12" height="10" rx="2" />
-          <circle cx="6" cy="6.5" r="1" fill="currentColor" stroke="none" />
-          <path d="M2 11l3.5-3 2.5 2 3-2.5 3 2.5" />
-        </svg>
-        {props.imageCount > 0 && (
-          <span className="image-toggle-count tabular" aria-hidden="true">
-            {props.imageCount}
-          </span>
-        )}
-      </button>
+      {/* Card 462: the working folder of the live session, with its menu. */}
+      {props.workspace !== undefined && props.workspace !== null && props.onPickFolder !== undefined && (
+        <WorkspaceChip
+          workspace={props.workspace}
+          onPickFolder={props.onPickFolder}
+          canPick={props.canPickFolder === true}
+        />
+      )}
 
+      {/* Card 430: learn or light, in every nav state. */}
+      <ModeSwitch />
+
+      {/* The side panel toggle, left of the menu (owner, 2026-09-29: "Der
+          sollte draußen sein ... Links daneben"). The dock exists on the chat
+          tab only, and so does its toggle. */}
       {props.showPanelToggle && (
         <button
           type="button"
+          data-header-icon="panel"
           className={`icon-button${props.panelOpen ? " icon-button--on" : ""}`}
-          aria-label={props.panelOpen ? t(lang, "hdr.panelHide") : t(lang, "hdr.panelToggle")}
+          aria-label={props.panelOpen ? t(lang, "hdr.panelHide") : t(lang, "hdr.panelShow")}
+          title={props.panelOpen ? t(lang, "hdr.panelHide") : t(lang, "hdr.panelShow")}
           aria-expanded={props.panelOpen}
           onClick={props.onTogglePanel}
         >
@@ -152,159 +120,16 @@ export function AppHeader(props: {
         </button>
       )}
 
-      {/* Card 228 (criterion 7): one icon per panel plus the ⋮ overflow — the
-          second door to the dock's own layout truth. Shown with the workspace
-          toggle: the dock only exists on the chat tab. */}
-      {props.showPanelToggle && <DockHeaderControls workOffered={props.workPanelOffered === true} />}
-
-      {/* The thinking toggle moved into the provider picker (card 88): it is
-          a per-model control now, driven by the capability record — a header
-          switch could offer what the active model cannot do. */}
-
-      {/* Card 430: learn or light, in every nav state. */}
-      <ModeSwitch />
-
-      {/* UI language toggle — chrome only; chats keep their own language. */}
-      <button
-        type="button"
-        className="lang-toggle mono"
-        title={t(lang, "hdr.langTitle")}
-        aria-label={t(lang, "hdr.langTitle")}
-        onClick={toggleLang}
-      >
-        {lang.toUpperCase()}
-      </button>
-
-      {/* keymap — the ? shortcut sheet (edu port). */}
-      <button
-        type="button"
-        className="icon-button"
-        aria-label={lang === "de" ? "Tastaturkürzel" : "keyboard shortcuts"}
-        title={lang === "de" ? "Tastaturkürzel (?)" : "keyboard shortcuts (?)"}
-        onClick={props.onOpenKeymap}
-      >
-        <svg
-          viewBox="0 0 16 16"
-          width="16"
-          height="16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect x="1.5" y="4" width="13" height="8" rx="1.6" />
-          <path d="M4 6.5h0M6.5 6.5h0M9 6.5h0M11.5 6.5h0M5 9.5h6" />
-        </svg>
-      </button>
-
-      {/* spectro doctor — the calibration/status page. Reference-lamp glyph:
-          a source dot with its emission lines. */}
-      <button
-        type="button"
-        className={`icon-button${props.doctorOpen ? " icon-button--on" : ""}`}
-        aria-label={t(lang, "hdr.doctor")}
-        title={t(lang, "hdr.doctor")}
-        aria-expanded={props.doctorOpen}
-        onClick={props.onToggleDoctor}
-      >
-        <svg
-          viewBox="0 0 16 16"
-          width="16"
-          height="16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          aria-hidden="true"
-        >
-          <circle cx="5" cy="8" r="2.2" />
-          <path d="M10 4.5v7M12.5 6v4M15 7v2" />
-        </svg>
-      </button>
-
-      {/* Design switcher — opens the skin/effects drawer. */}
-      <button
-        type="button"
-        className={`icon-button${props.settingsOpen ? " icon-button--on" : ""}`}
-        aria-label={t(lang, "hdr.settings")}
-        aria-expanded={props.settingsOpen}
-        onClick={props.onToggleSettings}
-      >
-        {/* A real GEAR — the button opens the settings PAGE now; the old sun
-            icon read as a theme toggle and nobody found the settings. */}
-        <svg
-          viewBox="0 0 24 24"
-          width="16"
-          height="16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
-
-      {props.viewingLive ? (
-        <ProviderPicker
-          provider={props.provider ?? FALLBACK_PROVIDER_LABEL}
-          model={props.model ?? ""}
-          status={props.status}
-          providerStatus={props.providerStatus}
-          providerAddress={props.providerAddress}
-          onApply={props.onApplyProvider}
-          onOpenSettings={() => {
-            if (!props.settingsOpen) props.onToggleSettings();
-          }}
-        />
-      ) : (
-        <span className="provider-chip">
-          <span
-            className={`dot ${props.status === "open" ? "ok" : props.status === "connecting" ? "warn" : "error"}`}
-            aria-hidden="true"
-          />
-          <span className="mono">{props.archiveProvider ?? FALLBACK_PROVIDER_LABEL}</span>
-          {props.model && <span className="provider-chip-model mono">{props.model}</span>}
-        </span>
-      )}
-
-      {props.lastInputTokens > 0 && (
-        <ContextRing
-          lastInputTokens={props.lastInputTokens}
-          context={props.context}
-          onWindowOverride={ringWindowOverride(props.viewingLive, props.onWindowOverride)}
-        />
-      )}
-
-      {props.viewingLive && props.running && (
-        <button type="button" className="stop" onClick={props.onAbort}>
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-            <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
-          </svg>
-          Stop
-        </button>
-      )}
+      {/* Card 442: every panel, the keyboard shortcuts and spectro doctor are
+          rows of this menu. */}
+      <HeaderMenu
+        showDock={props.showPanelToggle}
+        workOffered={props.workPanelOffered === true}
+        imageCount={props.imageCount}
+        doctorOpen={props.doctorOpen}
+        onToggleDoctor={props.onToggleDoctor}
+        onOpenKeymap={props.onOpenKeymap}
+      />
     </header>
   );
-}
-
-/**
- * What the ring may do with the window of this session (card 390): set and
- * clear it in the live view, nothing in a replay. A replay reads a recorded
- * session, and a set pressed there would go to whatever socket is live.
- *
- * @param viewingLive whether the header shows the live session
- * @param handler     the live session's set-or-clear
- * @return the handler in the live view, undefined in a replay
- */
-export function ringWindowOverride(
-  viewingLive: boolean,
-  handler: (tokens: number | null) => void,
-): ((tokens: number | null) => void) | undefined {
-  return viewingLive ? handler : undefined;
 }
