@@ -73,7 +73,7 @@ run, add the address locally:
 and put this file back the way it is now before committing. `git diff` for the
 address is a cheap last check.
 
-## Since 0.14.2: capture from a copy
+## Capture from a copy
 
 `capture_screens.sh` copies this directory into a throwaway home for each
 theme and writes the backend into the copy's `settings.json`. The session

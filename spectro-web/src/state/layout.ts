@@ -87,7 +87,7 @@ export interface LayoutState {
   dockFiles: DockPanelMode;
   dockTerminal: DockPanelMode;
   dockBrowser: DockPanelMode;
-  /** Card 443: the generated images. A blob stored before 0.14.2 has no such
+  /** Card 443: the generated images. A blob stored before card 443 has no such
    *  field and hydrates closed, which is what every launch showed then: the
    *  old area's open state was never stored. */
   dockImages: DockPanelMode;
