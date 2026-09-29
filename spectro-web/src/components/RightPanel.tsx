@@ -21,18 +21,19 @@
 //    cover or clip the native pane (card 201), so all of that folds into the
 //    segment's `active` and the layout-commit nonce.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import type { AgentInfo, PlanStep } from "../state/reducer";
+import type { AgentInfo, GeneratedImage, PlanStep } from "../state/reducer";
 import {
   openDockPanel,
   setDockColumnShare,
   setDockColumnSplit,
+  setDockTabs,
   toggleDockCollapse,
   toggleDockPanel,
   useLayout,
@@ -51,7 +52,11 @@ import { WorkspaceTab } from "../workspace/WorkspaceTab";
 import { TerminalPanel } from "../panels/TerminalPanel";
 import { BrowserSegment } from "../browser/BrowserSegment";
 import { BrowserReplay } from "../browser/BrowserReplay";
+import { ImagePanel } from "./ImagePanel";
 import { DOCK_ORDER, dockLabelKey, dockModes, panelFills } from "../panels/dockModel";
+import { keepOnTabs, nextParked, tabsSeating } from "../panels/dockTabs";
+import { stripOverflow } from "../panels/dockStrip";
+import type { StripOverflow } from "../panels/dockStrip";
 import type { WorkspaceInfo } from "../state/reducer";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -146,6 +151,11 @@ export function RightPanel({
   liveView,
   sessionId,
   covered = false,
+  images = [],
+  imageProvider = "gemini",
+  imageKeys = null,
+  onImageProviderChange,
+  imageSessionId,
 }: {
   agents: AgentInfo[];
   plan: PlanStep[] | null;
@@ -188,6 +198,15 @@ export function RightPanel({
    *  segment's `active`, because a dialog cannot paint over the native pane —
    *  it has to be told to hide first. */
   covered?: boolean;
+  /** The generated images of the shown session (card 443). */
+  images?: GeneratedImage[];
+  /** The image backend the next generation uses. */
+  imageProvider?: string;
+  /** Key presence per image backend, null until /api/config answered. */
+  imageKeys?: { gemini: boolean; openai: boolean } | null;
+  onImageProviderChange?: (provider: string) => void;
+  /** The live session whose workspace receives copies; absent in a replay. */
+  imageSessionId?: string;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = agents.find((a) => a.id === selectedId) ?? null;
@@ -230,6 +249,35 @@ export function RightPanel({
   ].join("|");
 
   const offered = DOCK_ORDER.filter((id) => id !== "work" || work !== undefined);
+
+  // Card 444: tabs mode. The store keeps one panel open; the panels the
+  // operator swapped away from stay mounted and hidden here ("parked"), so a
+  // terminal keeps its shell and a browser its page across a swap. The refs are
+  // assigned during render and idempotently, the colKeyByPanel idiom below: a
+  // second render with the same shown panel parks nothing new.
+  const tabs = layout.dockTabs;
+  const shownTab = tabs ? (offered.find((id) => modes[id] !== "closed") ?? null) : null;
+  const parkedRef = useRef<DockPanelId[]>([]);
+  const prevShownRef = useRef<DockPanelId | null>(null);
+  if (tabs) {
+    parkedRef.current = nextParked(parkedRef.current, prevShownRef.current, shownTab).filter((id) =>
+      offered.includes(id),
+    );
+    prevShownRef.current = shownTab;
+  } else {
+    parkedRef.current = [];
+    prevShownRef.current = null;
+  }
+  // The panel the operator last clicked or focused in: the one that stays when
+  // the switch turns tabs on (criterion 4). The switch itself takes the focus
+  // when it is clicked, so the focus has to be read before that.
+  const lastTouched = useRef<DockPanelId | null>(null);
+  const noteTouched = (target: EventTarget | null): void => {
+    const id = (target as Element | null)?.closest?.("[data-panel]")?.getAttribute("data-panel");
+    if (id !== null && id !== undefined && (DOCK_ORDER as readonly string[]).includes(id)) {
+      lastTouched.current = id as DockPanelId;
+    }
+  };
 
   // The arrangement (card 236), projected onto what THIS reading offers: the
   // v1 chat has no work panel, so a stored seat for it renders nothing here —
@@ -276,7 +324,28 @@ export function RightPanel({
     work: work?.length,
     agents: agents.length,
     plan: plan?.length,
+    images: images.length,
   };
+
+  // 0.14.2 D2: the strip scrolls with its scrollbar hidden, so a tab cut at
+  // its edge read as covered by the Tabs switch. The strip says which edge
+  // hides a tab and panel-dock.css fades that edge.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const [stripEdge, setStripEdge] = useState<StripOverflow>("none");
+  const stripContent = [tabs, lang, offered.join(","), ...offered.map((id) => counts[id] ?? 0)].join("|");
+  useLayoutEffect(() => {
+    const el = stripRef.current;
+    if (el === null) return;
+    const measure = (): void => setStripEdge(stripOverflow(el.scrollLeft, el.scrollWidth, el.clientWidth));
+    measure();
+    el.addEventListener("scroll", measure, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    return () => {
+      el.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, [stripContent]);
 
   const bodyFor = (id: DockPanelId): ReactNode => {
     switch (id) {
@@ -337,6 +406,16 @@ export function RightPanel({
         ) : (
           <BrowserReplay sessionId={sessionId} />
         );
+      case "images":
+        return (
+          <ImagePanel
+            images={images}
+            provider={imageProvider}
+            keys={imageKeys}
+            onProviderChange={onImageProviderChange ?? (() => {})}
+            sessionId={imageSessionId}
+          />
+        );
     }
   };
 
@@ -380,6 +459,8 @@ export function RightPanel({
   };
 
   const renderCard = (id: DockPanelId, style?: CSSProperties): ReactNode => {
+    // Card 444: in tabs mode the strip is the only way between panels, so the
+    // card has no fold and no close; the dock's own close stays.
     const collapsed = modes[id] === "collapsed";
     const full = fullPanel === id;
     return (
@@ -390,15 +471,17 @@ export function RightPanel({
         className={`dock-panel${collapsed ? " dock-panel--collapsed" : ""}${full ? " dock-panel--full" : ""}`}
       >
         <header className="dock-panel-head">
-          <button
-            type="button"
-            className="dock-panel-fold"
-            aria-expanded={!collapsed}
-            aria-label={t(lang, collapsed ? "dock.expand" : "dock.collapse")}
-            onClick={() => toggleDockCollapse(id)}
-          >
-            <span aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
-          </button>
+          {!tabs && (
+            <button
+              type="button"
+              className="dock-panel-fold"
+              aria-expanded={!collapsed}
+              aria-label={t(lang, collapsed ? "dock.expand" : "dock.collapse")}
+              onClick={() => toggleDockCollapse(id)}
+            >
+              <span aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
+            </button>
+          )}
           <span className="dock-panel-name">{t(lang, dockLabelKey(id))}</span>
           {(counts[id] ?? 0) > 0 && <span className="tab-count tabular">{counts[id]}</span>}
           <button
@@ -430,25 +513,27 @@ export function RightPanel({
               <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" />
             </svg>
           </button>
-          <button
-            type="button"
-            className="icon-button dock-panel-x"
-            aria-label={t(lang, "dock.closePanel")}
-            onClick={() => toggleDockPanel(id)}
-          >
-            <svg
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              aria-hidden="true"
+          {!tabs && (
+            <button
+              type="button"
+              className="icon-button dock-panel-x"
+              aria-label={t(lang, "dock.closePanel")}
+              onClick={() => toggleDockPanel(id)}
             >
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
+              <svg
+                viewBox="0 0 16 16"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          )}
         </header>
         <div
           className={`dock-panel-body${panelFills(id) ? " dock-panel-body--fill" : ""}`}
@@ -504,23 +589,86 @@ export function RightPanel({
     );
   });
 
+  // Card 444: in tabs mode one flat, stably keyed column holds the shown panel
+  // and the parked ones, so a swap changes a style and never a parent.
+  const seating = tabsSeating(parkedRef.current, shownTab);
+  const tabbed = (
+    <div key="tabs" className="dock-col dock-tabs" data-col={0}>
+      {seating.mounted.map((id) => renderCard(id, id === seating.shown ? undefined : { display: "none" }))}
+    </div>
+  );
+
+  const stripLabel = (id: DockPanelId): ReactNode => (
+    <>
+      {t(lang, dockLabelKey(id))}
+      {(counts[id] ?? 0) > 0 && <span className="tab-count tabular">{counts[id]}</span>}
+    </>
+  );
+
   return (
     <aside className="right-panel" aria-label="Panel">
       <div className="right-panel-head dock-head">
-        <div className="dock-strip" role="toolbar" aria-label={t(lang, "dock.strip")}>
-          {offered.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className={modes[id] !== "closed" ? "dock-toggle dock-toggle--on" : "dock-toggle"}
-              aria-pressed={modes[id] !== "closed"}
-              onClick={() => toggleDockPanel(id)}
-            >
-              {t(lang, dockLabelKey(id))}
-              {(counts[id] ?? 0) > 0 && <span className="tab-count tabular">{counts[id]}</span>}
-            </button>
-          ))}
-        </div>
+        {tabs ? (
+          <div
+            ref={stripRef}
+            className="dock-strip"
+            data-overflow={stripEdge}
+            role="tablist"
+            aria-label={t(lang, "dock.strip")}
+          >
+            {offered.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={id === shownTab}
+                className={id === shownTab ? "dock-toggle dock-toggle--on" : "dock-toggle"}
+                onClick={() => openDockPanel(id)}
+              >
+                {stripLabel(id)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div
+            ref={stripRef}
+            className="dock-strip"
+            data-overflow={stripEdge}
+            role="toolbar"
+            aria-label={t(lang, "dock.strip")}
+          >
+            {offered.map((id) => (
+              <button
+                key={id}
+                type="button"
+                className={modes[id] !== "closed" ? "dock-toggle dock-toggle--on" : "dock-toggle"}
+                aria-pressed={modes[id] !== "closed"}
+                onClick={() => {
+                  // Opening a panel from the strip counts as touching it: the
+                  // switch to tabs keeps the panel just opened.
+                  if (modes[id] === "closed") lastTouched.current = id;
+                  toggleDockPanel(id);
+                }}
+              >
+                {stripLabel(id)}
+              </button>
+            ))}
+          </div>
+        )}
+        <label className="dock-tabs-switch" title={t(lang, "dock.tabsTitle")}>
+          <input
+            type="checkbox"
+            checked={tabs}
+            onChange={(e) => {
+              if (e.currentTarget.checked) {
+                setDockTabs(true, keepOnTabs(modes, offered, lastTouched.current) ?? undefined);
+              } else {
+                setDockTabs(false);
+              }
+            }}
+          />
+          <span>{t(lang, "dock.tabs")}</span>
+        </label>
         <button
           type="button"
           className="icon-button rp-close"
@@ -541,8 +689,18 @@ export function RightPanel({
           </svg>
         </button>
       </div>
-      <div className="dock-body dock-columns">
-        {columns.length === 0 ? <p className="dock-empty ctx-empty">{t(lang, "dock.empty")}</p> : arranged}
+      <div
+        className="dock-body dock-columns"
+        onPointerDownCapture={(e) => noteTouched(e.target)}
+        onFocusCapture={(e) => noteTouched(e.target)}
+      >
+        {tabs && seating.mounted.length > 0 ? (
+          tabbed
+        ) : columns.length === 0 ? (
+          <p className="dock-empty ctx-empty">{t(lang, "dock.empty")}</p>
+        ) : (
+          arranged
+        )}
       </div>
     </aside>
   );

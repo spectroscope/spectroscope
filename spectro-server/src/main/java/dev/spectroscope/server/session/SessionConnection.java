@@ -162,6 +162,9 @@ public final class SessionConnection {
      * switch stays on top via {@code activeConfig}.
      */
     private volatile boolean modeTouched;
+    /** Card 459: true once the operator switched this session's backend. A
+     *  switch, even back to the connect-time pair, outranks the workspace. */
+    private volatile boolean providerTouched;
 
     /** True once {@link #onSetThinking} has been called — same contract as
      *  {@link #modeTouched}: a live pre-build toggle survives the session-moment
@@ -559,6 +562,11 @@ public final class SessionConnection {
             close();
             return;
         }
+        // Release 0.14.2, live check D1: a resumed session announces and runs
+        // on the pair its own record names, not the window's last saved default.
+        if (resumeId != null) {
+            restoreSessionBackend(resumeId);
+        }
         // Every fresh socket learns the ACTIVE backend up front — the header
         // chip and the trace host column start from wire truth, not a guess.
         sendProviderInfo();
@@ -940,6 +948,73 @@ public final class SessionConnection {
     }
 
     /**
+     * Takes a resumed session's provider and model from its own record, before
+     * the connect frame names them (release 0.14.2, live check D1; card 459:
+     * sessions are independent, provider and model included).
+     *
+     * <p>The last run the main agent started decides, so a switch made inside
+     * the session and followed by a run survives a reload; a child's run does
+     * not decide. The base URL stays the connect-time one: the record does not
+     * carry it. A pair this server cannot use any more (an unknown provider, a
+     * cloud provider without its key, a factory refusal) is not obeyed: the
+     * session starts on the pair a fresh session gets, and the connect frame
+     * names that one. {@code spectro-local} is taken without a probe, because
+     * building it starts the local runtime; a model that is not ready is
+     * reported at the first prompt, as for a fresh session. A workspace
+     * settings file that names a backend still decides at the session moment
+     * ({@link #adoptSessionConfig()}), as for a fresh session.</p>
+     *
+     * @param sessionId the session being resumed
+     */
+    private void restoreSessionBackend(String sessionId) {
+        RunEvent.RunStart last = lastMainRunStart(sessionId);
+        if (last == null || last.provider() == null || last.provider().isBlank()
+                || last.model() == null || last.model().isBlank()) {
+            return;
+        }
+        String provider = last.provider();
+        String model = last.model();
+        if (!SpectroConfig.isKnownProvider(provider)) {
+            return;
+        }
+        if (SpectroConfig.switchRequiresKey(provider)
+                && !SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(provider))) {
+            return;
+        }
+        SpectroConfig derived = activeConfig.get().withProvider(provider, model);
+        if (!"spectro-local".equals(provider)) {
+            try {
+                dev.spectroscope.core.config.ProviderFactory.providerFromConfig(derived);
+            } catch (RuntimeException refused) {
+                return;
+            }
+        }
+        activeConfig.set(derived);
+    }
+
+    /**
+     * The last {@code run_start} of the main agent in a stored session.
+     *
+     * @param sessionId the session to read
+     * @return that event, or null when the file names none or cannot be read
+     */
+    private static RunEvent.RunStart lastMainRunStart(String sessionId) {
+        List<RunEvent> events;
+        try {
+            events = SessionStore.readSessionEvents(sessionId);
+        } catch (IOException | RuntimeException unreadable) {
+            return null;
+        }
+        RunEvent.RunStart last = null;
+        for (RunEvent event : events) {
+            if (event instanceof RunEvent.RunStart start && start.parentId() == null) {
+                last = start;
+            }
+        }
+        return last;
+    }
+
+    /**
      * The header provider picker: switch the LLM backend (and optionally its model)
      * mid-session. Applies on the NEXT run, via the {@link SwitchableProvider} — the
      * agent and its history stay put. A missing key (anthropic) is reported and the
@@ -995,6 +1070,7 @@ public final class SessionConnection {
             return;
         }
         activeConfig.set(derived);
+        providerTouched = true;
         if (switchable != null) {
             switchable.swap(next, providerName);   // agent already built: swap the delegate
         }
@@ -1728,8 +1804,10 @@ public final class SessionConnection {
      * The session moment: the workspace's own {@code .spectro} pair joins the
      * chain now, and what it resolves to becomes this session's active config.
      *
-     * <p>A pre-build provider switch (activeConfig differs from the connect
-     * snapshot) stays on top of the re-resolved config; a broken workspace file
+     * <p>The backend the session announced (the connect snapshot, or a
+     * pre-build switch) stays on top of the re-resolved config, unless the
+     * workspace's own settings name another one and no switch was made (card
+     * 459: a user-default change made by another session does not count); a broken workspace file
      * is loud but never fatal — the session falls back to the connect-time view.
      * The three live seeds (permission mode, thinking, image provider) are only
      * overwritten where the operator has not already touched them.</p>
@@ -1747,9 +1825,15 @@ public final class SessionConnection {
         SpectroConfig sessionConfig;
         try {
             sessionConfig = SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, workspace);
-            SpectroConfig switched = activeConfig.get();
-            if (!switched.provider().equals(config.provider()) || !switched.model().equals(config.model())) {
-                sessionConfig = sessionConfig.withProvider(switched.provider(), switched.model());
+            SpectroConfig announced = activeConfig.get();
+            // Card 459: the session runs on the backend it announced at connect
+            // (or was switched to). Only the workspace's own settings may still
+            // change it here. The user scope is not a reason: several sessions
+            // run at once, and a switch confirmed in one of them saves its pair
+            // as the default for NEW chats, which must not reach a session whose
+            // header already names another backend.
+            if (providerTouched || !workspaceNamesBackend(sessionConfig)) {
+                sessionConfig = sessionConfig.withProvider(announced.provider(), announced.model());
             }
         } catch (IllegalArgumentException invalidWorkspaceScope) {
             // Through the same door as the belt's per-call reading, so the
@@ -1776,6 +1860,18 @@ public final class SessionConnection {
         sendProviderInfo();
         sendPermissionModeInfo();
         return sessionConfig;
+    }
+
+    /**
+     * Whether the workspace's own settings pick a backend other than the one
+     * the scopes below it resolve to right now (card 459).
+     *
+     * @param withWorkspace the session-moment reading, workspace scopes included
+     * @return true when provider or model differ from the reading without them
+     */
+    private boolean workspaceNamesBackend(SpectroConfig withWorkspace) {
+        SpectroConfig below = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir);
+        return !below.provider().equals(withWorkspace.provider()) || !below.model().equals(withWorkspace.model());
     }
 
     /**

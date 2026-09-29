@@ -19,6 +19,9 @@ export const DOCK_ORDER: readonly DockPanelId[] = [
   "files",
   "terminal",
   "browser",
+  // Card 443: the generated images, which had an area of their own beside the
+  // dock until 0.14.2.
+  "images",
 ];
 
 /**
@@ -69,6 +72,7 @@ export function dockModes(layout: LayoutState): Record<DockPanelId, DockPanelMod
     files: layout.dockFiles,
     terminal: layout.dockTerminal,
     browser: layout.dockBrowser,
+    images: layout.dockImages,
   };
 }
 

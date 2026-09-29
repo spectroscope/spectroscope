@@ -56,6 +56,12 @@ public interface Tool {
      * @param reachOutside card 453: true when the file tools may resolve a path
      *                   outside {@code cwd} for this call (the {@code extended}
      *                   permission mode). False keeps the working-directory fence.
+     * @param contextWindow card 456: the window in tokens the loop hands the
+     *                   tool for this turn, which bounds a whole-file read: the
+     *                   window behind the compaction threshold (card 263), or
+     *                   the threshold itself when no window is known. 0 or less
+     *                   means nothing is known, and {@link ReadBudget} then
+     *                   judges against the compaction fallback.
      */
     record ToolContext(Path cwd, CancelSignal signal,
                        String agentId, String callId,          // from additive
@@ -63,7 +69,29 @@ public interface Tool {
                        Consumer<Attachment> attach,            // view_image/view_file, additive
                        Consumer<FileChange> report,            // card 269, additive
                        LongConsumer waitReport,                // human wait, additive (card 265)
-                       boolean reachOutside) {                 // extended mode, additive (card 453)
+                       boolean reachOutside,                   // extended mode, additive (card 453)
+                       int contextWindow) {                    // read bound, additive (card 456)
+
+        /**
+         * The shape before card 456: no window known, so a whole-file read is
+         * judged against the compaction fallback.
+         *
+         * @param cwd          the sandbox root every path tool resolves against
+         * @param signal       the run's cancel signal
+         * @param agentId      the calling agent
+         * @param callId       the tool_call id
+         * @param emit         sink into the run's event stream
+         * @param attach       sink for images/documents the model should SEE
+         * @param report       sink for what a mutating file tool did to its file
+         * @param waitReport   sink for milliseconds spent parked on a person
+         * @param reachOutside true when the file tools may leave {@code cwd}
+         */
+        public ToolContext(Path cwd, CancelSignal signal, String agentId, String callId,
+                           Consumer<RunEvent> emit, Consumer<Attachment> attach,
+                           Consumer<FileChange> report, LongConsumer waitReport,
+                           boolean reachOutside) {
+            this(cwd, signal, agentId, callId, emit, attach, report, waitReport, reachOutside, 0);
+        }
 
         /**
          * The shape before card 453: the working-directory fence stays closed.

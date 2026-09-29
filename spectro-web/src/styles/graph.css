@@ -99,32 +99,30 @@
    (the thumbnails ARE links, so they may glow on hover). */
 
 .chat-row {
-  position: relative; /* anchor for the narrow-viewport overlay */
+  position: relative; /* anchor for the narrow-row dock overlay */
+  /* Card 443: panel-dock.css asks this row's width, not the window's, so the
+     sidebar being open or closed is part of the answer. */
+  container: chat-row / inline-size;
   display: flex;
   flex: 1;
   min-height: 0;
 }
 .chat-row .chat { min-width: 0; }
 
-.image-panel {
+/* The image gallery, the body of the dock's images panel (card 443). The dock
+   card draws the frame, the name and the count; the card body scrolls. */
+.image-dock {
   display: flex;
   flex-direction: column;
-  flex: none;
-  width: 300px; /* fallback — the layout store drives the real width inline */
-  min-width: 0; /* long option labels must never widen the panel */
-  min-height: 0;
-  background-color: var(--surface);
-  background-image: linear-gradient(var(--glint), transparent 120px);
-  border-left: 1px solid var(--border);
+  gap: var(--sp-3);
+  min-width: 0;
 }
 
-.image-panel-head {
+.image-dock-head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  min-height: 44px;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 
 /* Provider select: styled like the composer well — Coral only on focus. */
@@ -165,18 +163,14 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.image-panel-scroll {
-  flex: 1;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+.image-dock-list {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-  padding: var(--sp-3);
 }
 
 /* Empty state: quiet hint, same voice as the sidebar note. */
-.image-panel-empty {
+.image-dock-empty {
   margin: 0;
   padding: var(--sp-3);
   border: 1px dashed var(--border-strong);

@@ -892,12 +892,12 @@
   {
     "owner" : "dev.spectroscope.core.skills.SkillLibrary",
     "field" : "MAX_SKILL_FILE_BYTES",
-    "value" : "50000",
-    "expression" : "50_000",
+    "value" : "2097152",
+    "expression" : "ReadBudget.FUSE_BYTES",
     "kind" : "ALIAS",
     "unit" : "BYTES",
     "key" : "",
-    "explanation" : "The ceiling on ONE sibling read, the same 50 kB read_file allows.\n\nNot a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to.\n\nALIAS and not FIXED, and the two annotations that disagreed about this at the merge are worth recording. It is deliberately the same figure as StandardTools.MAX_FILE_BYTES — a skill's own file is read under the same bound as any other, so an operator cannot learn one ceiling and meet another. That makes it a restatement rather than an independent number, which is exactly what card 357's fourth class is for; classifying it FIXED would put a second number in the registry where there is one decision, and moving one without the other is the shape card 365 found in the two question-budget defaults."
+    "explanation" : "The fuse on ONE sibling read, the same one read_file has, and like read_file the read also has to fit the window share of ReadBudget (card 456).\n\nNot a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to.\n\nALIAS and not FIXED, and the two annotations that disagreed about this at the merge are worth recording. It is deliberately the same figure as ReadBudget.FUSE_BYTES: a skill's own file is read under the same bound as any other, so an operator cannot learn one ceiling and meet another. That makes it a restatement rather than an independent number, which is exactly what card 357's fourth class is for; classifying it FIXED would put a second number in the registry where there is one decision, and moving one without the other is the shape card 365 found in the two question-budget defaults."
   },
   {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",
@@ -1030,6 +1030,46 @@
     "explanation" : "How long one fetch may spend on connect and on read before the tool answers with a failure instead of a page. The same 15 s the four search tiers use, and for the same reason: a model waiting on a dead host is spending the turn a person is watching."
   },
   {
+    "owner" : "dev.spectroscope.core.tools.ReadBudget",
+    "field" : "BYTES_PER_TOKEN",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "Bytes per token for the estimate, rounded down so a file is counted as larger than it is rather than smaller.\n\nMeasured on 2026-09-29: the first 20,000 bytes of five files from the product and home repositories (German and English markdown, Java, TSX, JSON) were sent to the qwen2.5:3b tokenizer through Ollama, and the prompt token count (prompt_eval_count) was read back. The German-heavy markdown came out at 3.19 bytes per token, the other four between 3.43 and 4.61, all five together at 3.72. The estimate takes 3, below the lowest file measured. The context estimate elsewhere in the harness divides characters by 4; the German markdown measured here comes out below that, which is why this estimate does not reuse it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ReadBudget",
+    "field" : "FUSE_BYTES",
+    "value" : "2097152",
+    "expression" : "2L * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The fixed fuse on one read, in bytes, whatever the window.\n\nThe largest window in the harness's own table (ModelWindows, 2,000,000 tokens) times the share times BYTES_PER_TOKEN admits 1,500,000 bytes. The fuse sits above that, at 2 MiB, so on every window in that table the share decides and the fuse only stops a file none of them would take: a log, a dump, a binary. A backend that publishes a larger window of its own meets the fuse first. ReadFuseAboveTheLargestTabledWindowTest derives the comparison from the table, so a larger row turns it red. It is also the only bound edit_file and grep use: neither puts the file into the conversation, and the fuse caps the memory one call holds for it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ReadBudget",
+    "field" : "UNKNOWN_WINDOW",
+    "value" : "100000",
+    "expression" : "CompactionThreshold.FALLBACK_THRESHOLD",
+    "kind" : "ALIAS",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The window a read is judged against when the run states none: the level the loop compacts at when it has learned nothing, read from CompactionThreshold rather than kept as a second copy."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.ReadBudget",
+    "field" : "WINDOW_SHARE_PERCENT",
+    "value" : "25",
+    "expression" : "25",
+    "kind" : "FIXED",
+    "unit" : "PERCENT",
+    "key" : "",
+    "explanation" : "The share of the context window one whole-file read may take, in per cent.\n\nCompaction trips at 70 % of the window (CompactionThreshold). A read of a quarter leaves 45 of those 70 points for the system prompt, the tool definitions and the rest of the conversation. A share near 70 % would let one read trip compaction on the next turn, and the summary would fold away the file the model had just asked for. On the owner's loaded window of 250,368 tokens a quarter is 62,592 tokens, about 187 kB."
+  },
+  {
     "owner" : "dev.spectroscope.core.tools.RtkFilter",
     "field" : "ORACLE_TIMEOUT_SECONDS",
     "value" : "5",
@@ -1091,6 +1131,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.tools.StandardTools",
+    "field" : "FUSE_BYTES",
+    "value" : "2097152",
+    "expression" : "ReadBudget.FUSE_BYTES",
+    "kind" : "ALIAS",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The fixed fuse on one file, read from ReadBudget (card 456). edit_file and grep use it alone: neither puts the file into the conversation, so the window share does not apply to them."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.StandardTools",
     "field" : "MAX_DOCUMENT_BYTES",
     "value" : "10485760",
     "expression" : "10L * 1024 * 1024",
@@ -1098,16 +1148,6 @@
     "unit" : "BYTES",
     "key" : "",
     "explanation" : "The providers' practical per-document limit — Anthropic's request cap is ~32 MB total and base64 inflates by a third, so 10 MB source keeps requests healthy."
-  },
-  {
-    "owner" : "dev.spectroscope.core.tools.StandardTools",
-    "field" : "MAX_FILE_BYTES",
-    "value" : "50000",
-    "expression" : "50_000",
-    "kind" : "UNEXAMINED",
-    "unit" : "BYTES",
-    "key" : "",
-    "explanation" : "How much of a file one read may take, in bytes. Beyond it the tool refuses and names the limit rather than truncating in silence. No argument for this particular value is recorded here."
   },
   {
     "owner" : "dev.spectroscope.core.tools.StandardTools",

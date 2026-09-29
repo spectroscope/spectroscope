@@ -204,10 +204,10 @@ chapter where the details live.</p>
   <tr><td><strong>Web chat</strong></td><td>Streaming chat with markdown answers, collapsible reasoning, tool cards with gate chips, image attachments, push-to-talk.</td><td>5</td></tr>
   <tr><td><strong>Graph view</strong></td><td>Every run as a BPMN-style flow overview or a dagre DAG — live and for any archived session.</td><td>6</td></tr>
   <tr><td><strong>Trace view</strong></td><td>The Wireshark of the harness: every wire frame both directions, filters, Δt, LLM-direction column, three detail modes.</td><td>6</td></tr>
-  <tr><td><strong>Right panel</strong></td><td>Agents roster, the agent's live plan, the exact system context per agent, and a sandboxed file browser.</td><td>6</td></tr>
+  <tr><td><strong>Right panel</strong></td><td>Agents roster, the agent's live plan, the exact system context per agent, a sandboxed file browser and the generated images, side by side or one at a time as tabs.</td><td>6</td></tr>
   <tr><td><strong>The Lab</strong></td><td>A step-through debugger for agent runs: dam up the event stream, advance it click by click across three synchronized views.</td><td>7</td></tr>
   <tr><td><strong>Scenarios</strong></td><td>Seven deterministic, compiled demo runs — no LLM, no key — for teaching every mechanism.</td><td>7</td></tr>
-  <tr><td><strong>Sessions</strong></td><td>Every run is a JSONL file: list, replay, resume live (with the context re-upload made visible), delete with a two-step guard.</td><td>8</td></tr>
+  <tr><td><strong>Sessions</strong></td><td>Every run is a JSONL file with one row in the list: click it and keep typing (the context re-upload stays visible), run several at once, each on its own provider and model, delete after a confirmation.</td><td>8</td></tr>
   <tr><td><strong>Import</strong></td><td>Replay foreign files: raw spectroscope JSONL verbatim, Claude Code transcripts through an adapter.</td><td>8</td></tr>
   <tr><td><strong>Design system</strong></td><td>Three brand designs — spectro dark, spectro bright, spectro white — switchable in place, particle/scroll effects, one-step persistence.</td><td>9</td></tr>
   <tr><td><strong>Desktop app</strong></td><td>Electron shell that spawns and supervises the server JVM: health checks, tray, native cron notifications.</td><td>10</td></tr>
@@ -221,7 +221,7 @@ chapter where the details live.</p>
   <tr><td><strong>Resilience</strong></td><td>Transient-error retry with backoff (spectroscope owns it, SDK retry off) and Anthropic prompt caching with an honest compaction trigger.</td><td>16</td></tr>
   <tr><td><strong>Vision</strong></td><td>Attach images in the composer or <code>--image</code>; blobs stay next to the session file, prompts stay small.</td><td>17</td></tr>
   <tr><td><strong>Voice in/out</strong></td><td>Local whisper.cpp push-to-talk (editable transcript) and piper speech output that reads answers while they stream.</td><td>17</td></tr>
-  <tr><td><strong>Image generation</strong></td><td><code>generate_image</code> behind its own provider port (Gemini / OpenAI), content-addressed store, gallery panel.</td><td>17</td></tr>
+  <tr><td><strong>Image generation</strong></td><td><code>generate_image</code> behind its own provider port (Gemini / OpenAI), content-addressed store, an Images panel in the dock.</td><td>17</td></tr>
   <tr><td><strong>MCP client</strong></td><td>External tool servers over stdio or HTTP/SSE, Claude-Desktop-shaped config, at-most-once calls, example notes server included.</td><td>18</td></tr>
   <tr><td><strong>Context management</strong></td><td>Automatic compaction at 100k tokens, forced <code>/compact</code>, live context ring with per-part introspection.</td><td>28</td></tr>
   <tr><td><strong>Wire tracing</strong></td><td><code>--verbose</code> mirrors the full agent↔provider protocol to stderr; the Trace tab does it in the browser.</td><td>4, 6</td></tr>

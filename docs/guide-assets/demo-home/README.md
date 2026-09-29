@@ -20,8 +20,9 @@ across every plate that left the rail open: real questions, real token
 counts, real timestamps.
 
 Collapsing the rail everywhere was not the fix, because five plates have the
-rail as their subject (`01-home-empty`, `02-scenario-picker`, `15-archive-bar`,
-`15b-delete-armed`, `16-trace-resume-marker`). Those need a session list that
+rail as their subject (`01-home-empty`, `02-scenario-picker`, `15-session-open`,
+`15b-session-delete-running`, `15c-sessions-parallel`, `16-trace-resume-marker`).
+Those need a session list that
 is safe to publish, which is this one.
 
 ## What is in it
@@ -71,6 +72,15 @@ run, add the address locally:
 
 and put this file back the way it is now before committing. `git diff` for the
 address is a cheap last check.
+
+## Since 0.14.2: capture from a copy
+
+`capture_screens.sh` copies this directory into a throwaway home for each
+theme and writes the backend into the copy's `settings.json`. The session
+plates continue a stored session, which appends to its file, so a run
+against this directory itself would change tracked files. The copy leaves
+this directory as committed, and the reset below is only needed for the
+manual recipe.
 
 ## Reset between capture runs
 

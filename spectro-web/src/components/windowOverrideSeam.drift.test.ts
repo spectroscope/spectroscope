@@ -14,6 +14,8 @@ import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
 
 const app = stripComments(read("../App.tsx", import.meta.url));
+// Cards 458 and 459: the socket is a record's in the session set.
+const set = stripComments(read("../state/sessionSet.ts", import.meta.url));
 
 /**
  * The JSX element `<Name … />` as text, from its first mount.
@@ -47,11 +49,17 @@ describe("App sends the window set in the header's ring on the session socket", 
   });
 
   it("and sendClient hands the frame to the connection", () => {
-    const head = "const sendClient = useCallback((msg: ClientMessage): boolean => {";
+    const head = "const sendClient = useCallback(";
     const from = app.indexOf(head);
     expect(from, "sendClient must be declared in this form").toBeGreaterThan(-1);
-    const to = app.indexOf("}, []);", from);
+    const to = app.indexOf("[sessions],", from);
     expect(to, "sendClient's body must close").toBeGreaterThan(from);
-    expect(app.slice(from, to)).toContain("const sent = connRef.current?.send(msg) === true;");
+    // App hands the frame to the record in view, and the record to its socket.
+    expect(app.slice(from, to)).toContain("sessions.sendClient(sessions.view().key, msg)");
+    const inSet = set.slice(
+      set.indexOf("sendClient(key: string, msg: ClientMessage)"),
+      set.indexOf("sendNow("),
+    );
+    expect(inSet).toContain("const sent = record.connection?.send(msg) === true;");
   });
 });

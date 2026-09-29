@@ -53,12 +53,10 @@ function rail(nav: NavMode): string {
     <Sidebar
       activeId={null}
       refreshToken={0}
-      onSelectLive={() => {}}
       onSelectSession={() => {}}
       onNewChat={() => {}}
       onSettings={() => {}}
-      liveRunning={false}
-      resumeId={null}
+      held={[]}
       onImport={() => {}}
       onScenarios={() => {}}
       onStarters={() => {}}

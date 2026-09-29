@@ -42,7 +42,9 @@ const BASE = process.env.BASE_URL || (MODE === "fresh" ? "http://localhost:8151"
 mkdirSync(OUT, { recursive: true });
 
 const DESIGN = LIGHT ? "paper" : "spectroscope"; // spectro bright | spectro dark
-const browser = await chromium.launch();
+// The installed Chrome channel, like the main suite: the bundled Chromium is
+// not downloaded on the capture machine.
+const browser = await chromium.launch({ channel: "chrome", headless: true });
 const ctx = await browser.newContext({
   viewport: { width: 1600, height: 1000 },
   deviceScaleFactor: 1.5,
@@ -62,6 +64,17 @@ await ctx.addInitScript(([design]) => {
     );
   } catch {}
 }, [DESIGN]);
+// 0.14.2 (card 455): the learn-or-light question comes before the tutorial
+// question, once per origin. The fresh pass photographs it; the climb pass has
+// it answered with learn, since light has no tutorial to climb.
+if (MODE !== "fresh") {
+  await ctx.addInitScript(() => {
+    try {
+      localStorage.setItem("spectroscope:mode", "learn");
+      localStorage.setItem("spectroscope:mode-chosen", "1");
+    } catch {}
+  });
+}
 const page = await ctx.newPage();
 const shots = [];
 
@@ -121,7 +134,17 @@ await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForTimeout(900);
 
 if (MODE === "fresh") {
-  // ---- plate 1: the one screen a never-used home opens with ----
+  // ---- plate 0: the mode question, before everything else (card 455) ----
+  if (!(await page.locator(".mode-intro").count())) {
+    console.error("no mode screen on screen: this browser context has answered it, or the build predates 0.14.2");
+    await browser.close();
+    process.exit(1);
+  }
+  await shoot("68-mode-intro");
+  await page.locator(".mode-intro__pick").filter({ hasText: "Every part of the app" }).click();
+  await page.waitForSelector(".lvl-intro", { timeout: 10_000 });
+
+  // ---- plate 1: the tutorial question, which learn goes on to ----
   const introUp = await page.locator(".lvl-intro").count();
   if (!introUp) {
     console.error("no intro on screen — this home has already answered; start the server on a pristine -Duser.home");

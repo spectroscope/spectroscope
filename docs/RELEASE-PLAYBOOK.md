@@ -568,6 +568,9 @@ sign with `-` only — **never** a corporate/Valtech identity that
   Minimum smoke there: `./spectro-app doctor`, `./spectro-app web --port 8097`
   (server must come up on 8097), `./spectro-app desktop`. Dev-tree behaviour
   proves nothing about a clone.
+- **Test voice input in the signed desktop app, not only in a browser** (card
+  457): a browser tab brings its own microphone permission, so the browser
+  test passes even when the app has no microphone entitlement.
 - **`CSC_NAME` wants the identity WITHOUT the "Developer ID Application: "
   prefix** (0.2.0 signing lesson) — details in
   [DESKTOP-SIGNING.md](DESKTOP-SIGNING.md); the build script handles it, do

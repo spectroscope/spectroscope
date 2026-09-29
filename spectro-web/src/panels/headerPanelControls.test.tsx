@@ -60,8 +60,10 @@ describe("the overflow menu lists every panel with a check row", () => {
   it("lists all offered panels as menuitemcheckbox rows, checked off the store", () => {
     toggleDockPanel("plan");
     const html = renderToStaticMarkup(<DockHeaderControls workOffered={false} menuOpenForTest />);
-    // Six panels without work; agents and plan are the open ones.
-    expect(count(html, 'role="menuitemcheckbox"')).toBe(6);
+    // Every panel but work (card 443 added the images, so the number is
+    // derived from the vocabulary instead of typed); agents and plan are open.
+    expect(count(html, 'role="menuitemcheckbox"')).toBe(DOCK_ORDER.length - 1);
+    expect(html).toContain('data-menu-panel="images"');
     expect(count(html, 'aria-checked="true"')).toBe(2);
   });
 

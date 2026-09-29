@@ -717,6 +717,18 @@
   border-left-color: var(--accent);
   transform: none;
 }
+/* Card 459: what a held session asks of the reader, after its name. Words,
+   not only colour: "waiting for you" pulses like the gate chip, "waiting for
+   the model" stays quiet. */
+.session-wait {
+  flex: none;
+  margin-left: var(--sp-1);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.session-wait--answer {
+  color: var(--accent);
+}
 
 .session-title {
   display: block;

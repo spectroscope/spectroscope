@@ -27,7 +27,7 @@ function mounts(src: string, name: string): number {
 }
 
 /**
- * The two arms of Chat.tsx's `{liveView ? ( … ) : ( … )}` composer render.
+ * The two arms of Chat.tsx's `{composerOpen ? ( … ) : ( … )}` composer render.
  *
  * A control mounted inside one arm exists on one of the two screens only, and
  * reading the file top to bottom does not show that: the arms are 150 lines
@@ -38,11 +38,11 @@ function mounts(src: string, name: string): number {
  * @return the live arm and the archive arm, each as text
  */
 function composerArms(src: string): { live: string; archive: string } {
-  const open = src.indexOf("{liveView ? (");
+  const open = src.indexOf("{composerOpen ? (");
   const split = src.indexOf("\n      ) : (\n", open);
   const close = src.indexOf("\n      )}\n", split);
   if (open < 0 || split < 0 || close < 0) {
-    throw new Error("Chat.tsx no longer renders one `{liveView ? ( … ) : ( … )}` composer");
+    throw new Error("Chat.tsx no longer renders one `{composerOpen ? ( … ) : ( … )}` composer");
   }
   return { live: src.slice(open, split), archive: src.slice(split, close) };
 }

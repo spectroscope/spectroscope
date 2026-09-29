@@ -41,7 +41,8 @@ export type RightTab = "agents" | "context" | "plan" | "files" | "work";
 /** The dock's panels (card 219, first cut): every former right-panel tab as a
  *  panel of its own, plus the terminal (promoted out of the Files surface) and
  *  the browser (the owner's ask: in the same workspace as the others). */
-export type DockPanelId = "work" | "agents" | "plan" | "context" | "files" | "terminal" | "browser";
+export type DockPanelId =
+  "work" | "agents" | "plan" | "context" | "files" | "terminal" | "browser" | "images";
 
 /** One panel's state. `collapsed` means folded to its header but MOUNTED —
  *  that is the display:none idiom of card 175, and for the terminal it is the
@@ -70,7 +71,9 @@ export interface LayoutState {
   rightPanelOpen: boolean;
   /** Chat tab's right panel width in px. */
   rightPanelW: number;
-  /** Image gallery panel width in px (resizable like the workspace panes). */
+  /** The old image area's width in px. Card 443 moved the images into the
+   *  dock and nothing reads this any more; it stays for blob compatibility in
+   *  both directions, like `dockWeights`. */
   imagesW: number;
   /** Which tab the right panel shows. Unwritten since card 219 (see RightTab). */
   activeRightTab: RightTab;
@@ -84,6 +87,10 @@ export interface LayoutState {
   dockFiles: DockPanelMode;
   dockTerminal: DockPanelMode;
   dockBrowser: DockPanelMode;
+  /** Card 443: the generated images. A blob stored before 0.14.2 has no such
+   *  field and hydrates closed, which is what every launch showed then: the
+   *  old area's open state was never stored. */
+  dockImages: DockPanelMode;
   /** The panels' height weights, serialized (`"files:2,terminal:0.5"`) — one
    *  string field keeps the equality check one line. Parsing and clamping live
    *  in panels/dockModel.ts. */
@@ -115,6 +122,11 @@ export interface LayoutState {
    *  this (the header toggle, the dock's close, the header panel icons); the
    *  agent's cue (card 241) and the other programmatic opens stay transient. */
   dockReturn: boolean;
+  /** Card 444: the dock shows one panel at a time. Off by default (owner call
+   *  1, answered 2026-09-29): side by side stays what everybody has. While on,
+   *  the store's opening verbs close the shown panel before they open another,
+   *  so every door into the dock obeys it without knowing about it. */
+  dockTabs: boolean;
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -141,6 +153,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   dockFiles: "closed",
   dockTerminal: "closed",
   dockBrowser: "closed",
+  dockImages: "closed",
   dockWeights: "",
   // The roster alone in one column — the serialized form of the default face.
   dockColumns: "agents~1~0.5",
@@ -148,6 +161,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   // pane on one fresh tab exactly as it always did (restoreTabs).
   dockTermTabs: "",
   dockReturn: false,
+  dockTabs: false,
 };
 
 const KEY = "spectroscope:layout";
@@ -214,6 +228,7 @@ const DOCK_FIELDS = [
   "dockFiles",
   "dockTerminal",
   "dockBrowser",
+  "dockImages",
 ] as const;
 
 /** The store key for one dock panel's mode. Every RightTab is also a
@@ -226,6 +241,7 @@ const DOCK_FIELD: Record<DockPanelId, (typeof DOCK_FIELDS)[number]> = {
   files: "dockFiles",
   terminal: "dockTerminal",
   browser: "dockBrowser",
+  images: "dockImages",
 };
 
 function normalizeMode(v: unknown): DockPanelMode {
@@ -288,10 +304,20 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   // Card 242: the launch rule, same for every era (see the javadoc above).
   state.dockReturn = typeof blob.dockReturn === "boolean" ? blob.dockReturn : blob.rightPanelOpen === true;
   state.rightPanelOpen = false;
+  // Card 444: only a real true turns tabs on; junk heals to side by side and
+  // leaves the rest of the blob alone.
+  state.dockTabs = blob.dockTabs === true;
   const postCard = DOCK_FIELDS.some((f) => f in blob);
   if (postCard) {
     for (const f of DOCK_FIELDS) state[f] = normalizeMode(state[f]);
     if (typeof state.dockWeights !== "string") state.dockWeights = "";
+    // Card 444: a tabs layout shows one panel. A blob that says otherwise (an
+    // older build wrote it, or a hand edit) keeps the first shown panel in
+    // dock order.
+    if (state.dockTabs) {
+      const keep = DOCK_ORDER.find((id) => state[DOCK_FIELD[id]] !== "closed");
+      for (const id of DOCK_ORDER) if (id !== keep) state[DOCK_FIELD[id]] = "closed";
+    }
     // Card 236: a 228-era blob has modes but no arrangement — its open panels
     // hydrate through the fill rule in DOCK_ORDER, losslessly. A 236 blob is
     // taken at its word, reconciled against the modes it arrived with.
@@ -494,10 +520,12 @@ function set(patch: Partial<LayoutState>): void {
     next.dockFiles === state.dockFiles &&
     next.dockTerminal === state.dockTerminal &&
     next.dockBrowser === state.dockBrowser &&
+    next.dockImages === state.dockImages &&
     next.dockWeights === state.dockWeights &&
     next.dockColumns === state.dockColumns &&
     next.dockTermTabs === state.dockTermTabs &&
-    next.dockReturn === state.dockReturn
+    next.dockReturn === state.dockReturn &&
+    next.dockTabs === state.dockTabs
   ) {
     return; // no change — no emit
   }
@@ -572,11 +600,54 @@ export function setActiveRightTab(tab: RightTab): void {
   set({ activeRightTab: tab });
 }
 
+/** Card 444: the patch that makes `id` the one shown panel, alone in the
+ *  arrangement. */
+function onlyPanel(id: DockPanelId): Partial<LayoutState> {
+  const patch: Partial<LayoutState> = {};
+  for (const other of DOCK_ORDER) patch[DOCK_FIELD[other]] = other === id ? "open" : "closed";
+  patch.dockColumns = serializeColumns(openInColumns([], id, panelFills));
+  return patch;
+}
+
+/**
+ * The dock's switch (card 444). Turning tabs on keeps one panel: `keep` when it
+ * is given (the dock passes the panel the operator last touched, else the first
+ * one it shows), otherwise the first shown panel in dock order. Turning tabs off
+ * keeps the one panel that is open and changes nothing else.
+ *
+ * @param on   true for one panel at a time, false for side by side
+ * @param keep the panel that stays when tabs turn on
+ */
+export function setDockTabs(on: boolean, keep?: DockPanelId): void {
+  if (!on) {
+    set({ dockTabs: false });
+    return;
+  }
+  const kept =
+    keep !== undefined && keep in DOCK_FIELD
+      ? keep
+      : DOCK_ORDER.find((id) => state[DOCK_FIELD[id]] !== "closed");
+  set(kept === undefined ? { dockTabs: true } : { dockTabs: true, ...onlyPanel(kept) });
+}
+
 /** The strip's show/hide: closed opens, anything visible closes. The column
  *  arrangement moves WITH the mode (card 236): an open seats the panel by the
- *  fill rule, a close frees its seat and collapses an emptied column. */
+ *  fill rule, a close frees its seat and collapses an emptied column.
+ *
+ *  <p>In tabs mode (card 444) a closed panel takes the place of the shown one,
+ *  and the shown panel's own door shows or hides the dock instead of closing
+ *  the panel: an open dock always shows exactly one panel.</p> */
 export function toggleDockPanel(id: DockPanelId): void {
   const field = DOCK_FIELD[id];
+  if (state.dockTabs) {
+    if (state[field] === "closed") {
+      set(onlyPanel(id));
+      return;
+    }
+    const next = !state.rightPanelOpen;
+    set({ rightPanelOpen: next, dockReturn: next });
+    return;
+  }
   const closing = state[field] !== "closed";
   const cols = parseColumns(state.dockColumns, DOCK_ORDER);
   set({
@@ -599,6 +670,13 @@ export function toggleDockCollapse(id: DockPanelId): void {
  *  back byte-identical. */
 export function openDockPanel(id: DockPanelId): void {
   const field = DOCK_FIELD[id];
+  if (state.dockTabs) {
+    // Card 444: the new panel takes the shown one's place.
+    const alone = DOCK_ORDER.every((other) => other === id || state[DOCK_FIELD[other]] === "closed");
+    if (state[field] === "open" && alone) return;
+    set(onlyPanel(id));
+    return;
+  }
   if (state[field] === "open") return;
   set({
     [field]: "open",

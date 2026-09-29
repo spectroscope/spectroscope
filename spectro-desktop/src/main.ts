@@ -16,6 +16,7 @@ import { SERVER_PORT_FILE, readRememberedPort, rememberedPortPayload, shouldPers
 import { appMenuTemplate, openAboutScript, toTemplate, type Handlers } from "./menu";
 import { trayMenuModel, traySummary, trayTooltip, type ShellAction, type TrayStatus } from "./menuModel";
 import { shellCommandScript, type ShellCommandId } from "./shellCommands";
+import { quitQuestion, runningCount } from "./quitGuard";
 
 // Health budget: 30 s by default, overridable for slow environments (the CI
 // xvfb smoke and emulated containers boot the JVM far slower than any laptop).
@@ -576,7 +577,18 @@ if (!gotTheLock) {
   // finishing the current JSONL line — then a SIGKILL escalation after KILL_GRACE_MS if the
   // process is still alive. On Windows there are no POSIX signals: kill terminates hard. Fine
   // here (platform difference).
-  app.on("before-quit", shutdown);
+  // Card 459, owner call 4: several sessions can run at once, and quitting
+  // stops them all. The first quit asks the server what is running and, if
+  // anything is, asks the user; a confirmed quit (or nothing running) goes on
+  // to shutdown() as before.
+  app.on("before-quit", (event) => {
+    if (quitConfirmed || !serverUp || serverPort === 0) {
+      shutdown();
+      return;
+    }
+    event.preventDefault();
+    void confirmQuit();
+  });
 
   // (f') Linux only: a terminating signal (kill, session logout, the CI xvfb
   // smoke) does NOT route through before-quit there — Chromium just dies, and
@@ -585,7 +597,10 @@ if (!gotTheLock) {
   // linux so the darwin path is untouched by construction.
   if (process.platform === "linux") {
     for (const sig of ["SIGTERM", "SIGINT"] as const) {
-      process.on(sig, () => app.quit());
+      process.on(sig, () => {
+        quitConfirmed = true; // a signal is not asked (card 459): nobody is there to answer
+        app.quit();
+      });
     }
   }
 }
@@ -652,6 +667,29 @@ async function startup(): Promise<void> {
   refreshTray();
 
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) focusOrCreateWindow(); });
+}
+
+/** True once a quit was confirmed, or needs no question (card 459). */
+let quitConfirmed = false;
+
+/** How many sessions run right now, from the server's live set; 0 when it does not answer in time. */
+async function runningSessions(port: number): Promise<number> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/sessions/live`, { signal: AbortSignal.timeout(1500) });
+    return res.ok ? runningCount(await res.json()) : 0;
+  } catch {
+    return 0; // a server that cannot answer has nothing to protect here
+  }
+}
+
+async function confirmQuit(): Promise<void> {
+  const question = quitQuestion(await runningSessions(serverPort));
+  if (question !== null) {
+    const answer = await dialog.showMessageBox({ type: "question", title: "Quit spectroscope", ...question });
+    if (answer.response !== 0) return;
+  }
+  quitConfirmed = true;
+  app.quit();
 }
 
 function shutdown(): void {

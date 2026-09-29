@@ -16,7 +16,7 @@ FREE, GATE, PREFIX = "free", "gated", "gated + rule"
 GROUPS = [
     ("Files + search", C.ZONE_DISK_DEEP, [
         ("list_dir", FREE, "list a directory (sandboxed)"),
-        ("read_file", FREE, "read text, max 50 kB"),
+        ("read_file", FREE, "read text, whole if 1/4 of the window fits"),
         ("glob", FREE, "pattern find, pruned walk, cap 200"),
         ("grep", FREE, "regex search: path:line:text"),
         ("write_file", PREFIX, "write + mkdirs · rule scoped by path"),

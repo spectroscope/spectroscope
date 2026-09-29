@@ -34,11 +34,11 @@ public final class StandardTools {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** How much of a file one read may take, in bytes. Beyond it the tool
-     *  refuses and names the limit rather than truncating in silence. No
-     *  argument for this particular value is recorded here. */
-    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.BYTES)
-    private static final long MAX_FILE_BYTES = 50_000;
+    /** The fixed fuse on one file, read from {@link ReadBudget} (card 456).
+     *  edit_file and grep use it alone: neither puts the file into the
+     *  conversation, so the window share does not apply to them. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.BYTES)
+    private static final long FUSE_BYTES = ReadBudget.FUSE_BYTES;
 
     /** The shared tool-output clamp, read from {@link ToolOutput} rather than
      *  kept as a second copy of the same number. */
@@ -546,20 +546,22 @@ public final class StandardTools {
     // ---- read_file ---------------------------------------------------------------------
 
     /**
-     * Builds {@code read_file}: returns a sandboxed text file whole (refusing
-     * anything over the size limit), or — file_upload — a PAGED window of a
-     * file of any size via the optional {@code offset} (1-based line) and
-     * {@code limit} (line count) parameters. The 50 kB bound then applies to
-     * the WINDOW instead of the file, so big logs and datasets stay reachable.
+     * Builds {@code read_file}: returns a sandboxed text file whole when it
+     * fits {@link ReadBudget} under the run's context window (card 456), or a
+     * PAGED window of a file of any size via the optional {@code offset}
+     * (1-based line) and {@code limit} (line count) parameters. The same
+     * bound then applies to the page, counted in bytes like the file, so big
+     * logs and datasets stay reachable.
      */
     private static Tool readFile() {
         return new Tool() {
             /** Wire name: {@code read_file}. */
             public String name() { return "read_file"; }
-            /** The model-facing one-liner — announces the cap AND the paging escape. */
+            /** The model-facing one-liner: the rule and the paging escape. */
             public String description() {
-                return "Reads a text file (max 50 kB at once) relative to the working "
-                        + "directory. Larger files: page with offset (1-based line) and "
+                return "Reads a text file relative to the working directory, whole when it "
+                        + "fits " + ReadBudget.WINDOW_SHARE_PERCENT + " % of your context "
+                        + "window. Larger files: page with offset (1-based line) and "
                         + "limit (line count).";
             }
             /** Required {@code path}; optional integers {@code offset} and {@code limit}. */
@@ -585,28 +587,50 @@ public final class StandardTools {
                     Path file = resolveInside(context, input.path("path").asText());
                     int offset = input.path("offset").asInt(0);
                     int limit = input.path("limit").asInt(0);
+                    int contextWindow = context.contextWindow();
                     if (offset <= 0 && limit <= 0) {
-                        // Whole-file read — the pre-paging contract, unchanged.
+                        // Whole-file read: one size call decides before a byte is read.
                         long size = Files.size(file);
-                        if (size > MAX_FILE_BYTES) {
-                            return "ERROR: file too large (" + size + " bytes, limit "
-                                    + MAX_FILE_BYTES + ") — page with offset/limit.";
+                        String refused = ReadBudget.refusal("file", size, contextWindow);
+                        if (refused != null) {
+                            return "ERROR: " + refused + ". Page with offset (1-based line)"
+                                    + " and limit (line count).";
                         }
                         return Files.readString(file, StandardCharsets.UTF_8);
                     }
-                    // Paged window: lines stream lazily, so file size stops mattering.
+                    // Paged window: lines stream lazily and are counted in UTF-8
+                    // bytes as they come, so the page stops at the bound instead
+                    // of being loaded first and measured after.
                     long fromLine = Math.max(1, offset);
                     long count = limit > 0 ? limit : Long.MAX_VALUE;
-                    String window;
+                    long bound = ReadBudget.wholeReadBytes(contextWindow);
+                    StringBuilder window = new StringBuilder();
+                    long bytes = 0;
+                    boolean first = true;
                     try (Stream<String> lines = Files.lines(file, StandardCharsets.UTF_8)) {
-                        window = lines.skip(fromLine - 1).limit(count)
-                                .collect(Collectors.joining("\n"));
+                        java.util.Iterator<String> page =
+                                lines.skip(fromLine - 1).limit(count).iterator();
+                        while (page.hasNext()) {
+                            String line = page.next();
+                            bytes += line.getBytes(StandardCharsets.UTF_8).length + (first ? 0 : 1);
+                            if (bytes > bound) {
+                                return "ERROR: page too large (more than " + bound + " bytes, the"
+                                        + " most one read may take: "
+                                        + ReadBudget.WINDOW_SHARE_PERCENT + " % of the "
+                                        + ReadBudget.windowOrFallback(contextWindow)
+                                        + " tokens context window at "
+                                        + ReadBudget.BYTES_PER_TOKEN + " bytes per token,"
+                                        + " at most " + ReadBudget.FUSE_BYTES
+                                        + " bytes). Reduce limit.";
+                            }
+                            if (!first) {
+                                window.append('\n');
+                            }
+                            window.append(line);
+                            first = false;
+                        }
                     }
-                    if (window.length() > MAX_FILE_BYTES) {
-                        return "ERROR: window too large (" + window.length()
-                                + " chars, limit " + MAX_FILE_BYTES + ") — reduce limit.";
-                    }
-                    return window.isEmpty() ? "(no lines in that window)" : window;
+                    return window.isEmpty() ? "(no lines in that window)" : window.toString();
                 } catch (IOException | RuntimeException error) {
                     return "ERROR: " + error.getMessage();
                 }
@@ -914,8 +938,9 @@ public final class StandardTools {
                         return launch;
                     }
                     long size = Files.size(file);
-                    if (size > MAX_FILE_BYTES) {
-                        return "ERROR: file too large (" + size + " bytes, limit " + MAX_FILE_BYTES + ").";
+                    if (size > FUSE_BYTES) {
+                        return "ERROR: file too large (" + size + " bytes, over the fixed fuse of "
+                                + FUSE_BYTES + " bytes for one file).";
                     }
                     String content = Files.readString(file, StandardCharsets.UTF_8);
                     int count = countOccurrences(content, oldString);
@@ -1126,9 +1151,11 @@ public final class StandardTools {
                     PathMatcher matcher = glob.isBlank() ? null
                             : root.getFileSystem().getPathMatcher("glob:" + glob);
                     StringBuilder out = new StringBuilder();
+                    List<String> overFuse = new ArrayList<>();
                     for (String rel : walkMatches(root, matcher, Long.MAX_VALUE)) {
                         Path file = root.resolve(rel);
-                        if (Files.size(file) > MAX_FILE_BYTES) {
+                        if (Files.size(file) > FUSE_BYTES) {
+                            overFuse.add(rel); // named at the end, unless the hits fill the clamp first
                             continue;
                         }
                         List<String> lines;
@@ -1147,7 +1174,13 @@ public final class StandardTools {
                             }
                         }
                     }
-                    return out.isEmpty() ? "(no matches)" : out.toString();
+                    String answer = out.isEmpty() ? "(no matches)" : out.toString();
+                    if (overFuse.isEmpty()) {
+                        return answer;
+                    }
+                    return ToolOutput.clip((out.isEmpty() ? answer + "\n" : answer)
+                            + "(not searched, over the fixed fuse of " + FUSE_BYTES
+                            + " bytes: " + String.join(", ", overFuse) + ")", MAX_OUTPUT_CHARS);
                 } catch (IOException | RuntimeException error) {
                     return "ERROR: " + error.getMessage();
                 }

@@ -182,32 +182,27 @@ describe("the delete question", () => {
 });
 
 describe("the pinned group", () => {
-  const live = (
-    <button type="button" className="session-row live-row">
-      live
-    </button>
-  );
   const draw = (s: SessionMeta) => (
     <span key={s.id} className="probe">
       {s.id}
     </span>
   );
 
-  it("heads the list with its pinned rows, the rest under Recent with the live row first", () => {
+  it("heads the list with its pinned rows, the rest under Recent, and no live row (card 458)", () => {
     const html = renderToStaticMarkup(
-      <SessionGroups lang="en" groups={{ pinned: [TITLED], rest: [UNTITLED] }} live={live} row={draw} />,
+      <SessionGroups lang="en" groups={{ pinned: [TITLED], rest: [UNTITLED] }} row={draw} />,
     );
     const at = (needle: string) => html.indexOf(needle);
     expect(at(">Pinned<")).toBeGreaterThan(-1);
     expect(at(">Pinned<")).toBeLessThan(at(TITLED.id));
     expect(at(TITLED.id)).toBeLessThan(at(">Recent<"));
-    expect(at(">Recent<")).toBeLessThan(at("live-row"));
-    expect(at("live-row")).toBeLessThan(at(UNTITLED.id));
+    expect(at(">Recent<")).toBeLessThan(at(UNTITLED.id));
+    expect(html).not.toContain("live-row");
   });
 
   it("names the group in German", () => {
     const html = renderToStaticMarkup(
-      <SessionGroups lang="de" groups={{ pinned: [TITLED], rest: [] }} live={live} row={draw} />,
+      <SessionGroups lang="de" groups={{ pinned: [TITLED], rest: [] }} row={draw} />,
     );
     expect(html).toContain(">Angeheftet<");
     expect(html).toContain(">Zuletzt<");
@@ -215,10 +210,11 @@ describe("the pinned group", () => {
 
   it("draws no headings while nothing is pinned", () => {
     const html = renderToStaticMarkup(
-      <SessionGroups lang="en" groups={{ pinned: [], rest: [UNTITLED] }} live={live} row={draw} />,
+      <SessionGroups lang="en" groups={{ pinned: [], rest: [UNTITLED] }} row={draw} />,
     );
     expect(html).not.toContain("Pinned");
     expect(html).not.toContain("Recent");
-    expect(html.indexOf("live-row")).toBeLessThan(html.indexOf(UNTITLED.id));
+    expect(html).toContain(UNTITLED.id);
+    expect(html).not.toContain("live-row");
   });
 });

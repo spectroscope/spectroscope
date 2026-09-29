@@ -40,9 +40,31 @@
   overflow-x: auto;
   scrollbar-width: none; /* the strip scrolls by trackpad/wheel; a bar under
                             seven small toggles reads as chrome, not help */
-  gap: 2px;
+  gap: var(--sp-1);
   flex: 1;
   min-width: 0;
+}
+/* 0.14.2 D2: with the scrollbar hidden, a tab cut at the strip's edge read as
+   covered by the Tabs switch beside it ("Bilder" showed as "B" in German at
+   1440 px). RightPanel names the edges that hide a tab; only those fade. The
+   mask is alpha only, so the colour carries no meaning here. */
+.dock-strip[data-overflow="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-5)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-5)), transparent);
+}
+.dock-strip[data-overflow="start"] {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - var(--sp-5)), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - var(--sp-5)), transparent);
+}
+.dock-strip[data-overflow="both"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--sp-5),
+    #000 calc(100% - var(--sp-5)),
+    transparent
+  );
+  mask-image: linear-gradient(to right, transparent, #000 var(--sp-5), #000 calc(100% - var(--sp-5)), transparent);
 }
 .dock-toggle {
   flex: none; /* a toggle never shrinks — the strip scrolls instead (card 242) */
@@ -55,11 +77,39 @@
   cursor: pointer;
   font: inherit;
   font-size: var(--fs-12);
-  padding: var(--sp-1) var(--sp-2);
+  /* 0.14.2 D2: --sp-1 at the sides, down from --sp-2, so all eight tabs and
+     one count badge fit the default dock width at 1440 px in German, where
+     the labels are longest (dockStripFit.drift.test.ts holds the budget). */
+  padding: var(--sp-1) var(--sp-1);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
   transition: color var(--t-fast), background var(--t-fast);
+}
+/* Card 444: the switch between side by side and tabs, on the dock's own head.
+   Compact and quiet like the strip beside it; it never shrinks, the strip
+   scrolls instead. */
+.dock-tabs-switch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  white-space: nowrap;
+  cursor: pointer;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  padding: 0 var(--sp-1);
+}
+.dock-tabs-switch input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.dock-tabs-switch:hover {
+  color: var(--text);
+}
+.dock-toggle .tab-count {
+  padding: 0 var(--sp-1);
 }
 .dock-toggle:hover {
   color: var(--text-dim);
@@ -299,4 +349,19 @@ html.fx-scroll .chat-row[data-reveal]:has(.dock-panel--full) {
   font-size: var(--fs-12);
   color: var(--text-dim);
   text-align: center;
+}
+
+/* Card 443: a row too narrow for the dock beside the chat lays the dock OVER
+   the chat. The threshold is where the in-flow dock would fall under its drag
+   floor: reserve 360 + resizer 8 + floor 260 (state/rowWidths.ts; the drift
+   test derives it from there). The old image area had the same answer under
+   900px; the images moved into the dock and the answer moved with them. */
+@container chat-row (max-width: 628px) {
+  .right-panel {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: var(--z-dropdown);
+    box-shadow: var(--shadow-modal);
+    width: min(var(--right-panel-w, 360px), 100%);
+  }
 }

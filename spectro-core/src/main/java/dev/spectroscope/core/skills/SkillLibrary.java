@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.config.governing.Governs;
+import dev.spectroscope.core.tools.ReadBudget;
 import dev.spectroscope.core.tools.Tool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,7 +52,9 @@ public final class SkillLibrary {
     private static final int DESCRIPTION_FALLBACK_LIMIT = 120;
 
     /**
-     * The ceiling on ONE sibling read, the same 50 kB {@code read_file} allows.
+     * The fuse on ONE sibling read, the same one {@code read_file} has, and
+     * like {@code read_file} the read also has to fit the window share of
+     * {@link ReadBudget} (card 456).
      *
      * <p>Not a policy about skills but about a turn: the fattest catalogue skill
      * is 5.8 MB over 98 files, and one of them poured into the context would
@@ -59,7 +62,7 @@ public final class SkillLibrary {
      *
      * <p>ALIAS and not FIXED, and the two annotations that disagreed about this
      * at the merge are worth recording. It is deliberately the same figure as
-     * {@code StandardTools.MAX_FILE_BYTES} — a skill's own file is read under
+     * {@link ReadBudget#FUSE_BYTES}: a skill's own file is read under
      * the same bound as any other, so an operator cannot learn one ceiling and
      * meet another. That makes it a restatement rather than an independent
      * number, which is exactly what card 357's fourth class is for; classifying
@@ -68,7 +71,7 @@ public final class SkillLibrary {
      * the two question-budget defaults.</p>
      */
     @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.BYTES)
-    private static final long MAX_SKILL_FILE_BYTES = 50_000;
+    private static final long MAX_SKILL_FILE_BYTES = ReadBudget.FUSE_BYTES;
 
     /** Insertion order is load order; later roots already replaced earlier entries. */
     private final Map<String, Skill> byName;
@@ -411,7 +414,8 @@ public final class SkillLibrary {
             public String name() { return "read_skill_file"; }
             /** The model-facing one-liner — says what it reads and what read_file cannot. */
             public String description() {
-                return "Reads one file that ships beside a skill (max 50 kB): the skill's name "
+                return "Reads one file that ships beside a skill, whole when it fits "
+                        + ReadBudget.WINDOW_SHARE_PERCENT + " % of your context window: the skill's name "
                         + "plus a path relative to the skill's own directory, which use_skill "
                         + "names. Use it for the files a skill body refers to — it reads them "
                         + "wherever the skill was installed, which read_file cannot do when that "
@@ -455,10 +459,12 @@ public final class SkillLibrary {
                         return "ERROR: not a file in skill '" + requested + "': " + relative;
                     }
                     long size = Files.size(file);
-                    if (size > MAX_SKILL_FILE_BYTES) {
-                        return "ERROR: file too large (" + size + " bytes, limit "
-                                + MAX_SKILL_FILE_BYTES + ") in skill '" + requested + "': "
-                                + relative;
+                    String refused = size > MAX_SKILL_FILE_BYTES
+                            ? "file too large (" + size + " bytes, over the fixed fuse of "
+                                    + MAX_SKILL_FILE_BYTES + " bytes for one read)"
+                            : ReadBudget.refusal("file", size, context.contextWindow());
+                    if (refused != null) {
+                        return "ERROR: " + refused + " in skill '" + requested + "': " + relative;
                     }
                     return Files.readString(file, StandardCharsets.UTF_8);
                 } catch (java.nio.file.NoSuchFileException missing) {

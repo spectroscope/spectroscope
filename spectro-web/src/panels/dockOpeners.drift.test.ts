@@ -64,10 +64,15 @@ async function probeOpeners(): Promise<string[]> {
     )
     .map(([name]) => name);
   const argLists: unknown[][] = [[], [true], ...DOCK_ORDER.map((id) => [id])];
+  // Card 444: setDockTabs(true, id) opens `id` when tabs turn on. A verb that
+  // declares two parameters is also called with (true, id); the one-parameter
+  // verbs are not, which keeps the probe's module reloads where they were.
+  const twoArgLists: unknown[][] = DOCK_ORDER.map((id) => [true, id]);
   const openers = new Set<string>();
   for (const dockReturn of [false, true]) {
     for (const name of names) {
-      for (const args of argLists) {
+      const fn = shape[name as keyof LayoutModule] as (...a: unknown[]) => unknown;
+      for (const args of fn.length >= 2 ? [...argLists, ...twoArgLists] : argLists) {
         const store = await freshStore(dockReturn);
         const before = store.getLayout();
         // The probe starts where it says it does, or it measures nothing.
@@ -183,12 +188,14 @@ afterEach(() => {
 });
 
 describe("the calls that open the dock (card 402)", () => {
-  it("the store's openers, found by running every exported function, are these five", () => {
+  it("the store's openers, found by running every exported function, are these six", () => {
     expect([...OPENERS]).toEqual([
       // Shows the dock when the return memory says open (card 242).
       "applyDockReturn",
       "openDockPanel",
       "openRightPanel",
+      // Card 444: turning tabs on keeps one panel open, opening it if needed.
+      "setDockTabs",
       // Opens a closed panel and closes an open one.
       "toggleDockPanel",
       // Shows a hidden dock and hides a shown one.
@@ -222,10 +229,22 @@ describe("the calls that open the dock (card 402)", () => {
         // The dock's own panel strip and each panel's close button.
         "components/RightPanel.tsx onClick toggleDockPanel",
         "components/RightPanel.tsx onClick toggleDockPanel",
+        // Card 443: the header's images toggle and View > Images (toggleImagesPanel),
+        // and a picture that arrives while the operator watches (revealImagesPanel).
+        "state/imagesPanel.ts revealImagesPanel openDockPanel",
+        "state/imagesPanel.ts revealImagesPanel openRightPanel",
+        "state/imagesPanel.ts toggleImagesPanel openDockPanel",
+        "state/imagesPanel.ts toggleImagesPanel openRightPanel",
+        "state/imagesPanel.ts toggleImagesPanel toggleDockPanel",
         // The header's panel icons: a closed panel opens with the dock, an open one closes.
-        "panels/headerPanelControls.tsx press openDockPanel",
-        "panels/headerPanelControls.tsx press openRightPanel",
-        "panels/headerPanelControls.tsx press toggleDockPanel",
+        // Card 444 named the press so the tabs test can drive the same door.
+        "panels/headerPanelControls.tsx pressDockPanel openDockPanel",
+        "panels/headerPanelControls.tsx pressDockPanel openRightPanel",
+        "panels/headerPanelControls.tsx pressDockPanel toggleDockPanel",
+        // Card 444: the strip in tabs mode selects; the dock's switch keeps one panel.
+        "components/RightPanel.tsx onClick openDockPanel",
+        "components/RightPanel.tsx onChange setDockTabs",
+        "components/RightPanel.tsx onChange setDockTabs",
       ].sort(),
     );
   });

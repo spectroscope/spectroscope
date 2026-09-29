@@ -1,5 +1,10 @@
 // capture_screens.mjs — deterministic screenshot suite for USER-GUIDE.html
 //
+// Since 0.14.2 the whole run, both themes, is capture_screens.sh: it copies the
+// curated demo-home into a throwaway home per theme, because the session plates
+// now continue a stored session and that appends to its file. The manual recipe
+// below still works, but it writes into the tracked demo-home.
+//
 // Reproduce (once per theme):
 //   1. start the backend from the demo workspace, against the CURATED home so
 //      the left rail never prints a real session list (demo-home/README.md):
@@ -21,8 +26,8 @@
 // built-in deterministic scenarios (no LLM); only the plan/thinking/gate shots
 // do real local Ollama runs. The server's working directory IS the workspace
 // every session shows (hence step 1: start it from ~/spectro-demo). The
-// session-delete shot only ARMS the button (first click) and lets it
-// auto-disarm — nothing is ever deleted.
+// session-delete shot only OPENS the delete dialog of a running session and
+// cancels it; nothing is ever deleted.
 
 import { chromium } from "playwright";
 import { mkdirSync } from "fs";
@@ -49,6 +54,11 @@ await ctx.addInitScript(([design]) => {
     localStorage.setItem("spectroscope:lang", "en");
     localStorage.setItem("spectroscope:design",
       JSON.stringify({ design, scroll: true, particles: true, reasoningLens: false }));
+    // 0.14.2 (card 455): the first start asks learn or light before anything
+    // else, once per origin. These plates show the full app, so the question
+    // counts as answered with learn. The question itself is a leveling plate.
+    localStorage.setItem("spectroscope:mode", "learn");
+    localStorage.setItem("spectroscope:mode-chosen", "1");
   } catch {}
 }, [DESIGN]);
 const page = await ctx.newPage();
@@ -71,8 +81,15 @@ async function shoot(name) {
   results.push(name);
   console.log("shot:", name);
 }
+// A skipped block keeps yesterday's plate on disk under today's name, so the
+// run counts its skips and exits 1 when there were any.
+const skipped = [];
+// ONLY_BLOCKS="label|label" re-shoots just those blocks (a reshoot after one
+// timed out). Every other block is left out and its plate stays as it is.
+const ONLY = process.env.ONLY_BLOCKS ? process.env.ONLY_BLOCKS.split("|") : null;
 async function step(fn, label) {
-  try { await fn(); } catch (e) { console.log("SKIP", label, "—", e.message.split("\n")[0]); }
+  if (ONLY !== null && !ONLY.includes(label)) return;
+  try { await fn(); } catch (e) { skipped.push(label); console.log("SKIP", label, "—", e.message.split("\n")[0]); }
 }
 // The Lab's step control. It was `button.lab-step` until 2026-07-22, when the
 // transport was rebuilt into `.lab-ctrl-btns` with aria-labelled buttons. The
@@ -136,12 +153,45 @@ const openRightPanel = async () => {
   });
   await page.waitForSelector(".right-panel");
 };
+// The dock's strip. It was `.rp-tab` until the dock became arrangeable panels
+// (0.9.0); the old selector threw inside step(), so the panel plates kept their
+// July pixels until 2026-09-29. In side by side a strip button TOGGLES its
+// panel, so "show X" means: X on, every other panel off. One panel per plate,
+// as the chapter describes them one at a time.
 const clickPanelTab = async (match) => {
   await page.evaluate((m) => {
-    const t = [...document.querySelectorAll(".rp-tab")].find(x => new RegExp(m, "i").test(x.textContent));
-    if (!t) throw new Error("no panel tab " + m);
-    t.click();
+    const all = [...document.querySelectorAll(".right-panel .dock-strip .dock-toggle")];
+    const want = all.find(x => new RegExp(m, "i").test(x.textContent));
+    if (!want) throw new Error("no dock panel " + m);
+    const tabs = document.querySelector(".right-panel .dock-strip")?.getAttribute("role") === "tablist";
+    if (tabs) { want.click(); return; }
+    for (const b of all) {
+      const on = b.getAttribute("aria-pressed") === "true";
+      if (b === want ? !on : on) b.click();
+    }
   }, match);
+  await page.waitForTimeout(300);
+};
+/** The dock's "Tabs" switch (card 444): true = one panel at a time. */
+const setDockTabs = async (on) => {
+  await page.evaluate((v) => {
+    const cb = document.querySelector(".right-panel .dock-tabs-switch input");
+    if (!cb) throw new Error("no Tabs switch (.dock-tabs-switch)");
+    if (cb.checked !== v) cb.click();
+  }, on);
+  await page.waitForTimeout(300);
+};
+/** The sessions segment of the rail, whatever the previous block left on. */
+// The rail's actions and segments are `.nav-row` buttons since the rail was
+// redrawn as rows (the `.sidebar-scenarios` and `.new-chat` buttons are gone).
+const showSessions = async () => {
+  await page.evaluate(() => {
+    const seg = [...document.querySelectorAll(".nav-row")]
+      .find(x => /^sessions$/i.test(x.querySelector(".nav-row-label")?.textContent.trim() || ""));
+    if (!seg) throw new Error("no Sessions row in the rail");
+    if (seg.getAttribute("aria-selected") !== "true") seg.click();
+  });
+  await page.waitForTimeout(500);
 };
 
 // Default to the curated-home server (demo-home/README.md), NOT the dev server
@@ -156,7 +206,7 @@ await shoot("01-home-empty");
 
 // ---------- 02 scenario picker ----------
 await step(async () => {
-  await jsClick(".sidebar-scenarios");
+  await jsClickByText(".nav-row", "Scenarios");
   await page.waitForSelector(".scn-modal");
   await shoot("02-scenario-picker");
 }, "scenario picker");
@@ -220,60 +270,66 @@ await step(async () => {
   await shoot("14-panel-files");
 }, "right panel");
 
-// ---------- archive bar: resume + the two-step delete (ARM ONLY, never 2nd click) ----------
+// ---------- 0.14.2: the dock as tabs (card 444) ----------
+// Here stood the archive bar (15-archive-bar, 15b-delete-armed) and the Resume
+// button (16-trace-resume-marker). 0.14.2 removed both: a stored session opens
+// ready to type and is deleted from its row menu. Those plates are now shot at
+// the end of this file, after the live blocks, because continuing a session
+// needs a model and the helpers below.
 await step(async () => {
-  // "build_plan" is a SCENARIO, not a stored session, and a scenario has no
-  // archive bar — so this used to shoot a frame with no bar in it and file it
-  // under 15-archive-bar. Open a real session from the curated home instead,
-  // and refuse to shoot until the bar is actually on screen.
-  await page.evaluate(() => {
-    const seg = [...document.querySelectorAll("button")]
-      .find(x => /^sessions$/i.test(x.textContent.trim()));
-    if (seg) seg.click();
-  });
-  await page.waitForTimeout(500);
-  await jsClickByText(".session-row", "auth refactor");
-  await page.waitForSelector("button.archive-delete", { timeout: 10000 });
-  await page.waitForTimeout(1200);
-  await shoot("15-archive-bar");
-  await page.evaluate(() => {
-    // The archive bar's button reads just "Delete" — the old finder wanted
-    // "really delete" or "delete session", which is the ARMED label, not the
-    // resting one. Match the class instead of a word that only exists after
-    // the click we are about to make.
-    const del = document.querySelector("button.archive-delete");
-    if (!del) throw new Error("no delete button (button.archive-delete)");
-    del.click(); // ARMS only
-  });
-  await page.waitForTimeout(400);
-  await shoot("15b-delete-armed");
-  await page.waitForTimeout(4600); // auto-disarm, nothing deleted
-}, "archive bar + delete arm");
-
-// ---------- resume: the session_resume trace marker ----------
-await step(async () => {
-  await page.evaluate(() => {
-    const btn = document.querySelector("button.resume-btn");
-    if (!btn) throw new Error("no resume button (button.resume-btn)");
-    btn.click();
-  });
-  await page.waitForTimeout(2500);
-  await jsClickByText('.tab-nav [role="tab"]', "trace");
-  await page.waitForTimeout(800);
-  // scroll trace to bottom where the marker sits
-  await page.evaluate(() => {
-    const el = document.querySelector(".trace-list, .trace-view, .trace-scroll");
-    if (el) el.scrollTop = el.scrollHeight;
-  });
-  await shoot("16-trace-resume-marker");
   await jsClickByText('.tab-nav [role="tab"]', "chat");
-  await jsClick(".new-chat"); // detach again, no prompt was sent
-  await page.waitForTimeout(600);
-}, "resume marker");
+  await openRightPanel();
+  await setDockTabs(true);
+  await clickPanelTab("files");
+  await page.waitForTimeout(1200);
+  await shoot("69-dock-tabs");
+  await setDockTabs(false);
+}, "dock tabs");
+
+// ---------- 0.14.2: the images as a dock panel (card 443) ----------
+await step(async () => {
+  await jsClickByText(".nav-row", "Scenarios");
+  await page.waitForSelector(".scn-modal");
+  await pickScenario("chats / agents", "Image generation");
+  await page.waitForTimeout(1500);
+  await jsClickByText('.tab-nav [role="tab"]', "chat");
+  await page.evaluate(() => {
+    const b = document.querySelector(".icon-button.image-toggle");
+    if (!b) throw new Error("no images button (.image-toggle)");
+    if (b.getAttribute("aria-expanded") !== "true") b.click();
+  });
+  await page.waitForSelector('.right-panel [data-panel="images"]', { timeout: 8000 });
+  await clickPanelTab("images");
+  await page.waitForTimeout(1500);
+  await shoot("70-dock-images");
+}, "images panel");
+
+// ---------- explain over the text feed (needs the server's model) ----------
+await step(async () => {
+  await jsClickByText(".nav-row", "Scenarios");
+  await page.waitForSelector(".scn-modal");
+  await pickScenario("chats / agents", "Bug hunt");
+  await page.waitForTimeout(1500);
+  await jsClickByText('.tab-nav [role="tab"]', "text");
+  await page.waitForTimeout(800);
+  await jsClickByText(".trace-lens", "explain");
+  // Wait for the reading to finish, so the plate shows prose and not the spinner.
+  await page.waitForFunction(() => {
+    const body = document.querySelector(".tf-explain-body");
+    const streaming = [...document.querySelectorAll(".tf-explain-head button")].some(b => /stop/i.test(b.textContent));
+    // Finished, or far enough along that the plate shows a reading and not a
+    // spinner: a thinking model can spend minutes before its last word.
+    return body && (body.textContent.trim().length > 600 || (body.textContent.trim().length > 200 && !streaming));
+  }, null, { timeout: 600000 });
+  await page.waitForTimeout(800);
+  await shoot("30-text-explain");
+  await page.goto(BASE, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1100);
+}, "text explain");
 
 // ---------- the review fan-out: spectrum lanes + the reasoning lens ----------
 await step(async () => {
-  await jsClick(".sidebar-scenarios");
+  await jsClickByText(".nav-row", "Scenarios");
   await page.waitForSelector(".scn-modal");
   await pickScenario("fleet", "Review fan-out");
   // A fleet scenario replaces the six app tabs with the fleet bar
@@ -349,12 +405,7 @@ await step(async () => {
   // The fan-out block above leaves the sidebar on Fleets, so this used to shoot
   // the spawn dialog and file it under the name 20-import-dialog — a plate that
   // is wrong rather than missing, which the generator cannot catch.
-  await page.evaluate(() => {
-    const seg = [...document.querySelectorAll("button")]
-      .find(x => /^sessions$/i.test(x.textContent.trim()));
-    if (seg) seg.click();
-  });
-  await page.waitForTimeout(500);
+  await showSessions();
   await jsClick(".sidebar-import:not(.sidebar-spawn)");
   await page.waitForSelector(".import-modal, .modal", { timeout: 8000 });
   await page.waitForTimeout(1200);
@@ -407,14 +458,14 @@ const send = async (text) => {
   await jsClick('button[aria-label="Send"]');   // was a text button until 2026-08-09
 };
 await step(async () => {
-  await jsClick(".new-chat");
+  await jsClickByText(".nav-row", "New chat");
   await page.waitForTimeout(500);
   await newChat();
   await send("Call the update_plan tool exactly once with these three steps: step 1 'Read the project README' with status completed, step 2 'Summarize the build setup' with status in_progress, step 3 'Report back to the user' with status pending. After the tool call, just say: Plan published.");
   // wait for the plan to land in the Plan tab (badge appears)
   await openRightPanel();
   await page.waitForFunction(() => {
-    const t = [...document.querySelectorAll(".rp-tab")].find(x => /plan/i.test(x.textContent));
+    const t = [...document.querySelectorAll(".right-panel .dock-toggle")].find(x => /plan/i.test(x.textContent));
     return t && /\d/.test(t.textContent);
   }, null, { timeout: 180000 });
   await clickPanelTab("plan");
@@ -424,30 +475,35 @@ await step(async () => {
 
 // ---------- LIVE 2: thinking + the gate bar (permission) ----------
 await step(async () => {
-  await jsClick(".new-chat");
+  await jsClickByText(".nav-row", "New chat");
   await page.waitForTimeout(500);
   await newChat();
   await send("Use the run_command tool to run exactly: pwd");
-  await page.waitForSelector("[class*=thinking]", { timeout: 60000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  // The live disclosure, not any class that contains "thinking": the loose
+  // selector matched at once and shot "working 0:02" with no reasoning on screen.
+  await page.waitForSelector(".chat .thinking.thinking--active", { timeout: 180000 });
+  await page.waitForTimeout(2500);
   await shoot("22-thinking-live");
-  await page.waitForSelector(".gate-bar", { timeout: 180000 });
+  // The gate is a modal since 0.13.0 (`.modal--gate`); it was the `.gate-bar`
+  // under the composer before, and the old selector timed out here.
+  await page.waitForSelector(".modal--gate", { timeout: 300000 });
   await page.waitForTimeout(700);
   await shoot("23-permission-dialog");
   // 23b: tick "always allow" and expand for the full input + history
   await page.evaluate(() => {
-    const cb = document.querySelector(".gate-remember input");
-    if (cb && !cb.checked) cb.click();
-    const ex = document.querySelector(".gate-expand");
-    if (ex) ex.click();
+    const cb = document.querySelector(".modal--gate .modal-remember input[type=checkbox]");
+    if (!cb) throw new Error("no remember checkbox in the gate");
+    if (!cb.checked) cb.click();
   });
   await page.waitForTimeout(500);
   await shoot("23b-permission-dialog-remember");
   // 24: deny — no side effects
   await page.evaluate(() => {
-    const cb = document.querySelector(".gate-remember input");
+    const cb = document.querySelector(".modal--gate .modal-remember input[type=checkbox]");
     if (cb && cb.checked) cb.click(); // un-tick so nothing is remembered
-    document.querySelector(".gate-deny").click();
+    const deny = document.querySelector(".modal--gate .modal-actions button.ghost");
+    if (!deny) throw new Error("no Deny button in the gate");
+    deny.click();
   });
   await page.waitForTimeout(2500);
   await shoot("24-after-deny");
@@ -455,13 +511,13 @@ await step(async () => {
 
 // ---------- LIVE 3: an allowed write lands in the Files tab ----------
 await step(async () => {
-  await jsClick(".new-chat");
+  await jsClickByText(".nav-row", "New chat");
   await page.waitForTimeout(500);
   await newChat();
   await send("Write a file hello.txt with the text hi. Use the write_file tool exactly once.");
-  await page.waitForSelector(".gate-bar", { timeout: 180000 });
+  await page.waitForSelector(".modal--gate", { timeout: 300000 });
   await page.waitForTimeout(500);
-  await page.evaluate(() => document.querySelector(".gate-allow").click()); // writes hello.txt into the demo workspace
+  await page.evaluate(() => document.querySelector(".modal--gate .modal-actions .soft-primary").click()); // writes hello.txt into the demo workspace
   // wait for the run to finish, then show the fresh file on the agent's desk
   await page.waitForFunction(() => {
     const rows = [...document.querySelectorAll(".chat *")];
@@ -481,5 +537,90 @@ await step(async () => {
   await shoot("25-files-workspace");
 }, "live write run");
 
+// ---------- 0.14.2 sessions: one row each, click and keep typing (cards 458, 459) ----------
+const running = () => page.evaluate(() => !!document.querySelector('button[aria-label="Stop the running turn"]'));
+async function waitRunEnd(timeout = 300000) {
+  await page.waitForFunction(() => !!document.querySelector('button[aria-label="Stop the running turn"]'), null, { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="Stop the running turn"]'), null, { timeout });
+}
+const clickNewChat = () => page.evaluate(() => {
+  const b = [...document.querySelectorAll("button")].find(x => /new chat/i.test(x.textContent) && x.offsetParent !== null);
+  if (!b) throw new Error("no New chat button");
+  b.click();
+});
+
+// A stored session opens with its history and an empty composer; the next
+// message continues the same file, and the trace marks the point.
+await step(async () => {
+  await page.goto(BASE, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1100);
+  await showSessions();
+  await jsClickByText(".session-row", "auth refactor");
+  await page.waitForSelector('button[aria-label="Send"]', { timeout: 10000 });
+  await page.waitForTimeout(1200);
+  await shoot("15-session-open");
+  await send("In one sentence: which of the three findings would you fix first, and why? Do not use any tools.");
+  await waitRunEnd();
+  await page.waitForTimeout(1200);
+  await jsClickByText('.tab-nav [role="tab"]', "trace");
+  await page.waitForTimeout(900);
+  // The trace list is virtualized: a row far from the viewport is not in the
+  // DOM. Walk the list's own scroll box until the marker row is rendered.
+  const found = await page.evaluate(async () => {
+    const first = document.querySelector(".trace-row");
+    let box = first?.parentElement ?? null;
+    while (box && !(box.scrollHeight > box.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+    if (!box) return false;
+    for (let y = 0; y <= box.scrollHeight; y += Math.max(200, box.clientHeight / 2)) {
+      box.scrollTop = y;
+      await new Promise(r => setTimeout(r, 120));
+      const row = [...document.querySelectorAll(".trace-row")].find(r => /session_resume|events loaded/.test(r.textContent));
+      if (row) { row.scrollIntoView({ block: "center" }); window.scrollTo(0, 0); return true; }
+    }
+    return false;
+  });
+  if (!found) throw new Error("no session_resume row in the trace");
+  await page.waitForTimeout(600);
+  await shoot("16-trace-resume-marker");
+  await jsClickByText('.tab-nav [role="tab"]', "chat");
+}, "continue a stored session");
+
+// Two sessions at once on one model: the first keeps running while the second
+// is in view, its row pulses, and deleting it asks first. Nothing is deleted:
+// the dialog is cancelled.
+await step(async () => {
+  await newChat();
+  await send("Write about 400 words on the history of lighthouses. Plain prose, no headings. Do not use any tools.");
+  await page.waitForFunction(() => !!document.querySelector('button[aria-label="Stop the running turn"]'), null, { timeout: 30000 });
+  await page.waitForTimeout(4000);
+  await clickNewChat();
+  await page.waitForTimeout(900);
+  await send("Name three rivers in Europe on one line. Do not use any tools.");
+  await page.waitForFunction(() => {
+    const rows = [...document.querySelectorAll(".session-item")];
+    const lh = rows.find(r => /lighthouse/i.test(r.textContent));
+    return lh && (lh.querySelector(".pulse") || lh.querySelector(".session-wait"));
+  }, null, { timeout: 60000 });
+  await page.waitForTimeout(2500);
+  await shoot("15c-sessions-parallel");
+  await page.evaluate(() => {
+    const lh = [...document.querySelectorAll(".session-item")].find(r => /lighthouse/i.test(r.textContent));
+    const btn = lh?.querySelector(".session-menu-btn");
+    if (!btn) throw new Error("no row menu on the running session");
+    btn.click();
+  });
+  await page.waitForTimeout(400);
+  await jsClickByText('.row-menu-item', "Delete");
+  await page.waitForSelector(".session-delete-modal", { timeout: 5000 });
+  const asks = await page.evaluate(() => document.querySelector(".session-delete-modal h2")?.textContent || "");
+  if (!/still running/i.test(asks)) throw new Error("the delete dialog does not say the session is running: " + asks);
+  await page.waitForTimeout(500);
+  await shoot("15b-session-delete-running");
+  await jsClickByText(".session-delete-modal button", "Cancel");
+  await page.waitForTimeout(500);
+  // let both runs finish so the server stops with nothing in flight
+  await page.waitForFunction(() => ![...document.querySelectorAll(".session-item")].some(r => r.querySelector(".pulse")), null, { timeout: 600000 }).catch(() => {});
+}, "parallel sessions + delete of a running one");
 console.log("DONE", results.length, results.join(", "));
 await browser.close();
+if (skipped.length > 0) { console.log("SKIPPED", skipped.length, skipped.join(" | ")); process.exit(1); }

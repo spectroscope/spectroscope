@@ -129,15 +129,16 @@ describe("an alias points at the number it restates", () => {
     // it stayed green when a bare literal was let through as a constant
     // (kanban/evidence/412/loop/bite-9.log in the home repo). Here the
     // expression is masked out first, so only the sentence form is compared.
+    // Card 456: the registry's one literal alias, SkillLibrary's skill-file
+    // ceiling (50_000), now restates ReadBudget.FUSE_BYTES by name, so the
+    // registry may carry none. The shape it had stays in the cases as a row
+    // of its own, so this case never runs on an empty list.
     const literals = registry.filter(
       (n) => n.kind === "ALIAS" && !/(?<![\w$])[A-Za-z_$][\w$]*/.test(n.expression),
     );
-    expect(
-      literals.length,
-      "the registry carries no literal alias, so this case checks nothing",
-    ).toBeGreaterThan(0);
     const cases = [
       ...literals,
+      row({ kind: "ALIAS", expression: "50_000", key: "", unit: "BYTES" }),
       row({ kind: "ALIAS", expression: "300 * 1000L", key: "", unit: "MILLISECONDS" }),
     ];
     for (const number of cases) {

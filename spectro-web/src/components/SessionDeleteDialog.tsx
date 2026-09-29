@@ -17,6 +17,8 @@ export function SessionDeleteDialogBody(props: {
   busy: boolean;
   /** True after a delete that did not go through. */
   failed: boolean;
+  /** Card 459, owner call 2: the session still runs, so the question is "stop it and delete?". */
+  running?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   cancelRef?: Ref<HTMLButtonElement>;
@@ -36,7 +38,9 @@ export function SessionDeleteDialogBody(props: {
         aria-labelledby="session-delete-title"
         aria-describedby="session-delete-note"
       >
-        <h2 id="session-delete-title">{t(lang, "sess.delete.title")}</h2>
+        <h2 id="session-delete-title">
+          {t(lang, props.running === true ? "sess.delete.runningTitle" : "sess.delete.title")}
+        </h2>
         <p className="session-delete-name">{props.title}</p>
         <p className="session-delete-note" id="session-delete-note">
           {t(lang, "sess.delete.note")}
@@ -62,7 +66,7 @@ export function SessionDeleteDialogBody(props: {
             disabled={props.busy}
             onClick={props.onConfirm}
           >
-            {t(lang, "sess.delete.confirm")}
+            {t(lang, props.running === true ? "sess.delete.stopConfirm" : "sess.delete.confirm")}
           </button>
         </div>
       </div>
@@ -75,6 +79,7 @@ export function SessionDeleteDialog(props: {
   title: string;
   busy: boolean;
   failed: boolean;
+  running?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {

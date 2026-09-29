@@ -17,7 +17,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { t, type Lang } from "../i18n/i18n";
-import { dismissesMenu, MODAL_LAYER } from "./menuDismiss";
+import { dismissesMenu, scrollDismissesMenu, MODAL_LAYER } from "./menuDismiss";
 import { menuKeyStep, type RowMenuEntry, type RowMenuItemId } from "./rowMenuItems";
 
 /** Room kept between the menu and the window's edge, in px. */
@@ -131,7 +131,11 @@ export function SessionRowMenu(props: {
       if (dismissesMenu(press)) setOpen(false);
     };
     const onScroll = (e: Event): void => {
-      if (!inside(e.target)) setOpen(false);
+      const target = e.target;
+      const button = buttonRef.current;
+      const holdsAnchor =
+        target === document || (target instanceof Node && button !== null && target.contains(button));
+      if (scrollDismissesMenu({ inAnchor: inside(target), holdsAnchor })) setOpen(false);
     };
     const onResize = (): void => setOpen(false);
     window.addEventListener("mousedown", onDown);

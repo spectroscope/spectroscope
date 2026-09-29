@@ -29,11 +29,11 @@ describe("a delete from either place moves the view the same way", () => {
     expect(body.slice(end)).toContain("setRefreshToken((n) => n + 1);");
   });
 
-  it("the archive bar's delete reaches it once the server said yes", () => {
-    const body = fn(app, "deleteSession");
-    const refused = body.indexOf("if (!res.ok) return;");
-    expect(refused).toBeGreaterThan(-1);
-    expect(body.indexOf("sessionDeleted(id);")).toBeGreaterThan(refused);
+  it("has no archive-bar delete left: a stored session opens with the composer (card 458)", () => {
+    expect(app).not.toContain("  const deleteSession = ");
+    expect(app).not.toMatch(/onDelete[:=]/);
+    // The one delete that is left, the row menu's, still reaches the fallback.
+    expect(app).toContain("onSessionDeleted={sessionDeleted}");
   });
 
   it("App hands it to the sidebar", () => {

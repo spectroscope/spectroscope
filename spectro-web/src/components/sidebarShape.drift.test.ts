@@ -255,9 +255,11 @@ describe("normal density REMOVES the metadata line rather than hiding it", () =>
 });
 
 describe("every row says whether it is running", () => {
-  it("puts the indicator on the live row and on the stored rows alike", () => {
-    expect(mounts(sidebar, "RunDot")).toBeGreaterThanOrEqual(2);
-    expect(sidebar).toContain("runState(");
+  it("puts the indicator on every row, held and stored alike, with no live row of its own (card 458)", () => {
+    expect(mounts(sidebar, "RunDot")).toBeGreaterThanOrEqual(1);
+    expect(sidebar).toContain("heldRunState(");
+    expect(sidebar).toContain("storedRunState(");
+    expect(sidebar).not.toContain("live-row");
   });
 
   it("reads the server's live set rather than only this page's socket", () => {
@@ -268,7 +270,9 @@ describe("every row says whether it is running", () => {
     // own socket alone, which is how a second run went invisible.
     expect(sidebar).toContain("useLiveSessions()");
     expect(sidebar).toContain("storedRunState(");
-    expect(sidebar).toContain("props.resumeId"); // still the fallback for an older server
+    // Card 458: the rows this page holds read their own record first, which is
+    // also the fallback for a server that reports no live set.
+    expect(sidebar).toContain("props.held");
   });
 
   it("keeps the whole rule out of the markup", () => {

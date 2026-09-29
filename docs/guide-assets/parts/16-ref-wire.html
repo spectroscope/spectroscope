@@ -104,7 +104,8 @@ frames.</p>
 <code>permission_response</code> — <code>permission_decision</code> is the <em>RunEvent</em>
 that flows back and into the file. Cancel is spelled <code>abort</code> on the wire.
 Resume is <em>not</em> a frame: it is the <code>?resume=&lt;id&gt;</code> query parameter at
-connect time (kept across auto-reconnects); archive replay is pure REST.</p>
+connect time (kept across auto-reconnects). The web UI connects that way when you send the
+first message into a stored session. Opening its row before that is pure REST.</p>
 
 <h2 id="ch-ws-server">Server → client</h2>
 <p>Every event of a run goes to the socket <em>and</em> the session file — the same

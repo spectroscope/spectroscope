@@ -23,6 +23,8 @@ function code(rel: string): string {
 
 const chat = code("./Chat.tsx");
 const app = code("../App.tsx");
+// Cards 458 and 459: the socket's frames are read per record in the session set.
+const set = code("../state/sessionSet.ts");
 
 /** The source between two anchors, or "" when either is missing. */
 function between(src: string, from: string, to: string): string {
@@ -56,7 +58,7 @@ describe("the steering message on the screen", () => {
     expect(app).toMatch(/steerPending:\s*steeringView\.pending/);
     // What noteFrame hands back goes into the old waiting line (owner call 3),
     // through the same enqueue a queued submit uses.
-    const handler = between(app, "noteFrame(", "readSessionBusy(");
+    const handler = between(set, "noteFrame(", "record.slot = {");
     expect(handler).toContain("read.requeue");
     expect(handler).toContain("enqueue(");
   });
