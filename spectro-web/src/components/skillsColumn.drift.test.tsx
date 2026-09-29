@@ -15,14 +15,14 @@
 // nothing else under src/ declares either token: a later declaration would
 // win the cascade while the checks below read the first one.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { SkillsPane } from "./SkillsPane";
 import { blankBlockComments, blockOf, read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const tokens = read("../tokens.css", import.meta.url);
 const settingsCss = read("../styles/settings-trace.css", import.meta.url);
@@ -35,18 +35,7 @@ const decl = (block: string, prop: string): string | undefined =>
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
-const FILES = walk(SRC);
+const FILES = srcFiles(SRC);
 
 /**
  * Every place under src/ that can declare a custom property: in a stylesheet a
@@ -60,10 +49,10 @@ function declarationsOf(prop: string): { file: string; line: number }[] {
     let text: string;
     let pattern: RegExp;
     if (path.endsWith(".css")) {
-      text = blankBlockComments(readFileSync(path, "utf8"));
+      text = blankBlockComments(srcText(path));
       pattern = new RegExp(`${prop}\\s*:`, "g");
     } else if (/\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path)) {
-      text = stripComments(readFileSync(path, "utf8"));
+      text = stripComments(srcText(path));
       pattern = new RegExp(`["'\`]${prop}["'\`]`, "g");
     } else {
       continue;

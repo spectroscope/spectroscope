@@ -87,7 +87,8 @@ describe("the four actions", () => {
     expect(rows.map((r) => r[1])).toEqual([...WORKSPACE_CHIP_ACTIONS]);
     for (const [whole, id, body] of rows) {
       expect(body, id).toContain("<svg");
-      expect(body.replace(/<[^>]+>/g, "").trim().length, id).toBeGreaterThan(3);
+      const label = /class="hdr-menu-label">([^<]+)</.exec(body)?.[1] ?? "";
+      expect(label.trim().length, id).toBeGreaterThan(3);
       const disabled = whole.slice(0, whole.indexOf(">")).includes("disabled");
       expect(disabled, id).toBe(id === "reveal" || id === "terminal");
     }

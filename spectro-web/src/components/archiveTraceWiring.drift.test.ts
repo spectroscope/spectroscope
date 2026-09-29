@@ -15,11 +15,11 @@
 // rendered here. The behaviour of the pieces is pinned in
 // state/archiveTrace.test.tsx and state/archiveOpenBuildsNoTrace.test.ts.
 
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { relative, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 const app = stripComments(read("../App.tsx", import.meta.url));
@@ -58,11 +58,7 @@ function effects(): string[] {
 
 /** Every .ts and .tsx file under `dir` that is not a test. */
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
-    return /\.tsx?$/.test(entry.name) && !entry.name.includes(".test.") ? [full] : [];
-  });
+  return srcFiles(dir).filter((full) => /\.tsx?$/.test(basename(full)) && !basename(full).includes(".test."));
 }
 
 /** A read of a `trace` property: `x.trace`, `x?.trace`, or `{ trace } =`. A
@@ -74,7 +70,7 @@ const READ = /(?<!\.)\.trace(?![\w$-])|\{[^}]*(?<![\w$.])trace(?![\w$])[^}]*\}\s
 /** Every read in the source tree, comments blanked, as `file:line:code`. */
 function traceReads(): string[] {
   return sourceFiles(SRC).flatMap((file) =>
-    stripComments(readFileSync(file, "utf8"))
+    stripComments(srcText(file))
       .split("\n")
       .map((line, i) => ({ at: `${relative(SRC, file)}:${i + 1}`, code: line.trim() }))
       .filter(({ code }) => READ.test(code))

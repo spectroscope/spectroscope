@@ -28,13 +28,14 @@
 // universal and id selectors) are not read. The wave's browser stage measures
 // the drawn result.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { WIDTH_FIELDS } from "../state/layout";
 import { blankBlockComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
@@ -70,13 +71,7 @@ function entrySheets(): string[] {
 
 /** Every .css file under src, wherever it lives. */
 function allSheets(dir: string = SRC): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...allSheets(path));
-    else if (entry.name.endsWith(".css")) out.push(path);
-  }
-  return out;
+  return srcFiles(dir).filter((path) => path.endsWith(".css"));
 }
 
 /** One sheet's style rules, one entry per selector of a comma list, with the at-rules around them. */
@@ -322,7 +317,7 @@ function unweighed(classes: string[], props: string[], weighed: string[] = WEIGH
   const loaded = new Set(entrySheets());
   const found: string[] = [];
   for (const path of allSheets()) {
-    const rules = parse(path, readFileSync(path, "utf8"), 0);
+    const rules = parse(path, srcText(path), 0);
     for (const rule of rules) {
       const parts = rule.selector.split(/\s*[>+~]\s*|\s+/);
       const subject = parts[parts.length - 1] ?? "";
@@ -528,7 +523,7 @@ const PADDING = [
 describe("the sheets", () => {
   it("set no direction and no writing mode", () => {
     const found = allSheets().flatMap((path) =>
-      parse(path, readFileSync(path, "utf8"), 0)
+      parse(path, srcText(path), 0)
         .filter((rule) => rule.decls.some((d) => d.prop === "direction" || d.prop === "writing-mode"))
         .map((rule) => `${path.slice(SRC.length)}: ${rule.selector}`),
     );

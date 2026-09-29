@@ -17,24 +17,12 @@
 // which base.css pins anyway, and they are the scroller the wells chain INTO.
 // The line between the two idioms is max-height, and this guard draws it.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { rules } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
-
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
 
 
 
@@ -44,9 +32,9 @@ const isBoundedWell = (body: string): boolean =>
 const cutsTheChain = (body: string): boolean =>
   /overscroll-behavior(?:-y|-x)?\s*:\s*(contain|none)/.test(body);
 
-const stylesheets = walk(SRC)
+const stylesheets = srcFiles(SRC)
   .filter((f) => f.endsWith(".css"))
-  .flatMap((f) => rules(f.slice(SRC.length), readFileSync(f, "utf8")));
+  .flatMap((f) => rules(f.slice(SRC.length), srcText(f)));
 
 const wells = stylesheets.filter((r) => isBoundedWell(r.body));
 

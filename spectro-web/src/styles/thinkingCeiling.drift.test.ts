@@ -13,29 +13,17 @@
 // transcript, whose content has no definite height, so the pane measures
 // itself and hands the number down as a custom property.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blockOf, read, rules, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 import { THINKING_BODY_MAX_VAR, THINKING_FLOOR_PX } from "../components/thinkingCeiling";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
-const allRules = walk(SRC)
+const allRules = srcFiles(SRC)
   .filter((f) => f.endsWith(".css"))
-  .flatMap((f) => rules(f.slice(SRC.length), readFileSync(f, "utf8")));
+  .flatMap((f) => rules(f.slice(SRC.length), srcText(f)));
 
 const chatCss = read("./chat.css", import.meta.url);
 const chatTsx = stripComments(read("../components/Chat.tsx", import.meta.url));

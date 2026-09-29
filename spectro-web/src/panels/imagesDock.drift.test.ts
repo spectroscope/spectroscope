@@ -5,19 +5,19 @@
 // mount of ImagePanel is the dock's images panel, and the header toggle and
 // the View menu's Images row reach the images through the dock's store.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 import { menuRows } from "./headerPanelControls";
 
 const SRC = path.join(__dirname, "..");
 
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [full] : [];
+  return srcFiles(dir).filter((full) => {
+    const name = path.basename(full);
+    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name);
   });
 }
 
@@ -27,7 +27,7 @@ const menu = stripComments(readFileSync(path.join(SRC, "panels", "headerPanelCon
 /** Every source file, read once for both walks below. */
 const SOURCES: readonly { rel: string; text: string }[] = sourceFiles(SRC).map((f) => ({
   rel: rel(f),
-  text: readFileSync(f, "utf8"),
+  text: srcText(f),
 }));
 
 describe("no images area outside the dock (card 443, criterion 2)", () => {

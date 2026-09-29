@@ -12,11 +12,11 @@
 // className="composer-inner" belongs to the archive bar and would accept a row
 // mounted anywhere down to it.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blankBlockComments, blockOf, read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const chat = stripComments(read("./Chat.tsx", import.meta.url));
 const chatCss = read("../styles/chat.css", import.meta.url);
@@ -46,17 +46,12 @@ describe("the working folder row sits at the composer (card 389)", () => {
     // `state.turns.length === 0` branch, would be a second control for one
     // choice. Test files mount the row on purpose and are not the product.
     const SRC = fileURLToPath(new URL("..", import.meta.url));
-    const walk = (dir: string): string[] =>
-      readdirSync(dir).flatMap((entry) => {
-        const path = join(dir, entry);
-        return statSync(path).isDirectory() ? walk(path) : [path];
-      });
-    const sources = walk(SRC).filter((f) => /\.tsx?$/.test(f) && !f.includes(".test."));
+    const sources = srcFiles(SRC).filter((f) => /\.tsx?$/.test(f) && !f.includes(".test."));
     // Positive half: the walk reached the tree, including the one mounting file.
     expect(sources.length).toBeGreaterThan(100);
     expect(sources.some((f) => f.endsWith(join("components", "Chat.tsx")))).toBe(true);
     const mounts = sources.flatMap((f) => {
-      const n = stripComments(readFileSync(f, "utf8")).split("<WorkspaceChooser").length - 1;
+      const n = stripComments(srcText(f)).split("<WorkspaceChooser").length - 1;
       return n > 0 ? [`${f.slice(SRC.length)}: ${n}`] : [];
     });
     expect(mounts).toEqual([`${join("components", "Chat.tsx")}: 1`]);

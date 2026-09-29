@@ -45,27 +45,17 @@
 // sibling's own top margin, which in a block container collapses with the
 // heading's bottom margin.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { blankBlockComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
-const FILES = walk(SRC);
+const FILES = srcFiles(SRC);
 
 // ---- three-valued answers ----------------------------------------------------
 
@@ -225,7 +215,7 @@ const ORDER = loadOrder();
 const RULES: Rule[] = FILES.filter((f) => f.endsWith(".css")).flatMap((f) => {
   const rel = relative(SRC, f);
   const at = ORDER.indexOf(rel);
-  return parseSheet(rel, readFileSync(f, "utf8"), at < 0 ? null : at);
+  return parseSheet(rel, srcText(f), at < 0 ? null : at);
 });
 
 /** Whether a rule is the unconditional `:root` of a loaded sheet. */
@@ -677,7 +667,7 @@ interface Source {
 
 const SOURCES: Source[] = FILES.filter((f) => f.endsWith(".tsx") && !f.includes(".test.")).map((f) => ({
   rel: relative(SRC, f),
-  sf: ts.createSourceFile(f, readFileSync(f, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+  sf: ts.createSourceFile(f, srcText(f), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
 }));
 
 /** Every node of a file, depth first. */

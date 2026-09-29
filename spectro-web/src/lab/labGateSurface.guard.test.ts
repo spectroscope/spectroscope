@@ -8,28 +8,21 @@
 // is covered the day it is written.
 
 import { describe, expect, it } from "vitest";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, basename, relative, sep } from "node:path";
 import { stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const labDir = dirname(fileURLToPath(import.meta.url));
 const appPath = join(labDir, "..", "App.tsx");
 
 /** Every source file under lab/, tests excluded, at any depth. */
 function labFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      out.push(...labFiles(full));
-      continue;
-    }
-    if (!/\.tsx?$/.test(entry)) continue;
-    if (/\.test\.tsx?$/.test(entry)) continue;
-    out.push(full);
-  }
-  return out;
+  return srcFiles(dir).filter((full) => {
+    const entry = basename(full);
+    return /\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry);
+  });
 }
 
 /** What a permission surface looks like in source, whatever it is called. */
@@ -46,7 +39,7 @@ describe("the Lab holds no gate surface of its own", () => {
   it("has no file that reads the permission queue, mounts the window or takes a decision prop", () => {
     const offenders: string[] = [];
     for (const file of labFiles(labDir)) {
-      const src = stripComments(readFileSync(file, "utf8"));
+      const src = stripComments(srcText(file));
       for (const mark of GATE_MARKS) {
         if (src.includes(mark)) offenders.push(`${file.slice(labDir.length + 1)}: ${mark}`);
       }
@@ -105,18 +98,15 @@ describe("the bar's fate is decided, not drifted (criterion 14)", () => {
   const srcDir = join(labDir, "..");
 
   /** Every source file under src/, tests excluded, at any depth. */
-  function srcFiles(dir: string): string[] {
-    const out: string[] = [];
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        if (entry !== "node_modules") out.push(...srcFiles(full));
-        continue;
-      }
-      if (!/\.tsx?$/.test(entry) || /\.test\.tsx?$/.test(entry)) continue;
-      out.push(full);
-    }
-    return out;
+  function sourceFiles(dir: string): string[] {
+    return srcFiles(dir).filter((full) => {
+      const entry = basename(full);
+      return (
+        /\.tsx?$/.test(entry) &&
+        !/\.test\.tsx?$/.test(entry) &&
+        !relative(dir, full).split(sep).slice(0, -1).includes("node_modules")
+      );
+    });
   }
 
   it("GateBar is deleted", () => {
@@ -124,10 +114,10 @@ describe("the bar's fate is decided, not drifted (criterion 14)", () => {
   });
 
   it("no source file imports or mounts it", () => {
-    const files = srcFiles(srcDir);
+    const files = sourceFiles(srcDir);
     expect(files.length).toBeGreaterThan(100);
     const offenders = files
-      .filter((file) => /\bGateBar\b/.test(stripComments(readFileSync(file, "utf8"))))
+      .filter((file) => /\bGateBar\b/.test(stripComments(srcText(file))))
       .map((file) => file.slice(srcDir.length + 1));
     expect(offenders).toEqual([]);
   });

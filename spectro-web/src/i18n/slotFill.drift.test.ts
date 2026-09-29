@@ -12,24 +12,12 @@
 // literal /\{name\}/. A slot pattern held in a variable, built with new RegExp,
 // or filled with split and join is outside this guard.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
-
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
 
 /** A replace whose pattern is a slot written in place, in one of the four shapes. */
 const SLOT_FILL =
@@ -47,10 +35,10 @@ interface SlotFill {
   replacement: string;
 }
 
-const fills: SlotFill[] = walk(SRC)
+const fills: SlotFill[] = srcFiles(SRC)
   .filter((f) => /\.tsx?$/.test(f) && !f.includes(".test."))
   .flatMap((f) =>
-    slotFills(stripComments(readFileSync(f, "utf8"))).map((replacement) => ({
+    slotFills(stripComments(srcText(f))).map((replacement) => ({
       file: f.slice(SRC.length),
       replacement,
     })),

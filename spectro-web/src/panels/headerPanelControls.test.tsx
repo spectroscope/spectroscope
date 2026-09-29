@@ -76,7 +76,10 @@ describe("the menu holds everything the header used to show", () => {
     expect(rows.length).toBe(rowIds(html).length);
     for (const [, id, body] of rows) {
       expect(body, id).toContain("<svg");
-      expect(body.replace(/<[^>]+>/g, "").trim().length, id).toBeGreaterThan(1);
+      // The name is the label span's own text, read rather than left over
+      // after stripping tags (CodeQL, PR #92: a tag stripper is a sanitizer).
+      const label = /class="hdr-menu-label">([^<]+)</.exec(body)?.[1] ?? "";
+      expect(label.trim().length, id).toBeGreaterThan(1);
     }
   });
 

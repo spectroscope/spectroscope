@@ -3,11 +3,11 @@
 // state never lands. Read off disk (no DOM in this suite, house rule); the fold
 // itself is pinned by behaviour in state/archiveFold.test.ts.
 
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const app = stripComments(read("../App.tsx", import.meta.url));
 const surface = stripComments(read("./OpeningSurface.tsx", import.meta.url));
@@ -23,11 +23,7 @@ const SRC = fileURLToPath(new URL("..", import.meta.url));
 /** Every .ts and .tsx file under `dir` that is not a test, walked from the file
  *  system: no git needed, and a file not yet committed is read like any other. */
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
-    return /\.tsx?$/.test(entry.name) && !entry.name.includes(".test.") ? [full] : [];
-  });
+  return srcFiles(dir).filter((full) => /\.tsx?$/.test(basename(full)) && !basename(full).includes(".test."));
 }
 
 /** The sliced fold as every open runs it: the open's own ticket, the count to the sign.
@@ -89,7 +85,7 @@ describe("every open that folds a recorded session folds it in slices (criterion
     // rows); foldArchive, the one-shot fold with rows, has no caller left.
     // A definition is not a call.
     const callers = sourceFiles(SRC).flatMap((file) =>
-      stripComments(readFileSync(file, "utf8"))
+      stripComments(srcText(file))
         .split("\n")
         .map((line, i) => `${relative(SRC, file)}:${i + 1}:${line}`)
         .filter((line) => /(?<!function )\bfoldArchive(?:Deferred)?\(/.test(line)),
