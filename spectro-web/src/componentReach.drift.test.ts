@@ -14,30 +14,18 @@
 // another module merely mentions counts as reached. What does not count is a
 // name that appears only in the file that defines it.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { read } from "./testkit/source";
+import { srcFiles, srcText } from "./testkit/tree";
 
 const SRC = fileURLToPath(new URL(".", import.meta.url));
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
 /** The shipped tree: source only, so a test mounting something proves nothing. */
 const sources = new Map<string, string>(
-  walk(SRC)
+  srcFiles(SRC)
     .filter((f) => /\.tsx?$/.test(f) && !f.includes(".test."))
-    .map((f) => [f.slice(SRC.length), readFileSync(f, "utf8")]),
+    .map((f) => [f.slice(SRC.length), srcText(f)]),
 );
 
 /** @return how many times `<Name` is mounted as a JSX element in `src` */

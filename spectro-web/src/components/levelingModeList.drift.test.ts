@@ -14,11 +14,10 @@
 // each render site's guard is found by walking up from the site rather than by
 // quoting a line number that moves.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 import { LEVELING_MODES } from "../state/leveling";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
@@ -29,22 +28,11 @@ const LEVELING_STATE =
 /** Any class name of the tutorial, in a string or a template. */
 const LVL_CLASS = /["`]lvl-/;
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
 /** The shipped tree, comments blanked: prose about a mode is not a mode. */
 const shipped = new Map<string, string>(
-  walk(SRC)
+  srcFiles(SRC)
     .filter((file) => /\.tsx?$/.test(file) && !file.includes(".test."))
-    .map((file) => [file.slice(SRC.length), stripComments(readFileSync(file, "utf8"))]),
+    .map((file) => [file.slice(SRC.length), stripComments(srcText(file))]),
 );
 
 const app = (shipped.get("App.tsx") ?? "").split("\n");

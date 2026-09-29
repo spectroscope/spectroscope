@@ -49,6 +49,10 @@ await ctx.addInitScript(([design]) => {
     localStorage.setItem("spectroscope:lang", "en");
     localStorage.setItem("spectroscope:design",
       JSON.stringify({ design, scroll: true, particles: true, reasoningLens: false }));
+    // 0.14.2 (card 455): the learn-or-light question comes first on a new
+    // origin. The state graph lives in learn, so it counts as answered.
+    localStorage.setItem("spectroscope:mode", "learn");
+    localStorage.setItem("spectroscope:mode-chosen", "1");
   } catch {}
 }, [DESIGN]);
 const page = await ctx.newPage();

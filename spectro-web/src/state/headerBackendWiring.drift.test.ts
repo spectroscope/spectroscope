@@ -11,7 +11,7 @@ describe("App wires the header chip through headerBackend (0.14.2 D1)", () => {
     expect(app).toMatch(
       /viewingLive,\s*recorded:\s*\{\s*provider:\s*view\.provider,\s*model:\s*view\.runModel\s*\}/,
     );
-    expect(app).toMatch(/model=\{chip\.model\}/);
-    expect(app).toMatch(/archiveProvider=\{chip\.provider\}/);
+    // Card 463: the pair reaches the model chip under the composer.
+    expect(app).toMatch(/composerMeta:\s*\{\s*provider:\s*chip\.provider,\s*model:\s*chip\.model,/);
   });
 });

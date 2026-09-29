@@ -17,28 +17,16 @@
 // style object in TSX (--sidebar-w, --lvl-c). All three count. Comments do not
 // — the token sheets discuss var(--token) in prose.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blankBlockComments as code } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
-const files = walk(SRC).map((f) => ({
+const files = srcFiles(SRC).map((f) => ({
   rel: f.slice(SRC.length),
-  text: readFileSync(f, "utf8"),
+  text: srcText(f),
 }));
 
 const defined = new Set<string>();

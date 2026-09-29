@@ -14,8 +14,6 @@
 // wiring is read off disk, the idiom fleetLobby.drift.test.ts and
 // skillsPane.test.tsx already use for App.tsx.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -24,6 +22,7 @@ import { SkillsPane } from "./SkillsPane";
 import { navActionRows, navSegmentRows } from "./navRows";
 import { dict } from "../i18n/i18n";
 import { read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 type Segment = "sessions" | "fleets" | "stategraph";
 const SEGMENTS: Segment[] = ["sessions", "fleets", "stategraph"];
@@ -304,17 +303,12 @@ describe("no file calls Skills a segment any more", () => {
   // gone. This file is left out: it names the old segment to say it is gone.
   const SRC = fileURLToPath(new URL("..", import.meta.url));
   const self = fileURLToPath(import.meta.url);
-  const walk = (dir: string): string[] =>
-    readdirSync(dir).flatMap((entry) => {
-      const path = join(dir, entry);
-      return statSync(path).isDirectory() ? walk(path) : [path];
-    });
 
   it("finds the phrase in no source, test or stylesheet under src", () => {
-    const files = walk(SRC).filter((f) => /\.(tsx?|css)$/.test(f) && f !== self);
+    const files = srcFiles(SRC).filter((f) => /\.(tsx?|css)$/.test(f) && f !== self);
     expect(files.length).toBeGreaterThan(100);
     const hits = files.flatMap((f) =>
-      readFileSync(f, "utf8")
+      srcText(f)
         .split("\n")
         .flatMap((line, i) => (/skills segment/i.test(line) ? [`${f.slice(SRC.length)}:${i + 1}`] : [])),
     );

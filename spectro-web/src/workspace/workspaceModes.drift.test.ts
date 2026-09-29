@@ -11,11 +11,11 @@
 // list: it is read from the Java file, so a fifth mode added there turns this
 // file red before any web file is touched.
 
-import { readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 import { WORKSPACE_MODES } from "./paneState";
 import { CHOOSER_OPTIONS, optionFor, preselectedOption } from "./chooserMode";
 
@@ -92,16 +92,12 @@ describe("the workspace modes are the server's, read off its source", () => {
 /** Every non-test .ts and .tsx file under src, as [path, text]. */
 function sources(): [string, string][] {
   const root = fileURLToPath(new URL("../", import.meta.url));
-  const out: [string, string][] = [];
-  const walk = (dir: string): void => {
-    for (const name of readdirSync(dir)) {
-      const p = join(dir, name);
-      if (statSync(p).isDirectory()) walk(p);
-      else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push([p, read(p, import.meta.url)]);
-    }
-  };
-  walk(root);
-  return out;
+  return srcFiles(root)
+    .filter((p) => {
+      const name = basename(p);
+      return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name);
+    })
+    .map((p): [string, string] => [p, srcText(p)]);
 }
 
 describe("the mode set is declared once on the web side", () => {

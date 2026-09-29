@@ -42,30 +42,20 @@
 // applies one level down, to the DECLARATIONS inside a rule: `ceilingOf` takes
 // the LAST `max-height`, because that is the one the browser takes.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blockOf, rules, subjectOf } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
-const files = walk(SRC);
+const files = srcFiles(SRC);
 const toolcard = readFileSync(join(SRC, "styles/toolcard.css"), "utf8");
 const everySheet = files
   .filter((f) => f.endsWith(".css"))
-  .flatMap((f) => rules(f.slice(SRC.length), readFileSync(f, "utf8")));
+  .flatMap((f) => rules(f.slice(SRC.length), srcText(f)));
 
 /**
  * The `max-height` a rule really applies, or null.
@@ -199,7 +189,7 @@ describe("a tool card's body grows with what is in it", () => {
     // dead box as live, which is how it first ran.
     const sites = files
       .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
-      .filter((f) => readFileSync(f, "utf8").includes("io-block"))
+      .filter((f) => srcText(f).includes("io-block"))
       .map((f) => f.slice(SRC.length));
     expect(sites).toEqual([]);
   });

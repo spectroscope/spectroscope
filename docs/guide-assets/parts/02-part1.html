@@ -186,7 +186,8 @@ second copy of that list.</p>
 <code>.spectro/settings.json</code> + <code>settings.local.json</code> &lt; CLI flags —
 any settings file outranks the env. “Local Ollama for this checkout” is three
 uncommented lines in <code>.env</code> as long as no settings file overrides them — and
-in the web UI you can switch provider and model mid-session from the header.</p>
+in the web UI you can switch provider and model mid-session from the model chip under
+the message box.</p>
 
 <!--MERMAID:03-config-precedence|Configuration precedence, low to high. Each layer only fills what the higher layers left unset.-->
 
@@ -217,7 +218,7 @@ chapter where the details live.</p>
   <tr><td><strong>Hooks</strong></td><td>Config-driven shell guards around every tool call: <code>pre_tool_use</code> can block before the gate, <code>post_tool_use</code> observes.</td><td>13</td></tr>
   <tr><td><strong>Subagents</strong></td><td>Explore/worker children with their own context, visible A2A task/status/result protocol, four development role tools.</td><td>14</td></tr>
   <tr><td><strong>Skills</strong></td><td><code>SKILL.md</code> packages with progressive disclosure — catalog in the prompt, body on demand.</td><td>15</td></tr>
-  <tr><td><strong>Provider switch</strong></td><td>Change LLM backend and model mid-session from the header; history intact; refused cleanly without a key.</td><td>16</td></tr>
+  <tr><td><strong>Provider switch</strong></td><td>Change LLM backend and model mid-session from the model chip under the message box; history intact; refused cleanly without a key.</td><td>16</td></tr>
   <tr><td><strong>Resilience</strong></td><td>Transient-error retry with backoff (spectroscope owns it, SDK retry off) and Anthropic prompt caching with an honest compaction trigger.</td><td>16</td></tr>
   <tr><td><strong>Vision</strong></td><td>Attach images in the composer or <code>--image</code>; blobs stay next to the session file, prompts stay small.</td><td>17</td></tr>
   <tr><td><strong>Voice in/out</strong></td><td>Local whisper.cpp push-to-talk (editable transcript) and piper speech output that reads answers while they stream.</td><td>17</td></tr>

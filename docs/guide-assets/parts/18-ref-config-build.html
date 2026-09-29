@@ -62,7 +62,7 @@ patch to exactly one scope; a <code>null</code> value removes that key. Secret-s
 keys (<code>*_API_KEY</code>, <code>*_TOKEN</code>) are always rejected — a settings file
 is never a place to paste a key.</p>
 
-<p><strong>Two gears, two scopes.</strong> The header gear (the Settings page) edits the
+<p><strong>Two gears, two scopes.</strong> The gear at the foot of the sidebar (the Settings page) edits the
 GLOBAL, user-scope fields only: session defaults (provider/model/thinking/image backend),
 the default workspace (origin badge + a "reset" that falls back to the layer below),
 <code>logLevel</code>, and the machine-tool paths (<code>chromeBinary</code> /
@@ -110,8 +110,8 @@ settled the same way: it is built where the session's store is minted.</p>
 <p><strong>Provider, model, the provider address and <code>thinking</code> are the third
 case</strong>, and the one that reads as a contradiction until it is spelt out. Saving them
 on this page applies from the next session — the agent is built with the provider it was
-built with, and a run does not change backends underneath itself. The <em>picker in the
-header</em> is the live path: it swaps the running provider through the same session, which
+built with, and a run does not change backends underneath itself. The <em>model picker under
+the message box</em> is the live path: it swaps the running provider through the same session, which
 is a different door from the settings file. So "live via the picker" is true of the picker
 and not of the page, and the page now says the page's half rather than the picker's.</p>
 
@@ -182,7 +182,7 @@ legal value and the row says what it does.</p>
   <tr><td><code>allowLocalhost</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_ALLOW_LOCALHOST</code></td><td>the net fence's local-verify-loop opt-in: <code>web_fetch</code>/<code>browse_page</code> may reach loopback. Never widens to RFC 1918, the 100.64/10 tailnet or <code>file://</code> — <code>web_fetch</code> fences every redirect hop, while <code>browse_page</code> is fenced only on the address you hand it (Chrome's own redirects and script navigation are outside it — chapter 13). Process-global: refused in a workspace scope, user scope only</td></tr>
   <tr><td><code>searxngUrl</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_SEARXNG_URL</code></td><td>the SearXNG instance <code>web_search</code> prefers over every other tier (chapter 13). Process-global: refused in a workspace scope, user scope only — the searcher carries no net fence, so this field alone decides an address the tool dials</td></tr>
   <tr><td><code>imageProvider</code></td><td><code>gemini</code> | <code>openai</code> · <code>gemini</code></td><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td>image-generation backend</td></tr>
-  <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>, web header toggle). Reaches every way a run starts &mdash; the browser session, the REPL, <code>spectro run</code>, a cron fire, a fleet node and every child agent. Two places build an agent and do <b>not</b> read it, because neither is a face of the app: the <b>embedded library</b> facade (<code>Spectro.agent()</code>, used by a JVM program that took spectroscope as a dependency) and a lane of a <b>fleet panel</b> declared by that same program (<code>Spectro.panel()</code>). Both take their numbers from the code that declares them, never from a settings file on whatever machine they happen to run on. A child agent is built with the value its session's tool belt was built with, so the REPL's <code>/think</code> and the header toggle move the running parent and not the children spawned around it; the next session reads the key again, for the whole tree</td></tr>
+  <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>; in the web UI under Settings, Models). Reaches every way a run starts &mdash; the browser session, the REPL, <code>spectro run</code>, a cron fire, a fleet node and every child agent. Two places build an agent and do <b>not</b> read it, because neither is a face of the app: the <b>embedded library</b> facade (<code>Spectro.agent()</code>, used by a JVM program that took spectroscope as a dependency) and a lane of a <b>fleet panel</b> declared by that same program (<code>Spectro.panel()</code>). Both take their numbers from the code that declares them, never from a settings file on whatever machine they happen to run on. A child agent is built with the value its session's tool belt was built with, so the REPL's <code>/think</code> moves the running parent and not the children spawned around it; the next session reads the key again, for the whole tree</td></tr>
   <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18). The REPL and a web session mount every entry; a headless run mounts them only with the opt-in below or its <code>--mcp</code> flag</td></tr>
   <tr><td><code>headlessMcp</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_HEADLESS_MCP</code></td><td>the headless faces' MCP opt-in (card 220): when true, <code>spectro run</code>, every cron fire and every triggered fleet node mount the configured <code>mcpServers</code> the way the REPL does — read at each headless start, never by an interactive session. A manual <code>spectro run</code> overrides it per invocation with <code>--mcp</code>/<code>--no-mcp</code>. Under <code>--permissions auto</code> the opt-in approves every tool every configured server offers, unwatched. Process-global: refused in a workspace scope, user scope only — the switch that widens an unattended run must not live in the folder the agent writes into</td></tr>
   <tr><td><code>progressGuardWrites</code></td><td>int · <code>3</code></td><td>—</td><td>the progress guard's first detector (card 262): how many DISTINCT earlier paths must already carry the exact bytes a write is about to repeat before the run says what it saw and asks the operator — carry on, change course, or end it. <code>0</code> turns the detector off. Cut from a measured hour in which a local model wrote the same 283 bytes to 31 paths while the harness said nothing. Content shorter than 64 characters is never compared, so a scaffold's empty <code>__init__.py</code> files cannot trip it. Process-global: refused in a workspace scope, user scope only — a folder the agent writes into must not be able to switch off the detector watching it. Floor <code>0</code></td></tr>
@@ -217,7 +217,7 @@ legal value and the row says what it does.</p>
 before, but only as the BASE layer — see the deprecation table above for the field each
 one now defers to, and run <code>spectro doctor</code> to see which of yours are currently
 shadowed. The three "machine-tool path" fields are session-scoped like any other field,
-but discouraged from a committed project file — the header gear and the composer gear's
+but discouraged from a committed project file: the Settings page and the composer gear's
 local-overrides section are where they belong.</p>
 
 <h2 id="ch-config-observability">Observability: streaming to OTLP</h2>

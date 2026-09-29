@@ -26,7 +26,7 @@ import { isFlipIntoV2, useChatView } from "./state/chatView";
 import type { ChatViewMode } from "./state/chatView";
 import { foldWork } from "./state/work";
 import { ConnectionBanner } from "./components/ConnectionBanner";
-import { imagesShown, revealImagesPanel, toggleImagesPanel } from "./state/imagesPanel";
+import { revealImagesPanel, toggleImagesPanel } from "./state/imagesPanel";
 import { backendWithAKey } from "./components/imageBackend";
 import { ImportDialog } from "./components/ImportDialog";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -2444,30 +2444,16 @@ export function App() {
           resumed={replay === null && resumeId !== null}
           title={title}
           imageCount={view.images.length}
-          imagesOpen={imagesShown(layout)}
-          onToggleImages={toggleImagesPanel}
           showPanelToggle={tab === "chat"}
           panelOpen={layout.rightPanelOpen}
           onTogglePanel={toggleRightPanel}
           workPanelOffered={chatView === "v2"}
-          settingsOpen={settingsOpen}
-          onToggleSettings={() => (settingsOpen ? closeSettings() : openSettingsPage())}
           doctorOpen={doctorOpen}
           onToggleDoctor={() => setDoctorOpen((o) => !o)}
           onOpenKeymap={() => setKeymapOpen(true)}
-          viewingLive={viewingLive}
-          provider={chip.provider}
-          providerStatus={providerStatus ?? undefined}
-          providerAddress={providerAddress ?? undefined}
-          model={chip.model}
-          archiveProvider={chip.provider}
-          status={conn.status}
-          onApplyProvider={changeProvider}
-          lastInputTokens={view.lastInputTokens}
-          context={view.context}
-          onWindowOverride={(tokens) => sendClient(windowOverrideFrame(tokens))}
-          running={live.running}
-          onAbort={abort}
+          workspace={viewingLive ? view.workspace : null}
+          onPickFolder={pickWorkspace}
+          canPickFolder={canPickWorkspace}
         />
 
         {conn.status !== "open" && (
@@ -2822,6 +2808,20 @@ export function App() {
                         ? replay!.id
                         : undefined,
                     sendClient,
+                    // Card 463: the model, the thinking level and the context
+                    // ring sit under the composer, no longer in the header.
+                    composerMeta: {
+                      provider: chip.provider,
+                      model: chip.model,
+                      status: conn.status,
+                      providerStatus: providerStatus ?? undefined,
+                      providerAddress: providerAddress ?? undefined,
+                      onApplyProvider: changeProvider,
+                      onOpenSettings: () => {
+                        if (!settingsOpen) openSettingsPage();
+                      },
+                    },
+                    onWindowOverride: (tokens: number | null) => sendClient(windowOverrideFrame(tokens)),
                     onPickFolder: pickWorkspace,
                     queued: queue,
                     onUnqueue: unqueue,

@@ -19,10 +19,10 @@
 // here on purpose. The walk does not see an opener reached through a computed
 // key or a spread of the module.
 
-import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { srcFiles, srcText } from "../testkit/tree";
 import { DOCK_ORDER } from "./dockModel";
 import { DEFAULT_LAYOUT } from "../state/layout";
 
@@ -95,10 +95,9 @@ async function probeOpeners(): Promise<string[]> {
 
 /** Every non-test .ts and .tsx file under src, walked from the file system. */
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [full] : [];
+  return srcFiles(dir).filter((full) => {
+    const name = path.basename(full);
+    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name);
   });
 }
 
@@ -146,7 +145,7 @@ function isDeclarationName(id: ts.Identifier): boolean {
 function openerSites(openers: ReadonlySet<string>): string[] {
   const sites: string[] = [];
   for (const full of sourceFiles(SRC)) {
-    const text = readFileSync(full, "utf8");
+    const text = srcText(full);
     const kind = full.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
     const file = ts.createSourceFile(full, text, ts.ScriptTarget.ES2022, true, kind);
     const rel = path.relative(SRC, full).split(path.sep).join("/");

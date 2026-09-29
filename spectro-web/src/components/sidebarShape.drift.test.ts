@@ -11,27 +11,19 @@
 // count with a chevron; it is gone by owner decision, and "gone" here means the
 // fold, its strings and its rules — not `display: none`.
 
-import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blankBlockComments as code, read, stripComments as ts } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 
 /** Every stylesheet in the app, comments already blanked. A guard that reads
  *  one file only forbids a rule in that file, and a stylesheet is one import
  *  line away from anywhere. */
 function stylesheets(): { file: string; css: string }[] {
   const root = fileURLToPath(new URL("../", import.meta.url));
-  const out: { file: string; css: string }[] = [];
-  const walk = (dir: string): void => {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const p = `${dir}/${e.name}`;
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith(".css"))
-        out.push({ file: p.slice(root.length), css: code(readFileSync(p, "utf8")) });
-    }
-  };
-  walk(root.replace(/\/$/, ""));
-  return out;
+  return srcFiles(root)
+    .filter((p) => p.endsWith(".css"))
+    .map((p) => ({ file: p.slice(root.length), css: code(srcText(p)) }));
 }
 
 /** The innermost `selector { … }` blocks of a stylesheet. At-rule preludes

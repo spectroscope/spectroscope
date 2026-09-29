@@ -431,12 +431,8 @@ export function Sidebar(props: {
           rows, and "start something" and "look at something" are not the same
           kind of press.
 
-          The group is wrapped, and the wrapper is what the options control
-          hangs off (card 217). The control had a row of its own under this
-          group and cost the block that never moves a whole line for one 22px
-          glyph; it now rides the LAST row's line, at that row's right. The
-          wrapper goes AROUND the tablist rather than inside it on purpose: a
-          button among the tabs would be an owned element the role forbids. */}
+          The options control rode this group's last line from card 217 until
+          card 464 gave the list a head row of its own below it. */}
         <div className="sidebar-nav-seg-line">
           <div className="sidebar-nav sidebar-nav-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
             {navSegmentRows({
@@ -459,27 +455,27 @@ export function Sidebar(props: {
               />
             ))}
           </div>
-
-          {/* The options belong to the list rather than to the app: they change
-              how THESE rows read, so they sit with them and not in the settings
-              overlay at the foot. At the right, where a control that governs a
-              column goes.
-
-              It is drawn HERE, inside the block that does not scroll, rather
-              than above the list — card 216. Static, it left with the list: at
-              the bottom of a 120-session rail the trigger sat 4091px above the
-              rail's top edge while the settings row was still on screen, so one
-              end of the rail was pinned and the other ran away. What card 217
-              changed is only WHICH line it rides, not which block: no row of its
-              own, and no name of a row either — the stylesheet places it against
-              this group's bottom edge, which is the last row's bottom edge
-              whichever row that is. State graph is the last one since card
-              409 moved Skills up; Browser and Skills have both been last.
-
-              The guard, on the segment: the line is drawn on every segment,
-              and options for a list you are not looking at are noise. */}
-          {nav === "sessions" && <SessionListOptions />}
         </div>
+
+        {/* Card 464 (owner, 2026-09-29): "dass Sessions links steht, Import in
+            der Mitte und diese kleinen Einstellungen rechts". The list's own
+            head row, above the rows, inside the block that does not scroll
+            (card 216): the options change how THESE rows read, and Import
+            fills this list. On the sessions segment only. */}
+        {nav === "sessions" && (
+          <div className="session-list-head">
+            <span className="session-list-caption">{t(lang, "nav.sessions")}</span>
+            <button
+              type="button"
+              className="sidebar-import"
+              title={t(lang, "nav.importTitle")}
+              onClick={props.onImport}
+            >
+              Import
+            </button>
+            <SessionListOptions />
+          </div>
+        )}
       </div>
 
       {/* THE scroll container of the rail (card 217). The bar belonged to

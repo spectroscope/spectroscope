@@ -3,6 +3,7 @@ package dev.spectroscope.server.transcripts;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -29,10 +30,10 @@ import java.util.Locale;
  * runs for as long as the person keeps it open, and a request that waited for
  * it would hold a server thread until they closed Finder.</p>
  */
-final class FolderOpener {
+public final class FolderOpener {
 
     /** The result, so the endpoint can answer honestly rather than always 200. */
-    enum Result {
+    public enum Result {
         /** The file manager was started. */
         OPENED,
         /** There is no such directory. */
@@ -40,6 +41,24 @@ final class FolderOpener {
         /** This platform has no opener we know, or starting it failed. */
         UNSUPPORTED
     }
+
+    /** Starts a program from an argument list. Tests pass one that records the argv. */
+    @FunctionalInterface
+    public interface Launcher {
+        /**
+         * Starts the program and returns without waiting for it.
+         *
+         * @param argv the program and its arguments, never a shell string
+         * @throws IOException when the program cannot be started
+         */
+        void start(List<String> argv) throws IOException;
+    }
+
+    /** The production launcher: a real process, output discarded, not waited on. */
+    public static final Launcher PROCESS = argv -> new ProcessBuilder(argv)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start();
 
     private FolderOpener() {}
 
@@ -68,6 +87,20 @@ final class FolderOpener {
      * @return what happened
      */
     static Result open(Path folder) {
+        return open(folder, opener(), PROCESS);
+    }
+
+    /**
+     * Hands a directory to a program as its last argument, after realising it
+     * and checking it is a directory.
+     *
+     * @param folder the directory; may be null
+     * @param program the argv prefix, a constant chosen by the caller, or null
+     *        when this platform has none
+     * @param launcher starts the process
+     * @return what happened
+     */
+    public static Result open(Path folder, List<String> program, Launcher launcher) {
         if (folder == null) {
             return Result.MISSING;
         }
@@ -80,15 +113,13 @@ final class FolderOpener {
         if (!Files.isDirectory(real)) {
             return Result.MISSING;
         }
-        List<String> argv = opener();
-        if (argv == null) {
+        if (program == null || program.isEmpty()) {
             return Result.UNSUPPORTED;
         }
+        List<String> argv = new ArrayList<>(program);
+        argv.add(real.toString());
         try {
-            new ProcessBuilder(List.of(argv.get(0), real.toString()))
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
-                    .start();
+            launcher.start(List.copyOf(argv));
             return Result.OPENED;
         } catch (IOException | SecurityException cannot) {
             // No opener installed, or the sandbox forbids spawning. Neither is

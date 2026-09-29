@@ -15,7 +15,7 @@
 
 /* Session titles are headings, not labels: Book weight, tracked like the DS. */
 .header-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
   font-size: var(--fs-16);
@@ -49,27 +49,6 @@
   text-overflow: ellipsis;
 }
 
-/* Stop: Coral outline, visible only while a run is active. */
-.stop {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  background: transparent;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-control);
-  color: var(--accent);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-13);
-  padding: 6px var(--sp-3);
-  transition: background var(--t-fast), box-shadow var(--t-fast);
-}
-.stop:hover {
-  background: var(--accent-soft);
-  box-shadow: 0 4px 14px -8px var(--accent-glow);
-}
-.stop:active { background: var(--accent-soft); box-shadow: none; }
-
 /* ---------- Connection banner ---------- */
 
 .conn-banner {
@@ -91,31 +70,143 @@
 }
 
 
-/* Card 228 (criterion 7): the header's per-panel toggle icons and the ⋮
-   overflow. The pop reuses the wsg idiom but opens DOWNWARD — it hangs off
-   the header, not the composer — and its rows are real buttons, so the
-   button chrome is reset the way .export-pop resets it. */
-.hdr-panels-pop {
+/* Card 442: the header's ⋮ menu. It reuses the wsg idiom but opens DOWNWARD
+   from the right edge of its button, which is the header's last control. The
+   selector is compound on purpose: workspace-gear.css is imported after this
+   sheet with an equal-weight `.wsg-pop`, and a single class here lost the
+   cascade (a 34 px strip that showed one row, 2026-09-29). */
+.hdr-menu-anchor { flex: none; }
+.wsg-pop.hdr-menu-pop {
   top: calc(100% + 6px);
   bottom: auto;
-  width: 190px;
+  right: 0;
+  width: 240px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
   padding: var(--sp-2);
   gap: 0;
 }
-.hdr-panels-row {
+.hdr-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   width: 100%;
+  padding: 6px var(--sp-2);
   background: none;
   border: 0;
+  border-radius: var(--radius-control);
   font: inherit;
   font-size: var(--fs-13);
   color: var(--text);
   text-align: left;
-  align-items: center;
+  cursor: pointer;
 }
-.hdr-panels-check {
+.hdr-menu-row:hover,
+.hdr-menu-row:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.hdr-menu-icon {
+  flex: none;
+  color: var(--text-dim);
+}
+.hdr-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hdr-menu-count {
+  flex: none;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.hdr-menu-check {
   width: 14px;
   flex: none;
   color: var(--accent);
+  text-align: right;
+}
+.hdr-menu-sep {
+  height: 1px;
+  margin: var(--sp-2) var(--sp-1);
+  background: var(--border);
+}
+
+/* Card 462: the working folder chip beside the title, and its menu. The
+   switch after it takes the free space on its left, so the chip stays with
+   the title and the switch and the menu keep the right end. */
+.ws-chip-anchor {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ws-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px var(--sp-2);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-13);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.ws-chip:hover,
+.ws-chip[aria-expanded="true"] {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.ws-chip-icon {
+  flex: none;
+}
+.ws-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A narrow window keeps the chip to its icon: two names cut to a letter each
+   (the title and the folder) said nothing at 390 px. The tooltip and the
+   menu's first line carry the path. */
+@media (max-width: 520px) {
+  .ws-chip-name {
+    display: none;
+  }
+}
+.wsg-pop.ws-chip-pop {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: 0;
+  right: auto;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  padding: var(--sp-2);
+  gap: 0;
+}
+.ws-chip-path {
+  display: block;
+  padding: 4px var(--sp-2) var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+.ws-chip-note {
+  display: block;
+  padding: var(--sp-2) var(--sp-2) 2px;
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}
+.hdr-menu-row:disabled {
+  color: var(--text-faint);
+  cursor: default;
+  background: none;
 }
 
 /* Card 430: the learn and light switch. Two words in one chip, the checked one
@@ -123,6 +214,7 @@
 .mode-switch {
   display: inline-flex;
   flex: none;
+  margin-left: auto;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-chip);
   overflow: hidden;

@@ -20,9 +20,10 @@
 // neighbour is loaded just as surely as one pulled in at the top.
 
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const STYLES = fileURLToPath(new URL(".", import.meta.url));
 const SRC = fileURLToPath(new URL("..", import.meta.url));
@@ -34,13 +35,10 @@ function sheets(): string[] {
 
 /** @return every file under `dir` and its subfolders that can carry an import */
 function importers(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...importers(path));
-    else if (/\.(css|tsx?)$/.test(entry.name) && !entry.name.includes(".test.")) out.push(path);
-  }
-  return out;
+  return srcFiles(dir).filter((path) => {
+    const name = basename(path);
+    return /\.(css|tsx?)$/.test(name) && !name.includes(".test.");
+  });
 }
 
 describe("no stylesheet is written and left unloaded", () => {
@@ -50,7 +48,7 @@ describe("no stylesheet is written and left unloaded", () => {
     // the bundle, which is the only question being asked.
     const tree = importers(SRC)
       .filter((path) => !path.startsWith(STYLES) || path.endsWith(".css"))
-      .map((path) => readFileSync(path, "utf8"))
+      .map((path) => srcText(path))
       .join("\n");
     const orphans = sheets().filter((name) => {
       // A sheet naming itself does not count as reached — the check has to look

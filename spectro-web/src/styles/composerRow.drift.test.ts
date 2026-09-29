@@ -471,7 +471,8 @@ describe("the row under the composer is a toolbar, not a second input (card 383)
     // Criterion 6. The number is written nowhere else in the tree, which is
     // why it is written here: it is the one fact about the row that cannot be
     // derived from the row. Everything else in this file is.
-    expect(rowChildLines()).toHaveLength(7);
+    // Card 463 added the eighth: the block of the model, thinking and ring.
+    expect(rowChildLines()).toHaveLength(8);
   });
 
   it("wraps the row rather than clipping it, and a wrapped row is at most 72px", () => {

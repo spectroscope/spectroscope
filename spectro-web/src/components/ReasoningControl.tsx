@@ -1,6 +1,6 @@
-// The reasoning seg (card 88) — shared by the header provider picker and the
-// Settings "session defaults" section, the providerModelField pattern: one
-// brain, two hosts. Renders NOTHING until the capability record for the
+// The reasoning seg (card 88), in the Settings "session defaults" section. The
+// thinking menu under the composer (card 463, ComposerMeta.tsx) draws the same
+// cells from the same brain (state/reasoning.ts) as a list. Renders NOTHING until the capability record for the
 // (provider, model) pair is known, and nothing at all for control "none" —
 // the UI must not offer what the model cannot do. Cells write the per-model
 // choice store; the WIRE send lives in App (one site), which watches the
@@ -40,7 +40,7 @@ export function useReasoningCapability(provider: string, model: string): Reasoni
 }
 
 /** A cell's visible text: on/off translate, effort tokens are wire vocabulary. */
-function cellLabel(lang: "de" | "en", cell: SegCell): string {
+export function cellLabel(lang: "de" | "en", cell: SegCell): string {
   if (cell.kind === "on") return t(lang, "rc.on");
   if (cell.kind === "off") return t(lang, "rc.off");
   return cell.id;
@@ -48,7 +48,7 @@ function cellLabel(lang: "de" | "en", cell: SegCell): string {
 
 /** The hover line: the greyed-out reason wins, a pressed explicit choice
  *  offers the way back, everything else says what a click requests. */
-function cellTitle(lang: "de" | "en", cell: SegCell, explicit: boolean): string {
+export function cellTitle(lang: "de" | "en", cell: SegCell, explicit: boolean): string {
   if (cell.reason === "no-off") return t(lang, "rc.noOff");
   // The cap names the RECORD's offMaxEffort, never the cell it greys out.
   if (cell.reason === "cap") return t(lang, "rc.offCap", { level: cell.capAt ?? "" });

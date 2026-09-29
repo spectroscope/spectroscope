@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 79,
+    "endpointCount": 81,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -1052,6 +1052,38 @@
       "pathVars": [],
       "query": [],
       "body": null
+    },
+    {
+      "id": "workspace-reveal",
+      "method": "POST",
+      "path": "/api/workspace/reveal",
+      "area": "workspace-files",
+      "name": "show workspace in Finder",
+      "description": "Show a live session's working folder in Finder on the server machine (card 462). The body names the session only; the server takes the folder the socket resolved for it, the path the workspace_info frame carries, and realises it before opening. 204 opened, 400 missing or malformed sessionId, 404 unknown session or no directory there, 501 non-macOS, 500 the program could not start.",
+      "fence": "host+origin+json",
+      "writes": false,
+      "caution": "Opens a Finder window on the server machine; exclude it from automated replays.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "sessionId": "{{sessionId}}"
+      }
+    },
+    {
+      "id": "workspace-terminal",
+      "method": "POST",
+      "path": "/api/workspace/terminal",
+      "area": "workspace-files",
+      "name": "open Terminal in workspace",
+      "description": "Open a Terminal.app window in a live session's working folder on the server machine (card 462). Same body, lookup and answers as POST /api/workspace/reveal: 204, 400, 404, 501, 500.",
+      "fence": "host+origin+json",
+      "writes": false,
+      "caution": "Opens a Terminal window on the server machine; exclude it from automated replays.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "sessionId": "{{sessionId}}"
+      }
     },
     {
       "id": "images-get",

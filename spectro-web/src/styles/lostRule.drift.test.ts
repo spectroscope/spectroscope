@@ -44,27 +44,15 @@
 // has this one cause" while walking past the other cause is the kind of sentence
 // this whole file was written about.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { srcFiles, srcText } from "../testkit/tree";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
-/** @return every file under `dir`, recursively */
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) out.push(...walk(path));
-    else out.push(path);
-  }
-  return out;
-}
-
-const sheets = walk(SRC)
+const sheets = srcFiles(SRC)
   .filter((f) => f.endsWith(".css"))
-  .map((f) => ({ rel: f.slice(SRC.length), text: readFileSync(f, "utf8") }));
+  .map((f) => ({ rel: f.slice(SRC.length), text: srcText(f) }));
 
 // Every comment fault in a stylesheet, each as `line:column what` — the
 // position of the offending `*` or `/` itself, one-based, so it is the column

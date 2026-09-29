@@ -579,7 +579,8 @@
      left end. The other menus keep their own anchors. */
   position: relative;
 }
-.composer-actions .mic-button { margin-left: auto; }
+/* Card 463 (owner, 2026-09-29): the microphone and the gear join the left group;
+   the right end belongs to the model, thinking and ring (.composer-meta). */
 /* CARD 383: the field and the icon row under it read as one control, so the
    row sits one rung closer to the field than the column's own gap: --sp-1
    instead of --sp-2. Written as the difference of the two rungs, because
@@ -918,3 +919,129 @@
   transition: color var(--t-fast), border-color var(--t-fast);
 }
 .archive-export:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Card 463: the model, the thinking level and the context ring at the right end
+   of the row under the composer, the ring last. The anchors are static, so the
+   row (.composer-actions, position: relative) frames every menu of the block;
+   the menus open upward and hang from the row's right end. */
+.composer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.composer-meta .provider-picker,
+.composer-meta .context-wrap,
+.composer-meta .thinking-picker {
+  position: static;
+  min-width: 0;
+}
+.composer-meta .provider-chip {
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px var(--sp-2);
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+}
+.composer-meta .provider-chip:hover {
+  background: var(--surface-2);
+}
+.composer-meta .provider-chip .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thinking-picker {
+  display: inline-flex;
+  flex: none;
+}
+.thinking-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--sp-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.thinking-chip:hover,
+.thinking-chip[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.thinking-chip-name {
+  color: var(--text-faint);
+}
+.thinking-pop {
+  position: absolute;
+  top: auto;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 220px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+.thinking-pop-title {
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+.thinking-list {
+  display: flex;
+  flex-direction: column;
+}
+.thinking-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 6px var(--sp-2);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.thinking-row:hover:not(:disabled),
+.thinking-row:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.thinking-row:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.thinking-row-label {
+  flex: 1;
+}
+.thinking-row-check {
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+  text-align: right;
+}
+.thinking-pop-ends {
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-2);
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}

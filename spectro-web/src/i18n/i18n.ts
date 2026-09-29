@@ -362,12 +362,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "hdr.archivedSession": { de: "Archivierte Session", en: "Archived session" },
   "hdr.sidebarHide": { de: "Sidebar ausblenden", en: "Hide sidebar" },
   "hdr.sidebarShow": { de: "Sidebar einblenden", en: "Show sidebar" },
-  "hdr.panelToggle": { de: "Agenten & Kontext anzeigen", en: "Show agents & context" },
   "hdr.panelHide": { de: "Panel ausblenden", en: "Hide panel" },
-  "hdr.langTitle": {
-    de: "Sprache der Oberfläche: Deutsch (Klick wechselt zu Englisch)",
-    en: "UI language: English (click for German)",
-  },
+  // Card 442: the side panel toggle beside the header menu.
+  "hdr.panelShow": { de: "Seitenpanel einblenden", en: "Show side panel" },
   // The learn and light switch. The mode words stay lowercase and the same in
   // both languages, like the brand; the tooltip says what each one shows.
   "hdr.mode.label": { de: "Modus", en: "Mode" },
@@ -790,7 +787,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
 
   // doctor (calibration/status page)
-  "hdr.doctor": { de: "spectro doctor — Status & Kalibrierung", en: "spectro doctor — status & calibration" },
   "doc.title": { de: "spectro doctor", en: "spectro doctor" },
   "doc.kicker": { de: "calibration", en: "calibration" },
   "doc.lede": {
@@ -1034,6 +1030,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   // reasoning control (card 88) — the seg in the picker and in Settings.
   // Effort tokens (low/medium/…) are wire vocabulary and render untranslated.
   "rc.label": { de: "denken", en: "thinking" },
+  // Card 463: the thinking chip's menu under the composer.
+  "cm.thinkingTitle": { de: "Denken", en: "Thinking" },
+  "cm.faster": { de: "schneller", en: "faster" },
+  "cm.smarter": { de: "gründlicher", en: "smarter" },
+  "cm.default": { de: "Standard", en: "default" },
   "rc.aria": { de: "Reasoning des Modells steuern", en: "Control the model's reasoning" },
   "rc.on": { de: "an", en: "on" },
   "rc.off": { de: "aus", en: "off" },
@@ -1082,6 +1083,28 @@ export const dict: Record<string, { de: string; en: string }> = {
   "rp.images": { de: "Bilder", en: "Images" },
   // Card 228: the header's ⋮ overflow — every panel as a check row.
   "hdr.panelsMenu": { de: "Alle Panels", en: "All panels" },
+  // Card 462: the working folder chip in the header and its menu.
+  "wchip.none": { de: "kein Ordner", en: "no folder" },
+  "wchip.title": { de: "Arbeitsordner: {path}", en: "Working folder: {path}" },
+  "wchip.menu": { de: "Arbeitsordner", en: "Working folder" },
+  "wchip.reveal": { de: "Im Finder anzeigen", en: "Show in Finder" },
+  "wchip.copy": { de: "Pfad kopieren", en: "Copy path" },
+  "wchip.change": { de: "Ordner ändern …", en: "Change folder …" },
+  "wchip.terminal": { de: "Im Terminal öffnen", en: "Open in Terminal" },
+  "wchip.needsSession": { de: "Verfügbar nach der ersten Nachricht", en: "Available after the first message" },
+  "wchip.copied": { de: "Pfad kopiert", en: "Path copied" },
+  "wchip.changeLocked": {
+    de: "Der Ordner lässt sich nur vor der ersten Nachricht ändern",
+    en: "The folder can change only before the first message",
+  },
+  "wchip.macOnly": { de: "Nur unter macOS", en: "Only on macOS" },
+  "wchip.unreachable": { de: "Der Server ist nicht erreichbar", en: "The server is not reachable" },
+  "wchip.notFound": { de: "Die Session hat keinen Ordner auf der Platte", en: "The session has no folder on disk" },
+  "wchip.clipboard": { de: "Die Zwischenablage ist gesperrt", en: "The clipboard is blocked" },
+  "wchip.failed": { de: "Das hat nicht geklappt ({status})", en: "That did not work ({status})" },
+  // Card 442: the rows of the header menu that are not a dock panel.
+  "hdr.menu.keymap": { de: "Tastaturkürzel", en: "Keyboard shortcuts" },
+  "hdr.menu.doctor": { de: "spectro doctor", en: "spectro doctor" },
   "dock.strip": { de: "Panels", en: "Panels" },
   "dock.tabs": { de: "Reiter", en: "Tabs" },
   "dock.tabsTitle": {
@@ -1553,11 +1576,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   // thinking are bound when the agent is built — measured on one socket: the
   // settings were written to model=qwen3:latest, /api/config agreed, and the
   // next run in the same session still started on the model from before. The
-  // picker in the header IS live for those, and naming it is the difference
+  // model picker under the composer IS live for those, and naming it is the difference
   // between a limitation and a dead end.
   "set.provApplies": {
-    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält Provider, Modell und Adresse, mit denen sie gestartet ist — der Umschalter oben im Fenster wechselt eine laufende Sitzung sofort.",
-    en: "Applies from the next session. A session already open keeps the provider, model and address it started with — the picker in the header switches a running session right away.",
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält Provider, Modell und Adresse, mit denen sie gestartet ist. Der Umschalter für das Modell unter dem Nachrichtenfeld wechselt eine laufende Sitzung sofort.",
+    en: "Applies from the next session. A session already open keeps the provider, model and address it started with. The model picker under the message box switches a running session right away.",
   },
   "set.hkFailOpen": {
     de: "Antwortet ein Hook nicht rechtzeitig, wird er abgebrochen und der Aufruf läuft trotzdem — ein kaputter Hook soll nicht jeden Werkzeug-Aufruf blockieren. Das steht dann als „timed-out\" in der Ablaufspur, nie als „durchgelassen\".",
@@ -2780,8 +2803,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The agent reads files, runs tools, and streams every step of its work here.",
   },
   "chat.emptyHint": {
-    de: "Tipp: Das Zahnrad oben wechselt das Design (auch spectro white) und stellt die Partikel ein.",
-    en: "Tip: the gear up top switches the design (spectro white included) and tunes the particles.",
+    de: "Tipp: Die Einstellungen unten links wechseln das Design (auch spectro white) und stellen die Partikel ein.",
+    en: "Tip: Settings at the bottom left switch the design (spectro white included) and tune the particles.",
   },
   "img.noKey": { de: "kein Key in .env", en: "no key in .env" },
   "chat.recording": { de: "Aufnahme {t}", en: "Recording {t}" },
@@ -3663,8 +3686,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "a local model this size stays below the cloud models: simpler answers, a smaller context — answers can be off.",
   },
   "lmn.real": {
-    de: "Mehr Tiefe: oben im Picker einen Cloud-Anbieter wählen — oder im Chooser ein größeres Modell.",
-    en: "For more depth, pick a cloud provider in the header — or a larger model in the chooser.",
+    de: "Mehr Tiefe: in der Modellauswahl unter dem Nachrichtenfeld einen Cloud-Anbieter wählen oder im Chooser ein größeres Modell.",
+    en: "For more depth, pick a cloud provider in the model picker under the message box, or a larger model in the chooser.",
   },
   "lmn.gotIt": { de: "Verstanden", en: "Got it" },
 
@@ -4241,8 +4264,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   "gk.answer": { de: "Antwort", en: "Answer" },
 
   // header extras
-  "hdr.imagesShow": { de: "Bilder anzeigen", en: "Show images" },
-  "hdr.imagesHide": { de: "Bilder ausblenden", en: "Hide images" },
   "hdr.settings": { de: "Einstellungen", en: "Settings" },
 
   // relative time (sidebar meta)
