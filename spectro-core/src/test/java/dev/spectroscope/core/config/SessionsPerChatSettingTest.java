@@ -18,10 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Card 490, criterion 1: the session count of one chat is a settings key.
  *
  * <p>It ships unset, so a chat that names no count runs as v0.14.4 did. The
- * count a chat gets when one is set without a number of its own is 3, the
- * main agent and two helpers. The floor is 2: the writer refuses a lower
- * value, the loader skips it, and the settings page reads its minimum from
- * {@link SettingFloors}. What a chat does with the count is
+ * proposed count is 3, the main agent and two helpers. The floor is 2: the
+ * writer refuses a lower value, the loader skips it, and the settings API
+ * sends the floor from {@link SettingFloors} to the page. What a chat does with the count is
  * {@code SessionSlotPoolTest}'s.</p>
  */
 class SessionsPerChatSettingTest {
@@ -46,7 +45,7 @@ class SessionsPerChatSettingTest {
     }
 
     @Test
-    void theCountOfferedForAChatIsThree() {
+    void theProposedCountForAChatIsThree() {
         assertEquals(3, SpectroConfig.DEFAULT_SESSIONS_PER_CHAT,
                 "card 490: the main agent and two helpers, the owner's figure");
     }

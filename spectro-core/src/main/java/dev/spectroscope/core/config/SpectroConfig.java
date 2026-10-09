@@ -1186,20 +1186,22 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "subagentBudgetTokens")
     public static final int DEFAULT_SUBAGENT_BUDGET_TOKENS = 10_000_000;
 
-    /** The session count a chat gets when a count is set for it without a
-     *  number of its own (card 490): three, the main agent and two helpers.
-     *  It is the owner's figure of 2026-10-09 for a chat on a local model
-     *  ({@code konzept/RUN-PROFILES.md}, Knobs), not a measurement; the
-     *  concurrency of one chat on the house node is measured by card 487.
+    /** The proposed session count for a chat (card 490): three, the main
+     *  agent and two helpers. It is the owner's figure of 2026-10-09 for a
+     *  chat on a local model ({@code konzept/RUN-PROFILES.md}, Knobs), not a
+     *  measurement; the concurrency of one chat on the house node is measured
+     *  by card 487.
      *
      *  <p>The key itself ships unset: a chat that names no count runs as
      *  v0.14.4 did, with no limit per chat and one {@code spawn_agents} call
      *  starting up to
      *  {@link dev.spectroscope.core.subagents.SubagentManager#MAX_PARALLEL_CHILDREN}
-     *  helpers. This number is what the settings page offers for the field and
-     *  what Local mode (card 493) writes. The floor is 2, in
-     *  {@link SettingFloors}: a count of 1 would be a second way to say "no
-     *  helpers", which the {@code agents} tool group already says.</p> */
+     *  helpers. No code reads this number yet. The settings page has no field
+     *  for the key, and Local mode (card 493), which is to write this number,
+     *  is not built; until then a chat has a count only when a settings file
+     *  sets the key. The floor is 2, in {@link SettingFloors}: a count of 1
+     *  would be a second way to say "no helpers", which the {@code agents}
+     *  tool group already says.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "sessionsPerChat")
     public static final int DEFAULT_SESSIONS_PER_CHAT = 3;
 
