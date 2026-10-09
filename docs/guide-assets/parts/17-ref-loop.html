@@ -19,7 +19,8 @@ hops.</p>
           of what the next call will carry;</li>
       <li>the compaction check (chapter 28) — a no-op below the threshold;</li>
       <li>the request: system prompt, full history copy, tool specs, maxTokens (default
-          32&thinsp;000), thinking flag, the cancel signal;</li>
+          32&thinsp;000, lowered to fit the context window when the window is known,
+          card 488), thinking flag, the cancel signal;</li>
       <li>streaming: text deltas emit immediately; thinking deltas emit but never join the
           history; tool calls collect; usage updates the context measure; the stop reason
           records;</li>

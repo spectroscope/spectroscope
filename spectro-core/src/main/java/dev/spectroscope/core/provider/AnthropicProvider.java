@@ -340,6 +340,12 @@ public final class AnthropicProvider implements LlmProvider {
         }
     }
 
+    /** The smallest {@code budget_tokens} the Messages API accepts on the
+     *  families that take a token budget (card 488 review). A budget below it
+     *  is refused, so a request that cannot fit it goes out without thinking. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
+    static final int MIN_THINKING_BUDGET = 1_024;
+
     /** A modest reasoning budget, capped so maxTokens always stays strictly larger. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
     static final int THINKING_BUDGET = 2048;
@@ -375,17 +381,16 @@ public final class AnthropicProvider implements LlmProvider {
 
     /**
      * The thinking budget for a given maxTokens: the modest default, but always
-     * left below maxTokens (the API requires maxTokens &gt; budget). Returns 0 when
-     * maxTokens is too small to fit any budget — the caller then omits thinking.
+     * left below maxTokens (the API requires maxTokens &gt; budget) and never
+     * below {@link #MIN_THINKING_BUDGET}. Returns 0 when maxTokens is 1,024 or
+     * less, where no budget fits both rules; the caller then omits thinking.
      *
      * @param maxTokens the request's completion budget the thinking budget must stay below
      * @return the budget in tokens, or 0 when thinking should be omitted
      */
     static int thinkingBudget(int maxTokens) {
-        if (maxTokens <= 1) {
-            return 0;
-        }
-        return Math.min(THINKING_BUDGET, maxTokens - 1);
+        int budget = Math.min(THINKING_BUDGET, maxTokens - 1);
+        return budget < MIN_THINKING_BUDGET ? 0 : budget;
     }
 
     /**

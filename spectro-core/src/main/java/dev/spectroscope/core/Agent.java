@@ -102,7 +102,9 @@ public final class Agent {
         return options.maxTurns() != null ? options.maxTurns() : DEFAULT_MAX_TURNS;
     }
 
-    /** The completion budget one turn spends when nothing configures it.
+    /** The completion budget one turn spends when nothing configures it, before
+     *  the window clamp of card 488
+     *  ({@link dev.spectroscope.core.session.CompactionThreshold#completionBudget}).
      *  Public because {@link dev.spectroscope.core.session.CompactionThreshold}
      *  is defined AGAINST it (card 263): the share of the context window kept
      *  back has to hold one of these, and a second copy of the number in the
@@ -556,6 +558,10 @@ public final class Agent {
 
         // Input tokens of the last completed turn — the compaction trigger.
         int lastInputTokens = 0;
+        // Card 488: the characters of the turn request lastInputTokens was
+        // reported for, set with it, so the next request's estimate can use
+        // the backend's own density.
+        long lastRequestChars = 0;
 
         // Card 252: the withholding is stated once per run. The image lives in
         // the history, so the fence closes again on every turn of a tool-using
@@ -674,6 +680,7 @@ public final class Agent {
                     messages.addAll(compacted.messages());
                     emit.accept(compacted.event());
                     lastInputTokens = 0; // re-measure after compaction
+                    lastRequestChars = 0;
                     // The positions the elision remembered no longer hold their
                     // calls or are no longer old, so it drops them on this call.
                     outgoing = elision.requestView(List.copyOf(messages));
@@ -735,8 +742,15 @@ public final class Agent {
                 String systemForTurn = statedGoal == null
                         ? options.systemPrompt()
                         : options.systemPrompt() + statedGoal.promptSection();
+                // Card 488: the completion fits the window this turn compacts
+                // by, and what that window has left after this request's
+                // input, for every provider and every agent, children included.
+                long requestChars = requestChars(systemForTurn, advertisedTools, fenced.messages());
+                int inputEstimate = CompactionThreshold.inputEstimate(requestChars,
+                        lastRequestChars, lastInputTokens);
                 ProviderRequest request = new ProviderRequest(systemForTurn,
-                        fenced.messages(), advertisedTools, maxTokens,
+                        fenced.messages(), advertisedTools,
+                        CompactionThreshold.completionBudget(compaction, maxTokens, inputEstimate),
                         effectiveReasoning(), effortOverride, signal, tap);
 
                 // Card 270: this is the one place every exchange of every agent
@@ -776,6 +790,7 @@ public final class Agent {
                             // and carries the cache counts ADDITIVELY (absent when the
                             // provider reported none — those sessions stay byte-identical).
                             lastInputTokens = contextTokens(usage);
+                            lastRequestChars = requestChars;
                             emit.accept(new Usage(agentId,
                                     usage.inputTokens(), usage.outputTokens(),
                                     usage.cacheReadTokens() > 0 ? usage.cacheReadTokens() : null,
@@ -1594,6 +1609,30 @@ public final class Agent {
                 // by leaving the key out rather than by sending a zero — a zero
                 // in a window field is a claim about the room available.
                 compaction.window() > 0 ? compaction.window() : null);
+    }
+
+    /**
+     * The characters one request carries, counted the way {@link #contextInfo}
+     * counts them: the system prompt, each advertised tool's name, description
+     * and schema, and every content block of the history.
+     *
+     * @param system   the system prompt of the request
+     * @param tools    the tools the request advertises
+     * @param messages the history the request carries
+     * @return the character count behind the request's input estimate
+     */
+    static long requestChars(String system, List<ToolSpec> tools, List<ProviderMessage> messages) {
+        long chars = system == null ? 0 : system.length();
+        for (ToolSpec spec : tools) {
+            chars += spec.name().length() + spec.description().length()
+                    + spec.inputSchema().toString().length();
+        }
+        for (ProviderMessage message : messages) {
+            for (ProviderContent content : message.content()) {
+                chars += charsOf(content);
+            }
+        }
+        return chars;
     }
 
     /** Context-part texts are capped for the wire — a whole conversation can be
