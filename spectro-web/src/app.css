@@ -801,3 +801,40 @@
   max-height: 14rem;
   overflow: auto;
 }
+
+/* The provider overview on the settings page (card 480, playbook P1). Tokens
+   only; the wrapper scrolls the table sideways on a narrow window so the page
+   itself never does. */
+.prov-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.prov-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.prov-table th,
+.prov-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.prov-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.prov-table td {
+  white-space: nowrap;
+}
+.prov-row--failed .prov-state {
+  color: var(--error);
+}
+.prov-row--reachable .prov-state {
+  color: var(--ok);
+}
+.prov-foot {
+  margin-top: 8px;
+}

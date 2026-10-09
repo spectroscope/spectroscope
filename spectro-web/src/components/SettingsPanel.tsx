@@ -59,6 +59,8 @@ import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings } from "./SkillsMcpSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
+import { ProviderStatusSettings } from "./ProviderStatusSettings";
+import { checkProviders } from "../state/providerRegistry";
 import { AllowlistSettings } from "./AllowlistSettings";
 import { HooksSettings } from "./HooksSettings";
 import type { Leveling } from "../state/useLeveling";
@@ -920,7 +922,11 @@ export function SettingsPanel({
                         providerStatus={providerStatus}
                         providerAddress={providerAddress}
                         keyAffordance="inline"
-                        onKeySaved={onKeySaved}
+                        onKeySaved={() => {
+                          onKeySaved?.();
+                          // Card 480: a key save checks that one provider once.
+                          void checkProviders(String(view.effective.provider ?? ""));
+                        }}
                         markAbsent
                       />
                       {settingsModelMode !== "needs-key" && (
@@ -1008,6 +1014,8 @@ export function SettingsPanel({
                     </div>
                   </div>
                 )}
+                {/* Card 480: every provider, configured or not, and whether it answers. */}
+                <ProviderStatusSettings anchorId="providers" />
                 {/* The image pair reaches an open session — generate_image
                   resolves BOTH its backend and its model on the call
                   (SessionConnection#liveImageBackend). They are two blocks and

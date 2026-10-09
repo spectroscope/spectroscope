@@ -5163,6 +5163,31 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lab.moment.kind.skill": { de: "Skill", en: "skill" },
   "lab.moment.kind.error": { de: "Fehler", en: "error" },
   "lab.moment.kind.end": { de: "Lauf zu Ende", en: "run ended" },
+  // The provider overview on the settings page (card 480, playbook P1).
+  "prov.title": { de: "Provider", en: "Providers" },
+  "prov.hint": {
+    de: "Konfiguriert heißt: Key oder Adresse vorhanden. Antwortet heißt: die letzte Prüfung bekam eine Modell-Liste. Geprüft wird nur auf Knopfdruck, beim Öffnen für lokale Server und einmal nach dem Speichern eines Keys.",
+    en: "Configured means a key or an address is present. Answers means the last check got a model list. Checks run only on a press, on open for local servers, and once after a key is saved.",
+  },
+  "prov.col.provider": { de: "Provider", en: "Provider" },
+  "prov.col.state": { de: "Zustand", en: "State" },
+  "prov.col.key": { de: "Key", en: "Key" },
+  "prov.col.address": { de: "Adresse", en: "Address" },
+  "prov.col.models": { de: "Modelle", en: "Models" },
+  "prov.col.checked": { de: "Geprüft", en: "Checked" },
+  "prov.state.needs-key": { de: "Key fehlt", en: "needs a key" },
+  "prov.state.needs-download": { de: "Modell nicht geladen", en: "model not downloaded" },
+  "prov.state.configured": { de: "konfiguriert, nicht geprüft", en: "configured, not checked" },
+  "prov.state.reachable": { de: "antwortet", en: "answers" },
+  "prov.state.failed": { de: "antwortet nicht", en: "not answering" },
+  "prov.keyYes": { de: "vorhanden", en: "present" },
+  "prov.keyNo": { de: "fehlt", en: "missing" },
+  "prov.models": { de: "{n} Modelle (live)", en: "{n} models (live)" },
+  "prov.modelsFallback": { de: "{n} Modelle (Liste aus dem Produkt)", en: "{n} models (curated list)" },
+  "prov.never": { de: "nie", en: "never" },
+  "prov.ago": { de: "vor {s} s", en: "{s} s ago" },
+  "prov.check": { de: "Prüfen", en: "Check" },
+  "prov.checkAll": { de: "Alle prüfen", en: "Check all" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.
