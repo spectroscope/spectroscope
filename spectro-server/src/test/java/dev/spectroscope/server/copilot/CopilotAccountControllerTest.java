@@ -125,6 +125,36 @@ class CopilotAccountControllerTest {
     }
 
     @Test
+    void aForeignOriginCannotCancelAWaitingSignIn() throws Exception {
+        mvc.perform(post("http://127.0.0.1/api/copilot/account/sign-in")
+                        .contentType("application/json").content(body("github")))
+                .andExpect(jsonPath("$.state").value("WAITING"));
+
+        mvc.perform(post("http://127.0.0.1/api/copilot/account/cancel")
+                        .header("Origin", "https://evil.example")
+                        .contentType("application/json").content("{}"))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(get("http://127.0.0.1/api/copilot/account"))
+                .andExpect(jsonPath("$.state").value("WAITING"));
+        mvc.perform(post("http://127.0.0.1/api/copilot/account/cancel").contentType("application/json").content("{}"))
+                .andExpect(jsonPath("$.state").value("NOT_SIGNED_IN"));
+    }
+
+    @Test
+    void aReboundHostCannotCancelOrSignOut() throws Exception {
+        store.save(new CopilotCredentials.Stored(CopilotCredentials.Method.GITHUB, "octo-fixture", TOKEN, 0, null, 0));
+
+        for (String action : java.util.List.of("cancel", "sign-out")) {
+            mvc.perform(post("http://evil.example/api/copilot/account/" + action)
+                            .contentType("application/json").content("{}"))
+                    .andExpect(status().isNotFound());
+        }
+
+        assertTrue(Files.exists(store.path()), "the stored sign-in is still there");
+    }
+
+    @Test
     void aFormPostIsNotAccepted() throws Exception {
         mvc.perform(post("http://127.0.0.1/api/copilot/account/sign-in")
                         .contentType("application/x-www-form-urlencoded").content("method=github"))
