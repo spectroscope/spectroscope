@@ -146,6 +146,10 @@ class SessionSlotPoolTest {
     }
 
     private static Chat start(GatedProvider provider, Integer sessionsPerChat) {
+        return start(provider, sessionsPerChat, 30_000);
+    }
+
+    private static Chat start(GatedProvider provider, Integer sessionsPerChat, long runBudgetMs) {
         SubagentManager manager = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
                 .cwd(Path.of("."))
@@ -153,7 +157,7 @@ class SessionSlotPoolTest {
                 .onPermission(request -> true)
                 .baseTools(List.of())
                 .sessionsPerChat(sessionsPerChat)
-                .build(), 30_000);
+                .build(), runBudgetMs);
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
         Agent parent = new Agent(AgentOptions.builder()
@@ -290,6 +294,34 @@ class SessionSlotPoolTest {
         provider.gates.values().forEach(CountDownLatch::countDown);
         chat.drain().join(10_000);
         assertEquals(4, chat.results().size());
+    }
+
+    @Test
+    void aHelperWaitingForASlotDoesNotSpendItsFirstTokenGraceOnTheWait() throws Exception {
+        // A fixed run budget of 300 ms implies a median of 100 ms, so at a
+        // count of 3 a helper's grace is 300 + 1 x 100 = 400 ms. The first two
+        // helpers never answer and are cut when it runs out. The two behind
+        // them wait for a slot at least that long and then answer at once.
+        GatedProvider provider = new GatedProvider();
+        provider.gate("t3").countDown();
+        provider.gate("t4").countDown();
+        provider.parentTurns.add(spawnFour());
+        provider.parentTurns.add(text("done"));
+        Chat chat = start(provider, 3, 300);
+
+        chat.drain().join(15_000);
+        assertFalse(chat.drain().isAlive(), "the chat never finished");
+        Map<String, String> tasks = chat.taskById();
+        Map<String, String> outcome = new ConcurrentHashMap<>();
+        for (RunEvent.AgentMessage result : chat.results()) {
+            outcome.put(tasks.get(result.from()), result.state() + ": " + result.text());
+        }
+        assertTrue(outcome.get("t1").startsWith("failed") && outcome.get("t1").contains("never produced a token"),
+                "premise: the first helper is cut by its grace: " + outcome.get("t1"));
+        assertTrue(outcome.get("t3").startsWith("completed"),
+                "a helper that waited for a slot was charged the wait: " + outcome.get("t3"));
+        assertTrue(outcome.get("t4").startsWith("completed"),
+                "a helper that waited for a slot was charged the wait: " + outcome.get("t4"));
     }
 
     @Test
