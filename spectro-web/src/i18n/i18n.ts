@@ -367,11 +367,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "hdr.panelHide": { de: "Panel ausblenden", en: "Hide panel" },
   // Card 442: the side panel toggle beside the header menu.
   "hdr.panelShow": { de: "Seitenpanel einblenden", en: "Show side panel" },
-  // The learn and light switch. The mode words stay lowercase and the same in
-  // both languages, like the brand; the tooltip says what each one shows.
+  // The mode switch (learn, light, developer). The mode words stay lowercase and
+  // the same in both languages, like the brand; the tooltip says what each one shows.
   "hdr.mode.label": { de: "Modus", en: "Mode" },
   "hdr.mode.learn": { de: "learn", en: "learn" },
   "hdr.mode.light": { de: "light", en: "light" },
+  "hdr.mode.developer": { de: "developer", en: "developer" },
   "hdr.mode.learnTitle": {
     de: "learn: alles ist an, auch die Tabs spectrum, trace, graph, text und lab, die Flotten und der State-Graph",
     en: "learn: everything is on, including the tabs spectrum, trace, graph, text and lab, the fleets and the state graph",
@@ -379,6 +380,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "hdr.mode.lightTitle": {
     de: "light: Chat, Arbeitsbereich, Sessions und Skills. Die Tabs spectrum, trace, graph, text und lab, die Flotten und der State-Graph sind aus und arbeiten nicht im Hintergrund",
     en: "light: the chat, the workspace, sessions and skills. The tabs spectrum, trace, graph, text and lab, the fleets and the state graph are off and do no work in the background",
+  },
+  "hdr.mode.developerTitle": {
+    de: "developer: alles wie learn, dazu das Playbook-Modul und ohne Tutorial",
+    en: "developer: everything learn shows, plus the playbook module, with no tutorial",
   },
 
   // Card 430: a lazy view whose chunk did not arrive (components/ChunkBoundary.tsx).
@@ -4595,8 +4600,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "How much of spectroscope do you want to see?",
   },
   "mode.intro.lead": {
-    de: "Wähle einen Modus für dieses Fenster. Deine Chats und Sessions werden in beiden gleich gespeichert.",
-    en: "Choose a mode for this window. Your chats and sessions are saved the same way in both.",
+    de: "Wähle einen Modus für dieses Fenster. Deine Chats und Sessions werden in allen Modi gleich gespeichert.",
+    en: "Choose a mode for this window. Your chats and sessions are saved the same way in every mode.",
   },
   "mode.intro.learn.name": { de: "learn", en: "learn" },
   "mode.intro.learn.body": {
@@ -4604,8 +4609,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Every part of the app is open: the chat, the workspace, sessions and skills, and also the spectrum, trace, graph, text and lab tabs, the state graph and the fleets. After this you can choose a tutorial that opens them one at a time.",
   },
   "mode.intro.learn.switch": {
-    de: "Zu light wechselst du später mit dem Schalter learn und light oben rechts im Fenster.",
-    en: "You can switch to light later with the learn and light switch at the top right of the window.",
+    de: "Zu light oder developer wechselst du später mit dem Modus-Schalter oben rechts im Fenster.",
+    en: "You can switch to light or developer later with the mode switch at the top right of the window.",
   },
   "mode.intro.light.name": { de: "light", en: "light" },
   "mode.intro.light.body": {
@@ -4613,8 +4618,23 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "You get the chat, the workspace, sessions and skills. The app does not load the other tabs, the state graph or the fleets, and they do no work in the background. Light has no tutorial.",
   },
   "mode.intro.light.switch": {
-    de: "Zu learn wechselst du später mit dem Schalter learn und light oben rechts im Fenster. Das Tutorial schaltest du dann in den Einstellungen ein.",
-    en: "You can switch to learn later with the learn and light switch at the top right of the window. You can then turn the tutorial on in the settings.",
+    de: "Zu learn oder developer wechselst du später mit dem Modus-Schalter oben rechts im Fenster. Das Tutorial schaltest du dann in den Einstellungen ein.",
+    en: "You can switch to learn or developer later with the mode switch at the top right of the window. You can then turn the tutorial on in the settings.",
+  },
+  "mode.intro.developer.name": { de: "developer", en: "developer" },
+  "mode.intro.developer.body": {
+    de: "Alles wie learn, dazu ein Playbook: eine Arbeitsweise aus Schritten, Übergabedokumenten und einem Modell je Schritt, die du zeichnest und nach der später gebaut wird. Kein Tutorial.",
+    en: "Everything learn shows, plus a playbook: a way of working made of steps, handover documents and a model per step, which you draw and later build by. No tutorial.",
+  },
+  "mode.intro.developer.switch": {
+    de: "Zu learn oder light wechselst du später mit dem Modus-Schalter oben rechts im Fenster.",
+    en: "You can switch to learn or light later with the mode switch at the top right of the window.",
+  },
+  // Card 481: the playbook module. The pane arrives with the playbook segment;
+  // until then it states what this version does.
+  "pb.noRuns": {
+    de: "Läufe folgen dem Playbook noch nicht. Diese Version zeichnet es und prüft die Datei.",
+    en: "Runs do not follow the playbook yet. This version draws it and checks the file.",
   },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
   "leveling.intro.body": {

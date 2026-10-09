@@ -1,7 +1,7 @@
 // Card 430, criterion 4: every way into a surface asks the surface table
 // first. In light an address into a closed surface opens the chat of the same
 // place and the bar learns the address light can show; a scenario opens in the
-// chat; a fleet is refused. And when the switch itself closes the surface on
+// chat; a fleet is refused. Developer (card 481) routes like learn. And when the switch itself closes the surface on
 // screen, the window lands on the chat of the same session.
 //
 // Pure: App runs what these functions return (follow and applyRoute, the
@@ -16,7 +16,8 @@ import type { ViewMode } from "./viewMode";
 /**
  * The route a mode can show for an address.
  *
- * In learn the route itself. In light: a closed tab falls to the chat of the
+ * In learn and developer the route itself: developer opens every surface learn
+ * opens, and no route leads to the playbook. In light: a closed tab falls to the chat of the
  * same place, and the reading its address carried goes with it; an event index
  * (a seek into the trace) is dropped, so `#/session/{id}@{n}` opens that
  * session's chat; a fleet falls to the live default, the landing every refused
@@ -24,7 +25,7 @@ import type { ViewMode } from "./viewMode";
  * not draw.
  */
 export function routeInMode(route: Route, mode: ViewMode): Route {
-  if (mode === "learn") return route;
+  if (mode !== "light") return route;
   switch (route.kind) {
     case "live":
       return isOpen(route.tab ?? "chat", mode) ? route : { kind: "live", tab: null };

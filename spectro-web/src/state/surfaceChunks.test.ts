@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { WarmHost } from "../components/traceWarmup";
 import { read, stripComments } from "../testkit/source";
 import { chunk, ChunkLoadError, prefetchSurfaces, SURFACE_LOADERS } from "./surfaceChunks";
-import { SURFACES, type SurfaceId } from "./surfaces";
+import { SURFACES, isOpen, type SurfaceId } from "./surfaces";
 
 /** A host whose idle callback runs only when the test says so. */
 function idleHost(): { host: WarmHost; idle: () => void; scheduled: () => number } {
@@ -50,15 +50,35 @@ describe("fetching the chunks on idle", () => {
     expect(calls).toEqual([]);
   });
 
-  it("fetches every chunk in learn, and only once the browser is idle (twin)", () => {
+  it("fetches every chunk learn opens, and only once the browser is idle (twin)", () => {
     const { host, idle } = idleHost();
     const { loaders, calls } = countingLoaders();
     prefetchSurfaces("learn", host, loaders);
     expect(calls).toEqual([]);
     idle();
-    const expected = (Object.keys(SURFACES) as SurfaceId[]).flatMap((id) => SURFACES[id].chunks ?? []);
+    const expected = (Object.keys(SURFACES) as SurfaceId[])
+      .filter((id) => isOpen(id, "learn"))
+      .flatMap((id) => SURFACES[id].chunks ?? []);
     expect([...calls].sort()).toEqual([...expected].sort());
     expect(calls.length).toBeGreaterThanOrEqual(13);
+  });
+
+  it("fetches the playbook chunk in developer and never in learn or light (card 481)", () => {
+    for (const mode of ["learn", "light"] as const) {
+      const { host, idle } = idleHost();
+      const { loaders, calls } = countingLoaders();
+      prefetchSurfaces(mode, host, loaders);
+      idle();
+      expect(calls, mode).not.toContain("playbook/PlaybookPane.tsx");
+    }
+    const { host, idle } = idleHost();
+    const { loaders, calls } = countingLoaders();
+    prefetchSurfaces("developer", host, loaders);
+    idle();
+    expect(calls).toContain("playbook/PlaybookPane.tsx");
+    // developer fetches what learn fetches, and the playbook besides
+    const learnCalls = calls.filter((module) => module !== "playbook/PlaybookPane.tsx");
+    expect(learnCalls.length).toBeGreaterThanOrEqual(13);
   });
 
   it("fetches nothing once cancelled, as a switch to light cancels it", () => {

@@ -1,5 +1,5 @@
 // Card 430: which surface is open in which mode. One table, one entry per
-// surface, and a surface without an entry for both modes does not compile.
+// surface, and a surface without an entry for every mode does not compile.
 // The tab row and the rail's nav rows are drawn from it; the guard in
 // surfaces.guard.test.tsx holds the rendered App against it. The tab on screen,
 // the chat menu's live trace switch, the fleet section of the settings page
@@ -7,7 +7,9 @@
 //
 // Light is a browser mode: the server records every session as it always did
 // (owner decision 2, 2026-09-24). Leveling is a second axis and never removes
-// a button (state/leveling.ts); the mode does.
+// a button (state/leveling.ts); the mode does. Developer (card 481) opens what
+// learn opens and the playbook besides; its level pill follows the tutorial
+// the way light's does.
 
 import type { NavActionId, NavSegmentId } from "../components/navRows";
 import type { LevelingSnapshot } from "./leveling";
@@ -25,7 +27,7 @@ import type { ViewMode } from "./viewMode";
 export type Presence = "open" | "gone" | "tutorial";
 
 /** Parts of the window that are not a tab and not a nav row. */
-export type PartId = "tabRow" | "dock" | "leveling" | "liveTraceSwitch" | "fleetSettings";
+export type PartId = "tabRow" | "dock" | "leveling" | "liveTraceSwitch" | "fleetSettings" | "playbook";
 
 export type SurfaceId = ViewTab | NavActionId | NavSegmentId | PartId;
 
@@ -40,15 +42,15 @@ export interface SurfaceSpec {
   chunks?: readonly string[];
 }
 
-const EVERYWHERE: Record<ViewMode, Presence> = { learn: "open", light: "open" };
-const LEARN_ONLY: Record<ViewMode, Presence> = { learn: "open", light: "gone" };
-const LIGHT_WITH_TUTORIAL: Record<ViewMode, Presence> = { learn: "open", light: "tutorial" };
+const EVERYWHERE: Record<ViewMode, Presence> = { learn: "open", light: "open", developer: "open" };
+/** Open wherever learn is open: learn and developer, gone in light. */
+const LEARN_ONLY: Record<ViewMode, Presence> = { learn: "open", light: "gone", developer: "open" };
 
 /** The table. The card's criterion 2, plus the tab row as its own surface. */
 export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
   // The row that holds the tabs, the back and forward steps, the translate
   // toggle and the level pill.
-  tabRow: { modes: LIGHT_WITH_TUTORIAL },
+  tabRow: { modes: { learn: "open", light: "tutorial", developer: "open" } },
   chat: { modes: EVERYWHERE },
   spectrum: { modes: LEARN_ONLY, chunks: ["spectrum/SpectrumView.tsx"] },
   trace: { modes: LEARN_ONLY, chunks: ["components/TraceView.tsx"] },
@@ -76,10 +78,16 @@ export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
     ],
   },
   stategraph: { modes: LEARN_ONLY, chunks: ["stategraph/StateGraphPane.tsx"] },
+  // Card 481: the playbook module, developer only, in a chunk of its own. The
+  // segment row and the pane arrive with the playbook segment.
+  playbook: {
+    modes: { learn: "gone", light: "gone", developer: "open" },
+    chunks: ["playbook/PlaybookPane.tsx"],
+  },
   // Files, terminal and browser beside the chat.
   dock: { modes: EVERYWHERE },
   // The level pill, the level panel and the locked-tab teaser.
-  leveling: { modes: LIGHT_WITH_TUTORIAL },
+  leveling: { modes: { learn: "open", light: "tutorial", developer: "tutorial" } },
   // The row in the chat's menu that keeps or drops the live trace (card 246).
   liveTraceSwitch: { modes: LEARN_ONLY },
   // The fleet block of the settings page.

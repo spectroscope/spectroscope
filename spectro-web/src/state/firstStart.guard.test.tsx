@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LevelingSnapshot } from "./leveling";
-import type { ViewMode } from "./viewMode";
+import { VIEW_MODES, type ViewMode } from "./viewMode";
 
 const windowStandIn = Object.assign(new EventTarget(), {
   setTimeout: (task: () => void, ms: number) => setTimeout(task, ms) as unknown as number,
@@ -92,6 +92,20 @@ describe("the first start in the rendered App", () => {
     expect(html).toContain('class="chat-row"');
   });
 
+  it("after developer, neither question shows and the chat is there", async () => {
+    const html = await renderApp({ mode: "developer", chosen: true }, false);
+    expect(html).not.toContain(TUTORIAL);
+    expect(html).not.toContain(MODE_SCREEN);
+    expect(html).toContain('class="chat-row"');
+    // developer opens the tabs learn opens
+    expect(tabs(html)).toContain("lab");
+  });
+
+  it("the mode screen offers developer as a third choice", async () => {
+    const html = await renderApp({ chosen: false }, false);
+    expect(html).toContain('data-mode="developer"');
+  });
+
   it("an existing home that answered the tutorial sees the mode screen, and its mode stays", async () => {
     const html = await renderApp({ mode: "light", chosen: false }, true);
     expect(html).toContain(MODE_SCREEN);
@@ -104,7 +118,7 @@ describe("the first start in the rendered App", () => {
   });
 
   it("the same home after its choice sees no question at all", async () => {
-    for (const mode of ["learn", "light"] as const) {
+    for (const mode of VIEW_MODES) {
       const html = await renderApp({ mode, chosen: true }, true);
       expect(html, mode).not.toContain(MODE_SCREEN);
       expect(html, mode).not.toContain(TUTORIAL);
@@ -115,7 +129,7 @@ describe("the first start in the rendered App", () => {
   it("never shows two questions at once", async () => {
     for (const chosen of [false, true]) {
       for (const introSeen of [false, true]) {
-        for (const mode of ["learn", "light"] as const) {
+        for (const mode of VIEW_MODES) {
           const html = await renderApp({ mode, chosen }, introSeen);
           const questions = [MODE_SCREEN, TUTORIAL].filter((q) => html.includes(q)).length;
           expect(questions, `${mode} chosen=${chosen} introSeen=${introSeen}`).toBeLessThanOrEqual(1);

@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { firstStartDialog, lightTutorialAnswer } from "./firstStart";
 import type { LevelingSnapshot } from "./leveling";
+import { VIEW_MODES } from "./viewMode";
 
 function snapshot(introSeen: boolean, mode: LevelingSnapshot["mode"] = "ladder"): LevelingSnapshot {
   return {
@@ -67,7 +68,7 @@ describe("the first-start dialog order", () => {
         backendDue: false,
       }),
     ).toBe("mode");
-    for (const viewMode of ["learn", "light"] as const) {
+    for (const viewMode of VIEW_MODES) {
       const after = firstStartDialog({
         modeChosen: true,
         viewMode,
@@ -77,6 +78,25 @@ describe("the first-start dialog order", () => {
       expect(after, viewMode).toBeNull();
       expect(after, viewMode).not.toBe("tutorial");
     }
+  });
+
+  it("after developer, the tutorial question never shows, and the backend sheet waits for the answer", () => {
+    const pending = firstStartDialog({
+      modeChosen: true,
+      viewMode: "developer",
+      snapshot: snapshot(false),
+      backendDue: true,
+    });
+    expect(pending).not.toBe("tutorial");
+    expect(pending).toBeNull();
+    expect(
+      firstStartDialog({
+        modeChosen: true,
+        viewMode: "developer",
+        snapshot: snapshot(true, "off"),
+        backendDue: true,
+      }),
+    ).toBe("backend");
   });
 
   it("the backend sheet shows once the questions are answered and it is due", () => {
@@ -102,6 +122,15 @@ describe("what light answers for the tutorial question", () => {
   it("leaves an answered tutorial alone", () => {
     expect(
       lightTutorialAnswer({ modeChosen: true, viewMode: "light", snapshot: snapshot(true, "ladder") }),
+    ).toBeNull();
+  });
+
+  it("answers off for developer too, as it does for light", () => {
+    expect(lightTutorialAnswer({ modeChosen: true, viewMode: "developer", snapshot: snapshot(false) })).toBe(
+      "off",
+    );
+    expect(
+      lightTutorialAnswer({ modeChosen: true, viewMode: "developer", snapshot: snapshot(true, "ladder") }),
     ).toBeNull();
   });
 

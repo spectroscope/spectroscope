@@ -85,8 +85,17 @@ function entryClosure(): Set<string> {
 describe("the surfaces light closes load from their own chunks (criterion 9)", () => {
   it("reads its module list off the surface table, which names every one the card lists", () => {
     const ids = new Set(CHUNKED.map((c) => c.id));
-    expect([...ids].sort()).toEqual(["fleets", "graph", "lab", "spectrum", "stategraph", "text", "trace"]);
-    expect(CHUNKED.length).toBeGreaterThanOrEqual(13);
+    expect([...ids].sort()).toEqual([
+      "fleets",
+      "graph",
+      "lab",
+      "playbook",
+      "spectrum",
+      "stategraph",
+      "text",
+      "trace",
+    ]);
+    expect(CHUNKED.length).toBeGreaterThanOrEqual(14);
   });
 
   it("builds one entry chunk, and a manifest that names it", () => {
