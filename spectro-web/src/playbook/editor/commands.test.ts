@@ -442,6 +442,64 @@ describe("node fields", () => {
   });
 });
 
+describe("a command with nothing to do", () => {
+  // The history skips a command only when the document object is the same,
+  // and the panels commit on blur, so an unchanged commit must not be a step.
+  function unchanged(cmd: Command) {
+    const r = apply(CHAIN, null, cmd);
+    expect(r.refused).toBeNull();
+    expect(r.doc).toBe(CHAIN);
+  }
+
+  it("returns the same document for a step patch that changes nothing", () => {
+    unchanged({ kind: "editStep", id: "fix", patch: { name: "fix", nod: false, consumes: ["code"] } });
+    unchanged({ kind: "editStep", id: "fix", patch: { goal: undefined } });
+  });
+
+  it("returns the same document for a decision patch that changes nothing", () => {
+    unchanged({ kind: "editDecision", id: "review_task", patch: { check: "task_review", max_rounds: 5 } });
+  });
+
+  it("returns the same document for an end's unchanged result", () => {
+    unchanged({ kind: "editEnd", id: "cancelled", result: "cancelled" });
+  });
+
+  it("returns the same document for the current start", () => {
+    unchanged({ kind: "setStart", id: "implement" });
+  });
+
+  it("returns the same document for a document type put back unchanged", () => {
+    const { sections, location, purpose, name } = CHAIN.documents.spec;
+    unchanged({
+      kind: "putDocument",
+      id: "spec",
+      value: { sections: [...sections], location, purpose, name },
+    });
+  });
+
+  it("returns the same document for a check put back unchanged", () => {
+    unchanged({
+      kind: "putCheck",
+      id: "task_review",
+      value: { ...CHAIN.checks.task_review, labels: ["pass", "fail"] },
+    });
+  });
+});
+
+describe("refusals", () => {
+  it("refuses an outcome another arrow of the node already carries", () => {
+    const r = apply(CHAIN, null, { kind: "setOutcome", key: "review_task|fail", on: "pass" });
+    expect(r.refused).toBe("pbe.outcomeTaken");
+    expect(r.doc).toBe(CHAIN);
+  });
+
+  it("refuses an outcome rename onto a derived outcome", () => {
+    const r = apply(CHAIN, null, { kind: "renameOutcome", id: "review_task", from: "fail", to: "exhausted" });
+    expect(r.refused).toBe("pbe.renameTaken");
+    expect(r.doc).toBe(CHAIN);
+  });
+});
+
 describe("purity", () => {
   it("never mutates its input", () => {
     const cmds: Command[] = [

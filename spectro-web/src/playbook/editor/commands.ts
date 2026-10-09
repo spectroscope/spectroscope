@@ -137,10 +137,9 @@ export function apply(doc: PlaybookDoc, selection: Selection, cmd: Command): App
       const i = nodeIndex(doc, cmd.id);
       const n = doc.nodes[i];
       if (n?.kind !== "step") return same;
-      return done({
-        ...doc,
-        nodes: replaceAt(doc.nodes, i, defined({ ...n, ...cmd.patch, kind: "step", id: n.id })),
-      });
+      const patched = defined({ ...n, ...cmd.patch, kind: "step" as const, id: n.id });
+      if (equal(patched, n)) return same;
+      return done({ ...doc, nodes: replaceAt(doc.nodes, i, patched) });
     }
 
     case "editDecision": {
@@ -148,6 +147,7 @@ export function apply(doc: PlaybookDoc, selection: Selection, cmd: Command): App
       const n = doc.nodes[i];
       if (n?.kind !== "decision") return same;
       const patched = defined({ ...n, ...cmd.patch, kind: "decision" as const, id: n.id });
+      if (equal(patched, n)) return same;
       return done({ ...doc, nodes: replaceAt(doc.nodes, i, patched) });
     }
 
@@ -196,8 +196,11 @@ export function apply(doc: PlaybookDoc, selection: Selection, cmd: Command): App
       });
     }
 
-    case "putDocument":
-      return done({ ...doc, documents: { ...doc.documents, [cmd.id]: defined({ ...cmd.value }) } });
+    case "putDocument": {
+      const value = defined({ ...cmd.value });
+      if (cmd.id in doc.documents && equal(value, doc.documents[cmd.id])) return same;
+      return done({ ...doc, documents: { ...doc.documents, [cmd.id]: value } });
+    }
 
     case "renameDocument": {
       const { from, to } = cmd;
@@ -231,6 +234,7 @@ export function apply(doc: PlaybookDoc, selection: Selection, cmd: Command): App
           Object.entries(value).filter(([k]) => k === "kind" || used.includes(k as keyof DocCheck)),
         ) as DocCheck;
       }
+      if (before && equal(value, before)) return same;
       return done({ ...doc, checks: { ...doc.checks, [cmd.id]: value } });
     }
 
@@ -383,6 +387,19 @@ function withoutKey<V>(record: Record<string, V>, key: string): Record<string, V
 
 function mapValues<V>(record: Record<string, V>, f: (v: V) => V): Record<string, V> {
   return Object.fromEntries(Object.entries(record).map(([k, v]) => [k, f(v)]));
+}
+
+/** Structural equality over the plain JSON values a document holds; key order does not count. */
+function equal(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  const ra = a as Record<string, unknown>;
+  const rb = b as Record<string, unknown>;
+  return ka.every((k) => Object.prototype.hasOwnProperty.call(rb, k) && equal(ra[k], rb[k]));
 }
 
 /** A field set to undefined leaves the record, so the file omits it. */
