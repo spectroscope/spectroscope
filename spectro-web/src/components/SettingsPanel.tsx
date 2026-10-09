@@ -51,7 +51,7 @@ import { SttSettings } from "./SttSettings";
 import { FleetSettings } from "./FleetSettings";
 import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
-import { PROVIDERS } from "./providerPickerMode";
+import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
 import { addressOverrideNote, addressSpecFor } from "./providerAddress";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { settingsMayAutoPick } from "./settingsModelPolicy";
@@ -900,7 +900,7 @@ export function SettingsPanel({
                       >
                         {PROVIDERS.map((p) => (
                           <option key={p} value={p}>
-                            {p}
+                            {providerDisplayName(p)}
                           </option>
                         ))}
                       </select>

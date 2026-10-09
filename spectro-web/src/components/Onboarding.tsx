@@ -186,15 +186,15 @@ export function Onboarding(props: {
             body={
               de ? (
                 <>
-                  trag deinen Key in eine <code>.env</code> neben spectroscope:{" "}
-                  <code>ANTHROPIC_API_KEY=…</code> (oder <code>OPENAI_API_KEY</code> /{" "}
-                  <code>OPENROUTER_API_KEY</code> / <code>GEMINI_API_KEY</code>) und starte neu.
+                  trag deinen Key in <code>~/.spectro/.env</code> ein: <code>ANTHROPIC_API_KEY=…</code> (oder{" "}
+                  <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code> / <code>GEMINI_API_KEY</code>
+                  ). Der Key gilt ab dem nächsten Wechsel des Providers.
                 </>
               ) : (
                 <>
-                  add your key to a <code>.env</code> next to spectroscope: <code>ANTHROPIC_API_KEY=…</code>{" "}
-                  (or <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code> /{" "}
-                  <code>GEMINI_API_KEY</code>), then restart.
+                  add your key to <code>~/.spectro/.env</code>: <code>ANTHROPIC_API_KEY=…</code> (or{" "}
+                  <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code> / <code>GEMINI_API_KEY</code>
+                  ). The key applies from the next provider switch.
                 </>
               )
             }
