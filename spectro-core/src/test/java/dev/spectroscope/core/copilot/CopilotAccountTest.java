@@ -1,0 +1,493 @@
+package dev.spectroscope.core.copilot;
+
+import dev.spectroscope.core.provider.CopilotProvider;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.net.http.HttpClient;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Card 495: the sign-in sheet's account. The device flow runs against a fake
+ * GitHub, the Copilot CLI side against a fake, and the clock is set by hand, so
+ * a token can be made to expire in thirty seconds.
+ */
+@Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+class CopilotAccountTest {
+
+    private static final long T0 = 1_800_000_000L;
+
+    @TempDir
+    Path home;
+
+    private FakeGitHub github;
+    private SetClock clock;
+    private final List<Long> sleeps = new CopyOnWriteArrayList<>();
+    private CopilotCredentials store;
+    private CopilotAccount account;
+
+    /** A clock the test moves. */
+    static final class SetClock extends Clock {
+        final AtomicLong epochSecond = new AtomicLong(T0);
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return Instant.ofEpochSecond(epochSecond.get());
+        }
+    }
+
+    /** A Copilot CLI side the test scripts. */
+    static final class FakeCli implements CopilotAccount.Cli {
+        final AtomicReference<CopilotAccount.CliAuth> auth = new AtomicReference<>(
+                new CopilotAccount.CliAuth(false, null, null, "Not authenticated"));
+        final AtomicInteger logins = new AtomicInteger();
+        final CompletableFuture<CopilotCliLogin.Prompt> prompt = new CompletableFuture<>();
+        final CompletableFuture<CopilotCliLogin.Outcome> outcome = new CompletableFuture<>();
+        volatile boolean cancelled;
+
+        @Override
+        public CopilotAccount.CliAuth auth() {
+            return auth.get();
+        }
+
+        @Override
+        public CopilotCliLogin.Run login() {
+            logins.incrementAndGet();
+            return new CopilotCliLogin.Run() {
+                @Override
+                public CompletableFuture<CopilotCliLogin.Prompt> prompt() {
+                    return prompt;
+                }
+
+                @Override
+                public CompletableFuture<CopilotCliLogin.Outcome> outcome() {
+                    return outcome;
+                }
+
+                @Override
+                public void cancel() {
+                    cancelled = true;
+                    outcome.complete(new CopilotCliLogin.Outcome(false, null, "cancelled"));
+                }
+            };
+        }
+    }
+
+    @BeforeEach
+    void setUp() throws Exception {
+        github = new FakeGitHub();
+        clock = new SetClock();
+        store = new CopilotCredentials(home.resolve(".spectro").resolve("copilot-account.json"));
+        account = account(null);
+    }
+
+    @AfterEach
+    void tearDown() {
+        account.cancel();
+        github.close();
+    }
+
+    private CopilotAccount account(CopilotAccount.Cli cli) {
+        DeviceFlow flow = new GitHubDeviceFlow("Iv1.fixtureclient", github.base(), github.base(),
+                HttpClient.newHttpClient());
+        return new CopilotAccount(store, flow, cli, clock, seconds -> {
+            sleeps.add(seconds);
+            Thread.sleep(2);
+        });
+    }
+
+    private CopilotAccount.Status settled() throws InterruptedException {
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        CopilotAccount.Status status = account.status();
+        while (status.state() == CopilotAccount.State.WAITING && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+            status = account.status();
+        }
+        return status;
+    }
+
+    private void signInAs(String login, String token, long expiresIn, String refresh) throws Exception {
+        github.deviceCode("ABCD-1234").granted(token, expiresIn, refresh).login(login);
+        account.signInWithGitHub();
+        assertEquals(CopilotAccount.State.SIGNED_IN, settled().state());
+    }
+
+    // ---- the device flow -------------------------------------------------------------
+
+    @Test
+    void nothingStoredIsNotSignedIn() {
+        CopilotAccount.Status status = account.status();
+
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, status.state());
+        assertNull(status.login());
+        assertNull(status.method());
+    }
+
+    @Test
+    void theSheetGetsTheCodeAndTheAddressWhileItWaits() throws Exception {
+        github.deviceCode("ABCD-1234").pending();
+
+        CopilotAccount.Status waiting = account.signInWithGitHub();
+
+        assertEquals(CopilotAccount.State.WAITING, waiting.state());
+        assertEquals("ABCD-1234", waiting.userCode());
+        assertEquals("https://github.com/login/device", waiting.verificationUri());
+        assertEquals(T0 + 900, waiting.expiresAt());
+        assertEquals("github", waiting.method());
+        assertEquals(waiting, account.status(), "status repeats it while the poll goes on");
+    }
+
+    @Test
+    void aConfirmedCodeSignsInAsTheLoginAndTheFileIsOwnerOnly() throws Exception {
+        github.deviceCode("ABCD-1234").pending().granted("gho_" + "fixtureAccess", 0, null).login("octo-fixture");
+
+        account.signInWithGitHub();
+        CopilotAccount.Status status = settled();
+
+        assertEquals(CopilotAccount.State.SIGNED_IN, status.state());
+        assertEquals("octo-fixture", status.login());
+        assertEquals("github", status.method());
+        assertNull(status.userCode(), "the code is gone once it was used");
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(store.path())));
+        assertTrue(Files.readString(store.path()).contains("fixtureAccess"));
+    }
+
+    @Test
+    void thePollWaitsTheIntervalAndSlowsDownWhenGitHubAsks() throws Exception {
+        github.deviceCode("ABCD-1234")
+                .token(200, Map.of("error", "slow_down", "interval", 10))
+                .granted("gho_" + "fixtureAccess", 0, null).login("octo-fixture");
+
+        account.signInWithGitHub();
+        settled();
+
+        assertEquals(List.of(5L, 10L), sleeps);
+    }
+
+    @Test
+    void aRefusalIsReportedInGitHubsWordsAndNothingIsStored() throws Exception {
+        for (String[] answer : List.of(
+                new String[] {"access_denied", "The authorization request was denied."},
+                new String[] {"expired_token", "The device_code has expired."})) {
+            github.close();
+            github = new FakeGitHub();
+            account = account(null);
+            github.deviceCode("ABCD-1234").token(200, Map.of("error", answer[0], "error_description", answer[1]));
+
+            account.signInWithGitHub();
+            CopilotAccount.Status status = settled();
+
+            assertEquals(CopilotAccount.State.REFUSED, status.state(), answer[0]);
+            assertEquals(answer[1], status.message());
+            assertFalse(Files.exists(store.path()));
+        }
+    }
+
+    @Test
+    void aRefusedStartIsReportedInGitHubsWords() {
+        github.deviceCode(200, Map.of("error", "device_flow_disabled",
+                "error_description", "Device flow must be explicitly enabled for this App"));
+
+        CopilotAccount.Status status = account.signInWithGitHub();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertEquals("Device flow must be explicitly enabled for this App", status.message());
+    }
+
+    @Test
+    void aTokenGitHubRefusesAtUserIsNotStored() throws Exception {
+        github.deviceCode("ABCD-1234").granted("gho_" + "fixtureAccess", 0, null)
+                .user(401, Map.of("message", "Bad credentials"));
+
+        account.signInWithGitHub();
+        CopilotAccount.Status status = settled();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertEquals("Bad credentials", status.message());
+        assertFalse(Files.exists(store.path()));
+    }
+
+    @Test
+    void cancelStopsTheWaitAndStoresNothing() throws Exception {
+        github.deviceCode("ABCD-1234").pending();
+        account.signInWithGitHub();
+
+        CopilotAccount.Status status = account.cancel();
+
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, status.state());
+        Thread.sleep(50);
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, account.status().state());
+        assertFalse(Files.exists(store.path()));
+    }
+
+    @Test
+    void withoutAnOAuthAppTheGitHubSignInSaysSo() {
+        CopilotAccount none = new CopilotAccount(store, null, null, clock, seconds -> { });
+
+        CopilotAccount.Status status = none.signInWithGitHub();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertTrue(status.message().contains("OAuth app"), status.message());
+        assertFalse(none.gitHubAvailable());
+    }
+
+    // ---- sign out and a second account -----------------------------------------------
+
+    @Test
+    void signOutDeletesTheTokensAndTheStatusReturnsToNotSignedIn() throws Exception {
+        signInAs("octo-fixture", "gho_" + "fixtureAccess", 0, null);
+
+        CopilotAccount.Status status = account.signOut();
+
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, status.state());
+        assertFalse(Files.exists(store.path()));
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, account.status().state());
+    }
+
+    @Test
+    void aSecondSignInWithAnotherAccountReplacesTheFirst() throws Exception {
+        signInAs("octo-fixture", "gho_" + "fixtureFirst", 0, null);
+        github.close();
+        github = new FakeGitHub();
+        account = account(null);
+
+        signInAs("other-fixture", "gho_" + "fixtureSecond", 0, null);
+
+        assertEquals("other-fixture", account.status().login());
+        String file = Files.readString(store.path());
+        assertTrue(file.contains("fixtureSecond"));
+        assertFalse(file.contains("fixtureFirst"));
+    }
+
+    // ---- the token source --------------------------------------------------------------
+
+    @Test
+    void withNoStoredTokenTheSourceSaysNotSignedInAndAsksNobody() {
+        CopilotAccount.NotSignedIn refused = assertThrows(CopilotAccount.NotSignedIn.class,
+                () -> account.tokenSource().token("https://github.com", "initial"));
+
+        assertTrue(refused.getMessage().toLowerCase().contains("not signed in"), refused.getMessage());
+        assertTrue(github.seen().isEmpty(), "no request went out");
+    }
+
+    @Test
+    void aTokenThatDoesNotExpireIsHandedOutForEightHours() throws Exception {
+        signInAs("octo-fixture", "gho_" + "fixtureAccess", 0, null);
+
+        CopilotProvider.Token token = account.tokenSource().token("https://github.com", "initial");
+
+        assertEquals("gho_fixtureAccess", token.value());
+        assertEquals(8 * 60 * 60, token.expiresInSeconds());
+    }
+
+    @Test
+    void aTokenWithMoreThanAnHourLeftIsNotRefreshed() throws Exception {
+        signInAs("octo-fixture", "ghu_" + "fixtureAccess", 28800, "ghr_" + "fixtureRefresh");
+        int before = github.seen("/login/oauth/access_token").size();
+        clock.epochSecond.addAndGet(28800 - 7200);
+
+        CopilotProvider.Token token = account.tokenSource().token("https://github.com", "refresh");
+
+        assertEquals("ghu_fixtureAccess", token.value());
+        assertEquals(7200, token.expiresInSeconds());
+        assertEquals(before, github.seen("/login/oauth/access_token").size(), "no refresh was sent");
+    }
+
+    @Test
+    void aShortLivedTokenIsRefreshedBeforeItExpiresAndTheNewOneIsStored() throws Exception {
+        signInAs("octo-fixture", "ghu_" + "fixtureShort", 28800, "ghr_" + "fixtureRefresh");
+        clock.epochSecond.addAndGet(28800 - 30);
+        github.granted("ghu_" + "fixtureFresh", 28800, "ghr_" + "fixtureRefresh2");
+
+        CopilotProvider.Token token = account.tokenSource().token("https://github.com", "refresh");
+
+        assertEquals("ghu_fixtureFresh", token.value());
+        assertEquals(28800, token.expiresInSeconds());
+        FakeGitHub.Seen refresh = github.seen("/login/oauth/access_token").getLast();
+        assertEquals("refresh_token", refresh.form().get("grant_type"));
+        assertEquals("ghr_fixtureRefresh", refresh.form().get("refresh_token"));
+        CopilotCredentials.Stored stored = store.load().orElseThrow();
+        assertEquals("ghu_fixtureFresh", stored.accessToken());
+        assertEquals("ghr_fixtureRefresh2", stored.refreshToken());
+        assertEquals("octo-fixture", stored.login(), "the login stays");
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(store.path())));
+    }
+
+    @Test
+    void anExpiredTokenWhoseRefreshIsRefusedEndsTheSignInWithGitHubsWords() throws Exception {
+        signInAs("octo-fixture", "ghu_" + "fixtureShort", 28800, "ghr_" + "fixtureRefresh");
+        clock.epochSecond.addAndGet(28800 + 1);
+        github.token(200, Map.of("error", "bad_refresh_token",
+                "error_description", "The refresh token passed is incorrect or expired."));
+
+        IOException refused = assertThrows(IOException.class,
+                () -> account.tokenSource().token("https://github.com", "refresh"));
+
+        assertEquals("The refresh token passed is incorrect or expired.", refused.getMessage());
+        CopilotAccount.Status status = account.status();
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, status.state());
+        assertEquals("The refresh token passed is incorrect or expired.", status.message());
+    }
+
+    // ---- what the provider is built with -------------------------------------------------
+
+    @Test
+    void withNoSignInTheProviderGetsTheSourceAndNeverTheStoredLogin() {
+        CopilotProvider.Options options = account.providerOptions("auto", "/opt/homebrew/bin/copilot");
+
+        assertNotNull(options.tokenSource(), "credentials come only through the callback");
+        assertFalse(options.useStoredLogin(), "the CLI and gh fallback stay off");
+        assertEquals("/opt/homebrew/bin/copilot", options.cliPath());
+        assertEquals("auto", options.model());
+    }
+
+    @Test
+    void aGitHubSignInGivesTheProviderTheSource() throws Exception {
+        signInAs("octo-fixture", "gho_" + "fixtureAccess", 0, null);
+
+        CopilotProvider.Options options = account.providerOptions("auto", "/x/copilot");
+
+        assertFalse(options.useStoredLogin());
+        assertEquals("gho_fixtureAccess", options.tokenSource().token("https://github.com", "initial").value());
+    }
+
+    // ---- the Copilot CLI's own sign-in ----------------------------------------------------
+
+    @Test
+    void anExistingCliSignInIsTakenWithoutANewLogin() throws Exception {
+        FakeCli cli = new FakeCli();
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        account = account(cli);
+
+        CopilotAccount.Status status = account.signInWithCli();
+
+        assertEquals(CopilotAccount.State.SIGNED_IN, status.state());
+        assertEquals("cli", status.method());
+        assertEquals("octo-fixture", status.login());
+        assertEquals(0, cli.logins.get());
+        assertEquals(CopilotCredentials.Method.CLI, store.load().orElseThrow().method());
+        assertNull(store.load().orElseThrow().accessToken(), "no token is copied out of the CLI");
+        CopilotProvider.Options options = account.providerOptions("auto", "/x/copilot");
+        assertTrue(options.useStoredLogin());
+        assertNull(options.tokenSource());
+    }
+
+    @Test
+    void theGitHubCliFallbackIsNotTakenAsACliSignIn() throws Exception {
+        FakeCli cli = new FakeCli();
+        cli.auth.set(new CopilotAccount.CliAuth(true, "gh-cli", "octo-fixture", null));
+        account = account(cli);
+        cli.prompt.complete(new CopilotCliLogin.Prompt("https://github.com/login/device", "2B8A-BAC6"));
+
+        CopilotAccount.Status status = account.signInWithCli();
+
+        assertEquals(CopilotAccount.State.WAITING, status.state());
+        assertEquals("2B8A-BAC6", status.userCode());
+        assertEquals("https://github.com/login/device", status.verificationUri());
+        assertEquals(1, cli.logins.get(), "the CLI's own device flow runs instead");
+        assertFalse(Files.exists(store.path()));
+    }
+
+    @Test
+    void theCliDeviceFlowEndsSignedInAsTheLoginTheRuntimeReports() throws Exception {
+        FakeCli cli = new FakeCli();
+        account = account(cli);
+        cli.prompt.complete(new CopilotCliLogin.Prompt("https://github.com/login/device", "2B8A-BAC6"));
+        account.signInWithCli();
+
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        cli.outcome.complete(new CopilotCliLogin.Outcome(true, "octo-fixture", null));
+        CopilotAccount.Status status = settled();
+
+        assertEquals(CopilotAccount.State.SIGNED_IN, status.state());
+        assertEquals("octo-fixture", status.login());
+        assertEquals("cli", status.method());
+    }
+
+    @Test
+    void aFailedCliLoginIsReportedInTheCliWords() throws Exception {
+        FakeCli cli = new FakeCli();
+        account = account(cli);
+        cli.prompt.complete(new CopilotCliLogin.Prompt("https://github.com/login/device", "D3CD-CEDC"));
+        account.signInWithCli();
+
+        cli.outcome.complete(new CopilotCliLogin.Outcome(false, null,
+                "Error: Device code expired before authorization completed"));
+        CopilotAccount.Status status = settled();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertEquals("Error: Device code expired before authorization completed", status.message());
+    }
+
+    @Test
+    void aCliSignInThatTheRuntimeNoLongerReportsIsNotSignedIn() throws Exception {
+        FakeCli cli = new FakeCli();
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        account = account(cli);
+        account.signInWithCli();
+
+        cli.auth.set(new CopilotAccount.CliAuth(true, "gh-cli", "octo-fixture", null));
+        CopilotAccount.Status status = account.recheck();
+
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, status.state());
+        assertEquals("cli", status.method());
+    }
+
+    @Test
+    void signingOutOfTheCliChoiceLeavesTheCliAlone() throws Exception {
+        FakeCli cli = new FakeCli();
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        account = account(cli);
+        account.signInWithCli();
+
+        CopilotAccount.Status status = account.signOut();
+
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, status.state());
+        assertFalse(Files.exists(store.path()));
+        assertEquals(0, cli.logins.get(), "nothing was run against the CLI");
+        assertTrue(cli.auth().authenticated(), "the CLI keeps its own sign-in");
+        assertFalse(account.providerOptions("auto", "/x/copilot").useStoredLogin());
+    }
+
+    @Test
+    void withoutARuntimeTheCliSignInSaysSo() {
+        CopilotAccount.Status status = account.signInWithCli();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertTrue(status.message().contains("Copilot CLI"), status.message());
+    }
+}

@@ -76,6 +76,15 @@ final class FakeCopilotRuntime implements AutoCloseable {
     }
 
     /** Makes every {@code models.list} answer with a JSON-RPC error, as a runtime without a login does. */
+    /** What {@code auth.getStatus} answers; card 495. Not signed in until a test says otherwise. */
+    private volatile Map<String, Object> authStatus = Map.of("isAuthenticated", false,
+            "statusMessage", "Not authenticated");
+
+    FakeCopilotRuntime authStatus(Map<String, Object> status) {
+        this.authStatus = status;
+        return this;
+    }
+
     FakeCopilotRuntime failModels() {
         failModels = true;
         return this;
@@ -231,6 +240,7 @@ final class FakeCopilotRuntime implements AutoCloseable {
                 yield NODES.nullNode();
             }
             case "models.list" -> modelsFixture();
+            case "auth.getStatus" -> object(authStatus);
             case "session.detach", "session.tools.handlePendingToolCall",
                  "session.permissions.handlePendingPermissionRequest" -> object(Map.of("success", true));
             default -> NODES.objectNode();

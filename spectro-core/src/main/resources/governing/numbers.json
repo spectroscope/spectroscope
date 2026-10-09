@@ -290,6 +290,76 @@
     "explanation" : "The shipped subagentBudgetTokens: the spend, input plus output as its usage events report them, past which the harness cuts one child agent at its next turn. Ten million.\n\nCard 394. On 2026-09-23 four GLM children on Ollama spent 17,423,655 input tokens in about 340 s and handed back nothing; the 300 s wall clock of that release was the only thing that ended them, and card 372 has since raised that clock to two hours. The owner's words of 2026-09-24: the smaller agents must be able to work, and a middle ground has to be found.\n\nDATED SNAPSHOT, 2026-09-25, from outside this repo. Length: over 8,963 Claude Code subagent transcripts on the owner's machine a subagent makes a median of 16 round trips, p95 110, p99 173. Growth: the four children of 2026-09-23 added 480 to 1,217 input tokens of context per round trip (least-squares slope per child). Extended past their 340 s, those four lines reach ten million after 119, 140, 180 and 198 round trips, all above the p95 length; at the average rate each child showed over its 340 s, extended the same way, each would have reached it 491 to 1,165 s into its run instead of running for two hours. Both are extrapolations, not measurements. What the number does not do: four children of one spawn_agents call can still spend forty million together. The scripts and their output are in kanban/evidence/394/loop/ in the product home.\n\nCache reads and cache writes are reported apart and are not counted, as the child's running sum never counted them. A backend without a prompt cache reports the whole resent conversation as input, which is where the budget binds. No upper bound is enforced, for the reason DEFAULT_COMMAND_TIMEOUT_SECONDS gives."
   },
   {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "CLI_CACHE_MS",
+    "value" : "30000",
+    "expression" : "30_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a runtime's answer about the CLI sign-in is reused before it is asked again."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "CLI_PROMPT_TIMEOUT_S",
+    "value" : "30",
+    "expression" : "30",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long to wait for copilot login to print its code."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "DEFAULT_CODE_LIFETIME_S",
+    "value" : "900",
+    "expression" : "900",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "GitHub's default code lifetime, used for the CLI's flow, which prints none."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "NO_EXPIRY_LIFETIME_S",
+    "value" : "28800",
+    "expression" : "8 * 60 * 60",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The lifetime reported for a token that does not expire; the SDK docs name eight hours as the common value."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "REFRESH_MARGIN_S",
+    "value" : "3600",
+    "expression" : "60 * 60",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The SDK asks for a new token when this many seconds or fewer remain; the refresh happens at the same mark."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.GitHubDeviceFlow",
+    "field" : "SLOW_DOWN_STEP_S",
+    "value" : "5",
+    "expression" : "5",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "GitHub adds five seconds to the interval on every slow_down."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.GitHubDeviceFlow",
+    "field" : "TIMEOUT",
+    "value" : "30",
+    "expression" : "Duration.ofSeconds(30)",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long one request to GitHub may take, connecting included, before the sign-in reports it unreachable."
+  },
+  {
     "owner" : "dev.spectroscope.core.goal.CommandGoalCheck",
     "field" : "DEFAULT_TIMEOUT_SECONDS",
     "value" : "600",

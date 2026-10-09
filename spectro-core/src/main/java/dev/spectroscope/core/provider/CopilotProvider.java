@@ -19,6 +19,7 @@ import com.github.copilot.generated.SessionEvent;
 import com.github.copilot.generated.SessionIdleEvent;
 import com.github.copilot.rpc.BlobAttachment;
 import com.github.copilot.rpc.CopilotClientOptions;
+import com.github.copilot.rpc.GetAuthStatusResponse;
 import com.github.copilot.rpc.GitHubTokenProviderResult;
 import com.github.copilot.rpc.InfiniteSessionConfig;
 import com.github.copilot.rpc.MessageAttachment;
@@ -115,7 +116,16 @@ import java.util.concurrent.TimeoutException;
  * environment. A {@link TokenSource} hands a token to the runtime through the
  * SDK's token callback; without one, the stored CLI login is read only when
  * {@link Options#useStoredLogin()} says the user chose it. No token is
- * logged, recorded on the wire tap, or put into an error message.</p>
+ * logged, recorded on the wire tap, or put into an error message. A source
+ * that throws {@link NotSignedIn} has its message passed on, since it is
+ * written for the user; any other failure is named by its class only.</p>
+ *
+ * <p><b>Sign-in guard (card 495).</b> A run with neither a token source nor
+ * the stored-login choice is refused as "not signed in" before a runtime
+ * starts. With the stored-login choice, the runtime's {@code auth.getStatus}
+ * must report the CLI's own sign-in ({@code user}); a runtime that would fall
+ * back to the GitHub CLI's account ({@code gh-cli}) or any other credential is
+ * refused the same way, before a session opens.</p>
  */
 @AllowCopilotExperimental
 public final class CopilotProvider implements LlmProvider, AutoCloseable {
@@ -181,6 +191,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     private static final long MODELS_RETRY_AFTER_MS = 60_000;
 
     private final Options options;
+    /** Whether the CLI's stored sign-in was confirmed for the running client; reset with it. */
+    private boolean storedLoginChecked;
     private final String osName;
     private final String cliUrl;
     private final List<Conversation> conversations = new ArrayList<>();
@@ -214,6 +226,31 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
          */
         Token token(String host, String reason) throws Exception;
     }
+
+    /**
+     * Thrown by a {@link TokenSource} that has no sign-in to hand out. Its
+     * message is meant for the user and carries no token, so the provider
+     * passes it on, unlike the message of any other failure.
+     */
+    public static class NotSignedIn extends java.io.IOException {
+
+        private static final long serialVersionUID = 1L;
+
+        /** @param message why there is no token, in words for the user */
+        public NotSignedIn(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * What the runtime reports about its credentials ({@code auth.getStatus}).
+     *
+     * @param authenticated whether the runtime is signed in
+     * @param authType      how, such as {@code user} for the CLI's stored sign-in or {@code gh-cli}
+     * @param login         the GitHub login, or null
+     * @param message       the runtime's status message, or null
+     */
+    public record AuthStatus(boolean authenticated, String authType, String login, String message) {}
 
     /**
      * A GitHub token. {@link #toString()} never shows the value.
@@ -290,6 +327,51 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         if (!supportedPlatform(osName)) {
             throw new UnsupportedOperationException("copilot: not supported on this platform (" + osName
                     + "); the Copilot provider runs on macOS only");
+        }
+    }
+
+    /**
+     * Asks the runtime how it is signed in. Starts the runtime when it is not running.
+     *
+     * @return the runtime's answer
+     */
+    public AuthStatus authStatus() {
+        GetAuthStatusResponse status = await(client().getAuthStatus(), CALL_TIMEOUT_S, "read the sign-in");
+        String message = status.getStatusMessage();
+        return new AuthStatus(status.isAuthenticated(), status.getAuthType(), status.getLogin(),
+                message == null || message.isBlank() ? null : message);
+    }
+
+    /**
+     * Refuses a run that has no credential this provider may use: neither a
+     * token source nor the user's choice of the CLI's stored sign-in, or that
+     * choice when the runtime would sign in some other way, such as with the
+     * GitHub CLI's account (card 495).
+     */
+    private void requireSignIn() {
+        if (options.tokenSource() != null) {
+            return;
+        }
+        if (!options.useStoredLogin()) {
+            if (cliUrl != null) {
+                // A runtime that was already listening manages its own sign-in (the SDK refuses a
+                // token or the stored-login switch together with a cliUrl).
+                return;
+            }
+            throw new IllegalStateException("copilot: not signed in; sign in to GitHub Copilot first");
+        }
+        synchronized (this) {
+            if (storedLoginChecked) {
+                return;
+            }
+        }
+        AuthStatus status = authStatus();
+        if (!status.authenticated() || !"user".equals(status.authType())) {
+            throw new IllegalStateException("copilot: not signed in; the Copilot CLI has no sign-in of its own"
+                    + (status.authenticated() ? " (the runtime would sign in through " + status.authType() + ")" : ""));
+        }
+        synchronized (this) {
+            storedLoginChecked = true;
         }
     }
 
@@ -466,6 +548,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             conversations.clear();
             running = client;
             client = null;
+            storedLoginChecked = false;
         }
         open.forEach(Conversation::close);
         if (running != null) {
@@ -493,6 +576,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 return;
             }
             client = null;
+            storedLoginChecked = false;
             open = new ArrayList<>(conversations);
             conversations.clear();
         }
@@ -607,6 +691,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     }
 
     private Conversation open(ProviderRequest request, String system, String effort) {
+        requireSignIn();
         Conversation conversation = new Conversation(system, effort);
         conversation.tools(request.tools());
         SessionConfig config = new SessionConfig()
@@ -631,6 +716,9 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                     Token token = source.token(args.host(),
                             args.reason() == null ? null : args.reason().getValue());
                     return GitHubTokenProviderResult.token(token.value(), token.expiresInSeconds());
+                } catch (NotSignedIn notSignedIn) {
+                    // Written for the user and free of any token: passed on as it is.
+                    throw new IllegalStateException("copilot: not signed in: " + notSignedIn.getMessage());
                 } catch (Exception failure) {
                     // The message of a failed source is not passed on: it may quote what it read.
                     throw new IllegalStateException("copilot: the token source gave no token ("
