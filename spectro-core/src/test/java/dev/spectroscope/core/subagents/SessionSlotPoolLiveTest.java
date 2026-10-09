@@ -37,6 +37,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * closes, and how many were open at once, into the file named by
  * {@value #OUT_ENV}.
  *
+ * <p>{@value #SESSIONS_ENV} set to {@code unset} runs the same four helpers
+ * with no count, the control: no pool, no waiting notice, all four at the
+ * model at once. Local runs use {@code qwen2.5:7b} on Ollama.</p>
+ *
  * <p>Skipped unless {@value #MODEL_ENV} is set, so the gate never depends on
  * a model server.</p>
  */
@@ -47,6 +51,7 @@ class SessionSlotPoolLiveTest {
     static final String MODEL_ENV = "SPECTRO_LIVE_MODEL";
     static final String URL_ENV = "SPECTRO_LIVE_OLLAMA_URL";
     static final String OUT_ENV = "SPECTRO_LIVE_OUT";
+    static final String SESSIONS_ENV = "SPECTRO_LIVE_SESSIONS_PER_CHAT";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -94,6 +99,8 @@ class SessionSlotPoolLiveTest {
     void aChatAtThreeRunsFourHelpersTwoAtATimeOnARealModel() throws IOException {
         String model = System.getenv(MODEL_ENV);
         String url = System.getenv().getOrDefault(URL_ENV, "http://localhost:11434");
+        boolean control = "unset".equals(System.getenv(SESSIONS_ENV));
+        Integer count = control ? null : 3;
         Router router = new Router(new OllamaProvider(new OllamaOptions(url, model)));
         StringBuilder agents = new StringBuilder();
         for (int i = 1; i <= 4; i++) {
@@ -112,7 +119,7 @@ class SessionSlotPoolLiveTest {
                 .parentAgentId("main")
                 .onPermission(request -> true)
                 .baseTools(List.of())
-                .sessionsPerChat(3)
+                .sessionsPerChat(count)
                 .build());
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
@@ -122,7 +129,7 @@ class SessionSlotPoolLiveTest {
                 .registry(registry)
                 .cwd(Path.of("."))
                 .onPermission(request -> true)
-                .sessionsPerChat(3)
+                .sessionsPerChat(count)
                 .build());
 
         List<RunEvent> events = new ArrayList<>();
@@ -152,7 +159,8 @@ class SessionSlotPoolLiveTest {
 
         StringBuilder out = new StringBuilder();
         out.append("model ").append(model).append(" at ").append(url).append('\n');
-        out.append("sessionsPerChat 3, four explore helpers asked for in one spawn_agents call\n");
+        out.append("sessionsPerChat ").append(control ? "unset (control)" : "3")
+                .append(", four explore helpers asked for in one spawn_agents call\n");
         out.append("wall clock ").append(wallMs).append(" ms, max helper requests open at once ")
                 .append(router.maxOpen.get()).append(", waiting notices ").append(waiting)
                 .append(", completed results ").append(completed).append("\n\n");
@@ -171,6 +179,9 @@ class SessionSlotPoolLiveTest {
         chars.forEach((agent, c) -> out.append(agent).append(": text chars ").append(c[0])
                 .append(", thinking chars ").append(c[1]).append('\n'));
         out.append('\n');
+        new java.util.TreeMap<>(task).forEach((agent, text) -> out.append(agent).append(" was asked: ")
+                .append(text).append('\n'));
+        out.append('\n');
         lines.forEach(line -> out.append(line).append('\n'));
         String target = System.getenv(OUT_ENV);
         if (target != null && !target.isBlank()) {
@@ -178,11 +189,14 @@ class SessionSlotPoolLiveTest {
         }
         System.out.println(out);
 
-        assertTrue(router.maxOpen.get() <= 2, "more than two helpers were at the model at once");
-        assertEquals(2, waiting, "the chat did not show two helpers waiting");
+        if (control) {
+            assertEquals(0, waiting, "a chat with no count showed a helper waiting");
+        } else {
+            assertTrue(router.maxOpen.get() <= 2, "more than two helpers were at the model at once");
+            assertEquals(2, waiting, "the chat did not show two helpers waiting");
+        }
         // Every helper reaches the model and reports back. Whether its answer
-        // has text is the model's business: on 2026-10-09 this model returned
-        // an empty answer for 4 of 16 helpers over four runs, waiting or not.
+        // has text is the model's business and is recorded, not asserted.
         assertEquals(4, router.timeline.stream().filter(line -> line.contains(" open ")).count(),
                 "not every helper reached the model");
         long results = events.stream().filter(RunEvent.AgentMessage.class::isInstance)
