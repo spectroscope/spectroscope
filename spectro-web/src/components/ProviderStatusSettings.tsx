@@ -29,7 +29,12 @@ export function ageLabel(checkedAt: number, now: number, lang: Lang): string {
 /** The server never checks the built-in provider or a provider that lacks its
  *  key or its model file, so those rows get no button. */
 function checkable(row: ProviderRow): boolean {
-  return row.kind !== "builtin" && row.state !== "needs-key" && row.state !== "needs-download";
+  return (
+    row.kind !== "builtin" &&
+    row.state !== "needs-key" &&
+    row.state !== "needs-signin" &&
+    row.state !== "needs-download"
+  );
 }
 
 function Row({ row, busy, onCheck }: { row: ProviderRow; busy: boolean; onCheck: () => void }) {

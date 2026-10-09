@@ -91,6 +91,7 @@ export interface PickerOption {
 export function pickerOption(row: ProviderRow | undefined, current: string): PickerOption {
   if (!row || row.id === current) return { disabled: false, reasonKey: null };
   if (row.state === "needs-key") return { disabled: true, reasonKey: "pp.optNeedsKey" };
+  if (row.state === "needs-signin") return { disabled: true, reasonKey: "pp.optNeedsSignin" };
   if (row.state === "failed") {
     const reason = row.reason ?? "unknown";
     return row.endpoint

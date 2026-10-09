@@ -110,6 +110,11 @@ const row = (over: Partial<ProviderRow>): ProviderRow => ({
 });
 
 describe("pickerOption (D9: grey out, never hide)", () => {
+  it("disables a provider that needs a sign-in and says so (card 478 form)", () => {
+    expect(
+      pickerOption(row({ id: "copilot", kind: "cloud", state: "needs-signin", endpoint: null }), "ollama"),
+    ).toEqual({ disabled: true, reasonKey: "pp.optNeedsSignin" });
+  });
   it("disables a provider that needs a key and says so", () => {
     expect(
       pickerOption(row({ id: "openrouter", kind: "cloud", state: "needs-key", endpoint: null }), "ollama"),

@@ -6,7 +6,8 @@
 import { useSyncExternalStore } from "react";
 
 export type ProviderKind = "cloud" | "local" | "builtin";
-export type ProviderState = "needs-key" | "needs-download" | "configured" | "reachable" | "failed";
+export type ProviderState =
+  "needs-key" | "needs-signin" | "needs-download" | "configured" | "reachable" | "failed";
 
 export interface ProviderRow {
   id: string;

@@ -1006,6 +1006,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pp.model": { de: "Modell", en: "Model" },
   "pp.switch": { de: "Wechseln", en: "Switch" },
   "pp.optNeedsKey": { de: "kein Key gesetzt", en: "no key set" },
+  "pp.optNeedsSignin": { de: "nicht angemeldet", en: "not signed in" },
   "pp.optFailed": { de: "antwortet nicht ({reason})", en: "not answering ({reason})" },
   "pp.optFailedAt": {
     de: "antwortet nicht unter {addr} ({reason})",
@@ -5176,6 +5177,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "prov.col.models": { de: "Modelle", en: "Models" },
   "prov.col.checked": { de: "Geprüft", en: "Checked" },
   "prov.state.needs-key": { de: "Key fehlt", en: "needs a key" },
+  "prov.state.needs-signin": { de: "nicht angemeldet", en: "not signed in" },
   "prov.state.needs-download": { de: "Modell nicht geladen", en: "model not downloaded" },
   "prov.state.configured": { de: "konfiguriert, nicht geprüft", en: "configured, not checked" },
   "prov.state.reachable": { de: "antwortet", en: "answers" },
