@@ -125,9 +125,12 @@ public interface DeviceFlow {
 
         private static final long serialVersionUID = 1L;
 
+        /** GitHub's error code, or the HTTP status as text. */
         private final String error;
 
         /**
+         * A refusal.
+         *
          * @param error       GitHub's error code, or the HTTP status as text
          * @param description GitHub's description, or null
          */
@@ -136,7 +139,15 @@ public interface DeviceFlow {
             this.error = error;
         }
 
-        /** @return GitHub's error code, or the HTTP status as text */
+        /**
+
+         * Returns GitHub's error code, or the HTTP status as text.
+
+         *
+
+         * @return GitHub's error code, or the HTTP status as text
+
+         */
         public String error() {
             return error;
         }

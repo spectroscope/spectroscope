@@ -41,6 +41,8 @@ public final class CopilotCliLogin {
     private final Map<String, String> parentEnvironment;
 
     /**
+     * A login run against the given runtime.
+     *
      * @param cliPath           the {@code copilot} executable
      * @param parentEnvironment the environment to start from; token variables are removed
      */
@@ -74,10 +76,22 @@ public final class CopilotCliLogin {
 
     /** One running {@code copilot login}. */
     public interface Run {
-        /** @return completes when the code and address were printed, fails when the process ended first */
+        /**
+         * Returns completes when the code and address were printed, fails when the process ended first.
+         *
+         * @return completes when the code and address were printed, fails when the process ended first
+         */
         CompletableFuture<Prompt> prompt();
 
-        /** @return completes when the process ended */
+        /**
+
+         * Returns completes when the process ended.
+
+         *
+
+         * @return completes when the process ended
+
+         */
         CompletableFuture<Outcome> outcome();
 
         /** Stops the process. */
@@ -85,6 +99,8 @@ public final class CopilotCliLogin {
     }
 
     /**
+     * The login's environment: the parent's without any token variable.
+     *
      * @param parent the environment to start from
      * @return the same without any token variable
      */
@@ -95,6 +111,8 @@ public final class CopilotCliLogin {
     }
 
     /**
+     * Starts {@code copilot login --device-code}.
+     *
      * @return the running login
      * @throws IOException when the process cannot be started
      */

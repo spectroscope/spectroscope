@@ -66,7 +66,16 @@ public final class CopilotAccount {
     static final long DEFAULT_CODE_LIFETIME_S = 900;
 
     /** Where a sign-in stands. */
-    public enum State { NOT_SIGNED_IN, WAITING, SIGNED_IN, REFUSED }
+    public enum State {
+        /** Nothing usable is stored. */
+        NOT_SIGNED_IN,
+        /** A device flow waits for the user to confirm the code in the browser. */
+        WAITING,
+        /** A sign-in is stored and usable. */
+        SIGNED_IN,
+        /** The last sign-in was refused; the message says why, in the words it came in. */
+        REFUSED
+    }
 
     /**
      * What the sheet shows.
@@ -102,18 +111,30 @@ public final class CopilotAccount {
     /** The Copilot CLI side: its stored sign-in and its own device flow. */
     public interface Cli {
         /**
+         * Asks the runtime about the CLI's stored sign-in.
+         *
          * @return what the runtime reports for the CLI's stored sign-in
          * @throws Exception when the runtime cannot answer
          */
         CliAuth auth() throws Exception;
 
         /**
+         * Starts the CLI's own device flow.
+         *
          * @return a running {@code copilot login --device-code}
          * @throws IOException when it cannot be started
          */
         CopilotCliLogin.Run login() throws IOException;
 
-        /** @return whether a runtime is there to ask */
+        /**
+
+         * Returns whether a runtime is there to ask.
+
+         *
+
+         * @return whether a runtime is there to ask
+
+         */
         default boolean available() {
             return true;
         }
@@ -122,6 +143,8 @@ public final class CopilotAccount {
     /** Waits between two polls; a test passes one that does not sleep. */
     public interface Sleeper {
         /**
+         * Waits before the next poll.
+         *
          * @param seconds how long to wait
          * @throws InterruptedException when the wait is cut short
          */
@@ -132,7 +155,15 @@ public final class CopilotAccount {
     public static final class NotSignedIn extends CopilotProvider.NotSignedIn {
         private static final long serialVersionUID = 1L;
 
-        /** @param message why */
+        /**
+
+         * A refusal for lack of a sign-in.
+
+         *
+
+         * @param message why
+
+         */
         public NotSignedIn(String message) {
             super(message);
         }
@@ -179,6 +210,8 @@ public final class CopilotAccount {
     private volatile long cliAuthAt;
 
     /**
+     * An account over the given parts.
+     *
      * @param store   the stored sign-in
      * @param github  spectroscope's device flow, or null when no OAuth app is configured
      * @param cli     the Copilot CLI side, or null when there is none
@@ -207,7 +240,15 @@ public final class CopilotAccount {
                 Clock.systemUTC(), seconds -> TimeUnit.SECONDS.sleep(seconds));
     }
 
-    /** @return the CLI side that looks the runtime up on every use */
+    /**
+
+     * Returns the CLI side that looks the runtime up on every use.
+
+     *
+
+     * @return the CLI side that looks the runtime up on every use
+
+     */
     static Cli machineCli() {
         return new Cli() {
             private Optional<Path> runtime() {
@@ -240,19 +281,43 @@ public final class CopilotAccount {
         };
     }
 
-    /** @return whether spectroscope's own device flow is configured */
+    /**
+
+     * Returns whether spectroscope's own device flow is configured.
+
+     *
+
+     * @return whether spectroscope's own device flow is configured
+
+     */
     public boolean gitHubAvailable() {
         return github != null;
     }
 
-    /** @return whether a Copilot runtime is there for the CLI sign-in */
+    /**
+
+     * Returns whether a Copilot runtime is there for the CLI sign-in.
+
+     *
+
+     * @return whether a Copilot runtime is there for the CLI sign-in
+
+     */
     public boolean cliAvailable() {
         return cli != null && cli.available();
     }
 
     // ---- status ---------------------------------------------------------------------------
 
-    /** @return where the sign-in stands */
+    /**
+
+     * Returns where the sign-in stands.
+
+     *
+
+     * @return where the sign-in stands
+
+     */
     public Status status() {
         Pending p = pending;
         if (p != null) {
@@ -275,7 +340,15 @@ public final class CopilotAccount {
         return new Status(State.SIGNED_IN, "github", s.login(), null, null, 0, note);
     }
 
-    /** @return the status with the runtime asked again, not taken from the short cache */
+    /**
+
+     * Returns the status with the runtime asked again, not taken from the short cache.
+
+     *
+
+     * @return the status with the runtime asked again, not taken from the short cache
+
+     */
     public Status recheck() {
         cliAuth = null;
         return status();
@@ -346,7 +419,15 @@ public final class CopilotAccount {
 
     // ---- spectroscope's own device flow ------------------------------------------------------
 
-    /** @return the waiting status with the code to type, or a refusal */
+    /**
+
+     * Returns the waiting status with the code to type, or a refusal.
+
+     *
+
+     * @return the waiting status with the code to type, or a refusal
+
+     */
     public Status signInWithGitHub() {
         cancel();
         if (github == null) {
@@ -448,7 +529,15 @@ public final class CopilotAccount {
 
     // ---- the Copilot CLI's sign-in --------------------------------------------------------------
 
-    /** @return signed in through the CLI's stored sign-in, or waiting for the CLI's device flow */
+    /**
+
+     * Returns signed in through the CLI's stored sign-in, or waiting for the CLI's device flow.
+
+     *
+
+     * @return signed in through the CLI's stored sign-in, or waiting for the CLI's device flow
+
+     */
     public Status signInWithCli() {
         cancel();
         if (cli == null || !cli.available()) {
@@ -539,7 +628,15 @@ public final class CopilotAccount {
 
     // ---- cancel and sign out ----------------------------------------------------------------------
 
-    /** @return the status after a running sign-in was stopped */
+    /**
+
+     * Returns the status after a running sign-in was stopped.
+
+     *
+
+     * @return the status after a running sign-in was stopped
+
+     */
     public Status cancel() {
         Pending p;
         synchronized (this) {
@@ -563,7 +660,15 @@ public final class CopilotAccount {
         return status();
     }
 
-    /** @return not signed in; the stored tokens are deleted, and the Copilot CLI's own sign-in is left alone */
+    /**
+
+     * Returns not signed in; the stored tokens are deleted, and the Copilot CLI's own sign-in is left alone.
+
+     *
+
+     * @return not signed in; the stored tokens are deleted, and the Copilot CLI's own sign-in is left alone
+
+     */
     public Status signOut() {
         cancel();
         boolean wasCli = loaded().map(s -> s.method() == CopilotCredentials.Method.CLI).orElse(false);
@@ -580,7 +685,15 @@ public final class CopilotAccount {
 
     // ---- what the provider gets ---------------------------------------------------------------------
 
-    /** @return the token source the provider passes to the SDK's token callback */
+    /**
+
+     * Returns the token source the provider passes to the SDK's token callback.
+
+     *
+
+     * @return the token source the provider passes to the SDK's token callback
+
+     */
     public CopilotProvider.TokenSource tokenSource() {
         return (host, reason) -> token();
     }
@@ -632,6 +745,8 @@ public final class CopilotAccount {
     }
 
     /**
+     * The options a Copilot provider is built with.
+     *
      * @param model   the model id
      * @param cliPath the runtime
      * @return provider options with the credential choice this account holds: the

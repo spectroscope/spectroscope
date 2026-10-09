@@ -60,22 +60,48 @@ public final class CopilotCredentials {
 
     private final Path file;
 
-    /** @param file where the sign-in is kept */
+    /**
+
+     * The sign-in kept in one file.
+
+     *
+
+     * @param file where the sign-in is kept
+
+     */
     public CopilotCredentials(Path file) {
         this.file = file;
     }
 
-    /** @return {@code ~/.spectro/copilot-account.json} */
+    /**
+
+     * Returns {@code ~/.spectro/copilot-account.json}.
+
+     *
+
+     * @return {@code ~/.spectro/copilot-account.json}
+
+     */
     public static Path defaultPath() {
         return Path.of(System.getProperty("user.home"), ".spectro", "copilot-account.json");
     }
 
-    /** @return the file */
+    /**
+
+     * Returns the file.
+
+     *
+
+     * @return the file
+
+     */
     public Path path() {
         return file;
     }
 
     /**
+     * Reads the stored sign-in.
+     *
      * @return the stored sign-in, or empty when there is none or the file is not one
      * @throws IOException when the file exists and cannot be read
      */
@@ -147,6 +173,8 @@ public final class CopilotCredentials {
     }
 
     /**
+     * Deletes the stored sign-in.
+     *
      * @return true when a file was deleted
      * @throws IOException when it cannot be deleted
      */

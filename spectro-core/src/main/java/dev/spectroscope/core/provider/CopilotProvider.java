@@ -236,7 +236,15 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
 
         private static final long serialVersionUID = 1L;
 
-        /** @param message why there is no token, in words for the user */
+        /**
+
+         * A refusal for lack of a sign-in.
+
+         *
+
+         * @param message why there is no token, in words for the user
+
+         */
         public NotSignedIn(String message) {
             super(message);
         }

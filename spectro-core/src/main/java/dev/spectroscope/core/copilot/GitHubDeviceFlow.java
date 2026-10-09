@@ -57,6 +57,8 @@ public final class GitHubDeviceFlow implements DeviceFlow {
     private volatile long interval = 5;
 
     /**
+     * A flow against the given hosts.
+     *
      * @param clientId the OAuth app's client id
      * @param web      the web host, {@link #GITHUB_WEB}
      * @param api      the API host, {@link #GITHUB_API}
@@ -73,6 +75,8 @@ public final class GitHubDeviceFlow implements DeviceFlow {
     }
 
     /**
+     * The flow against github.com.
+     *
      * @param clientId the OAuth app's client id
      * @return the flow against github.com
      */
