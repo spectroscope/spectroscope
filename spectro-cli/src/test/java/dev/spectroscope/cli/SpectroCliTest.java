@@ -117,4 +117,28 @@ class SpectroCliTest {
         assertFalse(Pattern.compile("^\\s+gemini\\s+\\(local, free\\)", Pattern.MULTILINE)
                 .matcher(hint).find(), hint);
     }
+
+    /**
+     * The first-run gate judges openai against the endpoint it would dial. At
+     * the operator's own network and with no key it is a local server, the same
+     * word the doctor and /api/config give, so the gate lets it through.
+     */
+    @Test
+    void theFirstRunGateLetsOpenaiAtAPrivateAddressThrough() {
+        org.junit.jupiter.api.Assumptions.assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"));
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "openai", null, "http://192.168.1.20:8080", null, null, null));
+        assertFalse(SpectroCli.needsFirstRunHint(config),
+                "openai pointed at the operator's own network is not a keyless cloud call");
+    }
+
+    /** Positive twin: openai at its public address and no key still needs the hint. */
+    @Test
+    void theFirstRunGateStillStopsKeylessOpenaiAtItsPublicAddress() {
+        org.junit.jupiter.api.Assumptions.assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"));
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "openai", null, null, null, null, null));
+        assertTrue(SpectroCli.needsFirstRunHint(config),
+                "a keyless cloud call is the case the hint exists for");
+    }
 }

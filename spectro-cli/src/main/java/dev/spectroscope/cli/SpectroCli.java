@@ -232,8 +232,7 @@ public final class SpectroCli implements Runnable {
         // newcomer how to get a backend running. A keyless local backend (every
         // member of SpectroConfig.keylessLocalServers) is left to try; an
         // unreachable one fails clearly on the first call.
-        if ("needs-key".equals(
-                SpectroConfig.onboardingStatus(config.provider(), providerKeyPresent(config.provider())))) {
+        if (needsFirstRunHint(config)) {
             System.err.print(firstRunHint(config.provider()));
             return;
         }
@@ -419,6 +418,19 @@ public final class SpectroCli implements Runnable {
      */
     List<Tool> childBelt() {
         return childBelt;
+    }
+
+    /** Whether the configured provider is a keyless cloud call, judged against
+     *  the endpoint it would dial, the same rule the server and the doctor use.
+     *  @param config the effective configuration
+     *  @return true when the first-run hint should stop the start */
+    static boolean needsFirstRunHint(SpectroConfig config) {
+        String provider = config.provider();
+        boolean keyPresent = providerKeyPresent(provider);
+        String status = SpectroConfig.presetEndpointFor(provider) == null
+                ? SpectroConfig.onboardingStatus(provider, keyPresent)
+                : SpectroConfig.onboardingStatusAt(provider, config.endpointFor(provider), keyPresent);
+        return "needs-key".equals(status);
     }
 
     /** Whether this provider's API key is present in the environment. A

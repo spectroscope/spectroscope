@@ -425,6 +425,19 @@ public class SessionsController {
     }
 
     /**
+     * The onboarding word for one provider against the endpoint it would
+     * really dial (D11, 2026-10-09): openai pointed at a private address with
+     * no key is a local server, exactly as the doctor reports it, not a cloud
+     * call missing its key.
+     */
+    static String statusOf(String provider, SpectroConfig c, boolean keyPresent) {
+        if (SpectroConfig.presetEndpointFor(provider) == null) {
+            return SpectroConfig.onboardingStatus(provider, keyPresent);
+        }
+        return SpectroConfig.onboardingStatusAt(provider, c.endpointFor(provider), keyPresent);
+    }
+
+    /**
      * The active LLM backend for the header + the Lab map: the boot config's
      * provider and model (the same layers the socket builds its agent from). A
      * mid-session switch is reflected client-side by the set_provider round-trip;
@@ -470,7 +483,7 @@ public class SessionsController {
                 continue;
             }
             String keyEnv = SpectroConfig.keyEnvFor(p);
-            providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
+            providerStatus.put(p, statusOf(p, c, keyEnv != null && envKeySet(keyEnv)));
         }
         out.put("providerStatus", providerStatus);
         // Card 379: the popover prints the version the binary printed, and when
