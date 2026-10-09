@@ -12,7 +12,12 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** The structural rules of a playbook (spec rules 1 to 7). Every finding names a path. */
+/**
+ * The structural rules of a playbook (spec rules 1 to 7) and the shape of the
+ * {@code contents} paths (rule 9; rule 8, that they exist inside the folder,
+ * needs the file system and lives in the server's loader). Every finding names
+ * a path.
+ */
 public final class PlaybookValidator {
 
     private PlaybookValidator() {
@@ -23,6 +28,15 @@ public final class PlaybookValidator {
     static final Set<String> LOCATION_VARS = Set.of("date", "slug", "n");
     static final Set<String> PERFORMERS = Set.of("chat", "child");
     static final Set<String> ROLES = Set.of("explore", "worker", "research");
+    /** The role prefix that names an agent file the playbook's {@code contents.agents} lists. */
+    static final String AGENT_ROLE = "agent:";
+    /** One path segment of a contents entry: the skill token charset without the colon. */
+    private static final String SEG = "[\\p{L}\\p{N}][\\p{L}\\p{N}_-]*";
+    static final Pattern SKILL_PATH = Pattern.compile("skills/(" + SEG + ")");
+    static final Pattern AGENT_PATH = Pattern.compile("agents/(" + SEG + ")\\.md");
+    static final Pattern HOOK_PATH = Pattern.compile("hooks/hooks\\.json");
+    static final Pattern COMMAND_PATH = Pattern.compile("commands/(" + SEG + ")\\.md");
+    static final Pattern WORKFLOW_PATH = Pattern.compile("workflows/[^/\\\\]+");
     static final Set<String> PRIVACY = Set.of("private", "cheap");
     static final Set<String> PERMISSIONS = Set.of("inherit", "readonly", "ask", "auto");
     static final Set<String> CHECK_KINDS = Set.of("sections", "open_items", "command", "review", "human");
@@ -61,8 +75,8 @@ public final class PlaybookValidator {
                     if (!p.documents().containsKey(d)) out.add(new Finding(at + ".produces", "unknown document " + d));
                 }
                 if (!PERFORMERS.contains(s.performer())) out.add(new Finding(at + ".performer", "must be chat or child"));
-                if ("child".equals(s.performer()) && (s.role() == null || !ROLES.contains(s.role()))) {
-                    out.add(new Finding(at + ".role", "a child step needs a role: explore, worker or research"));
+                if ("child".equals(s.performer())) {
+                    roleFinding(p, s.role(), at).ifPresent(out::add);
                 }
                 if (!PRIVACY.contains(s.privacy())) out.add(new Finding(at + ".privacy", "must be private or cheap"));
                 if ("extended".equals(s.permission()) || !PERMISSIONS.contains(s.permission())) {
@@ -146,7 +160,59 @@ public final class PlaybookValidator {
             if (!ceiling) out.add(new Finding("arrows[" + j + "]", "a loop from " + a.from() + " back to " + a.to()
                     + " passes no decision with max_rounds"));
         }
+        contentsShapes(p, out);
         return List.copyOf(out);
+    }
+
+    /** A child step's role: a static one, or {@code agent:<name>} with its file listed in the contents. */
+    private static java.util.Optional<Finding> roleFinding(Playbook p, String role, String at) {
+        if (role != null && ROLES.contains(role)) {
+            return java.util.Optional.empty();
+        }
+        if (role != null && role.startsWith(AGENT_ROLE)) {
+            String name = role.substring(AGENT_ROLE.length());
+            String file = "agents/" + name + ".md";
+            if (!AGENT_PATH.matcher(file).matches()) {
+                return java.util.Optional.of(new Finding(at + ".role", "an agent role is agent:<name> with a plain name; got " + role));
+            }
+            List<String> listed = p.contents() == null || p.contents().agents() == null ? List.of() : p.contents().agents();
+            if (!listed.contains(file)) {
+                return java.util.Optional.of(new Finding(at + ".role", role + " needs " + file + " in contents.agents"));
+            }
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new Finding(at + ".role",
+                "a child step needs a role: explore, worker, research or agent:<name>"));
+    }
+
+    /** Rule 9: every entry of {@code contents} has the path shape of its kind. */
+    private static void contentsShapes(Playbook p, List<Finding> out) {
+        Playbook.Contents c = p.contents();
+        if (c == null) {
+            return;
+        }
+        shape(out, "skills", c.skills(), SKILL_PATH, "skills/<pack>", p.id());
+        shape(out, "agents", c.agents(), AGENT_PATH, "agents/<name>.md", null);
+        shape(out, "hooks", c.hooks(), HOOK_PATH, "hooks/hooks.json", null);
+        shape(out, "commands", c.commands(), COMMAND_PATH, "commands/<name>.md", null);
+        shape(out, "workflows", c.workflows(), WORKFLOW_PATH, "workflows/<file name>", null);
+    }
+
+    private static void shape(List<Finding> out, String kind, List<String> entries, Pattern shape, String expected,
+            String playbookId) {
+        if (entries == null) {
+            return;
+        }
+        for (int i = 0; i < entries.size(); i++) {
+            String entry = entries.get(i);
+            String at = "contents." + kind + "[" + i + "]";
+            Matcher m = entry == null ? null : shape.matcher(entry);
+            if (m == null || !m.matches()) {
+                out.add(new Finding(at, "must look like " + expected));
+            } else if (playbookId != null && m.groupCount() >= 1 && playbookId.equals(m.group(1))) {
+                out.add(new Finding(at, "the playbook id names the command pack; pick another pack name than " + playbookId));
+            }
+        }
     }
 
     static Set<String> outcomesOf(Playbook p, Playbook.Node n) {

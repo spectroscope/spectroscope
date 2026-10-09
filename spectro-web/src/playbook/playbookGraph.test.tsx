@@ -59,7 +59,7 @@ const MINIMAL: LoadedPlaybook = {
   steps: [
     {
       id: "write",
-      skills: [{ name: "spectropowers:brainstorming", installed: true }],
+      skills: [{ name: "spectropowers:brainstorming", installed: true, disabled: false }],
       model: { choice: "fast", provider: "ollama", model: "qwen3:8b", state: "local", reason: null },
     },
   ],

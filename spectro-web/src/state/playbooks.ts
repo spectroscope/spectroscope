@@ -72,7 +72,7 @@ export interface LoadedPlaybook {
   findings: { path: string; message: string }[];
   steps: {
     id: string;
-    skills: { name: string; installed: boolean }[];
+    skills: { name: string; installed: boolean; disabled: boolean }[];
     model: { choice: string; provider: string; model: string; state: string; reason: string | null } | null;
   }[];
   dir: string;

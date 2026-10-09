@@ -77,7 +77,7 @@ class PlaybookLoaderTest {
         assertEquals(1, loaded.steps().size());
         PlaybookLoader.StepResolution write = loaded.steps().get(0);
         assertEquals("write", write.id());
-        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false)), write.skills());
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, false)), write.skills());
         PlaybookLoader.ModelState model = write.model();
         assertEquals("fast", model.choice());
         assertEquals("ollama", model.provider());
@@ -96,8 +96,62 @@ class PlaybookLoaderTest {
 
         PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
 
-        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", true)),
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", true, false)),
                 loaded.steps().get(0).skills());
+    }
+
+    @Test
+    void aDisabledSkillIsNotInstalledAndSaysDisabled() throws IOException {
+        Path dir = playbook("pb", MINIMAL);
+        Path ws = Files.createDirectories(tmp.resolve("ws"));
+        Path skill = Files.createDirectories(ws.resolve(".spectro/skills/spectropowers/brainstorming"));
+        Files.writeString(skill.resolve("SKILL.md"), "---\nname: brainstorming\ndescription: d\n---\nbody\n");
+        Files.writeString(skill.resolve(".disabled"), "");
+
+        PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
+
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, true)),
+                loaded.steps().get(0).skills());
+    }
+
+    @Test
+    void aDisabledPackDisablesItsSkills() throws IOException {
+        Path dir = playbook("pb", MINIMAL);
+        Path ws = Files.createDirectories(tmp.resolve("ws"));
+        Path pack = ws.resolve(".spectro/skills/spectropowers");
+        Path skill = Files.createDirectories(pack.resolve("brainstorming"));
+        Files.writeString(skill.resolve("SKILL.md"), "---\nname: brainstorming\ndescription: d\n---\nbody\n");
+        Files.writeString(pack.resolve(".disabled"), "");
+
+        PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
+
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, true)),
+                loaded.steps().get(0).skills());
+    }
+
+    @Test
+    void aFlatSkillInContentsIsAFindingBecauseItCouldShadowTheUsersOwn() throws IOException {
+        Path dir = playbook("pb", MINIMAL.replace("\"skills\": [\"skills/spectropowers\"] }",
+                "\"skills\": [\"skills/brainstorming\"] }"));
+        Path flat = Files.createDirectories(dir.resolve("skills/brainstorming"));
+        Files.writeString(flat.resolve("SKILL.md"), "---\nname: brainstorming\ndescription: d\n---\nbody\n");
+        Path ws = Files.createDirectories(tmp.resolve("ws"));
+
+        List<Finding> findings = PlaybookLoader.load(dir, ws, config()).findings();
+
+        assertEquals(List.of(new Finding("contents.skills[0]",
+                "a flat skill could shadow a skill the user wrote; put it in a pack folder")), findings);
+    }
+
+    @Test
+    void aPathNamedByTheFolderCheckIsNotNamedAgainByTheShapeRule() throws IOException {
+        Path dir = playbook("pb", MINIMAL.replace("\"skills\": [\"skills/spectropowers\"] }",
+                "\"skills\": [\"skills/spectropowers\", \"skills/not here\"] }"));
+        Path ws = Files.createDirectories(tmp.resolve("ws"));
+
+        List<Finding> findings = PlaybookLoader.load(dir, ws, config()).findings();
+
+        assertEquals(List.of(new Finding("contents.skills[1]", "does not exist in the playbook folder")), findings);
     }
 
     @Test

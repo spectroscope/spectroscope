@@ -35,7 +35,7 @@ export function StepTable({ loaded }: { loaded: LoadedPlaybook }) {
         <tbody>
           {steps.map((s) => {
             const r = resolution.get(s.id);
-            const skills = r?.skills ?? s.skills.map((name) => ({ name, installed: false }));
+            const skills = r?.skills ?? s.skills.map((name) => ({ name, installed: false, disabled: false }));
             const model = r?.model ?? null;
             return (
               <tr data-step={s.id} key={s.id}>

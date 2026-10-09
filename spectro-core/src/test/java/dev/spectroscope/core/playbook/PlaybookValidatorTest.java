@@ -95,4 +95,55 @@ class PlaybookValidatorTest {
                 "\"spec_ok\": { \"kind\": \"command\", \"run\": \"{test}\" }"));
         assertTrue(has(PlaybookValidator.validate(p), "checks.spec_ok.run", "test"));
     }
+
+    private static final String BASE_CONTENTS = "\"contents\": { \"skills\": [\"skills/spectropowers\"] }";
+
+    private static String childWith(String role, String contentsJson) {
+        return PlaybookReaderTest.MINIMAL
+                .replace("\"model\": \"fast\"", "\"performer\": \"child\", \"role\": \"" + role + "\", \"model\": \"fast\"")
+                .replace(BASE_CONTENTS, "\"contents\": " + contentsJson);
+    }
+
+    @Test
+    void aChildStepMayNameAnAgentTheContentsList() {
+        Playbook listed = read(childWith("agent:reviewer", "{ \"agents\": [\"agents/reviewer.md\"] }"));
+        assertEquals(List.of(), PlaybookValidator.validate(listed));
+        Playbook missing = read(childWith("agent:reviewer", "{ \"agents\": [] }"));
+        List<Finding> f = PlaybookValidator.validate(missing);
+        assertTrue(has(f, "nodes[0].role", "agents/reviewer.md"), f.toString());
+        Playbook plain = read(childWith("worker", "{ \"agents\": [] }"));
+        assertEquals(List.of(), PlaybookValidator.validate(plain), "a static role needs no agent file");
+        Playbook unknown = read(childWith("boss", "{ \"agents\": [\"agents/reviewer.md\"] }"));
+        assertTrue(has(PlaybookValidator.validate(unknown), "nodes[0].role", "agent:<name>"));
+        Playbook empty = read(childWith("agent:", "{ \"agents\": [\"agents/.md\"] }"));
+        assertTrue(PlaybookValidator.validate(empty).stream().anyMatch(x -> x.path().equals("nodes[0].role")),
+                "agent: with no name never resolves");
+    }
+
+    @Test
+    void contentsPathsHaveTheirShape() {
+        Playbook p = read(PlaybookReaderTest.MINIMAL.replace(BASE_CONTENTS, """
+                "contents": {
+                  "skills": ["skills/spectropowers", "skills/a b", "skills/p"],
+                  "agents": ["agents/reviewer.md", "agents/x.txt"],
+                  "hooks": ["hooks/hooks.json", "hooks/other.json"],
+                  "commands": ["commands/ship.md"],
+                  "workflows": ["workflows/build.js", "workflows/a/b.js"] }"""));
+        List<String> paths = PlaybookValidator.validate(p).stream().map(Finding::path).toList();
+        assertEquals(List.of("contents.skills[1]", "contents.skills[2]", "contents.agents[1]",
+                "contents.hooks[1]", "contents.workflows[1]"), paths);
+        assertTrue(has(PlaybookValidator.validate(p), "contents.skills[2]", "playbook id"));
+    }
+
+    @Test
+    void contentsWithEveryKindInShapeIsClean() {
+        Playbook p = read(PlaybookReaderTest.MINIMAL.replace(BASE_CONTENTS, """
+                "contents": {
+                  "skills": ["skills/spectropowers", "skills/team_pack-2"],
+                  "agents": ["agents/reviewer.md"],
+                  "hooks": ["hooks/hooks.json"],
+                  "commands": ["commands/ship.md"],
+                  "workflows": ["workflows/build.js"] }"""));
+        assertEquals(List.of(), PlaybookValidator.validate(p));
+    }
 }

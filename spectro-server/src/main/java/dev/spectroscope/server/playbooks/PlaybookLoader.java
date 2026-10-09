@@ -14,8 +14,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -42,7 +44,12 @@ public final class PlaybookLoader {
 
     public record StepResolution(String id, List<SkillState> skills, ModelState model) {}
 
-    public record SkillState(String name, boolean installed) {}
+    /**
+     * One skill a step names. {@code disabled} is true when the skill is not
+     * installed because a {@code .disabled} marker hides it (on the skill's
+     * folder or on its pack), which is why an install over it would be refused.
+     */
+    public record SkillState(String name, boolean installed, boolean disabled) {}
 
     public record ModelState(String choice, String provider, String model, String state, String reason,
                               boolean unverified) {}
@@ -83,21 +90,94 @@ public final class PlaybookLoader {
         if (p == null) {
             return new Loaded(null, null, List.copyOf(findings), List.of(), root.toString());
         }
-        findings.addAll(PlaybookValidator.validate(p));
-        findings.addAll(contentsFindings(root, p.contents()));
+        List<Finding> folder = contentsFindings(root, p.contents());
+        Set<String> folderPaths = new HashSet<>();
+        folder.forEach(f -> folderPaths.add(f.path()));
+        // A path the folder check already names (missing, outside) is not named a second time for its shape.
+        PlaybookValidator.validate(p).stream().filter(f -> !folderPaths.contains(f.path())).forEach(findings::add);
+        findings.addAll(folder);
+        flatSkills(root, p.contents(), findings);
         countFiles(root, findings);
 
-        SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(workspace));
+        List<Path> skillRoots = SkillLibrary.defaultRoots(workspace);
+        SkillLibrary skills = SkillLibrary.load(skillRoots);
+        Set<String> disabledNames = disabledSkills(skillRoots);
         List<StepResolution> steps = new ArrayList<>();
         for (Playbook.Node n : p.nodes()) {
             if (n instanceof Playbook.Step s) {
                 List<SkillState> states = s.skills().stream()
-                        .map(name -> new SkillState(name, skills.find(name).isPresent()))
+                        .map(name -> {
+                            boolean installed = skills.find(name).isPresent();
+                            return new SkillState(name, installed, !installed && disabledNames.contains(name));
+                        })
                         .toList();
                 steps.add(new StepResolution(s.id(), states, model(p, s.model(), config, providers)));
             }
         }
         return new Loaded(p, PlaybookTopology.of(p), List.copyOf(findings), List.copyOf(steps), root.toString());
+    }
+
+    /**
+     * The names, as {@code pack:skill} or bare, of skills present under a root
+     * but hidden by a {@code .disabled} marker on the skill or on its pack. The
+     * name is the folder name, which is what the library uses unless a skill's
+     * front matter renames it.
+     */
+    static Set<String> disabledSkills(List<Path> roots) {
+        Set<String> out = new HashSet<>();
+        for (Path root : roots) {
+            for (Path dir : childDirs(root)) {
+                if (Files.isRegularFile(dir.resolve("SKILL.md"))) {
+                    if (Files.exists(dir.resolve(".disabled"))) {
+                        out.add(dir.getFileName().toString());
+                    }
+                } else {
+                    boolean packOff = Files.exists(dir.resolve(".disabled"));
+                    for (Path skill : childDirs(dir)) {
+                        if (Files.isRegularFile(skill.resolve("SKILL.md"))
+                                && (packOff || Files.exists(skill.resolve(".disabled")))) {
+                            out.add(dir.getFileName() + SkillLibrary.NAMESPACE_SEPARATOR + skill.getFileName());
+                        }
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static List<Path> childDirs(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return List.of();
+        }
+        try (Stream<Path> entries = Files.list(dir)) {
+            return entries.filter(Files::isDirectory).sorted().toList();
+        } catch (IOException | java.io.UncheckedIOException unreadable) {
+            return List.of();
+        }
+    }
+
+    /** A {@code contents.skills} entry holding a SKILL.md itself is a flat skill: it could shadow one the user wrote. */
+    private static void flatSkills(Path root, Playbook.Contents contents, List<Finding> findings) {
+        if (contents == null || contents.skills() == null) {
+            return;
+        }
+        List<String> entries = contents.skills();
+        for (int i = 0; i < entries.size(); i++) {
+            String entry = entries.get(i);
+            if (entry == null || entry.isBlank()) {
+                continue;
+            }
+            Path target;
+            try {
+                target = root.resolve(entry).normalize();
+            } catch (RuntimeException invalid) {
+                continue;
+            }
+            if (target.startsWith(root) && Files.isRegularFile(target.resolve("SKILL.md"))) {
+                findings.add(new Finding("contents.skills[" + i + "]",
+                        "a flat skill could shadow a skill the user wrote; put it in a pack folder"));
+            }
+        }
     }
 
     private static Loaded refused(String dir, Finding finding) {
