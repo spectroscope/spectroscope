@@ -48,7 +48,9 @@ import java.util.OptionalLong;
  *                        while nothing has been measured
  *                  = max(floor, min({@link #CEILING_MS}, {@link #P50_MULTIPLE} × p50))
  *                        once something has been measured
- *   queueAllowance = ({@link SubagentManager#MAX_PARALLEL_CHILDREN} - 1) × p50
+ *   queueAllowance = {@link SessionCount#queuedAhead()} × p50, which is
+ *                    ({@link SubagentManager#MAX_PARALLEL_CHILDREN} - 1) × p50
+ *                    in a chat with no session count (card 490)
  *   grace          = min({@link #GRACE_CEILING_MS}, runBudget + queueAllowance)
  *   worst case     = grace + runBudget          — the clocks run in SEQUENCE
  * </pre>
@@ -309,12 +311,31 @@ public final class ChildBudget {
 
     /**
      * How long a child may take to produce anything at all, counted from the
-     * spawn — the run budget plus the wait behind the other children of a wave.
+     * moment it holds a slot of its chat — the run budget plus the wait behind
+     * the other children of a wave. This is the grace of a chat with no session
+     * count; {@link #firstTokenGraceMs(SessionCount)} takes the chat's count.
      *
      * @return milliseconds, capped at {@link #GRACE_CEILING_MS}
      */
     public long firstTokenGraceMs() {
-        long queueAllowance = (SubagentManager.MAX_PARALLEL_CHILDREN - 1L) * p50OrImplied();
+        return firstTokenGraceMs(SessionCount.UNSET);
+    }
+
+    /**
+     * The grace of a helper in a chat with this session count (card 490).
+     *
+     * <p>The queue allowance is {@link SessionCount#queuedAhead()} median
+     * exchanges: the other helpers of the chat that can be at the model server
+     * in front of this one. The clock starts when the helper holds a slot of
+     * its chat, not at the spawn, so a helper that waits for a slot does not
+     * spend its grace on the wait. With no count set the allowance is three
+     * medians, as in v0.14.4.</p>
+     *
+     * @param count the chat's session count
+     * @return milliseconds, capped at {@link #GRACE_CEILING_MS}
+     */
+    public long firstTokenGraceMs(SessionCount count) {
+        long queueAllowance = (long) count.queuedAhead() * p50OrImplied();
         return Math.min(GRACE_CEILING_MS, runBudgetMs() + queueAllowance);
     }
 

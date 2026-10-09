@@ -119,6 +119,10 @@ class SpawnToolsRequestBytesTest {
      * server received.
      */
     private String firstBody(LlmProvider provider) {
+        return firstBody(provider, null);
+    }
+
+    private String firstBody(LlmProvider provider, Integer sessionsPerChat) {
         Path cwd = Path.of("/work");
         SubagentManager manager = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
@@ -127,6 +131,7 @@ class SpawnToolsRequestBytesTest {
                 .onPermission(request -> true)
                 .baseTools(List.of())
                 .webTools(List.of())
+                .sessionsPerChat(sessionsPerChat)
                 .build());
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
@@ -138,6 +143,7 @@ class SpawnToolsRequestBytesTest {
                 .cwd(cwd)
                 .agentId("main")
                 .onPermission(request -> true)
+                .sessionsPerChat(sessionsPerChat)
                 .build());
         try (EventStream stream = manager.run(parent, "go", new RunOptions(new CancelSignal(), null))) {
             stream.forEach(event -> { });
@@ -163,6 +169,36 @@ class SpawnToolsRequestBytesTest {
         }
         assertEquals(expected, body,
                 "a chat with no session count set no longer posts what v0.14.4 posted: " + name);
+    }
+
+    /** The positive half: with a count set, both spawn tools carry it. */
+    private static void assertCarriesTheCount(String body) throws IOException {
+        String sentence = "In this chat at most 2 subagents run at the same time;"
+                + " further ones wait for a free slot.";
+        int carriers = 0;
+        for (com.fasterxml.jackson.databind.JsonNode tool : JSON.readTree(body).path("tools")) {
+            String name = tool.has("function") ? tool.path("function").path("name").asText()
+                    : tool.path("name").asText();
+            String description = tool.has("function") ? tool.path("function").path("description").asText()
+                    : tool.path("description").asText();
+            if (description.contains(sentence)) {
+                carriers++;
+                org.junit.jupiter.api.Assertions.assertTrue(name.startsWith("spawn_agent"), name);
+            }
+        }
+        assertEquals(2, carriers, "spawn_agent and spawn_agents must both say the count: " + body);
+    }
+
+    @Test
+    void aChatAtThreeTellsAnthropicTwoHelpersRunAtOnce() throws IOException {
+        assertCarriesTheCount(firstBody(
+                new AnthropicProvider("claude-opus-4-8", true, "test-key", baseUrl), 3));
+    }
+
+    @Test
+    void aChatAtThreeTellsOpenAiTwoHelpersRunAtOnce() throws IOException {
+        assertCarriesTheCount(firstBody(new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl, "test-model", null)), 3));
     }
 
     @Test
