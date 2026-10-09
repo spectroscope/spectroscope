@@ -13,7 +13,7 @@ get {
 docs {
   Probe the configured OTLP exporter endpoint with an empty batch: {configured:false} | {configured:true, endpoint, ok, message?}. Auth never echoed.
   
-  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  Fence: host+origin. Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
   
   Writes state: no
 }

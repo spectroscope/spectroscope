@@ -625,6 +625,12 @@ class DoctorProviderCheckTest {
                 Path.of("/home/you/.spectro/models", model.file()), ModelResolution.Source.ABSENT);
     }
 
+    @Test
+    void theDoctorDoesNotDoubleTheVersionSegment() {
+        assertEquals("http://127.0.0.1:1234/v1/models", DoctorCommand.modelsUrl("http://127.0.0.1:1234/v1"));
+        assertEquals("http://127.0.0.1:1234/v1/models", DoctorCommand.modelsUrl("http://127.0.0.1:1234"));
+    }
+
     /** Runs the whole doctor against a user settings file naming {@code provider}. */
     private static String doctorOutputFor(String provider) throws IOException {
         return doctorOutputForSettings("{\"provider\": \"" + provider + "\"}");

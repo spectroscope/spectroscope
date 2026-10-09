@@ -1327,7 +1327,15 @@ describe("the resolver itself", () => {
   });
 
   it("follows a section component to where the page mounts it, through the tab panel wrapper", () => {
-    for (const site of ["components/DockWidthSettings.tsx:47", "components/SettingsPanel.tsx:724"]) {
+    // The design heading is found by its anchor, not by a line number: a line
+    // added above it (card 480's imports) moved it and blinded this case.
+    const designLines = srcText(join(SRC, "components/SettingsPanel.tsx")).split("\n");
+    const designIndex = designLines.findIndex(
+      (l) => l.includes(`className="settings-label"`) && l.includes(`sectionAnchorId("design")`),
+    );
+    expect(designIndex, "the design heading is found").toBeGreaterThanOrEqual(0);
+    const designHeading = `components/SettingsPanel.tsx:${designIndex + 1}`;
+    for (const site of ["components/DockWidthSettings.tsx:47", designHeading]) {
       const chains = chainsOf(site);
       expect(chains.length, site).toBeGreaterThan(0);
       for (const c of chains) {

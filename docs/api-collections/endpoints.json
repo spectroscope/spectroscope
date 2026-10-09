@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 84,
+    "endpointCount": 86,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -1774,6 +1774,39 @@
         "build": "gradle"
       },
       "bodyNote": "{dir: string (required, existing folder), build: string (optional)}."
+    },
+    {
+      "id": "providers-list",
+      "method": "GET",
+      "path": "/api/providers",
+      "area": "models-providers",
+      "name": "provider registry rows",
+      "description": "One row per provider the config knows: kind, state (needs-key, needs-download, configured, reachable, failed), keyPresent as a boolean, endpoint, models, live, reason and checkedAt. Sends no request to any provider; it shows presence plus the answer of the last check.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [],
+      "body": null
+    },
+    {
+      "id": "providers-check",
+      "method": "POST",
+      "path": "/api/providers/check",
+      "area": "models-providers",
+      "name": "check providers",
+      "description": "Runs a bounded check (5 s outer budget) and answers the rows. A provider that accepts the connection and never answers reads failed with reason timeout. Unknown provider id answers 400.",
+      "fence": "host+origin",
+      "writes": true,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "provider",
+          "required": false,
+          "example": "all",
+          "note": "a provider id, all (default) or local"
+        }
+      ],
+      "body": null
     }
   ]
 }
