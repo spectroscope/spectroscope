@@ -143,7 +143,14 @@ describe("the provider overview", () => {
   });
 
   it("has every state word in both languages", () => {
-    for (const state of ["needs-key", "needs-signin", "needs-download", "configured", "reachable", "failed"]) {
+    for (const state of [
+      "needs-key",
+      "needs-signin",
+      "needs-download",
+      "configured",
+      "reachable",
+      "failed",
+    ]) {
       const key = stateLabelKey(state as never);
       expect(dict[key].de.length).toBeGreaterThan(0);
       expect(dict[key].en.length).toBeGreaterThan(0);
