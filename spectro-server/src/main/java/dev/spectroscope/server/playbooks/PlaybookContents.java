@@ -261,7 +261,8 @@ public final class PlaybookContents {
             }
             String rel = slashed(file);
             List<HookFile> scripts = new ArrayList<>();
-            if (!hookScripts(file, scripts)) {
+            String scriptsHash = hookScripts(file, scripts);
+            if (scriptsHash == null) {
                 continue;
             }
             SafeWalk.Walk walk = SafeWalk.walk(root, file);
@@ -285,23 +286,29 @@ public final class PlaybookContents {
             }
             Path hookFolder = spectroHome.resolve("playbook-hooks").resolve(id);
             for (int i = 0; i < tree.size(); i++) {
-                hook(tree.get(i), rel, i, hookFolder, scripts).ifPresent(out::add);
+                hook(tree.get(i), rel, i, hookFolder, scripts, scriptsHash).ifPresent(out::add);
             }
         }
         return out;
     }
 
-    /** Reads every file beside {@code hooks.json} as text; false when one is refused or not UTF-8. */
-    private boolean hookScripts(Path hooksFile, List<HookFile> into) throws IOException {
+    /**
+     * Reads every file beside {@code hooks.json} as text and returns their tree hash (null when one
+     * is refused or not UTF-8). The hash skips {@code hooks.json} itself, so an edit of one entry
+     * leaves the other entries' hashes alone; an edit of a script changes every hook's hash, because
+     * each hook may run any of them.
+     */
+    private String hookScripts(Path hooksFile, List<HookFile> into) throws IOException {
         Path folder = hooksFile.getParent();
         String folderRel = slashed(folder);
         SafeWalk.Walk walk = SafeWalk.walk(root, folder);
-        boolean clean = !refused(walk, folderRel);
-        if (!clean) {
-            return false;
+        if (refused(walk, folderRel)) {
+            return null;
         }
+        String hooksName = hooksFile.getFileName().toString();
+        boolean clean = true;
         for (String rel : walk.files()) {
-            if (rel.equals(hooksFile.getFileName().toString())) {
+            if (rel.equals(hooksName)) {
                 continue;
             }
             String path = folderRel + "/" + rel;
@@ -312,10 +319,20 @@ public final class PlaybookContents {
                 into.add(new HookFile(rel, text));
             }
         }
-        return clean;
+        return clean ? ContentHash.tree(walk, Set.of(hooksName)) : null;
     }
 
-    private Optional<Item> hook(JsonNode node, String rel, int index, Path hookFolder, List<HookFile> scripts) {
+    /**
+     * The hash of a hook item: the resolved entry and the scripts beside it. The scripts are part of
+     * it because the contents hash is the only binding between the confirmation click and the
+     * install, and the install copies them.
+     */
+    private static String hookItemHash(String entryHash, String scriptsHash) {
+        return ContentHash.contents(List.of("entry " + entryHash, "scripts " + scriptsHash));
+    }
+
+    private Optional<Item> hook(JsonNode node, String rel, int index, Path hookFolder, List<HookFile> scripts,
+                                 String scriptsHash) {
         String at = rel + "[" + index + "]";
         if (node == null || !node.isObject()) {
             findings.add(new Finding(at, "a hook entry must be an object"));
@@ -358,7 +375,7 @@ public final class PlaybookContents {
         }
         String resolved = command.replace(HOOKS_PLACEHOLDER, hookFolder.toString());
         HookConfig entry = new HookConfig(matcher, event, resolved, timeout);
-        String sha = ContentHash.hook(event, matcher, resolved, timeout);
+        String sha = hookItemHash(ContentHash.hook(event, matcher, resolved, timeout), scriptsHash);
         String name = event + " " + (matcher == null || matcher.isBlank() ? "*" : matcher);
         String source = rel + "#" + index;
         InstallLedger.Item rec = recorded.get(key("hook", source));

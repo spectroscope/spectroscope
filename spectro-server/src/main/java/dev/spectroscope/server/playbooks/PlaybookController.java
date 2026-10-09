@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -148,10 +149,15 @@ public class PlaybookController {
         if (real == null) {
             return badRequest("Not a registered playbook folder: " + dir);
         }
-        Path ws = workspace == null || workspace.isBlank() ? null : Path.of(workspace);
-        SpectroConfig.Origin origin = SpectroConfig.loadResolved(SpectroConfig.Overrides.none(), launchDir, ws)
-                .origins().get("hooks");
-        String hooksOrigin = origin == null ? null : origin.winner();
+        String hooksOrigin;
+        try {
+            Path ws = workspace == null || workspace.isBlank() ? null : Path.of(workspace);
+            SpectroConfig.Origin origin = SpectroConfig.loadResolved(SpectroConfig.Overrides.none(), launchDir, ws)
+                    .origins().get("hooks");
+            hooksOrigin = origin == null ? null : origin.winner();
+        } catch (InvalidPathException notAPath) {
+            return badRequest("The workspace is not a usable path.");
+        }
         PlaybookReader.Read read;
         try {
             read = PlaybookReader.read(Files.readString(real.resolve(PlaybookFolders.PLAYBOOK_FILE), StandardCharsets.UTF_8));

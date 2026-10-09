@@ -258,4 +258,16 @@ class PlaybookControllerTest {
         assertEquals(List.of(), preview.items());
         assertFalse(preview.findings().isEmpty());
     }
+    @Test
+    void theContentsRouteAnswersABadRequestForAWorkspaceThatIsNotAPath() throws IOException {
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+
+        ResponseEntity<?> answered = contents.contents(a.toString(), "work\u0000space", local());
+
+        assertEquals(400, answered.getStatusCode().value());
+        assertEquals(200, contents.contents(a.toString(), tmp.toString(), local()).getStatusCode().value(),
+                "a usable workspace still answers the preview");
+    }
 }
