@@ -78,15 +78,28 @@ class ProvidersControllerTest {
     }
 
     @Test
-    void localChecksOnlyTheLocalKind() {
-        List<String> dialled = new CopyOnWriteArrayList<>();
-        ProviderRegistry registry = new ProviderRegistry((p, c) -> {
-            dialled.add(p);
-            return ListResult.ok(List.of(), "http://127.0.0.1:1");
-        }, System::currentTimeMillis);
-        new ProvidersController(registry).check("local", local());
-        assertTrue(dialled.stream().allMatch(SpectroConfig.keylessLocalServers()::contains), dialled.toString());
-        assertTrue(dialled.contains("ollama"), "the positive half: a local provider was in fact checked");
+    void localChecksOnlyTheLocalKindAndAllChecksAKeyedCloudProviderToo() throws IOException {
+        // A made up value in the redirected test home, so that a cloud provider is checkable.
+        SpectroConfig.writeApiKey("OPENROUTER_API_KEY", "test-value-not-a-secret");
+        try {
+            List<String> dialled = new CopyOnWriteArrayList<>();
+            ProviderRegistry registry = new ProviderRegistry((p, c) -> {
+                dialled.add(p);
+                return ListResult.ok(List.of(), "http://127.0.0.1:1");
+            }, System::currentTimeMillis);
+            ProvidersController controller = new ProvidersController(registry);
+
+            controller.check("local", local());
+            assertTrue(dialled.stream().allMatch(SpectroConfig.keylessLocalServers()::contains), dialled.toString());
+            assertTrue(dialled.contains("ollama"), "the positive half: a local provider was in fact checked");
+
+            dialled.clear();
+            controller.check("all", local());
+            assertTrue(dialled.contains("openrouter"), "all reaches the keyed cloud provider: " + dialled);
+            assertTrue(dialled.contains("ollama"), "all reaches the local provider: " + dialled);
+        } finally {
+            Files.deleteIfExists(SpectroConfig.dotEnvPath());
+        }
     }
 
     /**
