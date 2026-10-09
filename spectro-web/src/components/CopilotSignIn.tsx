@@ -4,7 +4,8 @@
 // "Signed in as <login>". The app never sees a password. A refusal is shown in
 // the words the server passed on (GitHub's, the CLI's or the runtime's).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import {
@@ -50,9 +51,29 @@ export function CopilotSignInSheet({
   const offerGithub = !!status && !waiting;
   const offerCli = !!status && !waiting && !(signedIn && status.method === "cli");
   const githubLabel = signedIn && status.method === "github" ? "cp.signInOther" : "cp.signInGithub";
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    dialog.current?.focus();
+  }, []);
   return (
-    <div className="modal-backdrop">
-      <div className="modal cp-modal" role="dialog" aria-modal="true" aria-labelledby="cp-title">
+    // The sheet is portalled out of the provider popover, whose window listeners
+    // close it on an outside mouse down and on Escape; both stop here.
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <div
+        className="modal cp-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cp-title"
+        tabIndex={-1}
+        ref={dialog}
+      >
         <div className="modal-head">
           <span className="eyebrow sand" id="cp-title">
             {t(lang, "cp.title")}
@@ -198,21 +219,23 @@ export function CopilotAccountNote() {
       <button type="button" className="ob-opt-cta" onClick={() => setOpen(true)}>
         {t(lang, "cp.manage")}
       </button>
-      {open && (
-        <CopilotSignInSheet
-          status={note.status}
-          lang={lang}
-          busy={busy}
-          readFailed={note.failures > 0 && !!note.status}
-          onSignIn={(method) => act("sign-in", { method })}
-          onCancel={() => act("cancel")}
-          onSignOut={() => act("sign-out")}
-          onClose={() => {
-            if (note.status?.state === "WAITING") act("cancel");
-            setOpen(false);
-          }}
-        />
-      )}
+      {open &&
+        createPortal(
+          <CopilotSignInSheet
+            status={note.status}
+            lang={lang}
+            busy={busy}
+            readFailed={note.failures > 0 && !!note.status}
+            onSignIn={(method) => act("sign-in", { method })}
+            onCancel={() => act("cancel")}
+            onSignOut={() => act("sign-out")}
+            onClose={() => {
+              if (note.status?.state === "WAITING") act("cancel");
+              setOpen(false);
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }

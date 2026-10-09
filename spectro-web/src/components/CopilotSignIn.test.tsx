@@ -158,6 +158,25 @@ describe("the sign-in sheet", () => {
   });
 });
 
+describe("where the sheet is mounted", () => {
+  // Measured on 2026-10-10 in the branch jar: rendered inside the provider
+  // popover, the backdrop covered only the chat column (the corners of the
+  // window hit the sidebar, the header and the footer). The sheet now goes to
+  // document.body, and its mouse and key events stop there, so the popover's
+  // outside click and Escape handlers on window do not unmount it.
+  const source = readFileSync(fileURLToPath(new URL("./CopilotSignIn.tsx", import.meta.url)), "utf8");
+
+  it("is portalled to the document body", () => {
+    expect(source).toMatch(/createPortal\(\s*<CopilotSignInSheet[\s\S]*?document\.body\s*,?\s*\)/);
+  });
+
+  it("keeps its mouse downs and key presses from reaching the popover's window listeners", () => {
+    expect(source).toMatch(/onMouseDown=\{\(e\) => e\.stopPropagation\(\)\}/);
+    expect(source).toMatch(/onKeyDown=\{/);
+    expect(source).toMatch(/e\.key === "Escape"/);
+  });
+});
+
 describe("the sheet's styles", () => {
   it("has a rule for every cp- class the sheet uses", () => {
     const source = readFileSync(fileURLToPath(new URL("./CopilotSignIn.tsx", import.meta.url)), "utf8");
