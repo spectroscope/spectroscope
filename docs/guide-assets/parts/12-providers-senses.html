@@ -112,6 +112,26 @@ map in the Lab re-places the LLM node inside or beyond the network boundary to m
 
 <!--MERMAID:02-provider-switch|set_provider: validate, build the new backend (key check included), swap the delegate. The next run_start reports the new provider — no new event type needed.-->
 
+<h2 id="ch-providers-overview">The provider overview</h2>
+<p>The settings page lists every provider the config knows in one table. A row shows the
+state in words (needs a key, model not downloaded, configured, answers, not answering),
+whether a key is present, the address for a local server, the number of models and whether
+that list came live from the provider or from the curated list, and the age of the last
+check. <em>Check</em> tests one provider and <em>Check all</em> tests every one. A check
+asks the provider for its model list, never for a completion, and it returns within five
+seconds: a server that accepts the connection and never answers reads “not answering” with
+the reason <code>timeout</code> and its address. Local servers are checked when the page
+opens, and a provider is checked once after you save its key. Nothing checks on a timer, and
+the built-in model is never started for a check.</p>
+<p>The model picker under the message box reads the same answer. All eight providers stay in
+its list, but a provider that needs a key or did not answer its last check is greyed out with
+the reason in the tooltip, and <em>Switch</em> stays disabled while a greyed provider is
+selected. The provider the chat is using right now remains selectable. An OpenAI-compatible
+server at a private address counts as local without a key, in settings, in the picker and in
+<code>spectro doctor</code>. Scripts get the same rows from <code>GET /api/providers</code>,
+which sends nothing to any provider, and <code>POST /api/providers/check?provider=&lt;id|all|local&gt;</code>,
+which answers local callers only.</p>
+
 <h2 id="ch-providers-retry">Retry — a loop that doesn't tip over</h2>
 <p>Transient failures (HTTP 408/409/425/429, any 5xx, dropped connections) are retried
 with exponential backoff and jitter — but <strong>only before the first event</strong> of
