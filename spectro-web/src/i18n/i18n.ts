@@ -1001,6 +1001,41 @@ export const dict: Record<string, { de: string; en: string }> = {
   "perm.task": { de: "Auftrag: {task}", en: "Task: {task}" },
 
   // provider picker (header)
+  "cp.title": { de: "Anmeldung bei GitHub Copilot", en: "GitHub Copilot sign-in" },
+  "cp.signedInAs": { de: "Angemeldet als {login}", en: "Signed in as {login}" },
+  "cp.notSignedIn": { de: "Nicht angemeldet", en: "Not signed in" },
+  "cp.waiting": { de: "Wartet auf deine Bestätigung im Browser", en: "Waiting for your confirmation in the browser" },
+  "cp.viaGithub": {
+    de: "Über die eigene GitHub-Anmeldung von spectroscope.",
+    en: "Through spectroscope's own GitHub sign-in.",
+  },
+  "cp.viaCli": {
+    de: "Über die Anmeldung der Copilot CLI auf diesem Mac.",
+    en: "Through the sign-in of the Copilot CLI on this Mac.",
+  },
+  "cp.openAndEnter": {
+    de: "Öffne diese Adresse im Browser und gib dort den Code ein:",
+    en: "Open this address in your browser and enter the code there:",
+  },
+  "cp.afterConfirm": {
+    de: "Dieses Fenster aktualisiert sich, sobald du den Code bestätigt hast.",
+    en: "This sheet updates once you have confirmed the code.",
+  },
+  "cp.signInGithub": { de: "Mit GitHub anmelden", en: "Sign in with GitHub" },
+  "cp.signInCli": { de: "Anmeldung der Copilot CLI verwenden", en: "Use the Copilot CLI sign-in" },
+  "cp.noGithub": {
+    de: "Die eigene GitHub-Anmeldung braucht eine registrierte GitHub-OAuth-App, und es ist keine eingerichtet.",
+    en: "The own GitHub sign-in needs a registered GitHub OAuth app, and none is configured.",
+  },
+  "cp.noCli": { de: "Auf diesem Mac wurde keine Copilot CLI gefunden.", en: "No Copilot CLI was found on this Mac." },
+  "cp.cancel": { de: "Abbrechen", en: "Cancel" },
+  "cp.signOut": { de: "Abmelden", en: "Sign out" },
+  "cp.close": { de: "Schließen", en: "Close" },
+  "cp.manage": { de: "Anmeldung …", en: "Sign-in …" },
+  "cp.unreachable": {
+    de: "Der Anmeldestatus konnte nicht gelesen werden.",
+    en: "The sign-in status could not be read.",
+  },
   "pp.chipTitle": { de: "LLM-Backend wechseln", en: "Switch LLM backend" },
   "pp.provider": { de: "Provider", en: "Provider" },
   "pp.model": { de: "Modell", en: "Model" },

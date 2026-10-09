@@ -16,6 +16,7 @@ import { useLang } from "../state/lang";
 import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { LocalModelDialog } from "./LocalModelDialog";
+import { CopilotAccountNote } from "./CopilotSignIn";
 
 export function ProviderPicker({
   provider,
@@ -162,6 +163,7 @@ export function ProviderPicker({
               />
             </label>
           )}
+          {sel === "copilot" && <CopilotAccountNote />}
           <div className="provider-pop-foot">
             <button type="button" className="soft-primary" onClick={apply}>
               {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}

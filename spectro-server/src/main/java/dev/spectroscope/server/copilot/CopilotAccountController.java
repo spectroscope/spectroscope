@@ -104,20 +104,6 @@ public class CopilotAccountController {
     }
 
     /**
-     * {@code POST /api/copilot/account/recheck}: asks the runtime again instead of using the short cache.
-     *
-     * @param request the servlet request, for the fences
-     * @return the status, or 404 for a refused caller
-     */
-    @PostMapping(value = "/api/copilot/account/recheck", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Map<String, Object>> recheck(HttpServletRequest request) {
-        if (!writable(request)) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(body(account.recheck()));
-    }
-
-    /**
      * {@code POST /api/copilot/account/sign-out}: deletes the stored tokens, or
      * the choice of the CLI's sign-in. The Copilot CLI's own sign-in is left alone.
      *
