@@ -4681,6 +4681,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pb.end": { de: "Ende", en: "end" },
   "pb.yes": { de: "ja", en: "yes" },
   "pb.no": { de: "nein", en: "no" },
+  "pbe.fit": { de: "Einpassen", en: "Fit" },
+  "pbe.fit.title": { de: "Den ganzen Ablauf ins Bild holen", en: "Bring the whole playbook into view" },
+  "pbe.ghost.missing": { de: "fehlt", en: "missing" },
+  "pbe.ghost.duplicate": { de: "doppelte ID", en: "duplicate id" },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
   "leveling.intro.body": {
     de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Das Tutorial macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.",

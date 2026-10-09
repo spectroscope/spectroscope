@@ -29,6 +29,7 @@
 @import "./styles/about.css"; /* About: the licence notice panel + its footer entry */
 @import "./styles/audio-clip.css"; /* Trace: the audio face of an stt exchange (card 184/187) */
 @import "./styles/stategraph.css";
+@import "./styles/playbook-editor.css"; /* The playbook editor canvas (card 483) */
 @import "./styles/playbook.css"; /* The playbook module (card 481) */
 /* The settings page's own list and switch rules. This line was missing: the
    sheet existed, both blocks in it were written and reviewed, and neither had

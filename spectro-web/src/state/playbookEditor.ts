@@ -51,6 +51,8 @@ export interface EditorState {
 }
 
 export const CHECK_DEBOUNCE_MS = 150;
+/** The performance mark dispatch sets for each command that changes the draft. */
+export const EDIT_MARK = "pb:cmd";
 
 const INITIAL: EditorState = {
   open: false,
@@ -303,6 +305,9 @@ export function dispatch(cmd: Command): void {
     set({ selection: out.selection, refused: null });
     return;
   }
+  // The start of one edit; the canvas measures "pb:edit" from here to the
+  // frame after the new layout is drawn (card 483, Task 12 reads it).
+  performance.mark(EDIT_MARK);
   change(push(h, out.doc), out.selection);
 }
 

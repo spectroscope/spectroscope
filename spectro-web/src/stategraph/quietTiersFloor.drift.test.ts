@@ -11,6 +11,10 @@
 // color-mix, and this test resolves that arithmetic against every design's
 // real palette, on both grounds a line can sit on (--bg cards, --surface
 // panel). A design added later fails here instead of shipping unreadable.
+//
+// Card 483: the playbook editor's canvas draws the same kind of facts (a
+// step's model choice, a ghost's reason) and floors the same two tiers on its
+// own `.pbe` block, so the same cases run for that block as well.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,6 +23,7 @@ import { describe, expect, it } from "vitest";
 const read = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
 const stategraphCss = read("../styles/stategraph.css");
+const editorCss = read("../styles/playbook-editor.css");
 const tokensCss = read("../tokens.css");
 const designsCss = read("../designs.css");
 
@@ -70,11 +75,11 @@ const contrast = (a: Rgb, b: Rgb): number => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
-/** The view-scoped share of --text that `.sg` gives a tier, from the CSS itself. */
-function mixShare(tier: "--text-faint" | "--text-dim"): number {
-  const sg = block(stategraphCss, ".sg");
-  const decl = sg.get(tier);
-  if (decl === undefined) throw new Error(`.sg does not floor ${tier}`);
+/** The view-scoped share of --text that a view block gives a tier, from the CSS itself. */
+function mixShare(css: string, selector: string, tier: "--text-faint" | "--text-dim"): number {
+  const view = block(css, selector);
+  const decl = view.get(tier);
+  if (decl === undefined) throw new Error(`${selector} does not floor ${tier}`);
   const m = /^color-mix\(in srgb, var\(--text\) (\d+)%, var\(--bg\)\)$/.exec(decl);
   if (m === null) throw new Error(`${tier} must be color-mix of --text toward --bg, was: ${decl}`);
   return Number(m[1]) / 100;
@@ -87,20 +92,27 @@ const DESIGNS = [
   ["still", block(designsCss, '[data-design="still"]')],
 ] as const;
 
-describe("the state graph's quiet tiers meet the AA floor in every design", () => {
-  for (const [name, own] of DESIGNS) {
-    for (const tier of ["--text-faint", "--text-dim"] as const) {
-      it(`${tier} on ${name} reads at 4.5:1 on both grounds`, () => {
-        const { text, bg, surface } = palette(own);
-        const share = mixShare(tier);
-        const mixed = [0, 1, 2].map((i) => text[i] * share + bg[i] * (1 - share)) as Rgb;
-        expect(contrast(mixed, bg), `${tier} on ${name} --bg`).toBeGreaterThanOrEqual(4.5);
-        expect(contrast(mixed, surface), `${tier} on ${name} --surface`).toBeGreaterThanOrEqual(4.5);
-      });
-    }
-  }
+const VIEWS = [
+  ["the state graph", stategraphCss, ".sg"],
+  ["the playbook editor", editorCss, ".pbe"],
+] as const;
 
-  it("dim stays stronger than faint, so the two tiers stay two", () => {
-    expect(mixShare("--text-dim")).toBeGreaterThan(mixShare("--text-faint"));
+for (const [view, css, selector] of VIEWS) {
+  describe(`${view}'s quiet tiers meet the AA floor in every design`, () => {
+    for (const [name, own] of DESIGNS) {
+      for (const tier of ["--text-faint", "--text-dim"] as const) {
+        it(`${tier} on ${name} reads at 4.5:1 on both grounds`, () => {
+          const { text, bg, surface } = palette(own);
+          const share = mixShare(css, selector, tier);
+          const mixed = [0, 1, 2].map((i) => text[i] * share + bg[i] * (1 - share)) as Rgb;
+          expect(contrast(mixed, bg), `${tier} on ${name} --bg`).toBeGreaterThanOrEqual(4.5);
+          expect(contrast(mixed, surface), `${tier} on ${name} --surface`).toBeGreaterThanOrEqual(4.5);
+        });
+      }
+    }
+
+    it("dim stays stronger than faint, so the two tiers stay two", () => {
+      expect(mixShare(css, selector, "--text-dim")).toBeGreaterThan(mixShare(css, selector, "--text-faint"));
+    });
   });
-});
+}
