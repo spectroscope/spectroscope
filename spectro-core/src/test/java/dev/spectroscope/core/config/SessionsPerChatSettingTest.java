@@ -6,6 +6,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -20,8 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>It ships unset, so a chat that names no count runs as v0.14.4 did. The
  * proposed count is 3, the main agent and two helpers. The floor is 2: the
  * writer refuses a lower value, the loader skips it, and the settings API
- * sends the floor from {@link SettingFloors} to the page. What a chat does with the count is
- * {@code SessionSlotPoolTest}'s.</p>
+ * sends the floor from {@link SettingFloors} to the page. Code built against
+ * the v0.14.4 constructor still compiles and gets no count. What a chat does
+ * with the count is {@code SessionSlotPoolTest}'s.</p>
  */
 class SessionsPerChatSettingTest {
 
@@ -42,6 +46,41 @@ class SessionsPerChatSettingTest {
     void theKeyShipsUnsetSoAChatRunsAsInV0144(@TempDir Path dir) {
         assertNull(SpectroConfig.load(SpectroConfig.Overrides.none(), dir).sessionsPerChat(),
                 "a config with nothing set carries a session count, so every chat is limited");
+    }
+
+    /**
+     * The v0.14.4 record ended at {@code toolGroupsOff}; this card appended
+     * {@code sessionsPerChat}. spectro-core is on Maven Central, so a caller
+     * that built a config positionally against v0.14.4 must keep compiling,
+     * as every release before kept a constructor for the arity of the one
+     * before it.
+     */
+    @Test
+    void codeBuiltAgainstTheV0144ConstructorStillCompilesAndGetsNoCount(@TempDir Path dir)
+            throws ReflectiveOperationException {
+        RecordComponent[] components = SpectroConfig.class.getRecordComponents();
+        int v0144 = 0;
+        while (!components[v0144].getName().equals("toolGroupsOff")) {
+            v0144++;
+        }
+        v0144++;
+        assertEquals("sessionsPerChat", components[v0144].getName(),
+                "premise: card 490 appended its key right after toolGroupsOff");
+        Class<?>[] types = Arrays.stream(components, 0, v0144)
+                .map(RecordComponent::getType).toArray(Class<?>[]::new);
+        Constructor<SpectroConfig> compat = SpectroConfig.class.getConstructor(types);
+
+        SpectroConfig loaded = SpectroConfig.load(SpectroConfig.Overrides.none(), dir);
+        Object[] values = new Object[v0144];
+        for (int i = 0; i < v0144; i++) {
+            values[i] = components[i].getAccessor().invoke(loaded);
+        }
+        SpectroConfig built = compat.newInstance(values);
+        assertNull(built.sessionsPerChat(), "the v0.14.4 constructor set a session count");
+        for (int i = 0; i < v0144; i++) {
+            assertEquals(values[i], components[i].getAccessor().invoke(built),
+                    components[i].getName() + " did not pass through the v0.14.4 constructor");
+        }
     }
 
     @Test

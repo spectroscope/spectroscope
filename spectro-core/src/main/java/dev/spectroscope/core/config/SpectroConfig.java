@@ -347,6 +347,85 @@ public record SpectroConfig(
         // Card 490: the session count of one chat. Appended last, same rule.
         Integer sessionsPerChat) {
 
+    /** Compat: the v0.14.4 arity, which knew no session count per chat
+     *  (card 490). Every caller that built a config positionally against
+     *  v0.14.4 keeps compiling and gets no count, which is the v0.14.4
+     *  behaviour: no limit per chat.
+     *
+     * @param provider              the LLM backend
+     * @param model                 the model id
+     * @param baseUrl               the legacy provider address
+     * @param compactionThreshold   input-token level that triggers compaction
+     * @param permissionMode        ask / auto / readonly
+     * @param autoApprove           the allowlist rules
+     * @param imageProvider         the image backend
+     * @param thinking              TRUE requests the reasoning stream
+     * @param mcpServers            the configured MCP servers
+     * @param maxRetries            provider retries
+     * @param promptCaching         TRUE asks the provider to cache the prompt
+     * @param hooks                 the configured shell hooks
+     * @param workspace             the workspace directory
+     * @param logLevel              file-diagnostics level
+     * @param imageModel            the image model id
+     * @param sttModel              the transcription model id
+     * @param sttProvider           auto / local / openai
+     * @param sttLanguage           auto or a language code
+     * @param chromeBinary          the browser binary
+     * @param otlpEndpoint          the trace endpoint
+     * @param otlpBasicAuth         the trace credentials
+     * @param ollamaBaseUrl         ollama's address
+     * @param lmstudioBaseUrl       LM Studio's address
+     * @param searxngUrl            the SearXNG instance
+     * @param allowLocalhost        TRUE lets the net fence dial loopback
+     * @param headlessMcp           TRUE mounts MCP servers in unattended runs
+     * @param progressGuardWrites   identical-write count that speaks
+     * @param progressGuardFailures failing-call count that speaks
+     * @param progressGuardPlanTurns planless turns that speak
+     * @param continuationBudget    continuations per run
+     * @param maxTurns              the runaway-loop brake
+     * @param llamacppBaseUrl       llama.cpp's address
+     * @param questionsPerRun       the ask budget
+     * @param maxQuestionOptions    options per question
+     * @param maxQuestionChars      characters per question
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth      pixels of chat the dock may never take
+     * @param dockMaxWidth          the dock's ceiling
+     * @param maxTokens             the completion budget
+     * @param subagentBudgetSeconds the child run budget floor
+     * @param rtkFilter             the rtk proxy switch
+     * @param subagentBudgetTokens  a child agent's token budget
+     * @param desktopNotifications  the cron end notification switch
+     * @param toolResultElision     the switch that leaves old, large tool results out
+     * @param toolGroupsOff         the switched-off tool groups */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds, int chatReserveWidth,
+                         int dockMaxWidth, int maxTokens, int subagentBudgetSeconds,
+                         String rtkFilter, int subagentBudgetTokens,
+                         String desktopNotifications, String toolResultElision,
+                         List<String> toolGroupsOff) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks, workspace,
+                logLevel, imageModel, sttModel, sttProvider, sttLanguage, chromeBinary,
+                otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl, searxngUrl,
+                allowLocalhost, headlessMcp, progressGuardWrites, progressGuardFailures,
+                progressGuardPlanTurns, continuationBudget, maxTurns, llamacppBaseUrl,
+                questionsPerRun, maxQuestionOptions, maxQuestionChars, commandTimeoutSeconds,
+                chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
+                subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
+                null);
+    }
+
     /** Compat: the arity main had before cards 476, 467 and 466, which knew
      *  no notification switch, no elision switch and no tool groups. Every
      *  caller that built a config positionally keeps compiling, gets the
