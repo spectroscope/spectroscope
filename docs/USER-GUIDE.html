@@ -501,7 +501,7 @@ pre.tree .hl { color: var(--sand); }
   </div>
   <div class="cover-foot">
     <span>spectroscope — the agent orchestrator you can watch</span>
-    <span>2026-09-29 · v0.14.3</span>
+    <span>2026-10-09 · v0.14.4</span>
   </div>
 </div>
 
@@ -541,7 +541,7 @@ exactly what crosses which wire”:</p>
   <div class="co-title">Honesty rules of this document</div>
   <p>Every screenshot in this guide is a real capture of the running application
   (English chrome, taken with the reproducible scripts in <code>docs/guide-assets/</code>;
-  the main suite, the tutorial, chat and state graph plates were re-taken on 2026-09-29 against v0.14.3). Every terminal block is real
+  the main suite, the tutorial, chat and state graph plates were re-taken on 2026-09-29 against the release before this one). Every terminal block is real
   command output. Every name, constant, wire string and default was read from the
   migration phase-6 source tree (2026-07-20) — not from memory. Where behaviour is a
   deliberate limitation, the guide says so.</p>
@@ -5744,8 +5744,8 @@ Maven Central instead. On a machine without a full JDK/Node for the Electron ste
 <p>The two headless modules are published under the <strong>verified namespace</strong>
 <code>dev.spectroscope</code>. Depend on the orchestrator and you get the core transitively:</p>
 <pre>dependencies {
-  implementation("dev.spectroscope:spectro-core:0.14.3")
-  implementation("dev.spectroscope:spectro-orchestrator:0.14.3")  // POM pins spectro-core at 0.14.3
+  implementation("dev.spectroscope:spectro-core:0.14.4")
+  implementation("dev.spectroscope:spectro-orchestrator:0.14.4")  // POM pins spectro-core at 0.14.4
 }</pre>
 <p><code>v0.1.0</code> is the first published version. <strong>Maven Central is
 append-only</strong>: a published version cannot be pulled or overwritten, only superseded,
@@ -5929,10 +5929,11 @@ is reproducible from the repository.</p>
   <dt>Source of truth</dt><dd>the prose and the figures were verified against the
     <strong>v0.1.0</strong> source tree; gate at that time: 678 JUnit + 383 vitest, 0 failures.
     The cover carries the edition date, not a re-verification: this edition ships with
-    <strong>v0.14.3</strong>. The passages on the header, the row under the message box and
-    the session list were checked against that tree on 2026-09-29, the passages on sessions,
-    the dock, the images and the first start against the previous release's tree on the same day; the
-    rest has not been re-checked.
+    <strong>v0.14.4</strong>. The passages on the tool groups in the gear, the two commands, the
+    code graph, the import bundle, the config reference rows for toolGroupsOff, toolResultElision
+    and desktopNotifications, and the folder chip were checked against that tree on 2026-10-09;
+    the header, the row under the message box and the session list against the previous
+    release's tree on 2026-09-29; the rest has not been re-checked.
     Where the guide and the product disagree, the product is right.</dd>
 </div>
 
