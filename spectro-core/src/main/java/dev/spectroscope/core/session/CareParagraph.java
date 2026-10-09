@@ -6,6 +6,10 @@ import dev.spectroscope.core.config.governing.Governs;
  * Card 492: the care paragraph, a short request at the end of the system
  * prompt to work in small steps on a backend with little capacity.
  *
+ * <p>The text names no backend. The concept's wording began "This chat runs
+ * on a local model"; the key reaches a hosted chat too, so that clause is
+ * left out.</p>
+ *
  * <p>The model may ignore it. What a run may do is held by the enforced
  * settings (tool groups, and later the session count and the read share);
  * this paragraph only asks. It is built once per run, so its text does not
@@ -20,12 +24,32 @@ public final class CareParagraph {
      *  reaches the agent: the concept's default of three model sessions per
      *  chat, the main agent and two helpers ({@code konzept/RUN-PROFILES.md},
      *  Knobs). The owner named three sessions; nobody has measured how many
-     *  requests the house test backend serves at once usefully. No shipped
-     *  call site sets another count. */
+     *  requests the house test backend serves at once usefully. Read only
+     *  through {@link #helpersFor}. */
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     public static final int DEFAULT_HELPERS = 2;
 
     private CareParagraph() {
+    }
+
+    /**
+     * How many helpers the paragraph names for these settings. Every face that
+     * offers a spawn tool takes the count from here, so the chat's session
+     * count reaches the paragraph through one method.
+     *
+     * <p>Card 490 brings that count as {@code sessionsPerChat}; it is on no
+     * branch this card builds on, so the answer is {@link #DEFAULT_HELPERS}.
+     * When the two cards meet, this method returns {@code sessionsPerChat - 1}
+     * (the main agent holds one session), and
+     * {@code DEFAULT_SESSIONS_PER_CHAT - 1} while the key is unset.
+     * {@code CareHelperWiringDriftTest} fails in a tree where the config
+     * declares the key and this method does not read it.</p>
+     *
+     * @param config the settings as the face reads them now
+     * @return the subagents that may run at once, at least 1
+     */
+    public static int helpersFor(dev.spectroscope.core.config.SpectroConfig config) {
+        return DEFAULT_HELPERS;
     }
 
     /**
@@ -51,7 +75,7 @@ public final class CareParagraph {
         String subagentSentence = subagents
                 ? " Start at most " + helpers + " subagents at once; more wait for a free slot."
                 : "";
-        return "This chat runs on a local model with limited capacity, so every request takes time."
+        return "This chat runs with limited capacity, so every request takes time."
                 + " Work in small steps."
                 + " Read only the file you need next, and read large files in parts with offset and limit."
                 + " Do not list or search the whole workspace in one call."

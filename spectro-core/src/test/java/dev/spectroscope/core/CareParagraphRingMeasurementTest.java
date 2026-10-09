@@ -25,7 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * of 2 and for the {@code agents} group off. The reader is the
  * {@code system prompt} part of the loop's first {@code context_info}, the
  * same one card 470 measured with. The numbers are printed for the card and
- * held to the concept's 368 and 306 plus the two-character separator.
+ * held to the shipped 351 and 289 plus the two-character separator (the
+ * concept's 368 and 306 less the 17 characters of " on a local model").
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class CareParagraphRingMeasurementTest {
@@ -102,18 +103,18 @@ class CareParagraphRingMeasurementTest {
         System.out.println("card-492 ring system prompt chars (" + label + "): bare=" + bare
                 + " care=" + careOnly + " discovery=" + discoveryOnly + " both=" + both
                 + " | care alone=" + alone + " discovery alone=" + discovery
-                + " together=" + together + " | concept=" + conceptChars + " separator=2");
-        assertEquals(conceptChars + 2, alone, "the ring reads the concept's paragraph plus the separator");
+                + " together=" + together + " | shipped text=" + conceptChars + " separator=2");
+        assertEquals(conceptChars + 2, alone, "the ring reads the shipped paragraph plus the separator");
         assertEquals(alone + discovery, together, "together the two paragraphs add what each adds alone");
     }
 
     @Test
     void twoHelpers() {
-        measure("helpers 2", Set.of(), 368);
+        measure("helpers 2", Set.of(), 351);
     }
 
     @Test
     void agentsGroupOff() {
-        measure("agents group off", EnumSet.of(ToolGroup.AGENTS), 306);
+        measure("agents group off", EnumSet.of(ToolGroup.AGENTS), 289);
     }
 }

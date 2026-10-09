@@ -46,6 +46,15 @@ class CareParagraphSettingTest {
     }
 
     @Test
+    void theSettingsNameTheDefaultHelperCountUntilTheSessionCountExists() {
+        // Card 490 adds the session count per chat; until then the settings
+        // carry no count, and the one derivation answers the default.
+        assertEquals(dev.spectroscope.core.session.CareParagraph.DEFAULT_HELPERS,
+                dev.spectroscope.core.session.CareParagraph.helpersFor(SpectroConfig.shippedDefaults()));
+        assertEquals(2, dev.spectroscope.core.session.CareParagraph.DEFAULT_HELPERS);
+    }
+
+    @Test
     void bothValuesAreKnownAndNothingElseIs() {
         assertEquals(java.util.Set.of("on", "off"), SpectroConfig.KNOWN_CARE_PARAGRAPH_VALUES);
     }

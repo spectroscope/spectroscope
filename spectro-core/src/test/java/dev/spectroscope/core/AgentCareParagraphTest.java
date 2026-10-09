@@ -3,6 +3,9 @@ package dev.spectroscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.events.RunEvent;
+import dev.spectroscope.core.goal.GoalVerdict;
+import dev.spectroscope.core.goal.RunGoal;
+import dev.spectroscope.core.goal.SessionGoal;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.session.CareTexts;
 import dev.spectroscope.core.subagents.RoleCatalog;
@@ -106,6 +109,14 @@ class AgentCareParagraphTest {
         return new Agent(builder.build());
     }
 
+    /** A goal whose check is met at once, so the run ends after its turns. */
+    private static SessionGoal statedGoal() {
+        SessionGoal session = new SessionGoal((goal, context) -> new GoalVerdict(GoalVerdict.Outcome.MET,
+                "true", 0, "ok", 1, null, null, "met: the check exited 0"));
+        session.state(new RunGoal("The repository is described.", "true"));
+        return session;
+    }
+
     private static List<RunEvent> run(Agent agent) {
         List<RunEvent> events = new ArrayList<>();
         try (EventStream stream = agent.run("describe the repository",
@@ -192,6 +203,41 @@ class AgentCareParagraphTest {
         provider.onRequest = turn -> { };
         run(agent);
         assertEquals(BASE, provider.systems.get(2), "the change did not reach the next run");
+    }
+
+    @Test
+    void withAGoalTheParagraphComesBeforeTheGoalSectionInTheRequestAndInTheRing() {
+        // Review finding of 2026-10-09: the order was a stated decision (the
+        // part fixed for the run first, the goal that may change between turns
+        // after it) and no test held it. Both the request and the ring's
+        // system prompt part are read, because the two are assembled apart.
+        TwoTurns provider = new TwoTurns();
+        SessionGoal goal = statedGoal();
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt(BASE)
+                .registry(belt())
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .introspection(true)
+                .careParagraph("on")
+                .goal(goal)
+                .build());
+        List<RunEvent> events = run(agent);
+        String expected = BASE + "\n\n" + CareTexts.TWO_HELPERS + goal.stated().promptSection();
+        assertTrue(provider.systems.size() >= 1, "premise: the run made a request");
+        assertEquals(expected, provider.systems.get(0),
+                "the request does not carry base, care paragraph, goal section in that order");
+        String ring = events.stream()
+                .filter(RunEvent.ContextInfo.class::isInstance)
+                .map(RunEvent.ContextInfo.class::cast)
+                .findFirst().orElseThrow()
+                .parts().stream()
+                .filter(part -> part.label().equals("system prompt"))
+                .findFirst().orElseThrow()
+                .text();
+        assertEquals(expected, ring,
+                "the ring's system prompt part does not read base, care paragraph, goal section in that order");
     }
 
     @Test

@@ -830,7 +830,7 @@ public final class SpectroCli implements Runnable {
      * @return the ready agent; the registry and broker are shared, not rebuilt
      */
     private Agent buildAgent(List<ProviderMessage> initialMessages) {
-        return new Agent(AgentOptions.builder()
+        Agent built = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(systemPrompt)
                 .registry(registry)
@@ -883,6 +883,9 @@ public final class SpectroCli implements Runnable {
                 .careParagraph(config.careParagraph())
                 .onPermission(askOnTerminal)
                 .build());
+        // Card 492: the helpers the paragraph names, from the one derivation.
+        built.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(config));
+        return built;
     }
 
     // ---------------------------------------------------------- slash commands

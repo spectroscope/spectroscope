@@ -516,23 +516,49 @@ class ConfigDocDriftTest {
     }
 
     @Test
-    void theSettledSystemPromptPromiseNamesThePartThatIsReadPerRun() throws IOException {
-        // Card 492. The care paragraph is appended to the system prompt at the
-        // start of every run, so "the system prompt stays settled for the
-        // session" stopped being true for one part of it. The paragraph that
-        // makes the promise has to name that part and say when a change to it
-        // lands, or a reader who saves the key mid-session expects a reconnect.
+    void theSettledSystemPromptPromiseIsTheSentenceCard491Pins() throws IOException {
+        // Card 492, criterion 7. The care paragraph is appended to the system
+        // prompt at the start of every run, so "the system prompt stays
+        // settled for the session" stopped being true. Card 491 rewrote and
+        // pins that sentence on its own branch; until it lands, this card
+        // carries the same sentence word for word, so the two changes to the
+        // paragraph are one change when they meet.
         Path source = source();
         assumeTrue(source != null, "not running from a source checkout");
-        String promise = paragraphContaining(Files.readString(source), "Four things are settled");
-        assertTrue(promise.contains("system prompt"),
-                "premise: this is the paragraph that settles the system prompt");
-        assertTrue(promise.contains("<code>careParagraph</code>"),
-                "the paragraph that settles the system prompt does not name careParagraph,"
-                        + " the part every run reads again");
-        assertTrue(promise.contains("applies from the next run"),
-                "the paragraph does not say that a change to careParagraph applies from the"
-                        + " next run of the same session");
+        String settled = paragraphContaining(Files.readString(source), "stay settled for that session");
+        assertFalse(settled.isEmpty(), "the paragraph about what a session settles is gone");
+        assertFalse(settled.contains("and the <strong>system prompt</strong>"),
+                "the chapter still says the whole system prompt is settled for the session,"
+                        + " which the care paragraph appended per run makes false. Paragraph: " + settled);
+        assertTrue(settled.contains("the base of the <strong>system prompt</strong>"),
+                "the paragraph must name the base of the system prompt as what the session settles."
+                        + " Paragraph: " + settled);
+        assertTrue(settled.contains("the system prompt a run sends is fixed for that run"),
+                "the paragraph must carry card 491's sentence. Paragraph: " + settled);
+    }
+
+    @Test
+    void theCareParagraphRowSaysWhichFaceReadsItWhen() throws IOException {
+        // Review finding of 2026-10-09: the row said a saved change "applies
+        // from the next run of an open session" for every face, and only the
+        // browser session reads the settings again before a prompt. The REPL
+        // keeps the value it started with. The row also carried a roadmap
+        // note, "(two until the session count per chat exists)".
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String html = Files.readString(source);
+        int at = html.indexOf("<tr><td><code>careParagraph</code></td>");
+        assertTrue(at >= 0, "the reference table has no careParagraph row");
+        String row = html.substring(at, html.indexOf("</tr>", at));
+        assertTrue(row.contains("The browser session reads the settings again before every message,"
+                        + " so a saved change applies from its next run"),
+                "the row must say that the browser session takes a saved change from its next run. Row: " + row);
+        assertTrue(row.contains("the REPL, the cron daemon and a fleet node read it when they start"),
+                "the row must say that the REPL reads the key when it starts. Row: " + row);
+        assertFalse(row.contains("of an open session"),
+                "the row promises the next run of any open session, which the REPL does not keep. Row: " + row);
+        assertFalse(row.contains("until the session count"),
+                "a roadmap note does not belong in the shipped guide. Row: " + row);
     }
 
     @Test

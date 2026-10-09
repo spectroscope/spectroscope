@@ -109,7 +109,7 @@ final class ContextDescriber {
         boolean spawns = tools.stream()
                 .anyMatch(tool -> tool.name().equals("spawn_agent") || tool.name().equals("spawn_agents"));
         systemPrompt = systemPrompt + dev.spectroscope.core.session.CareParagraph.suffix(
-                config.careParagraph(), dev.spectroscope.core.session.CareParagraph.DEFAULT_HELPERS, spawns);
+                config.careParagraph(), dev.spectroscope.core.session.CareParagraph.helpersFor(config), spawns);
         return new ContextInfo(systemPrompt, tools, skillCatalog,
                 mcpServerNames, config.thinking(), config.provider(), config.model(), profiles);
     }

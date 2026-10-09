@@ -7,21 +7,41 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Card 492: the care paragraph's text is the concept's text, the helper count
- * is filled in, and the subagent sentence goes when no spawn tool is offered.
- * The expected strings are typed here from {@code konzept/RUN-PROFILES.md}
- * (Care paragraph), not read from the class under test.
+ * Card 492: the care paragraph's text is the concept's text without the clause
+ * that names the backend, the helper count is filled in, and the subagent
+ * sentence goes when no spawn tool is offered. The expected strings are typed
+ * in {@link CareTexts}, not read from the class under test.
  */
 class CareParagraphTest {
 
     @Test
     void theConceptsTwoTextsHaveTheConceptsLengths() {
-        assertEquals(368, CareTexts.TWO_HELPERS.length(), "premise: the typed copy is the concept's 368");
-        assertEquals(306, CareTexts.NO_SUBAGENTS.length(), "premise: the typed copy is the concept's 306");
+        assertEquals(368, CareTexts.CONCEPT_TWO_HELPERS.length(), "premise: the typed copy is the concept's 368");
+        assertEquals(306, CareTexts.CONCEPT_NO_SUBAGENTS.length(), "premise: the typed copy is the concept's 306");
     }
 
     @Test
-    void withTwoHelpersTheTextIsTheConceptsText() {
+    void theShippedTextIsTheConceptsWithoutTheClauseThatNamesTheBackend() {
+        assertEquals(CareTexts.CONCEPT_TWO_HELPERS.replace(" on a local model", ""), CareTexts.TWO_HELPERS);
+        assertEquals(CareTexts.CONCEPT_NO_SUBAGENTS.replace(" on a local model", ""), CareTexts.NO_SUBAGENTS);
+        assertEquals(351, CareTexts.TWO_HELPERS.length());
+        assertEquals(289, CareTexts.NO_SUBAGENTS.length());
+    }
+
+    @Test
+    void theTextNamesNoBackendBecauseTheKeyReachesHostedChatsToo() {
+        // Review finding of 2026-10-09: the text said "This chat runs on a local
+        // model" for every backend, children and headless runs included. Card
+        // 493's switch reaches an Anthropic chat as well, which would then be
+        // told something false about itself.
+        for (String text : new String[] {CareParagraph.text(2, true), CareParagraph.text(2, false)}) {
+            assertFalse(text.toLowerCase(java.util.Locale.ROOT).contains("local"), text);
+            assertTrue(text.startsWith("This chat runs with limited capacity"), text);
+        }
+    }
+
+    @Test
+    void withTwoHelpersTheTextIsTheShippedText() {
         assertEquals(CareTexts.TWO_HELPERS, CareParagraph.text(2, true));
     }
 

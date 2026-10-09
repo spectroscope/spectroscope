@@ -2106,15 +2106,18 @@ public final class SessionConnection {
 
     /**
      * Card 492: hands the agent the {@code careParagraph} value the settings
-     * hold now, so a saved change reaches the next run of this session (reach
-     * {@code next-run}). Read through {@link #liveConfig()}, the same chain
-     * the belt reads per call. The run reads it once when it starts.
+     * hold now, and the helper count derived from them, so a saved change
+     * reaches the next run of this session (reach {@code next-run}). Read
+     * through {@link #liveConfig()}, the same chain the belt reads per call.
+     * The run reads both once when it starts.
      */
     void refreshCareParagraph() {
         if (agent == null) {
             return;
         }
-        agent.setCareParagraph(liveConfig().careParagraph());
+        SpectroConfig live = liveConfig();
+        agent.setCareParagraph(live.careParagraph());
+        agent.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(live));
     }
 
     /** Card 379: the oracle the next {@link #buildAgentOnce} hands the rtk
