@@ -17,7 +17,7 @@
     "kind" : "LOOKS_SETTABLE",
     "unit" : "TOKENS",
     "key" : "",
-    "explanation" : "The completion budget one turn spends when nothing configures it. Public because CompactionThreshold is defined AGAINST it (card 263): the share of the context window kept back has to hold one of these, and a second copy of the number in the derivation would drift the day this one moves."
+    "explanation" : "The completion budget one turn spends when nothing configures it, before the window clamp of card 488 (CompactionThreshold.completionBudget). Public because CompactionThreshold is defined AGAINST it (card 263): the share of the context window kept back has to hold one of these, and a second copy of the number in the derivation would drift the day this one moves."
   },
   {
     "owner" : "dev.spectroscope.core.Agent",
@@ -861,13 +861,13 @@
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
-    "field" : "MIN_SUMMARY_TOKENS",
+    "field" : "MIN_COMPLETION_TOKENS",
     "value" : "512",
     "expression" : "512",
     "kind" : "FIXED",
     "unit" : "TOKENS",
     "key" : "",
-    "explanation" : "The smallest completion a summary can plausibly be written in. A window so small that its reserve is under this has bigger problems than the summarizer; asking for zero tokens would just fail the call."
+    "explanation" : "The smallest completion budget a request is sent with when its window leaves a reserve below it, for a turn and for the summarizer alike (card 488). Only windows of 1,703 tokens or less have such a reserve; asking for zero tokens would just fail the call."
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",

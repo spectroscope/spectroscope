@@ -109,11 +109,12 @@ public final class CompactionThreshold {
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     private static final int WINDOW_SHARE = 10;
 
-    /** The smallest completion a summary can plausibly be written in. A window
-     *  so small that its reserve is under this has bigger problems than the
-     *  summarizer; asking for zero tokens would just fail the call. */
+    /** The smallest completion budget a request is sent with when its window
+     *  leaves a reserve below it, for a turn and for the summarizer alike
+     *  (card 488). Only windows of 1,703 tokens or less have such a reserve;
+     *  asking for zero tokens would just fail the call. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
-    private static final int MIN_SUMMARY_TOKENS = 512;
+    static final int MIN_COMPLETION_TOKENS = 512;
 
     /** Which fact produced the threshold — carried on {@code context_info} so
      *  the gauge's divisor, caption and the harness's behaviour cannot
@@ -382,37 +383,56 @@ public final class CompactionThreshold {
     }
 
     /**
-     * What the compaction summarizer may spend on its own completion.
+     * What the compaction summarizer may spend on its own completion: the same
+     * rule as a turn (see {@link #completionBudget}) applied to
+     * {@link Agent#DEFAULT_MAX_TOKENS}.
      *
      * <p>The summarizer asked for a flat {@link Agent#DEFAULT_MAX_TOKENS}
-     * whatever the window. That was harmless while the threshold was a literal
-     * 100,000 — on a small model compaction simply never fired — and card 263 is
-     * what makes the path reachable: a model loaded at 8,192 now compacts at
-     * 5,734, and the one call the reserve exists to hold would ask for four
-     * times the entire window. Compaction never throws, so the visible outcome
-     * would have been an {@code ErrorEvent} roughly every other turn.</p>
-     *
-     * <p><b>The budget IS the reserve, and since card 366 it is the MEASURED
-     * reserve</b> — the window minus the threshold, not the share expressed a
-     * second time. Three quarters made the two identical (a third of the
-     * threshold is the last quarter); 30 over 70 does not, and a budget derived
-     * from the fraction again would have drifted from the room actually left. It
-     * is only ever clamped DOWN, and only where a window is known: a run whose
-     * window is unknown, or whose threshold the operator typed, keeps the full
-     * budget, because neither says anything about how much room is left.</p>
+     * whatever the window until card 263 made compaction reachable on a model
+     * loaded at 8,192 (it compacts at 5,734), where that budget is four times
+     * the entire window.</p>
      *
      * @param derived what {@link #derive(Integer, int, String)} decided for this run
      * @return the {@code maxTokens} for the summarizer's request
      */
     public static int summaryBudget(Derived derived) {
+        return completionBudget(derived, Agent.DEFAULT_MAX_TOKENS);
+    }
+
+    /**
+     * The completion budget one request of a run is sent with (card 488):
+     * {@code min(maxTokens, window - threshold)}, from the derivation the run
+     * already compacts by.
+     *
+     * <p>The turn loop and the compaction summarizer both read this method,
+     * so every provider adapter receives a clamped {@code maxTokens} and none
+     * computes the window on its own. An adapter's own ceiling (the
+     * OpenAI-compatible path caps at 16,000) still applies on top.</p>
+     *
+     * <p>It only ever takes budget away, and only where a window is known:
+     * the loaded window, the published one or the session window. A run whose
+     * window is unknown keeps {@code maxTokens}. So does a run under an
+     * explicit {@code compactionThreshold}: its window is the published one and
+     * never a loaded instance, and the operator may set the threshold at or
+     * above it on purpose, where a clamp would leave every answer at the
+     * floor.</p>
+     *
+     * <p>A reserve below {@link #MIN_COMPLETION_TOKENS}, zero and negative
+     * included, is sent as that floor, unless {@code maxTokens} is lower
+     * still.</p>
+     *
+     * @param derived   what {@link #derive} decided for this turn
+     * @param maxTokens the configured completion budget
+     * @return the completion budget to put on the request
+     */
+    public static int completionBudget(Derived derived, int maxTokens) {
         boolean fromWindow = derived.source() == Source.WINDOW || derived.source() == Source.MODEL
                 || derived.source() == Source.WINDOW_OVERRIDE;
         if (!fromWindow || derived.window() <= 0) {
-            return Agent.DEFAULT_MAX_TOKENS;
+            return maxTokens;
         }
         long reserve = (long) derived.window() - derived.tokens();
-        return (int) Math.min(Agent.DEFAULT_MAX_TOKENS,
-                Math.max(MIN_SUMMARY_TOKENS, reserve));
+        return (int) Math.min(maxTokens, Math.max(MIN_COMPLETION_TOKENS, reserve));
     }
 
     /**

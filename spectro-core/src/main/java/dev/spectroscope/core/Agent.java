@@ -102,7 +102,9 @@ public final class Agent {
         return options.maxTurns() != null ? options.maxTurns() : DEFAULT_MAX_TURNS;
     }
 
-    /** The completion budget one turn spends when nothing configures it.
+    /** The completion budget one turn spends when nothing configures it, before
+     *  the window clamp of card 488
+     *  ({@link dev.spectroscope.core.session.CompactionThreshold#completionBudget}).
      *  Public because {@link dev.spectroscope.core.session.CompactionThreshold}
      *  is defined AGAINST it (card 263): the share of the context window kept
      *  back has to hold one of these, and a second copy of the number in the
@@ -735,8 +737,11 @@ public final class Agent {
                 String systemForTurn = statedGoal == null
                         ? options.systemPrompt()
                         : options.systemPrompt() + statedGoal.promptSection();
+                // Card 488: the completion fits the window this turn compacts
+                // by, for every provider and every agent, children included.
                 ProviderRequest request = new ProviderRequest(systemForTurn,
-                        fenced.messages(), advertisedTools, maxTokens,
+                        fenced.messages(), advertisedTools,
+                        CompactionThreshold.completionBudget(compaction, maxTokens),
                         effectiveReasoning(), effortOverride, signal, tap);
 
                 // Card 270: this is the one place every exchange of every agent
