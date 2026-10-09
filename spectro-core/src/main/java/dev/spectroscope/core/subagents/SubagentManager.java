@@ -473,7 +473,7 @@ public final class SubagentManager {
         // (try-with-resources below) also cancels the child signal per the
         // stage-3 contract, so the signal state alone cannot distinguish
         // "finished normally" from "out of budget".
-        long graceMs = budget.firstTokenGraceMs(liveCount());
+        long graceMs = firstTokenGraceMs(); // card 490: the one reader of the grace
         long runBudgetMs = budget.runBudgetMs();
         // Card 394: the third brake, and not a clock. It is read against the
         // running usage sum in the forwarder loop below and cuts through the
