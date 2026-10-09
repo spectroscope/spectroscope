@@ -114,7 +114,7 @@ Rules the validator enforces (every violation names the node or key):
 3. Every node that is not an `end` has exactly one arrow per outcome, and no arrow carries an outcome the node does not have. A `step` has one outgoing arrow with no `on`.
 4. Every arrow that leads back to a node that can reach its source passes through a decision with `max_rounds` (every loop has a ceiling).
 5. `model` names a key of `models`; `check` names a key of `checks`; `consumes` and `produces` name keys of `documents`; `skills` entries are non empty strings (whether they are installed is a load time finding, not a validation error).
-6. `permission` is never `extended`. Keys named `apiKey`, `key`, `baseUrl`, `endpoint`, `address`, `hooks`, `mcpServers`, `autoApprove` anywhere in the file are refused with their path (a shared folder may not route material or widen rights, D3).
+6. `permission` is never `extended`. Keys named `apiKey`, `key`, `baseUrl`, `endpoint`, `address`, `hooks`, `mcpServers`, `autoApprove` anywhere in the file except as the list names of the `contents` object (whose entries are paths, rule 8) are refused with their path (a shared folder may not route material or widen rights, D3).
 7. `vars` used in a `command` check are declared; locations use only declared vars plus `date`, `slug`, `n`.
 8. Each path in `contents` exists under the folder and stays inside it (no `..`, no absolute path, no symlink escape).
 

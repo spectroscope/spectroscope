@@ -16,7 +16,7 @@ import java.util.Set;
  * walked by hand rather than bound, so a finding can carry the JSON path a
  * person can go and look at. Refused names are searched in the whole tree,
  * including {@code vars} and the inside of unknown fields, before anything
- * is read.
+ * is read. The one exemption is the list names of {@code contents}.
  */
 public final class PlaybookReader {
 
@@ -76,14 +76,20 @@ public final class PlaybookReader {
         }
     }
 
-    /** Names every refused field at any depth, objects and arrays alike. */
+    /**
+     * Names every refused field at any depth, objects and arrays alike. The
+     * list names of the top level {@code contents} object are exempt: there
+     * {@code hooks} is a list of paths, which rule 8 checks. Their values are
+     * still walked.
+     */
     private void refuseAnywhere(JsonNode node, String path) {
         if (node.isObject()) {
             Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> e = fields.next();
                 String at = path.isEmpty() ? e.getKey() : path + "." + e.getKey();
-                if (REFUSED.contains(e.getKey())) {
+                boolean contentsList = "contents".equals(path) && CONTENTS.contains(e.getKey());
+                if (REFUSED.contains(e.getKey()) && !contentsList) {
                     findings.add(new Finding(at, "refused: a playbook may not carry keys, addresses, hooks or MCP servers"));
                     refused = true;
                 }

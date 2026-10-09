@@ -81,6 +81,31 @@ class PlaybookReaderTest {
     }
 
     @Test
+    void hooksInsideContentsIsAListOfPathsAndReadsClean() {
+        String json = MINIMAL.replace("\"contents\": { \"skills\": [\"skills/spectropowers\"] }",
+                "\"contents\": { \"skills\": [\"skills/spectropowers\"], \"hooks\": [\"hooks/hooks.json\"] }");
+        PlaybookReader.Read read = PlaybookReader.read(json);
+        assertEquals(List.of(), read.findings());
+        assertNotNull(read.playbook());
+        assertEquals(List.of("hooks/hooks.json"), read.playbook().contents().hooks());
+    }
+
+    @Test
+    void hooksOutsideContentsIsStillRefused() {
+        String atTop = MINIMAL.replace("\"start\": \"write\",", "\"hooks\": [\"hooks/hooks.json\"], \"start\": \"write\",");
+        PlaybookReader.Read top = PlaybookReader.read(atTop);
+        assertNull(top.playbook());
+        assertTrue(top.findings().stream().anyMatch(f -> f.path().equals("hooks")
+                && f.message().contains("refused")), top.findings().toString());
+        String inContents = MINIMAL.replace("\"contents\": { \"skills\": [\"skills/spectropowers\"] }",
+                "\"contents\": { \"skills\": [\"skills/spectropowers\"], \"baseUrl\": \"http://h\" }");
+        PlaybookReader.Read contents = PlaybookReader.read(inContents);
+        assertNull(contents.playbook());
+        assertTrue(contents.findings().stream().anyMatch(f -> f.path().equals("contents.baseUrl")
+                && f.message().contains("refused")), contents.findings().toString());
+    }
+
+    @Test
     void splitAndJoinAreNotSupportedInVersionOne() {
         String json = MINIMAL.replace("{ \"kind\": \"end\", \"id\": \"done\", \"result\": \"done\" }",
                 "{ \"kind\": \"end\", \"id\": \"done\", \"result\": \"done\" }, { \"kind\": \"split\", \"id\": \"s\", \"join\": \"j\" }");
