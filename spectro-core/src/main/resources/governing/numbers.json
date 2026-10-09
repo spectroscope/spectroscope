@@ -810,6 +810,66 @@
     "explanation" : "A modest reasoning budget, capped so maxTokens always stays strictly larger."
   },
   {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "ABORT_SETTLE_MS",
+    "value" : "5000",
+    "expression" : "5_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a cancelled turn waits for the runtime's idle before it returns. Card 478 measured the idle 9 ms after abort; this is a ceiling, not that."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "CALL_TIMEOUT_S",
+    "value" : "60",
+    "expression" : "60",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long one request to the runtime may take before the stream fails."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "MAX_CONVERSATIONS",
+    "value" : "8",
+    "expression" : "8",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Runtime sessions kept open at once; the least recently used one closes first. Nobody has measured how many sessions one runtime holds well."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "PING_TIMEOUT_MS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "A ping slower than this counts as a busy runtime, not a dead one."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "PROBE_AFTER_MS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "A silence this long during a stream makes the provider ping the runtime, which is how a runtime that died is told from a model that is thinking."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "START_TIMEOUT_S",
+    "value" : "60",
+    "expression" : "60",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long the runtime may take to start. Card 478 measured 574 and 752 ms."
+  },
+  {
     "owner" : "dev.spectroscope.core.provider.ExchangeLatency",
     "field" : "WINDOW",
     "value" : "16",

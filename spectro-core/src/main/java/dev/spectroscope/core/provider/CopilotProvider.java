@@ -33,6 +33,7 @@ import com.github.copilot.rpc.ToolDefinition;
 import com.github.copilot.rpc.ToolInvocation;
 import com.github.copilot.rpc.ToolResultObject;
 import com.github.copilot.rpc.ToolSet;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.provider.LlmProvider.PStop.StopReason;
 import dev.spectroscope.core.wire.LlmWireTap;
 import org.slf4j.Logger;
@@ -115,14 +116,37 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-    /** Runtime sessions kept open at once; the least recently used one closes first. */
+    /**
+     * Runtime sessions kept open at once; the least recently used one closes
+     * first. Nobody has measured how many sessions one runtime holds well.
+     */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     private static final int MAX_CONVERSATIONS = 8;
-    /** A silence this long makes the stream ask whether the runtime is still there. */
+
+    /**
+     * A silence this long during a stream makes the provider ping the runtime,
+     * which is how a runtime that died is told from a model that is thinking.
+     */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
     private static final long PROBE_AFTER_MS = 500;
+
+    /** A ping slower than this counts as a busy runtime, not a dead one. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
     private static final long PING_TIMEOUT_MS = 2_000;
-    /** How long a cancelled turn waits for the runtime's idle before it returns. */
+
+    /**
+     * How long a cancelled turn waits for the runtime's idle before it returns.
+     * Card 478 measured the idle 9 ms after abort; this is a ceiling, not that.
+     */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
     private static final long ABORT_SETTLE_MS = 5_000;
+
+    /** How long the runtime may take to start. Card 478 measured 574 and 752 ms. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.SECONDS)
     private static final long START_TIMEOUT_S = 60;
+
+    /** How long one request to the runtime may take before the stream fails. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.SECONDS)
     private static final long CALL_TIMEOUT_S = 60;
 
     private final Options options;
@@ -148,6 +172,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     @FunctionalInterface
     public interface TokenSource {
         /**
+         * Returns a token for the runtime. Called on the SDK's thread.
+         *
          * @param host   the GitHub host the runtime authenticates against
          * @param reason {@code initial} or {@code refresh}, as the runtime says it
          * @return the token and how many seconds it stays valid
