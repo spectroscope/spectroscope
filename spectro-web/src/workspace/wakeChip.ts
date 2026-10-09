@@ -43,7 +43,8 @@ export function headerWorkspace(input: {
   if (input.viewingLive) return input.liveWorkspace;
   if (!input.continuable || input.replayId === null) return null;
   const woken = input.woken;
-  if (woken !== null && woken.sessionId === input.replayId && (woken.resolved || folderGone(woken))) return woken;
+  if (woken !== null && woken.sessionId === input.replayId && (woken.resolved || folderGone(woken)))
+    return woken;
   return storedChipWorkspace(input.storedCwd);
 }
 
