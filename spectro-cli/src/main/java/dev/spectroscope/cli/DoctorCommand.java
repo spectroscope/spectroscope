@@ -239,7 +239,7 @@ public final class DoctorCommand implements Callable<Integer> {
                     // endpointFor also honours lmstudio's own address (card 193).
                     String endpoint = config.endpointFor(config.provider());
                     emit(openAiCompatLines(config.provider(), endpoint,
-                            probe(endpoint + "/v1/models"),
+                            probe(modelsUrl(endpoint)),
                             SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(config.provider()))));
                 }
                 case LLAMACPP -> {
@@ -1195,6 +1195,13 @@ public final class DoctorCommand implements Callable<Integer> {
         } catch (Exception nothingLearned) {
             return 0;
         }
+    }
+
+    /** The model list URL the SERVER dials, so the doctor and the picker probe
+     *  the same door: a base that already ends in a version segment is not
+     *  doubled. */
+    static String modelsUrl(String endpoint) {
+        return endpoint + dev.spectroscope.core.provider.OpenAiCompatProvider.compatPath(endpoint, "/models");
     }
 
     /**
