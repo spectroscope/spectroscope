@@ -114,7 +114,11 @@ describe("the provider overview", () => {
       },
     ]);
     const html = renderToStaticMarkup(<ProviderStatusSettings anchorId="providers" />);
-    expect(html).toContain(t(currentLang(), "prov.keyYes"));
+    const lang = currentLang();
+    // Read in the row's own cell: the hint above the table uses the same word.
+    const row = rowOf(html, "openai");
+    expect(row).toContain(`<td>${t(lang, "prov.keyYes")}</td>`);
+    expect(row).not.toContain(`<td>${t(lang, "prov.keyNo")}</td>`);
     expect(html).not.toMatch(/sk-[A-Za-z0-9]/);
   });
 
