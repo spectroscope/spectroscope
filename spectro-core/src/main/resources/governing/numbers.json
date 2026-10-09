@@ -1201,16 +1201,6 @@
   },
   {
     "owner" : "dev.spectroscope.core.tools.StandardTools",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
-  },
-  {
-    "owner" : "dev.spectroscope.core.tools.StandardTools",
     "field" : "MAX_SOURCE_IMAGE_BYTES",
     "value" : "52428800",
     "expression" : "50L * 1024 * 1024",
@@ -1237,7 +1227,7 @@
     "kind" : "FIXED",
     "unit" : "CHARACTERS",
     "key" : "",
-    "explanation" : "The output clamp every tool/hook result shares."
+    "explanation" : "The upper bound of the clamp on one tool or hook result, in characters.\n\nA tool result takes its clamp from maxOutputChars(int), which lowers this value on a small window (card 489). A hook result keeps it as it is: a hook runs around a tool call and is handed no window."
   },
   {
     "owner" : "dev.spectroscope.core.tools.UpdatePlanTool",
@@ -1258,16 +1248,6 @@
     "unit" : "COUNT",
     "key" : "",
     "explanation" : "A rejection is quoted back into the model's context, and every key in it is model-supplied: without these bounds one confused step could carry a megabyte of prose as a key name and the tool result would carry it right back."
-  },
-  {
-    "owner" : "dev.spectroscope.core.tools.WebFetchTool",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
   },
   {
     "owner" : "dev.spectroscope.core.tools.WebFetchTool",
@@ -1348,16 +1328,6 @@
     "unit" : "MILLISECONDS",
     "key" : "",
     "explanation" : "Virtual time granted to page JavaScript (ms) — this is what makes SPAs render."
-  },
-  {
-    "owner" : "dev.spectroscope.core.web.BrowsePageTool",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
   },
   {
     "owner" : "dev.spectroscope.core.web.BrowsePageTool",
@@ -1458,16 +1428,6 @@
     "unit" : "COUNT",
     "key" : "",
     "explanation" : "Hard ceiling on hits per search — more is noise in the context window."
-  },
-  {
-    "owner" : "dev.spectroscope.core.web.WebSearchTool",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
   },
   {
     "owner" : "dev.spectroscope.core.wire.BrowserWireRecorder",
