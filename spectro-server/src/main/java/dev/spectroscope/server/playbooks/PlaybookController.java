@@ -1,6 +1,7 @@
 package dev.spectroscope.server.playbooks;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
@@ -153,6 +154,54 @@ public class PlaybookController {
             disk = new byte[0];
         }
         return ResponseEntity.ok(EditorView.of(real, body, disk, workspaceOf(workspace, real), config()));
+    }
+
+    /**
+     * {@code PUT /api/playbooks/file?dir=&workspace=} with {@code {"baseHash", "playbook"}} : saves the draft as
+     * the folder's {@code playbook.json} in the canonical form. The fence answers first, then the size, then
+     * the body and the folder. 400 with the findings and nothing written while the draft has findings, 409
+     * with the disk hash when the file changed since {@code baseHash}.
+     */
+    @PutMapping(value = "/api/playbooks/file", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> putFile(@RequestParam("dir") String dir,
+                                     @RequestParam(value = "workspace", required = false) String workspace,
+                                     @RequestBody String body, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (body.getBytes(StandardCharsets.UTF_8).length > MAX_BODY_BYTES) {
+            return ResponseEntity.status(413).body(Map.of("message", "The draft is larger than 1 MB."));
+        }
+        JsonNode parsed;
+        try {
+            parsed = new ObjectMapper().readTree(body);
+        } catch (IOException notJson) {
+            return badRequest("The body is not JSON.");
+        }
+        String baseHash = text(parsed, "baseHash");
+        JsonNode playbook = parsed == null ? null : parsed.get("playbook");
+        if (baseHash.isEmpty() || playbook == null || !playbook.isObject()) {
+            return badRequest("A 'baseHash' and a 'playbook' object are required.");
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return badRequest("unknown folder");
+        }
+        try {
+            PlaybookFileWriter.Result result = PlaybookFileWriter.save(real, baseHash, playbook.toString(),
+                    workspaceOf(workspace, real), config());
+            if (result instanceof PlaybookFileWriter.Written written) {
+                return ResponseEntity.ok(written.view());
+            }
+            if (result instanceof PlaybookFileWriter.Refused refused) {
+                return ResponseEntity.badRequest().body(Map.of("findings", refused.findings()));
+            }
+            return ResponseEntity.status(409).body(Map.of("diskHash", ((PlaybookFileWriter.Changed) result).diskHash()));
+        } catch (IllegalArgumentException refused) {
+            return badRequest(refused.getMessage());
+        } catch (IOException failure) {
+            return ResponseEntity.status(500).body(Map.of("message", "Failed to write the playbook: " + failure.getMessage()));
+        }
     }
 
     /**
