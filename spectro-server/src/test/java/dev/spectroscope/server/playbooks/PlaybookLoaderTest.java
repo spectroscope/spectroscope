@@ -129,9 +129,13 @@ class PlaybookLoaderTest {
                 "\"skills\": [\"../outside\", \"skills/missing\", \"/etc\"] }"));
         Path ws = Files.createDirectories(tmp.resolve("ws"));
 
-        List<String> at = paths(PlaybookLoader.load(dir, ws, config()).findings());
+        List<Finding> findings = PlaybookLoader.load(dir, ws, config()).findings();
 
-        assertEquals(List.of("contents.skills[0]", "contents.skills[1]", "contents.skills[2]"), at);
+        assertEquals(List.of(
+                new Finding("contents.skills[0]", "leaves the playbook folder"),
+                new Finding("contents.skills[1]", "does not exist in the playbook folder"),
+                new Finding("contents.skills[2]", "an absolute path; contents paths are relative to the playbook folder")),
+                findings);
     }
 
     @Test
@@ -142,7 +146,8 @@ class PlaybookLoaderTest {
         Files.createSymbolicLink(dir.resolve("skills/escape"), outside);
         Path ws = Files.createDirectories(tmp.resolve("ws"));
 
-        assertEquals(List.of("contents.skills[0]"), paths(PlaybookLoader.load(dir, ws, config()).findings()));
+        assertEquals(List.of(new Finding("contents.skills[0]", "a link that leaves the playbook folder")),
+                PlaybookLoader.load(dir, ws, config()).findings());
     }
 
     @Test

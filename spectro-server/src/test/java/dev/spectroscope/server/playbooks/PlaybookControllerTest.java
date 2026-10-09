@@ -160,6 +160,8 @@ class PlaybookControllerTest {
         Path target = Files.createDirectories(tmp.resolve("target"));
         assertEquals(404, controller.copy("nope", body("dir", target.toString()), local()).getStatusCode().value());
         assertEquals(404, controller.copy("../spectro", body("dir", target.toString()), local()).getStatusCode().value());
+        // A folder inside a bundled playbook is not a playbook of its own.
+        assertEquals(404, controller.copy("spectro/skills", body("dir", target.toString()), local()).getStatusCode().value());
         try (var entries = Files.list(target)) {
             assertEquals(0, entries.count());
         }
