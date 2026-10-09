@@ -297,7 +297,7 @@ suite that never needs an API key.</p>
 <h2 id="ch-build-modules">Modules</h2>
 <table class="tbl">
   <tr><th>module</th><th>role</th><th>key facts</th></tr>
-  <tr><td><code>spectro-core</code></td><td>the headless library</td><td>java-library; Jackson is <code>api</code>, through its BOM (JsonNode appears in public contracts); the Anthropic SDK is <code>implementation</code> — no other class may import it; Spring <em>Framework</em> as a library (RestClient + HTTP interfaces); cron-utils</td></tr>
+  <tr><td><code>spectro-core</code></td><td>the headless library</td><td>java-library; Jackson is <code>api</code>, through its BOM (JsonNode appears in public contracts); the Anthropic SDK is <code>implementation</code> — no other class may import it; the Copilot SDK is <code>implementation</code> as well, used only by the Copilot provider, with its own Jackson family excluded; Spring <em>Framework</em> as a library (RestClient + HTTP interfaces); cron-utils</td></tr>
   <tr><td><code>spectro-cli</code></td><td>terminal face</td><td>application; picocli; Logback keeps the console WARN-quiet so the ANSI face stays clean and the diagnostics go to the log file; registers the <code>tour</code> task; stdin wired for the REPL</td></tr>
   <tr><td><code>spectro-server</code></td><td>web backend</td><td>Spring Boot 3.5.3 (only here); starters web + websocket; depends on core <em>and</em> cli; serves the built UI from <code>static/</code></td></tr>
   <tr><td><code>spectro-mcp-notes</code></td><td>example MCP server</td><td>standalone; Jackson only; its test spawns the real child JVM</td></tr>
@@ -310,6 +310,7 @@ suite that never needs an API key.</p>
 <table class="tbl dense">
   <tr><th>library</th><th>version</th><th></th></tr>
   <tr><td><code>com.anthropic:anthropic-java</code></td><td>2.34.0</td><td>owns SSE; client built with maxRetries(0)</td></tr>
+  <tr><td><code>com.github:copilot-sdk-java</code></td><td>1.0.20-preview.0</td><td>a preview release, MIT licence; the Copilot provider (macOS only) starts the Copilot runtime through it; its Jackson 2.22.2 family is excluded, so it runs on the BOM's 2.18.2</td></tr>
   <tr><td><code>com.fasterxml.jackson:jackson-bom</code></td><td>2.18.2</td><td>a platform, not a number: <code>jackson-databind</code> is declared under it with no version of its own and is the one <code>api</code> dependency</td></tr>
   <tr><td><code>info.picocli:picocli</code></td><td>4.7.6</td><td>CLI framework</td></tr>
   <tr><td><code>org.springframework:spring-web</code></td><td>6.2.8</td><td>Framework as library — no Boot in the core</td></tr>
