@@ -9,11 +9,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryNotEmptyException;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -26,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Stream;
 
 /**
  * The shelf a marketplace install copies from (card 182): four vendored skill
@@ -351,27 +349,29 @@ public class SkillCatalogue {
                     Map.of("files", count, "bytes", bytes));
         }
 
-        Path staging = stagingRoot.resolve(entry.name() + "-" + System.nanoTime());
+        Path staged = null;
         try {
-            Files.createDirectories(staging);
+            List<StagedInstall.FileCopy> copies = new ArrayList<>();
+            Set<String> own = new LinkedHashSet<>();
             for (FileRef file : files) {
                 String rel = relativeAfter(file.rel(), entry.dir() + "/");
                 if (rel == null || rel.isEmpty()) {
                     return failure("A catalogue file sits outside its own skill: " + file.rel());
                 }
-                Path destination = staging.resolve(rel).normalize();
-                if (!destination.startsWith(staging)) {
-                    return failure("A catalogue file would land outside the skill: " + rel);
-                }
-                Files.createDirectories(destination.getParent());
-                copy(file.resource(), destination);
+                copies.add(new StagedInstall.FileCopy(rel, new Shelved(file.resource())));
+                own.add(rel);
             }
-            copy(licence, free(staging, LICENCE_FILE, entry.pack()));
-            copy(provenance, free(staging, PROVENANCE_FILE, entry.pack()));
-            Files.writeString(staging.resolve(INSTALL_RECORD), installRecord(entry), StandardCharsets.UTF_8);
+            copies.add(new StagedInstall.FileCopy(free(own, LICENCE_FILE, entry.pack()), new Shelved(licence)));
+            copies.add(new StagedInstall.FileCopy(free(own, PROVENANCE_FILE, entry.pack()), new Shelved(provenance)));
+            byte[] record = installRecord(entry).getBytes(StandardCharsets.UTF_8);
+            copies.add(new StagedInstall.FileCopy(INSTALL_RECORD, () -> new ByteArrayInputStream(record)));
 
-            Files.createDirectories(target.getParent());
-            Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE);
+            staged = StagedInstall.build(stagingRoot, entry.name(), copies, this::write);
+            if (StagedInstall.promote(staged, target) == StagedInstall.Outcome.TAKEN) {
+                // The race behind the caller's pre-check: somebody created the folder
+                // between the look and the move. The pre-check's answer still holds.
+                return taken(entry);
+            }
             return new InstallResult(Status.INSTALLED, "", Map.of(
                     "name", entry.name(),
                     "pack", entry.pack(),
@@ -379,16 +379,34 @@ public class SkillCatalogue {
                     "bytes", bytes,
                     "licence", entry.licence(),
                     "commit", entry.commit()));
-        } catch (FileAlreadyExistsException | DirectoryNotEmptyException taken) {
-            // The race behind the caller's pre-check: somebody created the folder
-            // between the look and the move. The pre-check's answer still holds.
-            return new InstallResult(Status.TAKEN, "That name is taken — delete it first.",
-                    Map.of("name", entry.name()));
+        } catch (StagedInstall.OutsideFolder outside) {
+            return failure("A catalogue file would land outside the skill: " + outside.rel());
         } catch (IOException | RuntimeException failure) {
             return failure(String.valueOf(failure.getMessage()));
         } finally {
-            deleteTree(staging);
-            deleteIfEmpty(stagingRoot);
+            StagedInstall.discard(staged, stagingRoot);
+        }
+    }
+
+    private static InstallResult taken(Entry entry) {
+        return new InstallResult(Status.TAKEN, "That name is taken — delete it first.",
+                Map.of("name", entry.name()));
+    }
+
+    /** A catalogue resource as a staged file's source, so {@link #write} can hand it to {@link #copy}. */
+    private record Shelved(Resource resource) implements StagedInstall.Source {
+        @Override
+        public InputStream open() throws IOException {
+            return resource.getInputStream();
+        }
+    }
+
+    /** Writes one staged file: a catalogue resource through the {@link #copy} seam, the record as bytes. */
+    private void write(StagedInstall.FileCopy file, Path destination) throws IOException {
+        if (file.source() instanceof Shelved shelved) {
+            copy(shelved.resource(), destination);
+        } else {
+            StagedInstall.STREAM.copy(file, destination);
         }
     }
 
@@ -425,16 +443,19 @@ public class SkillCatalogue {
      * taken. No catalogue skill ships a LICENSE or PROVENANCE.json of its own
      * today, but if one ever does, the pack's licence still has to travel —
      * overwriting it would drop exactly the file MIT requires to be there.
+     *
+     * <p>Decided from the skill's own relative paths before anything is staged:
+     * a name is taken when a file has it, or when a folder of that name holds one.</p>
      */
-    private static Path free(Path staging, String fileName, String pack) {
-        Path plain = staging.resolve(fileName);
-        if (!Files.exists(plain)) {
-            return plain;
+    private static String free(Set<String> own, String fileName, String pack) {
+        boolean taken = own.stream().anyMatch(rel -> rel.equals(fileName) || rel.startsWith(fileName + "/"));
+        if (!taken) {
+            return fileName;
         }
         int dot = fileName.lastIndexOf('.');
-        return staging.resolve(dot < 0
+        return dot < 0
                 ? fileName + "." + pack
-                : fileName.substring(0, dot) + "." + pack + fileName.substring(dot));
+                : fileName.substring(0, dot) + "." + pack + fileName.substring(dot);
     }
 
     private static String installRecord(Entry entry) throws IOException {
@@ -451,28 +472,5 @@ public class SkillCatalogue {
 
     private static InstallResult failure(String message) {
         return new InstallResult(Status.FAILED, message, Map.of());
-    }
-
-    private static void deleteTree(Path root) {
-        if (!Files.exists(root)) {
-            return;
-        }
-        try (Stream<Path> walk = Files.walk(root)) {
-            for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
-            }
-        } catch (IOException stubborn) {
-            log.warn("could not clear the staging directory {} ({})", root, stubborn.toString());
-        }
-    }
-
-    private static void deleteIfEmpty(Path dir) {
-        try (Stream<Path> entries = Files.list(dir)) {
-            if (entries.findAny().isEmpty()) {
-                Files.deleteIfExists(dir);
-            }
-        } catch (IOException absentOrBusy) {
-            // an absent or non-empty staging root is fine — another install may own it
-        }
     }
 }
