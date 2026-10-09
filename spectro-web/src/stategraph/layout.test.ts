@@ -201,7 +201,11 @@ describe("placement", () => {
   it("moves every later rank by the extra gap it is given", () => {
     const topo = {
       entry: "a",
-      nodes: [{ id: "a", label: "a" }, { id: "b", label: "b" }, { id: "c", label: "c" }],
+      nodes: [
+        { id: "a", label: "a" },
+        { id: "b", label: "b" },
+        { id: "c", label: "c" },
+      ],
       edges: [
         { from: "a", to: "b", kind: "direct" as const },
         { from: "b", to: "c", kind: "direct" as const },
