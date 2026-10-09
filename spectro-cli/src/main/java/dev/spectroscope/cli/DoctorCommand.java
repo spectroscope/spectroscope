@@ -258,8 +258,9 @@ public final class DoctorCommand implements Callable<Integer> {
             }
         }
 
-        // Card 497: the Copilot runtime, on every run. The lookup never takes a
-        // program from inside the launch folder, which is the workspace here.
+        // Card 497: the Copilot runtime, on every run. The launch folder is the
+        // workspace here: the lookup takes no program from inside it, unless it
+        // is the home folder or above it.
         CopilotRuntime.Lookup copilot = CopilotRuntime.find(cwd);
         Optional<String> copilotVersion = copilot.isFound()
                 ? CopilotRuntime.version(CopilotRuntime.launch(copilot.path(), System.getenv(), userHome()),

@@ -39,7 +39,10 @@ import java.util.regex.Pattern;
  *   <li>{@code COPILOT_CLI_PATH}, the SDK's own override and the user's explicit
  *       choice. When it is set and unusable the lookup says so and stops; it
  *       never hands out a different runtime instead.</li>
- *   <li>Homebrew: {@code /opt/homebrew/bin}, then {@code /usr/local/bin}.</li>
+ *   <li>Homebrew: {@code /opt/homebrew/bin}, then {@code /usr/local/bin}. A
+ *       file there that does not link into Homebrew's Caskroom or Cellar is
+ *       reported as a standalone file, since the install script run as root
+ *       writes {@code /usr/local/bin} too.</li>
  *   <li>An npm global install: {@code <prefix>/bin}, with the prefix from
  *       {@code NPM_CONFIG_PREFIX} or the {@code prefix} line of
  *       {@code ~/.npmrc}. npm with Homebrew's node installs into the Homebrew
@@ -52,7 +55,12 @@ import java.util.regex.Pattern;
  * </ol>
  *
  * <p>No candidate may resolve to a file inside the workspace folder, so an agent
- * that writes a program into its workspace cannot make the app run it.
+ * that writes a program into its workspace cannot make the app run it. When the
+ * only runtimes found lie there, the lookup answers {@link Status#REJECTED} and
+ * names them. A workspace that is the home folder, or contains it, is not a
+ * fence: the per-user install folders ({@code ~/.local/bin}, an npm prefix under
+ * the home folder) lie inside it, and an agent that can write there can already
+ * write the shell start files and launch agents the system runs.
  *
  * <p>macOS only. On every other platform the lookup answers
  * {@link Status#UNSUPPORTED} without looking.
@@ -82,9 +90,12 @@ public final class CopilotRuntime {
     public static final List<String> HOMEBREW_DIRS = List.of("/opt/homebrew/bin", "/usr/local/bin");
 
     /**
-     * Variables that override the runtime's stored login. They are removed from
-     * the child's environment, so credentials reach the runtime only the way the
-     * provider passes them.
+     * The three variables that override the runtime's stored GitHub login.
+     * {@link #launch} removes them, so a token in the app's environment does not
+     * decide which GitHub account the runtime uses. Every other variable passes
+     * through unchanged, as it would for a {@code copilot} started from a
+     * terminal; that includes proxy and certificate settings, and also other
+     * credentials such as provider API keys.
      */
     public static final List<String> TOKEN_VARIABLES =
             List.of("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN");
@@ -100,7 +111,11 @@ public final class CopilotRuntime {
         FOUND,
         /** No runtime in any place searched. */
         NOT_INSTALLED,
-        /** {@code COPILOT_CLI_PATH} names a file that cannot be used. */
+        /**
+         * A runtime cannot be used: {@code COPILOT_CLI_PATH} names a file that
+         * cannot be used, or every runtime found lies inside the workspace
+         * folder.
+         */
         REJECTED,
         /** Not macOS. */
         UNSUPPORTED
@@ -110,12 +125,18 @@ public final class CopilotRuntime {
     public enum Source {
         /** The {@code COPILOT_CLI_PATH} variable. */
         COPILOT_CLI_PATH("COPILOT_CLI_PATH"),
-        /** A Homebrew folder holding the Homebrew cask. */
+        /** A Homebrew folder whose entry links into Homebrew's Caskroom or Cellar. */
         HOMEBREW("Homebrew"),
         /** An npm global install. */
         NPM_GLOBAL("npm global"),
         /** A folder on the tool PATH. */
-        PATH("PATH");
+        PATH("PATH"),
+        /**
+         * A plain file in a Homebrew folder that Homebrew did not put there,
+         * such as the install script run as root, which writes
+         * {@code /usr/local/bin}.
+         */
+        STANDALONE("standalone file");
 
         private final String label;
 
@@ -166,6 +187,22 @@ public final class CopilotRuntime {
          */
         public boolean isFound() {
             return status == Status.FOUND;
+        }
+
+        /**
+         * The runtime path for the provider's {@code cliPath}, or the reason
+         * there is none.
+         *
+         * @return the path as found
+         * @throws IllegalStateException unless {@link Status#FOUND}, with a
+         *         message such as {@code "copilot runtime: not installed. Install
+         *         it with: brew install --cask copilot-cli"}
+         */
+        public String requirePath() {
+            if (status != Status.FOUND) {
+                throw new IllegalStateException("copilot runtime: " + detail);
+            }
+            return path.toString();
         }
     }
 
@@ -392,6 +429,10 @@ public final class CopilotRuntime {
                     "not supported on this platform (macOS only)");
         }
         Path fence = realFolder(workspace);
+        Path home = realFolder(environment.home());
+        if (fence != null && home != null && home.startsWith(fence)) {
+            fence = null;
+        }
 
         String chosen = environment.copilotCliPath();
         if (chosen != null && !chosen.isBlank()) {
@@ -413,6 +454,7 @@ public final class CopilotRuntime {
             candidates.add(new Candidate(dir, Source.PATH));
         }
 
+        List<Path> fenced = new ArrayList<>();
         for (Candidate candidate : candidates) {
             String folder = trimSlashes(candidate.folder());
             if (!searched.add(folder)) {
@@ -428,15 +470,36 @@ public final class CopilotRuntime {
                 continue;
             }
             Optional<Path> real = realPath(file);
-            if (real.isEmpty() || inside(real.get(), fence)) {
+            if (real.isEmpty()) {
                 continue;
             }
-            Source source = real.get().toString().contains("/node_modules/") ? Source.NPM_GLOBAL : candidate.source();
+            if (inside(real.get(), fence)) {
+                fenced.add(file);
+                continue;
+            }
+            Source source = sourceOf(real.get(), candidate.source());
             return new Lookup(Status.FOUND, file, source, List.copyOf(searched),
                     "found at " + file + " (" + source.label() + ")");
         }
+        if (!fenced.isEmpty()) {
+            return new Lookup(Status.REJECTED, null, null, List.copyOf(searched),
+                    "found only inside the workspace folder " + fence + " ("
+                            + String.join(", ", fenced.stream().map(Path::toString).toList())
+                            + "), and a runtime is never taken from there. Install it with: " + INSTALL_LINE);
+        }
         return new Lookup(Status.NOT_INSTALLED, null, null, List.copyOf(searched),
                 "not installed. Install it with: " + INSTALL_LINE);
+    }
+
+    private static Source sourceOf(Path real, Source searchedAs) {
+        String text = real.toString();
+        if (text.contains("/node_modules/")) {
+            return Source.NPM_GLOBAL;
+        }
+        if (searchedAs == Source.HOMEBREW && !text.contains("/Caskroom/") && !text.contains("/Cellar/")) {
+            return Source.STANDALONE;
+        }
+        return searchedAs;
     }
 
     /**
@@ -588,11 +651,11 @@ public final class CopilotRuntime {
         return null;
     }
 
-    private static Path realFolder(Path workspace) {
-        if (workspace == null) {
+    private static Path realFolder(Path folder) {
+        if (folder == null || folder.toString().isEmpty()) {
             return null;
         }
-        return realPath(workspace).orElse(workspace.toAbsolutePath().normalize());
+        return realPath(folder).orElse(folder.toAbsolutePath().normalize());
     }
 
     private static Optional<Path> realPath(Path path) {

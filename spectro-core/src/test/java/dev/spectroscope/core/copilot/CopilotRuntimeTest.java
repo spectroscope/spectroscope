@@ -16,6 +16,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -33,7 +34,7 @@ class CopilotRuntimeTest {
 
     @Test
     void homebrewComesBeforeAnNpmPrefixAndBeforeThePath() throws IOException {
-        Path brew = executable(tmp.resolve("brew/bin"));
+        Path brew = caskInstall(tmp.resolve("brew"));
         Path npm = executable(tmp.resolve("npm/bin"));
         Path onPath = executable(tmp.resolve("onpath"));
 
@@ -73,6 +74,43 @@ class CopilotRuntimeTest {
 
         assertEquals(npm, lookup.path(), lookup.toString());
         assertEquals(CopilotRuntime.Source.NPM_GLOBAL, lookup.source());
+    }
+
+    @Test
+    void aTildePrefixInNpmrcIsExpandedAgainstTheHomeFolder() throws IOException {
+        // prefix=~/.npm-global is the form npm's own docs suggest for a user prefix
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Path npm = executable(home.resolve(".npm-global/bin"));
+        Path npmrc = home.resolve(".npmrc");
+        Files.writeString(npmrc, "prefix=~/.npm-global\n");
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env().npmrc(npmrc).build(), null);
+
+        assertEquals(npm, lookup.path(), lookup.toString());
+        assertEquals(CopilotRuntime.Source.NPM_GLOBAL, lookup.source());
+    }
+
+    @Test
+    void aPlainFileInAHomebrewFolderIsNotCalledHomebrew() throws IOException {
+        // the install script run as root also writes /usr/local/bin/copilot
+        Path plain = executable(tmp.resolve("usrlocal/bin"));
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env().homebrew(plain.getParent()).build(), null);
+
+        assertEquals(plain, lookup.path(), lookup.toString());
+        assertEquals(CopilotRuntime.Source.STANDALONE, lookup.source());
+        assertTrue(lookup.detail().endsWith("(standalone file)"), lookup.detail());
+    }
+
+    @Test
+    void aLinkIntoTheHomebrewCaskroomIsCalledHomebrew() throws IOException {
+        Path brew = caskInstall(tmp.resolve("brew"));
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env().homebrew(brew.getParent()).build(), null);
+
+        assertEquals(brew, lookup.path(), lookup.toString());
+        assertEquals(CopilotRuntime.Source.HOMEBREW, lookup.source());
+        assertTrue(lookup.detail().endsWith("(Homebrew)"), lookup.detail());
     }
 
     @Test
@@ -136,14 +174,41 @@ class CopilotRuntimeTest {
     // the security criterion: nothing from inside the workspace
 
     @Test
-    void aRuntimeInsideTheWorkspaceIsSkippedOnThePath() throws IOException {
+    void aRuntimeFoundOnlyInsideTheWorkspaceIsRejectedAndNamed() throws IOException {
         Path workspace = Files.createDirectories(tmp.resolve("workspace"));
         Path planted = executable(workspace.resolve("node_modules/.bin"));
 
         CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
                 .path(planted.getParent().toString()).build(), workspace);
 
-        assertEquals(CopilotRuntime.Status.NOT_INSTALLED, lookup.status(), lookup.toString());
+        assertEquals(CopilotRuntime.Status.REJECTED, lookup.status(), lookup.toString());
+        assertNull(lookup.path(), "the planted runtime is never handed out");
+        assertTrue(lookup.detail().contains(planted.toString()), "the skip is named: " + lookup.detail());
+        assertTrue(lookup.detail().contains("inside the workspace folder"), lookup.detail());
+    }
+
+    @Test
+    void aWorkspaceThatIsTheHomeFolderDoesNotHideAPerUserInstall() throws IOException {
+        // the install script's default for a non-root user is ~/.local/bin
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Path script = executable(home.resolve(".local/bin"));
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env().build(), home);
+
+        assertEquals(CopilotRuntime.Status.FOUND, lookup.status(), lookup.toString());
+        assertEquals(script, lookup.path());
+    }
+
+    @Test
+    void aWorkspaceAboveTheHomeFolderDoesNotHideAPerUserInstall() throws IOException {
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Path npm = executable(home.resolve(".npm-global/bin"));
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
+                .npmConfigPrefix(home.resolve(".npm-global").toString()).build(), tmp);
+
+        assertEquals(CopilotRuntime.Status.FOUND, lookup.status(), lookup.toString());
+        assertEquals(npm, lookup.path());
     }
 
     @Test
@@ -206,6 +271,24 @@ class CopilotRuntimeTest {
             assertFalse(CopilotRuntime.isSupportedPlatform(os), os);
         }
         assertTrue(CopilotRuntime.isSupportedPlatform(MAC));
+    }
+
+    // what the provider is handed
+
+    @Test
+    void theProviderGetsThePathOrAnErrorThatCarriesTheInstallLine() throws IOException {
+        Path onPath = executable(tmp.resolve("onpath"));
+        CopilotRuntime.Lookup found = CopilotRuntime.find(env().path(onPath.getParent().toString()).build(), null);
+        assertEquals(onPath.toString(), found.requirePath());
+
+        CopilotRuntime.Lookup missing = CopilotRuntime.find(env().build(), null);
+        IllegalStateException notInstalled = assertThrows(IllegalStateException.class, missing::requirePath);
+        assertEquals("copilot runtime: not installed. Install it with: " + CopilotRuntime.INSTALL_LINE,
+                notInstalled.getMessage());
+
+        CopilotRuntime.Lookup linux = CopilotRuntime.find(env().os("Linux").build(), null);
+        IllegalStateException unsupported = assertThrows(IllegalStateException.class, linux::requirePath);
+        assertEquals("copilot runtime: not supported on this platform (macOS only)", unsupported.getMessage());
     }
 
     // what the child gets
@@ -271,6 +354,13 @@ class CopilotRuntimeTest {
                 .home(tmp.resolve("home"))
                 .homebrewDirs(List.of())
                 .path("");
+    }
+
+    /** A Homebrew cask install: {@code <prefix>/bin/copilot} links into the Caskroom. */
+    private static Path caskInstall(Path prefix) throws IOException {
+        Path binary = script(prefix.resolve("Caskroom/copilot-cli/1.0.94/copilot"), "exit 0\n");
+        Path bin = Files.createDirectories(prefix.resolve("bin"));
+        return Files.createSymbolicLink(bin.resolve(CopilotRuntime.EXECUTABLE), binary);
     }
 
     private static Path executable(Path folder) throws IOException {
