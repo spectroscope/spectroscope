@@ -229,7 +229,6 @@ async function load(dir: string, workspace: string | null): Promise<boolean> {
  * @param workspace the workspace skills and providers resolve against
  */
 export async function openEditor(dir: string, workspace: string | null): Promise<void> {
-  if (state.open && state.dirty) return;
   if (!(await load(dir, workspace))) return;
   const view = state.view;
   if (!view || !view.editable || !view.document) return;
