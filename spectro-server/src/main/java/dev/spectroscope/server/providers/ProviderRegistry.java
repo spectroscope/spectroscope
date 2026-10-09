@@ -7,7 +7,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
 
 /**
  * Which providers are configured and which answer, for every surface that
@@ -38,6 +45,8 @@ public final class ProviderRegistry {
     public static final long LOCAL_TTL_MS = 30_000L;
     /** Time to live of a stored result for a {@code cloud} provider. */
     public static final long CLOUD_TTL_MS = 600_000L;
+    /** The whole round trip of one check, whatever the provider does with the connection. */
+    public static final long CHECK_BUDGET_MS = 5_000L;
 
     /** The credential form of a provider that authenticates with an API key. */
     public static final String CREDENTIAL_KEY = "key";
@@ -196,7 +205,8 @@ public final class ProviderRegistry {
     /**
      * Runs the lister for one provider and stores the result. A provider that
      * is built in or misses its credential or model file is returned as it
-     * reads, without a request. Task 3 bounds the call.
+     * reads, without a request. The call returns within {@link #CHECK_BUDGET_MS};
+     * a lister that has not answered by then is stored as {@code timeout}.
      *
      * @param provider the provider name
      * @param c        the config the address and key come from
@@ -207,9 +217,62 @@ public final class ProviderRegistry {
         if (!checkable(before)) {
             return before;
         }
-        ListResult result = lister.list(provider, c);
+        ListResult result = bounded(provider, c);
         stored.put(provider, new Stored(result, signature(provider, c), clock.getAsLong()));
         return row(provider, c);
+    }
+
+    /**
+     * Runs the lister on a virtual thread and gives up after the budget. The
+     * budget, not the HTTP read timeout, is the ceiling: a read timeout restarts
+     * with every byte, so a server that trickles bytes would hold the call
+     * open past it (the DockerPing pattern).
+     */
+    private ListResult bounded(String provider, SpectroConfig c) {
+        String endpoint = endpointOrNull(provider, c);
+        try (ExecutorService runner = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<ListResult> answer = runner.submit(() -> lister.list(provider, c));
+            try {
+                return answer.get(CHECK_BUDGET_MS, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException mute) {
+                answer.cancel(true);
+                return ListResult.failed("timeout", endpoint);
+            } catch (ExecutionException wrapped) {
+                return ListResult.failed("bad-answer", endpoint);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return ListResult.failed("timeout", endpoint);
+            }
+        }
+    }
+
+    /**
+     * Checks every row {@code which} accepts, side by side on virtual threads
+     * under one budget, and returns the rows.
+     *
+     * @param c     the config the addresses and keys come from
+     * @param which the rows to check; rows that cannot be checked are skipped
+     * @return every row after the checks
+     */
+    public List<ProviderRow> checkAll(SpectroConfig c, Predicate<ProviderRow> which) {
+        List<String> ids = rows(c).stream().filter(which).filter(ProviderRegistry::checkable)
+                .map(ProviderRow::id).toList();
+        try (ExecutorService runner = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<ProviderRow>> answers = new ArrayList<>();
+            for (String id : ids) {
+                answers.add(runner.submit(() -> check(id, c)));
+            }
+            for (Future<ProviderRow> answer : answers) {
+                try {
+                    answer.get(CHECK_BUDGET_MS + 500L, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException | ExecutionException ignored) {
+                    // check() already stored a timeout or a reason for this id
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        return rows(c);
     }
 
     static boolean checkable(ProviderRow row) {
