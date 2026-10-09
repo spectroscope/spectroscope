@@ -14,6 +14,7 @@ import dev.spectroscope.server.DotEnvSettings;
 import dev.spectroscope.server.leveling.ServerLeveling;
 import dev.spectroscope.server.providers.ListResult;
 import dev.spectroscope.server.providers.ModelLists;
+import dev.spectroscope.server.providers.ProviderRegistry;
 import dev.spectroscope.server.shell.HelperPtyProvider;
 import dev.spectroscope.server.shell.Shells;
 import dev.spectroscope.server.web.LocalOrigin;
@@ -569,6 +570,9 @@ public class SessionsController {
         } catch (Exception writeFailed) {
             return ResponseEntity.internalServerError().body(Map.of("error", "could not save the key"));
         }
+        // The registry's signature sees a key appear or vanish, not one key
+        // replaced by another, so a save drops the stored answer for that provider.
+        ProviderRegistry.shared().invalidate(provider);
         return ResponseEntity.ok(Map.of("saved", true, "provider", body.provider()));
     }
 
@@ -646,6 +650,12 @@ public class SessionsController {
             SpectroConfig.writeApiKey(name, value); // same writer, same 0600 file
         } catch (Exception writeFailed) {
             return ResponseEntity.internalServerError().body(Map.of("error", "could not save the setting"));
+        }
+        // A written name that is a provider's key variable drops that provider's stored answer.
+        for (String known : SpectroConfig.knownProviders()) {
+            if (name.equals(SpectroConfig.keyEnvFor(known))) {
+                ProviderRegistry.shared().invalidate(known);
+            }
         }
         // Honest about what just happened: the beans that read these are built
         // at boot, so the value is on disk and NOT in force until a restart.

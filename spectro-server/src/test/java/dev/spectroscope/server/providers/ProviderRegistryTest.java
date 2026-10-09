@@ -99,6 +99,21 @@ class ProviderRegistryTest {
     }
 
     @Test
+    void invalidatingOneProviderLeavesTheOthersStoredAnswerAlone() throws IOException {
+        // The key save routes call invalidate for the provider whose key they wrote;
+        // the positive half pins that the other providers keep what they measured.
+        writeUserSettings("{ \"ollamaBaseUrl\": \"http://127.0.0.1:11434\","
+                + " \"lmstudioBaseUrl\": \"http://127.0.0.1:1234\" }");
+        ProviderRegistry registry = new ProviderRegistry(
+                (p, c) -> ListResult.ok(List.of("m"), c.endpointFor(p)), now::get);
+        registry.check("ollama", config());
+        registry.check("lmstudio", config());
+        registry.invalidate("ollama");
+        assertEquals("configured", row(registry.rows(config()), "ollama").state());
+        assertEquals("reachable", row(registry.rows(config()), "lmstudio").state());
+    }
+
+    @Test
     void aCloudProviderWithoutAKeyNeedsAKeyAndIsNeverChecked() {
         assumeFalse(SpectroConfig.hasApiKey("OPENROUTER_API_KEY"),
                 "an OPENROUTER_API_KEY on this machine makes the provider keyed");
