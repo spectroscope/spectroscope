@@ -48,9 +48,18 @@ describe("the provider registry store", () => {
   it("keeps the rows it has when the server answers with an error", async () => {
     answer({ providers: [ollama] });
     await refreshProviders();
-    answer({}, 500);
+    answer({ providers: [] }, 500);
     await checkProviders("ollama");
     expect(rowFor("ollama")?.state).toBe("failed");
+  });
+
+  it("keeps the rows it has when the request itself is lost", async () => {
+    answer({ providers: [ollama] });
+    await refreshProviders();
+    fetchMock.mockRejectedValue(new Error("offline"));
+    await refreshProviders();
+    await checkProviders("all");
+    expect(providerRows().map((r) => r.id)).toEqual(["ollama"]);
   });
 
   it("starts empty and rowFor answers undefined for an unknown id", () => {
