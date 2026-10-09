@@ -205,4 +205,57 @@ class PlaybookControllerTest {
         assertEquals(List.of(), folders.read().folders());
         assertFalse(Files.exists(target.resolve("playbook.json")));
     }
+
+    private PlaybookController contentsController() {
+        return new PlaybookController(folders, FIXTURE_ROOT, new InstallLedger(tmp.resolve("home/playbook-installs.json")),
+                tmp.resolve("home/.spectro"), tmp.resolve("launch"));
+    }
+
+    @Test
+    void theContentsRouteAnswersAPreviewForARegisteredFolder() throws IOException {
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+
+        ResponseEntity<?> answered = contents.contents(a.toString(), null, local());
+
+        assertEquals(200, answered.getStatusCode().value());
+        PlaybookContents.Preview preview = (PlaybookContents.Preview) answered.getBody();
+        assertEquals("p", preview.playbook());
+        assertEquals(a.toRealPath().toString(), preview.dir());
+        assertEquals(List.of("skill spectropowers:brainstorming new"),
+                preview.items().stream().map(i -> i.kind() + " " + i.name() + " " + i.state()).toList());
+        assertEquals(List.of(), preview.findings());
+        JsonNode wire = mapper.valueToTree(answered.getBody());
+        assertEquals("spectropowers:brainstorming", wire.path("items").get(0).path("name").asText(null));
+        assertEquals(64, wire.path("contentsHash").asText("").length());
+    }
+
+    @Test
+    void theContentsRouteRefusesAnUnregisteredFolderAndAForeignCaller() throws IOException {
+        Path stranger = playbookFolder("stranger");
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+
+        assertEquals(400, contents.contents(stranger.toString(), null, local()).getStatusCode().value());
+        assertEquals(400, contents.contents("", null, local()).getStatusCode().value());
+        assertEquals(404, contents.contents(a.toString(), null, foreign()).getStatusCode().value());
+        assertEquals(404, contents.contents(a.toString(), null, crossSite()).getStatusCode().value());
+    }
+
+    @Test
+    void theContentsRouteNamesTheFindingsOfAPlaybookThatDoesNotReadInsteadOfFailing() throws IOException {
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+        Files.writeString(a.resolve("playbook.json"), "{ not json");
+
+        ResponseEntity<?> answered = contents.contents(a.toString(), null, local());
+
+        assertEquals(200, answered.getStatusCode().value());
+        PlaybookContents.Preview preview = (PlaybookContents.Preview) answered.getBody();
+        assertEquals(List.of(), preview.items());
+        assertFalse(preview.findings().isEmpty());
+    }
 }

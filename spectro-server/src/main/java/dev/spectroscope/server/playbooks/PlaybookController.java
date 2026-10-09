@@ -2,6 +2,9 @@ package dev.spectroscope.server.playbooks;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.playbook.Finding;
+import dev.spectroscope.core.playbook.PlaybookReader;
+import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.Resource;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -45,14 +49,31 @@ public class PlaybookController {
 
     private final PlaybookFolders folders;
     private final String bundleRoot;
+    private final InstallLedger ledger;
+    private final Path spectroHome;
+    private final Path launchDir;
 
     public PlaybookController() {
         this(PlaybookFolders.inHome(), BUNDLE_ROOT);
     }
 
     PlaybookController(PlaybookFolders folders, String bundleRoot) {
+        this(folders, bundleRoot, InstallLedger.inHome(),
+                Path.of(System.getProperty("user.home"), ".spectro"), Path.of(System.getProperty("user.dir")));
+    }
+
+    /**
+     * @param ledger      the install ledger, {@code ~/.spectro/playbook-installs.json}
+     * @param spectroHome {@code ~/.spectro}, where installed skills and hook scripts live
+     * @param launchDir   the launch directory, whose {@code .spectro/skills} is the project skill root
+     */
+    PlaybookController(PlaybookFolders folders, String bundleRoot, InstallLedger ledger, Path spectroHome,
+                       Path launchDir) {
         this.folders = folders;
         this.bundleRoot = bundleRoot;
+        this.ledger = ledger;
+        this.spectroHome = spectroHome;
+        this.launchDir = launchDir;
     }
 
     /** GET /api/playbooks?workspace= : the known folders and the one pinned to the workspace. */
@@ -108,6 +129,47 @@ public class PlaybookController {
         }
         Path ws = workspace == null || workspace.isBlank() ? real : Path.of(workspace);
         return ResponseEntity.ok(PlaybookLoader.load(real, ws, SpectroConfig.load(SpectroConfig.Overrides.none())));
+    }
+
+    /**
+     * {@code GET /api/playbooks/contents?dir=&workspace=} : what a registered folder brings (skills,
+     * commands, hooks, agents, workflows) with source, hash, state and reach, before anything is
+     * installed. Behind the same fence as the writes, because the answer carries the full text of
+     * the hook scripts. A playbook that does not read answers 200 with its findings and no items.
+     */
+    @GetMapping("/api/playbooks/contents")
+    public ResponseEntity<?> contents(@RequestParam("dir") String dir,
+                                      @RequestParam(value = "workspace", required = false) String workspace,
+                                      HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return badRequest("Not a registered playbook folder: " + dir);
+        }
+        Path ws = workspace == null || workspace.isBlank() ? null : Path.of(workspace);
+        SpectroConfig.Origin origin = SpectroConfig.loadResolved(SpectroConfig.Overrides.none(), launchDir, ws)
+                .origins().get("hooks");
+        String hooksOrigin = origin == null ? null : origin.winner();
+        PlaybookReader.Read read;
+        try {
+            read = PlaybookReader.read(Files.readString(real.resolve(PlaybookFolders.PLAYBOOK_FILE), StandardCharsets.UTF_8));
+        } catch (IOException unreadable) {
+            return ResponseEntity.ok(new PlaybookContents.Preview("", real.toString(), "", List.of(), 0, hooksOrigin,
+                    List.of(new Finding(PlaybookFolders.PLAYBOOK_FILE, "unreadable: " + unreadable.getMessage()))));
+        }
+        if (read.playbook() == null) {
+            return ResponseEntity.ok(new PlaybookContents.Preview("", real.toString(), "", List.of(), 0, hooksOrigin,
+                    read.findings()));
+        }
+        try {
+            Path projectSkills = SkillLibrary.defaultRoots(launchDir).get(1);
+            return ResponseEntity.ok(PlaybookContents.preview(real, read.playbook(), spectroHome, projectSkills,
+                    ledger, hooksOrigin));
+        } catch (IOException | IllegalStateException failed) {
+            return ResponseEntity.status(500).body(Map.of("message", "The contents could not be read: " + failed.getMessage()));
+        }
     }
 
     /**
