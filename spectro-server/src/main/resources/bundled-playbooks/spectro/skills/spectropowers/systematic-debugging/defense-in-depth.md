@@ -88,10 +88,10 @@ async function gitInit(directory: string) {
 
 When you find a bug:
 
-1. **Trace the data flow** - Where does bad value originate? Where used?
-2. **Map all checkpoints** - List every point data passes through
-3. **Add validation at each layer** - Entry, business, environment, debug
-4. **Test each layer** - Try to bypass layer 1, verify layer 2 catches it
+1. **Trace the data flow**: Where does bad value originate? Where used?
+2. **Map all checkpoints**: List every point data passes through
+3. **Add validation at each layer**: Entry, business, environment, debug
+4. **Test each layer**: Try to bypass layer 1, verify layer 2 catches it
 
 ## Example from Session
 

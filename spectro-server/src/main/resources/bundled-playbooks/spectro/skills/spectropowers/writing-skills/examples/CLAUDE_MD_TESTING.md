@@ -63,7 +63,7 @@ B) Just refactor it - you know what you're doing
 
 ## Documentation Variants to Test
 
-### NULL (Baseline - no skills doc)
+### NULL (Baseline: no skills doc)
 No mention of skills in CLAUDE.md at all.
 
 ### Variant A: Soft Suggestion
@@ -145,11 +145,11 @@ For each variant:
    - Does agent use skills if found?
    - Capture rationalizations if violated
 
-3. **Pressure test** - Add time/sunk cost/authority
+3. **Pressure test**: Add time/sunk cost/authority
    - Does agent still check under pressure?
    - Document when compliance breaks down
 
-4. **Meta-test** - Ask agent how to improve doc
+4. **Meta-test**: Ask agent how to improve doc
    - "You had the doc but didn't check. Why?"
    - "How could doc be clearer?"
 
@@ -177,7 +177,7 @@ For each variant:
 
 **Variant C:** Strong compliance but might feel too rigid
 
-**Variant D:** Balanced, but longer - will agents internalize it?
+**Variant D:** Balanced, but longer: will agents internalize it?
 
 ## Next Steps
 

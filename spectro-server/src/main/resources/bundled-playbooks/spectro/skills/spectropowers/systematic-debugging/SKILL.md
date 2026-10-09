@@ -127,7 +127,7 @@ You MUST complete each phase before proceeding to the next.
 
 2. **Compare Against References**
    - If implementing pattern, read reference implementation COMPLETELY
-   - Don't skim - read every line
+   - Don't skim: read every line
    - Understand the pattern fully before applying
 
 3. **Identify Differences**
@@ -209,9 +209,9 @@ You MUST complete each phase before proceeding to the next.
 
    **Discuss with your human partner before attempting more fixes**
 
-   This is NOT a failed hypothesis - this is a wrong architecture.
+   This is NOT a failed hypothesis: this is a wrong architecture.
 
-## Red Flags - STOP and Follow Process
+## Red Flags: STOP and Follow Process
 
 If you catch yourself thinking:
 - "Quick fix for now, investigate later"
@@ -233,11 +233,11 @@ If you catch yourself thinking:
 ## your human partner's Signals You're Doing It Wrong
 
 **Watch for these redirections:**
-- "Is that not happening?" - You assumed without verifying
-- "Will it show us...?" - You should have added evidence gathering
-- "Stop guessing" - You're proposing fixes without understanding
-- "Ultra-think this" - Question fundamentals, not just symptoms
-- "We're stuck?" (frustrated) - Your approach isn't working
+- "Is that not happening?": You assumed without verifying
+- "Will it show us...?": You should have added evidence gathering
+- "Stop guessing": You're proposing fixes without understanding
+- "Ultra-think this": Question fundamentals, not just symptoms
+- "We're stuck?" (frustrated): Your approach isn't working
 
 **When you see these:** STOP. Return to Phase 1.
 
@@ -278,6 +278,6 @@ If systematic investigation reveals issue is truly environmental, timing-depende
 
 These techniques are part of systematic debugging and available in this directory:
 
-- **`root-cause-tracing.md`** - Trace bugs backward through call stack to find original trigger
-- **`defense-in-depth.md`** - Add validation at multiple layers after finding root cause
-- **`condition-based-waiting.md`** - Replace arbitrary timeouts with condition polling
+- **`root-cause-tracing.md`**: Trace bugs backward through call stack to find original trigger
+- **`defense-in-depth.md`**: Add validation at multiple layers after finding root cause
+- **`condition-based-waiting.md`**: Replace arbitrary timeouts with condition polling

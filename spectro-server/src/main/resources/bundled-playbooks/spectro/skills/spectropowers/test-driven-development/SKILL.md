@@ -68,7 +68,7 @@ digraph tdd_cycle {
 }
 ```
 
-### RED - Write Failing Test
+### RED: Write Failing Test
 
 Write one minimal test showing what should happen.
 
@@ -110,7 +110,7 @@ Vague name, tests mock not code
 - Clear name
 - Real code (no mocks unless unavoidable)
 
-### Verify RED - Watch It Fail
+### Verify RED: Watch It Fail
 
 **MANDATORY. Never skip.**
 
@@ -127,7 +127,7 @@ Confirm:
 
 **Test errors?** Fix error, re-run until it fails correctly.
 
-### GREEN - Minimal Code
+### GREEN: Minimal Code
 
 Write simplest code to pass the test.
 
@@ -165,7 +165,7 @@ Over-engineered
 
 Don't add features, refactor other code, or "improve" beyond the test.
 
-### Verify GREEN - Watch It Pass
+### Verify GREEN: Watch It Pass
 
 **MANDATORY.**
 
@@ -182,7 +182,7 @@ Confirm:
 
 **Other tests fail?** Fix now.
 
-### REFACTOR - Clean Up
+### REFACTOR: Clean Up
 
 After green only:
 - Remove duplication
@@ -204,7 +204,7 @@ Next failing test for next feature.
 | **Shows intent** | Demonstrates desired API | Obscures what code should do |
 
 When writing or changing any test, read [writing-good-tests.md](writing-good-tests.md) for the rules that keep tests honest:
-- Name the production change that would make the test fail — before writing it
+- Name the production change that would make the test fail: before writing it
 - Assert on real behavior, never on mock behavior
 - Keep test-only code in test utilities, out of production classes
 - Understand a dependency's side effects before mocking it
@@ -214,18 +214,18 @@ When writing or changing any test, read [writing-good-tests.md](writing-good-tes
 | Excuse | Reality |
 |--------|---------|
 | "Too simple to test" | Simple code breaks. Test takes 30 seconds. |
-| "I'll test after" | Tests written after pass immediately — which proves nothing. They may test the wrong thing, test the implementation instead of the behavior, or miss the edge case you forgot. You never watched it fail, so you never proved it can catch the bug. Test-first forces that failure. |
-| "Tests after achieve same goals (spirit not ritual)" | Tests-after answer "what does this do?"; tests-first answer "what should this do?" Tests written after are biased by the code you already wrote — you verify the cases you remembered, not the ones you'd have discovered. Coverage without proof the tests work. |
+| "I'll test after" | Tests written after pass immediately: which proves nothing. They may test the wrong thing, test the implementation instead of the behavior, or miss the edge case you forgot. You never watched it fail, so you never proved it can catch the bug. Test-first forces that failure. |
+| "Tests after achieve same goals (spirit not ritual)" | Tests-after answer "what does this do?"; tests-first answer "what should this do?" Tests written after are biased by the code you already wrote: you verify the cases you remembered, not the ones you'd have discovered. Coverage without proof the tests work. |
 | "Already manually tested" | Manual testing is ad-hoc: no record of what you covered, no way to re-run it when the code changes, easy to forget cases under pressure. "Worked when I tried it" ≠ comprehensive. Automated tests run the same way every time. |
-| "Deleting X hours is wasteful" | Sunk cost fallacy — that time is already spent either way. The real choice: rewrite with TDD (high confidence) vs. keep it and bolt tests on after (low confidence, likely bugs). Keeping code you can't trust is the waste. |
+| "Deleting X hours is wasteful" | Sunk cost fallacy: that time is already spent either way. The real choice: rewrite with TDD (high confidence) vs. keep it and bolt tests on after (low confidence, likely bugs). Keeping code you can't trust is the waste. |
 | "Keep as reference, write tests first" | You'll adapt it. That's testing after. Delete means delete. |
 | "Need to explore first" | Fine. Throw away exploration, start with TDD. |
 | "Test hard = design unclear" | Listen to test. Hard to test = hard to use. |
-| "TDD will slow me down" | TDD IS the pragmatic path: catches bugs before commit, prevents regressions, lets you refactor without fear. "Pragmatic" shortcuts mean debugging in production — slower, not faster. |
+| "TDD will slow me down" | TDD IS the pragmatic path: catches bugs before commit, prevents regressions, lets you refactor without fear. "Pragmatic" shortcuts mean debugging in production: slower, not faster. |
 | "Manual test faster" | Manual doesn't prove edge cases. You'll re-test every change. |
 | "Existing code has no tests" | You're improving it. Add tests for existing code. |
 
-## Red Flags - STOP and Start Over
+## Red Flags: STOP and Start Over
 
 - Code before test
 - Test after implementation
@@ -292,6 +292,7 @@ Before marking work complete:
 - [ ] Output pristine (no errors, warnings)
 - [ ] Tests use real code (mocks only if unavoidable)
 - [ ] Edge cases and errors covered
+- [ ] The mutation probe is real: commit first, break the implementation, run the test and see it red, restore from the commit, see it green. Never revert with git checkout while uncommitted work sits in the same file.
 
 Can't check all boxes? You skipped TDD. Start over.
 

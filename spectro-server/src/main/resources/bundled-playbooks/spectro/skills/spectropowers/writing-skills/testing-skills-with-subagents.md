@@ -6,7 +6,7 @@
 
 **Testing skills is just TDD applied to process documentation.**
 
-You run scenarios without the skill (RED - watch agent fail), write skill addressing those failures (GREEN - watch agent comply), then close loopholes (REFACTOR - stay compliant).
+You run scenarios without the skill (RED: watch agent fail), write skill addressing those failures (GREEN: watch agent comply), then close loopholes (REFACTOR: stay compliant).
 
 **Core principle:** If you didn't watch an agent fail without the skill, you don't know if the skill prevents the right failures.
 
@@ -42,17 +42,17 @@ Same cycle as code TDD, different test format.
 
 ## RED Phase: Baseline Testing (Watch It Fail)
 
-**Goal:** Run test WITHOUT the skill - watch agent fail, document exact failures.
+**Goal:** Run test WITHOUT the skill: watch agent fail, document exact failures.
 
-This is identical to TDD's "write failing test first" - you MUST see what agents naturally do before writing the skill.
+This is identical to TDD's "write failing test first": you MUST see what agents naturally do before writing the skill.
 
 **Process:**
 
 - [ ] **Create pressure scenarios** (3+ combined pressures)
-- [ ] **Run WITHOUT skill** - give agents realistic task with pressures
+- [ ] **Run WITHOUT skill**: give agents realistic task with pressures
 - [ ] **Document choices and rationalizations** word-for-word
-- [ ] **Identify patterns** - which excuses appear repeatedly?
-- [ ] **Note effective pressures** - which scenarios trigger violations?
+- [ ] **Identify patterns**: which excuses appear repeatedly?
+- [ ] **Note effective pressures**: which scenarios trigger violations?
 
 **Example:**
 
@@ -81,7 +81,7 @@ Run this WITHOUT a TDD skill. Agent chooses B or C and rationalizes:
 
 ## GREEN Phase: Write Minimal Skill (Make It Pass)
 
-Write skill addressing the specific baseline failures you documented. Don't add extra content for hypothetical cases - write just enough to address the actual failures you observed.
+Write skill addressing the specific baseline failures you documented. Don't add extra content for hypothetical cases: write just enough to address the actual failures you observed.
 
 Run same scenarios WITH skill. Agent should now comply.
 
@@ -143,11 +143,11 @@ Forces explicit choice.
 
 ### Key Elements of Good Scenarios
 
-1. **Concrete options** - Force A/B/C choice, not open-ended
-2. **Real constraints** - Specific times, actual consequences
-3. **Real file paths** - `/tmp/payment-system` not "a project"
-4. **Make agent act** - "What do you do?" not "What should you do?"
-5. **No easy outs** - Can't defer to "I'd ask your human partner" without choosing
+1. **Concrete options**: Force A/B/C choice, not open-ended
+2. **Real constraints**: Specific times, actual consequences
+3. **Real file paths**: `/tmp/payment-system` not "a project"
+4. **Make agent act**: "What do you do?" not "What should you do?"
+5. **No easy outs**: Can't defer to "I'd ask your human partner" without choosing
 
 ### Testing Setup
 
@@ -162,7 +162,7 @@ Make agent believe it's real work, not a quiz.
 
 ## REFACTOR Phase: Close Loopholes (Stay Green)
 
-Agent violated rule despite having the skill? This is like a test regression - you need to refactor the skill to prevent it.
+Agent violated rule despite having the skill? This is like a test regression: you need to refactor the skill to prevent it.
 
 **Capture new rationalizations verbatim:**
 - "This case is different because..."
@@ -235,7 +235,7 @@ Agent should now:
 
 **If agent finds NEW rationalization:** Continue REFACTOR cycle.
 
-**If agent follows rule:** Success - skill is bulletproof for this scenario.
+**If agent follows rule:** Success: skill is bulletproof for this scenario.
 
 ## Meta-Testing (When GREEN Isn't Working)
 
@@ -288,14 +288,14 @@ Agent chose: C (write tests after)
 Rationalization: "Tests after achieve same goals"
 ```
 
-### Iteration 1 - Add Counter
+### Iteration 1: Add Counter
 ```markdown
 Added section: "Why Order Matters"
 Re-tested: Agent STILL chose C
 New rationalization: "Spirit not letter"
 ```
 
-### Iteration 2 - Add Foundational Principle
+### Iteration 2: Add Foundational Principle
 ```markdown
 Added: "Violating letter is violating spirit"
 Re-tested: Agent chose A (delete it)
@@ -325,7 +325,7 @@ Before deploying skill, verify you followed RED-GREEN-REFACTOR:
 - [ ] Updated rationalization table
 - [ ] Updated red flags list
 - [ ] Updated description with violation symptoms
-- [ ] Re-tested - agent still complies
+- [ ] Re-tested: agent still complies
 - [ ] Meta-tested to verify clarity
 - [ ] Agent follows rule under maximum pressure
 

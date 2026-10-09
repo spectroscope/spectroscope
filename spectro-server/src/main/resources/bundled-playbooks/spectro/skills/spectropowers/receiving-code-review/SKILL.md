@@ -1,6 +1,6 @@
 ---
 name: receiving-code-review
-description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation
+description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable; requires technical rigor and verification, not performative agreement or blind implementation
 ---
 
 # Code Review Reception
@@ -59,7 +59,7 @@ You understand 1,2,3,6. Unclear on 4,5.
 ## Source-Specific Handling
 
 ### From your human partner
-- **Trusted** - implement after understanding
+- **Trusted**: implement after understanding
 - **Still ask** if scope unclear
 - **No performative agreement**
 - **Skip to action** or technical acknowledgment
@@ -83,7 +83,7 @@ IF conflicts with your human partner's prior decisions:
   Stop and discuss with your human partner first
 ```
 
-**your human partner's rule:** "External feedback - be skeptical, but check carefully"
+**your human partner's rule:** "External feedback: be skeptical, but check carefully"
 
 ## YAGNI Check for "Professional" Features
 

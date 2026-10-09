@@ -146,8 +146,8 @@ What works perfectly for Opus might need more detail for Haiku. If you plan to u
 <Note>
   **YAML Frontmatter**: The SKILL.md frontmatter requires two fields:
 
-  * `name` - Human-readable name of the Skill (64 characters maximum)
-  * `description` - One-line description of what the Skill does and when to use it (1024 characters maximum)
+  * `name`: Human-readable name of the Skill (64 characters maximum)
+  * `description`: One-line description of what the Skill does and when to use it (1024 characters maximum)
 
   For complete Skill structure details, see the [Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview#skill-structure).
 </Note>
@@ -581,13 +581,13 @@ The old patterns section provides historical context without cluttering the main
 
 Choose one term and use it throughout the Skill:
 
-**Good - Consistent**:
+**Good, consistent**:
 
 * Always "API endpoint"
 * Always "field"
 * Always "extract"
 
-**Bad - Inconsistent**:
+**Bad, inconsistent**:
 
 * Mix "API endpoint", "URL", "API route", "path"
 * Mix "field", "box", "element", "control"
@@ -771,7 +771,7 @@ The most effective Skill development process involves the agent itself. Work wit
      Modern agents understand the Skill format and structure natively. You don't need special system prompts or a "writing skills" skill to get help creating Skills. Simply ask the agent to create a Skill and it will generate properly structured SKILL.md content with appropriate frontmatter and body content.
    </Tip>
 
-4. **Review for conciseness**: Check that Agent A hasn't added unnecessary explanations. Ask: "Remove the explanation about what win rate means - the agent already knows that."
+4. **Review for conciseness**: Check that Agent A hasn't added unnecessary explanations. Ask: "Remove the explanation about what win rate means; the agent already knows that."
 
 5. **Improve information architecture**: Ask Agent A to organize the content more effectively. For example: "Organize this so the table schema is in a separate reference file. We might add more tables later."
 

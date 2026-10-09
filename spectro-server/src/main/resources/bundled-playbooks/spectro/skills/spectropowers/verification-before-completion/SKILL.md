@@ -1,6 +1,6 @@
 ---
 name: verification-before-completion
-description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
+description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs; requires running verification commands and confirming output before making any success claims; evidence before assertions always
 ---
 
 # Verification Before Completion
@@ -35,6 +35,8 @@ BEFORE claiming any status or expressing satisfaction:
 Skip any step = lying, not verifying
 ```
 
+Gates run with a forced rerun (`--rerun-tasks --no-build-cache`, a fresh `vitest run`) and never through a pipe, because a pipe reports the exit code of the last command. UI work is verified in a browser in both themes at two widths.
+
 ## Common Failures
 
 | Claim | Requires | Not Sufficient |
@@ -47,7 +49,7 @@ Skip any step = lying, not verifying
 | Agent completed | VCS diff shows changes | Agent reports "success" |
 | Requirements met | Line-by-line checklist | Tests passing |
 
-## Red Flags - STOP
+## Red Flags: STOP
 
 - Using "should", "probably", "seems to"
 - Expressing satisfaction before verification ("Great!", "Perfect!", "Done!", etc.)

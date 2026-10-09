@@ -83,7 +83,7 @@ See `condition-based-waiting-example.ts` in this directory for complete implemen
 
 ## Common Mistakes
 
-**❌ Polling too fast:** `setTimeout(check, 1)` - wastes CPU
+**❌ Polling too fast:** `setTimeout(check, 1)`: wastes CPU
 **✅ Fix:** Poll every 10ms
 
 **❌ No timeout:** Loop forever if condition never met

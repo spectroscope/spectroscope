@@ -120,7 +120,7 @@ def spaced_hyphens(text):
             continue
         if fence:
             continue
-        prose = LIST_MARKER.sub("", INLINE_CODE.sub("", line), count=1)
+        prose = LIST_MARKER.sub("", INLINE_CODE.sub("code", line), count=1)
         count += len(SPACED_HYPHEN.findall(prose))
     return count
 
@@ -135,7 +135,7 @@ def reasons(rel, before, after):
         found.append("skill references renamed to spectropowers")
     if sum(before.count(d) for d in DASHES) > sum(after.count(d) for d in DASHES) or (
             rel.endswith(".md") and spaced_hyphens(before) > spaced_hyphens(after)):
-        found.append("dashes used as punctuation replaced by commas, colons, parentheses or full stops")
+        found.append("dashes used as punctuation replaced by commas, colons, semicolons or parentheses")
     if before.count("Superpowers") > after.count("Superpowers"):
         found.append("the pack is named spectropowers in prose")
     return found

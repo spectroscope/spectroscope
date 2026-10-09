@@ -5,7 +5,7 @@ description: Use when completing tasks, implementing major features, or before m
 
 # Requesting Code Review
 
-Dispatch a code reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history.
+Dispatch a code reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation: never your session's history.
 
 **Core principle:** Review early, review often.
 
@@ -24,8 +24,11 @@ Dispatch a code reviewer subagent to catch issues before they cascade. The revie
 ## How to Request
 
 **1. Get git SHAs:**
+
+The base is the merge base of the branch (`git merge-base main HEAD`), never `HEAD~1`, which drops every commit but the last.
+
 ```bash
-BASE_SHA=$(git rev-parse HEAD~1)  # or origin/main
+BASE_SHA=$(git merge-base main HEAD)
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
@@ -34,10 +37,10 @@ HEAD_SHA=$(git rev-parse HEAD)
 Dispatch a `general-purpose` subagent, filling the template at [code-reviewer.md](code-reviewer.md)
 
 **Placeholders:**
-- `{DESCRIPTION}` - Brief summary of what you built
-- `{PLAN_OR_REQUIREMENTS}` - What it should do
-- `{BASE_SHA}` - Starting commit
-- `{HEAD_SHA}` - Ending commit
+- `{DESCRIPTION}`: Brief summary of what you built
+- `{PLAN_OR_REQUIREMENTS}`: What it should do
+- `{BASE_SHA}`: Starting commit
+- `{HEAD_SHA}`: Ending commit
 
 **3. Act on feedback:**
 - Fix Critical issues immediately
@@ -76,7 +79,7 @@ You: [Fix progress indicators]
 
 | Excuse | Reality |
 |--------|---------|
-| "I'll just review the diff myself instead of dispatching a reviewer" | You're the coordinator — reviewing the diff inline burns the context window you need to keep driving the work. Dispatch a reviewer subagent: the diff and the evaluation live in its context, and only the findings come back to you. |
+| "I'll just review the diff myself instead of dispatching a reviewer" | You're the coordinator: reviewing the diff inline burns the context window you need to keep driving the work. Dispatch a reviewer subagent: the diff and the evaluation live in its context, and only the findings come back to you. |
 | "The reviewer needs my whole session history to understand the change" | Hand it precisely crafted context, never your session's history. That keeps the reviewer on the work product, not your thought process. |
 
 ## Red Flags

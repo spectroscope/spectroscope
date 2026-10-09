@@ -11,14 +11,14 @@ Load plan, review critically, execute all tasks, report when complete.
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
-**Note:** Tell your human partner that Superpowers works much better with access to subagents (Claude Code, Codex CLI, Codex App, Copilot CLI, and Gemini CLI all qualify; see the per-platform tool refs in `../using-spectropowers/references/`). If subagents are available, use spectropowers:subagent-driven-development instead of this skill.
+**Note:** Tell your human partner that spectropowers works much better with access to subagents (Claude Code, Codex CLI, Codex App, Copilot CLI, and Gemini CLI all qualify; see the per-platform tool refs in `../using-spectropowers/references/`). If subagents are available, use spectropowers:subagent-driven-development instead of this skill.
 
 ## The Process
 
 ### Step 1: Load and Review Plan
 1. Ensure an isolated workspace: use spectropowers:using-git-worktrees to create one or verify the existing one
 2. Read plan file
-3. Review critically - identify any questions or concerns about the plan
+3. Review critically: identify any questions or concerns about the plan
 4. If concerns: Raise them with your human partner before starting
 5. If no concerns: Create todos for the plan items and proceed
 
@@ -28,7 +28,7 @@ For each task:
 1. Mark as in_progress
 2. Follow each step exactly (plan has bite-sized steps)
 3. Run verifications as specified
-4. Mark as completed
+4. Mark as completed; progress goes into TASKS.md after every task
 
 ### Step 3: Complete Development
 
@@ -44,6 +44,7 @@ After all tasks complete and verified:
 - Plan has critical gaps preventing starting
 - You don't understand an instruction
 - Verification fails repeatedly
+- A plan conflict that touches architecture, language, repository or scope: stop and ask the owner; never rule on it.
 
 **Ask for clarification rather than guessing.**
 
@@ -53,7 +54,7 @@ After all tasks complete and verified:
 - Partner updates the plan based on your feedback
 - Fundamental approach needs rethinking
 
-**Don't force through blockers** - stop and ask.
+**Don't force through blockers**: stop and ask.
 
 ## Remember
 - Review plan critically first
