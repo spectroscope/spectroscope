@@ -75,6 +75,36 @@ describe("the workspace the header shows", () => {
     expect(headerWorkspace({ ...base, storedCwd: null, woken: answer })).toBe(answer);
   });
 
+  it("stays as it was for an answer that names neither a folder on disk nor a gone one", () => {
+    // Round two: a session that recorded no folder. The first message would
+    // make one; until then the chip must not name it as if it were there.
+    const notMade: WorkspaceInfo = {
+      resolved: false,
+      mode: "random",
+      configured: false,
+      sessionId: "s-1",
+      path: "/tmp/spectroscope-ws/s-1",
+      exists: false,
+    };
+    expect(headerWorkspace({ ...base, storedCwd: null, woken: notMade })).toBeNull();
+    expect(headerWorkspace({ ...base, storedCwd: "/work/ForgeDemo", woken: notMade })).toEqual(
+      storedChipWorkspace("/work/ForgeDemo"),
+    );
+  });
+
+  it("is the gone answer for a recorded folder that is no longer there", () => {
+    const gone: WorkspaceInfo = {
+      resolved: false,
+      mode: "recorded",
+      configured: false,
+      sessionId: "s-1",
+      path: "/work/deleted-project",
+      exists: false,
+      unavailable: "/work/deleted-project",
+    };
+    expect(headerWorkspace({ ...base, storedCwd: "/work/deleted-project", woken: gone })).toBe(gone);
+  });
+
   it("is nothing for a stored session without a folder and without a wake, as before", () => {
     expect(headerWorkspace({ ...base, storedCwd: null, woken: null })).toBeNull();
   });

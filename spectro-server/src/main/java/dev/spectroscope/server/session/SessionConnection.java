@@ -700,7 +700,8 @@ public final class SessionConnection {
      *
      * <p>Nothing is created on disk. A folder that exists is recorded as this
      * session's; a recorded folder that is gone is named in the frame, and the
-     * first run falls back as a resume does.</p>
+     * first run falls back as a resume does. A folder only the first message
+     * would create is not announced at all.</p>
      *
      * <p>A socket that already holds a session (this one, woken twice, or
      * another) ignores the frame. A session another socket holds is refused
@@ -765,11 +766,17 @@ public final class SessionConnection {
      * Names the woken session's folder without creating anything (card 498).
      * {@link WorkspaceResolver#locate} only, never {@code resolve}: a wake is
      * not a run, and a folder minted here would be a choice nobody made.
+     *
+     * <p>Three answers. A recorded folder that is gone is named as
+     * {@code unavailable}. A folder that is on disk is recorded and announced.
+     * A folder that is not on disk and was never recorded (the temp folder, or
+     * a configured one not made yet) is one the first message would create, so
+     * nothing is said about it and the page's chip stays as it was.</p>
      */
     private void announceWokenWorkspace() {
         WorkspacePick pick = workspacePick();
         if (pick.unavailable() != null) {
-            sendWokenWorkspace(pick.unavailable(), "recorded", pick.unavailable());
+            sendWokenWorkspace(pick.unavailable(), pick.unavailable());
             return;
         }
         Path target = WorkspaceResolver.locate(pick.path(), store.id());
@@ -777,22 +784,19 @@ public final class SessionConnection {
             workspace = target;
             SessionWorkspaces.resolved(store.id(), target.toString());
             sendWorkspaceInfo();
-            return;
         }
-        sendWokenWorkspace(target.toString(), pick.source(), null);
     }
 
     /**
-     * The workspace frame of a woken session whose folder is not on disk: a
+     * The workspace frame of a woken session whose recorded folder is gone: a
      * socket-only UI frame, never appended to the JSONL. It carries the
-     * {@code sessionId} like the resolved frame, says {@code exists} false and,
-     * for a recorded folder that is gone, names it as {@code unavailable}.
+     * {@code sessionId} like the resolved frame, says {@code exists} false and
+     * names the gone folder as {@code unavailable}.
      *
-     * @param path        the folder the session would work in
-     * @param mode        where that folder came from
-     * @param unavailable the recorded folder that is gone, or null
+     * @param path        the folder the record names
+     * @param unavailable the same folder, the one that is gone
      */
-    private synchronized void sendWokenWorkspace(String path, String mode, String unavailable) {
+    private synchronized void sendWokenWorkspace(String path, String unavailable) {
         if (!socket.isOpen() || store == null) {
             return;
         }
@@ -800,14 +804,12 @@ public final class SessionConnection {
         Map<String, Object> frame = new java.util.LinkedHashMap<>();
         frame.put("type", "workspace_info");
         frame.put("resolved", false);
-        frame.put("mode", mode);
+        frame.put("mode", "recorded");
         frame.put("exists", false);
         frame.put("sessionId", store.id());
         frame.put("path", path);
         frame.put("configured", configured != null && !configured.isBlank());
-        if (unavailable != null) {
-            frame.put("unavailable", unavailable);
-        }
+        frame.put("unavailable", unavailable);
         sendFrame(frame);
     }
 

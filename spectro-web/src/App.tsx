@@ -3083,6 +3083,7 @@ export function App() {
                 onSend={send}
                 onReturnToLive={returnToLive}
                 continuable={continuable}
+                onComposerFocus={wakeStored}
                 readOnlyNote={readOnlyNote}
                 sendClient={sendClient}
                 /* Card 301: the dock's handover and file rows are clickable, and

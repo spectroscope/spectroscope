@@ -12,6 +12,7 @@ import { read, stripComments } from "../testkit/source";
 
 const app = stripComments(read("../App.tsx", import.meta.url));
 const chat = stripComments(read("./Chat.tsx", import.meta.url));
+const lab = stripComments(read("../lab/LabView.tsx", import.meta.url));
 
 describe("the wake's wiring", () => {
   it("the message box reports its focus", () => {
@@ -47,5 +48,10 @@ describe("the wake's wiring", () => {
     expect(app).toMatch(
       /if \(held\.woken && held\.sessionId !== replayOnScreen\) sessions\.close\(held\.key\);/,
     );
+  });
+
+  it("the Lab's message box wakes the stored session too, through the same Chat", () => {
+    expect(lab).toMatch(/<Chat\b[\s\S]*?onComposerFocus=\{props\.onComposerFocus\}[\s\S]*?\/>/);
+    expect(app).toMatch(/<LabView\b[\s\S]*?onComposerFocus=\{wakeStored\}[\s\S]*?\/>/);
   });
 });

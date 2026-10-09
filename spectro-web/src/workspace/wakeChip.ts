@@ -7,6 +7,7 @@
 // place, so Finder, Terminal and the code graph can act on the folder.
 
 import type { WorkspaceInfo } from "../state/reducer";
+import { folderGone } from "../components/WorkspaceChip";
 
 /**
  * The chip for a stored session before its wake: the folder its record names,
@@ -26,8 +27,10 @@ export function storedChipWorkspace(storedCwd: string | null | undefined): Works
  * The live view shows its own announcement. A stored session that the next
  * message continues shows the wake's answer once one names this session, and
  * its recorded folder until then: the wake's socket first says which folder
- * the app would use for a new chat, and that is not this session's. An archive
- * that stays read-only shows no chip, as before.
+ * the app would use for a new chat, and that is not this session's. Only an
+ * answer that names a folder on disk or a recorded folder that is gone counts;
+ * a folder the first message would create leaves the chip as it was. An
+ * archive that stays read-only shows no chip, as before.
  */
 export function headerWorkspace(input: {
   viewingLive: boolean;
@@ -40,7 +43,7 @@ export function headerWorkspace(input: {
   if (input.viewingLive) return input.liveWorkspace;
   if (!input.continuable || input.replayId === null) return null;
   const woken = input.woken;
-  if (woken !== null && woken.sessionId === input.replayId) return woken;
+  if (woken !== null && woken.sessionId === input.replayId && (woken.resolved || folderGone(woken))) return woken;
   return storedChipWorkspace(input.storedCwd);
 }
 

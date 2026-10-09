@@ -58,13 +58,18 @@ export function chipActions(
 }
 
 /**
- * Card 498: the session is known to the server and its folder is not on disk,
- * which is what the wake of a stored session whose folder was deleted answers.
- * Before a session exists a missing folder is only a folder the first run will
- * create, so that case does not count.
+ * Card 498: the server names the session and reports the folder its record
+ * carries as unavailable, which is what the wake of a stored session whose
+ * folder was deleted answers. A folder that is merely not on disk yet is one
+ * the first run will create, so that case does not count.
  */
 export function folderGone(ws: WorkspaceInfo): boolean {
-  return typeof ws.sessionId === "string" && ws.sessionId !== "" && ws.exists === false;
+  return (
+    typeof ws.sessionId === "string" &&
+    ws.sessionId !== "" &&
+    typeof ws.unavailable === "string" &&
+    ws.unavailable !== ""
+  );
 }
 
 /**

@@ -387,4 +387,75 @@ class SessionWakeTest {
         assertThat(seen).as("premise: the listener heard the live set").isNotEmpty();
         assertThat(wokenFrames(socket)).isEmpty();
     }
+
+    @Test
+    void aWakeOfASessionThatRecordedNoFolderCreatesNothingAndSaysNothingAboutAFolder() throws Exception {
+        // Round two: no record and no configured folder. The first message
+        // would mint a temp folder; the wake must neither mint it nor send a
+        // frame that makes the chip name it as missing.
+        String id = stored("20261010-090000-w498none", null);
+        Path random = WorkspaceResolver.locate(null, id);
+        deleteTree(random);
+        assertThat(Files.exists(random)).as("premise: no temp folder for this session").isFalse();
+        LiveSessions live = new LiveSessions();
+        FakeSocket socket = new FakeSocket("ws-498-none", "ws://localhost/ws");
+        SessionConnection connection = fresh(socket, null, live);
+
+        connection.onWakeSession(id);
+
+        assertThat(connection.sessionId()).as("the wake binds the session").isEqualTo(id);
+        assertThat(live.holder(id)).isEqualTo("ws-498-none");
+        assertThat(Files.exists(random)).as("a wake creates nothing on disk").isFalse();
+        assertThat(wokenFrames(socket)).as("no folder state for a folder only the first message would make")
+                .isEmpty();
+        assertThat(SessionWorkspaces.resolvedPath(id)).isNull();
+        assertThat(frames(socket, "error")).isEmpty();
+
+        // The positive half: the first message still makes the folder and
+        // announces it with the session id, as it does without a wake.
+        connection.onUserMessage("ZETA a real question", null);
+        await(socket, "run_end", 1);
+        assertThat(Files.isDirectory(random)).as("the first message makes the folder").isTrue();
+        assertThat(wokenFrames(socket)).extracting(node -> node.path("resolved").asBoolean(false))
+                .as("and announces it, resolved").containsExactly(true);
+    }
+
+    @Test
+    void aWakeWithAConfiguredFolderThatIsMissingCreatesNothing(@TempDir Path parent) throws Exception {
+        Path configured = parent.resolve("not-made-yet");
+        String id = stored("20261010-090100-w498miss", null);
+        Path random = WorkspaceResolver.locate(null, id);
+        deleteTree(random);
+        FakeSocket socket = new FakeSocket("ws-498-miss", "ws://localhost/ws");
+        SessionConnection connection = fresh(socket, configured, new LiveSessions());
+        assertThat(Files.exists(configured)).as("premise: connecting made nothing").isFalse();
+
+        connection.onWakeSession(id);
+
+        assertThat(connection.sessionId()).isEqualTo(id);
+        assertThat(Files.exists(configured)).as("the configured folder is not created by a wake").isFalse();
+        assertThat(Files.exists(random)).as("no temp folder either").isFalse();
+        assertThat(wokenFrames(socket)).as("no folder state for a folder that is not there yet").isEmpty();
+        assertThat(SessionWorkspaces.resolvedPath(id)).isNull();
+    }
+
+    @Test
+    void aWakeWithAConfiguredFolderThatExistsAnnouncesItWithTheSessionId(@TempDir Path configured)
+            throws Exception {
+        String id = stored("20261010-090200-w498dflt", null);
+        FakeSocket socket = new FakeSocket("ws-498-dflt", "ws://localhost/ws");
+        SessionConnection connection = fresh(socket, configured, new LiveSessions());
+
+        connection.onWakeSession(id);
+
+        List<JsonNode> woken = wokenFrames(socket);
+        assertThat(woken).as("the folder the first message would use is there, so it is named").hasSize(1);
+        JsonNode frame = woken.getFirst();
+        assertThat(frame.path("sessionId").asText()).isEqualTo(id);
+        assertThat(frame.path("resolved").asBoolean(false)).isTrue();
+        assertThat(frame.path("exists").asBoolean(false)).isTrue();
+        assertThat(frame.path("mode").asText()).isEqualTo("default");
+        assertThat(frame.has("unavailable")).as("nothing is gone").isFalse();
+        assertThat(Path.of(frame.path("path").asText()).toRealPath()).isEqualTo(configured.toRealPath());
+    }
 }

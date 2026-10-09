@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { WorkspaceInfo } from "../state/reducer";
-import { WorkspaceChip, chipActions, codeGraphRowEnabled } from "./WorkspaceChip";
+import { WorkspaceChip, chipActions, codeGraphRowEnabled, folderGone } from "./WorkspaceChip";
 import { storedChipWorkspace } from "../workspace/wakeChip";
 
 const WOKEN: WorkspaceInfo = {
@@ -25,6 +25,16 @@ const GONE: WorkspaceInfo = {
   mode: "recorded",
   exists: false,
   unavailable: "/Users/someone/deleted-project",
+};
+// Round two: what a wake of a session with no recorded folder used to answer.
+// The first message would make this folder; nothing about it is gone.
+const NOT_MADE_YET: WorkspaceInfo = {
+  sessionId: "20261010-090000-w498",
+  path: "/tmp/spectroscope-ws/20261010-090000-w498",
+  configured: false,
+  resolved: false,
+  mode: "random",
+  exists: false,
 };
 const STORED = storedChipWorkspace("/Users/someone/ForgeDemo")!;
 const LOCKED_MAC = { canPick: false, mac: true };
@@ -72,5 +82,15 @@ describe("a stored session's chip", () => {
     );
     expect(open).not.toContain("The session has no folder on disk");
     expect(open).toContain("ForgeDemo");
+  });
+
+  it("calls a folder gone only when the server names a recorded folder as unavailable", () => {
+    expect(folderGone(GONE)).toBe(true);
+    expect(folderGone(NOT_MADE_YET)).toBe(false);
+    expect(folderGone({ ...GONE, sessionId: undefined })).toBe(false);
+    const open = renderToStaticMarkup(
+      <WorkspaceChip workspace={NOT_MADE_YET} onPickFolder={() => {}} canPick={false} mac menuOpenForTest />,
+    );
+    expect(open).not.toContain("The session has no folder on disk");
   });
 });
