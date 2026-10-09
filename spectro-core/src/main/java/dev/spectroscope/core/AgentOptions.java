@@ -99,6 +99,11 @@ import java.util.List;
  *                            carry, and the chat's slot pool reads it live.
  *                            Null sets no count, which is the shipped state and
  *                            the v0.14.4 behaviour
+ * @param careParagraph       card 492: {@code "on"} or {@code "off"}, the
+ *                            settings key of the same name. On, every run
+ *                            appends the care paragraph to its system prompt,
+ *                            read once when the run starts. Null is the shipped
+ *                            value, off
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
@@ -115,10 +120,12 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                            dev.spectroscope.core.session.SessionWindow sessionWindow,
                            String toolResultElision,
                            java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff,
-                           Integer sessionsPerChat) {
+                           Integer sessionsPerChat,
+                           String careParagraph) {
 
     /** Compat: the arity of v0.14.4, which knew no session count (card 490).
-     *  A caller without one sets no count, as before.
+     *  A caller without one sets no count, as before, and gets the
+     *  shipped care paragraph setting, off (card 492).
      *
      * @param provider            the LLM backend the loop streams from
      * @param systemPrompt        system prompt sent with every provider request
@@ -163,7 +170,8 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
                 initialMessages, providerName, maxTokens, compactionThreshold, introspection,
                 thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
-                goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, null);
+                goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, null,
+                null);
     }
 
     /** Compat: the arity before cards 467 and 466, which knew no elision
@@ -209,7 +217,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
                 initialMessages, providerName, maxTokens, compactionThreshold, introspection,
                 thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
-                goal, steering, rtkFilter, sessionWindow, null, null, null);
+                goal, steering, rtkFilter, sessionWindow, null, null, null, null);
     }
 
     /** Compat: the arity before card 390, with cards 379 and 380 in it. Never
@@ -501,6 +509,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private String toolResultElision; // nullable, the shipped "on"
         private java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff; // nullable, nothing off
         private Integer sessionsPerChat; // nullable, no count per chat
+        private String careParagraph; // nullable, the shipped "off"
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -643,6 +652,17 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
             return this;
         }
 
+        /**
+         * Card 492: whether every run appends the care paragraph.
+         *
+         * @param value {@code "on"}, {@code "off"}, or null for the shipped off
+         * @return this builder
+         */
+        public Builder careParagraph(String value) {
+            this.careParagraph = value;
+            return this;
+        }
+
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
@@ -650,7 +670,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
                     introspection, thinking, hooks, llmWire, latency, progressGuard,
                     maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow,
-                    toolResultElision, toolGroupsOff, sessionsPerChat);
+                    toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
         }
     }
 }

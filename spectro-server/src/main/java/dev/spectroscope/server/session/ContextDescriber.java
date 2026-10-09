@@ -104,6 +104,12 @@ final class ContextDescriber {
         List<RoleCatalog.RoleProfile> profiles = RoleCatalog.roleProfiles(
                 childBaseToolNames(settingsBelt, standardTools, skills)).stream()
                 .map(profile -> withoutSwitchedOff(profile, off)).toList();
+        // Card 492: the care paragraph the next run of a session on this
+        // config appends, naming helpers only while a spawn tool is listed.
+        boolean spawns = tools.stream()
+                .anyMatch(tool -> tool.name().equals("spawn_agent") || tool.name().equals("spawn_agents"));
+        systemPrompt = systemPrompt + dev.spectroscope.core.session.CareParagraph.suffix(
+                config.careParagraph(), dev.spectroscope.core.session.CareParagraph.helpersFor(config), spawns);
         return new ContextInfo(systemPrompt, tools, skillCatalog,
                 mcpServerNames, config.thinking(), config.provider(), config.model(), profiles);
     }

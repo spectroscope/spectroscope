@@ -840,6 +840,16 @@
     "explanation" : "The largest completion cap this provider ever sends. The harness default (32k) suits Anthropic and local servers, but api.openai.com enforces PER-MODEL caps and rejects a too-large value with HTTP 400 — the smallest cap among current chat models is gpt-4o-mini's 16384, so 16000 is the safe ceiling for everything the picker offers."
   },
   {
+    "owner" : "dev.spectroscope.core.session.CareParagraph",
+    "field" : "DEFAULT_HELPERS",
+    "value" : "2",
+    "expression" : "2",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The helpers the paragraph names while no session count per chat reaches the agent: the concept's default of three model sessions per chat, the main agent and two helpers (konzept/RUN-PROFILES.md, Knobs). The owner named three sessions; nobody has measured how many requests the house test backend serves at once usefully. Read only through helpersFor."
+  },
+  {
     "owner" : "dev.spectroscope.core.session.Compaction",
     "field" : "DEFAULT_KEEP_MESSAGES",
     "value" : "4",

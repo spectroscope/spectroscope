@@ -1675,6 +1675,7 @@ public final class SessionConnection {
             suggestTitleOnce(text); // card 445: in the background, the run does not wait
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
             refreshSessionsPerChat(); // card 490: the chat's session count, per prompt
+            refreshCareParagraph(); // card 492: the settings as they are now, per prompt
             sendWorkspaceInfo();
             sendGoalInfo(); // card 267: what this run is for, where it is watched
 
@@ -1989,6 +1990,10 @@ public final class SessionConnection {
                 .subagentBudgetTokens(active.subagentBudgetTokens())
                 // Card 467: the children follow the session's elision switch
                 .toolResultElision(active.toolResultElision())
+                // Card 492: the session's care paragraph switch. A child of a
+                // run takes the value that run started with
+                // (SubagentManager.childCareParagraph)
+                .careParagraph(active.careParagraph())
                 // Card 466: the SAME reader the parent reads below. A child
                 // spawned during a run takes the set that run started with
                 // (SubagentManager.childToolGroupsOff), so a gear change
@@ -2078,6 +2083,9 @@ public final class SessionConnection {
                 // settings files at the top of every prompt
                 // (refreshSessionsPerChat), so a save reaches the next prompt
                 .sessionsPerChat(active.sessionsPerChat())
+                // Card 492: the care paragraph. The build value is the session
+                // moment's; refreshCareParagraph re-reads it before every prompt
+                .careParagraph(active.careParagraph())
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
@@ -2125,6 +2133,22 @@ public final class SessionConnection {
             return;
         }
         agent.setSessionsPerChat(liveConfig().sessionsPerChat());
+    }
+
+    /**
+     * Card 492: hands the agent the {@code careParagraph} value the settings
+     * hold now, and the helper count derived from them, so a saved change
+     * reaches the next run of this session (reach {@code next-run}). Read
+     * through {@link #liveConfig()}, the same chain the belt reads per call.
+     * The run reads both once when it starts.
+     */
+    void refreshCareParagraph() {
+        if (agent == null) {
+            return;
+        }
+        SpectroConfig live = liveConfig();
+        agent.setCareParagraph(live.careParagraph());
+        agent.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(live));
     }
 
     /** Card 379: the oracle the next {@link #buildAgentOnce} hands the rtk

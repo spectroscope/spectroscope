@@ -535,6 +535,9 @@ public final class HeadlessRunner {
                 // an unattended run registers no spawn tools, so it has no
                 // helpers to hold slots.
                 .sessionsPerChat(config.sessionsPerChat())
+                // Card 492: the headless faces register no spawn tool, so the
+                // paragraph leaves the sentence about subagents out
+                .careParagraph(config.careParagraph())
                 .build());
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
         // headless failure behaviour stays exactly the inline sink's. An

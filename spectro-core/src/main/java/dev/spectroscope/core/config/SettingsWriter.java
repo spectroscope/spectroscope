@@ -94,7 +94,9 @@ public final class SettingsWriter {
             // Card 466: the tool groups a session leaves out of every request.
             "toolGroupsOff",
             // Card 490: how many model sessions one chat may run at once.
-            "sessionsPerChat");
+            "sessionsPerChat",
+            // Card 492: whether every run appends the care paragraph.
+            "careParagraph");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
@@ -318,6 +320,8 @@ public final class SettingsWriter {
                     SpectroConfig.KNOWN_DESKTOP_NOTIFICATIONS_VALUES);
             case "toolResultElision" ->
                     requireOneOf(key, value.asText(), SpectroConfig.KNOWN_TOOL_RESULT_ELISION_VALUES);
+            case "careParagraph" ->
+                    requireOneOf(key, value.asText(), SpectroConfig.KNOWN_CARE_PARAGRAPH_VALUES);
             // Card 466: every entry a known group. A non-array is left to the
             // shape check after this one, which names the type.
             case "toolGroupsOff" -> {

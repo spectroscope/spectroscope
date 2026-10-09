@@ -708,6 +708,8 @@ public final class SpectroCli implements Runnable {
                 // card 490: the chat's session count, between runs; during a
                 // run the parent agent's own count governs the slot pool
                 .sessionsPerChat(config.sessionsPerChat())
+                // card 492: and its care paragraph switch
+                .careParagraph(config.careParagraph())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -831,7 +833,7 @@ public final class SpectroCli implements Runnable {
      * @return the ready agent; the registry and broker are shared, not rebuilt
      */
     private Agent buildAgent(List<ProviderMessage> initialMessages) {
-        return new Agent(AgentOptions.builder()
+        Agent built = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(systemPrompt)
                 .registry(registry)
@@ -882,8 +884,13 @@ public final class SpectroCli implements Runnable {
                 .toolResultElision(config.toolResultElision())
                 // Card 490: the REPL is one chat; its helpers share its count.
                 .sessionsPerChat(config.sessionsPerChat())
+                // Card 492: the care paragraph, read when the REPL starts.
+                .careParagraph(config.careParagraph())
                 .onPermission(askOnTerminal)
                 .build());
+        // Card 492: the helpers the paragraph names, from the one derivation.
+        built.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(config));
+        return built;
     }
 
     // ---------------------------------------------------------- slash commands

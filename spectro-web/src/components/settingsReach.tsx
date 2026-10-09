@@ -215,6 +215,14 @@ export const SETTING_REACH = {
   // liveConfig) and applies from the next session; the chapter's next-run row
   // says so, and SessionToolGroupsReachTest holds both halves.
   toolGroupsOff: "next-run",
+  // Card 490: the slot pool reads the chat's count each time a helper asks for
+  // a slot, and the browser session re-reads the settings at the top of every
+  // prompt, so the pool follows a save at once. The spawn tools describe the
+  // count the run started with; the chapter's live row says so.
+  sessionsPerChat: "live",
+  // Card 492: the browser session re-reads the key before every prompt and the
+  // run builds its paragraph once when it starts.
+  careParagraph: "next-run",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to
