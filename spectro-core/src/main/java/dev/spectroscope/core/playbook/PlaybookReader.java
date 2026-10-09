@@ -24,6 +24,9 @@ public final class PlaybookReader {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** The sentence of every refusal, shared with the agent file reader. */
+    static final String REFUSAL = "refused: a playbook may not carry keys, addresses, hooks or MCP servers";
+
     /** Fields a playbook may never carry: they route material or widen rights. */
     static final Set<String> REFUSED = Set.of("apiKey", "key", "baseUrl", "endpoint", "address", "hooks",
             "mcpServers", "autoApprove");
@@ -90,7 +93,7 @@ public final class PlaybookReader {
                 String at = path.isEmpty() ? e.getKey() : path + "." + e.getKey();
                 boolean contentsList = "contents".equals(path) && CONTENTS.contains(e.getKey());
                 if (REFUSED.contains(e.getKey()) && !contentsList) {
-                    findings.add(new Finding(at, "refused: a playbook may not carry keys, addresses, hooks or MCP servers"));
+                    findings.add(new Finding(at, REFUSAL));
                     refused = true;
                 }
                 refuseAnywhere(e.getValue(), at);
