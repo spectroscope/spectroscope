@@ -427,7 +427,8 @@ export function foldWorkIndexed(events: readonly RunEvent[]): WorkFold {
         if (item === undefined) break;
         stamp(item, event.ts, event);
         if (event.role === "status") {
-          if (!settled(item.state)) item.state = "working";
+          // Card 490: "submitted" is a helper waiting for a free slot of its chat.
+          if (!settled(item.state)) item.state = event.state === "submitted" ? "submitted" : "working";
           item.lastStatus = event.text;
         } else if (event.role === "result") {
           item.state = event.state === "completed" ? "completed" : "failed";
