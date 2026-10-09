@@ -67,7 +67,7 @@ class PlaybookLoaderTest {
     void loadsTheMinimalPlaybookWithItsDrawingAndStepResolution() throws IOException {
         Path dir = playbook("pb", MINIMAL);
         Path ws = Files.createDirectories(tmp.resolve("ws"));
-        PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
+        PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config(), ProviderStates.presence());
 
         assertEquals(List.of(), loaded.findings());
         assertNotNull(loaded.playbook());

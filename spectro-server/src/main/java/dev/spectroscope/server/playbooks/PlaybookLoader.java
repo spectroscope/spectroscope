@@ -44,7 +44,8 @@ public final class PlaybookLoader {
 
     public record SkillState(String name, boolean installed) {}
 
-    public record ModelState(String choice, String provider, String model, String state, String reason) {}
+    public record ModelState(String choice, String provider, String model, String state, String reason,
+                              boolean unverified) {}
 
     private PlaybookLoader() {
     }
@@ -105,16 +106,16 @@ public final class PlaybookLoader {
 
     private static ModelState model(Playbook p, String choice, SpectroConfig config, ProviderStates providers) {
         if (choice == null || choice.isBlank()) {
-            return new ModelState(choice, null, null, "none", "the step names no model choice");
+            return new ModelState(choice, null, null, "none", "the step names no model choice", true);
         }
         Playbook.ModelChoice chosen = p.models().get(choice);
         if (chosen == null || chosen.primary() == null) {
-            return new ModelState(choice, null, null, "unknown", "the playbook has no model choice of this name");
+            return new ModelState(choice, null, null, "unknown", "the playbook has no model choice of this name", true);
         }
         String provider = chosen.primary().provider();
         String model = chosen.primary().model();
         ProviderStates.State state = providers.of(provider, model, config);
-        return new ModelState(choice, provider, model, state.state(), state.reason());
+        return new ModelState(choice, provider, model, state.state(), state.reason(), state.unverified());
     }
 
     /** Spec rule 8: every {@code contents} path exists under the folder and stays inside it. */
