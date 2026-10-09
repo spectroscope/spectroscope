@@ -197,6 +197,23 @@ describe("placement", () => {
     expect(l.nodes).toEqual([]);
     expect(l.edges).toEqual([]);
   });
+
+  it("moves every later rank by the extra gap it is given", () => {
+    const topo = {
+      entry: "a",
+      nodes: [{ id: "a", label: "a" }, { id: "b", label: "b" }, { id: "c", label: "c" }],
+      edges: [
+        { from: "a", to: "b", kind: "direct" as const },
+        { from: "b", to: "c", kind: "direct" as const },
+      ],
+    };
+    const base = layoutStateGraph(topo, "horizontal");
+    const wide = layoutStateGraph({ ...topo, gapAlong: 100 }, "horizontal");
+    const x = (l: typeof base, id: string) => l.nodes.find((n) => n.id === id)!.x;
+    expect(x(wide, "a")).toBe(x(base, "a"));
+    expect(x(wide, "b") - x(base, "b")).toBe(42);
+    expect(x(wide, "c") - x(base, "c")).toBe(84);
+  });
 });
 
 describe("edge geometry", () => {

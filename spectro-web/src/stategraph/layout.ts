@@ -105,6 +105,11 @@ export interface Topology {
    *  existed — that is what `layoutIdentity.test.ts` holds the ruler on, and
    *  it is the reason the rest of the engine could be changed around it. */
   sizes?: ReadonlyMap<string, NodeSize>;
+  /** Optional space between rank columns along the rank axis (card 483). The
+   *  playbook editor states it so an outcome label fits between two boxes.
+   *  Absent, not finite or below 20 means the engine's own gap, so every
+   *  caller that states none lays out byte for byte as before. */
+  gapAlong?: number;
 }
 
 /** A node's own box, either dimension optional (card 305). An omitted one is
@@ -412,7 +417,8 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
 
   // -- d. coordinates. One fixed cell per (rank, slot), so boxes cannot collide.
   const g = GAP[orientation];
-  const gapAlong = g.along;
+  const stated = topo.gapAlong;
+  const gapAlong = stated !== undefined && Number.isFinite(stated) && stated >= 20 ? stated : g.along;
   const gapCross = g.cross;
   const horiz = orientation === "horizontal";
   const slotOf = new Map<string, number>();

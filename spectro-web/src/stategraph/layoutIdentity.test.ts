@@ -96,4 +96,15 @@ describe("the state graph does not move", () => {
     expect(JSON.stringify(layoutStateGraph({ ...CRAG, sizes: same }, "horizontal"))).toBe(GOLDEN_HORIZONTAL);
     expect(JSON.stringify(layoutStateGraph({ ...CRAG, sizes: same }, "vertical"))).toBe(GOLDEN_VERTICAL);
   });
+
+  it("is unmoved by a stated gap equal to the engine's own", () => {
+    expect(JSON.stringify(layoutStateGraph({ ...CRAG, gapAlong: 58 }, "horizontal"))).toBe(GOLDEN_HORIZONTAL);
+    expect(JSON.stringify(layoutStateGraph({ ...CRAG, gapAlong: 46 }, "vertical"))).toBe(GOLDEN_VERTICAL);
+  });
+
+  it("ignores a gap it cannot route through", () => {
+    for (const gapAlong of [5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(JSON.stringify(layoutStateGraph({ ...CRAG, gapAlong }, "horizontal"))).toBe(GOLDEN_HORIZONTAL);
+    }
+  });
 });
