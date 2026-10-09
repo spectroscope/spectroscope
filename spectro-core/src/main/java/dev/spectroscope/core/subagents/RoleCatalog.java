@@ -439,7 +439,7 @@ public final class RoleCatalog {
      * The parent-only tools (spawn + dev) as name+description, for introspection,
      * in a chat with no session count.
      *
-     * @return spawn_agent, spawn_agents, then one entry per dev tool — catalog order
+     * @return spawn_agent, spawn_agents, then one entry per dev tool, in catalog order
      */
     public static List<ToolSummary> parentTools() {
         return parentTools(SessionCount.UNSET);
@@ -450,7 +450,7 @@ public final class RoleCatalog {
      * count (card 490), so the context view shows the text that is sent.
      *
      * @param count the chat's session count
-     * @return spawn_agent, spawn_agents, then one entry per dev tool — catalog order
+     * @return spawn_agent, spawn_agents, then one entry per dev tool, in catalog order
      */
     public static List<ToolSummary> parentTools(SessionCount count) {
         List<ToolSummary> out = new ArrayList<>();

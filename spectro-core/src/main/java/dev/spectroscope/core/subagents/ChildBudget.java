@@ -311,7 +311,7 @@ public final class ChildBudget {
 
     /**
      * How long a child may take to produce anything at all, counted from the
-     * moment it holds a slot of its chat — the run budget plus the wait behind
+     * moment it holds a slot of its chat: the run budget plus the wait behind
      * the other children of a wave. This is the grace of a chat with no session
      * count; {@link #firstTokenGraceMs(SessionCount)} takes the chat's count.
      *

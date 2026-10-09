@@ -440,13 +440,13 @@ public final class SubagentManager {
 
     /**
      * Builds and runs one child that holds a slot; returns its memo or an
-     * "ERROR: " string — never throws.
+     * "ERROR: " string; never throws.
      *
      * @param type         profile deciding system prompt and tool registry
      * @param task         the prompt the child runs on
      * @param childId      the child's agentId, already drawn from the counter
      * @param parentQueue  the shared queue its events are forwarded into
-     * @param parentSignal the parent's cancel — cancelling it cascades into the child's own signal
+     * @param parentSignal the parent's cancel; cancelling it cascades into the child's own signal
      */
     private String runAdmittedChild(AgentType type, String task, String childId,
                                     MergedEventStream parentQueue, CancelSignal parentSignal) {
@@ -964,7 +964,7 @@ public final class SubagentManager {
         }
     }
 
-    /** spawn_agents — starts up to the chat's batch width of subagents; the
+    /** spawn_agents: starts up to the chat's batch width of subagents; the
      *  chat's slot pool decides how many of them run at once (card 490). */
     private final class SpawnAgentsTool implements Tool {
         /** Wire name: {@code spawn_agents}. */
