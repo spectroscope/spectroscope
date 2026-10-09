@@ -200,14 +200,15 @@ describe("App: the view is a flag of its own, and every opened place closes it (
 
   it("keeps skills out of the segment state and in a flag of its own", () => {
     expect(app).toMatch(
-      /const \[nav, setNav\] = useState<"sessions" \| "fleets" \| "stategraph">\("sessions"\)/,
+      /const \[nav, setNav\] = useState<"sessions" \| "fleets" \| "stategraph" \| "playbook">\("sessions"\)/,
     );
     expect(app).toMatch(/const \[skillsOpen, setSkillsOpen\] = useState\(false\)/);
   });
 
   it("draws the skills view from the flag, ahead of every segment arm", () => {
-    expect(app).toMatch(/\{skillsOpen \? \(\s*<SkillsPane \/>\s*\) : nav === "stategraph" \? \(/);
-    expect(app).toMatch(/const wholeSurface = skillsOpen \|\| nav === "stategraph";/);
+    // Card 481: the playbook is the first segment arm now, the state graph the second.
+    expect(app).toMatch(/\{skillsOpen \? \(\s*<SkillsPane \/>\s*\) : nav === "playbook" \? \(/);
+    expect(app).toMatch(/const wholeSurface = skillsOpen \|\| nav === "stategraph" \|\| nav === "playbook";/);
   });
 
   it("opens the view from the Skills row without touching the rail's segment", () => {

@@ -58,6 +58,7 @@ const loadFleetHome = chunk("spectrum/FleetHome", () => import("../spectrum/Flee
 const loadFleetSpawn = chunk("spectrum/FleetSpawn", () => import("../spectrum/FleetSpawn"));
 const loadFleetLab = chunk("lab/FleetLab", () => import("../lab/FleetLab"));
 const loadStateGraphPane = chunk("stategraph/StateGraphPane", () => import("../stategraph/StateGraphPane"));
+const loadPlaybookPane = chunk("playbook/PlaybookPane", () => import("../playbook/PlaybookPane"));
 
 export const SpectrumView = lazy(() => loadSpectrumView().then((m) => ({ default: m.SpectrumView })));
 export const TraceView = lazy(() => loadTraceView().then((m) => ({ default: m.TraceView })));
@@ -72,6 +73,7 @@ export const FleetHome = lazy(() => loadFleetHome().then((m) => ({ default: m.Fl
 export const FleetSpawnForm = lazy(() => loadFleetSpawn().then((m) => ({ default: m.FleetSpawnForm })));
 export const FleetLab = lazy(() => loadFleetLab().then((m) => ({ default: m.FleetLab })));
 export const StateGraphPane = lazy(() => loadStateGraphPane().then((m) => ({ default: m.StateGraphPane })));
+export const PlaybookPane = lazy(() => loadPlaybookPane().then((m) => ({ default: m.PlaybookPane })));
 
 /** The loaders of each surface's chunks, in the order of the table's list. */
 export const SURFACE_LOADERS: Partial<Record<SurfaceId, ReadonlyArray<() => Promise<unknown>>>> = {
@@ -90,11 +92,13 @@ export const SURFACE_LOADERS: Partial<Record<SurfaceId, ReadonlyArray<() => Prom
     loadFleetLab,
   ],
   stategraph: [loadStateGraphPane],
+  playbook: [loadPlaybookPane],
 };
 
 /**
  * Fetch the chunks of every surface the mode opens, once the browser is idle.
- * Light opens none of them and fetches nothing. A chunk that fails to arrive
+ * Light opens none of them and fetches nothing; the playbook's chunk is
+ * fetched in developer and in no other mode (card 481). A chunk that fails to arrive
  * is left for the press that needs it.
  *
  * @param mode    the window's mode

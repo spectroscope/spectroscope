@@ -1,0 +1,141 @@
+<!-- ============================== CH 15d ============================== -->
+<h1 data-ch="15d" id="ch-playbooks"><span class="ch-num">Chapter 15d</span>Playbooks: a way of working, drawn</h1>
+
+<p class="lead">A playbook is a folder that says how a team builds: which steps come in
+which order, where the work branches, which skill and which model each step uses, and which
+handover document passes from one step to the next. The developer mode reads such a folder,
+checks it and draws it. It does not run anything by it yet.</p>
+
+<h2 id="ch-playbooks-what">What a playbook is</h2>
+
+<p>The central file is <code>playbook.json</code>. It describes a graph of three kinds of
+node. A <b>step</b> is work: it names who does it (the chat or a child agent), which skills it
+uses, which model choice it runs on, whether it stays private or may use a cheaper hosted
+model, which documents it takes in and which it hands on, and whether it waits for your nod.
+A <b>decision</b> is a check with named outcomes, for example <code>pass</code> and
+<code>fail</code>, and every outcome has exactly one arrow leaving it. An <b>end</b> closes
+the path with a result. Arrows connect them, and an arrow that leads back to an earlier node
+is a loop.</p>
+
+<p>Every loop has a ceiling. A decision that sits on a loop carries <code>max_rounds</code>, and
+when the rounds are used up the decision takes a further outcome called
+<code>exhausted</code>. A playbook whose loop has no such decision is refused when it is
+loaded, and the finding names the arrow.</p>
+
+<p>The file chooses a model by name, never by address. The names are model choices, a small set
+that the playbook defines once, and each choice holds a provider and a model with an optional
+list of fallbacks. A step says <code>strong</code> or <code>fast</code>, and the choice
+resolves to whatever your own installation has. This is what lets a team share a playbook
+without sharing a machine.</p>
+
+<h2 id="ch-playbooks-folder">The folder</h2>
+
+<p>The playbook that ships with the product shows the layout. These are the entries at the
+top of the folder:</p>
+
+<table>
+  <tr><th>Entry</th><th>What it holds</th></tr>
+  <tr><td><code>playbook.json</code></td><td>The graph, the model choices, the document types and the checks. This is the only file the loader must find.</td></tr>
+  <tr><td><code>skills/</code></td><td>The skills the steps name. The shipped folder holds the pack <code>spectropowers</code>, fourteen skills.</td></tr>
+  <tr><td><code>templates/</code></td><td>One Markdown template per document type, so a handover document always has the same sections.</td></tr>
+  <tr><td><code>docs/</code></td><td>A generated <code>index.html</code>: the graph as a picture, one section per step and one per document type.</td></tr>
+  <tr><td><code>LICENSE</code></td><td>The licence text of the material the playbook was built from.</td></tr>
+  <tr><td><code>PROVENANCE.md</code></td><td>Where the material came from, as which version, and every file that was changed.</td></tr>
+</table>
+
+<p>The format also has places for <code>agents/</code>, <code>hooks/</code>,
+<code>commands/</code> and <code>workflows/</code>. The shipped playbook leaves them empty, and
+version 1 only reads the paths the <code>contents</code> list of <code>playbook.json</code>
+names. The loader reads <code>playbook.json</code> and those files and nothing else, at most 1 MB
+per file and 200 files per folder, and only a folder you have registered.</p>
+
+<h2 id="ch-playbooks-mode">The developer mode</h2>
+
+<p>developer is the third view mode, next to learn and light (chapter 6c). It opens everything
+learn opens, without the tutorial, and adds one segment to the sidebar: <b>Playbook</b>. The
+choice is offered in the first question of a new window, and the mode switch at the top right
+changes it later. In learn and light the segment does not exist and its code is never
+requested.</p>
+
+<p>The Playbook segment has four parts.</p>
+
+<ul>
+  <li><b>Folders.</b> The folders you have registered, kept in <code>~/.spectro/playbooks.json</code>.
+  A field adds a folder by its absolute path. A button next to each other folder,
+  &ldquo;Use for this workspace&rdquo;, pins it to the working folder of the window.</li>
+  <li><b>The graph.</b> Steps are cards that show the step name, the model choice and who
+  performs it. Decisions are diamonds, ends are rounded boxes. Each arrow out of a decision
+  carries its outcome as a label, and a loop is drawn as a loop with its round limit, for
+  example &ldquo;up to 5 rounds&rdquo;. The colors follow the active design, light or dark.</li>
+  <li><b>The steps.</b> One table row per step: who performs it, each skill with
+  &ldquo;installed&rdquo; or &ldquo;not installed&rdquo; (read from the skills your installation
+  has), the model choice with the provider it names and that provider's state on this machine,
+  the privacy switch, the documents the step takes and hands on, and whether it waits for a
+  nod.</li>
+  <li><b>Findings.</b> The problems found in the file, one line each, naming the node or key.
+  The list appears only when there is something to report. A file the reader refuses, for
+  example one with an unknown field or a forbidden key, is not drawn at all. A file that
+  reads but breaks a rule, such as a loop without a ceiling, is drawn with its findings above
+  the graph.</li>
+</ul>
+
+<p>With no folder pinned the segment shows the folder picker and the copy button and nothing
+else. A sentence under the title states the limit of this version: Runs do not follow the
+playbook yet.</p>
+
+<h2 id="ch-playbooks-spectro">The spectro playbook</h2>
+
+<p>The product ships one playbook, <code>spectro</code>. It holds
+10 steps, 8 decisions and 2 ends. A first decision classifies the work as a spike, a bounded change or an architectural
+change, and each class takes its own path.</p>
+
+<ul>
+  <li>The <b>architectural</b> path brainstorms with you, checks that the spec has its sections,
+  waits for your nod, writes a plan, checks the plan, waits for your nod again, sets up a
+  worktree and then enters the build loop: implement a task, review it, fix what the review
+  found, for at most 5 rounds per task. A final review follows, and then the branch is
+  finished.</li>
+  <li>The <b>bounded</b> path is a short design in the chat, an implementation test first, and
+  the finish.</li>
+  <li>The <b>spike</b> path is a probe that ends in a recommendation.</li>
+</ul>
+
+<p>The model choices are <code>fast</code>, <code>standard</code>, <code>strong</code> and
+<code>judge</code>. The document types are Ticket, Spec, Plan, Task report and Review report,
+and every step names the ones it takes in and hands on. The skills come from
+<code>spectropowers</code>, a copy of the superpowers skills with house rules worked into the
+text. <code>LICENSE</code> carries the MIT text of the source, and <code>PROVENANCE.md</code>
+names the source version and lists every edited file.</p>
+
+<h2 id="ch-playbooks-copy">Copying it into a folder</h2>
+
+<p>Choose a folder you want to keep the playbook in, ideally one that is its own repository,
+type its absolute path into the field and press &ldquo;Copy the spectro playbook into a
+folder&rdquo;. The server writes the bundled files there and registers the folder. It never
+overwrites. If any target file already exists,
+nothing is written, the answer is a conflict, and the window lists the files that stand in the
+way. After a copy you can edit <code>playbook.json</code> in your editor. The segment reads the file
+each time it loads the folder, so the graph shows what the file says now.</p>
+
+<h2 id="ch-playbooks-refused">What a playbook file may not carry</h2>
+
+<p>A shared folder must not be able to route your material or widen your rights. A key named
+<code>apiKey</code>, <code>key</code>, <code>baseUrl</code>, <code>endpoint</code>,
+<code>address</code>, <code>hooks</code>, <code>mcpServers</code> or <code>autoApprove</code>,
+anywhere in <code>playbook.json</code> except inside the <code>contents</code> list, is refused
+with its path, for example <code>nodes[1].baseUrl</code>. The permission of a step can be
+<code>inherit</code>, <code>readonly</code>, <code>ask</code> or <code>auto</code>, and never
+<code>extended</code>. Node kinds for splitting and joining paths, a fallback chain on a step
+and a nested playbook are recognised and refused as not supported in version 1.</p>
+
+<h2 id="ch-playbooks-limits">What version 1 does not do</h2>
+
+<ul>
+  <li>Runs do not follow the playbook yet. The chat and the child agents work as they did
+  before, and the playbook only describes how a team means to work.</li>
+  <li>You cannot edit the graph with the mouse. The file is the source, and the segment shows
+  what the file says.</li>
+  <li>The skills, agents, hooks and commands of a playbook are not installed into your
+  installation. The step table says whether a named skill is installed, and that is all.</li>
+  <li>Paths that split into parallel branches and join again are not part of the format yet.</li>
+</ul>

@@ -84,6 +84,33 @@ describe("an address into a closed surface (criterion 4, row 1)", () => {
   });
 });
 
+describe("developer routes like learn (card 481)", () => {
+  it("changes no address, and keeps the same route object", () => {
+    for (const hash of [
+      "#/lab",
+      "#/session/s1/trace?row=12",
+      "#/session/s1@5",
+      "#/fleet/ctx-1",
+      "#/settings/fleet",
+    ]) {
+      const route = parseAppRoute(hash);
+      expect(routeInMode(route, "developer"), hash).toBe(route);
+    }
+  });
+
+  it("opens the lab for a scenario and enters a fleet", () => {
+    expect(scenarioLanding("developer")).toBe("lab");
+    expect(fleetEntryAllowed("developer")).toBe(true);
+  });
+
+  it("lands nowhere on a switch to developer", () => {
+    const still = { leaveFleet: false, nav: null, tab: null, route: null };
+    expect(planLanding({ ...onScreen, tab: "trace", enteredFleet: "ctx-1" }, "fleets", "developer")).toEqual(
+      still,
+    );
+  });
+});
+
 describe("an address with an event index (criterion 4, row 2)", () => {
   it("opens the chat at that session in light, with no seek", () => {
     expect(inLight("#/session/s1@5")).toBe("#/session/s1");
@@ -160,6 +187,18 @@ describe("the switch lands on the chat of the same session", () => {
       tab: "chat",
       route: { kind: "live", tab: null },
     });
+  });
+
+  it("moves the playbook segment back to the sessions on a switch out of developer (card 481)", () => {
+    for (const mode of ["learn", "light"] as const) {
+      expect(planLanding(onScreen, "playbook", mode), mode).toEqual({
+        leaveFleet: false,
+        nav: "sessions",
+        tab: null,
+        route: null,
+      });
+    }
+    expect(planLanding(onScreen, "playbook", "developer").nav).toBe(null);
   });
 
   it("leaves an entered fleet for the live chat", () => {
