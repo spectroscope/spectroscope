@@ -176,7 +176,11 @@ final class ContextDescriber {
         Stream<ContextInfo.ToolInfo> registered = Stream.of(standardTools.stream(), extras.stream(), useSkill)
                 .flatMap(tools -> tools)
                 .map(ContextDescriber::asToolInfo);
-        Stream<ContextInfo.ToolInfo> parentOnly = RoleCatalog.parentTools().stream()
+        // Card 490: the spawn tools name the chat's session count when one is
+        // set, so the view describes them with this config's count.
+        Stream<ContextInfo.ToolInfo> parentOnly = RoleCatalog.parentTools(
+                        dev.spectroscope.core.subagents.SessionCount.of(config.sessionsPerChat()))
+                .stream()
                 .map(summary -> new ContextInfo.ToolInfo(summary.name(), summary.description(), false));
         return Stream.concat(registered, parentOnly).toList();
     }

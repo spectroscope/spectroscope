@@ -95,6 +95,13 @@ import java.util.List;
  *                            provider request and out of the context ring, and
  *                            a call to one of its tools is refused as unknown.
  *                            Null switches nothing off, which is the shipped state
+ * @param sessionsPerChat     card 490: how many model sessions the chat this
+ *                            agent leads may run at once, itself and its
+ *                            helpers together. The agent reads it once at the
+ *                            start of every run for the text its spawn tools
+ *                            carry, and the chat's slot pool reads it live.
+ *                            Null sets no count, which is the shipped state and
+ *                            the v0.14.4 behaviour
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
@@ -110,7 +117,57 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                            dev.spectroscope.core.tools.RtkFilter rtkFilter,
                            dev.spectroscope.core.session.SessionWindow sessionWindow,
                            String toolResultElision,
-                           java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff) {
+                           java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff,
+                           Integer sessionsPerChat) {
+
+    /** Compat: the arity of v0.14.4, which knew no session count (card 490).
+     *  A caller without one sets no count, as before.
+     *
+     * @param provider            the LLM backend the loop streams from
+     * @param systemPrompt        system prompt sent with every provider request
+     * @param registry            the tool belt
+     * @param cwd                 working directory the file tools resolve against
+     * @param onPermission        blocking human gate
+     * @param agentId             id stamped on every emitted event
+     * @param parentId            the spawning agent's id; null for the main agent
+     * @param initialMessages     history seed of a resumed session
+     * @param providerName        build-time provider label for run_start
+     * @param maxTokens           output-token budget per provider call
+     * @param compactionThreshold input-token level that triggers compaction
+     * @param introspection       TRUE emits a context_info estimate each turn
+     * @param thinking            TRUE requests the model's reasoning stream
+     * @param hooks               external shell hooks around tool calls
+     * @param llmWire             the session's backend-to-LLM recorder
+     * @param latency             the session's shared window of exchange durations
+     * @param progressGuard       the harness's eye on a run going nowhere
+     * @param maxTurns            the runaway-loop brake, in turns per run
+     * @param continuationLeash   the leash that keeps an unfinished run going
+     * @param goal                what this run is FOR, and the check that decides it
+     * @param steering            what the operator typed while the run was working
+     * @param rtkFilter           the rtk rewrite of a shell line before the gate
+     * @param sessionWindow       the context window the operator set for this session
+     * @param toolResultElision   the elision switch, {@code "on"} or {@code "off"}
+     * @param toolGroupsOff       the tool groups the operator switched off */
+    public AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
+                        Path cwd, PermissionBroker onPermission, String agentId, String parentId,
+                        List<ProviderMessage> initialMessages, String providerName,
+                        Integer maxTokens, Integer compactionThreshold, Boolean introspection,
+                        Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire,
+                        dev.spectroscope.core.provider.ExchangeLatency latency,
+                        dev.spectroscope.core.progress.ProgressGuard progressGuard,
+                        Integer maxTurns,
+                        dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
+                        dev.spectroscope.core.goal.SessionGoal goal,
+                        dev.spectroscope.core.steering.SteeringInbox steering,
+                        dev.spectroscope.core.tools.RtkFilter rtkFilter,
+                        dev.spectroscope.core.session.SessionWindow sessionWindow,
+                        String toolResultElision,
+                        java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
+                initialMessages, providerName, maxTokens, compactionThreshold, introspection,
+                thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
+                goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, null);
+    }
 
     /** Compat: the arity before cards 467 and 466, which knew no elision
      *  switch and no tool groups. A caller without them gets the shipped
@@ -155,7 +212,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
                 initialMessages, providerName, maxTokens, compactionThreshold, introspection,
                 thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
-                goal, steering, rtkFilter, sessionWindow, null, null);
+                goal, steering, rtkFilter, sessionWindow, null, null, null);
     }
 
     /** Compat: the arity before card 390, with cards 379 and 380 in it. Never
@@ -446,6 +503,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable, sets nothing
         private String toolResultElision; // nullable, the shipped "on"
         private java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff; // nullable, nothing off
+        private Integer sessionsPerChat; // nullable, no count per chat
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -579,6 +637,15 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
             return this;
         }
 
+        /** Card 490: how many model sessions the chat this agent leads may run
+         *  at once, itself and its helpers together.
+         *  @param value the chat's count; null sets none, as v0.14.4 did
+         *  @return this builder */
+        public Builder sessionsPerChat(Integer value) {
+            this.sessionsPerChat = value;
+            return this;
+        }
+
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
@@ -586,7 +653,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
                     introspection, thinking, hooks, llmWire, latency, progressGuard,
                     maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow,
-                    toolResultElision, toolGroupsOff);
+                    toolResultElision, toolGroupsOff, sessionsPerChat);
         }
     }
 }

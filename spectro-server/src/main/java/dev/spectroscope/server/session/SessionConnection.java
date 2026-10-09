@@ -1674,6 +1674,7 @@ public final class SessionConnection {
             buildAgentOnce();
             suggestTitleOnce(text); // card 445: in the background, the run does not wait
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
+            refreshSessionsPerChat(); // card 490: the chat's session count, per prompt
             sendWorkspaceInfo();
             sendGoalInfo(); // card 267: what this run is for, where it is watched
 
@@ -1993,6 +1994,10 @@ public final class SessionConnection {
                 // (SubagentManager.childToolGroupsOff), so a gear change
                 // mid-run reaches parent and children together at the next run
                 .toolGroupsOff(toolGroupsOff::get)
+                // Card 490: the chat's session count between runs; during a
+                // run the parent agent below holds the live count the slot
+                // pool reads
+                .sessionsPerChat(active.sessionsPerChat())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -2069,6 +2074,10 @@ public final class SessionConnection {
                 .toolResultElision(active.toolResultElision())
                 // Card 466: the gear's tool groups, read at the start of every run
                 .toolGroupsOff(toolGroupsOff::get)
+                // Card 490: this chat's session count. Re-read from the
+                // settings files at the top of every prompt
+                // (refreshSessionsPerChat), so a save reaches the next prompt
+                .sessionsPerChat(active.sessionsPerChat())
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
@@ -2094,6 +2103,23 @@ public final class SessionConnection {
         if (active != null) {
             agent.continuationLeash().setBudget(active.continuationBudget());
         }
+    }
+
+    /**
+     * Re-reads the chat's session count onto the live agent (card 490).
+     *
+     * <p>Called at the top of every prompt, like the continuation budget, but
+     * from the settings files as they stand now ({@link #liveConfig()}), so a
+     * count saved on the settings page or in the folder's local file reaches
+     * the next prompt of a session that is already open. The slot pool reads
+     * the agent's count each time a helper asks for a slot; the spawn tools
+     * describe the count the run started with.</p>
+     */
+    void refreshSessionsPerChat() {
+        if (agent == null) {
+            return;
+        }
+        agent.setSessionsPerChat(liveConfig().sessionsPerChat());
     }
 
     /** Card 379: the oracle the next {@link #buildAgentOnce} hands the rtk

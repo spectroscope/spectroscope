@@ -705,6 +705,9 @@ public final class SpectroCli implements Runnable {
                 .subagentBudgetTokens(config.subagentBudgetTokens())
                 // card 467: the children follow the session's elision switch
                 .toolResultElision(config.toolResultElision())
+                // card 490: the chat's session count, between runs; during a
+                // run the parent agent's own count governs the slot pool
+                .sessionsPerChat(config.sessionsPerChat())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -877,6 +880,8 @@ public final class SpectroCli implements Runnable {
                 .maxTokens(config.maxTokens())
                 // Card 467: old, large tool results leave the request.
                 .toolResultElision(config.toolResultElision())
+                // Card 490: the REPL is one chat; its helpers share its count.
+                .sessionsPerChat(config.sessionsPerChat())
                 .onPermission(askOnTerminal)
                 .build());
     }

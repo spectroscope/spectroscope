@@ -115,8 +115,10 @@ export function buildFleetLabScene(model: FleetModel): FleetLabScene {
           byId.set(event.to, { ...card, task: event.text, state: "submitted" });
         } else if (event.role === "status") {
           const card = ensure(event.from);
-          byId.set(event.from, { ...card, state: "working", lastStatus: event.text });
-          activeNode = event.from;
+          // Card 490: "submitted" is a helper waiting for a free slot of its chat.
+          const waiting = event.state === "submitted";
+          byId.set(event.from, { ...card, state: waiting ? "submitted" : "working", lastStatus: event.text });
+          if (!waiting) activeNode = event.from;
         } else if (event.role === "result") {
           const card = ensure(event.from);
           byId.set(event.from, {

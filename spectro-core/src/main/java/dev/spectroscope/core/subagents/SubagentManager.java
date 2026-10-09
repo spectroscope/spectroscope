@@ -47,6 +47,11 @@ public final class SubagentManager {
      * house test backend serves four concurrent completions usefully, and
      * {@code konzept/ORCHESTRATION.md} §7 leaves the width an open owner call
      * until someone does. It moves when a number says so, with the number.</p>
+     *
+     * <p>Card 490 left it where it is and made it the width of a chat with no
+     * session count. A chat with a count reads {@link SessionCount}: its batch
+     * width never drops below this constant, and how many of a batch run at
+     * once is the chat's count minus the main agent.</p>
      */
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     public static final int MAX_PARALLEL_CHILDREN = 4;
@@ -69,19 +74,31 @@ public final class SubagentManager {
                 "task": { "type": "string", "description": "Complete, self-contained assignment" } } }
             """);
 
-    // maxItems mirrors MAX_PARALLEL_CHILDREN — keep the two in sync.
-    private static final JsonNode SPAWN_AGENTS_SCHEMA = parseSchema("""
-            { "type": "object", "required": ["agents"],
-              "properties": {
-                "agents": { "type": "array", "minItems": 1, "maxItems": 4,
-                  "items": { "type": "object", "required": ["type", "task"],
-                    "properties": {
-                      "type": { "type": "string", "enum": ["explore", "worker"] },
-                      "task": { "type": "string" } } } } } }
-            """);
+    /** The {@code spawn_agents} schemas by batch width (card 490). The width
+     *  comes from {@link SessionCount#batchWidth()}, so the schema, the
+     *  description and the width check cannot disagree; a chat with no count
+     *  gets width {@link #MAX_PARALLEL_CHILDREN}, which is the v0.14.4 schema. */
+    private static final Map<Integer, JsonNode> SPAWN_AGENTS_SCHEMAS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static JsonNode spawnAgentsSchema(int width) {
+        return SPAWN_AGENTS_SCHEMAS.computeIfAbsent(width, w -> parseSchema("""
+                { "type": "object", "required": ["agents"],
+                  "properties": {
+                    "agents": { "type": "array", "minItems": 1, "maxItems": %d,
+                      "items": { "type": "object", "required": ["type", "task"],
+                        "properties": {
+                          "type": { "type": "string", "enum": ["explore", "worker"] },
+                          "task": { "type": "string" } } } } } }
+                """.formatted(w)));
+    }
 
     private final SubagentConfig config;
     private final ChildBudget budget;
+
+    /** Card 490: the chat's slot pool. One per manager, because a manager is
+     *  built once per chat; nothing outside the chat is counted. */
+    private final SessionSlots slots = new SessionSlots();
 
     /** Per-type counters -> "explore-1", "worker-2". Synchronized access: parallel children draw concurrently. */
     private final Map<AgentType, Integer> counters = new EnumMap<>(AgentType.class);
@@ -180,6 +197,51 @@ public final class SubagentManager {
                 config.toolGroupsOff();
         java.util.Set<dev.spectroscope.core.ToolGroup> off = reader == null ? null : reader.get();
         return off == null ? java.util.Set.of() : java.util.Set.copyOf(off);
+    }
+
+    /**
+     * Card 490: the session count the spawn tools describe and check against.
+     * While a parent run is in flight it is the count that run read when it
+     * started, so the descriptions do not move inside a run. Between runs it
+     * is the count the config carries.
+     *
+     * @return the count for descriptions, the schema and the width check
+     */
+    SessionCount describedCount() {
+        Agent parent = currentParent;
+        return SessionCount.of(parent != null ? parent.sessionsPerChatThisRun() : config.sessionsPerChat());
+    }
+
+    /**
+     * Card 490: the session count the slot pool admits by, read live. While a
+     * parent run is in flight it is the parent agent's count as it stands now,
+     * so a change reaches the next helper that asks for a slot. The parent
+     * governs: a parent built without a count runs its helpers with no limit,
+     * whatever the config carries.
+     *
+     * @return the count for the pool and the first-token grace
+     */
+    SessionCount liveCount() {
+        Agent parent = currentParent;
+        return SessionCount.of(parent != null ? parent.sessionsPerChat() : config.sessionsPerChat());
+    }
+
+    /** The first-token grace a helper admitted now would get (card 490).
+     *  @return milliseconds */
+    long firstTokenGraceMs() {
+        return budget.firstTokenGraceMs(liveCount());
+    }
+
+    /** How many helpers of this chat hold a slot now, for tests.
+     *  @return the slots in use */
+    int slotsInUse() {
+        return slots.running();
+    }
+
+    /** How many helpers of this chat are in the slot queue now, for tests.
+     *  @return the tickets not yet admitted or dropped */
+    int slotsQueued() {
+        return slots.queued();
     }
 
     /**
@@ -310,27 +372,18 @@ public final class SubagentManager {
      * text. Runs on a virtual thread of the spawn executor — that thread IS
      * the forwarder. Never throws: failures return as a String prefixed
      * "ERROR: " (tool convention), which the agent loop turns into a
-     * tool_result with isError = true.
-     *
-     * @param type explore or worker
-     * @param task the self-contained assignment — both the child's prompt and the visible A2A task
-     * @return the child's final text (prefixed with id and token cost), or an "ERROR: " string
-     */
-    private String runChild(AgentType type, String task) {
-        return runChild(type, task, task, null);
-    }
-
-    /**
-     * The labeled variant behind the dev tools: wraps executeChild in the A2A
+     * tool_result with isError = true. Wraps executeChild in the A2A
      * envelope — spawn edge, task message, then the result message on every path.
      *
      * @param type      the child profile — dev tools always pass worker
      * @param task      the full prompt the child runs on (dev tools compose a role preamble)
      * @param ownerTask the assignment as given by the requester — what the A2A task message shows
      * @param label     the dev tool that spawned this child, or null for plain spawns
+     * @param ticket    the child's place in the chat's slot queue (card 490)
      * @return the outcome forwarded to the requester — final text or an "ERROR: " string
      */
-    private String runChild(AgentType type, String task, String ownerTask, String label) {
+    private String runChild(AgentType type, String task, String ownerTask, String label,
+                            SessionSlots.Ticket ticket) {
         MergedEventStream parentQueue = this.currentStream;
         CancelSignal parentSignal = this.currentParentSignal;
         if (parentQueue == null || parentSignal == null) {
@@ -347,7 +400,7 @@ public final class SubagentManager {
         parentQueue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
                 "task", "submitted", ownerTask, label, now()));
 
-        String outcome = executeChild(type, task, childId, parentQueue, parentSignal);
+        String outcome = executeChild(type, task, childId, parentQueue, parentSignal, ticket);
         boolean failed = outcome.startsWith("ERROR:");
         parentQueue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(),
                 "result", failed ? "failed" : "completed", outcome, label, now()));
@@ -355,16 +408,54 @@ public final class SubagentManager {
     }
 
     /**
-     * Builds and runs one child; returns its memo or an "ERROR: " string — never throws.
+     * Takes a slot of the chat for one child, runs it, and gives the slot
+     * back (card 490). A child that finds no free slot is shown as waiting, an
+     * {@code agent_message} with role {@code status} and the A2A state
+     * {@code submitted}, and waits behind the children asked for before it.
+     *
+     * <p>This is the seam a helper passes on its way to the model: everything
+     * between the slot and the release is {@link #runAdmittedChild}.</p>
      *
      * @param type         profile deciding system prompt and tool registry
      * @param task         the prompt the child runs on
      * @param childId      the child's agentId, already drawn from the counter
      * @param parentQueue  the shared queue its events are forwarded into
-     * @param parentSignal the parent's cancel — cancelling it cascades into the child's own signal
+     * @param parentSignal the parent's cancel; it also ends a wait for a slot
+     * @param ticket       the child's place in the slot queue
+     * @return the child's memo or an "ERROR: " string; never throws
      */
     private String executeChild(AgentType type, String task, String childId,
-                                MergedEventStream parentQueue, CancelSignal parentSignal) {
+                                MergedEventStream parentQueue, CancelSignal parentSignal,
+                                SessionSlots.Ticket ticket) {
+        SessionCount count = liveCount();
+        if (slots.mustWait(ticket, count)) {
+            parentQueue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(),
+                    "status", "submitted", count.waitingText(), null, now()));
+        }
+        parentSignal.onCancel(slots::wake);
+        if (!slots.acquire(ticket, this::liveCount, parentSignal)) {
+            return "ERROR: [" + childId + "] ended by cancellation of the parent run while it"
+                    + " waited for a free slot.";
+        }
+        try {
+            return runAdmittedChild(type, task, childId, parentQueue, parentSignal);
+        } finally {
+            slots.release();
+        }
+    }
+
+    /**
+     * Builds and runs one child that holds a slot; returns its memo or an
+     * "ERROR: " string; never throws.
+     *
+     * @param type         profile deciding system prompt and tool registry
+     * @param task         the prompt the child runs on
+     * @param childId      the child's agentId, already drawn from the counter
+     * @param parentQueue  the shared queue its events are forwarded into
+     * @param parentSignal the parent's cancel; cancelling it cascades into the child's own signal
+     */
+    private String runAdmittedChild(AgentType type, String task, String childId,
+                                    MergedEventStream parentQueue, CancelSignal parentSignal) {
         // Cascading cancel + TWO per-child clocks: the child gets its OWN signal.
         // The parent's signal cancels it (Ctrl+C ends the whole tree; onCancel
         // fires immediately if the parent is already cancelled — no race at
@@ -372,10 +463,11 @@ public final class SubagentManager {
         // budget. Never a Thread.sleep race, never Future.get(timeout).
         //
         // Card 270, the shape that replaces the single literal:
-        //   * the QUEUE GRACE is armed here, at the spawn, and only asks whether
-        //     this backend ever started on this child. Four children are
-        //     submitted at once and nothing between them and the backend queues,
-        //     so on one loaded local model the third and fourth wait for real.
+        //   * the QUEUE GRACE is armed here, once the child holds a slot of its
+        //     chat (card 490), and only asks whether this backend ever started
+        //     on this child. Up to a chat's helpers-at-once are at the backend
+        //     together, so on one loaded local model the later ones wait for
+        //     real; the allowance follows the chat's count.
         //   * the RUN BUDGET is armed on the child's FIRST TOKEN and asks whether
         //     it is still getting anywhere. One clock could not tell those apart,
         //     and on the owner's backend (median exchange 92.2 s) the literal
@@ -387,7 +479,7 @@ public final class SubagentManager {
         // (try-with-resources below) also cancels the child signal per the
         // stage-3 contract, so the signal state alone cannot distinguish
         // "finished normally" from "out of budget".
-        long graceMs = budget.firstTokenGraceMs();
+        long graceMs = firstTokenGraceMs(); // card 490: the one reader of the grace
         long runBudgetMs = budget.runBudgetMs();
         // Card 394: the third brake, and not a clock. It is read against the
         // running usage sum in the forwarder loop below and cuts through the
@@ -453,6 +545,10 @@ public final class SubagentManager {
                 // child's history grows with its own reads, and a switch that
                 // stopped at the root would leave the busiest readers unruled.
                 .toolResultElision(config.toolResultElision())
+                // Card 490: the child belongs to the chat whose count it ran
+                // under. It holds no spawn tools, so the number limits nothing
+                // in the child; it is carried so the tree reads one count.
+                .sessionsPerChat(liveCount().sessions())
                 .build());
 
         StringBuilder lastTurnText = new StringBuilder();
@@ -581,11 +677,25 @@ public final class SubagentManager {
      */
     private List<String> runChildrenInParallel(List<ChildRequest> requests) {
         List<String> results = new ArrayList<>();
+        // Card 490: the tickets are drawn HERE, on the caller's thread and in
+        // request order, so the slot queue starts the children in the order the
+        // parent asked for them and not in the order their threads wake up.
+        List<SessionSlots.Ticket> tickets = requests.stream().map(request -> slots.enqueue()).toList();
         // try-with-resources: ExecutorService.close() waits for the tasks (Java 21).
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<Future<String>> futures = requests.stream()
-                    .map(request -> executor.submit(() ->
-                            runChild(request.type(), request.task(), request.ownerTask(), request.label())))
+            List<Future<String>> futures = IntStream.range(0, requests.size())
+                    .mapToObj(i -> {
+                        ChildRequest request = requests.get(i);
+                        SessionSlots.Ticket ticket = tickets.get(i);
+                        return executor.submit(() -> {
+                            try {
+                                return runChild(request.type(), request.task(), request.ownerTask(),
+                                        request.label(), ticket);
+                            } finally {
+                                slots.forget(ticket); // a child refused before its slot holds no place
+                            }
+                        });
+                    })
                     .toList();
             for (Future<String> future : futures) {
                 try {
@@ -832,7 +942,7 @@ public final class SubagentManager {
         /** The catalog description — the same text the introspection view shows. */
         @Override
         public String description() {
-            return RoleCatalog.SPAWN_AGENT_DESC;
+            return RoleCatalog.spawnAgentDescription(describedCount());
         }
 
         /** Requires {@code type} (explore|worker) and a self-contained {@code task}. */
@@ -860,7 +970,8 @@ public final class SubagentManager {
         }
     }
 
-    /** spawn_agents — starts up to MAX_PARALLEL_CHILDREN subagents IN PARALLEL. */
+    /** spawn_agents: starts up to the chat's batch width of subagents; the
+     *  chat's slot pool decides how many of them run at once (card 490). */
     private final class SpawnAgentsTool implements Tool {
         /** Wire name: {@code spawn_agents}. */
         @Override
@@ -876,16 +987,16 @@ public final class SubagentManager {
             return false;
         }
 
-        /** The catalog description for the parallel variant. */
+        /** The catalog description for the parallel variant, naming the chat's count. */
         @Override
         public String description() {
-            return RoleCatalog.SPAWN_AGENTS_DESC;
+            return RoleCatalog.spawnAgentsDescription(describedCount());
         }
 
-        /** Requires an {@code agents} array of {type, task} — 1 to 4 entries. */
+        /** Requires an {@code agents} array of {type, task}, 1 to the batch width. */
         @Override
         public JsonNode inputSchema() {
-            return SPAWN_AGENTS_SCHEMA;
+            return spawnAgentsSchema(describedCount().batchWidth());
         }
 
         /** Permission-free — the children's tools ask for permission themselves. */
@@ -901,8 +1012,9 @@ public final class SubagentManager {
             if (!agents.isArray() || agents.isEmpty()) {
                 return "ERROR: agents must be a non-empty array.";
             }
-            if (agents.size() > MAX_PARALLEL_CHILDREN) {
-                return "ERROR: at most " + MAX_PARALLEL_CHILDREN + " parallel subagents.";
+            int width = describedCount().batchWidth();
+            if (agents.size() > width) {
+                return "ERROR: at most " + width + " parallel subagents.";
             }
             List<ChildRequest> requests = new ArrayList<>();
             for (JsonNode entry : agents) {
