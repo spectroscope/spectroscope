@@ -216,6 +216,101 @@
   text-overflow: ellipsis;
 }
 
+/* ---------- Local mode (card 493) ----------
+   The first section of the gear: one switch, and below it, while it is on,
+   one row per value it wrote. Tokens only, so both designs follow. */
+
+.wsg-lm-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.wsg-lm-switch input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.wsg-lm-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wsg-lm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+}
+.wsg-lm-row + .wsg-lm-row {
+  border-top: 1px solid var(--border);
+}
+
+.wsg-lm-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.wsg-lm-label {
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+
+.wsg-lm-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+.wsg-lm-control {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.wsg-lm-number {
+  width: 5em;
+}
+.wsg-lm-suffix {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.wsg-lm-care {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.wsg-lm-changed-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-11);
+}
+.wsg-lm-changed {
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--accent);
+}
+.wsg-lm-reset {
+  font-size: var(--fs-11);
+}
+
+.wsg-lm-warning {
+  margin: 0;
+}
+
 /* ---------- Always-allow rules ---------- */
 
 .wsg-empty {

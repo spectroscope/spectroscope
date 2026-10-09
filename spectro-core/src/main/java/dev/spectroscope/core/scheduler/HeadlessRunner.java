@@ -486,6 +486,10 @@ public final class HeadlessRunner {
             }
         };
 
+        // settings-reach: toolGroupsOff | unattended runs | spectro run, a cron
+        //     fire and a fleet node have no composer gear, and card 466 kept the
+        //     key to a session in the app window, so a list in a settings file
+        //     leaves an unattended run with every tool it registers.
         Agent agent = lastAgent = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(HEADLESS_SYSTEM_PROMPT)
@@ -538,6 +542,8 @@ public final class HeadlessRunner {
                 // Card 492: the headless faces register no spawn tool, so the
                 // paragraph leaves the sentence about subagents out
                 .careParagraph(config.careParagraph())
+                // Card 493: the read share, from the config the run is built with.
+                .readSharePercent(config.readSharePercent())
                 .build());
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
         // headless failure behaviour stays exactly the inline sink's. An

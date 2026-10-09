@@ -328,7 +328,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * @param baseUrl the configured server root, versioned or not
      * @return the absolute URL of the capability listing
      */
-    static String capabilityUrl(String baseUrl) {
+    public static String capabilityUrl(String baseUrl) {
         String root = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
         root = root.replaceAll("/v1beta/openai$", "").replaceAll("/v\\d+$", "");
         return root + "/api/v1/models";

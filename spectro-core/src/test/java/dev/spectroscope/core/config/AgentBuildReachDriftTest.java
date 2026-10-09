@@ -247,6 +247,30 @@ class AgentBuildReachDriftTest {
                         + ".\nOffending sites:\n  " + String.join("\n  ", failures));
     }
 
+    /**
+     * Card 493, criterion 8: every key the Local mode switch writes is a key
+     * this guard asks every face for. The list is {@link LocalMode#knobs()},
+     * read off the record's marked components, so a knob added tomorrow is
+     * asked for here the day it is marked.
+     */
+    @Test
+    void everyKeyTheLocalModeSwitchWritesIsAKeyThisGuardGoverns() {
+        List<String> governed = governedKeys();
+        List<String> knobs = LocalMode.knobs();
+        assertFalse(knobs.isEmpty(), "the switch writes no key, so this test watches nothing");
+        List<String> ungoverned = new ArrayList<>();
+        for (String knob : knobs) {
+            if (!governed.contains(knob)) {
+                ungoverned.add(knob);
+            }
+        }
+        assertTrue(ungoverned.isEmpty(),
+                "the Local mode switch writes " + ungoverned + " for a chat, and no field of the"
+                        + " same name reaches an agent through " + CHAINS + ", so this guard"
+                        + " never asks a face for it. A value the switch writes would then reach"
+                        + " whichever face happens to read it and no other, which is card 364");
+    }
+
     @Test
     void everyRefusalIsNamedInThePublishedRowOfTheKeyItRefuses() throws IOException {
         Path root = repoRoot();
@@ -406,7 +430,13 @@ class AgentBuildReachDriftTest {
         for (var component : SpectroConfig.class.getRecordComponents()) {
             Class<?> configType = boxed(component.getType());
             for (Map<String, Class<?>> target : targets) {
-                if (configType.equals(target.get(component.getName()))) {
+                Class<?> targetType = target.get(component.getName());
+                // Card 493: a Supplier of the same name is a LIVE reading of the
+                // key, which is how card 466 hands toolGroupsOff to an agent.
+                // The type rule alone left that key governed by nothing, and it
+                // is a key the Local mode switch writes.
+                if (configType.equals(targetType)
+                        || java.util.function.Supplier.class.equals(targetType)) {
                     keys.add(component.getName());
                     break;
                 }
@@ -429,7 +459,8 @@ class AgentBuildReachDriftTest {
 
     /** Which of the governed keys one builder's target record can carry, by the
      *  same rule that produced the keys: a component of the same name whose
-     *  boxed type matches {@link SpectroConfig}'.
+     *  boxed type matches {@link SpectroConfig}', or a {@code Supplier} of the
+     *  same name (card 493).
      *
      *  <p>The comparison is against the CONFIG's type rather than any one
      *  target's, because a key is governed as soon as some target matches the
@@ -449,7 +480,8 @@ class AgentBuildReachDriftTest {
         List<String> keys = new ArrayList<>();
         for (String key : governed) {
             Class<?> here = carried.get(key);
-            if (here != null && here.equals(config.get(key))) {
+            if (here != null && (here.equals(config.get(key))
+                    || java.util.function.Supplier.class.equals(here))) {
                 keys.add(key);
             }
         }

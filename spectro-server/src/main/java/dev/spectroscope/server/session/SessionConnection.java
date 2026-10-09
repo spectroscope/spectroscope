@@ -181,6 +181,33 @@ public final class SessionConnection {
     /** True once the gear has switched a group, so the session moment does
      *  not overwrite a choice made before the first prompt. */
     private volatile boolean toolGroupsTouched;
+
+    /**
+     * Card 493: the Local mode switch of this chat, a record of what it wrote
+     * (Alternative A of {@code konzept/RUN-PROFILES.md}). The server folds
+     * nothing for a mode: switching on writes ordinary values into this
+     * session and, with a pinned folder, into that folder's local file.
+     */
+    private final dev.spectroscope.core.config.LocalModeState localMode =
+            new dev.spectroscope.core.config.LocalModeState();
+
+    /**
+     * Card 493: the values this chat holds for the knobs of the switch other
+     * than the tool groups, which live in {@link #toolGroupsOff}. A key held
+     * here wins over the settings files, the touched flag per key that keeps
+     * the session moment and an agent's edit of the local file from undoing a
+     * live switch. A key absent here is read from the files at the top of
+     * every prompt, as cards 490 and 492 built it.
+     */
+    private final Map<String, JsonNode> heldKnobs = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Card 493: true once the switch was used in this session, so a folder
+     *  pinned later does not turn it on from the folder's record. */
+    private volatile boolean localModeTouched;
+
+    /** Card 493: why the last write of the switch into the local file did not
+     *  happen, or null. */
+    private volatile String localModeSaveError;
     /** Card 459: true once the operator switched this session's backend. A
      *  switch, even back to the connect-time pair, outranks the workspace. */
     private volatile boolean providerTouched;
@@ -646,7 +673,9 @@ public final class SessionConnection {
             // integration suite pins (provider, mode, workspace) stands. A
             // pinned folder's own list is shown from this moment on.
             seedToolGroupsFrom(savedToolGroupsFolder());
+            seedLocalModeFrom(savedToolGroupsFolder()); // card 493: the folder's record
             sendToolGroupsInfo();
+            sendLocalModeInfo();
             return;
         }
         try {
@@ -664,7 +693,9 @@ public final class SessionConnection {
             workspace = resolveAndRecord(workspaceChoice(), store.id());
             sendWorkspaceInfo();
             seedToolGroupsFrom(savedToolGroupsFolder()); // card 466
+            seedLocalModeFrom(savedToolGroupsFolder()); // card 493
             sendToolGroupsInfo();
+            sendLocalModeInfo();
         } catch (Exception missing) {
             // The claim was taken before the load; a session that cannot be
             // loaded must not stay held by a socket that is about to close.
@@ -993,6 +1024,303 @@ public final class SessionConnection {
     }
 
     /**
+     * The composer gear's Local mode switch (card 493). In memory and at once,
+     * like {@link #onSetPermissionMode}: switching on writes the preset of
+     * {@link dev.spectroscope.core.config.LocalMode} for every knob the
+     * operator has not set by hand, an edit or a reset changes one value, and
+     * switching off gives every knob back what the chat held before. With a
+     * pinned folder the values and the record of what the switch wrote also
+     * go into that folder's local file, so the next session in the folder
+     * starts with the switch on. The server writes it, for the reason
+     * {@link #onSetToolGroupsOff} gives.
+     *
+     * <p>The frame is untrusted input: {@code on} (a boolean), {@code values}
+     * (an object of knob keys) and {@code reset} (a list of knob keys). Every
+     * part is checked before anything changes; a refused part changes
+     * nothing and is answered with an error frame.</p>
+     *
+     * @param frame the {@code set_local_mode} frame
+     */
+    public void onSetLocalMode(JsonNode frame) {
+        JsonNode on = frame.path("on");
+        JsonNode values = frame.path("values");
+        JsonNode reset = frame.path("reset");
+        if (!on.isMissingNode() && !on.isBoolean()) {
+            sendError("Local mode: \"on\" must be true or false.");
+            return;
+        }
+        if (!values.isMissingNode() && !values.isObject()) {
+            sendError("Local mode: \"values\" must be an object of settings keys.");
+            return;
+        }
+        if (!reset.isMissingNode() && !reset.isArray()) {
+            sendError("Local mode: \"reset\" must be a list of settings keys.");
+            return;
+        }
+        boolean willBeOn = on.isBoolean() ? on.asBoolean() : localMode.on();
+        if ((values.size() > 0 || reset.size() > 0) && !willBeOn) {
+            sendError("Local mode is off; switch it on to change its values.");
+            return;
+        }
+        for (java.util.Map.Entry<String, JsonNode> entry : values.properties()) {
+            String refused = dev.spectroscope.core.config.LocalMode.refusal(entry.getKey(), entry.getValue());
+            if (refused != null) {
+                sendError("Local mode: " + refused + ".");
+                return;
+            }
+        }
+        for (JsonNode key : reset) {
+            if (!key.isTextual() || !dev.spectroscope.core.config.LocalMode.knobs().contains(key.asText())) {
+                sendError("Local mode: \"" + key.asText() + "\" is not a value of the switch.");
+                return;
+            }
+        }
+        localModeTouched = true;
+        if (on.isBoolean()) {
+            applyLocalModePlan(on.asBoolean() ? switchLocalModeOn() : localMode.switchOff());
+        }
+        for (java.util.Map.Entry<String, JsonNode> entry : values.properties()) {
+            applyLocalModePlan(localMode.edit(entry.getKey(), entry.getValue()));
+        }
+        for (JsonNode key : reset) {
+            applyLocalModePlan(localMode.reset(key.asText()));
+        }
+        sendToolGroupsInfo();
+        sendLocalModeInfo();
+    }
+
+    /** Switches on with what the chat and its folder hold now.
+     *  @return the plan to apply */
+    private dev.spectroscope.core.config.LocalModeState.Plan switchLocalModeOn() {
+        SpectroConfig live = liveConfig();
+        JsonNode local = readLocalFile(savedToolGroupsFolder());
+        Map<String, JsonNode> held = new java.util.LinkedHashMap<>();
+        Map<String, JsonNode> effective = new java.util.LinkedHashMap<>();
+        Map<String, JsonNode> file = new java.util.LinkedHashMap<>();
+        java.util.Set<String> handSet = new java.util.LinkedHashSet<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            held.put(key, heldKnob(key));
+            effective.put(key, knobNow(key, live));
+            file.put(key, local.path(key));
+            // Set by hand: in the folder's local file, the scope the switch
+            // writes, or switched in this session's gear before Local mode.
+            if (local.has(key) || ("toolGroupsOff".equals(key) && toolGroupsTouched)) {
+                handSet.add(key);
+            }
+        }
+        file.put(dev.spectroscope.core.config.LocalMode.RECORD_KEY,
+                local.path(dev.spectroscope.core.config.LocalMode.RECORD_KEY));
+        return localMode.switchOn(held, effective, handSet, file);
+    }
+
+    /**
+     * Turns the switch on from a folder's record, when a session starts in
+     * that folder or pins it, unless the switch was used in this session.
+     *
+     * @param folder the pinned or resolved folder, or null
+     */
+    private void seedLocalModeFrom(Path folder) {
+        if (folder == null || localModeTouched || localMode.on()) {
+            return;
+        }
+        SpectroConfig folderConfig;
+        try {
+            folderConfig = SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, folder);
+        } catch (IllegalArgumentException unreadable) {
+            return; // the session moment reports an unreadable workspace scope
+        }
+        List<String> record = folderConfig.localModeKeys();
+        if (record.isEmpty()) {
+            return;
+        }
+        JsonNode local = readLocalFile(folder);
+        Map<String, JsonNode> effective = new java.util.LinkedHashMap<>();
+        Map<String, JsonNode> file = new java.util.LinkedHashMap<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            effective.put(key, dev.spectroscope.core.config.LocalMode.valueIn(folderConfig, key));
+            file.put(key, local.path(key));
+        }
+        applyLocalModePlan(localMode.adopt(record, effective, file));
+    }
+
+    /**
+     * Applies one plan of the switch: the file half first, so a key the chat
+     * releases is read from the file as it now stands, then the session half,
+     * then the values reach the built agent.
+     *
+     * @param plan what the switch decided
+     */
+    private void applyLocalModePlan(dev.spectroscope.core.config.LocalModeState.Plan plan) {
+        if (!plan.file().isEmpty()) {
+            localModeSaveError = saveLocalMode(plan.file());
+        }
+        plan.session().forEach(this::holdKnob);
+        pushKnobsToAgent();
+    }
+
+    /**
+     * Holds one knob in the chat, or releases it to the settings files.
+     *
+     * @param key   the knob
+     * @param value the value, or {@link com.fasterxml.jackson.databind.node.MissingNode} to release
+     */
+    private void holdKnob(String key, JsonNode value) {
+        boolean release = value == null || value.isMissingNode();
+        if ("toolGroupsOff".equals(key)) {
+            if (release) {
+                toolGroupsTouched = false;
+                toolGroupsOff.set(releasedToolGroups());
+            } else {
+                java.util.Set<ToolGroup> off = java.util.EnumSet.noneOf(ToolGroup.class);
+                value.forEach(name -> ToolGroup.named(name.asText()).ifPresent(off::add));
+                toolGroupsOff.set(java.util.Collections.unmodifiableSet(off));
+                toolGroupsTouched = true;
+            }
+            return;
+        }
+        if (release) {
+            heldKnobs.remove(key);
+        } else {
+            heldKnobs.put(key, value);
+        }
+    }
+
+    /** The tool groups the settings files give this session once nothing
+     *  holds them: the pinned folder's scopes, else the session-moment config.
+     *  @return the switched-off groups */
+    private java.util.Set<ToolGroup> releasedToolGroups() {
+        Path folder = savedToolGroupsFolder();
+        if (folder != null) {
+            try {
+                return SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, folder)
+                        .toolGroupsOffSet();
+            } catch (IllegalArgumentException unreadable) {
+                // fall through to the config the session already holds
+            }
+        }
+        return activeConfig.get().toolGroupsOffSet();
+    }
+
+    /** Hands the built agent the values the chat holds now, so a switch
+     *  reaches the slot pool at once and the next run's text and share. */
+    private void pushKnobsToAgent() {
+        Agent built = agent;
+        if (built == null) {
+            return;
+        }
+        SpectroConfig live = liveConfig();
+        Integer sessions = sessionsPerChatNow(live);
+        built.setSessionsPerChat(sessions);
+        built.setCareParagraph(careParagraphNow(live));
+        built.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(sessions));
+        built.setReadSharePercent(readSharePercentNow(live));
+    }
+
+    /**
+     * Card 493: hands the agent the read share the chat holds, or the one the
+     * settings hold now, so a saved change reaches the next run of this
+     * session (reach {@code next-run}). The run reads it once when it starts.
+     */
+    void refreshReadShare() {
+        if (agent == null) {
+            return;
+        }
+        agent.setReadSharePercent(readSharePercentNow(liveConfig()));
+    }
+
+    /** @param key a knob @return what the chat holds for it, MissingNode when nothing */
+    private JsonNode heldKnob(String key) {
+        if ("toolGroupsOff".equals(key)) {
+            return toolGroupsTouched
+                    ? dev.spectroscope.core.config.LocalMode.groups(toolGroupsOff.get())
+                    : com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
+        return heldKnobs.getOrDefault(key, com.fasterxml.jackson.databind.node.MissingNode.getInstance());
+    }
+
+    /** @param key a knob @param live the settings now @return the value in force for this chat */
+    private JsonNode knobNow(String key, SpectroConfig live) {
+        if ("toolGroupsOff".equals(key)) {
+            return dev.spectroscope.core.config.LocalMode.groups(toolGroupsOff.get());
+        }
+        JsonNode held = heldKnobs.get(key);
+        return held != null ? held : dev.spectroscope.core.config.LocalMode.valueIn(live, key);
+    }
+
+    /** @param live the settings now @return the chat's session count, null for none */
+    private Integer sessionsPerChatNow(SpectroConfig live) {
+        JsonNode held = heldKnobs.get("sessionsPerChat");
+        if (held == null) {
+            return live.sessionsPerChat();
+        }
+        return held.isNull() ? null : held.asInt();
+    }
+
+    /** @param live the settings now @return the chat's care paragraph setting */
+    private String careParagraphNow(SpectroConfig live) {
+        JsonNode held = heldKnobs.get("careParagraph");
+        return held != null ? held.asText() : live.careParagraph();
+    }
+
+    /** @param live the settings now @return the chat's read share in per cent */
+    private int readSharePercentNow(SpectroConfig live) {
+        JsonNode held = heldKnobs.get("readSharePercent");
+        return held != null ? held.asInt() : live.readSharePercent();
+    }
+
+    /**
+     * Reads a folder's local settings file as it stands, for what the
+     * operator set there by hand.
+     *
+     * @param folder the folder, or null
+     * @return the file's object, or an empty object when there is none
+     */
+    private JsonNode readLocalFile(Path folder) {
+        if (folder == null) {
+            return mapper.createObjectNode();
+        }
+        Path file = folder.resolve(SpectroConfig.WS_LOCAL_SETTINGS);
+        try {
+            if (Files.isRegularFile(file)) {
+                JsonNode read = mapper.readTree(file.toFile());
+                if (read != null && read.isObject()) {
+                    return read;
+                }
+            }
+        } catch (IOException | RuntimeException unreadable) {
+            // The session moment reports an unreadable scope; the switch then
+            // treats the file as holding nothing set by hand.
+        }
+        return mapper.createObjectNode();
+    }
+
+    /**
+     * Writes the file half of a plan into the pinned folder's local scope.
+     *
+     * @param values key to value; MissingNode removes the key
+     * @return null when written or when there is no folder to write to, else the reason
+     */
+    private String saveLocalMode(Map<String, JsonNode> values) {
+        Path folder = savedToolGroupsFolder();
+        if (folder == null) {
+            return null;
+        }
+        if (!Files.isDirectory(folder)) {
+            return "the folder " + folder + " does not exist yet";
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode patch = mapper.createObjectNode();
+        values.forEach((key, value) -> patch.set(key,
+                value == null || value.isMissingNode() ? mapper.nullNode() : value));
+        try {
+            SettingsWriter.patch(folder.resolve(SpectroConfig.WS_LOCAL_SETTINGS),
+                    SettingsWriter.Scope.LOCAL, patch);
+            return null;
+        } catch (IOException | RuntimeException failed) {
+            return String.valueOf(failed.getMessage());
+        }
+    }
+
+    /**
      * The composer gear's tool-group switch (card 466): the groups named here
      * are left out of the next run's provider request, the parent's and every
      * child's. In-memory and immediate, like {@link #onSetPermissionMode}.
@@ -1033,6 +1361,13 @@ public final class SessionConnection {
         toolGroupsOff.set(java.util.Collections.unmodifiableSet(off));
         toolGroupsTouched = true;
         sendToolGroupsInfo(save ? saveToolGroups(off) : null);
+        // Card 493: with Local mode on, the chat's own list replaces the
+        // preset, and the switch's row says it changed from Local mode.
+        if (localMode.on()) {
+            applyLocalModePlan(localMode.edit("toolGroupsOff",
+                    dev.spectroscope.core.config.LocalMode.groups(off)));
+            sendLocalModeInfo();
+        }
     }
 
     /**
@@ -1468,7 +1803,9 @@ public final class SessionConnection {
             workspaceAnnounced = false; // re-announce: the Files tab re-roots live
             sendWorkspaceInfo();
             seedToolGroupsFrom(savedToolGroupsFolder()); // card 466: the picked folder's list
+            seedLocalModeFrom(savedToolGroupsFolder()); // card 493: the picked folder's record
             sendToolGroupsInfo();
+            sendLocalModeInfo();
         } catch (RuntimeException rejected) {
             sendError("Workspace rejected: " + rejected.getMessage());
         }
@@ -1676,6 +2013,7 @@ public final class SessionConnection {
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
             refreshSessionsPerChat(); // card 490: the chat's session count, per prompt
             refreshCareParagraph(); // card 492: the settings as they are now, per prompt
+            refreshReadShare(); // card 493: the read share, per prompt
             sendWorkspaceInfo();
             sendGoalInfo(); // card 267: what this run is for, where it is watched
 
@@ -1994,6 +2332,9 @@ public final class SessionConnection {
                 // run takes the value that run started with
                 // (SubagentManager.childCareParagraph)
                 .careParagraph(active.careParagraph())
+                // Card 493: the read share; refreshReadShare re-reads it before
+                // every prompt, and the Local mode switch may hold it
+                .readSharePercent(active.readSharePercent())
                 // Card 466: the SAME reader the parent reads below. A child
                 // spawned during a run takes the set that run started with
                 // (SubagentManager.childToolGroupsOff), so a gear change
@@ -2086,6 +2427,9 @@ public final class SessionConnection {
                 // Card 492: the care paragraph. The build value is the session
                 // moment's; refreshCareParagraph re-reads it before every prompt
                 .careParagraph(active.careParagraph())
+                // Card 493: the read share; refreshReadShare re-reads it before
+                // every prompt, and the Local mode switch may hold it
+                .readSharePercent(active.readSharePercent())
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
@@ -2132,7 +2476,8 @@ public final class SessionConnection {
         if (agent == null) {
             return;
         }
-        agent.setSessionsPerChat(liveConfig().sessionsPerChat());
+        // Card 493: a count the Local mode switch holds wins over the files.
+        agent.setSessionsPerChat(sessionsPerChatNow(liveConfig()));
     }
 
     /**
@@ -2147,8 +2492,9 @@ public final class SessionConnection {
             return;
         }
         SpectroConfig live = liveConfig();
-        agent.setCareParagraph(live.careParagraph());
-        agent.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(live));
+        // Card 493: values the Local mode switch holds win over the files.
+        agent.setCareParagraph(careParagraphNow(live));
+        agent.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(sessionsPerChatNow(live)));
     }
 
     /** Card 379: the oracle the next {@link #buildAgentOnce} hands the rtk
@@ -2274,6 +2620,8 @@ public final class SessionConnection {
         if (!toolGroupsTouched) {
             toolGroupsOff.set(sessionConfig.toolGroupsOffSet());
         }
+        // Card 493: a folder resolved only now may carry the switch's record.
+        seedLocalModeFrom(workspace);
         if (!thinkingTouched) {
             thinking.set(sessionConfig.thinking());
         }
@@ -2289,6 +2637,7 @@ public final class SessionConnection {
         sendProviderInfo();
         sendPermissionModeInfo();
         sendToolGroupsInfo();
+        sendLocalModeInfo();
         return sessionConfig;
     }
 
@@ -3052,6 +3401,46 @@ public final class SessionConnection {
                 "provider", active.provider(),
                 "model", active.model(),
                 "host", active.providerHost()));
+    }
+
+    /**
+     * Tells the gear where the Local mode switch stands and what each of its
+     * rows holds (card 493): a socket-only UI frame like
+     * {@code tool_groups_info}, never appended to the JSONL. Sent at connect,
+     * when a folder is pinned, at the session moment and after every change of
+     * the switch or of the tool groups.
+     */
+    private synchronized void sendLocalModeInfo() {
+        if (!socket.isOpen()) {
+            return;
+        }
+        SpectroConfig live = liveConfig();
+        Map<String, JsonNode> effective = new java.util.LinkedHashMap<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            effective.put(key, knobNow(key, live));
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (dev.spectroscope.core.config.LocalModeState.Row row : localMode.rows(effective)) {
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("key", row.key());
+            out.put("value", row.value());
+            out.put("preset", row.preset());
+            out.put("changed", row.changed());
+            Integer floor = dev.spectroscope.core.config.SettingFloors.floors().get(row.key());
+            if (floor != null) {
+                out.put("floor", floor);
+            }
+            rows.add(out);
+        }
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "local_mode_info");
+        frame.put("on", localMode.on());
+        frame.put("rows", rows);
+        String saveError = localModeSaveError;
+        if (saveError != null) {
+            frame.put("saveError", saveError);
+        }
+        sendFrame(frame);
     }
 
     /**

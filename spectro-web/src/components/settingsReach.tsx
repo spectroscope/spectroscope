@@ -223,6 +223,14 @@ export const SETTING_REACH = {
   // Card 492: the browser session re-reads the key before every prompt and the
   // run builds its paragraph once when it starts.
   careParagraph: "next-run",
+  // Card 493: the run reads the share once when it starts, so read_file's
+  // description and its check agree for the whole run. The browser session
+  // re-reads the key before every prompt.
+  readSharePercent: "next-run",
+  // Card 493: the record of what the Local mode switch wrote. A session reads
+  // it when it starts and when a folder is pinned; no control saves it, the
+  // switch writes it.
+  localModeKeys: "next-session",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

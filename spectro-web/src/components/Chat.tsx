@@ -1533,6 +1533,9 @@ export function Chat(props: {
                   workspaceInfo={state.workspace}
                   permissionMode={state.permissionMode}
                   toolGroups={state.toolGroups}
+                  localMode={state.localMode}
+                  provider={props.composerMeta?.provider}
+                  model={props.composerMeta?.model}
                   sendClient={props.sendClient}
                 />
                 {/* Card 463: the model, the thinking level and the context

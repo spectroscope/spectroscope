@@ -104,6 +104,10 @@ import java.util.List;
  *                            appends the care paragraph to its system prompt,
  *                            read once when the run starts. Null is the shipped
  *                            value, off
+ * @param readSharePercent    card 493: the share of the context window, in per
+ *                            cent, that one whole-file read may take, the
+ *                            settings key of the same name. Read once when a run
+ *                            starts. Null is the shipped value, 25
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
@@ -121,11 +125,13 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                            String toolResultElision,
                            java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff,
                            Integer sessionsPerChat,
-                           String careParagraph) {
+                           String careParagraph,
+                           Integer readSharePercent) {
 
     /** Compat: the arity of v0.14.4, which knew no session count (card 490).
      *  A caller without one sets no count, as before, and gets the
-     *  shipped care paragraph setting, off (card 492).
+     *  shipped care paragraph setting, off (card 492), and the shipped read
+     *  share, 25 (card 493).
      *
      * @param provider            the LLM backend the loop streams from
      * @param systemPrompt        system prompt sent with every provider request
@@ -171,7 +177,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                 initialMessages, providerName, maxTokens, compactionThreshold, introspection,
                 thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
                 goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, null,
-                null);
+                null, null);
     }
 
     /** Compat: the arity before cards 467 and 466, which knew no elision
@@ -217,7 +223,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
                 initialMessages, providerName, maxTokens, compactionThreshold, introspection,
                 thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
-                goal, steering, rtkFilter, sessionWindow, null, null, null, null);
+                goal, steering, rtkFilter, sessionWindow, null, null, null, null, null);
     }
 
     /** Compat: the arity before card 390, with cards 379 and 380 in it. Never
@@ -510,6 +516,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff; // nullable, nothing off
         private Integer sessionsPerChat; // nullable, no count per chat
         private String careParagraph; // nullable, the shipped "off"
+        private Integer readSharePercent; // nullable, the shipped 25
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -663,6 +670,15 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
             return this;
         }
 
+        /** Card 493: the share of the context window one whole-file read may
+         *  take, in per cent.
+         *  @param value the share; null for the shipped 25
+         *  @return this builder */
+        public Builder readSharePercent(Integer value) {
+            this.readSharePercent = value;
+            return this;
+        }
+
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
@@ -670,7 +686,8 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
                     introspection, thinking, hooks, llmWire, latency, progressGuard,
                     maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow,
-                    toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
+                    toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                    readSharePercent);
         }
     }
 }

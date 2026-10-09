@@ -210,6 +210,14 @@ public final class Agent {
      *  it starts so the text cannot change within the run. Empty when off. */
     private volatile String careThisRun = "";
 
+    /** Card 493: the read share the NEXT run reads, in per cent. Seeded from
+     *  {@link AgentOptions#readSharePercent()}; null is the shipped share. */
+    private volatile Integer readSharePercent;
+
+    /** Card 493: the read share this run read when it started. 0 before the
+     *  first run, which {@code ReadBudget} reads as the shipped share. */
+    private volatile int readShareThisRun;
+
     /**
      * Card 467: what leaves the outgoing request of an old, large tool result.
      * It lives with the agent for the reason {@link #messages} does: its
@@ -276,6 +284,7 @@ public final class Agent {
         this.sessionsPerChat = dev.spectroscope.core.subagents.SessionCount
                 .of(options.sessionsPerChat()).sessions();
         this.careSetting = options.careParagraph();
+        this.readSharePercent = options.readSharePercent();
         // A tool this agent does not carry cannot be called again, so a stub
         // that says "call it again" would be false: its results stay whole.
         this.elision = new dev.spectroscope.core.session.ToolResultElision(
@@ -535,6 +544,11 @@ public final class Agent {
         // same for every request of the run.
         careSettingThisRun = careSetting;
         careThisRun = careSuffixFor(careSettingThisRun, groupsOffThisRun);
+        // Card 493: read ONCE per run for the reason the session count is: the
+        // share is part of read_file's description, and the description and
+        // the check of one run must name the same number.
+        readShareThisRun = dev.spectroscope.core.tools.ReadBudget.shareOrShipped(
+                readSharePercent == null ? 0 : readSharePercent);
         ContinuationLeash leash = options.continuationLeash();
         if (leash != null) {
             // The count and the fingerprint are sentences about THIS run, for
@@ -1527,7 +1541,7 @@ public final class Agent {
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
                         planLedger(emit), attach, reported::set, humanWaitMs::addAndGet,
-                        reachOutside, window));
+                        reachOutside, window, readShareThisRun));
         long durationMs = Math.max(0, now() - startedAt - humanWaitMs.get());
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is
@@ -1990,7 +2004,8 @@ public final class Agent {
      * @return the advertised specs, in registration order
      */
     public List<ToolSpec> toolSpecsForNextRun() {
-        return ToolGroup.visible(options.registry().specs(), toolGroupsOffNow());
+        return ToolGroup.visible(options.registry().specs(new Tool.RunFacts(readSharePercent())),
+                toolGroupsOffNow());
     }
 
     /**
@@ -2039,9 +2054,44 @@ public final class Agent {
         return sessionsPerChatThisRun;
     }
 
-    /** The registry's specs minus the groups this run switched off. */
+    /**
+     * Card 493: sets the read share the NEXT run reads. A run in flight keeps
+     * the share it started with, in its {@code read_file} description and in
+     * the check.
+     *
+     * @param value the share in per cent, or null for the shipped one
+     */
+    public void setReadSharePercent(Integer value) {
+        this.readSharePercent = value;
+    }
+
+    /**
+     * Card 493: the read share the next run will read.
+     *
+     * @return the share in per cent, the shipped one when none is set
+     */
+    public int readSharePercent() {
+        Integer share = readSharePercent;
+        return dev.spectroscope.core.tools.ReadBudget.shareOrShipped(share == null ? 0 : share);
+    }
+
+    /**
+     * Card 493: the read share the current (or last) run read when it
+     * started. A child spawned during the run takes this share. Before the
+     * first run it is the share the next run will read.
+     *
+     * @return the share in per cent
+     */
+    public int readSharePercentThisRun() {
+        int read = readShareThisRun;
+        return read > 0 ? read : readSharePercent();
+    }
+
+    /** The registry's specs minus the groups this run switched off, each
+     *  described with what the run read when it started (card 493). */
     private List<ToolSpec> visibleSpecs() {
-        return ToolGroup.visible(options.registry().specs(), groupsOffThisRun);
+        return ToolGroup.visible(options.registry().specs(
+                new Tool.RunFacts(readSharePercentThisRun())), groupsOffThisRun);
     }
 
     /**

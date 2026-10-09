@@ -47,8 +47,18 @@ public final class CareParagraph {
      * @return the subagents that may run at once, at least 1
      */
     public static int helpersFor(dev.spectroscope.core.config.SpectroConfig config) {
-        Integer count = config.sessionsPerChat();
-        int sessions = count != null ? count
+        return helpersFor(config.sessionsPerChat());
+    }
+
+    /**
+     * The same count for a session count a face holds itself, the way the
+     * browser session holds the one the Local mode switch wrote (card 493).
+     *
+     * @param sessionsPerChat the chat's count, or null when none is set
+     * @return the helpers the paragraph names
+     */
+    public static int helpersFor(Integer sessionsPerChat) {
+        int sessions = sessionsPerChat != null ? sessionsPerChat
                 : dev.spectroscope.core.config.SpectroConfig.DEFAULT_SESSIONS_PER_CHAT;
         return sessions - 1;
     }

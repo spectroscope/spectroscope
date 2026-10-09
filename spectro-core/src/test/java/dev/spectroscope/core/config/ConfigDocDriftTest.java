@@ -341,9 +341,9 @@ class ConfigDocDriftTest {
      *
      * <p><b>What it deliberately cannot check</b> is derived too. A row prints
      * the JSON shape of a collection ({@code {}} for the server map,
-     * {@code []} for the three lists) and a Java {@code toString} is not that
-     * shape, so those four sit out, and the set is asserted, not assumed, so a
-     * fifth such component joins it visibly rather than silently. Everything
+     * {@code []} for the four lists) and a Java {@code toString} is not that
+     * shape, so those five sit out, and the set is asserted, not assumed, so a
+     * sixth such component joins it visibly rather than silently. Everything
      * else is checkable including the nulls: an unset default has one printed
      * form in this table, {@code <em>unset</em>}, and twelve rows use it.</p>
      */
@@ -358,12 +358,13 @@ class ConfigDocDriftTest {
                 unchecked.add(component.getName());
             }
         }
-        // Card 466 added toolGroupsOff, a list printed as [] like autoApprove.
-        assertEquals(List.of("autoApprove", "hooks", "mcpServers", "toolGroupsOff"),
+        // Card 466 added toolGroupsOff, a list printed as [] like autoApprove,
+        // and card 493 localModeKeys, another such list.
+        assertEquals(List.of("autoApprove", "hooks", "localModeKeys", "mcpServers", "toolGroupsOff"),
                 unchecked.stream().sorted().toList(),
                 "the set of key rows whose default this guard cannot read has changed. A"
                         + " collection prints as a JSON shape in the table and as a Java"
-                        + " toString here, which is why those four sit out; anything else"
+                        + " toString here, which is why those five sit out; anything else"
                         + " arriving in this list is a row nobody is checking, and it has to"
                         + " be looked at rather than accepted");
 

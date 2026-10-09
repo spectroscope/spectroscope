@@ -117,6 +117,10 @@ import java.util.List;
  *                      run read at its start, not this value. A child offers
  *                      no spawn tool, so its paragraph never carries the
  *                      sentence about subagents (nullable: the shipped off)
+ * @param readSharePercent the session's {@code readSharePercent} (card 493).
+ *                      While a parent run is in flight a child takes the share
+ *                      that run read at its start, not this value (nullable:
+ *                      the shipped 25)
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -138,7 +142,8 @@ public record SubagentConfig(
         String toolResultElision,
         java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff,
         Integer sessionsPerChat,
-        String careParagraph) {
+        String careParagraph,
+        Integer readSharePercent) {
 
     /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
      *  and an absent budget to the derived one over an unfed window. The
@@ -201,7 +206,7 @@ public record SubagentConfig(
         this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
                 webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
                 subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, toolResultElision,
-                toolGroupsOff, null, null);
+                toolGroupsOff, null, null, null);
     }
 
     /** Compat: the arity before cards 467 and 466, which knew no elision
@@ -234,7 +239,7 @@ public record SubagentConfig(
         this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
                 webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
                 subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, null, null, null,
-                null);
+                null, null);
     }
 
     /** The pre-card-394 arity, kept so a caller that does not carry a token
@@ -398,6 +403,7 @@ public record SubagentConfig(
         private java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff; // nullable -> none off
         private Integer sessionsPerChat;         // nullable -> no count per chat
         private String careParagraph;            // nullable -> the shipped "off"
+        private Integer readSharePercent;        // nullable -> the shipped 25
 
         private Builder() {
         }
@@ -543,12 +549,24 @@ public record SubagentConfig(
             return this;
         }
 
+        /**
+         * Card 493: the session's read share, for every child.
+         *
+         * @param value the share in per cent, or null for the shipped 25
+         * @return this builder
+         */
+        public Builder readSharePercent(Integer value) {
+            this.readSharePercent = value;
+            return this;
+        }
+
         /** @return the finished config, normalized by the canonical constructor */
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
                     baseTools, hooks, llmWire, webTools, budget, compactionThreshold,
                     maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow,
-                    subagentBudgetTokens, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
+                    subagentBudgetTokens, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                    readSharePercent);
         }
     }
 }

@@ -524,6 +524,10 @@ export type ClientMessage =
   // Card 466: the tool groups the next run leaves out of the provider request.
   // The server answers with a socket-only tool_groups_info frame.
   | { type: "set_tool_groups_off"; groups: string[]; save?: boolean }
+  // Card 493: the composer gear's Local mode switch. One frame switches it,
+  // changes values of its rows, or resets rows to the preset. The server
+  // answers with a socket-only local_mode_info frame.
+  | { type: "set_local_mode"; on?: boolean; values?: Record<string, unknown>; reset?: string[] }
   // Card 390: the window for this session, from the context ring. null clears;
   // the server decides the range and answers with a `window_override` event.
   | { type: "set_window_override"; tokens: number | null }

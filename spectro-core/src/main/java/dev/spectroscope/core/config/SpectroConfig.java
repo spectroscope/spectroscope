@@ -283,6 +283,16 @@ import java.util.function.Function;
  *                              to the system prompt of every run, asking the
  *                              model to work in small steps and read in parts;
  *                              {@code "off"} sends no paragraph. Ships off
+ * @param readSharePercent      card 493: the share of the context window, in
+ *                              per cent, that one whole-file read may take.
+ *                              Ships at 25, the value of the constant
+ *                              {@link dev.spectroscope.core.tools.ReadBudget#WINDOW_SHARE_PERCENT}
+ *                              it replaces. Floor 1, see {@link SettingFloors}
+ * @param localModeKeys         card 493: the keys the Local mode switch wrote
+ *                              into a folder's local file, so the next session
+ *                              in that folder starts with the switch on and
+ *                              knows what switching off removes. Ships empty:
+ *                              the switch is off
  */
 public record SpectroConfig(
         String provider,
@@ -347,17 +357,22 @@ public record SpectroConfig(
         // Card 467: "on" or "off". Appended last, same rule.
         String toolResultElision,
         // Card 466: the switched-off tool groups. Appended last, same rule.
-        List<String> toolGroupsOff,
+        @LocalModeKnob List<String> toolGroupsOff,
         // Card 490: the session count of one chat. Appended last, same rule.
-        Integer sessionsPerChat,
+        @LocalModeKnob Integer sessionsPerChat,
         // Card 492: "on" or "off". Appended last, same rule.
-        String careParagraph) {
+        @LocalModeKnob String careParagraph,
+        // Card 493: the read share. Appended last, same rule.
+        @LocalModeKnob int readSharePercent,
+        // Card 493: what the Local mode switch wrote. Appended last, same rule.
+        List<String> localModeKeys) {
 
     /** Compat: the v0.14.4 arity, which knew no session count per chat
      *  (card 490). Every caller that built a config positionally against
      *  v0.14.4 keeps compiling and gets no count, which is the v0.14.4
-     *  behaviour: no limit per chat. Card 492 appended the care paragraph
-     *  after the count; this compat ships it off.
+     *  behaviour: no limit per chat. Cards 492 and 493 appended the care
+     *  paragraph, the read share and the Local mode record after the count;
+     *  this compat ships them as v0.14.4 behaved: off, 25 and empty.
      *
      * @param provider              the LLM backend
      * @param model                 the model id
@@ -430,15 +445,17 @@ public record SpectroConfig(
                 questionsPerRun, maxQuestionOptions, maxQuestionChars, commandTimeoutSeconds,
                 chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
                 subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
-                null, DEFAULT_CARE_PARAGRAPH);
+                null, DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT,
+                List.of());
     }
 
     /** Compat: the arity main had before cards 476, 467 and 466, which knew
      *  no notification switch, no elision switch and no tool groups. Every
      *  caller that built a config positionally keeps compiling, gets the
      *  shipped {@code on} for both switches, switches no tool group off,
-     *  sets no session count (card 490) and ships the care paragraph off
-     *  (card 492), so it still builds the config main built.
+     *  sets no session count (card 490), ships the care paragraph off (card
+     *  492), the read share at 25 and no Local mode record (card 493), so it
+     *  still builds the config main built.
      *
      * @param provider              the LLM backend
      * @param model                 the model id
@@ -507,7 +524,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens,
                 DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(), null,
-                DEFAULT_CARE_PARAGRAPH);
+                DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT, List.of());
     }
 
     /** Compat: the pre-card-394 arity, which knew no token budget for a child.
@@ -1284,10 +1301,11 @@ public record SpectroConfig(
      *  v0.14.4 did, with no limit per chat and one {@code spawn_agents} call
      *  starting up to
      *  {@link dev.spectroscope.core.subagents.SubagentManager#MAX_PARALLEL_CHILDREN}
-     *  helpers. No code reads this number yet. The settings page has no field
-     *  for the key, and Local mode (card 493), which is to write this number,
-     *  is not built; until then a chat has a count only when a settings file
-     *  sets the key. The floor is 2, in {@link SettingFloors}: a count of 1
+     *  helpers. The Local mode switch of the composer gear writes this
+     *  number for one chat ({@link LocalMode#PRESET_SESSIONS_PER_CHAT}, card
+     *  493), and the care paragraph names this number minus one while the key
+     *  is unset ({@code CareParagraph.helpersFor}). Otherwise a chat has a
+     *  count only when a settings file sets the key. The floor is 2, in {@link SettingFloors}: a count of 1
      *  would be a second way to say "no helpers", which the {@code agents}
      *  tool group already says.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "sessionsPerChat")
@@ -1298,6 +1316,7 @@ public record SpectroConfig(
         mcpServers = mcpServers == null ? List.of() : List.copyOf(mcpServers);
         hooks = hooks == null ? List.of() : List.copyOf(hooks);
         toolGroupsOff = toolGroupsOff == null ? List.of() : List.copyOf(toolGroupsOff);
+        localModeKeys = localModeKeys == null ? List.of() : List.copyOf(localModeKeys);
     }
 
     public static final Path CONFIG_PATH =
@@ -1457,6 +1476,13 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "careParagraph")
     public static final String DEFAULT_CARE_PARAGRAPH = CARE_PARAGRAPH_OFF;
 
+    /** The shipped {@code readSharePercent} (card 493): the value of
+     *  {@link dev.spectroscope.core.tools.ReadBudget#WINDOW_SHARE_PERCENT},
+     *  read from it so the two cannot disagree. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.PERCENT)
+    public static final int DEFAULT_READ_SHARE_PERCENT =
+            dev.spectroscope.core.tools.ReadBudget.WINDOW_SHARE_PERCENT;
+
     private static final SpectroConfig DEFAULTS = new SpectroConfig(
             // compactionThreshold null: unset, so the harness derives it (card 263)
             "anthropic", "claude-opus-4-8", "http://localhost:11434", null, "ask", List.of(),
@@ -1547,7 +1573,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, value, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     /**
@@ -1575,7 +1602,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, value,
-                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     /**
@@ -1606,7 +1634,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, value, sessionsPerChat, careParagraph);
+                toolResultElision, value, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -2088,6 +2117,8 @@ public record SpectroConfig(
         // Card 466: a typo in a group name must not leave the operator believing
         // a family is off while every request still carries it.
         requireKnownToolGroups(base.toolGroupsOff());
+        // Card 493: the record names only keys the switch can write.
+        requireKnownLocalModeKeys(base.localModeKeys());
         validateKnown("careParagraph", base.careParagraph(),
                 KNOWN_CARE_PARAGRAPH_VALUES,
                 CARE_PARAGRAPH_ON + ", " + CARE_PARAGRAPH_OFF);
@@ -2117,7 +2148,8 @@ public record SpectroConfig(
                         base.subagentBudgetSeconds(), base.rtkFilter(),
                         base.subagentBudgetTokens(), base.desktopNotifications(),
                         base.toolResultElision(), base.toolGroupsOff(),
-                        base.sessionsPerChat(), base.careParagraph());
+                        base.sessionsPerChat(), base.careParagraph(),
+                        base.readSharePercent(), base.localModeKeys());
             }
         }
         return base;
@@ -2207,7 +2239,10 @@ public record SpectroConfig(
             // Card 490, appended last, same rule.
             new FieldProbe("sessionsPerChat", p -> p.sessionsPerChat),
             // Card 492, appended last, same rule.
-            new FieldProbe("careParagraph", p -> p.careParagraph));
+            new FieldProbe("careParagraph", p -> p.careParagraph),
+            // Card 493, appended last, same rule.
+            new FieldProbe("readSharePercent", p -> p.readSharePercent),
+            new FieldProbe("localModeKeys", p -> p.localModeKeys));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -2641,7 +2676,8 @@ public record SpectroConfig(
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2759,6 +2795,26 @@ public record SpectroConfig(
      *  this method's scope). */
     public static boolean switchRequiresKey(String provider) {
         return keyEnvFor(provider) != null && !"openai".equals(provider);
+    }
+
+    /**
+     * Refuses a {@code localModeKeys} record that names a key the Local mode
+     * switch does not write (card 493). The single check behind the load and
+     * {@link SettingsWriter}'s write.
+     *
+     * @param names the key names a scope holds; null and empty pass
+     * @throws IllegalArgumentException on the first unknown or null name
+     */
+    static void requireKnownLocalModeKeys(List<String> names) {
+        if (names == null) {
+            return;
+        }
+        for (String name : names) {
+            if (name == null || !LocalMode.knobs().contains(name)) {
+                throw new IllegalArgumentException("Unknown " + LocalMode.RECORD_KEY + " entry: \""
+                        + name + "\" (allowed: " + String.join(", ", LocalMode.knobs()) + ")");
+            }
+        }
     }
 
     /**
@@ -3565,6 +3621,10 @@ public record SpectroConfig(
         public Integer sessionsPerChat;
         // Card 492: "on" or "off".
         public String careParagraph;
+        // Card 493: the read share in per cent.
+        public Integer readSharePercent;
+        // Card 493: the keys the Local mode switch wrote, by name.
+        public List<String> localModeKeys;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -3640,6 +3700,9 @@ public record SpectroConfig(
             out.toolGroupsOff = Optional.ofNullable(higher.toolGroupsOff).orElse(toolGroupsOff);
             out.sessionsPerChat = Optional.ofNullable(higher.sessionsPerChat).orElse(sessionsPerChat);
             out.careParagraph = Optional.ofNullable(higher.careParagraph).orElse(careParagraph);
+            out.readSharePercent = Optional.ofNullable(higher.readSharePercent).orElse(readSharePercent);
+            // Card 493: a whole list, like toolGroupsOff.
+            out.localModeKeys = Optional.ofNullable(higher.localModeKeys).orElse(localModeKeys);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -3709,7 +3772,9 @@ public record SpectroConfig(
                     Optional.ofNullable(toolGroupsOff).orElse(DEFAULTS.toolGroupsOff()),
                     // Card 490: unset stays unset, so no limit applies per chat.
                     Optional.ofNullable(sessionsPerChat).orElse(DEFAULTS.sessionsPerChat()),
-                    Optional.ofNullable(careParagraph).orElse(DEFAULTS.careParagraph()));
+                    Optional.ofNullable(careParagraph).orElse(DEFAULTS.careParagraph()),
+                    Optional.ofNullable(readSharePercent).orElse(DEFAULTS.readSharePercent()),
+                    Optional.ofNullable(localModeKeys).orElse(DEFAULTS.localModeKeys()));
         }
 
         /**
