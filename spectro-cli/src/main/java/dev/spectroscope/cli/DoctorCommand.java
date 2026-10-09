@@ -3,6 +3,7 @@ package dev.spectroscope.cli;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import dev.spectroscope.core.copilot.CopilotRuntime;
 import dev.spectroscope.core.local.LlamaServerBinary;
 import dev.spectroscope.core.local.LocalCatalog;
 import dev.spectroscope.core.local.LocalModel;
@@ -251,8 +252,21 @@ public final class DoctorCommand implements Callable<Integer> {
                         config.model(),
                         LocalCatalog.bundled().resolve(config.model()),
                         localModelFile(config.model())));
+                case COPILOT -> {
+                    // The runtime row below carries the verdict for this provider.
+                }
             }
         }
+
+        // Card 497: the Copilot runtime, on every run. The lookup never takes a
+        // program from inside the launch folder, which is the workspace here.
+        CopilotRuntime.Lookup copilot = CopilotRuntime.find(cwd);
+        Optional<String> copilotVersion = copilot.isFound()
+                ? CopilotRuntime.version(CopilotRuntime.launch(copilot.path(), System.getenv(), userHome()),
+                        Duration.ofSeconds(10))
+                : Optional.empty();
+        emit(List.of(copilotRuntimeLine(copilot, copilotVersion,
+                CopilotRuntime.PROVIDER.equals(config.provider()))));
 
         // Fleet hub — optional infrastructure: nodes are opt-in, so the lines
         // inform when the env names a hub and never fail the doctor.
@@ -438,7 +452,40 @@ public final class DoctorCommand implements Callable<Integer> {
         BUILT_IN,
         /** llama.cpp: ask {@code GET /health} whether it is ready, and
          *  {@code GET /props} what the loaded model's window is (card 312). */
-        LLAMACPP
+        LLAMACPP,
+        /** Copilot: the runtime row decides (card 497); the sign-in line
+         *  follows with card 496. */
+        COPILOT
+    }
+
+    /**
+     * The row for the Copilot runtime (card 497): found at a path with its
+     * version, not installed with the install line and the folders searched, a
+     * rejected {@code COPILOT_CLI_PATH}, or not supported off macOS.
+     *
+     * <p>A missing or silent runtime is a note unless Copilot is the configured
+     * provider; then it is a verdict, because no turn can be answered. Off macOS
+     * the row is always a note.
+     *
+     * @param lookup           the runtime lookup
+     * @param version          what {@code copilot --version} reported, or empty
+     * @param providerSelected whether Copilot is the configured provider
+     * @return the row
+     */
+    static Line copilotRuntimeLine(CopilotRuntime.Lookup lookup, Optional<String> version,
+                                   boolean providerSelected) {
+        String prefix = "copilot runtime: ";
+        Kind problem = providerSelected ? Kind.FAIL : Kind.INFO;
+        return switch (lookup.status()) {
+            case UNSUPPORTED -> new Line(Kind.INFO, prefix + lookup.detail());
+            case REJECTED -> new Line(problem, prefix + lookup.detail());
+            case NOT_INSTALLED -> new Line(problem, prefix + lookup.detail()
+                    + " (searched: " + String.join(", ", lookup.searched()) + ")");
+            case FOUND -> version
+                    .map(v -> new Line(Kind.PASS, prefix + lookup.detail() + ", version " + v))
+                    .orElseGet(() -> new Line(problem, prefix + lookup.detail()
+                            + ", but it did not report a version"));
+        };
     }
 
     /**
@@ -462,6 +509,7 @@ public final class DoctorCommand implements Callable<Integer> {
             // 503-while-loading as an absent server.
             case "llamacpp" -> ProviderCheck.LLAMACPP;
             case "spectro-local" -> ProviderCheck.BUILT_IN;
+            case CopilotRuntime.PROVIDER -> ProviderCheck.COPILOT;
             default -> null;
         };
     }
