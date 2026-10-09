@@ -90,7 +90,15 @@ public final class GitHubDeviceFlow implements DeviceFlow {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("client_id", clientId);
         form.put("scope", SCOPE);
-        JsonNode body = post("/login/device/code", form);
+        Answer answer = send("/login/device/code", form);
+        JsonNode body = answer.body();
+        if (answer.status() == 404) {
+            // GitHub's whole answer for a client id it does not know is "Not Found"
+            // (observed 2026-10-10); it is kept and the setting it points at is named.
+            throw new Refused(body.path("error").asText("HTTP 404"), "GitHub does not know the OAuth app set in "
+                    + CopilotAccount.CLIENT_ID_VARIABLE + " (GitHub answered: "
+                    + body.path("error").asText("HTTP 404") + ").");
+        }
         refusal(body);
         long seconds = body.path("interval").asLong(5);
         interval = seconds;
@@ -157,7 +165,15 @@ public final class GitHubDeviceFlow implements DeviceFlow {
 
     // ---- the wire -------------------------------------------------------------------------
 
+    /** One answer of GitHub's web host: the HTTP status and the JSON body. */
+    private record Answer(int status, JsonNode body) {
+    }
+
     private JsonNode post(String path, Map<String, String> form) throws IOException {
+        return send(path, form).body();
+    }
+
+    private Answer send(String path, Map<String, String> form) throws IOException {
         String encoded = form.entrySet().stream()
                 .map(e -> URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8) + "="
                         + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
@@ -174,7 +190,7 @@ public final class GitHubDeviceFlow implements DeviceFlow {
         if (response.statusCode() / 100 != 2 && !body.has("error")) {
             throw new Refused("HTTP " + response.statusCode(), body.path("message").asText(null));
         }
-        return body;
+        return new Answer(response.statusCode(), body);
     }
 
     private HttpResponse<String> send(HttpRequest request) throws IOException {

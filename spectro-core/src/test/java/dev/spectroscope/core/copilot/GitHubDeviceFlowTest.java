@@ -139,6 +139,19 @@ class GitHubDeviceFlowTest {
     }
 
     @Test
+    void anUnknownClientIdIsNamedWithGitHubsWordAndTheVariable() {
+        // The shape GitHub gave on 2026-10-10 for a client id it does not know:
+        // HTTP 404 with {"error":"Not Found"} (evidence/495/round2/live).
+        github.deviceCode(404, Map.of("error", "Not Found"));
+
+        DeviceFlow.Refused refused = assertThrows(DeviceFlow.Refused.class, () -> flow.start());
+
+        assertTrue(refused.getMessage().contains("Not Found"), refused.getMessage());
+        assertTrue(refused.getMessage().contains(CopilotAccount.CLIENT_ID_VARIABLE), refused.getMessage());
+        assertFalse(refused.getMessage().contains(CLIENT), "the client id itself is not repeated");
+    }
+
+    @Test
     void refreshSendsTheRefreshGrantWithoutASecret() throws Exception {
         github.granted("ghu_" + "fixtureNew", 28800, "ghr_" + "fixtureNewRefresh");
 
