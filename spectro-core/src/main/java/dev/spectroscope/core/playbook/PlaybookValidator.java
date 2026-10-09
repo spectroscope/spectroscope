@@ -149,7 +149,8 @@ public final class PlaybookValidator {
         return List.copyOf(out);
     }
 
-    static Set<String> outcomesOf(Playbook p, Playbook.Node n) {
+    /** The outcomes a node can leave by, in order: a step's one unlabelled outcome is the empty string. */
+    public static Set<String> outcomesOf(Playbook p, Playbook.Node n) {
         if (n instanceof Playbook.End) return Set.of();
         if (n instanceof Playbook.Step) return Set.of("");
         Playbook.Decision d = (Playbook.Decision) n;

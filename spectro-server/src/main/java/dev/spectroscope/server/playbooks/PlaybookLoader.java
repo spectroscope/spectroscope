@@ -75,7 +75,26 @@ public final class PlaybookLoader {
             return refused(root.toString(), new Finding(PlaybookFolders.PLAYBOOK_FILE,
                     "unreadable: " + unreadable.getMessage()));
         }
+        return fromJson(root, json, workspace, config, providers);
+    }
 
+    /**
+     * Loads {@code json} as the {@code playbook.json} of the folder {@code dir}:
+     * the same reading, validation, folder checks and step resolution as
+     * {@link #load}, for a text that is not (yet) on disk. The folder checks
+     * look at {@code dir} as it is.
+     */
+    public static Loaded fromJson(Path dir, String json, Path workspace, SpectroConfig config) {
+        return fromJson(dir, json, workspace, config, ProviderStates.current());
+    }
+
+    static Loaded fromJson(Path dir, String json, Path workspace, SpectroConfig config, ProviderStates providers) {
+        Path root;
+        try {
+            root = dir.toRealPath();
+        } catch (IOException missing) {
+            return refused(dir.toString(), new Finding("", "not a folder: " + dir));
+        }
         PlaybookReader.Read read = PlaybookReader.read(json);
         List<Finding> findings = new ArrayList<>(read.findings());
         Playbook p = read.playbook();

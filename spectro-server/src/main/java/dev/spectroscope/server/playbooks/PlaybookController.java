@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -106,8 +107,52 @@ public class PlaybookController {
         if (real == null) {
             return badRequest("Not a registered playbook folder: " + dir);
         }
-        Path ws = workspace == null || workspace.isBlank() ? real : Path.of(workspace);
-        return ResponseEntity.ok(PlaybookLoader.load(real, ws, SpectroConfig.load(SpectroConfig.Overrides.none())));
+        return ResponseEntity.ok(PlaybookLoader.load(real, workspaceOf(workspace, real), config()));
+    }
+
+    /** The largest draft body the check reads. */
+    static final int MAX_BODY_BYTES = 1024 * 1024;
+
+    /** {@code GET /api/playbooks/draft?dir=&workspace=} : the editor view of a registered folder's file. */
+    @GetMapping("/api/playbooks/draft")
+    public ResponseEntity<?> getDraft(@RequestParam("dir") String dir,
+                                      @RequestParam(value = "workspace", required = false) String workspace) {
+        Path real = registered(dir);
+        if (real == null) {
+            return badRequest("unknown folder");
+        }
+        return ResponseEntity.ok(EditorView.ofDisk(real, workspaceOf(workspace, real), config()));
+    }
+
+    /**
+     * {@code POST /api/playbooks/draft?dir=&workspace=} with the draft as the body : the editor view of the
+     * body, checked as a load would check it. Writes nothing. The fence answers first, then the size, then
+     * the folder.
+     */
+    @PostMapping(value = "/api/playbooks/draft", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> postDraft(@RequestParam("dir") String dir,
+                                       @RequestParam(value = "workspace", required = false) String workspace,
+                                       @RequestBody String body, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > MAX_BODY_BYTES) {
+            return ResponseEntity.status(413).body(Map.of("message", "The draft is larger than 1 MB."));
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return badRequest("unknown folder");
+        }
+        byte[] disk;
+        try {
+            Path file = real.resolve(PlaybookFolders.PLAYBOOK_FILE);
+            disk = Files.isRegularFile(file) && Files.size(file) <= PlaybookLoader.MAX_BYTES
+                    ? Files.readAllBytes(file) : new byte[0];
+        } catch (IOException unreadable) {
+            disk = new byte[0];
+        }
+        return ResponseEntity.ok(EditorView.of(real, body, disk, workspaceOf(workspace, real), config()));
     }
 
     /**
@@ -232,6 +277,14 @@ public class PlaybookController {
         } catch (IOException | RuntimeException missing) {
             return null;
         }
+    }
+
+    private static Path workspaceOf(String workspace, Path folder) {
+        return workspace == null || workspace.isBlank() ? folder : Path.of(workspace);
+    }
+
+    private static SpectroConfig config() {
+        return SpectroConfig.load(SpectroConfig.Overrides.none());
     }
 
     private static boolean fenced(HttpServletRequest request) {
