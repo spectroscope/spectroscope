@@ -55,9 +55,11 @@ class SessionWakeTest {
             mock.stop(0);
         }
         for (String id : written) {
-            Files.deleteIfExists(SessionStore.sessionFile(id));
-            Files.deleteIfExists(LlmWireRecorder.fileFor(id));
-            deleteTree(WorkspaceResolver.locate(null, id)); // a folder a broken wake minted
+            Files.deleteIfExists(SessionStore.SESSIONS_DIR.resolve(id + ".jsonl"));
+            if (id.matches("[A-Za-z0-9][A-Za-z0-9-]*")) {
+                Files.deleteIfExists(LlmWireRecorder.fileFor(id));
+                deleteTree(WorkspaceResolver.locate(null, id)); // a folder a broken wake minted
+            }
         }
     }
 
@@ -357,19 +359,32 @@ class SessionWakeTest {
     }
 
     @Test
-    void aPathShapedOrForeignIdIsNotFoundAndBindsNothing() throws Exception {
+    void aPathShapedOrForeignIdIsNotFoundAndBindsNothing(@TempDir Path folder) throws Exception {
+        // A file in the store whose name the export endpoint refuses: the dot
+        // keeps it out of the id shape, so a wake may not reach it either.
+        String dotted = "w498.dotted";
+        Files.createDirectories(SessionStore.SESSIONS_DIR);
+        Files.writeString(SessionStore.SESSIONS_DIR.resolve(dotted + ".jsonl"), """
+                {"type":"run_start","runId":"r1","agentId":"main","prompt":"hi","workspace":%s,"ts":1}
+                """.formatted(JSON.writeValueAsString(folder.toString())));
+        written.add(dotted);
         LiveSessions live = new LiveSessions();
+        List<List<LiveSessions.LiveSession>> seen = new CopyOnWriteArrayList<>();
+        live.addListener(seen::add);
         FakeSocket socket = new FakeSocket("ws-498-shape", "ws://localhost/ws");
         SessionConnection connection = fresh(socket, null, live);
 
         connection.onWakeSession("../../etc/passwd");
         connection.onWakeSession("20261009-000000-notthere");
+        connection.onWakeSession(dotted);
 
         assertThat(frames(socket, "error").stream().map(node -> node.path("message").asText()))
-                .as("both are answered like the export endpoint's 404, the caller's text never echoed")
-                .containsExactly("Session not found.", "Session not found.");
+                .as("each is answered like the export endpoint's 404, the caller's text never echoed")
+                .containsExactly("Session not found.", "Session not found.", "Session not found.");
         assertThat(connection.sessionId()).isNull();
-        assertThat(live.snapshot()).as("nothing was claimed").isEmpty();
+        assertThat(seen).as("no window's rail ever showed one of them, not even for a moment")
+                .allSatisfy(snapshot -> assertThat(snapshot).isEmpty());
+        assertThat(seen).as("premise: the listener heard the live set").isNotEmpty();
         assertThat(wokenFrames(socket)).isEmpty();
     }
 }
