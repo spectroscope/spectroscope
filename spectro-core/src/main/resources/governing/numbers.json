@@ -801,6 +801,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.provider.AnthropicProvider",
+    "field" : "MIN_THINKING_BUDGET",
+    "value" : "1024",
+    "expression" : "1_024",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The smallest budget_tokens the Messages API accepts on the families that take a token budget (card 488 review). A budget below it is refused, so a request that cannot fit it goes out without thinking."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.AnthropicProvider",
     "field" : "THINKING_BUDGET",
     "value" : "2048",
     "expression" : "2048",
@@ -867,7 +877,7 @@
     "kind" : "FIXED",
     "unit" : "TOKENS",
     "key" : "",
-    "explanation" : "The smallest completion budget a request is sent with when its window leaves a reserve below it, for a turn and for the summarizer alike (card 488). Only windows of 1,703 tokens or less have such a reserve; asking for zero tokens would just fail the call."
+    "explanation" : "The smallest completion budget a request is sent with when its window leaves less than this, for a turn and for the summarizer alike (card 488): a window of 1,703 tokens or less, or a turn whose input leaves less than this of the window. Asking for zero tokens would just fail the call."
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",

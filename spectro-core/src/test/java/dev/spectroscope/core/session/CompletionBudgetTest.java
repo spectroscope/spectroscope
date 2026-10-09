@@ -9,8 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Card 488: the completion budget of a turn is
- * {@code min(maxTokens, window minus compaction threshold)}, from the window
- * the run already uses for compaction.
+ * {@code min(maxTokens, window minus compaction threshold, window minus input)},
+ * from the window the run already uses for compaction, with a floor of 512.
  *
  * <p>The rule lives in {@link CompactionThreshold#completionBudget}; the turn
  * loop and the compaction summarizer both read it, so no provider adapter
@@ -57,18 +57,74 @@ class CompletionBudgetTest {
     }
 
     @Test
-    void noKnownWindowAndAnOperatorThresholdLeaveTheBudgetAlone() {
+    void noKnownWindowLeavesTheBudgetAlone() {
         assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.completionBudget(
                 CompactionThreshold.derive(null, 0), Agent.DEFAULT_MAX_TOKENS),
                 "fallback: nothing is known about the window");
-        // Decided on card 488: under an explicit compactionThreshold the window
-        // is the published one and never a loaded instance, and the operator may
-        // set the threshold at or above it on purpose. The summarizer has made
-        // the same call since card 263.
         assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.completionBudget(
+                new Derived(5_000, Source.OVERRIDE, 0), Agent.DEFAULT_MAX_TOKENS),
+                "an operator threshold on a backend that was never asked for its window");
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.completionBudget(
+                CompactionThreshold.derive(null, 0), Agent.DEFAULT_MAX_TOKENS, 1_000_000),
+                "an input estimate alone says nothing without a window to hold it against");
+    }
+
+    @Test
+    void anOperatorThresholdInsideAKnownWindowIsClampedLikeAnyOther() {
+        // Review finding 1: the explicit compactionThreshold was exempt, so an
+        // operator threshold of 5,000 on a published 8,192 window still sent
+        // 32,000. The window is known, so the rule applies.
+        assertEquals(3_192, CompactionThreshold.completionBudget(
+                new Derived(5_000, Source.OVERRIDE, 8_192), Agent.DEFAULT_MAX_TOKENS));
+        assertEquals(10_000, CompactionThreshold.completionBudget(
                 new Derived(190_000, Source.OVERRIDE, 200_000), Agent.DEFAULT_MAX_TOKENS));
         assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.completionBudget(
+                new Derived(100_000, Source.OVERRIDE, 200_000), Agent.DEFAULT_MAX_TOKENS),
+                "a reserve above the budget takes nothing away");
+    }
+
+    @Test
+    void anOperatorThresholdAtOrAboveTheWindowKeepsTheBudget() {
+        // Decided on card 488: an operator who sets the threshold at or above the
+        // window has turned compaction off for that window. There is no reserve
+        // to hand out, and the floor on every answer would be the result.
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.completionBudget(
+                new Derived(200_000, Source.OVERRIDE, 200_000), Agent.DEFAULT_MAX_TOKENS));
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.completionBudget(
                 new Derived(300_000, Source.OVERRIDE, 200_000), Agent.DEFAULT_MAX_TOKENS));
+        assertEquals(1_000, CompactionThreshold.completionBudget(
+                new Derived(300_000, Source.OVERRIDE, 200_000), Agent.DEFAULT_MAX_TOKENS, 199_000),
+                "the input clamp still holds: the window is known");
+    }
+
+    @Test
+    void aTurnWhoseInputPassedTheThresholdGetsWhatTheWindowHasLeft() {
+        // Review finding 2: on the scripted run, the turn on which one tool
+        // result pushed the input to 6,439 still asked for 2,458 on 8,192.
+        Derived derived = CompactionThreshold.derive(null, 8_192);
+        assertEquals(1_753, CompactionThreshold.completionBudget(derived, Agent.DEFAULT_MAX_TOKENS, 6_439));
+        assertEquals(2_458, CompactionThreshold.completionBudget(derived, Agent.DEFAULT_MAX_TOKENS, 3_000),
+                "below the threshold the reserve is the tighter bound");
+        assertEquals(CompactionThreshold.MIN_COMPLETION_TOKENS,
+                CompactionThreshold.completionBudget(derived, Agent.DEFAULT_MAX_TOKENS, 9_000),
+                "input above the window: the floor, never zero or less");
+        assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.completionBudget(
+                CompactionThreshold.derive(null, 200_000), Agent.DEFAULT_MAX_TOKENS, 1_000),
+                "a large window and a small input change nothing");
+        assertEquals(1_000, CompactionThreshold.completionBudget(derived, 1_000, 6_439),
+                "the configured budget still wins when it is lower");
+    }
+
+    @Test
+    void theInputEstimateIsCharsOverFourOrTheBackendsOwnDensityIfThatIsHigher() {
+        assertEquals(1_000, CompactionThreshold.inputEstimate(4_000, 0, 0), "nothing reported yet");
+        assertEquals(1_001, CompactionThreshold.inputEstimate(4_001, 0, 0), "rounded up");
+        assertEquals(3_000, CompactionThreshold.inputEstimate(8_000, 4_000, 1_500),
+                "the backend counted 1,500 for 4,000 characters, so 8,000 are 3,000");
+        assertEquals(3_001, CompactionThreshold.inputEstimate(8_001, 4_000, 1_500), "rounded up");
+        assertEquals(2_000, CompactionThreshold.inputEstimate(8_000, 4_000, 500),
+                "a backend that counts fewer never lowers the estimate below chars/4");
+        assertEquals(0, CompactionThreshold.inputEstimate(0, 0, 0));
     }
 
     @Test

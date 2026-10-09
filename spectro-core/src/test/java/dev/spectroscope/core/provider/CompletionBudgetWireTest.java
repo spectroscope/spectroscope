@@ -53,7 +53,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>With {@code SPECTRO_CAPTURE_DIR} set, every body and a summary line per
  * request are written there, which is how the card compares the bodies at
- * 200,000 with the release before the fix.</p>
+ * 200,000 with the release before the fix and counts the requests at 8,192
+ * whose input plus completion budget is above the window by the server's
+ * count. That count is a measurement and not asserted here: the server counts
+ * the JSON framing of each body, which the harness's estimate does not see.</p>
  */
 @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class CompletionBudgetWireTest {
@@ -138,6 +141,7 @@ class CompletionBudgetWireTest {
         List<String> lines = new ArrayList<>();
         List<int[]> sentByRequest = new ArrayList<>();
         int oversize = 0;
+        int maxOvershoot = 0;
         for (int i = 0; i < bodies.size(); i++) {
             JsonNode body = JSON.readTree(bodies.get(i));
             int sent = completionField(adapter, body);
@@ -145,29 +149,47 @@ class CompletionBudgetWireTest {
             int inputEstimate = inputOf(bodies.get(i));
             boolean over = inputEstimate + sent > window;
             oversize += over ? 1 : 0;
+            maxOvershoot = Math.max(maxOvershoot, inputEstimate + sent - window);
             sentByRequest.add(new int[] {sent, summary ? 1 : 0});
             lines.add(String.join("\t", adapter, String.valueOf(window), String.valueOf(i + 1),
                     summary ? "summary" : "turn", String.valueOf(sent), String.valueOf(inputEstimate),
                     String.valueOf(over)));
         }
         // Written before any assertion, so a red run leaves its capture behind.
-        capture(adapter, window, lines, oversize);
+        capture(adapter, window, lines, oversize, maxOvershoot);
 
         int turnRequests = 0;
         for (int i = 0; i < sentByRequest.size(); i++) {
             int sent = sentByRequest.get(i)[0];
             if (sentByRequest.get(i)[1] == 0) {
                 turnRequests++;
-                assertEquals(expected, sent, "request " + (i + 1) + " of " + adapter
-                        + " at a window of " + window + " sent " + sent);
+                if (window == 200_000) {
+                    assertEquals(expected, sent, "request " + (i + 1) + " of " + adapter
+                            + " at a window of " + window + " sent " + sent);
+                } else {
+                    // Below the threshold the reserve decides; on the turn whose
+                    // input passed it, what the window leaves after that input.
+                    assertTrue(sent <= expected && sent >= 512, "request " + (i + 1) + " of "
+                            + adapter + " at a window of " + window + " sent " + sent);
+                }
             } else {
                 assertTrue(sent <= reserve, "the summarizer asked for " + sent);
             }
         }
         assertEquals(TOOL_TURNS + 1, turnRequests, "premise: every turn of the script was sent");
+        if (window == 8_192) {
+            // The input bound reached the wire: on the turn whose input passed
+            // the threshold the request asks for less than the reserve. How
+            // many requests still overshoot by the server's count, and by how
+            // much, is the measurement in the capture, not an assertion: the
+            // server counts JSON framing the harness estimate does not see.
+            assertTrue(sentByRequest.stream().anyMatch(r -> r[1] == 0 && r[0] < expected),
+                    "no turn request of " + adapter + " was held below the reserve: " + lines);
+        }
     }
 
-    private void capture(String adapter, int window, List<String> lines, int oversize) throws IOException {
+    private void capture(String adapter, int window, List<String> lines, int oversize, int maxOvershoot)
+            throws IOException {
         String target = System.getenv("SPECTRO_CAPTURE_DIR");
         if (target == null || target.isBlank()) {
             return;
@@ -180,7 +202,7 @@ class CompletionBudgetWireTest {
         Files.write(Path.of(target).resolve("requests.tsv"), lines,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         Files.writeString(Path.of(target).resolve("oversize.tsv"),
-                adapter + "\t" + window + "\t" + bodies.size() + "\t" + oversize + "\n",
+                adapter + "\t" + window + "\t" + bodies.size() + "\t" + oversize + "\t" + maxOvershoot + "\n",
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 

@@ -27,7 +27,8 @@ import java.util.List;
  *                            provider reports no live name of its own
  * @param maxTokens           output-token budget per provider call; null falls back to 32k.
  *                            A known window lowers it to the room the compaction
- *                            threshold leaves (card 488)
+ *                            threshold leaves, and to what the window has left
+ *                            after a request's input (card 488)
  * @param compactionThreshold input-token level that triggers compaction; null falls back to 100k
  * @param introspection       TRUE emits a {@code context_info} estimate each turn (additive)
  * @param thinking            TRUE requests the model's reasoning stream
