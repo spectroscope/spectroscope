@@ -13,7 +13,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
+import { checkProviders, refreshProviders, rowFor, useProviderRows } from "../state/providerRegistry";
+import { PROVIDERS, pickerOption, providerDisplayName } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { LocalModelDialog } from "./LocalModelDialog";
 
@@ -50,6 +51,10 @@ export function ProviderPicker({
 
   const isLocal = sel === "spectro-local";
 
+  // Re-render when a check lands; rowFor below reads the store this subscribes to.
+  useProviderRows();
+  const selectedOption = pickerOption(rowFor(sel), provider);
+
   // Opening seeds the form from the active provider and the real current model.
   useEffect(() => {
     if (open) {
@@ -57,6 +62,12 @@ export function ProviderPicker({
       setModel(activeModel || "");
     }
   }, [open, provider, activeModel]);
+
+  // Opening reads the stored rows, then checks the local kind only: localhost
+  // calls, bounded by the server. A cloud provider is never called on open (D10).
+  useEffect(() => {
+    if (open) void refreshProviders().then(() => checkProviders("local"));
+  }, [open]);
 
   // Shared model list + field mode; autoPick snaps a stale local model.
   const { models, mode } = useProviderModels(open ? sel : "", providerStatus, {
@@ -133,12 +144,25 @@ export function ProviderPicker({
                 setModel("");
               }}
             >
-              {PROVIDERS.map((p) => (
-                <option key={p} value={p}>
-                  {providerDisplayName(p)}
-                </option>
-              ))}
+              {PROVIDERS.map((p) => {
+                const option = pickerOption(rowFor(p), provider);
+                return (
+                  <option
+                    key={p}
+                    value={p}
+                    disabled={option.disabled}
+                    title={option.reasonKey ? t(lang, option.reasonKey, option.vars) : undefined}
+                  >
+                    {providerDisplayName(p)}
+                  </option>
+                );
+              })}
             </select>
+            {selectedOption.reasonKey && (
+              <span className="provider-field-note">
+                {t(lang, selectedOption.reasonKey, selectedOption.vars)}
+              </span>
+            )}
           </label>
           {isLocal ? (
             <p className="provider-local-note">{t(lang, "pp.localNote")}</p>
@@ -163,7 +187,7 @@ export function ProviderPicker({
             </label>
           )}
           <div className="provider-pop-foot">
-            <button type="button" className="soft-primary" onClick={apply}>
+            <button type="button" className="soft-primary" disabled={selectedOption.disabled} onClick={apply}>
               {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}
             </button>
           </div>

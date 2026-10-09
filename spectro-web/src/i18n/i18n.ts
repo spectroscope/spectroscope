@@ -1005,6 +1005,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pp.provider": { de: "Provider", en: "Provider" },
   "pp.model": { de: "Modell", en: "Model" },
   "pp.switch": { de: "Wechseln", en: "Switch" },
+  "pp.optNeedsKey": { de: "kein Key gesetzt", en: "no key set" },
+  "pp.optFailed": { de: "antwortet nicht ({reason})", en: "not answering ({reason})" },
+  "pp.optFailedAt": {
+    de: "antwortet nicht unter {addr} ({reason})",
+    en: "not answering at {addr} ({reason})",
+  },
+  "pp.optNoModels": { de: "antwortet, kein Modell geladen", en: "answers, no model loaded" },
   "pp.chooseLocal": { de: "Modell wählen …", en: "Choose a model …" },
   "pp.localNote": {
     de: "Läuft komplett auf dieser Maschine — kein Key, kein externer Server. Der nächste Schritt zeigt die Modelle.",

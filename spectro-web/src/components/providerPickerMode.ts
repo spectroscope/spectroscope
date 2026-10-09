@@ -1,5 +1,7 @@
 // Pure logic for the provider picker, split out so it is testable without a DOM.
 
+import type { ProviderRow } from "../state/providerRegistry";
+
 /** Every selectable LLM backend, and the app's only copy of that set — it is
  *  held to SpectroConfig.KNOWN_PROVIDERS from the Java side by
  *  ProviderListDriftTest, which reads this array out of this file. Before that
@@ -72,4 +74,31 @@ export function pickModel(current: string, models: string[], authoritative: bool
     return models[0];
   }
   return current;
+}
+
+export interface PickerOption {
+  disabled: boolean;
+  reasonKey: string | null;
+  vars?: Record<string, string>;
+}
+
+/**
+ * How one provider renders in the chat picker (owner decision D9, 2026-10-09:
+ * grey out, never hide). The provider the chat runs on is never disabled, so
+ * the chip can always be re-selected and never claims a state it is not in.
+ * An unknown row (an older server) is enabled.
+ */
+export function pickerOption(row: ProviderRow | undefined, current: string): PickerOption {
+  if (!row || row.id === current) return { disabled: false, reasonKey: null };
+  if (row.state === "needs-key") return { disabled: true, reasonKey: "pp.optNeedsKey" };
+  if (row.state === "failed") {
+    const reason = row.reason ?? "unknown";
+    return row.endpoint
+      ? { disabled: true, reasonKey: "pp.optFailedAt", vars: { addr: row.endpoint, reason } }
+      : { disabled: true, reasonKey: "pp.optFailed", vars: { reason } };
+  }
+  if (row.state === "reachable" && row.models.length === 0) {
+    return { disabled: false, reasonKey: "pp.optNoModels" };
+  }
+  return { disabled: false, reasonKey: null };
 }

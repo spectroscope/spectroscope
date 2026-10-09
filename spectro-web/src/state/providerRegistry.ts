@@ -70,7 +70,9 @@ export async function refreshProviders(): Promise<void> {
 /** POST: the server checks the target and answers with every row. */
 export async function checkProviders(target: "all" | "local" | string): Promise<void> {
   try {
-    await take(await fetch(`/api/providers/check?provider=${encodeURIComponent(target)}`, { method: "POST" }));
+    await take(
+      await fetch(`/api/providers/check?provider=${encodeURIComponent(target)}`, { method: "POST" }),
+    );
   } catch {
     // same rule as above
   }
@@ -79,4 +81,9 @@ export async function checkProviders(target: "all" | "local" | string): Promise<
 /** Test only. */
 export function __resetProviderRegistry(): void {
   rows = [];
+}
+
+/** Test only: rows as if a server had answered. */
+export function __seedProviderRows(seed: ProviderRow[]): void {
+  adopt(seed);
 }
