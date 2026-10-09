@@ -272,11 +272,15 @@ class CopilotProviderTest {
             }
         });
         runtime.onSend(turn -> {
+            // Slower than the abort's own tail below: anything of the aborted
+            // turn that the provider did not wait for would land in this turn.
+            FakeCopilotRuntime.sleep(300);
             turn.delta("fresh");
             turn.usage(20, 1, 0, 0, "stop");
             turn.idle();
         });
         runtime.abortTail(turn -> {
+            FakeCopilotRuntime.sleep(100);
             turn.delta("late");
             turn.delta("late");
         });
