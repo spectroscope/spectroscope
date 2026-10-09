@@ -100,6 +100,11 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // the union as `compaction`; the frame around it is the app's own screen.
   // Caught by the drift guard next door.
   "compaction_state",
+  // Card 498. The page's own outbound frame that wakes a stored session's
+  // folder on the server before the first message. It is a fact about this
+  // socket at this moment; a stored "woken" would be a claim about a server
+  // that has since restarted. Its answer is the workspace_info above.
+  "wake_session",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the
