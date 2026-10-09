@@ -89,6 +89,11 @@ import java.util.concurrent.TimeoutException;
  * session, an edit) opens a new runtime session whose first message carries the
  * earlier conversation as plain text.</p>
  *
+ * <p><b>What is not passed on.</b> {@link ProviderRequest#maxTokens()} has no
+ * counterpart in the SDK's session or message options and is ignored. The
+ * reasoning effort is set when a session opens and changed through
+ * {@code setModel} when a later request names another one.</p>
+ *
  * <p><b>Credentials.</b> Token variables are removed from the runtime's
  * environment. A {@link TokenSource} hands a token to the runtime through the
  * SDK's token callback; without one, the stored CLI login is read only when
