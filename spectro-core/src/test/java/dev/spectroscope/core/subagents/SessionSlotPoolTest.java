@@ -52,6 +52,7 @@ class SessionSlotPoolTest {
     private static final class GatedProvider implements LlmProvider {
         final Queue<List<ProviderEvent>> parentTurns = new ConcurrentLinkedQueue<>();
         final List<String> started = new CopyOnWriteArrayList<>();
+        final Map<String, Long> startedAtNanos = new ConcurrentHashMap<>();
         final Map<String, CountDownLatch> gates = new ConcurrentHashMap<>();
 
         CountDownLatch gate(String task) {
@@ -68,6 +69,7 @@ class SessionSlotPoolTest {
                 return turn;
             }
             String task = taskOf(request);
+            startedAtNanos.putIfAbsent(task, System.nanoTime());
             started.add(task);
             CountDownLatch gate = gate(task);
             try {
@@ -325,6 +327,50 @@ class SessionSlotPoolTest {
     }
 
     @Test
+    void aHelperAtTheModelIsCutByTheGraceOfItsChatsCountNotByTheOldWidth() throws Exception {
+        // The grace the running helper gets is the one executeChild arms, so
+        // this pins that call site and not only the formula. A fixed run
+        // budget of 3000 ms implies a median of 1000 ms. At a count of 3 one
+        // other helper can be at the model ahead of this one: 3000 + 1 x 1000
+        // = 4000 ms. With no count, the v0.14.4 width, it would be three:
+        // 3000 + 3 x 1000 = 6000 ms. The first helper never answers, so the
+        // time from its model request to its failure is its grace.
+        GatedProvider provider = new GatedProvider();
+        provider.gate("t3").countDown();
+        provider.gate("t4").countDown();
+        provider.parentTurns.add(spawnFour());
+        provider.parentTurns.add(text("done"));
+        Chat chat = start(provider, 3, 3000);
+
+        await("the first helper is at the model", () -> provider.startedAtNanos.containsKey("t1"));
+        long startedAt = provider.startedAtNanos.get("t1");
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(12);
+        String t1Outcome = null;
+        while (t1Outcome == null && System.nanoTime() < deadline) {
+            Map<String, String> tasks = chat.taskById();
+            for (RunEvent.AgentMessage result : chat.results()) {
+                if ("t1".equals(tasks.get(result.from()))) {
+                    t1Outcome = result.state() + ": " + result.text();
+                }
+            }
+            if (t1Outcome == null) {
+                Thread.sleep(10);
+            }
+        }
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        assertTrue(t1Outcome != null && t1Outcome.startsWith("failed")
+                        && t1Outcome.contains("never produced a token"),
+                "premise: the first helper is cut by its grace: " + t1Outcome);
+        assertTrue(elapsedMs >= 3500,
+                "the helper was cut after " + elapsedMs + " ms, before the 4000 ms grace of a chat at 3");
+        assertTrue(elapsedMs < 5000,
+                "the helper was cut after " + elapsedMs + " ms; a chat at 3 grants 4000 ms,"
+                        + " the old width of four 6000 ms");
+        chat.drain().join(15_000);
+        assertFalse(chat.drain().isAlive(), "the chat never finished");
+    }
+
+    @Test
     void aWaitingHelperEndsWithTheParentRunAndHoldsNothing() throws Exception {
         GatedProvider provider = new GatedProvider();
         provider.parentTurns.add(spawnFour());
@@ -338,5 +384,7 @@ class SessionSlotPoolTest {
         assertEquals(2, provider.started.size(),
                 "a helper that waited for a slot started after the run was cancelled");
         assertEquals(4, chat.results().size(), "every helper owes the parent a result");
+        assertEquals(0, chat.manager().slotsInUse(), "a slot of the chat is still held after the run");
+        assertEquals(0, chat.manager().slotsQueued(), "a ticket is still in the chat's slot queue after the run");
     }
 }

@@ -238,6 +238,12 @@ public final class SubagentManager {
         return slots.running();
     }
 
+    /** How many helpers of this chat are in the slot queue now, for tests.
+     *  @return the tickets not yet admitted or dropped */
+    int slotsQueued() {
+        return slots.queued();
+    }
+
     /**
      * Replaces agent.run() at the call site: pumps the parent's events into
      * the same queue as the children's and returns the merged stream. If the

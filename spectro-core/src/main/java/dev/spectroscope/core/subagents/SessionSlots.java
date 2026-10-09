@@ -176,6 +176,16 @@ final class SessionSlots {
         }
     }
 
+    /** @return how many tickets are in the queue now */
+    int queued() {
+        lock.lock();
+        try {
+            return queue.size();
+        } finally {
+            lock.unlock();
+        }
+    }
+
     private void forgetLocked(Ticket ticket) {
         if (queue.remove(ticket)) {
             changed.signalAll();
