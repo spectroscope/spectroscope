@@ -14,6 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** A check answers within its budget whatever the provider does. */
 class ProviderRegistryBudgetTest {
 
+    /** Card 480 acceptance 2, as a literal so a raised constant cannot raise the bound with it. */
+    private static final long CARD_CEILING_MS = 5_000L;
+
     private static SpectroConfig config() {
         return SpectroConfig.load(SpectroConfig.Overrides.none());
     }
@@ -36,7 +39,7 @@ class ProviderRegistryBudgetTest {
         System.out.println("budget-test elapsed ms: " + elapsedMs);
         assertEquals("failed", r.state());
         assertEquals("timeout", r.reason());
-        assertTrue(elapsedMs < ProviderRegistry.CHECK_BUDGET_MS + 1_500L,
+        assertTrue(elapsedMs < CARD_CEILING_MS + 1_500L,
                 "answered after " + elapsedMs + " ms, budget " + ProviderRegistry.CHECK_BUDGET_MS);
         never.countDown();
     }
