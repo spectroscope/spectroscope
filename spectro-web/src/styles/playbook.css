@@ -280,3 +280,20 @@
   color: var(--text-dim);
   white-space: nowrap;
 }
+
+/* ---------- ends, ghosts and marked arrows (card 483) ---------- */
+.pb-end {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.pb-ghost {
+  fill: none;
+  stroke: var(--error);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.pb-edge--dangling {
+  stroke: var(--error);
+  stroke-dasharray: 3 3;
+}

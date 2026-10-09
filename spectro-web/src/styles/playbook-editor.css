@@ -338,3 +338,106 @@
   color: var(--text);
   border-color: var(--accent);
 }
+
+/* ---------- pane and toolbar (Task 11) ---------- */
+.pbe-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.pbe-bar:empty {
+  display: none;
+}
+.pb-pane .pbe-edit {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pbe-note-line,
+.pbe-notice {
+  margin: 0;
+  max-width: 64ch;
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text);
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-2);
+}
+.pbe-notice {
+  margin-bottom: var(--sp-2);
+}
+.pb-pane button:disabled,
+.pb-pane input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pb-pane button:disabled:hover {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.pbe-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+.pbe-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.pbe-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.pb-pane .pbe-btn--primary {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pbe-state {
+  margin-left: auto;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pbe-state--refused,
+.pbe-state--changed,
+.pbe-state--failed {
+  color: var(--text);
+  border-left: 2px solid var(--error);
+  padding-left: var(--sp-2);
+}
+.pbe-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+.pbe-stage {
+  min-width: 0;
+  height: clamp(360px, 62vh, 680px);
+  border-right: 1px solid var(--border);
+}
+.pbe-side {
+  min-width: 0;
+  max-height: clamp(360px, 62vh, 680px);
+  overflow: auto;
+}
+@media (max-width: 720px) {
+  .pbe-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pbe-stage {
+    height: 60vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .pbe-side {
+    max-height: none;
+  }
+}

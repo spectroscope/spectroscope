@@ -4,13 +4,18 @@
 // copies the shipped spectro playbook into a folder), and for the folder shown
 // the graph, the step table and the findings. It runs nothing: it says so.
 //
+// Card 483 (Task 11): the graph is drawn from the document the editor store
+// holds, the header offers Edit when the file can be edited without losing
+// anything, and an open editor replaces the graph and the table with the edit
+// layout. While the draft has unsaved changes the folder picker is locked.
+//
 // The stylesheet is styles/playbook.css, imported by app.css: a surface chunk
 // carries no stylesheet of its own.
 
 import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { useEditorState } from "../state/playbookEditor";
+import { closeEditor, loadView, openEditor, useEditorState } from "../state/playbookEditor";
 import {
   copyBundled,
   loadPlaybook,
@@ -20,7 +25,8 @@ import {
   useLoadedPlaybook,
   usePlaybookFolders,
 } from "../state/playbooks";
-import { EditorPanels } from "./editor/panels/EditorPanels";
+import type { PlaybookDoc } from "./editor/doc";
+import { EditorShell } from "./editor/EditorShell";
 import { PlaybookGraph } from "./PlaybookGraph";
 import { StepTable } from "./StepTable";
 
@@ -35,7 +41,9 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
   const lang = useLang();
   const { folders, active } = usePlaybookFolders();
   const loaded = useLoadedPlaybook();
-  const editing = useEditorState().open;
+  const ed = useEditorState();
+  const editing = ed.open;
+  const locked = ed.dirty;
   const [path, setPath] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -46,10 +54,14 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
     refreshFolders(ws).catch((e: unknown) => setNotice(messageOf(e)));
   }, [ws]);
 
+  // Read mode reads the folder twice: the load route for the step table and
+  // the findings, the draft route for the document the graph draws. An open
+  // editor keeps its own view; closing it reads both again.
   useEffect(() => {
-    if (shown === null) return;
+    if (shown === null || editing) return;
     loadPlaybook(shown, ws).catch((e: unknown) => setNotice(messageOf(e)));
-  }, [shown, ws]);
+    loadView(shown, workspace).catch((e: unknown) => setNotice(messageOf(e)));
+  }, [shown, ws, workspace, editing]);
 
   const run = (work: () => Promise<void>): void => {
     setNotice(null);
@@ -82,14 +94,40 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
     });
   };
 
+  const view = ed.view;
+  const doc: PlaybookDoc | null = editing
+    ? (ed.history?.present ?? null)
+    : (ed.saved ?? view?.document ?? null);
   const p = loaded?.playbook ?? null;
+  const title = doc?.name ?? p?.name ?? t(lang, "pb.title");
+  const description = doc?.description ?? p?.description ?? "";
+  const dir = ed.dir ?? shown;
 
   return (
     <div className="pb-pane">
       <header className="pb-head">
-        <h2 className="pb-title">{p !== null ? p.name : t(lang, "pb.title")}</h2>
-        {p !== null && p.description !== "" && <p className="pb-description">{p.description}</p>}
+        <h2 className="pb-title">{title}</h2>
+        {description !== "" && <p className="pb-description">{description}</p>}
         <p className="pb-no-runs">{t(lang, "pb.noRuns")}</p>
+        <div className="pbe-bar">
+          {editing ? (
+            <button type="button" className="pbe-stop" disabled={ed.dirty} onClick={closeEditor}>
+              {t(lang, "pbe.stop")}
+            </button>
+          ) : view !== null && view.editable && view.document !== null ? (
+            <button
+              type="button"
+              className="pbe-edit"
+              onClick={() => {
+                if (dir !== null) run(() => openEditor(dir, workspace));
+              }}
+            >
+              {t(lang, "pbe.edit")}
+            </button>
+          ) : view !== null ? (
+            <p className="pbe-note-line">{t(lang, "pbe.notEditable")}</p>
+          ) : null}
+        </div>
       </header>
 
       <section className="pb-picker" aria-label={t(lang, "pb.folders")}>
@@ -103,6 +141,7 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
                     type="button"
                     className={`pb-folder${dir === shown ? " is-active" : ""}`}
                     title={dir}
+                    disabled={locked}
                     onClick={() => setPicked(dir)}
                   >
                     {dir}
@@ -111,6 +150,7 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
                     <button
                       type="button"
                       className="pb-pin"
+                      disabled={locked}
                       onClick={() => run(() => pinFolder(workspace, dir))}
                     >
                       {t(lang, "pb.useHere")}
@@ -129,18 +169,24 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
             placeholder={t(lang, "pb.addFolder")}
             aria-label={t(lang, "pb.addFolder")}
             spellCheck={false}
+            disabled={locked}
             onChange={(e) => setPath(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") add();
             }}
           />
-          <button type="button" className="pb-add" onClick={add}>
+          <button type="button" className="pb-add" disabled={locked} onClick={add}>
             {t(lang, "pb.add")}
           </button>
-          <button type="button" className="pb-copy" onClick={copy}>
+          <button type="button" className="pb-copy" disabled={locked} onClick={copy}>
             {t(lang, "pb.copyBundled")}
           </button>
         </div>
+        {locked && (
+          <p className="pb-notice" role="status">
+            {t(lang, "pbe.folderLocked")}
+          </p>
+        )}
         {notice !== null && (
           <p className="pb-notice" role="status">
             {notice}
@@ -148,31 +194,39 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
         )}
       </section>
 
-      {loaded !== null && loaded.findings.length > 0 && (
-        <section className="pb-section">
-          <h3 className="pb-h">{t(lang, "pb.findings")}</h3>
-          <ul className="pb-findings">
-            {loaded.findings.map((f, i) => (
-              <li className="pb-finding" key={`${f.path}#${i}`}>
-                <code className="pb-mono">{f.path === "" ? loaded.dir : f.path}</code> {f.message}
-              </li>
-            ))}
-          </ul>
+      {editing ? (
+        <section className="pb-section pbe-editor">
+          {!ed.canonical && (
+            <p className="pbe-notice" role="status">
+              {t(lang, "pbe.notCanonical")}
+            </p>
+          )}
+          <EditorShell />
         </section>
-      )}
-
-      {loaded !== null && p !== null && (
+      ) : (
         <>
-          <section className="pb-section pb-canvas">
-            <PlaybookGraph loaded={loaded} />
-          </section>
-          <section className="pb-section">
-            <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
-            <StepTable loaded={loaded} />
-          </section>
-          {editing && (
+          {loaded !== null && loaded.findings.length > 0 && (
             <section className="pb-section">
-              <EditorPanels />
+              <h3 className="pb-h">{t(lang, "pb.findings")}</h3>
+              <ul className="pb-findings">
+                {loaded.findings.map((f, i) => (
+                  <li className="pb-finding" key={`${f.path}#${i}`}>
+                    <code className="pb-mono">{f.path === "" ? loaded.dir : f.path}</code> {f.message}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {doc !== null && (
+            <section className="pb-section pb-canvas">
+              <PlaybookGraph doc={doc} />
+            </section>
+          )}
+          {loaded !== null && p !== null && (
+            <section className="pb-section">
+              <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
+              <StepTable loaded={loaded} />
             </section>
           )}
         </>

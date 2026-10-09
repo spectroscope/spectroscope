@@ -122,6 +122,32 @@ describe("the surfaces light closes load from their own chunks (criterion 9)", (
   }
 });
 
+// Card 483, non-functional criterion 1: the playbook editor is in the playbook
+// chunk. Learn and light never load it: it is reached only through
+// PlaybookPane, whose chunk the entry does not import.
+describe("the playbook editor loads with the playbook chunk and with nothing else (card 483)", () => {
+  const EDITOR = [
+    "playbook/editor/EditorCanvas.tsx",
+    "playbook/editor/EditorShell.tsx",
+    "playbook/editor/EditorToolbar.tsx",
+    "playbook/editor/panels/EditorPanels.tsx",
+  ];
+  const homeOf = (module: string): Rollup.OutputChunk | undefined =>
+    chunks.find((chunk) => chunk.moduleIds.includes(`${WEB}src/${module}`));
+
+  for (const module of EDITOR) {
+    it(`${module} belongs to the chunk of playbook/PlaybookPane.tsx, which the entry does not load`, () => {
+      const pane = homeOf("playbook/PlaybookPane.tsx");
+      const home = homeOf(module);
+      expect(pane, "PlaybookPane.tsx is in no chunk of this build").toBeDefined();
+      expect(home, `${module} is in no chunk of this build`).toBeDefined();
+      expect(home!.fileName).toBe(pane!.fileName);
+      expect(home!.isEntry).toBe(false);
+      expect(entryClosure().has(home!.fileName)).toBe(false);
+    });
+  }
+});
+
 describe("every chunked module has a loader, and App draws the lazy one", () => {
   it("names each table module in exactly one import() of surfaceChunks.ts", () => {
     const loaders = stripComments(read("./surfaceChunks.ts", import.meta.url));
