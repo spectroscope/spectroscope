@@ -430,6 +430,7 @@
   place-items: center;
   padding: var(--sp-4);
   background: color-mix(in srgb, var(--bg) 68%, transparent);
+  backdrop-filter: blur(3px);
 }
 .pc-panel {
   display: flex;
@@ -487,6 +488,8 @@
   gap: var(--sp-2);
 }
 .pc-outcome {
+  /* Keeps the answer clear of the sticky action row when it scrolls into view. */
+  scroll-margin-bottom: 72px;
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
@@ -494,9 +497,15 @@
   padding-left: var(--sp-2);
 }
 .pc-actions {
+  position: sticky;
+  bottom: calc(-1 * var(--sp-5));
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
+  margin: 0 calc(-1 * var(--sp-5)) calc(-1 * var(--sp-5));
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg);
 }
 .pb-pane .pc-primary {
   color: var(--accent);

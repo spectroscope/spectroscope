@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { loadPlaybook } from "../state/playbooks";
 import {
   installContents,
   loadContents,
@@ -43,10 +44,21 @@ function refusalText(lang: Lang, f: InstallFailure): string {
 }
 
 /**
+ * After a write the list and the playbook are read again: the list moves its
+ * states to installed or new, and the playbook's step table, which resolves
+ * each skill against what the harness has, stops offering an install that is
+ * done (or offers it again after a remove).
+ */
+async function readAgain(dir: string, workspace: string | null): Promise<void> {
+  await loadContents(dir, workspace).catch(() => undefined);
+  await loadPlaybook(dir, workspace ?? "").catch(() => undefined);
+}
+
+/**
  * Install what the list showed. The hash is the one of the list the person saw.
- * A written install reads the list again so the states move to installed; a
- * refused one leaves the dialog open (the store reads the list again itself
- * when the folder changed).
+ * A written install reads the list and the playbook again, so the states move
+ * to installed. A refused one leaves the dialog open; the store reads the list
+ * again itself when the folder changed.
  */
 export async function confirmInstall(
   lang: Lang,
@@ -57,7 +69,7 @@ export async function confirmInstall(
 ): Promise<Outcome> {
   const answer = await installContents(dir, preview.contentsHash, hooks);
   if (answer.ok) {
-    await loadContents(dir, workspace).catch(() => undefined);
+    await readAgain(dir, workspace);
     return { message: t(lang, "pc.reach"), names: answer.installed, done: true };
   }
   return { message: refusalText(lang, answer), names: [], done: false };
@@ -67,7 +79,7 @@ export async function confirmInstall(
 export async function confirmRemove(lang: Lang, dir: string, workspace: string | null): Promise<Outcome> {
   const answer = await removeContents(dir);
   if (answer.ok) {
-    await loadContents(dir, workspace).catch(() => undefined);
+    await readAgain(dir, workspace);
     const kept = answer.kept.length > 0 ? t(lang, "pc.kept", { names: answer.kept.join(", ") }) : null;
     return { message: kept, names: answer.removed, done: true };
   }
@@ -187,7 +199,7 @@ export function ContentsConfirmView(props: ConfirmViewProps) {
         )}
 
         {outcome !== null && (
-          <div className="pc-outcome" role="status">
+          <div className="pc-outcome" role="status" ref={(el) => el?.scrollIntoView({ block: "nearest" })}>
             {outcome.message !== null && <p className="pc-note">{outcome.message}</p>}
             {outcome.names.length > 0 && (
               <p className="pc-note">

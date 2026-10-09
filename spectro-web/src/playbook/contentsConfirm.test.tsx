@@ -278,6 +278,36 @@ describe("the install confirmation", () => {
     expect(String(vi.mocked(fetch).mock.calls[1][0])).toContain("/api/playbooks/contents?dir=%2Fp");
   });
 
+  it("reads the playbook again after a write, so the step table stops offering what was installed", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(answer(200, { installed: ["spectropowers"] }))
+      .mockResolvedValueOnce(answer(200, preview()))
+      .mockResolvedValueOnce(answer(200, LOADED));
+    await confirmInstall("en", "/p", preview(), false, "/ws");
+    const urls = vi.mocked(fetch).mock.calls.map((c) => String(c[0]));
+    expect(
+      urls.some((u) => u.startsWith("/api/playbooks/load?dir=%2Fp") && u.includes("workspace=%2Fws")),
+    ).toBe(true);
+
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(answer(200, { removed: ["spectropowers"], kept: [] }))
+      .mockResolvedValueOnce(answer(200, preview()))
+      .mockResolvedValueOnce(answer(200, LOADED));
+    await confirmRemove("en", "/p", "/ws");
+    expect(
+      vi.mocked(fetch).mock.calls.some((c) => String(c[0]).startsWith("/api/playbooks/load?dir=%2Fp")),
+    ).toBe(true);
+  });
+
+  it("does not read the playbook again after a refusal", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      answer(413, { reason: "TOO_LARGE", message: "Over the ceiling.", names: [] }),
+    );
+    await confirmInstall("en", "/p", preview(), false, null);
+    expect(vi.mocked(fetch).mock.calls.some((c) => String(c[0]).includes("/api/playbooks/load"))).toBe(false);
+  });
+
   it("disables install with one taken item, and enables it for the same list without one", () => {
     const taken = preview({
       items: [SKILL, item({ kind: "command", name: "ship", state: "taken", target: "/t" })],
