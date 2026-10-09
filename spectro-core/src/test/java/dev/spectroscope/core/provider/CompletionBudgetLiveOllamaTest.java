@@ -33,7 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * already be loaded with the window under test, so {@code /api/ps} reports it;
  * the base URL is {@code SPECTRO_LIVE_OLLAMA_URL}, else localhost. With
  * {@code SPECTRO_CAPTURE_DIR} set, one line per request is appended to
- * {@code live-ollama.tsv} there. The test asserts only that the run happened;
+ * {@code live-ollama.tsv} there: model, window, request, {@code num_predict},
+ * {@code prompt_eval_count}, oversize, the gauge's estimate of the request and
+ * the backend's count minus that estimate. The test asserts only that the run happened;
  * the numbers are the measurement.</p>
  */
 @EnabledIfEnvironmentVariable(named = "SPECTRO_LIVE_OLLAMA_MODEL", matches = ".+")
@@ -68,6 +70,13 @@ class CompletionBudgetLiveOllamaTest {
                 return input.path("value").asText();
             }
         });
+        // With SPECTRO_LIVE_STANDARD_TOOLS set, the request also advertises the
+        // standard tool set, the way a CLI run does, so the template's wrapping
+        // of every tool shows in the backend's count.
+        String standard = System.getenv("SPECTRO_LIVE_STANDARD_TOOLS");
+        if (standard != null && !standard.isBlank()) {
+            dev.spectroscope.core.tools.StandardTools.all().forEach(registry::register);
+        }
         Path sidecar = dir.resolve("session.llm.jsonl");
         List<RunEvent> events = new ArrayList<>();
         try (LlmWireRecorder recorder = new LlmWireRecorder(sidecar, LlmWireRecorder.DEFAULT_CEILING_BYTES)) {
@@ -80,6 +89,7 @@ class CompletionBudgetLiveOllamaTest {
                     .onPermission(request -> true)
                     .llmWire(recorder)
                     .maxTurns(4)
+                    .introspection(true)
                     .build());
             agent.setReasoning(LlmProvider.ProviderRequest.Reasoning.OFF, null);
             try (EventStream stream = agent.run("Call the echo tool once with the value 'one',"
@@ -98,14 +108,22 @@ class CompletionBudgetLiveOllamaTest {
         }
         List<Integer> input = events.stream().filter(RunEvent.Usage.class::isInstance)
                 .map(e -> ((RunEvent.Usage) e).inputTokens()).toList();
+        // The harness's chars/4 estimate of each turn request, as the context
+        // gauge states it before the request goes out (card 488, the input
+        // reserve: how far the backend's count lies above it).
+        List<Integer> estimated = events.stream().filter(RunEvent.ContextInfo.class::isInstance)
+                .map(e -> ((RunEvent.ContextInfo) e).estimatedTokens()).toList();
         assertFalse(sent.isEmpty(), "premise: at least one request went out");
 
         List<String> lines = new ArrayList<>();
         for (int i = 0; i < sent.size(); i++) {
             Integer in = i < input.size() ? input.get(i) : null;
+            Integer estimate = i < estimated.size() ? estimated.get(i) : null;
             boolean over = in != null && in + sent.get(i) > window;
             lines.add(String.join("\t", model, String.valueOf(window), String.valueOf(i + 1),
-                    String.valueOf(sent.get(i)), String.valueOf(in), String.valueOf(over)));
+                    String.valueOf(sent.get(i)), String.valueOf(in), String.valueOf(over),
+                    String.valueOf(estimate),
+                    in == null || estimate == null ? "null" : String.valueOf(in - estimate)));
         }
         String target = System.getenv("SPECTRO_CAPTURE_DIR");
         if (target != null && !target.isBlank()) {

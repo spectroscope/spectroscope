@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Timeout;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -222,8 +223,8 @@ class CompletionBudgetLoopTest {
         int estimate = CompactionThreshold.inputEstimate(chars,
                 Agent.requestChars(first.system(), first.tools(), first.messages()), 1);
         assertTrue(estimate > 5_734, "premise: the input passed the threshold, estimate " + estimate);
-        assertEquals(8_192 - estimate, second.maxTokens(),
-                "the completion gets what the window leaves after the input");
+        assertEquals(8_192 - estimate - CompactionThreshold.INPUT_RESERVE_TOKENS, second.maxTokens(),
+                "the completion gets what the window leaves after the input and the reserve");
     }
 
     @Test
@@ -254,8 +255,60 @@ class CompletionBudgetLoopTest {
         int calibrated = CompactionThreshold.inputEstimate(secondChars, firstChars, reported);
         int plain = CompactionThreshold.inputEstimate(secondChars, 0, 0);
         assertTrue(calibrated > plain + 2_000, "premise: the backend's density moves the estimate");
-        assertTrue(calibrated > 5_734 && calibrated < 8_192 - 512,
+        assertTrue(calibrated > 5_734
+                        && calibrated < 8_192 - 512 - CompactionThreshold.INPUT_RESERVE_TOKENS,
                 "premise: the input passed the threshold but not the floor, " + calibrated);
-        assertEquals(8_192 - calibrated, second.maxTokens());
+        assertEquals(8_192 - calibrated - CompactionThreshold.INPUT_RESERVE_TOKENS, second.maxTokens());
+    }
+
+    @Test
+    void aPastedScreenshotLeavesTheBudgetOfALargeWindowAlone() {
+        // Review finding of round three: 1 MB of PNG is 1,398,104 base64
+        // characters. Counted over four that is 349,526 tokens, above a window
+        // of 200,000, and the turn after the screenshot was sent with the floor
+        // of 512. A backend counts the image by its pixels, so the request
+        // keeps the configured budget.
+        String screenshot = Base64.getEncoder().encodeToString(new byte[1 << 20]);
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new Tool() {
+            public String name() {
+                return "screenshot";
+            }
+
+            public String description() {
+                return "attaches a screenshot";
+            }
+
+            public JsonNode inputSchema() {
+                return JSON.createObjectNode().put("type", "object");
+            }
+
+            public boolean needsPermission() {
+                return false;
+            }
+
+            public String execute(JsonNode input, ToolContext context) {
+                context.attach().accept(new Tool.AttachedImage("image/png", screenshot));
+                return "attached";
+            }
+        });
+        int[] turn = {0};
+        RecordingProvider provider = new RecordingProvider(200_000, request -> ++turn[0] <= 2
+                ? toolTurn("c" + turn[0], "screenshot", 60 + (turn[0] - 1) * 1_600)
+                : answer("ok", 3_300));
+
+        run(agent(provider, registry, new SessionWindow()));
+
+        assertEquals(3, provider.requests.size(), "premise: two screenshots, then the answer");
+        long images = provider.requests.get(2).messages().stream()
+                .flatMap(m -> m.content().stream())
+                .filter(c -> c instanceof LlmProvider.ImageContent image
+                        && image.dataBase64().length() == 1_398_104)
+                .count();
+        assertEquals(2, images, "premise: the last request carries both 1 MB screenshots");
+        for (LlmProvider.ProviderRequest request : provider.requests) {
+            assertEquals(Agent.DEFAULT_MAX_TOKENS, request.maxTokens(),
+                    "a screenshot on a window of 200,000 takes nothing from the budget");
+        }
     }
 }

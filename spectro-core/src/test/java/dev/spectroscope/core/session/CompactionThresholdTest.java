@@ -214,9 +214,14 @@ class CompactionThresholdTest {
         assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.summaryBudget(
                 CompactionThreshold.derive(null, 0)),
                 "nothing known about the window means nothing to clamp against");
+        // Card 488, round three: an operator's threshold with no known window
+        // implies the window it is 70 % of. 100,000 implies 142,858, whose
+        // reserve of 42,858 is above the budget, so nothing is taken away.
+        // (This line asserted that 5,000 kept the full budget; that premise
+        // fell with the decision, and CompletionBudgetTest pins 5,000 now.)
         assertEquals(Agent.DEFAULT_MAX_TOKENS, CompactionThreshold.summaryBudget(
-                CompactionThreshold.derive(5_000, 0)),
-                "an operator's threshold says nothing about the window either");
+                CompactionThreshold.derive(100_000, 0)),
+                "an operator's threshold implies a window, and this one is large");
     }
 
     @Test

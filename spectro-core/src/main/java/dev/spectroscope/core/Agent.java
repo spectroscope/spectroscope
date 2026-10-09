@@ -562,6 +562,7 @@ public final class Agent {
         // reported for, set with it, so the next request's estimate can use
         // the backend's own density.
         long lastRequestChars = 0;
+        int lastRequestAttachmentTokens = 0;
 
         // Card 252: the withholding is stated once per run. The image lives in
         // the history, so the fence closes again on every turn of a tool-using
@@ -746,8 +747,9 @@ public final class Agent {
                 // by, and what that window has left after this request's
                 // input, for every provider and every agent, children included.
                 long requestChars = requestChars(systemForTurn, advertisedTools, fenced.messages());
-                int inputEstimate = CompactionThreshold.inputEstimate(requestChars,
-                        lastRequestChars, lastInputTokens);
+                int attachmentTokens = attachmentTokens(fenced.messages());
+                int inputEstimate = CompactionThreshold.inputEstimate(requestChars, attachmentTokens,
+                        lastRequestChars, lastRequestAttachmentTokens, lastInputTokens);
                 ProviderRequest request = new ProviderRequest(systemForTurn,
                         fenced.messages(), advertisedTools,
                         CompactionThreshold.completionBudget(compaction, maxTokens, inputEstimate),
@@ -791,6 +793,7 @@ public final class Agent {
                             // provider reported none — those sessions stay byte-identical).
                             lastInputTokens = contextTokens(usage);
                             lastRequestChars = requestChars;
+                            lastRequestAttachmentTokens = attachmentTokens;
                             emit.accept(new Usage(agentId,
                                     usage.inputTokens(), usage.outputTokens(),
                                     usage.cacheReadTokens() > 0 ? usage.cacheReadTokens() : null,
@@ -1612,9 +1615,11 @@ public final class Agent {
     }
 
     /**
-     * The characters one request carries, counted the way {@link #contextInfo}
-     * counts them: the system prompt, each advertised tool's name, description
-     * and schema, and every content block of the history.
+     * The text characters one request carries: the system prompt, each
+     * advertised tool's name, description and schema, and every text, tool
+     * call and tool result of the history, counted as {@link #contextInfo}
+     * counts them. Images and documents are left out; their share of the
+     * input is {@link #attachmentTokens}, not their base64 characters.
      *
      * @param system   the system prompt of the request
      * @param tools    the tools the request advertises
@@ -1629,10 +1634,29 @@ public final class Agent {
         }
         for (ProviderMessage message : messages) {
             for (ProviderContent content : message.content()) {
-                chars += charsOf(content);
+                if (!(content instanceof ImageContent) && !(content instanceof DocumentContent)) {
+                    chars += charsOf(content);
+                }
             }
         }
         return chars;
+    }
+
+    /**
+     * The tokens the images and documents of one request add to its input
+     * estimate ({@link CompactionThreshold#attachmentTokens}).
+     *
+     * @param messages the history the request carries
+     * @return the sum over every attachment of the history
+     */
+    static int attachmentTokens(List<ProviderMessage> messages) {
+        long tokens = 0;
+        for (ProviderMessage message : messages) {
+            for (ProviderContent content : message.content()) {
+                tokens += CompactionThreshold.attachmentTokens(content);
+            }
+        }
+        return (int) Math.min(Integer.MAX_VALUE, tokens);
     }
 
     /** Context-part texts are capped for the wire — a whole conversation can be
