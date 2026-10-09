@@ -224,7 +224,7 @@ import {
   type ModeSwitchDeps,
 } from "./state/modeWork";
 import { storedCwdOf } from "./workspace/storedFolder";
-import { headerWorkspace, wakeWanted } from "./workspace/wakeChip";
+import { headerWorkspace, ownSessionIds, wakeWanted } from "./workspace/wakeChip";
 
 interface ConnState {
   status: ConnectionStatus;
@@ -1716,7 +1716,8 @@ export function App() {
   // Card 458: what stands where the composer would be. A stored session gets
   // the composer and continues on the first message; an import, a scenario
   // and a session another window holds (card 212) say why they are read-only.
-  const ownIds = heldRows.map((row) => row.id);
+  // Card 498: a wake is this page's too, or its own claim would lock its box.
+  const ownIds = ownSessionIds(heldRows, allSlots);
   const shownComposer =
     replay === null
       ? null

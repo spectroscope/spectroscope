@@ -39,6 +39,10 @@ describe("the wake's wiring", () => {
     expect(app).toMatch(/if \(woken !== undefined\) \{\s*sessions\.continueWoken\(woken\.key,/);
   });
 
+  it("a session this page woke is its own, never live elsewhere", () => {
+    expect(app).toContain("const ownIds = ownSessionIds(heldRows, allSlots);");
+  });
+
   it("a wake is let go when the stored session leaves the screen", () => {
     expect(app).toMatch(
       /if \(held\.woken && held\.sessionId !== replayOnScreen\) sessions\.close\(held\.key\);/,

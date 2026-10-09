@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { WorkspaceInfo } from "../state/reducer";
-import { headerWorkspace, storedChipWorkspace, wakeWanted } from "./wakeChip";
+import { headerWorkspace, ownSessionIds, storedChipWorkspace, wakeWanted } from "./wakeChip";
 
 const answered = (sessionId: string, path: string, exists = true): WorkspaceInfo => ({
   resolved: exists,
@@ -100,5 +100,20 @@ describe("whether a focus wakes the session", () => {
   it("never wakes an import or a scenario", () => {
     expect(wakeWanted({ replayId: "import:a", continuable: true, held: false })).toBe(false);
     expect(wakeWanted({ replayId: "scenario:a", continuable: true, held: false })).toBe(false);
+  });
+});
+
+describe("the sessions this page holds", () => {
+  it("count a woken session as this page's own, so the server's live set does not make it read-only", () => {
+    // Found in the live check: the wake's claim put the session in the live
+    // set, the rail does not list a wake as held, and the composer under it
+    // turned read-only the moment the box was clicked.
+    const held = [{ id: "held-1" }];
+    const slots = [
+      { sessionId: "held-1", woken: false },
+      { sessionId: "s-1", woken: true },
+      { sessionId: null, woken: false },
+    ];
+    expect(ownSessionIds(held, slots)).toEqual(["held-1", "s-1"]);
   });
 });

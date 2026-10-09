@@ -54,3 +54,19 @@ export function wakeWanted(input: { replayId: string | null; continuable: boolea
   if (id === null || !input.continuable || input.held) return false;
   return !id.startsWith("import:") && !id.startsWith("scenario:");
 }
+
+/**
+ * The sessions this page holds a socket to: the rail's held rows and every
+ * wake. A wake is claimed in the server's live set like any socket, and a
+ * session this page holds is never "live in another window".
+ */
+export function ownSessionIds(
+  held: readonly { id: string }[],
+  slots: readonly { sessionId: string | null; woken: boolean }[],
+): string[] {
+  const own = held.map((row) => row.id);
+  for (const slot of slots) {
+    if (slot.woken && slot.sessionId !== null && !own.includes(slot.sessionId)) own.push(slot.sessionId);
+  }
+  return own;
+}
