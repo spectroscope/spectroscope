@@ -11,9 +11,18 @@
 // sends it, or edits it first, or deletes it. The server appends the named
 // skills' instructions for the model; doing the invocation visibly is what
 // lets somebody disagree with the completion before it reaches the agent.
+//
+// Card 471 puts the chat's two commands above the skills, /compact and /clear,
+// when the slash opens the draft and the host hands in a command callback. A
+// command leaves through that callback as its own frame. A click on a command
+// row runs it. Enter runs it only when the draft already spells it out; on a
+// partial name ("/" or "/cl") Enter writes the highlighted command into the
+// draft, as Tab does, so a slash and a stray Enter cannot start a model call
+// that rewrites the history (card 471, review round).
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { matchSkills, slashQueryAt, tokenInsert, type SkillOption } from "../state/slashCommands";
+import { matchCommands, parseCommand, type ChatCommand, type ChatCommandName } from "../state/chatCommands";
 import { useSkills } from "../state/skillList";
 import { SLASH_TIP_W, SlashTip, slashTipBox, slashTipView, type SlashTipBox } from "./SlashTip";
 import { t } from "../i18n/i18n";
@@ -33,6 +42,7 @@ export interface SlashPicker {
  * @param caret   the caret position inside it — the token being spelled lives there
  * @param enabled false where completing makes no sense (an archive, a replay)
  * @param onPick  hands back the new draft and where the caret lands in it
+ * @param onCommand runs a command (card 471); absent, the picker offers skills only
  * @returns the popover and the key handler the composer must call first
  */
 export function useSlashPicker(
@@ -40,6 +50,7 @@ export function useSlashPicker(
   caret: number,
   enabled: boolean,
   onPick: (text: string, caret: number) => void,
+  onCommand?: (command: ChatCommandName) => void,
 ): SlashPicker {
   const lang = useLang();
   const at = enabled ? slashQueryAt(draft, caret) : null;
@@ -48,6 +59,11 @@ export function useSlashPicker(
   // who never uses this costs no request at all.
   const skills = useSkills(query !== null);
   const options = query === null ? [] : matchSkills(query, skills);
+  // Card 471: the commands come first and share the one focus index with the
+  // skills, so the arrows walk from the last command into the first skill.
+  const commands: ChatCommand[] =
+    at === null || onCommand === undefined ? [] : matchCommands(at.query, at.start);
+  const rowCount = commands.length + options.length;
 
   const [index, setIndex] = useState(0);
   // Esc closes the list and LEAVES the slash where it was typed, so the reader
@@ -69,7 +85,8 @@ export function useSlashPicker(
   }, [query]);
 
   const open = query !== null && !dismissed;
-  const active = options[index];
+  const activeCommand = index < commands.length ? commands[index] : undefined;
+  const active = index < commands.length ? undefined : options[index - commands.length];
 
   // Card 253: where the description popover hangs, from the room there actually
   // is. It starts on the right — the side the card's screenshot shows, and the
@@ -102,7 +119,7 @@ export function useSlashPicker(
     };
   }, [open]);
 
-  const tipView = slashTipView(options, index);
+  const tipView = activeCommand !== undefined ? null : slashTipView(options, index - commands.length);
   const tip = tipView === null || tipBox === null ? null : <SlashTip view={tipView} box={tipBox} />;
 
   const pick = (skill: SkillOption): void => {
@@ -113,6 +130,22 @@ export function useSlashPicker(
     setIndex(0);
   };
 
+  /** Runs a command; the composer empties the draft (card 471). */
+  const run = (command: ChatCommand): void => {
+    if (onCommand === undefined) return;
+    onCommand(command.name);
+    setDismissed(false);
+    setIndex(0);
+  };
+
+  /** Writes a command into the draft without running it. A command only opens
+   *  the draft, so it replaces everything up to the caret. */
+  const complete = (command: ChatCommand): void => {
+    const text = `/${command.name}`;
+    onPick(text + draft.slice(caret), text.length);
+    setIndex(0);
+  };
+
   const handleKey = (event: KeyboardEvent): boolean => {
     if (!open) return false;
     if (event.key === "Escape") {
@@ -120,7 +153,7 @@ export function useSlashPicker(
       setDismissed(true);
       return true;
     }
-    if (options.length === 0) {
+    if (rowCount === 0) {
       // Nothing to pick, so Enter is not the picker's business: the composer
       // is a text box and "/nonsense" is text somebody typed.
       return false;
@@ -128,7 +161,13 @@ export function useSlashPicker(
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      setIndex((i) => (i + step + options.length) % options.length);
+      setIndex((i) => (i + step + rowCount) % rowCount);
+      return true;
+    }
+    if (activeCommand !== undefined && (event.key === "Enter" || event.key === "Tab")) {
+      event.preventDefault();
+      if (event.key === "Enter" && parseCommand(draft) === activeCommand.name) run(activeCommand);
+      else complete(activeCommand);
       return true;
     }
     if (event.key === "Enter" || event.key === "Tab") {
@@ -144,45 +183,75 @@ export function useSlashPicker(
     return { node: null, handleKey };
   }
 
+  // Card 471: with commands on offer, a skill section that has nothing to show
+  // steps aside instead of saying "no skill matches" under a command that does.
+  const skillSection = commands.length === 0 || options.length > 0;
+
   const node = (
     <>
       <div className="wsg-pop slash-pop" role="dialog" aria-label={t(lang, "slash.title")} ref={popRef}>
-        <div className="settings-label">{t(lang, "slash.title")}</div>
-        {options.length === 0 ? (
+        {commands.length > 0 && (
+          <>
+            <div className="settings-label">{t(lang, "slash.commands")}</div>
+            <ul className="slash-list" role="listbox" aria-label={t(lang, "slash.commands")}>
+              {commands.map((command, at) => (
+                <li key={command.name}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={at === index}
+                    className={`slash-row${at === index ? " slash-row--on" : ""}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setIndex(at)}
+                    onClick={() => run(command)}
+                  >
+                    <span className="slash-name mono">{`/${command.name}`}</span>
+                    <span className="slash-desc">{t(lang, command.helpKey)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {skillSection && <div className="settings-label">{t(lang, "slash.title")}</div>}
+        {!skillSection ? null : options.length === 0 ? (
           <p className="settings-note">
             {skills.length === 0 ? t(lang, "slash.empty") : t(lang, "slash.none", { query: query ?? "" })}
           </p>
         ) : (
           <ul className="slash-list" role="listbox" aria-label={t(lang, "slash.title")}>
-            {options.map((skill, at) => (
-              <li key={skill.name}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={at === index}
-                  className={`slash-row${at === index ? " slash-row--on" : ""}`}
-                  // The pointer must not take focus off the textarea, or the
-                  // composer loses the caret the pick is about to write into.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setIndex(at)}
-                  onClick={() => pick(skill)}
-                >
-                  <span className="slash-name mono">{skill.name}</span>
-                  {/* The pack is not decoration: it is half the name the agent
-                      calls. It shows on every packed row, not only where a name
-                      collides, because a label that comes and goes moves the
-                      layout under somebody who is still typing. */}
-                  {skill.pack === null ? null : (
-                    <span className="wsg-scope-tag" title={t(lang, "slash.namespace")}>
-                      {skill.pack}
+            {options.map((skill, skillAt) => {
+              const at = commands.length + skillAt;
+              return (
+                <li key={skill.name}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={at === index}
+                    className={`slash-row${at === index ? " slash-row--on" : ""}`}
+                    // The pointer must not take focus off the textarea, or the
+                    // composer loses the caret the pick is about to write into.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setIndex(at)}
+                    onClick={() => pick(skill)}
+                  >
+                    <span className="slash-name mono">{skill.name}</span>
+                    {/* The pack is not decoration: it is half the name the agent
+                        calls. It shows on every packed row, not only where a name
+                        collides, because a label that comes and goes moves the
+                        layout under somebody who is still typing. */}
+                    {skill.pack === null ? null : (
+                      <span className="wsg-scope-tag" title={t(lang, "slash.namespace")}>
+                        {skill.pack}
+                      </span>
+                    )}
+                    <span className="slash-desc" title={skill.description}>
+                      {skill.description}
                     </span>
-                  )}
-                  <span className="slash-desc" title={skill.description}>
-                    {skill.description}
-                  </span>
-                </button>
-              </li>
-            ))}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
         <p className="settings-note slash-hint">{t(lang, "slash.hint")}</p>

@@ -1,0 +1,4 @@
+{"type":"run_start","runId":"r1","agentId":"main","prompt":"Grüß mich","provider":"anthropic","model":"claude-sonnet-5","llmWire":"20261009-125122-c24ce365.llm.jsonl","browserWire":"20261009-125122-c24ce365.browser.jsonl","children":[],"ts":1791540000100}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1791540000200}
+{"type":"text_delta","agentId":"main","text":"Hallo ✓","ts":1791540000900}
+{"type":"run_end","runId":"r1","stopReason":"end_turn","ts":1791540001000}

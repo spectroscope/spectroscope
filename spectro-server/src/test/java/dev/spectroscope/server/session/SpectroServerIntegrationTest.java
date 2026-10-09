@@ -254,6 +254,10 @@ class SpectroServerIntegrationTest {
 
         List<JsonNode> announced = announcements(events);
         List<String> types = announced.stream().map(e -> e.path("type").asText()).toList();
+        // Card 466: the gear learns the seven tool groups over the socket.
+        JsonNode groups = lastOfType(events, "tool_groups_info");
+        assertEquals(7, groups.path("groups").size(), "seven tool groups, got " + groups);
+        assertEquals(0, groups.path("off").size(), "nothing is switched off as shipped, got " + groups);
         // The socket-only frames precede the first run (none of them is ever
         // stored in the JSONL): provider_info + permission_mode_info + the
         // PROSPECTIVE workspace_info on connect, the SAME provider pair again
@@ -388,8 +392,13 @@ class SpectroServerIntegrationTest {
      * @return the frames this connection announced about itself, in order
      */
     private static List<JsonNode> announcements(List<JsonNode> events) {
+        // Card 466: tool_groups_info leaves the positional sequence for the
+        // reason live_sessions does: the gear hears it on connect, at the
+        // session moment and once the belt is built, and none of that is part
+        // of the order this suite pins. Its arrival is asserted on its own.
         return events.stream()
                 .filter(e -> !"live_sessions".equals(e.path("type").asText()))
+                .filter(e -> !"tool_groups_info".equals(e.path("type").asText()))
                 .toList();
     }
 
@@ -631,19 +640,25 @@ class SpectroServerIntegrationTest {
                             collectInto(events, "run_end", runEnded))
                     .join();
 
-            // Pin the session to the workspace BEFORE the agent is built.
+            // Pin the session to the workspace BEFORE the agent is built. The
+            // send is joined: the JDK WebSocket allows one pending send, and a
+            // prompt sent while this frame is still being written fails with
+            // "Send pending" and never reaches the server (the 0.14.4 CI failure).
+            // The wait is for the RESOLVED workspace_info: connect already sent a
+            // prospective one, and a starved runner can deliver it before the
+            // first look, which used to end this wait at once.
             socket.sendText("""
-                    {"type":"set_workspace","path":"%s"}""".formatted(ws), true);
+                    {"type":"set_workspace","path":"%s"}""".formatted(ws), true).join();
             for (int i = 0; i < 100 && events.stream()
-                    .noneMatch(e -> "workspace_info".equals(e.path("type").asText())); i++) {
+                    .noneMatch(SpectroServerIntegrationTest::isResolvedWorkspace); i++) {
                 Thread.sleep(100);
             }
-            assertTrue(events.stream().anyMatch(e -> "workspace_info".equals(e.path("type").asText())),
+            assertTrue(events.stream().anyMatch(SpectroServerIntegrationTest::isResolvedWorkspace),
                     "set_workspace must answer with workspace_info before the run starts");
 
             // The first prompt builds the agent — the session moment.
             socket.sendText("""
-                    {"type":"user_message","text":"Say hello."}""", true);
+                    {"type":"user_message","text":"Say hello."}""", true).join();
             assertTrue(runEnded.await(20, TimeUnit.SECONDS), "run_end must arrive");
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
@@ -711,17 +726,19 @@ class SpectroServerIntegrationTest {
                             collectInto(events, "run_end", runEnded))
                     .join();
 
+            // Joined and waited on the resolved frame, for the reasons given in
+            // theAgentBuildsFromTheWorkspaceScopedConfig.
             socket.sendText("""
-                    {"type":"set_workspace","path":"%s"}""".formatted(ws), true);
+                    {"type":"set_workspace","path":"%s"}""".formatted(ws), true).join();
             for (int i = 0; i < 100 && events.stream()
-                    .noneMatch(e -> "workspace_info".equals(e.path("type").asText())); i++) {
+                    .noneMatch(SpectroServerIntegrationTest::isResolvedWorkspace); i++) {
                 Thread.sleep(100);
             }
-            assertTrue(events.stream().anyMatch(e -> "workspace_info".equals(e.path("type").asText())),
+            assertTrue(events.stream().anyMatch(SpectroServerIntegrationTest::isResolvedWorkspace),
                     "set_workspace must answer with workspace_info before the run starts");
 
             socket.sendText("""
-                    {"type":"user_message","text":"Say hello."}""", true);
+                    {"type":"user_message","text":"Say hello."}""", true).join();
             assertTrue(runEnded.await(20, TimeUnit.SECONDS),
                     "the run must still complete on the connect-time view");
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
@@ -774,18 +791,20 @@ class SpectroServerIntegrationTest {
                     .join();
 
             // 1. Pin the session to a real workspace (not the per-session auto temp folder).
+            //    Joined and waited on the resolved frame, for the reasons given in
+            //    theAgentBuildsFromTheWorkspaceScopedConfig.
             socket.sendText("""
-                    {"type":"set_workspace","path":"%s"}""".formatted(ws), true);
+                    {"type":"set_workspace","path":"%s"}""".formatted(ws), true).join();
             for (int i = 0; i < 100 && events.stream()
-                    .noneMatch(e -> "workspace_info".equals(e.path("type").asText())); i++) {
+                    .noneMatch(SpectroServerIntegrationTest::isResolvedWorkspace); i++) {
                 Thread.sleep(100);
             }
-            assertTrue(events.stream().anyMatch(e -> "workspace_info".equals(e.path("type").asText())),
+            assertTrue(events.stream().anyMatch(SpectroServerIntegrationTest::isResolvedWorkspace),
                     "set_workspace must answer with workspace_info before the run starts");
 
             // 2. A prompt that makes the scripted mock call run_command, which needs permission.
             socket.sendText("""
-                    {"type":"user_message","text":"%s"}""".formatted(RUN_COMMAND_TRIGGER_TEXT), true);
+                    {"type":"user_message","text":"%s"}""".formatted(RUN_COMMAND_TRIGGER_TEXT), true).join();
             for (int i = 0; i < 100 && events.stream()
                     .noneMatch(e -> "permission_request".equals(e.path("type").asText())); i++) {
                 Thread.sleep(100);

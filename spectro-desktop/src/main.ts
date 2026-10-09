@@ -17,6 +17,7 @@ import { appMenuTemplate, openAboutScript, toTemplate, type Handlers } from "./m
 import { trayMenuModel, traySummary, trayTooltip, type ShellAction, type TrayStatus } from "./menuModel";
 import { shellCommandScript, type ShellCommandId } from "./shellCommands";
 import { quitQuestion, runningCount } from "./quitGuard";
+import { cronJobs, jobNotice } from "./jobNotices";
 
 // Health budget: 30 s by default, overridable for slow environments (the CI
 // xvfb smoke and emulated containers boot the JVM far slower than any laptop).
@@ -364,12 +365,12 @@ async function pollJobs(port: number): Promise<void> {
   for (const [id, state] of Object.entries(current)) {
     const status = state.status ?? "unknown";
     if (previousJobStates[id] !== status) {
-      const n = new Notification({
-        title: `Cron job "${id}" ${status}`,
-        body: state.sessionId ? "Click to open the session." : status,
-      });
-      n.on("click", () => focusOrCreateWindow()); // clicking focuses the window
-      n.show();
+      const notice = jobNotice(id, state);
+      if (notice !== null) {
+        const n = new Notification(notice);
+        n.on("click", () => focusOrCreateWindow()); // clicking focuses the window
+        n.show();
+      }
     }
   }
   previousJobStates = Object.fromEntries(
@@ -379,7 +380,7 @@ async function pollJobs(port: number): Promise<void> {
 }
 
 function jobsStatusText(): string {
-  const entries = Object.entries(previousJobStates);
+  const entries = Object.entries(cronJobs(previousJobStates));
   if (entries.length === 0) return "No cron runs yet.";
   return entries.map(([id, status]) => `${id}: ${status}`).join("\n");
 }

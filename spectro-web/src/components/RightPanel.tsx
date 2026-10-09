@@ -58,6 +58,7 @@ import { keepOnTabs, nextParked, tabsSeating } from "../panels/dockTabs";
 import { stripOverflow } from "../panels/dockStrip";
 import type { StripOverflow } from "../panels/dockStrip";
 import type { WorkspaceInfo } from "../state/reducer";
+import type { ToolGroupsInfo } from "../state/toolGroups";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -137,6 +138,7 @@ export function RightPanel({
   provider,
   model,
   thinking,
+  toolGroups = null,
   workspace,
   recordedCwd = null,
   storedCwd = null,
@@ -163,6 +165,8 @@ export function RightPanel({
   provider?: string;
   model?: string;
   thinking: boolean;
+  /** Card 466: the session's tool groups, for the System context tab. */
+  toolGroups?: ToolGroupsInfo | null;
   workspace: WorkspaceInfo | null;
   /** The cwd an imported run recorded (card 291) — the Files panel shows it,
    *  labelled as recorded, where it would otherwise promise a first run. */
@@ -366,7 +370,15 @@ export function RightPanel({
       case "plan":
         return <PlanTab plan={plan} />;
       case "context":
-        return <SystemContextTab selected={selected} provider={provider} model={model} thinking={thinking} />;
+        return (
+          <SystemContextTab
+            selected={selected}
+            provider={provider}
+            model={model}
+            thinking={thinking}
+            toolGroups={toolGroups}
+          />
+        );
       case "files":
         return (
           <WorkspaceTab

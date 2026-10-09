@@ -342,12 +342,16 @@ public interface LlmProvider {
      * @param input  the fully parsed JSON arguments
      */
     record PToolCall(String callId, String name, JsonNode input) implements ProviderEvent {}
-    /** {@code inputTokens} is the provider's RAW count — it feeds the wire-format
-     *  usage event, which must stay byte-identical on the wire. Cache
-     *  tokens ride along separately so the loop can fold them into its
-     *  compaction trigger (a cache hit shrinks inputTokens, not the context).
+    /** {@code inputTokens} is the part of the prompt no cache served. It feeds
+     *  the wire-format usage event, which stays byte-identical on the wire when
+     *  nothing was cached. Cache tokens ride along separately so the loop can
+     *  fold them into its compaction trigger (a cache hit shrinks inputTokens,
+     *  not the context).
      *
-     *  @param inputTokens         the RAW prompt token count as the provider billed it
+     *  @param inputTokens         prompt tokens no cache served: Anthropic reports
+     *                             this count itself; where the provider counts
+     *                             cached tokens inside the prompt (the OpenAI usage
+     *                             shape), the provider takes them out (card 468)
      *  @param outputTokens        the completion token count
      *  @param cacheReadTokens     tokens served from the prompt cache (0 without caching)
      *  @param cacheCreationTokens tokens freshly written into the prompt cache (0 without caching)
@@ -355,9 +359,10 @@ public interface LlmProvider {
     record PUsage(int inputTokens, int outputTokens,
                   int cacheReadTokens, int cacheCreationTokens) implements ProviderEvent {
         /**
-         * Compat: no cache tokens (ollama/openai).
+         * Compat: no cache tokens (ollama, and any endpoint whose response
+         * reports no cached count).
          *
-         * @param inputTokens  the RAW prompt token count
+         * @param inputTokens  the prompt token count, nothing of it cached
          * @param outputTokens the completion token count
          */
         public PUsage(int inputTokens, int outputTokens) {

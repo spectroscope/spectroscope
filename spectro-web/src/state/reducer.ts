@@ -11,6 +11,7 @@ import type { ThresholdSource } from "../wire/thresholdSources";
 import { rtkRewriteOf } from "../wire/rtkRewrite";
 import { t } from "../i18n/i18n";
 import { SEARXNG_HTML_NOTE_KEY, searxngHtmlAddress } from "./searxngHtmlNote";
+import { parseToolGroupsInfo, type ToolGroupsInfo } from "./toolGroups";
 
 export interface ToolCard {
   callId: string;
@@ -117,6 +118,12 @@ export type Turn =
        *  An explicit field rather than a naming convention over infoVars, so
        *  nothing has to be remembered to keep it working. */
       infoRefKey?: string;
+      /** Card 471: drawn as a divider across the chat rather than as a line in
+       *  it (the "context cleared" mark of a /clear). Absent on every other
+       *  info line. */
+      divider?: true;
+      /** When the divider's event happened, for the time it shows. */
+      ts?: number;
     }
   /** agentId marks a failure that belongs to a subagent's thread — `error` has
    *  carried the field on the wire all along, and a session import sets it for
@@ -300,6 +307,10 @@ export interface UiState {
    *  run needs its own. Reset with `runUsage` at run_start. */
   runSubagents: RunSubagents;
   running: boolean;
+  /** Card 471: a /compact is summarizing the history. The page is running
+   *  meanwhile, with no root run: the stop button cancels the summary, and a
+   *  sentence typed now waits in the queue instead of steering. */
+  compacting: boolean;
   /** Internal: only the root run's run_end may end "running". */
   rootRunId: string | null;
   /** ts of the root run_start — the working line's elapsed timer (card 244).
@@ -382,6 +393,10 @@ export interface UiState {
    *  switch. Defaults to "ask" so a state built without ever seeing the frame
    *  (e.g. a bare initialState in a test) still matches the server's default. */
   permissionMode: string;
+  /** Card 466: the tool groups the server announced in its socket-only
+   *  tool_groups_info frame (what each group holds, which are off). Null until
+   *  the first frame, so the gear draws no section from a guess. */
+  toolGroups: ToolGroupsInfo | null;
   /** ts of the current assistant turn's first event, per agent — so the `usage`
    *  event can stamp each answer's duration. Transient bookkeeping, not shown. */
   assistantTurnStart: Record<string, number>;
@@ -402,6 +417,7 @@ export const initialState: UiState = {
   runUsage: { inputTokens: 0, outputTokens: 0 },
   runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
   running: false,
+  compacting: false,
   rootRunId: null,
   runStartTs: null,
   provider: null,
@@ -424,6 +440,7 @@ export const initialState: UiState = {
   lastOtlpOutcome: null,
   runModel: null,
   permissionMode: "ask",
+  toolGroups: null,
   assistantTurnStart: {},
   answerAwaitingUsage: [],
 };
@@ -824,6 +841,35 @@ export function traceRowOf(
   };
 }
 
+/** Card 471: the line each /compact outcome that changed nothing leaves. */
+const COMPACTION_OUTCOME_KEYS: Record<string, string | undefined> = {
+  nothing_to_compact: "chat.compactNothing",
+  stopped: "chat.compactStopped",
+  failed: "chat.compactFailed",
+};
+
+/**
+ * The context snapshot after a /clear (card 471): the conversation part
+ * emptied, the estimate lowered by what it held, and everything else as the
+ * last measurement had it.
+ *
+ * @param context the last snapshot
+ * @return the snapshot without the conversation
+ */
+function withoutConversation(context: ContextSnapshot): ContextSnapshot {
+  const gone = context.parts
+    .filter((part) => part.label === "conversation")
+    .reduce((sum, part) => sum + part.estTokens, 0);
+  return {
+    ...context,
+    messages: 0,
+    estimatedTokens: Math.max(0, context.estimatedTokens - gone),
+    parts: context.parts.map((part) =>
+      part.label === "conversation" ? { label: part.label, chars: 0, estTokens: 0, text: "" } : part,
+    ),
+  };
+}
+
 export function reduce(state: UiState, event: RunEvent): UiState {
   // EVERY incoming frame lands in the trace first — known or unknown type
   // alike. The switch below may ignore an event; the wire view must not,
@@ -935,11 +981,52 @@ function applyFrame(traced: UiState, event: RunEvent): UiState {
       ...(carried?.length ? { attachments: carried } : {}),
     });
   }
+  // Card 471, review round: the socket-only frame that opens and closes a
+  // /compact. Opening it makes the page run, so the stop button takes the
+  // seat; closing it ends that, unless a real run is under way (rootRunId),
+  // which owns the flag. A compacted history needs no second line, the
+  // compaction event drew one; the outcomes that changed nothing get a line in
+  // the reader's language and never an error card, whose "Send again" would
+  // resend a prompt that has nothing to do with the command.
+  if (raw.type === "compaction_state") {
+    const c = event as unknown as { active?: unknown; outcome?: unknown; message?: unknown };
+    if (c.active === true) {
+      return addTurn(
+        { ...traced, running: true, compacting: true },
+        { kind: "info", text: "Compacting the history", infoKey: "chat.compacting", tone: "neutral" },
+      );
+    }
+    // Round three: the "Compacting the history" line leaves with the
+    // compaction, so the live chat reads like its replay, which never had it.
+    const ended = {
+      ...traced,
+      turns: traced.turns.filter((turn) => !(turn.kind === "info" && turn.infoKey === "chat.compacting")),
+      compacting: false,
+      running: traced.rootRunId === null ? false : traced.running,
+    };
+    const outcome = typeof c.outcome === "string" ? c.outcome : "";
+    const message = typeof c.message === "string" ? c.message : "";
+    const key = COMPACTION_OUTCOME_KEYS[outcome];
+    return key === undefined
+      ? ended
+      : addTurn(ended, {
+          kind: "info",
+          text: message !== "" ? message : outcome,
+          infoKey: key,
+          infoVars: { message },
+          tone: "warn",
+        });
+  }
   // Same boundary rule for permission_mode_info: connect + every switch
   // announce the active mode; the composer gear follows wire truth.
   if (raw.type === "permission_mode_info") {
     const m = event as unknown as { mode?: unknown };
     return { ...traced, permissionMode: typeof m.mode === "string" ? m.mode : traced.permissionMode };
+  }
+  // Card 466: same boundary rule. A frame that cannot be read keeps the last
+  // truth rather than emptying the gear.
+  if (raw.type === "tool_groups_info") {
+    return { ...traced, toolGroups: parseToolGroupsInfo(event) ?? traced.toolGroups };
   }
   // The session-wide agent roster folds separately from the UI state and uses
   // the PRE-apply rootRunId (applyEvent's run_end clears it).
@@ -1227,6 +1314,34 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
             : { n: event.removedTurns },
         tone: "warn",
       });
+
+    // Card 471: the operator's /clear. Every turn above stays on screen (the
+    // record keeps them, and so does the reader's scroll); the divider says
+    // where the agent's memory now starts. The ring stops counting the
+    // conversation that went: the next prompt starts empty, and a gauge that
+    // kept the old fill until that prompt's usage arrived would say the clear
+    // did nothing. What stays (system prompt, tool schemas, the threshold) is
+    // kept as the last snapshot measured it, and until the next answer
+    // measures again the ring reads that estimate. Zero would hide the ring,
+    // so a ring that was drawn keeps at least one token (round three, owner
+    // decision 1): with no snapshot, or one that held only the conversation,
+    // it reads near zero and stays on screen.
+    case "context_cleared": {
+      const kept = state.context === null ? null : withoutConversation(state.context);
+      const estimate = kept === null ? 0 : kept.estimatedTokens;
+      return {
+        ...addTurn(state, {
+          kind: "info",
+          text: "context cleared",
+          infoKey: "chat.contextCleared",
+          tone: "neutral",
+          divider: true,
+          ts: event.ts,
+        }),
+        lastInputTokens: state.lastInputTokens > 0 ? Math.max(1, estimate) : estimate,
+        context: kept,
+      };
+    }
 
     // Card 252. The picture is still in the bubble above this line — the record
     // keeps it, only the request went without it — so the line has to say what
@@ -1705,6 +1820,7 @@ export function normalizeReplay(state: UiState): UiState {
   return {
     ...state,
     running: false,
+    compacting: false,
     rootRunId: null,
     runStartTs: null,
     thinkingActive: false,

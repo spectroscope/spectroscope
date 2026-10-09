@@ -202,7 +202,8 @@ export function importBarText(lang: Lang, bar: ImportBarState): ImportBarText {
  * tool ran and whether it succeeded, never what it returned); the subagent note
  * is about what THIS file is (card 152); the children note is what a run import
  * carried (card 291); `extra` is a sentence the store owes the reader, such as
- * a run that fell back to its session file (card 318).
+ * a run that fell back to its session file (card 318); `found` is what came
+ * with a spectroscope session file: its wires and child sessions (card 473).
  *
  * @param lang  the chrome language
  * @param about what the import knows about the file
@@ -215,6 +216,8 @@ export function importBarNote(
     subagent?: SubagentTranscript | null;
     run?: ImportedRunSummary | null;
     extra?: string | null;
+    /** Card 473: what came with a spectroscope session file, said once. */
+    found?: string | null;
   },
 ): string | null {
   const notes = [
@@ -222,6 +225,7 @@ export function importBarNote(
     subagentNote(lang, about.subagent),
     childrenNote(lang, about.run),
     about.extra ?? null,
+    about.found ?? null,
   ].filter((line): line is string => line !== null && line !== "");
   return notes.length > 0 ? notes.join(" ") : null;
 }

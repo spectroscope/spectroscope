@@ -1,7 +1,7 @@
 // Card 462 (owner, 2026-09-29): the header names the working folder of the
 // live session, like Claude Code's folder chip, and its menu offers the four
 // things one does with it: show it in Finder, copy its path, choose another,
-// open a terminal there.
+// open a terminal there. Card 472 adds "Build code graph" below them.
 //
 // Finder and Terminal are the server's job (POST /api/workspace/reveal and
 // /terminal). The page sends the session id, never a path: the server opens
@@ -17,6 +17,7 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { chooserFolder, chooserTitle } from "../workspace/chooserMode";
 import { nextMenuIndex } from "../panels/headerPanelControls";
+import { openCodeGraphSheet } from "../codegraph/codeGraphStore";
 
 /** The menu's rows, in Claude Code's order. */
 export const WORKSPACE_CHIP_ACTIONS = ["reveal", "copy", "change", "terminal"] as const;
@@ -52,6 +53,15 @@ export function chipActions(
     terminal: opener(),
   };
   return WORKSPACE_CHIP_ACTIONS.map((id) => ({ id, ...rows[id] }));
+}
+
+/**
+ * Card 472: "Build code graph" below the four actions. The server builds the
+ * folder it resolved for the session, so the row waits for a session like
+ * Finder and Terminal do, on every platform.
+ */
+export function codeGraphRowEnabled(ws: WorkspaceInfo): boolean {
+  return chooserTitle(ws) !== null && typeof ws.sessionId === "string" && ws.sessionId !== "";
 }
 
 /** Why Finder or Terminal did not open, in words rather than a status code. */
@@ -109,8 +119,19 @@ export function menuShift(anchorLeft: number, popWidth: number, viewport: number
   return Math.max(margin - anchorLeft, Math.min(0, over));
 }
 
+/** Every row the arrows walk: the four actions and the code graph row, enabled ones only. */
+const ROWS = "[data-ws-action]:not(:disabled), [data-ws-extra]:not(:disabled)";
+
 /** The glyphs, in a 16px box. */
-const GLYPHS: Record<WorkspaceChipAction | "folder", ReactNode> = {
+const GLYPHS: Record<WorkspaceChipAction | "folder" | "codegraph", ReactNode> = {
+  codegraph: (
+    <>
+      <circle cx="3.5" cy="4" r="1.5" />
+      <circle cx="12.5" cy="5" r="1.5" />
+      <circle cx="7" cy="12" r="1.5" />
+      <path d="M5 4.3l6 .5M4.3 5.3l1.9 5.3M11.6 6.3l-3.6 4.6" />
+    </>
+  ),
   folder: (
     <path d="M2 4.2c0-.7.5-1.2 1.2-1.2h3l1.4 1.6h5.2c.7 0 1.2.5 1.2 1.2v6c0 .7-.5 1.2-1.2 1.2H3.2c-.7 0-1.2-.5-1.2-1.2z" />
   ),
@@ -137,7 +158,7 @@ const GLYPHS: Record<WorkspaceChipAction | "folder", ReactNode> = {
   ),
 };
 
-function Glyph({ id, className }: { id: WorkspaceChipAction | "folder"; className: string }) {
+function Glyph({ id, className }: { id: WorkspaceChipAction | "folder" | "codegraph"; className: string }) {
   return (
     <svg
       className={className}
@@ -209,7 +230,7 @@ export function WorkspaceChip(props: {
   const actions = chipActions(props.workspace, { canPick: props.canPick, mac: props.mac ?? onAMac() });
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
-    const rows = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("[data-ws-action]:not(:disabled)")];
+    const rows = [...e.currentTarget.querySelectorAll<HTMLButtonElement>(ROWS)];
     const at = rows.indexOf(document.activeElement as HTMLButtonElement);
     const next = nextMenuIndex(at < 0 ? 0 : at, e.key, rows.length);
     if (next !== at && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
@@ -292,6 +313,22 @@ export function WorkspaceChip(props: {
                 <span className="hdr-menu-label">{t(lang, `wchip.${id}`)}</span>
               </button>
             ))}
+            <div className="hdr-menu-sep" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              data-ws-extra="codegraph"
+              className="hdr-menu-row"
+              disabled={!codeGraphRowEnabled(props.workspace)}
+              title={codeGraphRowEnabled(props.workspace) ? undefined : t(lang, "wchip.needsSession")}
+              onClick={() => {
+                setOpen(false);
+                openCodeGraphSheet("build");
+              }}
+            >
+              <Glyph id="codegraph" className="hdr-menu-icon" />
+              <span className="hdr-menu-label">{t(lang, "wchip.codegraph")}</span>
+            </button>
           </div>
           {actions.some((a) => a.reason === "wchip.needsSession") && (
             <span className="ws-chip-note">{t(lang, "wchip.needsSession")}</span>

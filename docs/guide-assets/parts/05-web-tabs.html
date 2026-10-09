@@ -142,7 +142,7 @@ its parts each headed by a character count and a token estimate, plus the usage 
 boundaries and the published plan. The setting travels into the exported document, so the file
 says what the screen said.</p>
 
-<!--SHOT:50-chat-text-extended|The text feed with extended on. Above the conversation stands the request as it was actually assembled: the system prompt at 820 chars, ~205 tokens, then the tool schemas at 18911 chars, ~4727 tokens, each tool with its real JSON schema. Normal reading starts at the run and never shows any of this.-->
+<!--SHOT:50-chat-text-extended|The text feed with extended on. Above the conversation stands the request as it was actually assembled: the system prompt with its size in chars and estimated tokens, then the tool schemas with theirs, each tool with its real JSON schema. Normal reading starts at the run and never shows any of this.-->
 
 <h3 id="ch-tabs-explain">Explain: have a model read the run</h3>
 
@@ -209,7 +209,8 @@ the labels localize. The tab badge counts steps; the CLI pretty-prints the same 
 <!--SHOT:13-panel-system-context|“What goes to the LLM before any user message”: the real system prompt (markdown-rendered), model + thinking state, all tools with gate markers, skills, MCP servers and the subagent role profiles.-->
 
 <p>The transparency panel: exactly what the LLM receives before any user message. For the
-<strong>main agent</strong>: the full system prompt (working directory, project
+<strong>main agent</strong>: the full system prompt (the paragraph on when to read a file
+directly and when to send an explore or worker child, working directory, project
 <code>SPECTRO.md</code> context, the skills catalog), provider/model/thinking, every tool
 in registration order (gate chip = needs your approval), skills, MCP servers, and the
 six subagent role profiles. For a <strong>selected subagent</strong>: its role prompt,

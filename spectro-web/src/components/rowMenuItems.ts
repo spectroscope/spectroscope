@@ -10,7 +10,7 @@ import type { Lang } from "../i18n/i18n";
 import { sessionDisplayTitle } from "./sessionRows";
 
 /** What a row menu can do. */
-export type RowMenuItemId = "pin" | "unpin" | "rename" | "suggest" | "delete";
+export type RowMenuItemId = "pin" | "unpin" | "rename" | "suggest" | "bundle" | "delete";
 
 /** One item as the menu draws it. */
 export interface RowMenuEntry {
@@ -50,6 +50,9 @@ export function rowMenuItems(row: {
   ];
   if (!row.hasTitle)
     items.push({ id: "suggest", labelKey: "sess.menu.suggest", danger: false, disabled: false });
+  // Card 473: the session with its wires and child sessions as one zip. It
+  // only reads, so a session a socket holds can still be downloaded.
+  items.push({ id: "bundle", labelKey: "sess.menu.bundle", danger: false, disabled: false });
   items.push(
     row.deletable
       ? { id: "delete", labelKey: "sess.menu.delete", danger: true, disabled: false }
@@ -141,4 +144,15 @@ export function renameRequest(field: { typed: string; shown: string; hasTitle: b
   if (typed === "") return field.hasTitle ? "" : null;
   if (typed === field.shown.trim()) return null;
   return typed;
+}
+
+/**
+ * Card 473: the bundle download of one stored session, for the row menu and
+ * the archive bar alike.
+ *
+ * @param id the stored session's id
+ * @return the endpoint and the file name the browser saves it as
+ */
+export function bundleLink(id: string): { href: string; download: string } {
+  return { href: `/api/sessions/${encodeURIComponent(id)}/bundle`, download: `${id}.spectro.zip` };
 }

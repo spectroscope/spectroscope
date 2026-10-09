@@ -8,7 +8,7 @@
 
 import { useSyncExternalStore } from "react";
 import { t, type Lang } from "../i18n/i18n";
-import { openCount, type OpenProgress } from "../state/openProgress";
+import { openCount, openWire, type OpenProgress } from "../state/openProgress";
 import type { SessionOpening } from "../state/sessionOpening";
 
 export function OpeningSurface(props: { lang: Lang; opening: SessionOpening; progress: OpenProgress }) {
@@ -38,7 +38,11 @@ export function OpeningSurface(props: { lang: Lang; opening: SessionOpening; pro
               centred, and a line that arrived later moved it up by 11.3 px
               (measured in Chrome, 2026-09-25). */}
           <span className="opening-count tabular" aria-hidden="true">
-            {counted !== null ? openCount(lang, counted.folded, counted.total) : "\u00a0"}
+            {counted === null
+              ? "\u00a0"
+              : counted.unit === "wire"
+                ? openWire(lang, counted.folded, counted.total)
+                : openCount(lang, counted.folded, counted.total)}
           </span>
         </div>
       </div>

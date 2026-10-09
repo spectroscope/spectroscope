@@ -880,6 +880,46 @@
     "explanation" : "…out of this many. See the class note for why the reserve is 30 %."
   },
   {
+    "owner" : "dev.spectroscope.core.session.ToolResultElision",
+    "field" : "BATCH_CHARS",
+    "value" : "8000",
+    "expression" : "8_000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The smallest saving that changes the request: results waiting to be stubbed are stubbed together once they would save this many chars, never one by one. Card 467 sets the floor at 8,000 so an Anthropic cached prefix survives between batches."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.ToolResultElision",
+    "field" : "KEEP_TURNS",
+    "value" : "4",
+    "expression" : "4",
+    "kind" : "FIXED",
+    "unit" : "TURNS",
+    "key" : "",
+    "explanation" : "How many assistant turns a tool result stays in the request in full after the turn that produced it.\n\nPicked from a census of the 368 local session files on 2026-10-09 (ToolResultElisionCensus, table in kanban/evidence/467/review/): 1,387 requests of the main agent replayed with a batch of 8,000 chars, each recorded compaction applied where it happened (5, all in one session). Share of request chars saved, pooled over every request, K = 4, 6, 8 at N = 2,000: 25.7 %, 24.8 %, 24.0 %. Without the one session of 525 requests that dominates the pool: 4.9 %, 4.5 %, 4.2 %. The smallest K of the grid saves the most in both views, and no larger K was within 0.2 points of it, so 4 ships.\n\nThe whole grid, share of chars saved pooled over every request, for N = 1,000 / 2,000 / 4,000: K = 4: 29.4 / 25.7 / 17.3 %. K = 6: 28.4 / 24.8 / 16.6 %. K = 8: 27.5 / 24.0 / 15.9 %. The same grid without the dominant session: K = 4: 5.0 / 4.9 / 2.3 %. K = 6: 4.6 / 4.5 / 2.0 %. K = 8: 4.3 / 4.2 / 1.8 %. Mean request off: 99,940 chars; on at the shipped pair: 74,233. The compaction points are those of runs without elision, and a run with elision compacts later."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.ToolResultElision",
+    "field" : "MAX_ARGUMENT_CHARS",
+    "value" : "40",
+    "expression" : "40",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest path or command word a stub repeats. The argument is already in the history in full, inside the call the model made; the stub only has to let the model recognise which call it was."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.ToolResultElision",
+    "field" : "MIN_RESULT_CHARS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The size at or under which a tool result always stays.\n\nPicked from the same census as KEEP_TURNS. Share of request chars saved at K = 4, N = 1,000, 2,000, 4,000: 29.4 %, 25.7 %, 17.3 % pooled, and 5.0 %, 4.9 %, 2.3 % without the session that dominates the pool; batches (each one a cache prefix thrown away) 50, 45 and 31 over 1,387 requests. The rule: the largest saving without the dominant session, unless a larger N is within 0.2 points of it. 2,000 is 0.1 below 1,000 there, so 2,000 ships and keeps every result under two thousand chars whole."
+  },
+  {
     "owner" : "dev.spectroscope.core.skills.SkillLibrary",
     "field" : "DESCRIPTION_FALLBACK_LIMIT",
     "value" : "120",

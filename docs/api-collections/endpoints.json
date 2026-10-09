@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 81,
+    "endpointCount": 84,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -286,7 +286,7 @@
       "path": "/api/jobs/state",
       "area": "health-doctor",
       "name": "scheduler job state",
-      "description": "The scheduler's job-state map from ~/.spectro/jobs-state.json (what `spectroscope cron status` prints); empty when absent/corrupt.",
+      "description": "The scheduler's job-state map from ~/.spectro/jobs-state.json (what `spectroscope cron status` prints); empty when absent/corrupt. Since card 472 it also lists the code graph builds of the server process under codegraph:<folder>, with status running while they build.",
       "fence": "host",
       "writes": false,
       "pathVars": [],
@@ -1084,6 +1084,71 @@
       "body": {
         "sessionId": "{{sessionId}}"
       }
+    },
+    {
+      "id": "codegraph-status",
+      "method": "GET",
+      "path": "/api/codegraph/status",
+      "area": "workspace-files",
+      "name": "code graph status",
+      "description": "Whether graphify is on the server's tool PATH (with the folders searched and the install line) and, with a sessionId, whether that session's working folder has graphify-out/graph.html (its time) and the folder's last build since the server started (card 472). The folder is the live session's resolved workspace or, for a stored session not continued yet, the folder its own record names. Without sessionId it answers the installation alone, which the doctor panel reads. 200, 400 malformed sessionId, 404 unknown session.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "sessionId",
+          "required": false,
+          "example": "{{sessionId}}",
+          "note": "the session; leave out for the installation alone"
+        }
+      ],
+      "body": null
+    },
+    {
+      "id": "codegraph-start",
+      "method": "POST",
+      "path": "/api/codegraph/start",
+      "area": "workspace-files",
+      "name": "build code graph",
+      "description": "Start graphify as a background job of the server against a session's working folder (card 472). mode full runs extract --code-only then cluster-only --no-label, which keeps the community names a graph already has; update runs update; with a provider, either then runs label --missing-only, which names only the communities without a name. provider is one of the harness providers the status lists (null for no labels) and model is required with it; both are checked before they become arguments. 202 started, 400 malformed or refused choice, 404 unknown session, 409 a build already runs for the folder, 503 graphify not installed.",
+      "fence": "host+origin+json",
+      "writes": true,
+      "caution": "Runs graphify, which writes graphify-out/ into the session's folder and, with a provider, calls that model.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "sessionId": "{{sessionId}}",
+        "mode": "update",
+        "provider": null,
+        "model": null
+      }
+    },
+    {
+      "id": "codegraph-view",
+      "method": "GET",
+      "path": "/api/codegraph/view",
+      "area": "workspace-files",
+      "name": "code graph page",
+      "description": "The session folder's graphify-out/graph.html, for the internal browser (card 472), served under Content-Security-Policy: sandbox allow-scripts allow-popups so a page from a cloned repository runs with an opaque origin and cannot act as the app. Served once per ticket: the Graph ready chip sends open_code_graph on the browser view socket, the server mints a one-shot ticket and navigates the session's browser here, and this endpoint spends it. A request from a REST client has no ticket and gets 404. 404 no live ticket for this session, unknown session, no graph, or a page that resolves outside the folder.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "sessionId",
+          "required": true,
+          "example": "{{sessionId}}",
+          "note": "the session whose folder's graph to show"
+        },
+        {
+          "name": "ticket",
+          "required": true,
+          "example": "minted-by-the-chip-press",
+          "note": "the one-shot ticket the server minted for the Graph ready press; a made-up value answers 404"
+        }
+      ],
+      "body": null
     },
     {
       "id": "images-get",

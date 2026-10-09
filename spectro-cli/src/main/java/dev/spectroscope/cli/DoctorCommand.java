@@ -357,12 +357,19 @@ public final class DoctorCommand implements Callable<Integer> {
         // Vision — a hint, never unhealthy.
         info(visionLine(config.provider(), config.model()));
 
+        // Card 476: whether a finished cron job shows on the desktop, and the key
+        // that switches it. A preference, never a verdict.
+        emit(List.of(desktopNotificationsLine(config)));
+
         // Voice input — STT is optional infrastructure: info when absent.
         // config.sttModel() already folds the settings hierarchy AND SPECTRO_STT_MODEL;
         // the source name (settings vs SPECTRO_STT_MODEL vs default) is presentation only.
         Path sttModel = sttModelPath(config);
         emit(List.of(voiceInputLine(ToolPath.locate("whisper-cli"), sttModel,
                 Files.exists(sttModel), sttModelSource(config))));
+
+        // Code graph (card 472): graphify behind "Build code graph", optional.
+        emit(List.of(codeGraphLine(ToolPath.locate("graphify"))));
 
         // Voice output — TTS is optional infrastructure: info when absent.
         Path piperBin = userHome().resolve(".spectro").resolve("models").resolve("piper").resolve("piper");
@@ -514,6 +521,23 @@ public final class DoctorCommand implements Callable<Integer> {
                 new Line(Kind.INFO, "tool PATH (every run_command shell and hook): "
                         + entries + " entries · " + provenance),
                 new Line(Kind.INFO, "tool PATH = " + resolved.path()));
+    }
+
+    /**
+     * The code graph line (card 472): {@code graphify}, the program behind the
+     * app's "Build code graph", looked up on the tool PATH the server's build
+     * uses. Optional infrastructure, so a missing binary is a note with the
+     * install line and the folders searched.
+     *
+     * @param graphify where {@code graphify} was found, and where it was looked for
+     * @return a verdict when found, otherwise a note
+     */
+    static Line codeGraphLine(ToolPath.Lookup graphify) {
+        if (graphify.isFound()) {
+            return new Line(Kind.PASS, "code graph: graphify at " + graphify.found() + " (Build code graph)");
+        }
+        return new Line(Kind.INFO, "code graph: graphify missing (searched "
+                + String.join(", ", graphify.searched()) + "); install it with: uv tool install graphifyy");
     }
 
     /**
@@ -845,6 +869,23 @@ public final class DoctorCommand implements Callable<Integer> {
      * @param model    the configured model, may be null
      * @return the info line to print
      */
+    /**
+     * Card 476: the state of the {@code desktopNotifications} key, as doctor
+     * prints it. Only {@code spectro cron} shows notifications, so the line says
+     * that too.
+     *
+     * @param config the effective configuration
+     * @return an info line naming the state and the key
+     */
+    static Line desktopNotificationsLine(SpectroConfig config) {
+        return config.desktopNotificationsOn()
+                ? new Line(Kind.INFO, "desktop notifications: on (a finished spectro cron job"
+                        + " shows a banner; desktopNotifications: \"off\" in"
+                        + " ~/.spectro/settings.json turns it off)")
+                : new Line(Kind.INFO, "desktop notifications: off (desktopNotifications; a"
+                        + " finished spectro cron job writes to its log only)");
+    }
+
     static String visionLine(String provider, String model) {
         String named = (model == null || model.isBlank()) ? "(no model set)" : model;
         return switch (provider) {

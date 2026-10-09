@@ -23,6 +23,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "open.traceLine": { de: "Trace wird aufgebaut", en: "Building the trace" },
   // How far the fold has got. The numbers arrive grouped for the language.
   "open.count": { de: "{folded} von {total} Ereignissen", en: "{folded} of {total} events" },
+  "open.wire": { de: "Wire wird gelesen: {pct} %", en: "reading the wire: {pct}%" },
   "open.countOne": { de: "{folded} von {total} Ereignis", en: "{folded} of {total} event" },
   "nav.none": {
     de: "Noch keine gespeicherten Sessions. Beendete Läufe erscheinen hier.",
@@ -66,6 +67,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sess.menu.unpin": { de: "Nicht mehr anheften", en: "Unpin" },
   "sess.menu.rename": { de: "Umbenennen", en: "Rename" },
   "sess.menu.suggest": { de: "Titel vorschlagen", en: "Suggest a title" },
+  "sess.menu.bundle": { de: "Als Bundle herunterladen (.zip)", en: "Download as bundle (.zip)" },
   "sess.menu.delete": { de: "Löschen", en: "Delete" },
   "sess.menu.deleteLive": {
     de: "Beende oder schließe diese Session, bevor du sie löschst",
@@ -132,8 +134,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Net fence on: private addresses, the tailnet and file:// stay refused on every redirect hop",
   },
   "browser.fence.loopbackOff": {
-    de: "localhost auch, bis allowLocalhost an ist",
-    en: "localhost too, until allowLocalhost is on",
+    de: "localhost ohne allowLocalhost nur Graph fertig",
+    en: "localhost needs allowLocalhost, except Graph ready",
   },
   "browser.fence.loopbackOn": {
     de: "localhost erreichbar, allowLocalhost ist an",
@@ -417,6 +419,24 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "… the {n} newest only. Older transcripts are in the store but not in this list.",
   },
   "imp.pick": { de: "Datei wählen …", en: "Pick a file …" },
+  "imp.found.lead": { de: "Gefunden: {list}.", en: "Found: {list}." },
+  "imp.readingBundle": { de: "Bundle wird gelesen: {pct} %", en: "Reading the bundle: {pct}%" },
+  "imp.found.session": { de: "die Session", en: "the session" },
+  "imp.found.llm": { de: "das LLM-Wire mit {n} Austauschen", en: "the llm wire with {n} exchanges" },
+  "imp.found.llmOne": { de: "das LLM-Wire mit 1 Austausch", en: "the llm wire with 1 exchange" },
+  "imp.found.browser": { de: "das Browser-Wire mit {n} Aktionen", en: "the browser wire with {n} actions" },
+  "imp.found.browserOne": { de: "das Browser-Wire mit 1 Aktion", en: "the browser wire with 1 action" },
+  "imp.found.children": { de: "{n} Kind-Sessions", en: "{n} child sessions" },
+  "imp.found.childrenOne": { de: "1 Kind-Session", en: "1 child session" },
+  "imp.found.local": { de: " (von diesem Rechner)", en: " (from this machine)" },
+  "imp.found.missing": { de: "Nicht gefunden: {names}.", en: "Not found: {names}." },
+  "imp.found.missingMore": {
+    de: "Nicht gefunden: {names} und {n} weitere.",
+    en: "Not found: {names} and {n} more.",
+  },
+  "imp.found.llmNone": { de: "kein LLM-Wire", en: "no llm wire" },
+  "imp.found.browserNone": { de: "kein Browser-Wire", en: "no browser wire" },
+  "imp.found.noWire": { de: "Ein Wire kam nicht mit.", en: "No wire came with it." },
   "imp.vscodeNote": {
     de: "Dieser VS-Code-Export hält fest, welche Tools liefen und ob sie erfolgreich waren, aber nicht, was sie zurückgaben. Die Tool-Inhalte bleiben deshalb leer.",
     en: "This VS Code export records which tools ran and whether they succeeded, but not what they returned. The tool bodies are empty for that reason.",
@@ -814,6 +834,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   // tier IS the live tier and the hedge became a lie in the other direction. The tripwire in
   // doctorPanel.drift.test.tsx fires on the merge, in whichever order the two branches land.
   "doc.webSearch": { de: "Web-Suche", en: "web search" },
+  "doc.codeGraph": { de: "Code-Graph", en: "code graph" },
   // No wire name here. "too old for the webSearch block" told an operator to go
   // and read the product's own JSON to find out what was wrong with their
   // machine — on the panel that exists so they do not have to.
@@ -1102,7 +1123,37 @@ export const dict: Record<string, { de: string; en: string }> = {
   "wchip.notFound": { de: "Die Session hat keinen Ordner auf der Platte", en: "The session has no folder on disk" },
   "wchip.clipboard": { de: "Die Zwischenablage ist gesperrt", en: "The clipboard is blocked" },
   "wchip.failed": { de: "Das hat nicht geklappt ({status})", en: "That did not work ({status})" },
+  "wchip.codegraph": { de: "Code-Graph bauen", en: "Build code graph" },
+  // Card 472: graphify run from the app, its header line, chip and sheet.
+  "cg.title": { de: "Code-Graph bauen", en: "Build code graph" },
+  "cg.building": { de: "Code-Graph wird gebaut", en: "Building code graph" },
+  "cg.since": { de: "seit {time}", en: "since {time}" },
+  "cg.ready": { de: "Graph fertig", en: "Graph ready" },
+  "cg.readyTitle": { de: "Den Graphen im Browser-Panel öffnen", en: "Open the graph in the browser panel" },
+  "cg.failed": { de: "Graph fehlgeschlagen", en: "Graph failed" },
+  "cg.failedTitle": { de: "Code-Graph fehlgeschlagen", en: "Code graph failed" },
+  "cg.exit": { de: "Exit-Code {code}", en: "exit {code}" },
+  "cg.noExit": { de: "nicht gestartet", en: "did not start" },
+  "cg.lastLines": { de: "Die letzten {n} Zeilen der Ausgabe", en: "The last {n} lines of output" },
+  "cg.again": { de: "Neu bauen", en: "Build again" },
+  "cg.notInstalled": { de: "graphify ist nicht installiert. Installiere es im Terminal und öffne diesen Dialog danach erneut:", en: "graphify is not installed. Install it in a terminal, then open this sheet again:" },
+  "cg.notInstalledShort": { de: "nicht installiert", en: "not installed" },
+  "cg.notInstalledHint": { de: "spectro doctor zeigt, in welchen Ordnern die App danach gesucht hat.", en: "spectro doctor shows the folders the app looked in." },
+  "cg.what": { de: "Was gebaut wird", en: "What to build" },
+  "cg.full": { de: "Vollständig bauen", en: "Full build" },
+  "cg.fullHint": { de: "Liest den ganzen Code neu. Vorhandene Gruppennamen bleiben, solange die Gruppe gleich bleibt.", en: "Reads all code again. Existing community names stay while the community stays the same." },
+  "cg.update": { de: "Nur aktualisieren", en: "Update only" },
+  "cg.updateHint": { de: "Liest geänderten Code und behält die vorhandenen Namen.", en: "Reads changed code and keeps the existing names." },
+  "cg.names": { de: "Gruppennamen", en: "Community names" },
+  "cg.noLabels": { de: "Keine Namen", en: "No labels" },
+  "cg.model": { de: "Modell", en: "Model" },
+  "cg.noModels": { de: "Dieser Anbieter nennt gerade keine Modelle.", en: "This provider lists no models right now." },
+  "cg.running": { de: "Für diesen Ordner läuft gerade ein Build.", en: "A build is running for this folder." },
+  "cg.cancel": { de: "Abbrechen", en: "Cancel" },
+  "cg.start": { de: "Starten", en: "Start" },
   // Card 442: the rows of the header menu that are not a dock panel.
+  "hdr.menu.codegraph": { de: "Code-Graph bauen", en: "Build code graph" },
+  "hdr.menu.codegraphNote": { de: "braucht graphify: {install}", en: "needs graphify: {install}" },
   "hdr.menu.keymap": { de: "Tastaturkürzel", en: "Keyboard shortcuts" },
   "hdr.menu.doctor": { de: "spectro doctor", en: "spectro doctor" },
   "dock.strip": { de: "Panels", en: "Panels" },
@@ -2080,6 +2131,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // face is still there.
   "trace.mode.wire": { de: "Draht", en: "Wire" },
   "trace.mode.source": { de: "Quelle", en: "Source" },
+  // Card 473: the Lab's JSONL strip opens an llm_exchange line on its bodies.
+  "trace.mode.exchange": { de: "Austausch", en: "Exchange" },
   // The llm-wire detail pane (wire/llmWire.ts): one honest sentence per
   // fidelity, said per SIDE — the request and the response of one exchange can
   // be recorded at different fidelities.
@@ -2848,6 +2901,28 @@ export const dict: Record<string, { de: string; en: string }> = {
   // few words.
   "slash.about": { de: "Beschreibung", en: "Description" },
   "slash.namespace": { de: "Namensraum", en: "Namespace" },
+  // Card 471: the chat's two commands, above the skills in the slash picker.
+  "slash.commands": { de: "Befehle", en: "Commands" },
+  "cmd.compact.help": { de: "Verlauf jetzt zusammenfassen und Kontext frei machen", en: "Summarize the history now to free the context" },
+  "cmd.clear.help": { de: "Frischer Kontext in dieser Session, der Verlauf bleibt sichtbar", en: "Start a fresh context in this session, the history stays visible" },
+  // Card 471: the divider a /clear leaves in the chat, followed by the time.
+  "chat.contextCleared": { de: "Kontext geleert", en: "context cleared" },
+  "chat.compacting": {
+    de: "Der Verlauf wird zusammengefasst. Stopp bricht ab und lässt ihn, wie er ist.",
+    en: "Compacting the history. Stop cancels it and leaves the history as it was.",
+  },
+  "chat.compactNothing": {
+    de: "Nichts zusammenzufassen, der Verlauf ist noch kurz.",
+    en: "Nothing to compact, the history is still short.",
+  },
+  "chat.compactStopped": {
+    de: "Zusammenfassen gestoppt. Der Verlauf ist unverändert.",
+    en: "Compaction stopped. The history is unchanged.",
+  },
+  "chat.compactFailed": {
+    de: "Zusammenfassen fehlgeschlagen, der Verlauf ist unverändert: {message}",
+    en: "Compaction failed, the history is unchanged: {message}",
+  },
   "chat.placeholder": { de: "Nachricht an den Agenten …", en: "Message the agent …" },
   "chat.running": { de: "Läuft …", en: "Running …" },
   "chat.send": { de: "Senden", en: "Send" },
@@ -3326,6 +3401,18 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.cacheWrite": { de: "in den Cache", en: "cache write" },
   // Card 374: normal shows three numbers, so the tooltip promises three. The
   // extended reading has its own title one entry below.
+  // Card 473: an answer opens the LLM exchange that produced it.
+  "chat.exchangeShow": { de: "LLM-Austausch", en: "LLM exchange" },
+  "chat.exchangeHide": { de: "LLM-Austausch ausblenden", en: "hide LLM exchange" },
+  "chat.exchangeTitle": {
+    de: "Die aufgezeichnete Anfrage an das Modell und seine Antwort zu dieser Nachricht",
+    en: "The recorded request to the model and its response for this message",
+  },
+  "chat.exchangeLoading": { de: "der Austausch wird gesucht …", en: "finding the exchange …" },
+  "chat.exchangeNone": {
+    de: "Zu dieser Antwort ist kein Austausch aufgezeichnet.",
+    en: "No recorded exchange matches this answer.",
+  },
   "chat.usageTitle": {
     de: "Tokens dieser Antwort (rein · raus) und wie lange sie gedauert hat",
     en: "This answer's tokens (in · out) and how long it took",
@@ -3787,6 +3874,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   // and writes the view on screen. Two neighbours reading "Export" would have
   // been one word for two different things (owner report, 2026-08-03).
   "arch.export": { de: ".jsonl herunterladen", en: "download .jsonl" },
+  "arch.exportBundle": { de: "Bundle herunterladen (.zip)", en: "download bundle (.zip)" },
+  "arch.exportBundleTitle": {
+    de: "Die Session mit ihrem LLM-Wire, ihrem Browser-Wire und ihren Kind-Sessions als eine Datei; der Import liest sie auf jedem Rechner wieder ein",
+    en: "The session with its llm wire, its browser wire and its child sessions as one file; the import reads it back on any machine",
+  },
   "arch.exportTitle": {
     de: "Die aufgezeichnete Datei, unverändert; der Import liest sie wieder ein",
     en: "The recorded file, unchanged; the import reads it back",
@@ -4051,8 +4143,8 @@ export const dict: Record<string, { de: string; en: string }> = {
 
   // composer workspace gear (settings-productization Task 16)
   "wsg.title": {
-    de: "Permission-Modus & Regeln für dieses Projekt",
-    en: "Permission mode & rules for this project",
+    de: "Permission-Modus, Werkzeuggruppen & Regeln für dieses Projekt",
+    en: "Permission mode, tool groups & rules for this project",
   },
   "wsg.header": { de: "Workspace-Settings", en: "Workspace settings" },
   "wsg.unpinned": {
@@ -4078,6 +4170,19 @@ export const dict: Record<string, { de: string; en: string }> = {
   "wsg.mode.readonly.hint": {
     de: "Lehnt jeden gefährlichen Tool-Aufruf automatisch ab — nichts verändert etwas.",
     en: "Denies every risky tool call automatically — nothing gets to change anything.",
+  },
+  // Card 466: the tool groups. A checked group is sent to the model; an
+  // unchecked one is left out of the request from the next run on.
+  "wsg.tools.title": { de: "Werkzeuggruppen", en: "Tool groups" },
+  "wsg.tools.note": {
+    de: "Abgewählte Gruppen schickt der nächste Lauf nicht an das Modell, auch nicht an Unteragenten. An den Berechtigungen ändert das nichts.",
+    en: "The next run leaves unchecked groups out of the model request, for subagents too. Permissions do not change.",
+  },
+  "wsg.tools.none": { de: "kein Werkzeug in dieser Sitzung", en: "no tool in this session" },
+  "wsg.tools.saveFailed": { de: "Nicht gespeichert: {reason}", en: "Not saved: {reason}" },
+  "wsg.tools.unsaved": {
+    de: "Ohne angehefteten Ordner gilt die Wahl nur für diese Sitzung und wird nicht gespeichert.",
+    en: "Without a pinned folder the choice holds for this session only and is not saved.",
   },
   "wsg.rules.title": { de: "Immer erlauben", en: "Always allow" },
   "wsg.rules.scope": { de: "[projekt]", en: "[project]" },
@@ -4211,6 +4316,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The run figure includes the subagents: {out} out came from them.",
   },
   "footer.runActive": { de: "Lauf aktiv", en: "run active" },
+  // Card 471: the footer while a /compact summarizes the history.
+  "footer.compacting": { de: "Kompaktierung läuft", en: "compacting" },
   "footer.stopped": { de: "gestoppt · {r}", en: "stopped · {r}" },
   "footer.ready": { de: "bereit", en: "ready" },
   // Card 264: a run that walked away from its own plan stops with "end_turn"

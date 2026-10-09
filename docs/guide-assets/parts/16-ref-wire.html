@@ -26,9 +26,9 @@ record PUsage(int inputTokens, int outputTokens,
 record PStop(StopReason reason /* END_TURN | TOOL_USE | MAX_TOKENS | ABORTED */)</pre>
 
 <p>Contract points: all three backends return <em>lazy</em> iterables (tokens reach the
-UI while the HTTP stream is still open); <code>PUsage.inputTokens</code> stays the
-provider's raw count (it feeds the wire <code>usage</code> event) while the two cache
-fields ride separately for the compaction trigger only; a cancel mid-stream surfaces as
+UI while the HTTP stream is still open); <code>PUsage.inputTokens</code> is the part of
+the prompt no cache served (it feeds the wire <code>usage</code> event) while the two cache
+fields ride separately and are added back only by the compaction trigger and the UIs; a cancel mid-stream surfaces as
 <code>PStop(ABORTED)</code>, never as an exception.</p>
 
 <h2 id="ch-pwire-mapping">Backend mappings</h2>
@@ -72,6 +72,13 @@ fields ride separately for the compaction trigger only; a cancel mid-stream surf
       arguments arrive as a JSON <em>string</em> and are re-parsed (unparseable →
       <code>{"raw": …}</code>).</li>
   <li>Bearer auth only when a key is present — LM Studio and friends run keyless.</li>
+  <li>Prompt cache (card 468): the <code>llamacpp</code> and <code>spectro-local</code> dialects
+      send <code>cache_prompt: true</code> while <code>promptCaching</code> is on; with it off the
+      field is left out. No other dialect gets the field. A cached share is read from
+      <code>usage.prompt_tokens_details.cached_tokens</code>, or from llama.cpp's
+      <code>timings.cache_n</code> and <code>timings.prompt_n</code> when the usage has no details;
+      it leaves <code>inputTokens</code> and arrives as <code>cacheReadTokens</code>, the split
+      Anthropic reports.</li>
   <li>Endpoint by provider name, no key-based swap: <code>openai</code> &rarr;
       <code>https://api.openai.com</code>, <code>lmstudio</code> &rarr;
       <code>http://localhost:1234</code>, <code>llamacpp</code> &rarr;

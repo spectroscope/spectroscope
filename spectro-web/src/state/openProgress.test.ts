@@ -4,7 +4,7 @@
 // for a count.
 
 import { describe, expect, it } from "vitest";
-import { PROGRESS_EVERY_MS, createOpenProgress, openCount } from "./openProgress";
+import { PROGRESS_EVERY_MS, createOpenProgress, openCount, openWire } from "./openProgress";
 
 /** A store on a clock the test moves, with its notifications counted. */
 function store() {
@@ -105,5 +105,25 @@ describe("the count, in the reader's language", () => {
   it("says one event as one", () => {
     expect(openCount("en", 0, 1)).toBe("0 of 1 event");
     expect(openCount("de", 1, 1)).toBe("1 von 1 Ereignis");
+  });
+});
+
+// Card 473: an import that brings its wire reads it under the same sign, and
+// the sign says so instead of repeating the finished event count.
+describe("the wire read, on the same sign", () => {
+  it("passes the first wire reading of an open on at once, even inside the quiet time", () => {
+    const s = store();
+    s.at(1000);
+    s.progress.report(7, 10, 10);
+    s.at(1010);
+    s.progress.report(7, 20, 100, "wire");
+    expect(s.told).toEqual([1000, 1010]);
+    expect(s.progress.read()).toEqual({ ticket: 7, folded: 20, total: 100, unit: "wire" });
+  });
+
+  it("says how far the wire is read, as a share", () => {
+    expect(openWire("en", 24, 100)).toBe("reading the wire: 24%");
+    expect(openWire("de", 24, 100)).toBe("Wire wird gelesen: 24 %");
+    expect(openWire("en", 0, 0)).toBe("reading the wire: 0%");
   });
 });

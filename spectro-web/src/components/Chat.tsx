@@ -35,7 +35,8 @@ import {
   wheelPull,
   type ReaderPull,
 } from "../state/scrollPin";
-import { agentAccent, answerLineSegments } from "../format";
+import { agentAccent, answerLineSegments, clockTime } from "../format";
+import { composerSubmit, type ChatCommandName } from "../state/chatCommands";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
 import { AttachmentThumbs } from "./AttachmentThumbs";
@@ -87,6 +88,8 @@ import { skillTokenSegments } from "../state/skillTokens";
 import { useSkills } from "../state/skillList";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { bundleLink } from "./rowMenuItems";
+import { AnswerExchange } from "./AnswerExchange";
 
 /** What a v2 chip may do about its own fold (card 271) — the whole surface, so
  *  the chip stays a control and Chat stays the only renderer of turns. */
@@ -131,9 +134,18 @@ export function Chat(props: {
    *  the store. A paste or a picked file has no address, and therefore no
    *  folders to offer. */
   storePath?: string | null;
+  /** Card 473: the session an answer's LLM exchange is read under (an
+   *  import's held wire, or the server's sidecar), or null for none. Absent
+   *  or null means no answer offers its exchange. */
+  exchangeSessionId?: string | null;
   /** true when this is the live socket view, false for a replayed archive. */
   liveView: boolean;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
+  /** Card 471: runs /compact or /clear. A draft that is exactly a command
+   *  comes here and never reaches onSend. False means the frame did not leave
+   *  (the socket is down), and the draft stays. Absent in hosts without a
+   *  session to command (the Lab); there a command draft sends nothing. */
+  onCommand?: (command: ChatCommandName) => boolean;
   onReturnToLive: () => void;
   /** Card 458: a stored session that the first message continues. The live
    *  composer stands under its history instead of the archive bar, and the
@@ -662,17 +674,33 @@ export function Chat(props: {
     if (el !== null) requestAnimationFrame(() => el.setSelectionRange(at, at));
     return true;
   };
-  const slash = useSlashPicker(draft, caret, composerOpen, (text, nextCaret) => {
-    setDraft(text);
-    setCaret(nextCaret);
-    const el = textareaRef.current;
-    if (el !== null) {
-      el.focus();
-      // The caret lands after the token, so the reader carries straight on
-      // with what they actually wanted.
-      requestAnimationFrame(() => el.setSelectionRange(nextCaret, nextCaret));
+  // Card 471: one runner for both ways a command is given, the picker's row
+  // and a submitted draft. The draft empties only when the frame left.
+  const runCommand = (name: ChatCommandName): void => {
+    if (props.onCommand === undefined) return;
+    setPin(true);
+    if (props.onCommand(name)) {
+      setDraft("");
+      setWalk(atDraft());
     }
-  });
+  };
+  const slash = useSlashPicker(
+    draft,
+    caret,
+    composerOpen,
+    (text, nextCaret) => {
+      setDraft(text);
+      setCaret(nextCaret);
+      const el = textareaRef.current;
+      if (el !== null) {
+        el.focus();
+        // The caret lands after the token, so the reader carries straight on
+        // with what they actually wanted.
+        requestAnimationFrame(() => el.setSelectionRange(nextCaret, nextCaret));
+      }
+    },
+    props.onCommand === undefined ? undefined : runCommand,
+  );
 
   // Card 247: the names the transcript and the composer may color. The color
   // means "the server will expand this", so it is fed by the same catalog the
@@ -687,8 +715,16 @@ export function Chat(props: {
   const marksRef = useRef<HTMLDivElement>(null);
 
   const submit = (): void => {
-    const text = draft.trim();
-    if (text === "" || !composerOpen) return;
+    if (!composerOpen) return;
+    const decided = composerSubmit(draft);
+    if (decided === null) return;
+    // Card 471: a draft that is exactly a command is not a prompt. It leaves
+    // as its own frame, or not at all, and never through onSend.
+    if (decided.kind === "command") {
+      runCommand(decided.name);
+      return;
+    }
+    const text = decided.text;
     // Sending is the reader asking for an answer, so the view goes back to
     // watching for it — the same deliberate act the jump-to-end button is.
     setPin(true);
@@ -732,7 +768,8 @@ export function Chat(props: {
       draftEmpty: draft.trim() === "",
       // Attachments never steer (owner call 2), so a draft carrying one says
       // Queue even on a server that understands the frame.
-      steers: props.steers === true && attachments.pending.length === 0,
+      // Card 471: a /compact runs with no run to steer, so a sentence queues.
+      steers: props.steers === true && attachments.pending.length === 0 && !state.compacting,
     },
     lang,
   );
@@ -847,6 +884,11 @@ export function Chat(props: {
                 ))}
               </div>
             )}
+            {/* Card 473: the LLM exchange behind a billed answer, read from the
+                session's wire (an import's held one included). */}
+            {props.exchangeSessionId != null && turn.endTs !== undefined && (
+              <AnswerExchange sessionId={props.exchangeSessionId} agentId={turn.agentId} endTs={turn.endTs} />
+            )}
           </div>
         );
       }
@@ -857,6 +899,18 @@ export function Chat(props: {
         ) : null;
       }
       case "info":
+        // Card 471: the mark of a /clear runs across the chat, with its time.
+        if (turn.divider === true) {
+          const label = turn.infoKey !== undefined ? t(lang, turn.infoKey) : turn.text;
+          return (
+            <div key={`${vk}:${i}`} className="chat-divider" role="separator" aria-label={label}>
+              <span className="chat-divider-label">
+                {label}
+                {turn.ts !== undefined && <span className="tabular"> · {clockTime(turn.ts)}</span>}
+              </span>
+            </div>
+          );
+        }
         return (
           <div key={`${vk}:${i}`} className={`info-line ${turn.tone}`}>
             {turn.infoKey !== undefined
@@ -1478,6 +1532,7 @@ export function Chat(props: {
                 <ComposerGear
                   workspaceInfo={state.workspace}
                   permissionMode={state.permissionMode}
+                  toolGroups={state.toolGroups}
                   sendClient={props.sendClient}
                 />
                 {/* Card 463: the model, the thinking level and the context
@@ -1520,6 +1575,19 @@ export function Chat(props: {
                   title={t(lang, "arch.exportTitle")}
                 >
                   {t(lang, "arch.export")}
+                </a>
+              )}
+              {/* Card 473: the same session with everything beside it (its
+                  wires and child sessions) as one zip, for another machine.
+                  The plain .jsonl above stays. */}
+              {props.exportId !== undefined && (
+                <a
+                  className="ghost archive-export"
+                  href={bundleLink(props.exportId).href}
+                  download={bundleLink(props.exportId).download}
+                  title={t(lang, "arch.exportBundleTitle")}
+                >
+                  {t(lang, "arch.exportBundle")}
                 </a>
               )}
               {/* The sidecar beside that file: the recorded LLM exchanges,

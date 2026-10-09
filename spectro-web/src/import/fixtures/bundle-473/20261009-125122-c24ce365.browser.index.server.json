@@ -1,0 +1,21 @@
+[
+  {
+    "cid": "cc2a6c35-28fc-43cf-b2ec-cb829aa2fecd",
+    "epoch": 1,
+    "agentId": "main",
+    "callId": "call-1",
+    "actor": null,
+    "tool": "browser_navigate",
+    "pageUrl": "https://example.com/",
+    "ok": true,
+    "resultBytes": 33,
+    "durationMs": 29,
+    "blobPath": null,
+    "sha256": null,
+    "mediaType": null,
+    "width": 0,
+    "height": 0,
+    "ts": 1791543082711,
+    "startedAt": 1791543082682
+  }
+]

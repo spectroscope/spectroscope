@@ -328,6 +328,40 @@ class BrowserViewSocketTest {
     }
 
     @Test
+    void theChipPressMintsATicketAndOpensTheCodeGraphViewOnTheOperatorsBrowser(@TempDir Path base)
+            throws Exception {
+        // Card 472: the "Graph ready" chip sends open_code_graph on this
+        // channel, which only the app's own page speaks. The server mints a
+        // one-shot ticket, builds the address on its own port, and navigates
+        // like an operator's typed address, through the same fence.
+        dev.spectroscope.server.web.AppPageTickets tickets =
+                new dev.spectroscope.server.web.AppPageTickets(System::currentTimeMillis);
+        dev.spectroscope.core.browser.headless.HeadlessFence fence =
+                new dev.spectroscope.core.browser.headless.HeadlessFence(() -> false, () -> 8473, tickets::isLive);
+        RecordingDesktop desktop = new RecordingDesktop();
+        BrowserViewSocket socket = new BrowserViewSocket(new PrecedenceBrowserFaces(
+                desktop, () -> true, headless(base), fence::judge), new SessionBrowserBridge());
+        socket.useCodeGraphTickets(tickets, () -> 8473);
+        FakeSocket viewer = new FakeSocket("view-1", "ws://127.0.0.1:8746/ws/browser-view");
+        socket.afterConnectionEstablished(viewer);
+
+        tell(socket, viewer, "{\"type\":\"navigate\",\"sessionId\":\"" + SESSION
+                + "\",\"url\":\"http://localhost:8473/api/codegraph/view?sessionId=" + SESSION + "\"}");
+        assertTrue(desktop.verbs.isEmpty(), "the view without a ticket is a loopback address like any other");
+        assertTrue(lastOfType(viewer, "refused").path("sentence").asText().contains("loopback"));
+
+        tell(socket, viewer, "{\"type\":\"open_code_graph\",\"sessionId\":\"" + SESSION + "\"}");
+        assertEquals(List.of("navigate"), desktop.verbs);
+        String prefix = "http://localhost:8473/api/codegraph/view?sessionId=" + SESSION + "&ticket=";
+        assertTrue(desktop.url.startsWith(prefix), desktop.url);
+        assertTrue(tickets.isLive(desktop.url.substring(prefix.length())), "the ticket is live until the view spends it");
+        assertTrue(lastOfType(viewer, "verb").path("ok").asBoolean(), viewer.textJoined());
+
+        tell(socket, viewer, "{\"type\":\"open_code_graph\",\"sessionId\":\"../etc\"}");
+        assertEquals(List.of("navigate"), desktop.verbs, "a malformed session id opens nothing");
+    }
+
+    @Test
     void navigateBackForwardAndScreenshotDriveTheDesktopPane(@TempDir Path base) throws Exception {
         // Criterion 1: the desktop face gains the same control row — the verbs
         // travel this same channel and route to the pane, never a second engine.

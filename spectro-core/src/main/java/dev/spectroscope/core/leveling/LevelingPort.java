@@ -8,12 +8,18 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Watches one live session's event stream and tells the ladder what it saw.
+ * Watches one live session's events and tells the ladder what it saw.
  *
- * <p>Belongs on {@link TracingPorts#register(TracingPort)}, never on
- * {@code require}: leveling is a nicety, and the registry isolates registered
- * ports precisely so a nicety cannot end a run. This class adds its own
- * warn-once guard on top, the same belt-and-braces the OTLP sink wears.</p>
+ * <p>Two ways in. The server's browser session feeds it through
+ * {@code SessionStore.onLine} and {@link #onEventAt} (card 473): the store
+ * numbers every line the file gets, including the lines that never pass the
+ * tracing ports (a closed exchange, a window override), so a receipt names
+ * the line a reader finds at that position. There the port's own counter is
+ * unused. As a tracing port it counts the stream itself; it then belongs on
+ * {@link TracingPorts#register(TracingPort)}, never on {@code require}:
+ * leveling is a nicety, and the registry isolates registered ports precisely
+ * so a nicety cannot end a run. Either way this class adds its own warn-once
+ * guard, the same belt-and-braces the OTLP sink wears.</p>
  *
  * <p>The session id is injected at construction from the store, exactly as
  * {@code JsonlSink} takes its {@code SessionStore}. That is also what makes the
@@ -50,7 +56,19 @@ public final class LevelingPort implements TracingPort {
 
     @Override
     public void onEvent(RunEvent event) {
-        int at = index++;
+        onEventAt(index++, event);
+    }
+
+    /**
+     * Tells the ladder of one event at a line number the caller knows (card
+     * 473: the session store's own count, see
+     * {@code SessionStore.onLine}), instead of this port's own counter, which
+     * only sees the tracing stream.
+     *
+     * @param at    the event's line number in the session file
+     * @param event the event on that line
+     */
+    public void onEventAt(int at, RunEvent event) {
         try {
             recorder.observe(sessionId, at, event);
         } catch (RuntimeException never) {

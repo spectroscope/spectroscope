@@ -448,6 +448,13 @@ export function navigateFrame(sessionId: string, url: string): Record<string, un
   return { type: "navigate", sessionId, url };
 }
 
+/** @return the "Graph ready" chip's frame (card 472): the server mints a
+ *          one-shot ticket and navigates this session's browser to its own
+ *          code graph view; the page sends no address */
+export function openCodeGraphFrame(sessionId: string): Record<string, unknown> {
+  return { type: "open_code_graph", sessionId };
+}
+
 /** @return the back/forward frame — these two verbs exist only on this face */
 export function historyFrame(sessionId: string, direction: "back" | "forward"): Record<string, unknown> {
   return { type: direction, sessionId };

@@ -79,12 +79,15 @@ export type RunStatusLine = { key: string; vars?: Record<string, string | number
 export function runStatusLine(
   state: {
     running: boolean;
+    /** Card 471: a /compact holds the running flag; the footer names it. */
+    compacting?: boolean;
     lastStopReason: string | null;
     plan: PlanStep[] | null;
   },
   lang: Lang,
 ): RunStatusLine {
   const { running, lastStopReason, plan } = state;
+  if (running && state.compacting === true) return { key: "footer.compacting" };
   if (running) return { key: "footer.runActive" };
   if (lastStopReason === null) return { key: "footer.ready" };
   // The rule itself lives in state/planVerdict.ts, because the exported

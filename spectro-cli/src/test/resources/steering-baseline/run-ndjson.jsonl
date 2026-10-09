@@ -1,4 +1,4 @@
-{"type":"run_start","runId":"<run>","agentId":"main","prompt":"Summarise notes.txt","provider":"anthropic","workspace":"<path>","ts":0}
+{"type":"run_start","runId":"<run>","agentId":"main","prompt":"Summarise notes.txt","provider":"anthropic","workspace":"<path>","llmWire":"<session>.llm.jsonl","children":[],"ts":0}
 {"type":"turn_start","agentId":"main","turn":1,"ts":0}
 {"type":"thinking_delta","agentId":"main","text":"Look at the folder first.","ts":0}
 {"type":"text_delta","agentId":"main","text":"Let me look.","ts":0}

@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
-  cachedLookup, refuse, refuseResolved, type FencePolicy, type HostLookup,
+  APP_PAGES, APP_TICKET, cachedLookup, passesAsAppPage, refuse, refuseResolved, type FencePolicy, type HostLookup,
 } from "./browserFence";
 
 const VECTOR_FILE = path.join(
@@ -28,6 +28,7 @@ const TABLE = JSON.parse(readFileSync(VECTOR_FILE, "utf8")) as {
     allowLocalhost: boolean;
     rule: string | null;
   }[];
+  appPages: { url: string; appPort: number; ticket: string | null; allowLocalhost: boolean; rule: string | null }[];
   divergences: {
     url: string;
     allowLocalhost: boolean;
@@ -244,5 +245,40 @@ describe("browserFence", () => {
     await assert.rejects(lookup("flaky.example.com"));
     await assert.rejects(lookup("flaky.example.com"));
     assert.equal(asked, 2);
+  });
+
+  it("agrees with the shared table on the app's own pages (card 472)", async () => {
+    assert.ok(TABLE.appPages.length >= 20, "the app page half proves nothing this small");
+    let passing = 0;
+    for (const v of TABLE.appPages) {
+      const policy: FencePolicy = {
+        allowLocalhost: v.allowLocalhost,
+        appPort: v.appPort,
+        ...(v.ticket === null ? {} : { appTicket: v.ticket }),
+      };
+      const verdict = refuse(v.url, policy);
+      const resolved = await refuseResolved(v.url, policy, answering({}));
+      if (v.rule === null && !v.allowLocalhost) passing += 1;
+      const label = `${v.url} (appPort=${v.appPort}, ticket=${v.ticket})`;
+      assert.equal(verdict === null ? null : verdict.rule, v.rule, label);
+      assert.equal(resolved === null ? null : resolved.rule, v.rule, `${label}, resolving`);
+    }
+    assert.ok(passing >= 3, "no row shows the app page passing without the opt-in");
+  });
+
+  it("names the code graph view as the app's one page and ticket as its parameter, as the Java side does", () => {
+    assert.deepEqual(APP_PAGES, ["/api/codegraph/view"]);
+    assert.equal(APP_TICKET, "ticket");
+  });
+
+  it("lets nothing through on the app's port when the command carried no ticket", () => {
+    const page = "http://localhost:8473/api/codegraph/view?sessionId=s-1&ticket=0123456789abcdef0123456789abcdef";
+    assert.equal(refuse(page, { allowLocalhost: false, appPort: 8473 })?.rule, "loopback");
+    assert.equal(refuse(page, { allowLocalhost: false, appPort: 8473, appTicket: "" })?.rule, "loopback");
+    assert.equal(passesAsAppPage(page, { allowLocalhost: false, appPort: 8473 }), false);
+    assert.equal(
+      passesAsAppPage(page, { allowLocalhost: false, appPort: 8473, appTicket: "0123456789abcdef0123456789abcdef" }),
+      true,
+    );
   });
 });

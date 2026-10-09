@@ -17,6 +17,9 @@ import {
 import type { TraceEntry, UiState } from "./state/reducer";
 import { currentLiveTraceWanted, useLiveTraceWanted } from "./state/liveTrace";
 import { fetchLlmWireIndex, mergeLlmExchanges } from "./wire/llmWire";
+import { heldLlmWire, releaseHeldWires } from "./wire/heldWire";
+import { foundSentence, holdImportWires, type ImportWires } from "./import/wireImport";
+import { llmWireSessionOf } from "./state/wireSession";
 import { windowOverrideFrame } from "./wire/windowOverride";
 import { seedResumedLive, summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
@@ -68,6 +71,8 @@ import {
   type Place,
 } from "./state/appRouter";
 import { DoctorPanel } from "./components/DoctorPanel";
+import { CodeGraphHost } from "./codegraph/CodeGraphHost";
+import { codeGraphSessionOf } from "./codegraph/codeGraphModel";
 import { OpeningSurface } from "./components/OpeningSurface";
 import { TraceTabCount } from "./components/TraceTabCount";
 import { foldArchiveDeferred, foldArchiveDeferredSliced } from "./state/archiveFold";
@@ -104,6 +109,7 @@ import { fetchSettings, putSettings } from "./state/serverSettings";
 import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
 import { useReasoningCapability } from "./components/ReasoningControl";
 import { SessionSet, type BatchInfo } from "./state/sessionSet";
+import type { ChatCommandName } from "./state/chatCommands";
 import { openDecision, readOnlyKey, replayComposer } from "./state/sessionRows";
 import {
   applyDockReturn,
@@ -720,6 +726,18 @@ export function App() {
     }
     sessions.send(sessions.view().key, text, attachments);
   };
+  // Card 471: /compact and /clear. A live session sends the frame on its own
+  // socket; a stored session that can be continued is resumed first and sends
+  // it as its first frame, so a /clear on an old session gives it a fresh head
+  // without a prompt in between.
+  const command = (name: ChatCommandName): boolean => {
+    if (replay !== null) {
+      if (!continuable) return false;
+      void resumeSession(replay.id, { command: name });
+      return true;
+    }
+    return sessions.command(sessions.view().key, name);
+  };
   const abort = (): void => {
     sessions.abort(sessions.view().key);
   };
@@ -1325,14 +1343,42 @@ export function App() {
     /** "gesture" pushes a history entry; "apply" replaces it, so following an
      *  address does not stack a second one on top of itself. */
     cause: NavCause = "gesture",
+    /** Card 473: the files that came with a spectroscope session file (a
+     *  bundle's entries, or wires picked or dropped beside it). */
+    wires?: ImportWires,
   ): Promise<void> => {
     const ticket = navNonce.issue(); // an import supersedes any in-flight session open
     const sessionId = `import:${kind}:${label}`;
+    // Card 473: only the import on screen holds wires; the last one lets go.
+    releaseHeldWires();
     // Card 431: an import can be as large as a recorded session (the store
     // serves up to 128 MiB), so its fold runs in slices under the same sign.
     // The dialog closes first, or it would stand over the sign.
     setOpening({ ticket, sessionId, title: label });
     setImportOpen(false);
+    // Card 473: a spectroscope session finds its wires (the bundle's, the
+    // dropped ones, or this machine's by the referenced name) and reads them
+    // under the same sign, in slices, so a 50 MB wire never freezes the page.
+    // Read BEFORE the fold: a later navigation stops it the way it stops the
+    // fold, and nothing is held for a superseded import.
+    const found =
+      kind === "spectroscope"
+        ? await holdImportWires(
+            sessionId,
+            events,
+            wires ?? { sessionFileName: null, llm: null, browser: null, children: [], from: "files" },
+            {
+              isCurrent: () => navNonce.isCurrent(ticket),
+              onProgress: (done, total) => openProgress.report(ticket, done, total, "wire"),
+            },
+          ).catch((e: unknown) => {
+            reportBrowserError("import", e);
+            return null;
+          })
+        : null;
+    const foundNote = found === null ? null : foundSentence(lang, found);
+    // The index this import's trace merges: its own held wire, or none.
+    const indexSession = heldLlmWire(sessionId) !== null ? sessionId : null;
     // Card 435: without trace rows, as a session opens.
     const folded = await foldArchiveDeferredSliced(events, {
       isCurrent: () => navNonce.isCurrent(ticket),
@@ -1370,8 +1416,9 @@ export function App() {
       id: sessionId,
       state: folded.state,
       events,
-      // An import has no llm-wire sidecar on this server to ask.
-      archiveTrace: createArchiveTrace(folded.recipe, null),
+      // An import has no llm-wire sidecar on this server to ask; since card
+      // 473 one that holds its wire asks the browser, under its own id.
+      archiveTrace: createArchiveTrace(folded.recipe, indexSession),
       source,
       kind,
     });
@@ -1406,7 +1453,8 @@ export function App() {
       // session file instead, and says so rather than passing for a normal
       // load (card 318). The same call says whether the file is one agent's
       // transcript, so the bar does not call that file a session (card 152).
-      ...importBarAbout(lang, { kind, subagent, run, extra: note }),
+      // Card 473: and what came with the session file, said once.
+      ...importBarAbout(lang, { kind, subagent, run, extra: note, found: foundNote }),
     });
   };
 
@@ -1585,7 +1633,7 @@ export function App() {
   // session_resume trace marker, then the context_info/usage jump.
   const resumeSession = async (
     id: string,
-    first: { text: string; attachments?: PendingAttachment[] },
+    first: { text: string; attachments?: PendingAttachment[] } | { command: ChatCommandName },
   ): Promise<void> => {
     const ticket = navNonce.issue();
     setOpening({ ticket, sessionId: id, title: sessionTitleOf(id) }); // card 431, as in openSession
@@ -1633,7 +1681,8 @@ export function App() {
         resumeId: id,
         state: seedResumedLive(seeded),
         events,
-        firstMessage: first, // card 459: beside the running sessions, never in their place
+        // card 459: beside the running sessions, never in their place
+        ...("command" in first ? { firstCommand: first.command } : { firstMessage: first }),
       });
       setReplay(null);
       // The Lab dam holds the history and new events queue behind it; in light
@@ -1962,6 +2011,13 @@ export function App() {
     const folded = reduceAllUntraced(initialState, shownEvents);
     return replay === null ? folded : normalizeReplay(folded);
   }, [showingTranslation, enteredFleet, recordedView, replay, shownEvents]);
+  // Card 472: the code graph status follows the live session, or a stored one
+  // opened read-only (AC5), never a scenario or an import.
+  const codeGraphSession = codeGraphSessionOf(
+    viewingLive,
+    view.workspace?.sessionId ?? null,
+    replay?.id ?? null,
+  );
   const shownRows = useMemo(() => {
     if (sourcedRows === null || !showingTranslation || enteredFleet !== null) return sourcedRows;
     return swapTracePayloads(sourcedRows, tabEvents, shownEvents);
@@ -2210,14 +2266,18 @@ export function App() {
   // one. Null for everything that has no sidecar to ask — an import, a
   // scenario, an entered fleet — and the detail then says so instead of
   // fetching a 404.
-  const llmWireSessionId =
-    enteredFleet !== null
-      ? null
-      : replay !== null
-        ? canResume
-          ? replay.id
-          : null
-        : (live.workspace?.sessionId ?? null);
+  // Card 473: a held wire belongs to the import on screen. Leaving it for a
+  // stored session, a scenario or the live view lets the wire go.
+  useEffect(() => {
+    if (replay === null || !replay.id.startsWith("import:")) releaseHeldWires();
+  }, [replay]);
+  // Card 473: an import that holds its wire names itself (state/wireSession.ts).
+  const llmWireSessionId = llmWireSessionOf({
+    inFleet: enteredFleet !== null,
+    replayId: replay?.id ?? null,
+    canResume,
+    liveSessionId: live.workspace?.sessionId ?? null,
+  });
 
   // Card 137: the trace's own address in the configured backend. Derived, not
   // fetched — the id is sha256 over the session id, the same seed OtlpSink
@@ -2420,7 +2480,14 @@ export function App() {
           onSpawnNode={() => setSpawnDialogOpen(true)}
         />
       )}
-      {importOpen && <ImportDialog onLoad={openImport} onClose={() => setImportOpen(false)} />}
+      {importOpen && (
+        <ImportDialog
+          onLoad={(events, label, kind, source, subagent, storePath, run, note, wires) =>
+            void openImport(events, label, kind, source, subagent, storePath, run, note, "gesture", wires)
+          }
+          onClose={() => setImportOpen(false)}
+        />
+      )}
       {scenariosOpen && <ScenarioDialog onPick={openScenario} onClose={() => setScenariosOpen(false)} />}
       {startersOpen && <StarterDialog onClose={() => setStartersOpen(false)} />}
 
@@ -2792,6 +2859,7 @@ export function App() {
                     viewKey,
                     liveView: viewingLive,
                     onSend: send,
+                    onCommand: command,
                     onReturnToLive: returnToLive,
                     continuable,
                     readOnlyNote,
@@ -2808,6 +2876,9 @@ export function App() {
                         ? replay!.id
                         : undefined,
                     sendClient,
+                    // Card 473: an answer opens its LLM exchange from the
+                    // same session the trace's exchange rows read.
+                    exchangeSessionId: llmWireSessionId,
                     // Card 463: the model, the thinking level and the context
                     // ring sit under the composer, no longer in the header.
                     composerMeta: {
@@ -2886,6 +2957,7 @@ export function App() {
                       provider={curProvider}
                       model={curModel}
                       thinking={thinking}
+                      toolGroups={view.toolGroups}
                       workspace={view.workspace}
                       recordedCwd={shownRecordedCwd}
                       storedCwd={shownStoredCwd}
@@ -2977,6 +3049,7 @@ export function App() {
                  fourth way to reach a trace row would be a fourth thing to
                  keep in step. */
                 onFocusEvent={focusInTrace}
+                exchangeSessionId={llmWireSessionId}
               />
             )
           ) : null}
@@ -3264,6 +3337,8 @@ export function App() {
         providerInfo={live.providerInfo}
         permissionMode={view.permissionMode}
       />
+      {/* Card 472: the code graph status of the live folder, and its sheets. */}
+      <CodeGraphHost sessionId={codeGraphSession} />
 
       {/* Delta floods stay silent for screen readers; announce only turn ends. */}
       <div className="sr-only" aria-live="polite">

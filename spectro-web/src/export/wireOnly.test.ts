@@ -89,11 +89,19 @@ describe("what a written jsonl may contain", () => {
       // history — the VERDICT is history and rides the union as `goal_check`,
       // so exactly one of the pair belongs here.
       "goal_info",
+      // Card 466: the composer gear's tool groups, a fact about the session
+      // right now and announced like permission_mode_info.
+      "tool_groups_info",
+      // Card 471: the frame that opens and closes a /compact. The compaction
+      // it may produce is history and rides the union as `compaction`; the
+      // frame around it is the page's own screen.
+      "compaction_state",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    // Twenty-three: eighteen, plus card 212's two, plus card 261's `pong`,
-    // card 267's `goal_info` and card 322's `workflow_state`. The number is
+    // Twenty-five: eighteen, plus card 212's two, plus card 261's `pong`,
+    // card 267's `goal_info`, card 322's `workflow_state`, card 466's
+    // `tool_groups_info` and card 471's `compaction_state`. The number is
     // asserted so the set cannot grow or shrink by accident — only on purpose,
     // with the reason written above.
     //
@@ -104,7 +112,7 @@ describe("what a written jsonl may contain", () => {
     // identical. The compiler had nothing to say either. This guard was the
     // only thing that noticed, which is the whole argument for keeping a bare
     // number in a test.
-    expect(NON_WIRE_TYPES.size).toBe(23);
+    expect(NON_WIRE_TYPES.size).toBe(25);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

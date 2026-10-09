@@ -94,16 +94,26 @@ class ExtendedHeadlessTest {
 
     @Test
     void anExtendedJobWritesAboveItsWorkingFolder() {
+        RecordingNotifier notes = new RecordingNotifier();
         new HeadlessRunner(JSON, CONFIG, writesAbove())
+                .withNotifier(notes)
                 .runJob(new Job("j453", "* * * * *", "write it", cwd.toString(), "extended"), line -> { });
         assertTrue(Files.exists(outer.resolve("above.txt")));
+        assertEquals(1, notes.shown().size(), "card 476: the job's end is announced once");
+        assertTrue(notes.shown().get(0).title().startsWith("spectroscope: j453 "),
+                notes.shown().toString());
     }
 
     @Test
     void anAutoJobStaysFenced() {
+        RecordingNotifier notes = new RecordingNotifier();
         new HeadlessRunner(JSON, CONFIG, writesAbove())
+                .withNotifier(notes)
                 .runJob(new Job("j453a", "* * * * *", "write it", cwd.toString(), "auto"), line -> { });
         assertFalse(Files.exists(outer.resolve("above.txt")));
+        assertEquals(1, notes.shown().size(), "card 476: the job's end is announced once");
+        assertTrue(notes.shown().get(0).title().startsWith("spectroscope: j453a "),
+                notes.shown().toString());
     }
 
     // ---------------------------------------------------------------- review: reach needs approval

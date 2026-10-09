@@ -198,7 +198,7 @@ def needs_json_header(ep: dict) -> bool:
 
 
 def fence_line(ep: dict, semantics: dict) -> str:
-    return f"Fence: {ep['fence']} — {semantics[ep['fence']]}"
+    return f"Fence: {ep['fence']}. {semantics[ep['fence']]}"
 
 
 def request_docs(ep: dict, semantics: dict) -> str:
@@ -219,10 +219,10 @@ def collection_overview(table: dict) -> str:
     meta = table["meta"]
     m = meta["fenceMeasurement"]
     lines = [
-        f"The whole REST surface of {meta['module']} — "
+        f"The whole REST surface of {meta['module']}: "
         f"{meta['endpointCount']} endpoints in {len(table['areas'])} folders, one per area.",
         "",
-        "Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port "
+        "Every request targets {{baseUrl}} = http://{{host}}:{{port}}; change host/port "
         "once in the collection variables to re-target everything.",
         "",
         meta["wsNote"],
@@ -247,7 +247,7 @@ def collection_overview(table: dict) -> str:
         "",
     ]
     for v in table["variables"]:
-        lines.append(f"- `{{{{{v['key']}}}}}` = `{v['value']}` — {v['note']}")
+        lines.append(f"- `{{{{{v['key']}}}}}` = `{v['value']}`: {v['note']}")
     lines += [
         "",
         "## Handle with care",
@@ -255,7 +255,7 @@ def collection_overview(table: dict) -> str:
     ]
     for ep in table["endpoints"]:
         if ep.get("caution"):
-            lines.append(f"- **{ep['method']} {ep['path']}** — {ep['caution']}")
+            lines.append(f"- **{ep['method']} {ep['path']}**: {ep['caution']}")
     return "\n".join(lines)
 
 

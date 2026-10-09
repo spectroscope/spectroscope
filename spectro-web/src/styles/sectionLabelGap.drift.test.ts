@@ -1096,14 +1096,38 @@ function at(site: string): Verdict[] {
   return SURVEY.verdicts.filter((v) => v.site === site);
 }
 
+/**
+ * The site of the slash picker heading whose line carries `key` (card 471,
+ * round three). The picker grew twice in one day and both times the pinned
+ * line number went stale; the heading is found by what it says instead.
+ */
+function slashHeading(key: string): string {
+  const lines = srcText(join(SRC, "components/SlashPicker.tsx")).split("\n");
+  const index = lines.findIndex((l) => l.includes(`className="settings-label">`) && l.includes(`"${key}"`));
+  if (index < 0) throw new Error(`no settings-label heading for ${key} in SlashPicker.tsx`);
+  return `components/SlashPicker.tsx:${index + 1}`;
+}
+const SKILLS_HEADING = slashHeading("slash.title");
+const COMMANDS_HEADING = slashHeading("slash.commands");
+
 describe("the slash picker's two headings (criteria 1 and 2)", () => {
   it("SKILLS sits 8px above the first row in .wsg-pop.slash-pop", () => {
-    const vs = at("components/SlashPicker.tsx:150");
+    const vs = at(SKILLS_HEADING);
     expect(vs.length, "the heading is found and resolved").toBeGreaterThan(0);
     for (const v of vs) {
       expect(v.container).toMatch(/^div\.wsg-pop\.slash-pop /);
       expect(v.gap, line(v)).toBe(8);
       expect(v.gap + v.margin, line(v)).toBeGreaterThanOrEqual(0);
+      expect(v.gap + v.margin, line(v)).toBe(8);
+    }
+  });
+
+  it("COMMANDS (card 471) sits 8px above the first row in .wsg-pop.slash-pop, like SKILLS", () => {
+    const vs = at(COMMANDS_HEADING);
+    expect(vs.length, "the heading is found and resolved").toBeGreaterThan(0);
+    for (const v of vs) {
+      expect(v.container).toMatch(/^div\.wsg-pop\.slash-pop /);
+      expect(v.gap, line(v)).toBe(8);
       expect(v.gap + v.margin, line(v)).toBe(8);
     }
   });
@@ -1282,8 +1306,11 @@ describe("the resolver itself", () => {
     c.els.map((e) => `${e.tag}${[...e.classes].map((k) => `.${k}`).join("")}`).join(" < ");
 
   it("follows a hook's returned node to where its caller places it", () => {
-    const chains = chainsOf("components/SlashPicker.tsx:150");
-    expect(chains.length).toBeGreaterThan(0);
+    const chains = [
+      ...chainsOf(SKILLS_HEADING),
+      ...chainsOf(COMMANDS_HEADING),
+    ];
+    expect(chains.length).toBeGreaterThan(1);
     for (const c of chains) {
       expect(path(c)).toMatch(/^div\.settings-label < div\.wsg-pop\.slash-pop < div\.composer-inner < /);
       // All the way up: Chat, the app shell, and index.html's root.

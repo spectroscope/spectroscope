@@ -173,6 +173,49 @@
   color: var(--text-dim);
 }
 
+/* ---------- Tool groups (card 466) ---------- */
+
+.wsg-tool-groups-note {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+.wsg-tool-group-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wsg-tool-group-row + .wsg-tool-group-row {
+  border-top: 1px solid var(--border);
+}
+
+.wsg-tool-group-label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+}
+.wsg-tool-group-label:hover {
+  background: var(--surface-2);
+}
+.wsg-tool-group-label input {
+  flex: none;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+/* One line per hint, so the seven rows fit the popover; the title holds
+   the full list. */
+.wsg-tool-group-label .wsg-mode-hint {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---------- Always-allow rules ---------- */
 
 .wsg-empty {

@@ -139,6 +139,10 @@ export function buildTextFeed(events: readonly RunEvent[], extended = false): Fe
       case "compaction":
         push("marker", e.agentId, `[compaction −${e.removedTurns} turns]`);
         break;
+      // Card 471: the operator's /clear, the boundary the agent's memory starts at.
+      case "context_cleared":
+        push("marker", e.agentId, `[context_cleared ${e.removedMessages} messages]`);
+        break;
       case "image_generated":
         push("marker", e.agentId, `[image_generated ${e.provider} ${e.model}] ${e.prompt}`);
         break;

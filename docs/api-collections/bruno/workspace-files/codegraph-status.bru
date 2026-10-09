@@ -1,0 +1,23 @@
+meta {
+  name: code graph status
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/codegraph/status
+  body: none
+  auth: none
+}
+
+params:query {
+  ~sessionId: {{sessionId}}
+}
+
+docs {
+  Whether graphify is on the server's tool PATH (with the folders searched and the install line) and, with a sessionId, whether that session's working folder has graphify-out/graph.html (its time) and the folder's last build since the server started (card 472). The folder is the live session's resolved workspace or, for a stored session not continued yet, the folder its own record names. Without sessionId it answers the installation alone, which the doctor panel reads. 200, 400 malformed sessionId, 404 unknown session.
+  
+  Fence: host. Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

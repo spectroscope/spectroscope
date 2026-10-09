@@ -121,15 +121,19 @@ class HeadlessStreamBaselineTest {
         List<String> ndjson = new ArrayList<>();
         SessionStore store = new SessionStore();
 
+        // Card 476: the bridge holds the desktop notifier; a test hands in a
+        // quiet one even though runOnce never announces.
         HeadlessRunner.Outcome outcome = HeadlessRunners.withProvider(JSON, CONFIG, scripted())
+                .withNotifier((title, message, log) -> { })
                 .runOnce(PROMPT, cwd, false, null, event -> ndjson.add(ndjsonLine(event)),
                         line -> { }, store, List.of());
 
         assertTrue(outcome.exitOk(), "the scripted run ends on end_turn: " + outcome.stopReason());
         List<String> scrub = scrubPaths(cwd);
         List<String> missing = new ArrayList<>();
-        compare("run-ndjson.jsonl", normalize(ndjson, scrub), missing);
-        compare("run-session.jsonl", normalize(Files.readAllLines(store.file()), scrub), missing);
+        compare("run-ndjson.jsonl", withSession(normalize(ndjson, scrub), store.id()), missing);
+        compare("run-session.jsonl",
+                withSession(normalize(Files.readAllLines(store.file()), scrub), store.id()), missing);
         assertTrue(missing.isEmpty(), "no baseline, this run's stream was written instead: " + missing);
     }
 
@@ -158,14 +162,22 @@ class HeadlessStreamBaselineTest {
 
             List<String> scrub = scrubPaths(cwd);
             List<String> missing = new ArrayList<>();
-            compare("node-session.jsonl", normalize(Files.readAllLines(store.file()), scrub), missing);
+            compare("node-session.jsonl",
+                    withSession(normalize(Files.readAllLines(store.file()), scrub), store.id()), missing);
             List<String> received;
             synchronized (payloads) {
                 received = List.copyOf(payloads);
             }
-            compare("node-bus.jsonl", normalize(received, scrub), missing);
+            compare("node-bus.jsonl", withSession(normalize(received, scrub), store.id()), missing);
             assertTrue(missing.isEmpty(), "no baseline, this run's stream was written instead: " + missing);
         }
+    }
+
+    /** Card 473: the main run_start names the session's llm wire by its file
+     *  name, and the session id in it is minted per run. The fixtures carry
+     *  {@code <session>} in its place; every other byte is compared as written. */
+    private static List<String> withSession(List<String> lines, String sessionId) {
+        return lines.stream().map(line -> line.replace(sessionId, "<session>")).toList();
     }
 
     /** One event the way {@code RunCommand.emitNdjson} prints it. */

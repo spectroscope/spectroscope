@@ -368,6 +368,123 @@ class SubagentTokenBudgetTest {
         assertTrue(result.output().contains("memo: the holder is SessionStore"), result.output());
     }
 
+    /**
+     * A child whose first exchange reports {@code firstUsage}, and whose second
+     * exchange, if it is allowed one, answers at once.
+     *
+     * @param firstUsage    the usage of the read
+     * @param childRequests counts the child's exchanges
+     * @return the scripted backend
+     */
+    private static ReadThrashingChild readThenAnswer(LlmProvider.PUsage firstUsage,
+                                                     AtomicInteger childRequests) {
+        return readThenAnswer(firstUsage, childRequests, false);
+    }
+
+    /**
+     * The same child, with a choice of how its second exchange behaves.
+     *
+     * <p>The token cut is taken on the forwarder thread when it reads the
+     * child's turn_start, while the child's own thread goes on to its model
+     * call; {@code theRequestOfTheTurnAChildIsCutInStillReachesTheBackend...}
+     * pins that. A second exchange that answers at once can be over before the
+     * cut reaches it, and which of the two threads runs first is then up to the
+     * scheduler: on a two-core runner the child won and the run ended on
+     * {@code end_turn}. A real exchange takes seconds, so a test that expects
+     * the cut keeps the second exchange in flight until the cut arrives, as
+     * {@link ReadThrashingChild} does, for at most {@link #WAIT_FOR_A_CUT_MS}.</p>
+     *
+     * @param firstUsage    the usage of the read
+     * @param childRequests counts the child's exchanges
+     * @param awaitTheCut   true keeps the second exchange open until the
+     *                      child's signal is cancelled and ends it as aborted;
+     *                      false answers at once
+     * @return the scripted backend
+     */
+    private static ReadThrashingChild readThenAnswer(LlmProvider.PUsage firstUsage,
+                                                     AtomicInteger childRequests,
+                                                     boolean awaitTheCut) {
+        return new ReadThrashingChild(Long.MAX_VALUE) {
+            @Override
+            public Iterable<ProviderEvent> stream(ProviderRequest request) {
+                if (!request.system().contains("subagent")) {
+                    return super.stream(request);
+                }
+                if (request.signal().isCancelled()) {
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                }
+                if (childRequests.getAndIncrement() == 0) {
+                    return List.of(new PToolCall("r0", "read_file",
+                                    JSON.createObjectNode().put("path", "SessionConnection.java")),
+                            firstUsage, new PStop(PStop.StopReason.TOOL_USE));
+                }
+                if (awaitTheCut && cutArrives(request.signal())) {
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                }
+                return List.of(new PTextDelta("memo: the holder is SessionStore"),
+                        new PUsage(20, 3, 1_259, 0), new PStop(PStop.StopReason.END_TURN));
+            }
+        };
+    }
+
+    /**
+     * Waits for a child's signal to be cancelled. The wait ends on the cancel
+     * itself, not on a poll.
+     *
+     * @param signal the child's signal, as its request carries it
+     * @return true when the cancel arrived within {@link #WAIT_FOR_A_CUT_MS}
+     */
+    private static boolean cutArrives(CancelSignal signal) {
+        java.util.concurrent.CountDownLatch cut = new java.util.concurrent.CountDownLatch(1);
+        Runnable stopListening = signal.onCancel(cut::countDown);
+        try {
+            return cut.await(WAIT_FOR_A_CUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return signal.isCancelled();
+        } finally {
+            stopListening.run();
+        }
+    }
+
+    @Test
+    void cacheReadsOfALocalCachingBackendDoNotCountAgainstAChildsTokenBudget() {
+        // Card 468: llama.cpp now reports its cached prompt as a cache read, the
+        // split card 394 already counted for Anthropic. The shape is turn two of
+        // the live probe against llama-server (PUsage 20, 3, 1236, 0). The child
+        // spent 23 tokens of input and output, under its budget of 1,000; the
+        // 1,236 reused tokens are not counted, as card 394 decided for every
+        // caching backend.
+        AtomicInteger childRequests = new AtomicInteger();
+        ReadThrashingChild provider = readThenAnswer(new LlmProvider.PUsage(20, 3, 1_236, 0), childRequests);
+
+        List<RunEvent> events = run(provider,
+                shipped(provider).subagentBudgetTokens(1_000).build());
+
+        assertEquals(2, childRequests.get(), "the child was allowed its second exchange");
+        assertEquals("end_turn", childRunEnd(events, "explore-1").stopReason());
+        assertTrue(spawnResult(events).output().contains("memo: the holder is SessionStore"),
+                spawnResult(events).output());
+    }
+
+    @Test
+    void theSamePromptWithoutACacheHitCountsInFullAgainstAChildsTokenBudget() {
+        // The control for the test above: the same 1,256 prompt tokens arriving
+        // as plain input pass the budget of 1,000, so the numbers there are
+        // chosen to straddle it. The second exchange waits for the cut the way
+        // a real one would; answering at once raced the forwarder and lost on
+        // the two-core CI runner.
+        AtomicInteger childRequests = new AtomicInteger();
+        ReadThrashingChild provider = readThenAnswer(new LlmProvider.PUsage(1_256, 3), childRequests, true);
+
+        List<RunEvent> events = run(provider,
+                shipped(provider).subagentBudgetTokens(1_000).build());
+
+        assertEquals("child_token_budget_exhausted", childRunEnd(events, "explore-1").stopReason());
+        assertTrue(spawnResult(events).output().contains("out of tokens"),
+                spawnResult(events).output());
+    }
+
     @Test
     void aChildWhoseLastExchangePassesItsTokenBudgetKeepsItsAnswer() {
         // The budget is read when the child starts ANOTHER exchange. A child

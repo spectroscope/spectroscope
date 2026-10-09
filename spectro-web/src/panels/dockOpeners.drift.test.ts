@@ -215,6 +215,10 @@ describe("the calls that open the dock (card 402)", () => {
         // Automatic: the agent's own browser_action, at most once per run (card 241).
         "state/browserReveal.ts revealBrowserPanel openDockPanel",
         "state/browserReveal.ts revealBrowserPanel openRightPanel",
+        // Card 472: a press on the code graph's "Graph ready" chip opens the
+        // browser panel, where the graph page is sent.
+        "codegraph/CodeGraphHeaderStatus.tsx openGraphInBrowser openDockPanel",
+        "codegraph/CodeGraphHeaderStatus.tsx openGraphInBrowser openRightPanel",
         // A click on a work item inside the chat.
         "App.tsx onOpenWork openDockPanel",
         "App.tsx onOpenWork openRightPanel",

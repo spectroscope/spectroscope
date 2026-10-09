@@ -1,0 +1,3 @@
+{"type":"browser_open","epoch":1,"ts":1791543082686}
+{"type":"browser_call","cid":"cc2a6c35-28fc-43cf-b2ec-cb829aa2fecd","epoch":1,"agentId":"main","callId":"call-1","tool":"browser_navigate","input":{"url":"https://example.com/"},"ts":1791543082682}
+{"type":"browser_result","cid":"cc2a6c35-28fc-43cf-b2ec-cb829aa2fecd","epoch":1,"ok":true,"result":"Navigated to https://example.com/","pageUrl":"https://example.com/","resultBytes":33,"durationMs":29,"ts":1791543082711}

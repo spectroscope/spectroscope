@@ -189,4 +189,65 @@ class FenceVectorTwinTest {
         assertTrue(!refusal.sentence().contains("SECRETVALUE"), refusal.sentence());
         assertTrue(!refusal.sentence().contains("/admin"), refusal.sentence());
     }
+    /**
+     * The app's own pages (card 472): the one loopback address the browser may
+     * open without the opt-in is the app server's code graph view, in one exact
+     * shape and only with the ticket the server minted for the operator's chip
+     * press. Both halves read the {@code appPages} rows.
+     */
+    @Test
+    void theJavaFenceAgreesWithEveryAppPageVectorInTheSharedTable() throws Exception {
+        JsonNode rows = table().path("appPages");
+        assertTrue(rows.size() >= 20, "the app page half proves nothing this small: " + rows.size());
+        int passing = 0;
+        int refusedForTheTicket = 0;
+        List<String> wrong = new ArrayList<>();
+        for (JsonNode vector : rows) {
+            String url = vector.path("url").asText();
+            int appPort = vector.path("appPort").asInt();
+            String ticket = vector.path("ticket").isNull() ? null : vector.path("ticket").asText();
+            boolean allowLocalhost = vector.path("allowLocalhost").asBoolean();
+            String expected = vector.path("rule").isNull() ? null : vector.path("rule").asText();
+            NetFence.Refusal refusal = new NetFence(allowLocalhost, DNS, appPort,
+                    candidate -> candidate.equals(ticket)).refuse(url);
+            String actual = refusal == null ? null : refusal.rule();
+            if (expected == null && !allowLocalhost) {
+                passing++;
+            }
+            if ("loopback".equals(expected) && url.contains("/api/codegraph/view?") && appPort == 8473
+                    && url.startsWith("http://localhost:8473/")) {
+                refusedForTheTicket++;
+            }
+            if (!java.util.Objects.equals(expected, actual)) {
+                wrong.add("\"" + url + "\" appPort=" + appPort + " ticket=" + ticket
+                        + " allowLocalhost=" + allowLocalhost + " expected " + expected + " but got " + actual);
+            }
+        }
+        assertTrue(passing >= 3, "no row shows the app page passing without the opt-in");
+        assertTrue(refusedForTheTicket >= 5, "no rows show the right page refused for its ticket");
+        assertTrue(wrong.isEmpty(), "the shared fence policy disagrees with this side on app pages:\n  "
+                + String.join("\n  ", wrong));
+    }
+
+    @Test
+    void theAppPageIsTheCodeGraphViewAndNothingElse() {
+        assertEquals(List.of("/api/codegraph/view"), NetFence.APP_PAGES);
+        assertEquals("ticket", NetFence.APP_TICKET);
+    }
+
+    /**
+     * The agent's fence (card 472). Every browser tool the agent holds judges
+     * with {@link NetFence#withSystemDns}, which knows no app port and no
+     * ticket: the code graph view, even with a ticket in its address, keeps the
+     * loopback rule for the agent.
+     */
+    @Test
+    void theAgentsFenceRefusesTheCodeGraphViewEvenWithATicketInTheAddress() {
+        String page = "http://localhost:8473/api/codegraph/view?sessionId=s-1&ticket="
+                + "0123456789abcdef0123456789abcdef";
+        NetFence.Refusal refusal = NetFence.withSystemDns(false).refuse(page);
+        assertEquals("loopback", refusal == null ? null : refusal.rule());
+        NetFence.Refusal plain = new NetFence(false, DNS).refuse(page);
+        assertEquals("loopback", plain == null ? null : plain.rule());
+    }
 }

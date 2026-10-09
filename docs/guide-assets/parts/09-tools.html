@@ -158,3 +158,22 @@ surfacing live in the parent's UI. Telling the parent what you do is never dange
 </table>
 <p class="small">* when skills are installed. Children never receive: spawn/dev tools
 (nesting depth 1 is structural), generate_image, web_fetch, web_search, browse_page, update_plan, MCP tools.</p>
+
+<h2 id="ch-tools-groups">Tool groups</h2>
+<p>Every request to the model carries the schema of every tool the session holds, whether the
+task uses the tool or not. In a session without MCP servers or skills, that block is 18,101
+characters, about 4,500 tokens; the context ring's own reader measured it on 2026-10-09. The gear
+under the message box lists seven tool groups (<code>browser</code>, <code>launch</code>,
+<code>images</code>, <code>web</code>, <code>agents</code>, <code>roles</code> and <code>mcp</code>)
+with the tools each group holds in this session. When you uncheck a group, the next run leaves its
+tools out of the request, and so do the subagents that run spawns. With all seven unchecked the
+block drops to 4,125 characters, and the model sees the standard file tools except
+<code>view_image</code>, which belongs to <code>images</code>, plus <code>run_command</code>,
+<code>update_plan</code> and <code>ask_user_question</code>. Switching a group off does not change a
+permission: a tool that is still on asks exactly as before. If the session has a pinned folder, the
+gear saves your choice in that folder's local settings file under <code>toolGroupsOff</code>
+(<a href="#ch-config-keys">chapter 30</a>), and the next session starts with it. Without a pinned folder the gear says
+that the choice holds for this session only and is not saved. The switch applies to sessions in
+the app window; the REPL and <code>spectro run</code> send every tool.</p>
+
+<!--SHOT:71-gear-tool-groups|The tool groups in the composer gear of a session with a pinned folder, with browser and launch switched off for the next run. Each group lists the tools it holds in this session, and the [local] tag says where the choice is saved.-->

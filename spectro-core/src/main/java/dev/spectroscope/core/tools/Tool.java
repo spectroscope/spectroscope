@@ -29,6 +29,27 @@ public interface Tool {
     String execute(JsonNode input, ToolContext context);
 
     /**
+     * Whether a second call is how the model gets this kind of result again
+     * (card 467). It promises neither the same answer nor a call without
+     * effects: a file may have changed, a page may have moved on, and a
+     * command runs again. A child agent's report, a person's answer or a
+     * generated image is different, because a second call asks someone else
+     * for new work, and false keeps such results whole.
+     *
+     * <p>The loop leaves an old, large result of a tool that answers true out
+     * of the request as a one-line stub. What the stub says a second call does
+     * comes from the tool's tier in {@code tool-tiers.json}, the map the
+     * permission gate reads: a {@code read} tool is called again to read the
+     * thing as it is now, and any other tool, an unrated MCP tool included, is
+     * said to run again with its effects.</p>
+     *
+     * @return true unless a second call cannot stand in for the earlier result
+     */
+    default boolean resultRepeatable() {
+        return true;
+    }
+
+    /**
      * What the loop hands a tool for one call. Grown additively in tools that
      * produce artifacts publish domain events through {@code emit} (the loop injects its
      * own event sink plus the ids of the call) — the two-arg constructor keeps every

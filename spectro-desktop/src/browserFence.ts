@@ -36,6 +36,89 @@
 export interface FencePolicy {
   /** Card 199's opt-in: loopback stays refused without it, and it never widens. */
   allowLocalhost: boolean;
+  /**
+   * The port the app's server listens on, sent with every command (card 472).
+   * An {@link APP_PAGES} address on this port passes without the opt-in only
+   * with the command's ticket. 0 or absent means not known, and then nothing
+   * is excepted.
+   */
+  appPort?: number;
+  /**
+   * The ticket the server minted for the operator's "Graph ready" press,
+   * sent only with the navigate that carries it (card 472). The code graph
+   * view passes only with exactly this ticket in its query; an agent's verbs
+   * never carry one.
+   */
+  appTicket?: string;
+}
+
+/** The query parameter that carries an app page's ticket; NetFence.APP_TICKET on the Java side. */
+export const APP_TICKET = "ticket";
+
+/**
+ * Whether an address passes as the app's own page under this policy: the
+ * shape below and the policy's ticket. The pane uses it to spend the ticket
+ * on the first load it lets through.
+ */
+export function passesAsAppPage(rawUrl: string, policy: FencePolicy): boolean {
+  try {
+    return isAppPage(new URL(rawUrl.trim()), policy);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The value of the one ticket parameter in a raw query, or null when there
+ * is none, more than one, or an empty one. The same reading as
+ * NetFence.ticketOf.
+ */
+function ticketOf(search: string): string | null {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  if (raw === "") return null;
+  let found: string | null = null;
+  let count = 0;
+  for (const part of raw.split("&")) {
+    const eq = part.indexOf("=");
+    const key = eq < 0 ? part : part.slice(0, eq);
+    if (key === APP_TICKET) {
+      count += 1;
+      found = eq < 0 ? "" : part.slice(eq + 1);
+    }
+  }
+  return count === 1 && found !== null && found !== "" ? found : null;
+}
+
+/**
+ * The app's own pages a browser may open on loopback without the opt-in
+ * (card 472): the code graph view, which serves a folder's graph.html under a
+ * CSP sandbox. The same list as NetFence.APP_PAGES; fence-vectors.json holds
+ * both halves to it.
+ */
+export const APP_PAGES: readonly string[] = ["/api/codegraph/view"];
+
+/** The loopback host spellings an app page may use, as the WHATWG parser reports them. */
+const APP_HOSTS: readonly string[] = ["localhost", "127.0.0.1", "[::1]"];
+
+/**
+ * Whether this is one of the app's own pages, opened by the operator: plain
+ * http, no userinfo, a loopback host spelled as APP_HOSTS lists, the explicit
+ * port the server listens on, a path exactly in APP_PAGES, and exactly one
+ * ticket parameter equal to the ticket the command carried. Nothing else is
+ * widened.
+ */
+function isAppPage(parsed: URL, policy: FencePolicy): boolean {
+  const port = policy.appPort ?? 0;
+  return port > 0
+    && parsed.protocol === "http:"
+    && parsed.username === ""
+    && parsed.password === ""
+    && parsed.port === String(port)
+    && APP_HOSTS.includes(parsed.hostname.toLowerCase())
+    && APP_PAGES.includes(parsed.pathname)
+    && typeof policy.appTicket === "string"
+    && policy.appTicket !== ""
+    && ticketOf(parsed.search) === policy.appTicket;
 }
 
 /** One refusal: what was refused, which rule did it, and the sentence a human reads. */
@@ -239,6 +322,9 @@ export function refuse(rawUrl: string, policy: FencePolicy): FenceRefusal | null
   // model and the transcript.
   const where = parsed.port ? `${host.replace(/^\[|\]$/g, "")}:${parsed.port}` : host.replace(/^\[|\]$/g, "");
 
+  if (isAppPage(parsed, policy)) {
+    return null;
+  }
   if (isLoopbackName(host)) {
     return policy.allowLocalhost ? null : refusal(where, "loopback");
   }

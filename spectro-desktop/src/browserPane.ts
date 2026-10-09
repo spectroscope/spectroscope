@@ -37,7 +37,7 @@ import * as fs from "node:fs";
 import * as dns from "node:dns";
 import { compileFilters, DEFAULT_FILTERS, type Blocklist } from "./adblock";
 import {
-  cachedLookup, refuse, refuseResolved, type FenceRefusal, type FencePolicy, type HostLookup,
+  cachedLookup, passesAsAppPage, refuse, refuseResolved, type FenceRefusal, type FencePolicy, type HostLookup,
 } from "./browserFence";
 import { applyViewport, forgetBaseUserAgent } from "./deviceEmulation";
 import { isUsable, paneBounds, toDeviceRect, type Rect } from "./paneBounds";
@@ -54,6 +54,10 @@ export interface PaneReply {
 /** What the server told the shell about policy, refreshed with every command. */
 export interface PaneSettings {
   allowLocalhost: boolean;
+  /** The app server's own port; its code graph view passes the fence without the opt-in with a ticket (card 472). */
+  appPort?: number;
+  /** The operator's one-shot ticket for the code graph view, on the navigate that carries it only (card 472). */
+  appTicket?: string;
   /** Whether the filter list is on. Default on; a page under test can turn it off. */
   adblock: boolean;
 }
@@ -261,6 +265,12 @@ function paneSession(pane: SessionPane): Session {
         });
         callback({ cancel: true });
         return;
+      }
+      // Card 472: the operator's ticket opens one load of the code graph view.
+      // Spent here, so a reload or a redirect back finds the loopback rule.
+      if (atPolicy.appTicket !== undefined && policy === atPolicy && passesAsAppPage(details.url, atPolicy)) {
+        const { appTicket: _spent, ...rest } = atPolicy;
+        policy = rest;
       }
       if (adblockOn && filters.blocks(details.url, details.referrer ?? "", isTop)) {
         pane.refusals.push({
@@ -643,7 +653,11 @@ export async function runVerb(
   settings: PaneSettings,
   sessionId: string | null,
 ): Promise<PaneReply> {
-  policy = { allowLocalhost: settings.allowLocalhost === true };
+  policy = {
+    allowLocalhost: settings.allowLocalhost === true,
+    appPort: typeof settings.appPort === "number" ? settings.appPort : 0,
+    ...(typeof settings.appTicket === "string" && settings.appTicket !== "" ? { appTicket: settings.appTicket } : {}),
+  };
   adblockOn = settings.adblock !== false;
 
   // The rectangle is the WINDOW's, not a session's, so it is recorded even for a

@@ -149,10 +149,15 @@ describe("every reader asks the one accessor (criterion 4)", () => {
     expect(writes).toHaveLength(3);
     for (const w of writes) {
       expect(w).toMatch(/state: folded\.state,/);
-      expect(w).toMatch(/archiveTrace: createArchiveTrace\(folded\.recipe, (id|null)\)/);
+      expect(w).toMatch(/archiveTrace: createArchiveTrace\(folded\.recipe, (id|null|indexSession)\)/);
     }
     expect(fn("openSession")).toMatch(/archiveTrace: createArchiveTrace\(folded\.recipe, id\)/);
-    expect(fn("openImport")).toMatch(/archiveTrace: createArchiveTrace\(folded\.recipe, null\)/);
+    // Card 473: an import merges the index of the wire it holds, and only that
+    // one; without a held wire it asks for none, as before.
+    expect(fn("openImport")).toMatch(/archiveTrace: createArchiveTrace\(folded\.recipe, indexSession\)/);
+    expect(fn("openImport")).toMatch(
+      /const indexSession = heldLlmWire\(sessionId\) !== null \? sessionId : null;/,
+    );
     expect(fn("openScenario")).toMatch(/archiveTrace: createArchiveTrace\(folded\.recipe, null\)/);
   });
 

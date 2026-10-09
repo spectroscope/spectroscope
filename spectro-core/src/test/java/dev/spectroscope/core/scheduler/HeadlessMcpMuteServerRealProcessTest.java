@@ -148,9 +148,11 @@ class HeadlessMcpMuteServerRealProcessTest {
 
         Job job = new Job("nightly", "0 0 * * *", "say ok", cwd.toString(), "readonly");
         long startedAt = System.nanoTime();
+        RecordingNotifier notes = new RecordingNotifier();
         JobState state = new HeadlessRunner(JSON, config(List.of(mute)),
                 ScriptedProvider.oneAnswer("done"))
                 .withMcpLoader(shortBoundLoader(cwd))
+                .withNotifier(notes)
                 .runJob(job, line -> { });
         long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
 
@@ -159,6 +161,8 @@ class HeadlessMcpMuteServerRealProcessTest {
         assertEquals(JobState.OK, state.status(),
                 "the fire completes on the standard belt and writes its state — a mute"
                         + " server costs the bound, never the job");
+        assertEquals(List.of(new RecordingNotifier.Shown("spectroscope: nightly ok", "done")),
+                notes.shown(), "card 476: the fire is announced through the injected notifier");
 
         long pid = pidOf(pidFile);
         Optional<ProcessHandle> child = ProcessHandle.of(pid);

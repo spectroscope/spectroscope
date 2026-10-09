@@ -160,4 +160,61 @@ class HeadlessFenceTest {
         assertNull(fence.judge("http://127.0.0.1:5173/"),
                 "a mid-session opt-in must reach the very next judgment");
     }
+    @Test
+    void theWebFaceJudgeAgreesWithEveryAppPageVectorInTheSharedTable() throws Exception {
+        List<String> wrong = new ArrayList<>();
+        for (JsonNode vector : table().path("appPages")) {
+            String url = vector.path("url").asText();
+            int appPort = vector.path("appPort").asInt();
+            String ticket = vector.path("ticket").isNull() ? null : vector.path("ticket").asText();
+            boolean allowLocalhost = vector.path("allowLocalhost").asBoolean();
+            String expected = vector.path("rule").isNull() ? null : vector.path("rule").asText();
+            HeadlessFence fence = new HeadlessFence(() -> allowLocalhost, () -> appPort,
+                    candidate -> candidate.equals(ticket), PUBLIC_DNS,
+                    System::currentTimeMillis, HeadlessFence.LOOKUP_TTL_MS);
+            NetFence.Refusal refusal = fence.judge(url);
+            String actual = refusal == null ? null : refusal.rule();
+            if (!java.util.Objects.equals(expected, actual)) {
+                wrong.add("\"" + url + "\" appPort=" + appPort + " ticket=" + ticket
+                        + " expected " + expected + " but got " + actual);
+            }
+        }
+        assertTrue(wrong.isEmpty(), "the web face's judge disagrees with the shared table on app pages:\n  "
+                + String.join("\n  ", wrong));
+    }
+
+    @Test
+    void theAppPortAndTheTicketAreReadPerJudgment() {
+        // The server binds after the fence is built, and a ticket is minted on
+        // the chip press and spent on the first load: both are asked per hop.
+        AtomicInteger port = new AtomicInteger();
+        java.util.Set<String> live = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        HeadlessFence fence = new HeadlessFence(() -> false, port::get, live::contains, PUBLIC_DNS,
+                System::currentTimeMillis, 30_000);
+        String page = "http://localhost:8473/api/codegraph/view?sessionId=s-1&ticket=t-0123456789abcdef";
+        assertNotNull(fence.judge(page), "no port known yet: the loopback rule holds");
+        port.set(8473);
+        assertNotNull(fence.judge(page), "a port but no live ticket: the loopback rule holds");
+        live.add("t-0123456789abcdef");
+        assertNull(fence.judge(page), "the operator's live ticket on the server's own port passes");
+        live.clear();
+        assertNotNull(fence.judge(page), "a spent ticket passes no more, on any later hop");
+    }
+
+    @Test
+    void anAgentHopToTheCodeGraphViewWithoutTheTicketIsRefused() {
+        // What an agent can reach on the web face: browser_eval setting
+        // location.href, a click on a link, a redirect. None of them carries the
+        // ticket the operator's chip press minted, so the hop gate refuses.
+        java.util.Set<String> live = java.util.Set.of("t-0123456789abcdef");
+        HeadlessFence fence = new HeadlessFence(() -> false, () -> 8473, live::contains, PUBLIC_DNS,
+                System::currentTimeMillis, 30_000);
+        for (String hop : List.of(
+                "http://localhost:8473/api/codegraph/view?sessionId=s-1",
+                "http://localhost:8473/api/codegraph/view?sessionId=other-session",
+                "http://localhost:8473/api/codegraph/view?sessionId=s-1&ticket=guessed-0123456789")) {
+            NetFence.Refusal refusal = fence.judge(hop);
+            assertEquals("loopback", refusal == null ? null : refusal.rule(), hop);
+        }
+    }
 }

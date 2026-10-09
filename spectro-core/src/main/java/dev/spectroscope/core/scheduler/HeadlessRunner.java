@@ -15,6 +15,7 @@ import dev.spectroscope.core.mcp.McpServerConfig;
 import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.core.subagents.RoleCatalog;
 import dev.spectroscope.core.trace.JsonlSink;
 import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPort;
@@ -27,6 +28,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import dev.spectroscope.core.wire.LlmWireRecorder;
+import dev.spectroscope.core.wire.WireReference;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -37,12 +39,14 @@ import java.util.function.Consumer;
 /**
  * The headless building block. Runs one prompt (a job or an ad-hoc
  * `spectroscope run`) unattended: mints a normal JSONL session, drives the agent, writes
- * the job state, and raises a desktop notification. No REPL, no y/N — the permission
- * policy is a constant {@link PermissionBroker} the caller passes in.
+ * the job state, and announces the end of a job through its {@link DesktopNotifier}.
+ * No REPL, no y/N: the permission policy is a constant {@link PermissionBroker} the
+ * caller passes in.
  *
  * <p>The core speaks only events, so this class never prints application output:
- * every log line goes through the injected {@code log} callback. The sole exception
- * is the deliberate terminal bell in {@link #notify} on non-macOS systems.
+ * every log line goes through the injected {@code log} callback. The desktop
+ * notifier ({@link DesktopNotifier#system()}) owns the one deliberate terminal
+ * bell on non-macOS systems.
  */
 public final class HeadlessRunner {
 
@@ -51,7 +55,7 @@ public final class HeadlessRunner {
             "You are spectroscope in unattended operation. There is no human at the terminal: "
                     + "do not ask questions, carry out the assignment with the available tools, "
                     + "and summarize the result briefly at the end. If a tool is denied, do not "
-                    + "retry it — state the denial in your result.";
+                    + "retry it; state the denial in your result. " + RoleCatalog.DISCOVERY_GUIDANCE;
 
     /** The default identity of a headless run — the solo agent. */
     private static final String DEFAULT_AGENT_ID = "main";
@@ -88,6 +92,9 @@ public final class HeadlessRunner {
     private final McpLoader mcpLoader;
     /** Card 453: the extended mode's reach; false keeps the working-directory fence. */
     private final boolean reachOutside;
+    /** Card 476: where the end of a job is announced. The public constructor
+     *  holds the desktop, the provider-override constructor the log only. */
+    private final DesktopNotifier notifier;
 
     /** The registry-loading seam. Package-private on purpose: only tests
      *  replace it — every production face pays the real spawn cost or none. */
@@ -109,11 +116,19 @@ public final class HeadlessRunner {
      * @param config the effective configuration (file plus overrides)
      */
     public HeadlessRunner(ObjectMapper mapper, SpectroConfig config) {
-        this(mapper, config, null);
+        this(mapper, config, null, DEFAULT_AGENT_ID, null, null, null, null,
+                null, McpServerRegistry::load, false, DesktopNotifier.system());
     }
 
     /**
      * Visible for tests: inject a scripted provider instead of the config-built one.
+     *
+     * <p>Card 476: a runner built here announces a finished job to the run's log
+     * only ({@link DesktopNotifier#logOnly()}), never on the desktop. Tests build
+     * their runners here, and the suite runs real jobs; before this default every
+     * run of it put a banner on the screen of whoever ran it. A production caller
+     * that wants the desktop says so with {@link #withNotifier}, as
+     * {@code HeadlessRunners.withProvider} does.</p>
      *
      * @param mapper           the module's shared, configured ObjectMapper
      * @param config           the effective configuration
@@ -121,13 +136,14 @@ public final class HeadlessRunner {
      */
     HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride) {
         this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null, null, null,
-                null, McpServerRegistry::load, false);
+                null, McpServerRegistry::load, false, DesktopNotifier.logOnly());
     }
 
     private HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
                            String agentId, TracingPort auxiliaryPort, CancelSignal externalSignal,
                            PermissionBroker externalBroker, String trigger,
-                           Boolean mcpOverride, McpLoader mcpLoader, boolean reachOutside) {
+                           Boolean mcpOverride, McpLoader mcpLoader, boolean reachOutside,
+                           DesktopNotifier notifier) {
         this.mapper = mapper;
         this.config = config;
         this.providerOverride = providerOverride;
@@ -139,6 +155,7 @@ public final class HeadlessRunner {
         this.mcpOverride = mcpOverride;
         this.mcpLoader = mcpLoader;
         this.reachOutside = reachOutside;
+        this.notifier = notifier;
     }
 
     /**
@@ -152,7 +169,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withIdentity(String agentId) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside, notifier);
     }
 
     /**
@@ -169,7 +186,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withAuxiliaryPort(TracingPort port) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, port,
-                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside, notifier);
     }
 
     /**
@@ -184,7 +201,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withCancelSignal(CancelSignal signal) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                signal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
+                signal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside, notifier);
     }
 
     /**
@@ -199,7 +216,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withBroker(PermissionBroker broker) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, broker, trigger, mcpOverride, mcpLoader, reachOutside);
+                externalSignal, broker, trigger, mcpOverride, mcpLoader, reachOutside, notifier);
     }
 
     /**
@@ -211,7 +228,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withOutsideReach(boolean reach) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reach);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reach, notifier);
     }
 
     /**
@@ -227,7 +244,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withTrigger(String trigger) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside, notifier);
     }
 
     /**
@@ -248,7 +265,29 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withMcp(Boolean mcp) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcp, mcpLoader, reachOutside);
+                externalSignal, externalBroker, trigger, mcp, mcpLoader, reachOutside, notifier);
+    }
+
+    /**
+     * Card 476: a copy of this runner that announces a finished job through
+     * {@code notifier} instead of the one it was built with. Tests hand in a
+     * recording notifier and assert on what it kept; a production caller that
+     * built through the provider-override constructor hands in
+     * {@link DesktopNotifier#system()} to reach the desktop.
+     *
+     * @param notifier where {@link #runJob} announces the end of a job
+     * @return the re-announced runner; this instance is unchanged
+     */
+    public HeadlessRunner withNotifier(DesktopNotifier notifier) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader, reachOutside,
+                java.util.Objects.requireNonNull(notifier, "notifier"));
+    }
+
+    /** The notifier {@link #runJob} announces through, for the wiring pins.
+     *  @return the notifier this runner holds */
+    DesktopNotifier notifier() {
+        return notifier;
     }
 
     /**
@@ -261,7 +300,7 @@ public final class HeadlessRunner {
      */
     HeadlessRunner withMcpLoader(McpLoader loader) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger, mcpOverride, loader, reachOutside);
+                externalSignal, externalBroker, trigger, mcpOverride, loader, reachOutside, notifier);
     }
 
     /**
@@ -405,6 +444,9 @@ public final class HeadlessRunner {
                 ? providedStore
                 : new SessionStore(); // canonical sessionId + JSONL append
         LlmWireRecorder llmWire = LlmWireRecorder.forSession(store.id());
+        // Card 473: the main run_start names the files beside the session, by
+        // the same rule as the server's browser session.
+        WireReference wireReference = new WireReference(store.id(), true);
 
         // Headless there is no y/N. The policy is the whole broker: readonly => always
         // false, auto => always true — auditable as a permission_decision event. A
@@ -486,6 +528,9 @@ public final class HeadlessRunner {
                 // threshold governs the whole tree, and this face was the one
                 // that never passed it. Null still lets the run derive it.
                 .compactionThreshold(config.compactionThreshold())
+                // Card 467: an unattended run reads the same files over many
+                // turns, so its requests are where the elision saves the most.
+                .toolResultElision(config.toolResultElision())
                 .build());
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
         // headless failure behaviour stays exactly the inline sink's. An
@@ -513,6 +558,7 @@ public final class HeadlessRunner {
                                 start.prompt(), start.provider(), start.model(), trigger,
                                 start.attachments(), start.ts())
                         : rawEvent;
+                event = wireReference.stamp(event);
                 tracing.onEvent(event); // headless runs are normal sessions too
                 if (onEvent != null) {
                     onEvent.accept(event);
@@ -591,8 +637,9 @@ public final class HeadlessRunner {
     }
 
     /**
-     * Runs one job once, writes its {@link JobState}, and raises a notification.
-     * A missing cwd fails fast without touching the model. Never throws.
+     * Runs one job once, writes its {@link JobState}, and announces the end through
+     * the notifier, unless {@code desktopNotifications} is off. A missing cwd fails
+     * fast without touching the model. Never throws.
      *
      * @param job the validated job definition to execute
      * @param log log sink for progress lines
@@ -604,7 +651,7 @@ public final class HeadlessRunner {
             JobState state = new JobState(startedAt, JobState.FAILED,
                     "error: cwd \"" + job.cwd() + "\" does not exist", null, "");
             JobStateStore.write(mapper, job.id(), state);
-            notify("spectroscope: " + job.id() + " failed", state.stopReason(), log);
+            announce("spectroscope: " + job.id() + " failed", state.stopReason(), log);
             return state;
         }
         boolean extended = Job.EXTENDED.equals(job.permissions());
@@ -617,7 +664,7 @@ public final class HeadlessRunner {
                 outcome.exitOk() ? JobState.OK : JobState.FAILED,
                 outcome.stopReason(), outcome.sessionId(), preview);
         JobStateStore.write(mapper, job.id(), state);
-        notify("spectroscope: " + job.id() + " " + state.status(),
+        announce("spectroscope: " + job.id() + " " + state.status(),
                 outcome.exitOk() ? (preview.isEmpty() ? "Run finished." : preview) : state.stopReason(),
                 log);
         return state;
@@ -635,41 +682,36 @@ public final class HeadlessRunner {
     }
 
     /**
-     * Desktop notification: macOS via osascript, otherwise a terminal bell plus a log
-     * line. Never throws — a failed notification must not fail the run.
+     * Card 476: the end of a job reaches the notifier unless the operator said
+     * {@code desktopNotifications: off}. Muted, the run log still carries the
+     * line, so a cron daemon's log says what it did not show.
      *
      * @param title   the notification headline (job id plus status)
-     * @param message the body text — sanitized and truncated before it reaches AppleScript
-     * @param log     receives the fallback line and any failure note
+     * @param message the body text
+     * @param log     the run's log sink
      */
-    public static void notify(String title, String message, Consumer<String> log) {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("mac")) {
-            // Neutralize quotes and backslashes, or the AppleScript breaks.
-            String safeTitle = sanitize(title);
-            String safeMessage = sanitize(message);
-            try {
-                new ProcessBuilder("osascript", "-e",
-                        "display notification \"" + safeMessage + "\" with title \"" + safeTitle + "\"")
-                        .start(); // fire and forget — do not block the run on the banner
-            } catch (IOException failure) {
-                log.accept("Notification failed: " + failure.getMessage());
-            }
-        } else {
-            System.out.print("\007"); // terminal bell — deliberate CLI/notification concern
-            log.accept("[NOTIFY] " + title + ": " + message);
+    private void announce(String title, String message, Consumer<String> log) {
+        if (!config.desktopNotificationsOn()) {
+            log.accept("[NOTIFY off: desktopNotifications] " + title + ": " + message);
+            return;
         }
+        notifier.show(title, message, log);
     }
 
     /**
-     * Strips quotes and backslashes (the AppleScript breakers) and caps the length.
+     * Desktop notification: macOS via osascript, otherwise a terminal bell plus a log
+     * line. Never throws, because a failed notification must not fail the run.
      *
-     * @param text the raw notification text
-     * @return a string safe to inline into the osascript command
+     * @param title   the notification headline (job id plus status)
+     * @param message the body text, sanitized and truncated before it reaches AppleScript
+     * @param log     receives the fallback line and any failure note
+     * @deprecated since card 476. Use {@link DesktopNotifier#system()}, which this
+     *             delegates to, or hand a runner its notifier with {@link #withNotifier}.
+     *             This method ignores the {@code desktopNotifications} key.
      */
-    private static String sanitize(String text) {
-        String cleaned = text.replaceAll("[\"\\\\]", " ");
-        return cleaned.length() > 200 ? cleaned.substring(0, 200) : cleaned;
+    @Deprecated
+    public static void notify(String title, String message, Consumer<String> log) {
+        DesktopNotifier.system().show(title, message, log);
     }
 
     /**

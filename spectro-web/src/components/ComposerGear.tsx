@@ -43,6 +43,8 @@ import {
 import { generalAddressIgnoredNote } from "./providerAddress";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { savesToolGroups, switchToolGroups, type ToolGroupsInfo } from "../state/toolGroups";
+import { ToolGroupsSection } from "./ToolGroupsSection";
 
 /** The value a key would carry into the editor: what it resolves to today,
  *  as text. An unset field (imageModel/sttModel default to null) starts
@@ -88,6 +90,7 @@ function nowLine(support: OverrideSupport, lang: Lang): string {
 export function ComposerGear({
   workspaceInfo,
   permissionMode,
+  toolGroups,
   sendClient,
 }: {
   /** This session's workspace announcement (the socket-only workspace_info
@@ -96,6 +99,9 @@ export function ComposerGear({
   /** The LIVE mode (state.permissionMode) — wire truth, always wins over
    *  whatever the settings file says. */
   permissionMode: string;
+  /** Card 466: the server's last tool_groups_info (state.toolGroups), or null
+   *  before the first one. Wire truth, like the mode above. */
+  toolGroups: ToolGroupsInfo | null;
   sendClient: (msg: ClientMessage) => boolean;
 }) {
   const lang = useLang();
@@ -134,6 +140,9 @@ export function ComposerGear({
   // where a run would work, which is not the same as a folder that exists with
   // a .spectro to persist rules into.
   const model = buildGearModel(view, workspaceInfo?.resolved === true ? workspaceInfo : null, permissionMode);
+  // Card 466: the tool groups do not wait for a run. A folder the connect-time
+  // frame names is pinned already, and the server saves into it on request.
+  const savesHere = savesToolGroups(workspaceInfo);
 
   // Fetch the project-scope view fresh on every open — another tab or the
   // Settings page may have changed the file since the last time. An
@@ -219,6 +228,14 @@ export function ComposerGear({
         .then(setView)
         .catch(() => {});
     }
+  };
+
+  // Card 466: the tool groups switch the open session at once (its next run)
+  // and, with a folder pinned, the server saves them in that folder's LOCAL
+  // file so the next session starts with them. The server's echo redraws the
+  // checkboxes and carries the reason when the save did not happen.
+  const chooseToolGroups = (off: string[]): void => {
+    switchToolGroups(off, { sendClient, save: savesHere });
   };
 
   const onListKeyDown: KeyboardEventHandler<HTMLDivElement> = (e) => {
@@ -412,6 +429,8 @@ export function ComposerGear({
               ))}
             </div>
           </div>
+
+          <ToolGroupsSection lang={lang} info={toolGroups} saved={savesHere} onChange={chooseToolGroups} />
 
           {model.pinned && (
             <div className="wsg-section">

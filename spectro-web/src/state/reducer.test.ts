@@ -1496,6 +1496,32 @@ describe("permission_mode_info (socket-only frame)", () => {
   });
 });
 
+describe("tool_groups_info (socket-only frame, card 466)", () => {
+  it("folds the groups and the switched-off list", () => {
+    expect(initialState.toolGroups).toBeNull();
+    const frame = {
+      type: "tool_groups_info",
+      off: ["browser"],
+      groups: [{ name: "browser", tools: ["browser_click"] }],
+    } as unknown as RunEvent;
+    const next = reduce(initialState, frame);
+    expect(next.toolGroups).toEqual({
+      off: ["browser"],
+      groups: [{ name: "browser", tools: ["browser_click"] }],
+    });
+  });
+
+  it("keeps the last truth when a frame cannot be read", () => {
+    const good = reduce(initialState, {
+      type: "tool_groups_info",
+      off: [],
+      groups: [{ name: "web", tools: ["web_fetch"] }],
+    } as unknown as RunEvent);
+    const after = reduce(good, { type: "tool_groups_info", off: "web" } as unknown as RunEvent);
+    expect(after.toolGroups).toEqual(good.toolGroups);
+  });
+});
+
 describe("traceFromEvents — a flat inbound stream for the fleet trace tab", () => {
   it("maps each event to an inbound trace entry with type, agentId, ts and payload", () => {
     const events: RunEvent[] = [

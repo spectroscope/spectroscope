@@ -1,0 +1,189 @@
+/* Card 472: the code graph line and chip in the header, and the build sheet.
+   Imported from the components that draw them. Tokens only; colour sits on
+   lines (the running line's left rule, the failed chip's border), never on
+   text or fills, and nothing casts a shadow. */
+
+/* The header line while a build runs. It takes what space the title leaves
+   and gives it back first: the last output line is the part that shrinks.
+   At 44ch the label and the time left about 15 characters of the last line
+   (measured 112.8 px at 1440 px wide, card 472 round 2); 72ch shows a
+   typical graphify line whole and still leaves the header's right side free. */
+.cg-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 72ch;
+  padding: 2px var(--sp-2);
+  border-left: 2px solid var(--ev-tool);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cg-line-label { flex: none; color: var(--text); }
+.cg-line-since { flex: none; font-size: var(--fs-11); color: var(--text-faint); }
+.cg-line-last {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+
+/* The chip once the build has ended. */
+.cg-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: none;
+  padding: 3px var(--sp-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.cg-chip:hover { border-color: var(--text-faint); }
+.cg-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cg-chip--failed { border-color: var(--error); }
+.cg-chip-time { font-size: var(--fs-11); color: var(--text-faint); }
+
+/* A narrow window keeps the chip and drops the running line's detail. */
+@media (max-width: 520px) {
+  .cg-line-since,
+  .cg-line-last { display: none; }
+  .cg-chip-time { display: none; }
+}
+
+/* The sheet. */
+.cg-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  background: var(--scrim);
+}
+.cg-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-modal);
+  color: var(--text);
+}
+.cg-head { display: flex; align-items: center; gap: var(--sp-3); }
+.cg-title {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 500;
+  letter-spacing: var(--track-heading);
+}
+.cg-close { margin-left: auto; }
+.cg-sub {
+  margin: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+.cg-missing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-left: 2px solid var(--warn);
+  background: var(--surface-2);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-13);
+}
+.cg-missing p { margin: 0; }
+.cg-install {
+  display: block;
+  padding: 6px var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-12);
+  user-select: all;
+}
+.cg-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.cg-legend {
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  color: var(--text-faint);
+}
+.cg-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.cg-choice input { margin-top: 3px; accent-color: var(--accent); }
+.cg-choice-text { display: flex; flex-direction: column; gap: 2px; }
+.cg-select select {
+  width: 100%;
+  padding: 6px var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-13);
+}
+.cg-note {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}
+.cg-error {
+  margin: 0;
+  padding-left: var(--sp-2);
+  border-left: 2px solid var(--error);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.cg-tail {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--error);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cg-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}

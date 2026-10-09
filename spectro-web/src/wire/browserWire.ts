@@ -28,6 +28,8 @@
 // is exactly what the card asks: "loading exactly the sidecar and the blobs its
 // events reference, nothing else".
 
+import { heldBrowserWire, RECORDER_ID } from "./heldWire";
+
 /** One recorded browser action, as the ledger endpoint spells it. Metadata
  *  only — the arguments and the result text live behind {@link fetchBrowserAction}. */
 export interface BrowserActionMeta {
@@ -215,6 +217,10 @@ export function replayEpochs(steps: readonly BrowserActionMeta[]): ReplayEpoch[]
  * @return the ledger, oldest first
  */
 export async function fetchBrowserWireIndex(sessionId: string): Promise<BrowserActionMeta[]> {
+  // Card 473: an imported session that holds its browser wire answers from it.
+  const held = heldBrowserWire(sessionId);
+  if (held !== null)
+    return held.index.map(readBrowserAction).filter((x): x is BrowserActionMeta => x !== null);
   try {
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/browser-wire/index`);
     if (!res.ok) return [];
@@ -285,6 +291,15 @@ export async function fetchBrowserAction(
   sessionId: string,
   cid: string,
 ): Promise<BrowserActionDetail | null> {
+  const held = heldBrowserWire(sessionId);
+  if (held !== null) {
+    const pair = RECORDER_ID.test(cid) ? held.pairs.get(cid) : undefined;
+    if (pair === undefined) return null;
+    return readBrowserActionDetail({
+      call: JSON.parse(pair.call) as unknown,
+      result: pair.result === null ? null : (JSON.parse(pair.result) as unknown),
+    });
+  }
   try {
     const res = await fetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/browser-wire/action/${encodeURIComponent(cid)}`,

@@ -191,9 +191,10 @@ export interface AnswerLineTurn {
  * The context total is the sum Agent.contextTokens computes at Agent.java:1353,
  * the uncached remainder plus both cache halves. It is drawn ONLY where a cache
  * half was reported: with no cache the sum IS the remainder, and two labels
- * over one number read as two measurements. On the owner's backends, which
- * build the two argument PUsage (OpenAiCompatProvider.java:967,
- * OllamaProvider.java:593), that means the total is always absent.
+ * over one number read as two measurements. Ollama builds the two argument
+ * PUsage, so its total is always absent; an OpenAI-compatible server that
+ * reports cached prompt tokens (llama.cpp does, card 468) gets the cache read
+ * and with it the total.
  *
  * The cache rule itself is not restated here. It is read out of cacheSplit,
  * which already says a reported zero counts as none and is pinned six ways in

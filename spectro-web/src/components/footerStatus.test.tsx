@@ -120,6 +120,38 @@ describe("runStatusLine — what the footer says a run did", () => {
   });
 });
 
+// Card 471, round three (owner decision 5): a /compact holds the page's
+// running flag so the stop button takes the seat, and the footer names the
+// compaction instead of a run that does not exist.
+describe("the footer during a /compact", () => {
+  afterEach(() => setLang("en"));
+  const compacting = { type: "compaction_state", active: true, ts: 1 } as unknown as RunEvent;
+  const done = {
+    type: "compaction_state",
+    active: false,
+    outcome: "compacted",
+    ts: 2,
+  } as unknown as RunEvent;
+
+  it("says compacting while the summary runs", () => {
+    expect(runStatusLine(fold([compacting]), "en").key).toBe("footer.compacting");
+  });
+
+  it("reads compacting in English and in German, never run active", () => {
+    const html = renderToStaticMarkup(<UsageFooter state={fold([compacting])} connection="open" />);
+    expect(html).toContain("</span> compacting</span>");
+    expect(html).not.toContain("run active");
+    setLang("de");
+    const de = renderToStaticMarkup(<UsageFooter state={fold([compacting])} connection="open" />);
+    expect(de).toContain(`</span> ${dict["footer.compacting"]?.de}</span>`);
+    expect(de).not.toContain("Lauf aktiv");
+  });
+
+  it("goes back to ready when the compaction ends", () => {
+    expect(runStatusLine(fold([compacting, done]), "en").key).toBe("footer.ready");
+  });
+});
+
 describe("the footer's own markup", () => {
   afterEach(() => setLang("en"));
 

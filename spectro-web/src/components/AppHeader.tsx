@@ -9,6 +9,7 @@ import { replayEyebrow } from "./replayEyebrow";
 import { HeaderMenu } from "../panels/headerPanelControls";
 import { ModeSwitch } from "./ModeSwitch";
 import { WorkspaceChip } from "./WorkspaceChip";
+import { CodeGraphHeaderStatus } from "../codegraph/CodeGraphHeaderStatus";
 import type { WorkspaceInfo } from "../state/reducer";
 
 /** Card 442: the only icon buttons the header may draw, in their order. The
@@ -86,6 +87,9 @@ export function AppHeader(props: {
           canPick={props.canPickFolder === true}
         />
       )}
+
+      {/* Card 472: the code graph build of this folder, or its ready chip. */}
+      <CodeGraphHeaderStatus />
 
       {/* Card 430: learn or light, in every nav state. */}
       <ModeSwitch />

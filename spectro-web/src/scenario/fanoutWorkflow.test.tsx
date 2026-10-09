@@ -311,6 +311,11 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     // Card 421: read by the Files pane of a reopened session, printed by none
     // of the four renderers (grep "workspace" over them finds nothing).
     workspace: null,
+    // Card 473: the file reference, read by the import (import/wireImport.ts)
+    // and printed by none of the four renderers.
+    llmWire: null,
+    browserWire: null,
+    children: null,
     ts: null,
   },
   turn_start: { type: "LabTrace.tsx:88", turn: "LabTrace.tsx:28-29", agentId: null, ts: null },

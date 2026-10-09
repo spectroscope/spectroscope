@@ -56,6 +56,8 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   "provider_info",
   "workspace_info",
   "permission_mode_info",
+  // Card 466: the composer gear's tool groups, announced like the mode above.
+  "tool_groups_info",
   "session_resume",
   "otlp_export",
   "fleet_roster",
@@ -93,6 +95,11 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // IS history and rides the union as `goal_check`, so exactly one of the two
   // is here. Caught by the drift guard next door, which is what it is for.
   "goal_info",
+  // Card 471. Opens and closes a /compact so the page can show it running and
+  // stop it. Only the compaction it may produce is history, and that rides
+  // the union as `compaction`; the frame around it is the app's own screen.
+  // Caught by the drift guard next door.
+  "compaction_state",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

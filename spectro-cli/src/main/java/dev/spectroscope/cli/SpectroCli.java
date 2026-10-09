@@ -26,6 +26,7 @@ import dev.spectroscope.core.wire.LlmWireRecorder;
 import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.skills.SkillLibrary;
+import dev.spectroscope.core.subagents.RoleCatalog;
 import dev.spectroscope.core.subagents.SubagentConfig;
 import dev.spectroscope.core.subagents.SubagentManager;
 import dev.spectroscope.core.permission.Allowlist;
@@ -70,10 +71,6 @@ import java.util.concurrent.atomic.AtomicReference;
                 LevelCommand.class},
         description = "spectroscope — an agent harness.")
 public final class SpectroCli implements Runnable {
-
-    private static final String BASE_SYSTEM_PROMPT =
-            "You are spectroscope, a coding agent in the terminal. Use the tools when they help, "
-                    + "and answer in English. Working directory: ";
 
     private static final String MAIN_AGENT_ID = "main";
 
@@ -167,6 +164,8 @@ public final class SpectroCli implements Runnable {
     private TracingPorts tracing;
     // The backend-to-LLM record (card 184) — opened with the store, same id.
     private LlmWireRecorder llmWire;
+    /** Card 473: stamps the main run_start with the files beside the session. */
+    private dev.spectroscope.core.wire.WireReference wireReference;
     /**
      * Card 270: ONE window of measured exchange durations for this REPL, shared
      * by the main agent and every child. It is a field rather than a local
@@ -307,6 +306,7 @@ public final class SpectroCli implements Runnable {
         // resume lands in the SAME folder it worked in before.
         store = new SessionStore(resume);
         llmWire = LlmWireRecorder.forSession(store.id()); // the second JSONL (card 184)
+        wireReference = new dev.spectroscope.core.wire.WireReference(store.id(), true); // card 473
         gateAudit = dev.spectroscope.core.permission.GateAudit.forSession(store.id()); // card 199
         tracing = new TracingPorts().require(new JsonlSink(store));
         // The OTel exporter rides as a REGISTERED port (isolated, warn-once):
@@ -581,7 +581,7 @@ public final class SpectroCli implements Runnable {
      *  folder but keeps the project's context. Recomposed by /clear (a new
      *  session means a new workspace). */
     private void composeSystemPrompt() {
-        systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
+        systemPrompt = RoleCatalog.BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
                 + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
     }
 
@@ -703,6 +703,8 @@ public final class SpectroCli implements Runnable {
                 .subagentBudgetSeconds(config.subagentBudgetSeconds())
                 // card 394: the most tokens one child may spend before it is cut
                 .subagentBudgetTokens(config.subagentBudgetTokens())
+                // card 467: the children follow the session's elision switch
+                .toolResultElision(config.toolResultElision())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -765,7 +767,9 @@ public final class SpectroCli implements Runnable {
                 CancelSignal signal = new CancelSignal();
                 currentSignal.set(signal);
                 try (var events = subagents.run(agent, input, new RunOptions(signal, null))) {
-                    for (RunEvent event : events) {
+                    for (RunEvent rawEvent : events) {
+                        // Card 473: the main run_start names the files beside the session.
+                        RunEvent event = wireReference.stamp(rawEvent);
                         tracing.onEvent(event);
                         speech.onEvent(event); // second consumer — the CLI rendering below is unchanged
                         renderer.render(event);
@@ -871,6 +875,8 @@ public final class SpectroCli implements Runnable {
                 // number that governed the browser session alone.
                 .maxTurns(config.maxTurns())
                 .maxTokens(config.maxTokens())
+                // Card 467: old, large tool results leave the request.
+                .toolResultElision(config.toolResultElision())
                 .onPermission(askOnTerminal)
                 .build());
     }
@@ -960,6 +966,7 @@ public final class SpectroCli implements Runnable {
                     llmWire.close(); // the old session's writer; lines are flushed
                 }
                 llmWire = LlmWireRecorder.forSession(store.id());
+                wireReference = new dev.spectroscope.core.wire.WireReference(store.id(), true); // card 473
                 // Card 267: a new session is a new goal file, and inheriting the
                 // old session's outcome would be the harness deciding what the
                 // fresh conversation is for.

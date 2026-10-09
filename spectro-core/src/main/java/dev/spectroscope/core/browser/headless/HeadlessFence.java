@@ -9,7 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
 
 /**
  * The web face's navigation gate — where the desktop's {@code browserFence.ts}
@@ -48,6 +50,8 @@ public final class HeadlessFence {
     public static final long LOOKUP_TTL_MS = 30_000;
 
     private final BooleanSupplier allowLocalhost;
+    private final IntSupplier appPort;
+    private final Predicate<String> liveTicket;
     private final NetFence.Resolver caching;
 
     /** One remembered answer: when it was asked, and what came back. */
@@ -76,6 +80,40 @@ public final class HeadlessFence {
      */
     public HeadlessFence(BooleanSupplier allowLocalhost, NetFence.Resolver dns,
             LongSupplier clock, long ttlMs) {
+        this(allowLocalhost, () -> 0, ticket -> false, dns, clock, ttlMs);
+    }
+
+    /**
+     * The production gate for the operator's browser, which may open the app's
+     * own pages with a ticket the server minted (card 472).
+     *
+     * @param allowLocalhost card 199's local-verify-loop opt-in, read per judgment
+     * @param appPort        the port the app's server listens on, read per
+     *                       judgment (it is known only once the server has
+     *                       bound); 0 while unknown
+     * @param liveTicket     whether a ticket is live, asked per judgment: one is
+     *                       minted when the operator presses the chip and spent
+     *                       when the page is served
+     */
+    public HeadlessFence(BooleanSupplier allowLocalhost, IntSupplier appPort, Predicate<String> liveTicket) {
+        this(allowLocalhost, appPort, liveTicket, NetFence.SYSTEM_DNS, System::currentTimeMillis,
+                LOOKUP_TTL_MS);
+    }
+
+    /**
+     * The seam form with the app port and the ticket check.
+     *
+     * @param allowLocalhost the opt-in, read per judgment
+     * @param appPort        the app server's port, read per judgment, 0 while unknown
+     * @param liveTicket     whether a ticket is live, asked per judgment
+     * @param dns            how a host name becomes addresses
+     * @param clock          the time source the cache window is measured on
+     * @param ttlMs          how long one resolved answer is reused
+     */
+    public HeadlessFence(BooleanSupplier allowLocalhost, IntSupplier appPort, Predicate<String> liveTicket,
+            NetFence.Resolver dns, LongSupplier clock, long ttlMs) {
+        this.appPort = appPort;
+        this.liveTicket = liveTicket;
         this.allowLocalhost = allowLocalhost;
         this.caching = host -> {
             Answer hit = seen.get(host);
@@ -105,6 +143,6 @@ public final class HeadlessFence {
      * @return the refusal, or null when the hop passes
      */
     public NetFence.Refusal judge(String url) {
-        return new NetFence(allowLocalhost.getAsBoolean(), caching).refuse(url);
+        return new NetFence(allowLocalhost.getAsBoolean(), caching, appPort.getAsInt(), liveTicket).refuse(url);
     }
 }

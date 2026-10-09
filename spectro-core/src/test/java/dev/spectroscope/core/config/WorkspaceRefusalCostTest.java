@@ -411,7 +411,13 @@ class WorkspaceRefusalCostTest {
                 //
                 // Asked of the loader rather than typed here, so a key that
                 // grows a value check tomorrow does not quietly resurrect this.
-                return "logLevel".equals(key) ? "debug" : "card-354-" + key;
+                // Card 476 added the second checked string on this list; its
+                // sample is the value that is not the default.
+                return switch (key) {
+                    case "logLevel" -> "debug";
+                    case "desktopNotifications" -> SpectroConfig.DESKTOP_NOTIFICATIONS_OFF;
+                    default -> "card-354-" + key;
+                };
             }
             throw new AssertionError("no sample value for " + key + " of type " + type);
         }

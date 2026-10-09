@@ -52,7 +52,11 @@ public class LlmWireController {
             "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     /**
-     * The whole sidecar, verbatim: the wire-record twin of the session export.
+     * The whole sidecar: the wire-record twin of the session export. Decoded
+     * leniently: every well-formed line is served as written, and a malformed
+     * byte sequence anywhere (a torn tail after a crash, or a line torn
+     * mid-file by a second writer) is replaced by U+FFFD instead of turning
+     * the whole wire into a 404.
      *
      * @param id      the session whose sidecar is read
      * @param request the servlet request, for the local fence
@@ -66,7 +70,11 @@ public class LlmWireController {
             return ResponseEntity.status(404).build();
         }
         try {
-            String jsonl = Files.readString(file);
+            // Decoded leniently (card 473): a crash can leave half a UTF-8
+            // character at the end, a second writer can tear a line in the
+            // middle, and the reader skips a line that does not parse anyway.
+            // A strict read threw, and the whole wire answered 404.
+            String jsonl = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
             // The body is recorded LLM traffic = caller-shaped text. Served as
             // a download with a non-HTML type and nosniff, like the session
             // export, so it can never reach an HTML parsing context here.
@@ -177,6 +185,8 @@ public class LlmWireController {
             return null;
         }
         Path file = LlmWireRecorder.fileFor(id);
-        return Files.isRegularFile(file) ? file : null;
+        // Card 473: the import's local fallback reads through here, so the
+        // file itself must be a wire, not a link that leads out of the folder.
+        return Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS) ? file : null;
     }
 }

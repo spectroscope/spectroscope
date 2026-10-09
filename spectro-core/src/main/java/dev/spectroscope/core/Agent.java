@@ -51,6 +51,7 @@ import dev.spectroscope.core.wire.LlmWireTap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -184,6 +185,17 @@ public final class Agent {
      */
     private volatile boolean planWrittenThisRun;
 
+    /** Card 466: the tool groups this run leaves out, read once when it starts. */
+    private volatile Set<ToolGroup> groupsOffThisRun = Set.of();
+
+    /**
+     * Card 467: what leaves the outgoing request of an old, large tool result.
+     * It lives with the agent for the reason {@link #messages} does: its
+     * bookkeeping of which results it stubbed spans the runs of one session,
+     * so a second run sends the same prefix the first one ended with.
+     */
+    private final dev.spectroscope.core.session.ToolResultElision elision;
+
     /**
      * Flips reasoning visibility mid-session — the web header toggle. Takes
      * effect immediately (even mid-run: the emission filter reads it per
@@ -238,6 +250,12 @@ public final class Agent {
      */
     public Agent(AgentOptions options) {
         this.options = options;
+        // A tool this agent does not carry cannot be called again, so a stub
+        // that says "call it again" would be false: its results stay whole.
+        this.elision = new dev.spectroscope.core.session.ToolResultElision(
+                dev.spectroscope.core.session.ToolResultElision.enabled(options.toolResultElision()),
+                name -> options.registry() != null && options.registry().get(name)
+                        .map(dev.spectroscope.core.tools.Tool::resultRepeatable).orElse(false));
         if (options.initialMessages() != null) {
             this.messages.addAll(options.initialMessages()); // resumed sessions
         }
@@ -273,6 +291,20 @@ public final class Agent {
      * @return the event to persist and render, or empty when nothing was compacted
      */
     public Optional<RunEvent> compactNow() {
+        return compactNow(new CancelSignal());
+    }
+
+    /**
+     * {@link #compactNow()} with a stop (card 471): the web chat's stop button
+     * cancels {@code signal}, which reaches the summary call. A stopped
+     * compaction changes nothing and returns empty, even when the backend still
+     * delivered text after the stop: a summary cut off half way would fold the
+     * history into half of what it held.
+     *
+     * @param signal the stop the caller holds
+     * @return the event to persist and render, or empty when nothing was compacted or it was stopped
+     */
+    public Optional<RunEvent> compactNow(CancelSignal signal) {
         // Between runs there is no turn number, so the wire binding carries null.
         LlmWireRecorder recorder = options.llmWire();
         // The TRIGGER is forced, the BUDGET is not: /compact on a model loaded
@@ -281,17 +313,40 @@ public final class Agent {
                 options.compactionThreshold(), () -> options.provider().contextWindow(),
                 () -> options.provider().publishedWindow(),
                 options.provider().modelName(), sessionWindowTokens());
+        List<ProviderMessage> history = List.copyOf(messages);
         Compaction.Result result = Compaction.maybeCompact(
-                options.provider(), List.copyOf(messages),
+                options.provider(), history, elision.requestView(history),
                 Integer.MAX_VALUE, 1, // force: pretend the context is over any threshold
-                options.agentId(), new CancelSignal(),
+                compaction.tokens(), // card 467: what the summarizer may read, unforced
+                options.agentId(), signal,
                 recorder == null ? null : recorder.bound(options.agentId(), null, "compaction"),
                 CompactionThreshold.summaryBudget(compaction));
+        if (signal.isCancelled()) {
+            return Optional.empty();
+        }
         if (result.event() instanceof RunEvent.Compaction) {
             messages.clear();
             messages.addAll(result.messages());
         }
         return Optional.ofNullable(result.event());
+    }
+
+    /**
+     * Drops the conversation history (the web chat's {@code /clear}, card 471).
+     *
+     * <p>Call only between runs. The system prompt, the goal, the tool world
+     * and every other option stay as they are; the next run starts with its
+     * own prompt as the only message. The plan ledger goes with the history:
+     * a footer that grades a plan the model can no longer see would grade
+     * something the next run never wrote.</p>
+     *
+     * @return the marker to persist and render, naming how many messages went
+     */
+    public RunEvent.ContextCleared clearContext() {
+        int removed = messages.size();
+        messages.clear();
+        lastPlan = null;
+        return new RunEvent.ContextCleared(options.agentId(), removed, now());
     }
 
     /**
@@ -440,6 +495,10 @@ public final class Agent {
         // Reset unconditionally, so the flag cannot depend on whether this face
         // happens to carry a leash.
         planWrittenThisRun = false;
+        // Card 466: read ONCE per run, so a switch flipped in the gear reaches
+        // the next run of this already-built agent, and a run never changes
+        // the tool list it advertises halfway through.
+        groupsOffThisRun = toolGroupsOffNow();
         ContinuationLeash leash = options.continuationLeash();
         if (leash != null) {
             // The count and the fingerprint are sentences about THIS run, for
@@ -586,18 +645,28 @@ public final class Agent {
                             compactionThreshold, compaction.source().wireName(), turn);
                 }
 
+                // Card 467: the history this turn's request carries, with old,
+                // large tool results stubbed. Built BEFORE the gauge so the
+                // context ring reads what is sent; compaction below still gets
+                // the full `messages`, and the session file never sees a stub.
+                List<ProviderMessage> outgoing = elision.requestView(List.copyOf(messages));
+
                 // context introspection, opt-in via the options.
                 if (Boolean.TRUE.equals(options.introspection())) {
-                    emit.accept(contextInfo(turn, messages, compaction));
+                    emit.accept(contextInfo(turn, outgoing, compaction));
                 }
 
                 // Compaction hook: a no-op below the threshold. The event
                 // is appended to the stream; the JSONL file is never rewritten.
                 // The summarizer's own model call is on the record too, under
                 // its own kind — bound to the turn that triggered it.
+                // Card 467: the trigger reads the usage of an elided request,
+                // so the full history may no longer fit the window. The
+                // summarizer reads it whole where it fits the threshold and
+                // the request view where it does not.
                 Compaction.Result compacted = Compaction.maybeCompact(
-                        options.provider(), List.copyOf(messages), lastInputTokens,
-                        compactionThreshold, agentId, signal,
+                        options.provider(), List.copyOf(messages), outgoing, lastInputTokens,
+                        compactionThreshold, compactionThreshold, agentId, signal,
                         recorder == null ? null : recorder.bound(agentId, turn, "compaction"),
                         summaryBudget);
                 if (compacted.event() != null) {
@@ -605,6 +674,9 @@ public final class Agent {
                     messages.addAll(compacted.messages());
                     emit.accept(compacted.event());
                     lastInputTokens = 0; // re-measure after compaction
+                    // The positions the elision remembered no longer hold their
+                    // calls or are no longer old, so it drops them on this call.
+                    outgoing = elision.requestView(List.copyOf(messages));
                 }
 
                 StringBuilder text = new StringBuilder();
@@ -624,7 +696,7 @@ public final class Agent {
                 List<ToolSpec> advertisedTools =
                         ModelProfile.forModel(providerLabel, options.provider().modelName())
                                 .nativeTools()
-                                ? options.registry().specs()
+                                ? visibleSpecs()
                                 : List.of();
                 // One tap per provider call, bound to this agent and the same
                 // turn number turn_start carries; the provider records the real
@@ -639,7 +711,7 @@ public final class Agent {
                 // the user's bubble keep the image. The same call guards the
                 // compaction summarizer inside Compaction.maybeCompact above: one
                 // decision, every door.
-                VisionFence.Fenced fenced = VisionFence.fence(options.provider(), List.copyOf(messages));
+                VisionFence.Fenced fenced = VisionFence.fence(options.provider(), outgoing);
                 if (fenced.withheld() > 0 && !saidTheImagesWereWithheld) {
                     saidTheImagesWereWithheld = true; // once per run, not per turn
                     emit.accept(new RunEvent.ImagesWithheld(agentId, fenced.withheld(),
@@ -700,7 +772,7 @@ public final class Agent {
                         }
                         case PUsage usage -> {
                             // The trigger sees the REAL context size (cached tokens still
-                            // occupy the window); the wire keeps the provider's raw count
+                            // occupy the window); the wire keeps the uncached input count
                             // and carries the cache counts ADDITIVELY (absent when the
                             // provider reported none — those sessions stay byte-identical).
                             lastInputTokens = contextTokens(usage);
@@ -1307,6 +1379,14 @@ public final class Agent {
     private GuardedResult executeToolCall(PToolCall call, String agentId, CancelSignal signal,
                                           Consumer<RunEvent> emit, int window,
                                           Consumer<Tool.Attachment> attach) {
+        // Card 466: a tool of a switched-off group was never advertised; a
+        // model that calls it anyway (from an earlier run's history) gets the
+        // same answer as for a tool that does not exist, and the reason.
+        if (ToolGroup.switchedOff(call.name(), groupsOffThisRun)) {
+            return new GuardedResult("ERROR: unknown tool: " + call.name() + " (its tool group \""
+                    + ToolGroup.of(call.name()).map(ToolGroup::wireName).orElse("")
+                    + "\" is switched off for this session)", 0, null);
+        }
         return options.registry().get(call.name())
                 .map(tool -> runGuarded(tool, call, agentId, signal, emit, window, attach))
                 .orElse(new GuardedResult("ERROR: unknown tool: " + call.name(), 0, null));
@@ -1488,7 +1568,10 @@ public final class Agent {
                 ? options.systemPrompt()
                 : options.systemPrompt() + statedForGauge.promptSection();
         int systemChars = systemForGauge.length();
-        int schemaChars = options.registry().specs().stream()
+        // Card 466: the ring measures what the request carries, so a
+        // switched-off group leaves this part exactly as it leaves the request.
+        List<ToolSpec> advertised = visibleSpecs();
+        int schemaChars = advertised.stream()
                 .mapToInt(spec -> spec.name().length() + spec.description().length()
                         + spec.inputSchema().toString().length())
                 .sum();
@@ -1496,7 +1579,7 @@ public final class Agent {
                 .flatMap(message -> message.content().stream())
                 .mapToInt(Agent::charsOf)
                 .sum();
-        String schemaText = options.registry().specs().stream()
+        String schemaText = advertised.stream()
                 .map(spec -> spec.name() + " — " + spec.description() + "\n" + spec.inputSchema())
                 .reduce((a, b) -> a + "\n\n" + b).orElse("");
         List<ContextPart> parts = List.of(
@@ -1575,10 +1658,10 @@ public final class Agent {
     /**
      * The compaction trigger's view of a usage event: cached tokens still occupy
      * the context window, so they count toward the threshold even though the
-     * provider bills them outside {@code inputTokens}. The wire-format usage
-     * event keeps the raw count.
+     * provider reports them outside {@code inputTokens}. The wire-format usage
+     * event keeps the uncached input count.
      *
-     * @param usage the provider's raw per-call token report
+     * @param usage the provider's per-call token report
      * @return input plus cache-read plus cache-creation tokens — the real window size
      */
     static int contextTokens(PUsage usage) {
@@ -1714,6 +1797,20 @@ public final class Agent {
     }
 
     /**
+     * The system prompt this agent was built with, before a per-turn goal
+     * section is appended (card 470).
+     *
+     * <p>Same reason as {@link #goal()}: the fence is the WIRING. "Every face
+     * sends the discovery paragraph" has to be readable off the agent a real
+     * face built, not off one a test assembled by hand.</p>
+     *
+     * @return the assembled base system prompt
+     */
+    public String systemPrompt() {
+        return options.systemPrompt();
+    }
+
+    /**
      * The goal this agent runs with, or null where none is wired (card 267).
      *
      * <p>Same reason as {@link #progressGuard()} and {@link #continuationLeash()}:
@@ -1751,6 +1848,57 @@ public final class Agent {
      */
     public dev.spectroscope.core.tools.RtkFilter rtkFilter() {
         return options.rtkFilter();
+    }
+
+    /**
+     * Whether this agent leaves old, large tool results out of its requests
+     * (card 467). Same reason as {@link #rtkFilter()}: the fence is the wiring
+     * a real session build did.
+     *
+     * @return true when the elision is on
+     */
+    public boolean toolResultElision() {
+        return dev.spectroscope.core.session.ToolResultElision.enabled(options.toolResultElision());
+    }
+
+    /**
+     * Card 466: the tool groups the NEXT run of this agent will leave out,
+     * read through the same reader the loop reads at the start of a run.
+     *
+     * @return the switched-off groups, empty when none are or none is wired
+     */
+    public Set<ToolGroup> toolGroupsOffNow() {
+        java.util.function.Supplier<Set<ToolGroup>> reader = options.toolGroupsOff();
+        Set<ToolGroup> off = reader == null ? null : reader.get();
+        return off == null || off.isEmpty() ? Set.of() : Set.copyOf(off);
+    }
+
+    /**
+     * Test seam (card 466), not called by any face: the specs the next
+     * provider request of this agent would carry if the model speaks the tool
+     * protocol, the registry minus every switched-off group.
+     *
+     * @return the advertised specs, in registration order
+     */
+    public List<ToolSpec> toolSpecsForNextRun() {
+        return ToolGroup.visible(options.registry().specs(), toolGroupsOffNow());
+    }
+
+    /**
+     * Card 466: the tool groups the current run of this agent leaves out, as
+     * read when that run started. A child spawned during the run takes this
+     * set, so the gear changing mid-run cannot hand a child a tool the parent
+     * still hides. Empty before the first run.
+     *
+     * @return the switched-off groups of the current (or last) run
+     */
+    public Set<ToolGroup> toolGroupsOffThisRun() {
+        return groupsOffThisRun;
+    }
+
+    /** The registry's specs minus the groups this run switched off. */
+    private List<ToolSpec> visibleSpecs() {
+        return ToolGroup.visible(options.registry().specs(), groupsOffThisRun);
     }
 
     /**

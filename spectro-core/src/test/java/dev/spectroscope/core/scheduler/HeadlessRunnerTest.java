@@ -389,10 +389,13 @@ class HeadlessRunnerTest {
         ScriptedProvider provider = new ScriptedProvider(); // never called
         Job job = new Job("ghost", "* * * * *", "do it", "/definitely/not/here", null);
 
-        JobState state = runner(provider).runJob(job, line -> { });
+        RecordingNotifier notes = new RecordingNotifier();
+        JobState state = runner(provider).withNotifier(notes).runJob(job, line -> { });
 
         assertEquals(JobState.FAILED, state.status());
         assertTrue(state.stopReason().contains("does not exist"));
+        assertEquals(1, notes.shown().size(), "card 476: announced through the injected notifier");
+        assertEquals("spectroscope: ghost failed", notes.shown().get(0).title());
         Path statePath = Path.of(System.getProperty("user.home"), ".spectro", "jobs-state.json");
         assertEquals(JobState.FAILED,
                 HeadlessRunner.JobStateStore.read(JSON, statePath).get("ghost").status());
