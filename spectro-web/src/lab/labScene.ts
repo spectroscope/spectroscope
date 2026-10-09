@@ -338,6 +338,17 @@ export function advanceScene(scene: Scene, event: RunEvent): Scene {
           }),
         };
       case "status":
+        // Card 490: a helper waiting for a free slot of its chat reports with
+        // the A2A state "submitted". It stays submitted and, doing nothing,
+        // does not take the highlight.
+        if (event.state === "submitted")
+          return {
+            ...scene,
+            subagents: upsertCard(scene.subagents, event.from, {
+              state: "submitted",
+              lastStatus: event.text,
+            }),
+          };
         return {
           ...scene,
           subagents: upsertCard(scene.subagents, event.from, { state: "working", lastStatus: event.text }),

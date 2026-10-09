@@ -209,11 +209,41 @@ public final class RoleCatalog {
                     + "subtasks. The subagent sees ONLY the task text, so phrase it as a self-contained "
                     + "assignment and ask the child for a short digest with path and line, not for file "
                     + "contents.";
-    static final String SPAWN_AGENTS_DESC =
-            "Starts up to " + SubagentManager.MAX_PARALLEL_CHILDREN + " subagents IN PARALLEL and waits until "
+    /** Everything of the {@code spawn_agents} description after its width. */
+    private static final String SPAWN_AGENTS_DESC_TAIL =
+            " subagents IN PARALLEL and waits until "
                     + "all of them are finished. For independent subtasks (e.g. investigating several "
                     + "directories at the same time). Write each task as a self-contained assignment and "
                     + "ask each child for a short digest with path and line, not for file contents.";
+    /** The {@code spawn_agents} description of a chat with no session count:
+     *  the v0.14.4 text. */
+    static final String SPAWN_AGENTS_DESC =
+            "Starts up to " + SubagentManager.MAX_PARALLEL_CHILDREN + SPAWN_AGENTS_DESC_TAIL;
+
+    /**
+     * The description of {@code spawn_agent} in a chat with this count (card
+     * 490): the v0.14.4 text, plus {@link SessionCount#limitSentence()} when a
+     * count is set.
+     *
+     * @param count the session count the run started with
+     * @return the model-facing description
+     */
+    static String spawnAgentDescription(SessionCount count) {
+        return SPAWN_AGENT_DESC + count.limitSentence();
+    }
+
+    /**
+     * The description of {@code spawn_agents} in a chat with this count (card
+     * 490). The width it names is {@link SessionCount#batchWidth()}, the
+     * number the schema and the width check hold a call to; with no count set
+     * the text is {@link #SPAWN_AGENTS_DESC}, byte for byte.
+     *
+     * @param count the session count the run started with
+     * @return the model-facing description
+     */
+    static String spawnAgentsDescription(SessionCount count) {
+        return "Starts up to " + count.batchWidth() + SPAWN_AGENTS_DESC_TAIL + count.limitSentence();
+    }
 
     /** One development tool = a role wrapper over a child spawn. Static so both
      *  devTools() (live) and roleProfiles()/parentTools() (introspection) share
@@ -406,14 +436,26 @@ public final class RoleCatalog {
     }
 
     /**
-     * The parent-only tools (spawn + dev) as name+description, for introspection.
+     * The parent-only tools (spawn + dev) as name+description, for introspection,
+     * in a chat with no session count.
      *
-     * @return spawn_agent, spawn_agents, then one entry per dev tool — catalog order
+     * @return spawn_agent, spawn_agents, then one entry per dev tool, in catalog order
      */
     public static List<ToolSummary> parentTools() {
+        return parentTools(SessionCount.UNSET);
+    }
+
+    /**
+     * The parent-only tools as name+description in a chat with this session
+     * count (card 490), so the context view shows the text that is sent.
+     *
+     * @param count the chat's session count
+     * @return spawn_agent, spawn_agents, then one entry per dev tool, in catalog order
+     */
+    public static List<ToolSummary> parentTools(SessionCount count) {
         List<ToolSummary> out = new ArrayList<>();
-        out.add(new ToolSummary("spawn_agent", SPAWN_AGENT_DESC));
-        out.add(new ToolSummary("spawn_agents", SPAWN_AGENTS_DESC));
+        out.add(new ToolSummary("spawn_agent", spawnAgentDescription(count)));
+        out.add(new ToolSummary("spawn_agents", spawnAgentsDescription(count)));
         for (DevSpec spec : DEV_SPECS) {
             out.add(new ToolSummary(spec.name(), devToolDescription(spec)));
         }

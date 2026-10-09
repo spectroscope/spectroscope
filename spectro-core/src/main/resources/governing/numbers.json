@@ -271,6 +271,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_SESSIONS_PER_CHAT",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "sessionsPerChat",
+    "explanation" : "The proposed session count for a chat (card 490): three, the main agent and two helpers. It is the owner's figure of 2026-10-09 for a chat on a local model (konzept/RUN-PROFILES.md, Knobs), not a measurement; the concurrency of one chat on the house node is measured by card 487.\n\nThe key itself ships unset: a chat that names no count runs as v0.14.4 did, with no limit per chat and one spawn_agents call starting up to SubagentManager.MAX_PARALLEL_CHILDREN helpers. No code reads this number yet. The settings page has no field for the key, and Local mode (card 493), which is to write this number, is not built; until then a chat has a count only when a settings file sets the key. The floor is 2, in SettingFloors: a count of 1 would be a second way to say \"no helpers\", which the agents tool group already says."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_SUBAGENT_BUDGET_SECONDS",
     "value" : "7200",
     "expression" : "7200",
@@ -1000,6 +1010,16 @@
     "explanation" : "Card 395: the most bytes the text of one merged delta may take once it is written as JSON (UTF-8, with the escapes JSON needs). The session file writes each line through Files.write, which hands the bytes over in chunks of 8,192, and a second writer landing between two chunks tears the line (card 406; measured on 2026-09-24 with a 12,000-character merged line). This budget leaves 512 bytes for the rest of the line, so a merge never builds a line of that size. A single delta that is larger already is handed out as it came."
   },
   {
+    "owner" : "dev.spectroscope.core.subagents.SessionSlots",
+    "field" : "RECHECK_MS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How often a waiting helper reads the chat's count again when nothing else wakes it: half a second. A finished helper and a cancelled run wake the waiters at once; this interval only bounds how late a RAISED count reaches them, because the setter lives on the parent agent and does not know the pool. Half a second against helpers whose first exchange is measured in tens of seconds on a local model."
+  },
+  {
     "owner" : "dev.spectroscope.core.subagents.SubagentManager",
     "field" : "MAX_PARALLEL_CHILDREN",
     "value" : "4",
@@ -1007,7 +1027,7 @@
     "kind" : "UNEXAMINED",
     "unit" : "COUNT",
     "key" : "",
-    "explanation" : "How many children one spawn_agents call may start at once.\n\nUnchanged by card 270, deliberately: nobody has measured whether the house test backend serves four concurrent completions usefully, and konzept/ORCHESTRATION.md §7 leaves the width an open owner call until someone does. It moves when a number says so, with the number."
+    "explanation" : "How many children one spawn_agents call may start at once.\n\nUnchanged by card 270, deliberately: nobody has measured whether the house test backend serves four concurrent completions usefully, and konzept/ORCHESTRATION.md §7 leaves the width an open owner call until someone does. It moves when a number says so, with the number.\n\nCard 490 left it where it is and made it the width of a chat with no session count. A chat with a count reads SessionCount: its batch width never drops below this constant, and how many of a batch run at once is the chat's count minus the main agent."
   },
   {
     "owner" : "dev.spectroscope.core.tools.AskUserQuestionTool",
