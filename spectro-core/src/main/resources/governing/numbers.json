@@ -881,6 +881,26 @@
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "IMAGE_TOKENS",
+    "value" : "4784",
+    "expression" : "4_784",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "What one image adds to a request's input estimate, whatever its size in bytes: the most one image costs on any Claude model (the high-resolution tier, 2,576 px on the long edge), from Anthropic's vision documentation, read on 2026-10-10. A backend counts an image by its pixels after its own resizing; counting its base64 characters over four made one 1 MB screenshot read as 349,526 tokens."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "INPUT_RESERVE_TOKENS",
+    "value" : "256",
+    "expression" : "256",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "What the input bound of completionBudget(Derived, int, int) keeps back beyond the estimated input (card 488): the tokens a backend counts and the character estimate does not see, such as the chat template's role markers, the wrapping of each tool definition and the JSON framing. Measured on 2026-10-10 as the backend's count minus the harness's chars/4 estimate: at most 16 on the scripted wire run, and 98 with one tool and 133 with the nine standard tools on the first request of a live Ollama run with qwen2.5:7b, before the backend's own count of an earlier request can raise the estimate."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
     "field" : "MIN_COMPLETION_TOKENS",
     "value" : "512",
     "expression" : "512",
@@ -888,6 +908,16 @@
     "unit" : "TOKENS",
     "key" : "",
     "explanation" : "The smallest completion budget a request is sent with when its window leaves less than this, for a turn and for the summarizer alike (card 488): a window of 1,703 tokens or less, or a turn whose input leaves less than this of the window. Asking for zero tokens would just fail the call."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "PDF_PAGE_TEXT_TOKENS",
+    "value" : "3000",
+    "expression" : "3_000",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The text one PDF page adds to a request's input estimate, on top of IMAGE_TOKENS for the image of the page: the upper end of the 1,500 to 3,000 a page in Anthropic's PDF support documentation, read on 2026-10-10."
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",

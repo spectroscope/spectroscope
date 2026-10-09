@@ -51,12 +51,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * model listing, Anthropic from the session window at 8,192 (no Claude model
  * publishes a window that small) and from the published table at 200,000.</p>
  *
+ * <p>At 200,000 every body is compared byte for byte with the body v0.14.4
+ * sent for the same request, recorded in
+ * {@code completion-budget/v0.14.4-<adapter>-200000.jsonl.gz} (one body per
+ * line, captured from v0.14.4's loop on 2026-10-09). At 8,192 no request may
+ * ask for more than the window has left after its input, by the server's
+ * count: the server counts the JSON framing of each body, which the
+ * harness's estimate does not see, and the input reserve has to cover it.</p>
+ *
  * <p>With {@code SPECTRO_CAPTURE_DIR} set, every body and a summary line per
- * request are written there, which is how the card compares the bodies at
- * 200,000 with the release before the fix and counts the requests at 8,192
- * whose input plus completion budget is above the window by the server's
- * count. That count is a measurement and not asserted here: the server counts
- * the JSON framing of each body, which the harness's estimate does not see.</p>
+ * request are also written there for the card's tables.</p>
  */
 @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class CompletionBudgetWireTest {
@@ -179,12 +183,28 @@ class CompletionBudgetWireTest {
         assertEquals(TOOL_TURNS + 1, turnRequests, "premise: every turn of the script was sent");
         if (window == 8_192) {
             // The input bound reached the wire: on the turn whose input passed
-            // the threshold the request asks for less than the reserve. How
-            // many requests still overshoot by the server's count, and by how
-            // much, is the measurement in the capture, not an assertion: the
-            // server counts JSON framing the harness estimate does not see.
+            // the threshold the request asks for less than the reserve.
             assertTrue(sentByRequest.stream().anyMatch(r -> r[1] == 0 && r[0] < expected),
                     "no turn request of " + adapter + " was held below the reserve: " + lines);
+            assertEquals(0, oversize, "requests of " + adapter + " whose input by the server's"
+                    + " count plus the budget sent exceed 8,192: " + lines);
+        } else {
+            List<String> recorded = recordedBodies(adapter, window);
+            assertEquals(recorded.size(), bodies.size(), "premise: as many requests as v0.14.4 sent");
+            for (int i = 0; i < recorded.size(); i++) {
+                assertEquals(recorded.get(i), bodies.get(i), "request " + (i + 1) + " of " + adapter
+                        + " at a window of " + window + " differs from v0.14.4");
+            }
+        }
+    }
+
+    /** The bodies v0.14.4 sent for this run, one per line, from the test resources. */
+    private static List<String> recordedBodies(String adapter, int window) throws IOException {
+        String name = "/completion-budget/v0.14.4-" + adapter + "-" + window + ".jsonl.gz";
+        try (var in = CompletionBudgetWireTest.class.getResourceAsStream(name)) {
+            assertTrue(in != null, "premise: the recorded fixture " + name + " is on the test classpath");
+            String text = new String(new java.util.zip.GZIPInputStream(in).readAllBytes(), StandardCharsets.UTF_8);
+            return List.of(text.split("\n"));
         }
     }
 
