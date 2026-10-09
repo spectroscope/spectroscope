@@ -515,7 +515,7 @@ class ProviderRegistryTest {
 
     @Test
     void openaiAtAPrivateAddressWithoutAKeyIsLocal() throws IOException {
-        writeUserSettings("{ \"openaiBaseUrl\": \"http://192.168.1.20:8080\" }");
+        writeUserSettings("{ \"openaiBaseUrl\": \"http://192.168.1.10:8080\" }");
         ProviderRegistry registry = new ProviderRegistry(
                 (p, c) -> ListResult.ok(List.of(), c.endpointFor(p)), now::get);
         ProviderRow r = row(registry.rows(config()), "openai");
@@ -1161,7 +1161,7 @@ Add to `ConfigProviderStatusTest`:
         org.junit.jupiter.api.Assumptions.assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"));
         java.nio.file.Files.createDirectories(SpectroConfig.USER_SETTINGS_PATH.getParent());
         java.nio.file.Files.writeString(SpectroConfig.USER_SETTINGS_PATH,
-                "{ \"openaiBaseUrl\": \"http://192.168.1.20:8080\" }");
+                "{ \"openaiBaseUrl\": \"http://192.168.1.10:8080\" }");
         try {
             Map<String, Object> config = new SessionsController().config();
             Map<String, String> status = (Map<String, String>) config.get("providerStatus");
@@ -1181,7 +1181,7 @@ Add to `SpectroCliTest` (follow the file's existing way of building a config; th
         org.junit.jupiter.api.Assumptions.assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"));
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none())
                 .withProvider("openai")
-                .withOpenaiBaseUrl("http://192.168.1.20:8080");
+                .withOpenaiBaseUrl("http://192.168.1.10:8080");
         assertFalse(SpectroCli.needsFirstRunHint(config),
                 "openai pointed at the operator's own network is not a keyless cloud call");
     }

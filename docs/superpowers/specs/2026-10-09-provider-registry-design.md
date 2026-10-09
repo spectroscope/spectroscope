@@ -120,7 +120,7 @@ scenario: a wrong cloud key is caught by the check, not by the picker
   And the picker lists openai disabled with that reason
 
 scenario: openai at a private address is local everywhere
-  Given openaiBaseUrl is http://192.168.1.20:8080 and no OPENAI_API_KEY
+  Given openaiBaseUrl is http://192.168.1.10:8080 and no OPENAI_API_KEY
   Then /api/config reports openai as local
   And spectro doctor prints the local line for openai
   And spectro run does not print the first run hint
