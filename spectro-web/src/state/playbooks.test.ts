@@ -62,6 +62,7 @@ const LOADED: LoadedPlaybook = {
     arrows: [{ from: "classify", to: "done", on: "spike" }],
     models: {},
     documents: {},
+    contents: { skills: [], agents: [], hooks: [], commands: [], workflows: [] },
   },
   topology: {
     entry: "classify",

@@ -2,6 +2,11 @@
 // skills it names and whether each is installed, which model choice it runs on
 // and what state that provider is in, whether it stays private, which
 // documents it takes and hands on, and whether it waits for a nod.
+//
+// Card 485: a skill the harness lacks gets a link that opens the install of this
+// playbook's contents, but only when the playbook lists that skill's pack; a skill
+// that is switched off says so and offers no install, because the install would
+// find its folder occupied.
 
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -9,13 +14,14 @@ import type { LoadedPlaybook, PlaybookNode } from "../state/playbooks";
 
 type Step = Extract<PlaybookNode, { kind: "step" }>;
 
-export function StepTable({ loaded }: { loaded: LoadedPlaybook }) {
+export function StepTable({ loaded, onInstall }: { loaded: LoadedPlaybook; onInstall: () => void }) {
   const lang = useLang();
   const p = loaded.playbook;
   if (p === null) return null;
   const steps = p.nodes.filter((n): n is Step => n.kind === "step");
   const resolution = new Map(loaded.steps.map((s) => [s.id, s]));
   const docName = (id: string): string => p.documents[id]?.name ?? id;
+  const packs = new Set(p.contents.skills.map((entry) => entry.replace(/^skills\//, "")));
 
   return (
     <div className="pb-table-wrap">
@@ -44,11 +50,36 @@ export function StepTable({ loaded }: { loaded: LoadedPlaybook }) {
                 <td>
                   <ul className="pb-skills">
                     {skills.map((k) => (
-                      <li key={k.name} className={k.installed ? "is-installed" : "is-missing"}>
+                      <li
+                        key={k.name}
+                        className={k.disabled ? "is-disabled" : k.installed ? "is-installed" : "is-missing"}
+                      >
                         <span className="pb-mono">{k.name}</span>{" "}
                         <span className="pb-state">
-                          {t(lang, k.installed ? "pb.installed" : "pb.notInstalled")}
+                          {t(
+                            lang,
+                            k.disabled ? "pb.disabled" : k.installed ? "pb.installed" : "pb.notInstalled",
+                          )}
                         </span>
+                        {!k.installed && !k.disabled && packs.has(k.name.split(":")[0]) && (
+                          <>
+                            {" "}
+                            <button
+                              type="button"
+                              className="pb-link"
+                              data-action="install-from-playbook"
+                              onClick={onInstall}
+                            >
+                              {t(lang, "pc.installFromPlaybook")}
+                            </button>
+                          </>
+                        )}
+                        {!k.installed && !k.disabled && !packs.has(k.name.split(":")[0]) && (
+                          <>
+                            {" "}
+                            <span className="pb-note">{t(lang, "pc.notInPlaybook")}</span>
+                          </>
+                        )}
                       </li>
                     ))}
                   </ul>

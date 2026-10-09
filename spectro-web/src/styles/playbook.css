@@ -280,3 +280,225 @@
   color: var(--text-dim);
   white-space: nowrap;
 }
+
+/* ---------- contents (card 485) ----------
+   The step table's install link, the contents row, the contents list and the
+   confirmation dialog. Same rule as above: tokens only, colour on lines. */
+.pb-pane .pb-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pb-pane .pb-link:hover {
+  background: none;
+  color: var(--text);
+}
+.pb-note {
+  color: var(--text-dim);
+}
+.pb-skills .is-disabled .pb-state {
+  color: var(--text-dim);
+}
+
+.pc-counts {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pc-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.pb-pane .pc-row-actions button:disabled,
+.pb-pane .pc-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.pc-kind-h,
+.pc-group-h {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-11);
+  font-weight: 500;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--sand);
+}
+.pc-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pc-item {
+  min-width: 0;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.pc-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.pc-name {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--text);
+}
+.pc-state {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pc-state[data-state="new"] {
+  color: var(--sand);
+}
+.pc-state[data-state="same"] {
+  color: var(--ok);
+}
+.pc-state[data-state="source-changed"],
+.pc-state[data-state="copy-changed"],
+.pc-state[data-state="taken"] {
+  color: var(--warn);
+}
+.pc-hash,
+.pc-source {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pc-hash {
+  margin-left: auto;
+}
+.pc-scope {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.pc-command {
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pc-file {
+  margin-top: var(--sp-2);
+}
+.pc-file-path {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pc-pre {
+  max-height: 240px;
+  margin: 2px 0 0;
+  padding: var(--sp-2);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  white-space: pre;
+}
+
+.pc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+}
+.pc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: min(720px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  color: var(--text);
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pc-title {
+  font-size: var(--fs-16);
+  font-weight: 500;
+  color: var(--text);
+}
+.pb-pane .pc-close {
+  padding: 0 var(--sp-1);
+  border: 0;
+  background: none;
+  font-size: var(--fs-20);
+  line-height: 1;
+}
+.pc-note {
+  margin: 0;
+  max-width: 64ch;
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pc-note--warn {
+  color: var(--text);
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-2);
+}
+.pc-tick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+.pc-hooks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.pc-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  border-left: 2px solid var(--sand);
+  padding-left: var(--sp-2);
+}
+.pc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.pb-pane .pc-primary {
+  color: var(--accent);
+  border-color: var(--accent);
+}

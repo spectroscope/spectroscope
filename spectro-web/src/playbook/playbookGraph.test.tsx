@@ -38,6 +38,7 @@ const MINIMAL: LoadedPlaybook = {
     ],
     models: { fast: { primary: { provider: "ollama", model: "qwen3:8b" }, fallbacks: [] } },
     documents: { spec: { name: "Spec", purpose: "design", location: "docs/{slug}.md", sections: ["Goal"] } },
+    contents: { skills: [], agents: [], hooks: [], commands: [], workflows: [] },
   },
   topology: {
     entry: "write",

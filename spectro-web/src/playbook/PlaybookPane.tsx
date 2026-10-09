@@ -4,6 +4,9 @@
 // copies the shipped spectro playbook into a folder), and for the folder shown
 // the graph, the step table and the findings. It runs nothing: it says so.
 //
+// Card 485: a contents row under the step table counts what the folder brings
+// and opens the install and remove confirmations.
+//
 // The stylesheet is styles/playbook.css, imported by app.css: a surface chunk
 // carries no stylesheet of its own.
 
@@ -19,6 +22,8 @@ import {
   useLoadedPlaybook,
   usePlaybookFolders,
 } from "../state/playbooks";
+import { loadContents, usePlaybookContents, type ContentKind } from "../state/playbookContents";
+import { ContentsConfirm } from "./ContentsConfirm";
 import { PlaybookGraph } from "./PlaybookGraph";
 import { StepTable } from "./StepTable";
 
@@ -36,6 +41,8 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
   const [path, setPath] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<"install" | "remove" | null>(null);
+  const contents = usePlaybookContents();
   const ws = workspace ?? "";
   const shown = picked ?? active;
 
@@ -47,6 +54,12 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
     if (shown === null) return;
     loadPlaybook(shown, ws).catch((e: unknown) => setNotice(messageOf(e)));
   }, [shown, ws]);
+
+  const loadedDir = loaded?.playbook != null ? loaded.dir : null;
+  useEffect(() => {
+    if (loadedDir === null) return;
+    loadContents(loadedDir, workspace).catch((e: unknown) => setNotice(messageOf(e)));
+  }, [loadedDir, workspace]);
 
   const run = (work: () => Promise<void>): void => {
     setNotice(null);
@@ -80,6 +93,12 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
   };
 
   const p = loaded?.playbook ?? null;
+  const here = contents !== null && loaded !== null && contents.dir === loaded.dir ? contents : null;
+  const count = (kind: ContentKind): number => here?.items.filter((i) => i.kind === kind).length ?? 0;
+  const anyInstalled =
+    here?.items.some(
+      (i) => i.state === "same" || i.state === "source-changed" || i.state === "copy-changed",
+    ) ?? false;
 
   return (
     <div className="pb-pane">
@@ -165,9 +184,45 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
           </section>
           <section className="pb-section">
             <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
-            <StepTable loaded={loaded} />
+            <StepTable loaded={loaded} onInstall={() => setDialog("install")} />
           </section>
+          {here !== null && (
+            <section className="pb-section pc-row">
+              <h3 className="pb-h">{t(lang, "pc.title")}</h3>
+              <p className="pc-counts">
+                {t(lang, "pc.row", {
+                  skills: count("skill"),
+                  commands: count("command"),
+                  hooks: count("hook"),
+                  agents: count("agent"),
+                  workflows: count("workflow"),
+                })}
+              </p>
+              <div className="pc-row-actions">
+                <button type="button" data-action="install" onClick={() => setDialog("install")}>
+                  {t(lang, "pc.install")}
+                </button>
+                <button
+                  type="button"
+                  data-action="remove"
+                  disabled={!anyInstalled}
+                  onClick={() => setDialog("remove")}
+                >
+                  {t(lang, "pc.remove")}
+                </button>
+              </div>
+            </section>
+          )}
         </>
+      )}
+
+      {dialog !== null && loaded !== null && (
+        <ContentsConfirm
+          dir={loaded.dir}
+          mode={dialog}
+          workspace={workspace}
+          onClose={() => setDialog(null)}
+        />
       )}
     </div>
   );

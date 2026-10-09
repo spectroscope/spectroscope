@@ -62,6 +62,14 @@ export interface LoadedPlaybook {
     arrows: PlaybookArrow[];
     models: Record<string, { primary: ModelRefWire; fallbacks: ModelRefWire[] }>;
     documents: Record<string, { name: string; purpose: string; location: string; sections: string[] }>;
+    /** The paths the playbook lists as its contents, per kind (card 485). */
+    contents: {
+      skills: string[];
+      agents: string[];
+      hooks: string[];
+      commands: string[];
+      workflows: string[];
+    };
   } | null;
   /** Null exactly when `playbook` is. */
   topology: {

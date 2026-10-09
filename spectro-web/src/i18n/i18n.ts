@@ -4681,6 +4681,87 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pb.end": { de: "Ende", en: "end" },
   "pb.yes": { de: "ja", en: "yes" },
   "pb.no": { de: "nein", en: "no" },
+  "pb.disabled": { de: "ausgeschaltet", en: "disabled" },
+  "pc.title": { de: "Inhalt des Playbooks", en: "Playbook contents" },
+  "pc.install": { de: "Installieren", en: "Install" },
+  "pc.remove": { de: "Entfernen", en: "Remove" },
+  "pc.cancel": { de: "Abbrechen", en: "Cancel" },
+  "pc.kind.skill": { de: "Skills", en: "Skills" },
+  "pc.kind.command": { de: "Befehle", en: "Commands" },
+  "pc.kind.hook": { de: "Hooks", en: "Hooks" },
+  "pc.kind.agent": { de: "Agenten", en: "Agents" },
+  "pc.kind.workflow": { de: "Workflows", en: "Workflows" },
+  "pc.scope.sessions": {
+    de: "Jede neue Sitzung sieht das, in jedem Modus.",
+    en: "Every new session sees this, in every mode.",
+  },
+  "pc.scope.toolCalls": {
+    de: "Läuft vor der Freigabeprüfung bei jedem Werkzeugaufruf jeder neuen Sitzung.",
+    en: "Runs before the permission check on every tool call of every new session.",
+  },
+  "pc.scope.runs": {
+    de: "Nur Schritte dieses Playbooks starten diese Rolle.",
+    en: "Only steps of this playbook start this role.",
+  },
+  "pc.scope.none": {
+    de: "Das Produkt hat keinen Workflow-Runner. Diese Datei wird nicht ausgeführt.",
+    en: "The product has no workflow runner. This file is not run.",
+  },
+  "pc.state.new": { de: "neu", en: "new" },
+  "pc.state.same": { de: "installiert", en: "installed" },
+  "pc.state.sourceChanged": {
+    de: "im Playbook geändert seit der Installation",
+    en: "changed in the playbook since the install",
+  },
+  "pc.state.copyChanged": { de: "installierte Kopie geändert", en: "installed copy was edited" },
+  "pc.state.taken": { de: "Ziel belegt: {target}", en: "target taken: {target}" },
+  "pc.state.notRun": { de: "nicht ausgeführt", en: "not run" },
+  "pc.hooks.tick": {
+    de: "Diese Hooks in meine Benutzereinstellungen schreiben",
+    en: "Write these hooks into my user settings",
+  },
+  "pc.hooks.silenced": {
+    de: "In diesem Arbeitsbereich legen die Projekteinstellungen eigene Hooks fest. Diese hier laufen dort nicht.",
+    en: "The project settings of this workspace set their own hooks. These do not run there.",
+  },
+  "pc.promptCost": {
+    de: "Skills und Befehle verlängern den Systemprompt jeder neuen Sitzung um {n} Zeichen.",
+    en: "Skills and commands add {n} characters to the system prompt of every new session.",
+  },
+  "pc.reach": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
+    en: "Applies from the next session. A session already open keeps what it started with.",
+  },
+  "pc.changed": {
+    de: "Der Ordner hat sich geändert, seit die Liste angezeigt wurde. Nichts wurde geschrieben. Hier ist die neue Liste.",
+    en: "The folder changed since the list was shown. Nothing was written. This is the new list.",
+  },
+  "pc.already": {
+    de: "Schon installiert aus {dir} am {date}. Erst entfernen, dann neu installieren.",
+    en: "Already installed from {dir} on {date}. Remove it first, then install again.",
+  },
+  "pc.kept": {
+    de: "Behalten, weil die installierte Kopie bearbeitet wurde: {names}",
+    en: "Kept, because the installed copy was edited: {names}",
+  },
+  "pc.installFromPlaybook": { de: "Aus diesem Playbook installieren", en: "Install from this playbook" },
+  "pc.notInPlaybook": { de: "nicht in diesem Playbook", en: "not in this playbook" },
+  "pc.row": {
+    de: "{skills} Skills, {commands} Befehle, {hooks} Hooks, {agents} Agenten, {workflows} Workflows",
+    en: "{skills} skills, {commands} commands, {hooks} hooks, {agents} agents, {workflows} workflows",
+  },
+  "pc.removeGoes": { de: "Wird entfernt", en: "Will be removed" },
+  "pc.removeStays": {
+    de: "Bleibt, weil die installierte Kopie bearbeitet wurde",
+    en: "Stays, because the installed copy was edited",
+  },
+  "pc.removeNothing": {
+    de: "Von diesem Playbook ist nichts installiert.",
+    en: "Nothing of this playbook is installed.",
+  },
+  "pc.loading": { de: "Die Liste wird gelesen.", en: "Reading the list." },
+  "pc.written": { de: "Geschrieben", en: "Written" },
+  "pc.removed": { de: "Entfernt", en: "Removed" },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
   "leveling.intro.body": {
     de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Das Tutorial macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.",

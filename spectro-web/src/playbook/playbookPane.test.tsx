@@ -39,6 +39,7 @@ const LOADED: LoadedPlaybook = {
     ],
     models: { fast: { primary: { provider: "ollama", model: "qwen3:8b" }, fallbacks: [] } },
     documents: {},
+    contents: { skills: [], agents: [], hooks: [], commands: [], workflows: [] },
   },
   topology: {
     entry: "write",
