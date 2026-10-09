@@ -144,7 +144,7 @@ class SessionContinuationLeashTest {
         // immediately". The reach is next-run, so the next prompt has to read
         // the settings files, the way the belt does.
         String previous = saveForUser("""
-                { "provider": "ollama", "model": "qwen3:latest",
+                { "provider": "ollama", "model": "qwen2.5:7b",
                   "baseUrl": "http://127.0.0.1:1" }
                 """);
         try {
@@ -155,7 +155,7 @@ class SessionContinuationLeashTest {
                     .isEqualTo(ContinuationLeash.DEFAULT_BUDGET);
 
             saveForUser("""
-                    { "provider": "ollama", "model": "qwen3:latest",
+                    { "provider": "ollama", "model": "qwen2.5:7b",
                       "baseUrl": "http://127.0.0.1:1", "continuationBudget": 1 }
                     """);
 
