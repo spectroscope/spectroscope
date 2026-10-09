@@ -5,6 +5,7 @@ import dev.spectroscope.core.playbook.Finding;
 import dev.spectroscope.core.playbook.Playbook;
 import dev.spectroscope.core.playbook.PlaybookReader;
 import dev.spectroscope.core.playbook.PlaybookValidator;
+import dev.spectroscope.core.playbook.PlaybookWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.ClassPathResource;
@@ -76,6 +77,12 @@ class SpectroPlaybookTest {
         assertEquals("spectro", p.id());
         assertTrue(p.models().keySet().containsAll(List.of("fast", "standard", "strong", "judge")));
         assertTrue(p.documents().keySet().containsAll(List.of("ticket", "spec", "plan", "task_report", "review_report")));
+    }
+
+    @Test
+    void theShippedPlaybookIsStoredInTheCanonicalForm() throws IOException {
+        String file = resource("playbook.json");
+        assertEquals(file, PlaybookWriter.write(PlaybookReader.read(file).playbook()));
     }
 
     @Test
