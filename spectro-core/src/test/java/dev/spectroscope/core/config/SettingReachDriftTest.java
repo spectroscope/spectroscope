@@ -97,14 +97,58 @@ class SettingReachDriftTest {
         }
     }
 
+    /**
+     * Pins the two labels in the web table only. When each key really acts is
+     * pinned at the session's door: {@code SessionContinuationLeashTest} for
+     * the budget, {@code SessionToolGroupsReachTest} for the tool groups.
+     */
     @Test
-    void theToolGroupsAndTheContinuationBudgetActAtTheNextRun() throws IOException {
-        // Card 466 shipped the tool groups as "from its next run": Agent reads
-        // them once per run. The continuation budget is read at the top of every
-        // prompt. Neither is live and neither waits for a new session.
+    void theWebTableLabelsTheToolGroupsAndTheContinuationBudgetNextRun() throws IOException {
         Map<String, String> web = webReach();
         assertEquals("next-run", web.get("toolGroupsOff"));
         assertEquals("next-run", web.get("continuationBudget"));
+    }
+
+    @Test
+    void theNextRunRowSaysAToolGroupsListInAFileWaitsForTheNextSession() throws IOException {
+        // Review of card 491. toolGroupsOff acts at the next run only when the
+        // composer gear switches it. A list written into a settings file is
+        // read when a session starts and when a folder is pinned, never again
+        // in an open session (SessionConnection keeps it off liveConfig on
+        // purpose). The row must say both halves, or it promises the next run
+        // to a file save that never reaches the session.
+        Path root = repoRoot();
+        assumeTrue(root != null && Files.isRegularFile(root.resolve(REFERENCE)),
+                "not running from a source checkout");
+        String when = rowDescription(Files.readString(root.resolve(REFERENCE)), "next-run");
+        assertTrue(when.contains("composer gear"),
+                "the next-run row must name the composer gear as the control that acts at"
+                        + " the next run. Row: " + when);
+        assertTrue(when.contains("<code>toolGroupsOff</code>"),
+                "the next-run row must name toolGroupsOff where it states the exception."
+                        + " Row: " + when);
+        assertTrue(when.contains("settings file") && when.contains("next session"),
+                "the next-run row must say that a toolGroupsOff list saved in a settings"
+                        + " file waits for the next session. Row: " + when);
+    }
+
+    @Test
+    void theIntroductionSaysWhichGearControlPrintsTheReach() throws IOException {
+        // Review of card 491. The gear prints a reach sentence under the tool
+        // groups only; its other controls switch the session and back no key.
+        Path root = repoRoot();
+        assumeTrue(root != null && Files.isRegularFile(root.resolve(REFERENCE)),
+                "not running from a source checkout");
+        String chapter = Files.readString(root.resolve(REFERENCE));
+        int heading = chapter.indexOf("id=\"ch-config-reach\"");
+        assertTrue(heading > 0, "the heading ch-config-reach is gone");
+        String intro = chapter.substring(chapter.indexOf("<p>", heading),
+                chapter.indexOf("</p>", heading)).replaceAll("\\s+", " ");
+        assertTrue(!intro.contains("composer gear print the same answer under each control"),
+                "the introduction says the gear prints a reach under each control. It"
+                        + " prints one under the tool groups only. Intro: " + intro);
+        assertTrue(intro.contains("composer gear prints it under the tool groups"),
+                "the introduction must say where the gear prints the reach. Intro: " + intro);
     }
 
     @Test
@@ -181,6 +225,14 @@ class SettingReachDriftTest {
             }
         }
         return reach;
+    }
+
+    /** The "a saved change acts" cell of the row for {@code word}. */
+    static String rowDescription(String chapter, String word) {
+        Matcher row = Pattern.compile("(?s)<tr><td><code>" + Pattern.quote(word)
+                + "</code></td><td>(.*?)</td><td>").matcher(reachTable(chapter));
+        assertTrue(row.find(), "the reach table has no row for " + word);
+        return row.group(1).replaceAll("\\s+", " ");
     }
 
     /** The reach words of the chapter's table, in row order. */

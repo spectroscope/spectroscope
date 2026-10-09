@@ -2416,12 +2416,15 @@ public final class SessionConnection {
      *
      * <p><b>The answer is the same for all of them.</b> Not "web_search is fixed
      * now" — every setting a tool here reads is read again on the call. What
-     * this method does NOT cover is listed on the card and said on the settings
-     * page: the workspace, the MCP servers, the shell hooks, the system prompt
-     * and its skills, and the CONFIGURED compaction threshold are settled when
-     * the agent is built and stay settled, because changing them mid-session
-     * would mean killing processes or rewriting a conversation that already
-     * happened.</p>
+     * this method does NOT cover is listed on the card and in the reach table
+     * of the config reference chapter: the workspace, the MCP servers, the
+     * shell hooks, the base of the system prompt and its skills, and the
+     * CONFIGURED compaction threshold are settled when the agent is built and
+     * stay settled, because changing them mid-session would mean killing
+     * processes or rewriting a conversation that already happened. Card 491:
+     * only the base of the prompt is settled for the session. A setting with
+     * the reach {@code next-run} may add to the prompt at the start of each
+     * run, so the prompt a run sends is fixed for that run.</p>
      *
      * <p>Half of that last one moved with card 263 and the sentence above would
      * otherwise be the harder kind of stale — true enough to believe. What the

@@ -26,7 +26,7 @@ import { t, type Lang } from "../i18n/i18n";
  *  nothing, and a condition that exists is written down rather than dropped.
  *
  *  - `live` — a save decides the next tool call or the next request.
- *  - `next-run` — the value is read at the start of each run, so a save
+ *  - `next-run`: the value is read at the start of each run, so a save
  *    decides the next run of a session already open, and a run in progress
  *    keeps the value it started with (card 491).
  *  - `next-session` — the value is bound when the agent is built.
@@ -52,8 +52,8 @@ export type Reach = "live" | "live-unless-picked" | "next-run" | "next-session" 
  * - `live` — a tool or a controller reads the settings again when it acts, so
  *   a save decides the next tool call (the belt: `SessionConnection.liveConfig`)
  *   or the next request (`logLevel` on PUT, `sttModel` per transcription).
- * - `next-run` — the agent reads the value when a run starts: the next prompt
- *   of a session already open picks a save up, a run in progress does not.
+ * - `next-run`: the agent reads the value when a run starts. The next prompt
+ *   of a session already open picks a change up, a run in progress does not.
  * - `next-session` — the value is bound when the agent is built, or the change
  *   would mean killing processes or rewriting a conversation that has already
  *   happened. The allowlist is the one entry that is next-session BY CHOICE:
@@ -209,7 +209,11 @@ export const SETTING_REACH = {
   desktopNotifications: "headless-run",
   // Card 466: Agent reads the switched-off groups once per run
   // (groupsOffThisRun), so the gear's change reaches the next run of the open
-  // session and a run in progress keeps the tools it advertised.
+  // session and a run in progress keeps the tools it advertised. The gear is
+  // the key's only control in the app. A list written into a settings file is
+  // not read again by an open session (SessionConnection keeps it off
+  // liveConfig) and applies from the next session; the chapter's next-run row
+  // says so, and SessionToolGroupsReachTest holds both halves.
   toolGroupsOff: "next-run",
 } as const satisfies Record<string, Reach>;
 

@@ -64,7 +64,7 @@ describe("the tool groups section", () => {
     expect(html).toContain(t("en", "wsg.tools.none"));
   });
 
-  it("says when the next run picks the change up, in both languages", () => {
+  it("says what unchecking a group does, in both languages", () => {
     expect(render({})).toContain(t("en", "wsg.tools.note"));
     expect(render({}, "de")).toContain(t("de", "wsg.tools.note"));
     expect(t("de", "wsg.tools.note")).not.toBe(t("en", "wsg.tools.note"));
