@@ -40,14 +40,9 @@ public final class StandardTools {
     @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.BYTES)
     private static final long FUSE_BYTES = ReadBudget.FUSE_BYTES;
 
-    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
-     *  kept as a second copy of the same number. */
-    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
-    private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
-
     /** The line between a timed out command's error line and what the command
      *  had printed before the cut (card 384). Below it stands the end of the
-     *  output, at most {@link ToolOutput#MAX_OUTPUT_CHARS} chars, with an
+     *  output, at most {@link ToolOutput#maxOutputChars(int)} chars, with an
      *  ellipsis in front when its start was dropped. */
     public static final String CUT_OUTPUT_MARKER =
             "--- what the command printed before its time limit cut it, unfinished ---";
@@ -867,7 +862,8 @@ public final class StandardTools {
                 // environment it had before this card.
                 ShellCommand.Result result = shell.run(command,
                         RtkFilter.shellEnvFor(input), context.cwd(),
-                        timeoutSeconds, context.signal(), MAX_OUTPUT_CHARS);
+                        timeoutSeconds, context.signal(),
+                        ToolOutput.maxOutputChars(context.contextWindow()));
                 if (result.timedOut()) {
                     // Card 384. The first words stay as they were; the key is named
                     // the way card 372 names subagentBudgetSeconds. Blank output is
@@ -1150,6 +1146,7 @@ public final class StandardTools {
                     String glob = input.path("glob").asText("");
                     PathMatcher matcher = glob.isBlank() ? null
                             : root.getFileSystem().getPathMatcher("glob:" + glob);
+                    int clamp = ToolOutput.maxOutputChars(context.contextWindow());
                     StringBuilder out = new StringBuilder();
                     List<String> overFuse = new ArrayList<>();
                     for (String rel : walkMatches(root, matcher, Long.MAX_VALUE)) {
@@ -1168,8 +1165,8 @@ public final class StandardTools {
                             if (pattern.matcher(lines.get(i)).find()) {
                                 out.append(rel).append(':').append(i + 1).append(':')
                                         .append(lines.get(i)).append('\n');
-                                if (out.length() > MAX_OUTPUT_CHARS) {
-                                    return ToolOutput.clip(out.toString(), MAX_OUTPUT_CHARS);
+                                if (out.length() > clamp) {
+                                    return ToolOutput.clip(out.toString(), clamp);
                                 }
                             }
                         }
@@ -1180,7 +1177,7 @@ public final class StandardTools {
                     }
                     return ToolOutput.clip((out.isEmpty() ? answer + "\n" : answer)
                             + "(not searched, over the fixed fuse of " + FUSE_BYTES
-                            + " bytes: " + String.join(", ", overFuse) + ")", MAX_OUTPUT_CHARS);
+                            + " bytes: " + String.join(", ", overFuse) + ")", clamp);
                 } catch (IOException | RuntimeException error) {
                     return "ERROR: " + error.getMessage();
                 }
