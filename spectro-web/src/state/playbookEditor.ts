@@ -74,6 +74,8 @@ const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 /** Bumped by every open, close, reset and view load, so an answer for a draft that is gone is dropped. */
 let epoch = 0;
+/** Bumped by every view load before its fetch, so the newest load wins when several overlap. */
+let loadSeq = 0;
 
 interface Seams {
   fetch?: typeof fetch;
@@ -176,20 +178,30 @@ function keepSelection(sel: Selection, doc: PlaybookDoc): Selection {
 
 /**
  * Read the file on disk as an editor view into the store. `open` stays as it
- * is and no history is started. A draft with unsaved changes is never replaced.
+ * is and no history is started. A draft with unsaved changes is never
+ * replaced, and only the newest load of several overlapping ones is applied.
+ * An open, clean editor whose reloaded view is not editable is closed.
  *
  * @param dir the registered playbook folder
  * @param workspace the workspace skills and providers resolve against
  */
 export async function loadView(dir: string, workspace: string | null): Promise<void> {
-  if (state.open && state.dirty) return;
+  await load(dir, workspace);
+}
+
+/** The body of loadView. Answers whether this call's view went into the store. */
+async function load(dir: string, workspace: string | null): Promise<boolean> {
+  if (state.open && state.dirty) return false;
+  const seq = ++loadSeq;
   const res = await doFetch(`/api/playbooks/draft?${query(dir, workspace)}`);
   if (!res.ok) throw await refusal(res);
   const view = (await res.json()) as EditorViewWire;
-  if (state.open && state.dirty) return;
+  if (seq !== loadSeq) return false;
+  if (state.open && state.dirty) return false;
   cancelCheck();
   epoch++;
   compareOutcomes(view.document, view);
+  const editable = view.editable && view.document !== null;
   set({
     dir,
     workspace,
@@ -200,8 +212,13 @@ export async function loadView(dir: string, workspace: string | null): Promise<v
     sentSeq: 0,
     save: { kind: "idle" },
     refused: null,
-    ...(state.open && view.document ? { history: startHistory(view.document) } : {}),
+    ...(state.open
+      ? editable
+        ? { history: startHistory(view.document as PlaybookDoc) }
+        : { open: false, history: null, selection: null }
+      : {}),
   });
+  return true;
 }
 
 /**
@@ -213,7 +230,7 @@ export async function loadView(dir: string, workspace: string | null): Promise<v
  */
 export async function openEditor(dir: string, workspace: string | null): Promise<void> {
   if (state.open && state.dirty) return;
-  await loadView(dir, workspace);
+  if (!(await load(dir, workspace))) return;
   const view = state.view;
   if (!view || !view.editable || !view.document) return;
   set({ open: true, history: startHistory(view.document), selection: null });
@@ -400,6 +417,7 @@ export function __setEditorSeams(s: Seams): void {
 export function __resetPlaybookEditor(): void {
   cancelCheck();
   epoch++;
+  loadSeq++;
   seams = {};
   state = INITIAL;
   for (const l of listeners) l();

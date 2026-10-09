@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PlaybookDoc } from "../playbook/editor/doc";
+import { arrowKey, type PlaybookDoc } from "../playbook/editor/doc";
 import {
   CHECK_DEBOUNCE_MS,
   __resetPlaybookEditor,
@@ -312,5 +312,160 @@ describe("the editor store", () => {
     await loadView(DIR, WS);
     expect(err).not.toHaveBeenCalled();
     expect(editorState().view).not.toBeNull();
+  });
+
+  it("loadView leaves a dirty open draft alone and does not even ask the server", async () => {
+    await openEditor(DIR, WS);
+    dispatch({ kind: "editEnd", id: "done", result: "mine" });
+    const before = editorState();
+    calls.length = 0;
+    const other = { ...DOC, name: "Other" };
+    fetchMock.mockImplementation(() => Promise.resolve(reply(200, viewOf(other, { diskHash: "disk2" }))));
+    await loadView(DIR, WS);
+    const after = editorState();
+    expect(calls).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(after.history?.present).toBe(before.history?.present);
+    expect(after.saved).toEqual(DOC);
+    expect(after.baseHash).toBe("h0");
+    expect(after.view?.diskHash).toBe("h0");
+    expect(after.dirty).toBe(true);
+  });
+
+  it("loadView drops a late answer when the draft turned dirty while the read was in flight", async () => {
+    await openEditor(DIR, WS);
+    let release: (r: Response) => void = () => undefined;
+    fetchMock.mockImplementation(() => new Promise<Response>((res) => (release = res)));
+    const pending = loadView(DIR, WS);
+    dispatch({ kind: "editEnd", id: "done", result: "mine" });
+    const mineDraft = editorState().history?.present;
+    const other = { ...DOC, name: "Other" };
+    release(reply(200, viewOf(other, { diskHash: "disk2" })));
+    await pending;
+    const s = editorState();
+    expect(s.history?.present).toBe(mineDraft);
+    expect(s.saved).toEqual(DOC);
+    expect(s.baseHash).toBe("h0");
+    expect(s.view?.diskHash).toBe("h0");
+    expect(s.dirty).toBe(true);
+  });
+
+  it("openEditor on an open, dirty editor makes no read and keeps the draft", async () => {
+    await openEditor(DIR, WS);
+    dispatch({ kind: "editEnd", id: "done", result: "mine" });
+    const mineDraft = editorState().history?.present;
+    const reads = fetchMock.mock.calls.length;
+    await openEditor(DIR, WS);
+    expect(fetchMock.mock.calls.length).toBe(reads);
+    expect(editorState().history?.present).toBe(mineDraft);
+    expect(editorState().history?.past).toHaveLength(1);
+    expect(editorState().dirty).toBe(true);
+  });
+
+  it("of two overlapping loads the newer one wins even when the older answers last", async () => {
+    const resolvers: ((r: Response) => void)[] = [];
+    fetchMock.mockImplementation(() => new Promise<Response>((res) => resolvers.push(res)));
+    const a = loadView("/work/a", null);
+    const b = loadView("/work/b", null);
+    expect(resolvers).toHaveLength(2);
+    resolvers[1](reply(200, viewOf(DOC, { diskHash: "b-disk" })));
+    await b;
+    resolvers[0](reply(200, viewOf({ ...DOC, name: "A" }, { diskHash: "a-disk" })));
+    await a;
+    const s = editorState();
+    expect(s.dir).toBe("/work/b");
+    expect(s.view?.diskHash).toBe("b-disk");
+    expect(s.baseHash).toBe("b-disk");
+    expect(s.saved).toEqual(DOC);
+  });
+
+  it("a reload of an open, clean editor into a view that is not editable closes the editor", async () => {
+    await openEditor(DIR, WS);
+    fetchMock.mockImplementation(() => Promise.resolve(reply(200, viewOf(null, { editable: false }))));
+    await loadView(DIR, WS);
+    const s = editorState();
+    expect(s.open).toBe(false);
+    expect(s.history).toBeNull();
+    expect(s.selection).toBeNull();
+    expect(s.saved).toBeNull();
+    expect(s.dirty).toBe(false);
+  });
+
+  it("a check that answers with an error ends checking and keeps the previous view", async () => {
+    await openEditor(DIR, WS);
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) =>
+      Promise.resolve(init?.method === "POST" ? reply(500, { message: "down" }) : reply(200, viewOf(DOC))),
+    );
+    dispatch({ kind: "editEnd", id: "done", result: "x" });
+    await vi.advanceTimersByTimeAsync(CHECK_DEBOUNCE_MS);
+    const s = editorState();
+    expect(s.sentSeq).toBe(1);
+    expect(s.viewSeq).toBe(s.sentSeq);
+    expect(s.view).not.toBeNull();
+    expect(s.view?.diskHash).toBe("h0");
+  });
+
+  it("a check whose request fails ends checking and keeps the previous view", async () => {
+    await openEditor(DIR, WS);
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? Promise.reject(new Error("offline"))
+        : Promise.resolve(reply(200, viewOf(DOC))),
+    );
+    dispatch({ kind: "editEnd", id: "done", result: "x" });
+    await vi.advanceTimersByTimeAsync(CHECK_DEBOUNCE_MS);
+    const s = editorState();
+    expect(s.sentSeq).toBe(1);
+    expect(s.viewSeq).toBe(s.sentSeq);
+    expect(s.view).not.toBeNull();
+    expect(s.view?.diskHash).toBe("h0");
+  });
+
+  it("a command during a save is checked after the save lands and saved is the draft that was sent", async () => {
+    await openEditor(DIR, WS);
+    dispatch({ kind: "editEnd", id: "done", result: "sent" });
+    const sentDraft = editorState().history!.present;
+    let releasePut: (r: Response) => void = () => undefined;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ method, url, body });
+      if (method === "PUT") return new Promise<Response>((res) => (releasePut = res));
+      return Promise.resolve(reply(200, viewOf(method === "POST" ? (body as PlaybookDoc) : DOC)));
+    });
+    calls.length = 0;
+    const saving = saveEdit();
+    dispatch({ kind: "editEnd", id: "done", result: "newer" });
+    await vi.advanceTimersByTimeAsync(CHECK_DEBOUNCE_MS);
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+    releasePut(reply(200, viewOf(sentDraft, { diskHash: "h1" })));
+    await saving;
+    await vi.advanceTimersByTimeAsync(CHECK_DEBOUNCE_MS);
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(2);
+    expect((posts[1].body as PlaybookDoc).nodes[1]).toEqual({ kind: "end", id: "done", result: "newer" });
+    const s = editorState();
+    expect(s.dirty).toBe(true);
+    expect(s.saved).toEqual(sentDraft);
+    expect(s.history?.present.nodes[1]).toEqual({ kind: "end", id: "done", result: "newer" });
+    expect(s.baseHash).toBe("h1");
+    expect(s.sentSeq).toBe(s.viewSeq);
+  });
+
+  it("undo keeps a selected arrow that still exists and clears one that does not", async () => {
+    await openEditor(DIR, WS);
+    dispatch({ kind: "add", nodeKind: "step", after: { kind: "node", id: "write" } });
+    const keptKey = arrowKey({ from: "write", to: "step_1" });
+    const goneKey = arrowKey({ from: "step_1", to: "done" });
+    expect(editorState().history!.present.arrows.map(arrowKey)).toEqual(
+      expect.arrayContaining([keptKey, goneKey]),
+    );
+    select({ kind: "arrow", key: keptKey });
+    undoEdit();
+    expect(editorState().selection).toEqual({ kind: "arrow", key: keptKey });
+    redoEdit();
+    select({ kind: "arrow", key: goneKey });
+    undoEdit();
+    expect(editorState().selection).toBeNull();
   });
 });
