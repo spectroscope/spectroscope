@@ -12,6 +12,8 @@ import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.web.WebSearchTiers;
 import dev.spectroscope.server.DotEnvSettings;
 import dev.spectroscope.server.leveling.ServerLeveling;
+import dev.spectroscope.server.providers.ListResult;
+import dev.spectroscope.server.providers.ModelLists;
 import dev.spectroscope.server.shell.HelperPtyProvider;
 import dev.spectroscope.server.shell.Shells;
 import dev.spectroscope.server.web.LocalOrigin;
@@ -26,8 +28,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestClient;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -729,10 +729,6 @@ public class SessionsController {
     private static final List<String> OPENAI_MODELS =
             List.of("gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3-mini");
 
-    /** The Anthropic Models API — fixed endpoint, versioned like the SDK does it. */
-    private static final String ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models?limit=50";
-    private static final String ANTHROPIC_VERSION = "2023-06-01";
-
     /**
      * Which wire a provider's model list is read on (card 472). Anthropic and
      * ollama have their own; every provider the harness counts as OpenAI
@@ -797,43 +793,6 @@ public class SessionsController {
     }
 
     /**
-     * A dedicated client for the model-list probes with FINITE connect + read
-     * timeouts. RestClient.create() would inherit the classpath's default
-     * factory, whose read timeout is unbounded — a backend that accepts the TCP
-     * connection but never answers (a stalled/black-holed Ollama) would then pin
-     * the Tomcat worker forever. The JDK factory guarantees the timeouts hold
-     * regardless of which HTTP client is on the classpath.
-     */
-    private static final RestClient MODEL_PROBE = RestClient.builder()
-            .requestFactory(modelProbeFactory())
-            .build();
-
-    /**
-     * The probe's JDK request factory — the one place the finite timeouts live.
-     *
-     * @return a factory enforcing 1.5 s connect and 2.5 s read timeouts
-     */
-    private static SimpleClientHttpRequestFactory modelProbeFactory() {
-        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
-        f.setConnectTimeout(1500);
-        f.setReadTimeout(2500);
-        return f;
-    }
-
-    /** Model families the chat picker must not offer — the /v1/models list carries everything. */
-    private static final List<String> NON_CHAT_MODEL_MARKERS = List.of(
-            "embedding", "tts", "whisper", "dall-e", "audio", "realtime",
-            "moderation", "transcribe", "davinci", "babbage", "image", "sora");
-
-    /** Whether a model id looks like a chat-completions candidate.
-     *  @param id the model id from /v1/models
-     *  @return false for embedding/speech/image/legacy families */
-    private static boolean isChatModel(String id) {
-        String lower = id.toLowerCase();
-        return NON_CHAT_MODEL_MARKERS.stream().noneMatch(lower::contains);
-    }
-
-    /**
      * Asks the EFFECTIVE endpoint of ONE OpenAI-compatible provider for its
      * models — live like the other two routes: api.openai.com when a key rides
      * the untouched default (Bearer attached), otherwise whatever host that
@@ -845,7 +804,7 @@ public class SessionsController {
      * @return chat-capable model ids, newest first, or the curated fallback
      */
     private List<String> openaiModels(String provider) {
-        // Curated fallback ONLY for real OpenAI — gpt-4o etc. are its models.
+        // Curated fallback ONLY for real OpenAI: gpt-4o etc. are its models.
         // Every OTHER provider on this route that isn't answering returns EMPTY,
         // so the picker says 'not reachable' instead of showing a misleading
         // OpenAI list for a server that serves whatever you loaded into it.
@@ -853,35 +812,11 @@ public class SessionsController {
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
             String key = SpectroConfig.resolveApiKey(SpectroConfig.keyEnvFor(provider));
-            boolean hasKey = key != null && !key.isBlank();
             // endpointFor resolves a per-provider address where one is declared
             // (card 193) and keeps the legacy shared rule for the cloud providers.
-            String base = c.endpointFor(provider);
-
-            RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get()
-                    .uri(base + dev.spectroscope.core.provider.OpenAiCompatProvider.compatPath(base, "/models"));
-            if (hasKey) {
-                request = request.header("Authorization", "Bearer " + key);
-            }
-            JsonNode page = request.retrieve().body(JsonNode.class);
-
-            record ModelRow(String id, long created) {}
-            List<ModelRow> rows = new ArrayList<>();
-            if (page != null && page.has("data")) {
-                for (JsonNode entry : page.get("data")) {
-                    String id = entry.path("id").asText("");
-                    if (!id.isBlank() && isChatModel(id)) {
-                        rows.add(new ModelRow(id, entry.path("created").asLong(0)));
-                    }
-                }
-            }
-            List<String> ids = rows.stream()
-                    .sorted(java.util.Comparator.comparingLong(ModelRow::created).reversed())
-                    .map(ModelRow::id)
-                    .limit(60)
-                    .toList();
-            return ids.isEmpty() ? fallback : ids;
-        } catch (Exception apiUnreachable) {
+            ListResult r = ModelLists.openAiCompat(provider, c.endpointFor(provider), key);
+            return r.isOk() && !r.models().isEmpty() ? r.models() : fallback;
+        } catch (Exception configUnreadable) {
             return fallback;
         }
     }
@@ -895,29 +830,8 @@ public class SessionsController {
      * @return the model ids the API reports, newest first, or the curated list
      */
     private List<String> anthropicModels() {
-        String key = SpectroConfig.resolveApiKey("ANTHROPIC_API_KEY");
-        if (key == null || key.isBlank()) {
-            return ANTHROPIC_MODELS;
-        }
-        try {
-            JsonNode page = MODEL_PROBE.get()
-                    .uri(ANTHROPIC_MODELS_URL)
-                    .header("x-api-key", key)
-                    .header("anthropic-version", ANTHROPIC_VERSION)
-                    .retrieve().body(JsonNode.class);
-            List<String> ids = new ArrayList<>();
-            if (page != null && page.has("data")) {
-                for (JsonNode entry : page.get("data")) {
-                    String id = entry.path("id").asText("");
-                    if (!id.isBlank()) {
-                        ids.add(id);
-                    }
-                }
-            }
-            return ids.isEmpty() ? ANTHROPIC_MODELS : ids;
-        } catch (Exception apiUnreachable) {
-            return ANTHROPIC_MODELS;
-        }
+        ListResult r = ModelLists.anthropic(SpectroConfig.resolveApiKey("ANTHROPIC_API_KEY"));
+        return r.isOk() && !r.models().isEmpty() ? r.models() : ANTHROPIC_MODELS;
     }
 
     /**
@@ -930,24 +844,13 @@ public class SessionsController {
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
             // The per-provider address first, the legacy baseUrl underneath, the
-            // preset last — the same endpointFor chain the provider itself dials
+            // preset last: the same endpointFor chain the provider itself dials
             // (card 193), so the probe can never test a different server than
             // the one a run would talk to.
-            String base = c.endpointFor("ollama");
-            JsonNode tags = MODEL_PROBE.get()
-                    .uri(base + "/api/tags").retrieve().body(JsonNode.class);
-            List<String> names = new ArrayList<>();
-            if (tags != null && tags.has("models")) {
-                for (JsonNode entry : tags.get("models")) {
-                    String name = entry.path("name").asText("");
-                    if (!name.isBlank()) {
-                        names.add(name);
-                    }
-                }
-            }
-            return names;
-        } catch (Exception ollamaDown) {
-            return List.of(); // ollama unreachable → empty; the client keeps free-text
+            ListResult r = ModelLists.ollama(c.endpointFor("ollama"));
+            return r.isOk() ? r.models() : List.of();
+        } catch (Exception configUnreadable) {
+            return List.of(); // the client keeps free-text
         }
     }
 
