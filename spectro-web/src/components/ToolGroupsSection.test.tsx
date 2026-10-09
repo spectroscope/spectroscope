@@ -6,7 +6,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ToolGroupsSection } from "./ToolGroupsSection";
 import type { ToolGroupsInfo } from "../state/toolGroups";
 import { dict, t } from "../i18n/i18n";
-import { blockOf, read } from "../testkit/source";
+import { blockOf, stripComments, read } from "../testkit/source";
+import { SETTING_REACH } from "./settingsReach";
+import { SURFACES } from "../state/surfaces";
 
 const info: ToolGroupsInfo = {
   off: ["launch"],
@@ -83,6 +85,45 @@ describe("the tool groups section", () => {
 
   it("draws nothing before the server has said what the groups are", () => {
     expect(render(null)).toBe("");
+  });
+});
+
+describe("when a change in the gear acts", () => {
+  // Card 491, criterion 4. The sentence comes from the reach table, not from a
+  // string of this section, so the gear and the reference chapter cannot say
+  // two different things about the same key.
+  it("shows the reach of the tool groups in words, in both languages", () => {
+    expect(SETTING_REACH.toolGroupsOff).toBe("next-run");
+    for (const lang of ["en", "de"] as const) {
+      const html = render({}, lang);
+      expect(html).toContain('data-reach="next-run"');
+      expect(html).toContain('data-reach-fields="toolGroupsOff"');
+      expect(html).toContain(t(lang, "set.reachNextRun"));
+    }
+    expect(render({})).toContain("Applies from the next run");
+  });
+
+  it("shows it with and without a pinned folder", () => {
+    expect(render({}, "en", false)).toContain(t("en", "set.reachNextRun"));
+    expect(render({}, "en", true)).toContain(t("en", "set.reachNextRun"));
+  });
+
+  it("is in the gear in learn and in light", () => {
+    // The gear sits in the chat's composer row, and the chat is open in both
+    // modes. Neither the chat's mount of the gear nor the gear's mount of this
+    // section asks the mode, so the sentence is drawn in both.
+    expect(SURFACES.chat.modes).toEqual({ learn: "open", light: "open" });
+    const chat = stripComments(read("./Chat.tsx", import.meta.url));
+    const gear = stripComments(read("./ComposerGear.tsx", import.meta.url));
+    expect(chat).toContain("<ComposerGear");
+    expect(gear).toContain("<ToolGroupsSection");
+    for (const [name, source] of [
+      ["Chat.tsx", chat],
+      ["ComposerGear.tsx", gear],
+      ["ToolGroupsSection.tsx", stripComments(read("./ToolGroupsSection.tsx", import.meta.url))],
+    ] as const) {
+      expect(source, `${name} reads the view mode`).not.toMatch(/viewMode|ViewMode/);
+    }
   });
 });
 

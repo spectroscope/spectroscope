@@ -551,6 +551,38 @@ class ConfigDocDriftTest {
                         + " itself. Paragraph: " + exception);
     }
 
+    /** Card 491: the phrase that replaced "the system prompt stays settled for
+     *  the session". A setting with the reach {@code next-run} may add a
+     *  paragraph to the system prompt at the start of each run, so the promise
+     *  is about the base of the prompt, and the prompt a run sends is fixed for
+     *  that run. */
+    static final String SYSTEM_PROMPT_PHRASE =
+            "the system prompt a run sends is fixed for that run";
+
+    @Test
+    void theSystemPromptPromiseHoldsWhenAParagraphIsAddedPerRun() throws IOException {
+        // Card 491. The chapter used to list "the system prompt" among the four
+        // things settled for the whole session. A paragraph appended at the
+        // start of each run (card 492) makes that false, so the paragraph now
+        // promises the BASE of the prompt for the session and the whole prompt
+        // for one run, and this pins both halves.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String settled = paragraphContaining(Files.readString(source), "stay settled for that session");
+        assertFalse(settled.isEmpty(), "the paragraph about what a session settles is gone");
+        assertFalse(settled.contains("and the <strong>system prompt</strong>"),
+                "the chapter still says the whole system prompt is settled for the session,"
+                        + " which a paragraph added per run makes false. Paragraph: " + settled);
+        assertTrue(settled.contains("the base of the <strong>system prompt</strong>"),
+                "the paragraph must name the base of the system prompt as what the session"
+                        + " settles. Paragraph: " + settled);
+        assertTrue(settled.contains(SYSTEM_PROMPT_PHRASE),
+                "the paragraph must say \"" + SYSTEM_PROMPT_PHRASE + "\". Paragraph: " + settled);
+        assertTrue(settled.contains("next-run"),
+                "the paragraph must name the reach that adds to the prompt. Paragraph: "
+                        + settled);
+    }
+
     /** The one {@code <p>} carrying {@code marker}, so an assertion about a
      *  sentence cannot be satisfied by a table elsewhere in the chapter.
      *  @param html   the reference chapter

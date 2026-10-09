@@ -1606,6 +1606,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
     en: "Applies from the next session. A session already open keeps what it started with.",
   },
+  // Card 491: the fifth answer. The agent reads these keys when a run starts,
+  // so the next prompt of a session already open picks a change up and a run
+  // in progress keeps what it started with.
+  "set.reachNextRun": {
+    de: "Gilt ab dem nächsten Lauf, auch in einer schon offenen Sitzung. Ein laufender Lauf behält, womit er gestartet ist.",
+    en: "Applies from the next run, including in a session already open. A run in progress keeps what it started with.",
+  },
   // The third answer, and the only field that needs it (card 222, F5). The
   // image backend has a SECOND live control — the dropdown in the composer —
   // and a pick there outranks a file saved under it for the rest of that
@@ -4175,8 +4182,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // unchecked one is left out of the request from the next run on.
   "wsg.tools.title": { de: "Werkzeuggruppen", en: "Tool groups" },
   "wsg.tools.note": {
-    de: "Abgewählte Gruppen schickt der nächste Lauf nicht an das Modell, auch nicht an Unteragenten. An den Berechtigungen ändert das nichts.",
-    en: "The next run leaves unchecked groups out of the model request, for subagents too. Permissions do not change.",
+    de: "Abgewählte Gruppen gehen nicht an das Modell, auch nicht an Unteragenten. An den Berechtigungen ändert das nichts.",
+    en: "Unchecked groups are left out of the model request, for subagents too. Permissions do not change.",
   },
   "wsg.tools.none": { de: "kein Werkzeug in dieser Sitzung", en: "no tool in this session" },
   "wsg.tools.saveFailed": { de: "Nicht gespeichert: {reason}", en: "Not saved: {reason}" },

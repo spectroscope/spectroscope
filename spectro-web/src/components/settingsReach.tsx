@@ -26,6 +26,9 @@ import { t, type Lang } from "../i18n/i18n";
  *  nothing, and a condition that exists is written down rather than dropped.
  *
  *  - `live` — a save decides the next tool call or the next request.
+ *  - `next-run` — the value is read at the start of each run, so a save
+ *    decides the next run of a session already open, and a run in progress
+ *    keeps the value it started with (card 491).
  *  - `next-session` — the value is bound when the agent is built.
  *  - `live-unless-picked` — live, unless the same setting also has a LIVE
  *    control elsewhere in the window and the operator used it this session, in
@@ -37,15 +40,20 @@ import { t, type Lang } from "../i18n/i18n";
  *    node at their start. Card 220's `headlessMcp` is the one field in this
  *    state; calling it either live or next-session would promise a session
  *    something the runner never reads. */
-export type Reach = "live" | "live-unless-picked" | "next-session" | "headless-run";
+export type Reach = "live" | "live-unless-picked" | "next-run" | "next-session" | "headless-run";
 
 /**
- * Every saveable setting on the page, and when it reaches a session that is
- * already open. Measured against the code that reads it, not against intent:
+ * Every saveable setting on the page, and every key of `SpectroConfig`, and when
+ * it reaches a session that is already open. `SettingReachDriftTest` derives the
+ * key list from the record's components and turns red for a key with no entry
+ * here; it also holds this table to the reach table of the config reference
+ * chapter. Measured against the code that reads it, not against intent:
  *
  * - `live` — a tool or a controller reads the settings again when it acts, so
  *   a save decides the next tool call (the belt: `SessionConnection.liveConfig`)
  *   or the next request (`logLevel` on PUT, `sttModel` per transcription).
+ * - `next-run` — the agent reads the value when a run starts: the next prompt
+ *   of a session already open picks a save up, a run in progress does not.
  * - `next-session` — the value is bound when the agent is built, or the change
  *   would mean killing processes or rewriting a conversation that has already
  *   happened. The allowlist is the one entry that is next-session BY CHOICE:
@@ -56,6 +64,9 @@ export const SETTING_REACH = {
   // ---- session defaults: bound when the agent is built ----
   provider: "next-session",
   model: "next-session",
+  // The shared fallback address, read where the provider is built, like the
+  // three per-provider addresses below.
+  baseUrl: "next-session",
   ollamaBaseUrl: "next-session",
   lmstudioBaseUrl: "next-session",
   llamacppBaseUrl: "next-session",
@@ -117,8 +128,11 @@ export const SETTING_REACH = {
   progressGuardPlanTurns: "next-session",
   // Card 266's leash: SessionConnection calls setBudget(...) on the LIVE agent
   // once per prompt, so a save decides the next prompt of the session already
-  // open. The one field in this neighbourhood that is not next-session.
-  continuationBudget: "live",
+  // open. The one field in this neighbourhood that is not next-session. Card
+  // 491: per prompt is the start of a run, so the word is next-run, and the
+  // budget is read from the settings files rather than from the snapshot the
+  // agent was built with, which no save reaches.
+  continuationBudget: "next-run",
   // Card 282: the turn ceiling. Agent.maxTurns() reads options, and options are
   // frozen when the agent is built — there is no setter, deliberately, because
   // raising the cap mid-run would move a boundary the run has already counted
@@ -181,6 +195,22 @@ export const SETTING_REACH = {
   // the walker beside this file had to grow to see RtkFilterSection.tsx before
   // this row could be guarded by anything.
   rtkFilter: "live",
+  // Card 491: the keys no control on the page saves, classified so that every
+  // key of SpectroConfig has a reach. compactionThreshold, toolResultElision,
+  // maxRetries and promptCaching are read where the agent or its provider is
+  // built. permissionMode is read when the session starts; the gear's own
+  // control (set_permission_mode) moves the open session and is not a save.
+  compactionThreshold: "next-session",
+  permissionMode: "next-session",
+  maxRetries: "next-session",
+  promptCaching: "next-session",
+  toolResultElision: "next-session",
+  // Card 476: only the cron daemon reads it, at its start.
+  desktopNotifications: "headless-run",
+  // Card 466: Agent reads the switched-off groups once per run
+  // (groupsOffThisRun), so the gear's change reaches the next run of the open
+  // session and a run in progress keeps the tools it advertised.
+  toolGroupsOff: "next-run",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to
@@ -196,6 +226,7 @@ export type SettingKey = keyof typeof SETTING_REACH;
 export const NOTE_REACH: Record<string, Reach> = {
   "set.reachLive": "live",
   "set.reachLiveUnlessPicked": "live-unless-picked",
+  "set.reachNextRun": "next-run",
   "set.reachNextSession": "next-session",
   // Block-specific wordings that carry their own reason. They still have to
   // agree with the table above.
@@ -214,6 +245,7 @@ export const NOTE_REACH: Record<string, Reach> = {
 const GENERIC: Record<Reach, string> = {
   live: "set.reachLive",
   "live-unless-picked": "set.reachLiveUnlessPicked",
+  "next-run": "set.reachNextRun",
   "next-session": "set.reachNextSession",
   "headless-run": "set.reachHeadless",
 };

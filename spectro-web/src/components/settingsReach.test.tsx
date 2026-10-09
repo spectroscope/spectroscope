@@ -187,6 +187,34 @@ describe("the sentence about when a setting lands", () => {
     expect(html).not.toContain(dict["set.reachLive"].en);
   });
 
+  it("knows next-run, the moment between a live call and a new session", () => {
+    // Card 491. The tool groups (card 466) are read once per run, and the
+    // continuation budget at the top of every prompt. Neither reaches a call
+    // already going and neither waits for a new session, so both carry the
+    // fifth word, and a block of them renders a sentence of its own.
+    expect(SETTING_REACH.toolGroupsOff).toBe("next-run");
+    expect(SETTING_REACH.continuationBudget).toBe("next-run");
+    expect(reachOf(["toolGroupsOff", "continuationBudget"])).toBe("next-run");
+    expect(() => reachOf(["toolGroupsOff", "maxTurns"])).toThrow(/do not all reach/);
+    expect(() => reachOf(["toolGroupsOff", "imageModel"])).toThrow(/do not all reach/);
+    expect(noteKeyFor(["toolGroupsOff"])).toBe("set.reachNextRun");
+    expect(noteKeyFor(["toolGroupsOff"], "set.reachLive")).toBe("set.reachNextRun");
+    const html = renderToStaticMarkup(<ReachBlock lang="en" fields={["toolGroupsOff"]} />);
+    expect(html).toContain('data-reach="next-run"');
+    expect(html).toContain(dict["set.reachNextRun"].en);
+  });
+
+  it("says next-run in words a user reads, in both languages and without a dash", () => {
+    const sentence = dict["set.reachNextRun"];
+    expect(sentence, "set.reachNextRun is missing from the dictionary").toBeDefined();
+    expect(sentence.en).toMatch(/^Applies from the next run\b/);
+    expect(sentence.de).toMatch(/^Gilt ab dem nächsten Lauf\b/);
+    for (const text of [sentence.en, sentence.de]) {
+      expect(text).not.toMatch(/[\u2013\u2014]|--/);
+      expect(text).not.toBe(dict["set.reachNextSession"].en);
+    }
+  });
+
   it("exists for every note the page may end a block with", () => {
     for (const key of Object.keys(NOTE_REACH)) {
       expect(dict[key], `${key} is promised in NOTE_REACH and missing from the dictionary`).toBeDefined();
@@ -272,7 +300,7 @@ describe("the settings page, walked", () => {
     // straight into the panel, above whatever happened to be there. Through the
     // block or not at all — that is what makes the two rules above binding.
     for (const file of PAGE_FILES) {
-      for (const key of ["set.reachLive", "set.reachNextSession"]) {
+      for (const key of ["set.reachLive", "set.reachNextSession", "set.reachNextRun"]) {
         expect(
           source(file).includes(`"${key}"`),
           `${file} names ${key} directly — a reach sentence belongs to a ReachBlock, ` +

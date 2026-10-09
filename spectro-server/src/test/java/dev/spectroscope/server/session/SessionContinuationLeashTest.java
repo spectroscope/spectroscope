@@ -134,6 +134,49 @@ class SessionContinuationLeashTest {
     }
 
     @Test
+    void aBudgetSavedDuringTheSessionReachesTheNextRunWithNoSessionMoment(
+            @TempDir Path workspace) throws IOException, InterruptedException {
+        // Card 491. The two tests around this one call adoptSessionConfig() by
+        // hand between the save and the prompt, and in the app nothing does:
+        // that method runs once, when the agent is built. The refresh read the
+        // snapshot that method wrote, so a number saved on the settings page
+        // during a session never reached it, while the page said "applies
+        // immediately". The reach is next-run, so the next prompt has to read
+        // the settings files, the way the belt does.
+        String previous = saveForUser("""
+                { "provider": "ollama", "model": "qwen3:latest",
+                  "baseUrl": "http://127.0.0.1:1" }
+                """);
+        try {
+            SessionConnection connection = sessionIn("ws-491-next-run", workspace);
+            connection.buildAgentOnce();
+            assertThat(connection.agent().continuationLeash().budget())
+                    .as("the premise: this session started on the shipped default")
+                    .isEqualTo(ContinuationLeash.DEFAULT_BUDGET);
+
+            saveForUser("""
+                    { "provider": "ollama", "model": "qwen3:latest",
+                      "baseUrl": "http://127.0.0.1:1", "continuationBudget": 1 }
+                    """);
+
+            connection.onUserMessage("say something", null);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            while (System.nanoTime() < deadline
+                    && connection.agent().continuationLeash().budget()
+                            == ContinuationLeash.DEFAULT_BUDGET) {
+                Thread.sleep(20);
+            }
+
+            assertThat(connection.agent().continuationLeash().budget())
+                    .as("a save between two prompts governs the next run, with no session"
+                            + " moment in between")
+                    .isEqualTo(1);
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
+
+    @Test
     void aSecondPromptPicksUpTheOperatorsNewBudgetWithoutAReconnect(@TempDir Path workspace)
             throws IOException, InterruptedException {
         // Criterion 7, pinned where it lives: the CALL SITE in runPrompt, not the

@@ -2085,14 +2085,19 @@ public final class SessionConnection {
      * a reconnect — which is a rebuild by another name. The settings panel
      * already writes this key through {@code SettingsWriter}; this is what makes
      * the number it wrote govern the very next run.</p>
+     *
+     * <p>Card 491: the number comes from {@link #liveConfig()}, which reads the
+     * settings files again. {@link #activeConfig} is written when the agent is
+     * built and by nothing a settings save does, so reading it here kept the
+     * budget the session started with. The key's reach is {@code next-run}.</p>
      */
     void refreshContinuationBudget() {
         if (agent == null || agent.continuationLeash() == null) {
             return;
         }
-        SpectroConfig active = activeConfig.get();
-        if (active != null) {
-            agent.continuationLeash().setBudget(active.continuationBudget());
+        SpectroConfig live = liveConfig();
+        if (live != null) {
+            agent.continuationLeash().setBudget(live.continuationBudget());
         }
     }
 
