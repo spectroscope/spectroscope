@@ -76,4 +76,13 @@ class PlaybookFoldersTest {
         Files.delete(a.resolve("playbook.json"));
         assertNull(folders.activeFor(ws));
     }
+
+    @Test
+    void refusesAPinToAFolderThatHoldsAPlaybookButWasNeverRegistered() throws IOException {
+        PlaybookFolders folders = new PlaybookFolders(tmp.resolve("playbooks.json"));
+        Path unregistered = playbookFolder("unregistered");
+        Path ws = Files.createDirectories(tmp.resolve("ws"));
+        assertThrows(IllegalArgumentException.class, () -> folders.pin(ws, unregistered));
+        assertNull(folders.activeFor(ws));
+    }
 }
