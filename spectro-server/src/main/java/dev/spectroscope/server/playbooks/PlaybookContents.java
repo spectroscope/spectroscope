@@ -391,7 +391,8 @@ public final class PlaybookContents {
                 resolved.getBytes(StandardCharsets.UTF_8).length, hookFolder.toString(), resolved, List.copyOf(scripts)));
     }
 
-    private static HookConfig recordedEntry(InstallLedger.Item rec) {
+    /** The hook entry a ledger item recorded, or null when it has none or it does not bind. */
+    static HookConfig recordedEntry(InstallLedger.Item rec) {
         Map<String, Object> e = rec.entry();
         if (e == null) {
             return null;
@@ -405,7 +406,8 @@ public final class PlaybookContents {
         }
     }
 
-    private static List<HookConfig> readUserHooks(Path settings) {
+    /** The hook entries of a settings file that bind; a missing or unreadable file has none. */
+    static List<HookConfig> readUserHooks(Path settings) {
         List<HookConfig> out = new ArrayList<>();
         if (!Files.isRegularFile(settings)) {
             return out;
