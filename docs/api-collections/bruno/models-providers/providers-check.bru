@@ -1,19 +1,21 @@
 meta {
-  name: delete a user skill
+  name: check providers
   type: http
-  seq: 4
+  seq: 7
 }
 
-delete {
-  url: {{baseUrl}}/api/skills/{{skillName}}
+post {
+  url: {{baseUrl}}/api/providers/check
   body: none
   auth: none
 }
 
+params:query {
+  ~provider: all
+}
+
 docs {
-  Delete a USER-root skill for good (seeding ledger keeps it away). 409 for a project skill, 404 unknown. Traversal-guarded.
-  
-  CAUTION: Deletion is permanent — the seeding ledger will not re-seed it.
+  Runs a bounded check (5 s outer budget) and answers the rows. A provider that accepts the connection and never answers reads failed with reason timeout. Unknown provider id answers 400.
   
   Fence: host+origin. Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
   

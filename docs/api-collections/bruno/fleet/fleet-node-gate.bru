@@ -26,7 +26,7 @@ docs {
   
   Body: GateAnswer(String callId, Boolean allow) — both required; allow is boxed so a missing verdict is 400, never a silent deny.
   
-  Fence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.
+  Fence: host+json. Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.
   
   Writes state: yes
 }

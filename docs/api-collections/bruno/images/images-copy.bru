@@ -27,7 +27,7 @@ docs {
   
   Body: CopyRequest(String file, String session, String name) — name optional (keeps store name; extension inherited).
   
-  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  Fence: host+origin+json. Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
   
   Writes state: yes
 }
