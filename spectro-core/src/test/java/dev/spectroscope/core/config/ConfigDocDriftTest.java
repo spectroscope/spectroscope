@@ -516,6 +516,26 @@ class ConfigDocDriftTest {
     }
 
     @Test
+    void theSettledSystemPromptPromiseNamesThePartThatIsReadPerRun() throws IOException {
+        // Card 492. The care paragraph is appended to the system prompt at the
+        // start of every run, so "the system prompt stays settled for the
+        // session" stopped being true for one part of it. The paragraph that
+        // makes the promise has to name that part and say when a change to it
+        // lands, or a reader who saves the key mid-session expects a reconnect.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String promise = paragraphContaining(Files.readString(source), "Four things are settled");
+        assertTrue(promise.contains("system prompt"),
+                "premise: this is the paragraph that settles the system prompt");
+        assertTrue(promise.contains("<code>careParagraph</code>"),
+                "the paragraph that settles the system prompt does not name careParagraph,"
+                        + " the part every run reads again");
+        assertTrue(promise.contains("applies from the next run"),
+                "the paragraph does not say that a change to careParagraph applies from the"
+                        + " next run of the same session");
+    }
+
+    @Test
     void theChapterCarriesTheOneConditionOnTheLivePromise() throws IOException {
         // Card 222, review finding F5. The live promise has exactly one
         // exception, and this is the second round in which it went unwritten.

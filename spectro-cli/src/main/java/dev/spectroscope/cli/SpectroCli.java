@@ -705,6 +705,8 @@ public final class SpectroCli implements Runnable {
                 .subagentBudgetTokens(config.subagentBudgetTokens())
                 // card 467: the children follow the session's elision switch
                 .toolResultElision(config.toolResultElision())
+                // card 492: and its care paragraph switch
+                .careParagraph(config.careParagraph())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -877,6 +879,8 @@ public final class SpectroCli implements Runnable {
                 .maxTokens(config.maxTokens())
                 // Card 467: old, large tool results leave the request.
                 .toolResultElision(config.toolResultElision())
+                // Card 492: the care paragraph, read when the REPL starts.
+                .careParagraph(config.careParagraph())
                 .onPermission(askOnTerminal)
                 .build());
     }

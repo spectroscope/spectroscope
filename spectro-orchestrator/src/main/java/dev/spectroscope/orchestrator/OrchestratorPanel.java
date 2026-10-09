@@ -358,7 +358,7 @@ public final class OrchestratorPanel implements FleetPanel {
                 ? lane.systemPrompt
                 : UNATTENDED_PROMPT + "\nYour lane is " + lane.id + ". The workspace is " + workspace + ".";
         // settings-reach: compactionThreshold, thinking, maxTurns, maxTokens,
-        //     toolResultElision
+        //     toolResultElision, careParagraph
         //     | fleet panel | a lane is declared in the embedding program through
         //     Spectro.panel(), the same way the facade declares an agent, so its
         //     ceilings come from that program and not from a settings file on the

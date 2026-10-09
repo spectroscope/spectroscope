@@ -273,6 +273,10 @@ import java.util.function.Function;
  *                              every provider request, by their wire names
  *                              ({@link dev.spectroscope.core.ToolGroup#wireNames()}).
  *                              Ships empty, which sends every tool
+ * @param careParagraph         card 492: {@code "on"} appends a short paragraph
+ *                              to the system prompt of every run, asking the
+ *                              model to work in small steps and read in parts;
+ *                              {@code "off"} sends no paragraph. Ships off
  */
 public record SpectroConfig(
         String provider,
@@ -337,12 +341,16 @@ public record SpectroConfig(
         // Card 467: "on" or "off". Appended last, same rule.
         String toolResultElision,
         // Card 466: the switched-off tool groups. Appended last, same rule.
-        List<String> toolGroupsOff) {
+        List<String> toolGroupsOff,
+        // Card 492: "on" or "off". Appended last, same rule.
+        String careParagraph) {
 
     /** Compat: the arity main had before cards 476, 467 and 466, which knew
      *  no notification switch, no elision switch and no tool groups. Every
      *  caller that built a config positionally keeps compiling, gets the
      *  shipped {@code on} for both switches and switches no tool group off.
+     *  Card 492 appended the care paragraph after them; this compat ships it
+     *  off, so it still builds the config main built.
      *
      * @param provider              the LLM backend
      * @param model                 the model id
@@ -410,7 +418,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens,
-                DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of());
+                DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(),
+                DEFAULT_CARE_PARAGRAPH);
     }
 
     /** Compat: the pre-card-394 arity, which knew no token budget for a child.
@@ -1322,6 +1331,25 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "toolResultElision")
     public static final String DEFAULT_TOOL_RESULT_ELISION = TOOL_RESULT_ELISION_ON;
 
+    /** {@code careParagraph} on: every run appends the care paragraph to its
+     *  system prompt (card 492). */
+    public static final String CARE_PARAGRAPH_ON = "on";
+
+    /** {@code careParagraph} off: no paragraph, the system prompt of v0.14.4. */
+    public static final String CARE_PARAGRAPH_OFF = "off";
+
+    /** {@code careParagraph}'s known values: the single source for the
+     *  load-time check and {@link SettingsWriter}'s write-time check. */
+    public static final Set<String> KNOWN_CARE_PARAGRAPH_VALUES =
+            Set.of(CARE_PARAGRAPH_ON, CARE_PARAGRAPH_OFF);
+
+    /** The shipped {@code careParagraph}: off, so a chat sends the system
+     *  prompt it sent before the key existed. The Local mode switch (card 493)
+     *  turns it on for one chat. The text is
+     *  {@link dev.spectroscope.core.session.CareParagraph}. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "careParagraph")
+    public static final String DEFAULT_CARE_PARAGRAPH = CARE_PARAGRAPH_OFF;
+
     private static final SpectroConfig DEFAULTS = new SpectroConfig(
             // compactionThreshold null: unset, so the harness derives it (card 263)
             "anthropic", "claude-opus-4-8", "http://localhost:11434", null, "ask", List.of(),
@@ -1412,7 +1440,7 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, value, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff);
+                toolResultElision, toolGroupsOff, careParagraph);
     }
 
     /**
@@ -1440,7 +1468,7 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, value,
-                toolResultElision, toolGroupsOff);
+                toolResultElision, toolGroupsOff, careParagraph);
     }
 
     /**
@@ -1471,7 +1499,7 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, value);
+                toolResultElision, value, careParagraph);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -1953,6 +1981,9 @@ public record SpectroConfig(
         // Card 466: a typo in a group name must not leave the operator believing
         // a family is off while every request still carries it.
         requireKnownToolGroups(base.toolGroupsOff());
+        validateKnown("careParagraph", base.careParagraph(),
+                KNOWN_CARE_PARAGRAPH_VALUES,
+                CARE_PARAGRAPH_ON + ", " + CARE_PARAGRAPH_OFF);
 
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
@@ -1978,7 +2009,8 @@ public record SpectroConfig(
                         base.dockMaxWidth(), base.maxTokens(),
                         base.subagentBudgetSeconds(), base.rtkFilter(),
                         base.subagentBudgetTokens(), base.desktopNotifications(),
-                        base.toolResultElision(), base.toolGroupsOff());
+                        base.toolResultElision(), base.toolGroupsOff(),
+                        base.careParagraph());
             }
         }
         return base;
@@ -2064,7 +2096,9 @@ public record SpectroConfig(
             // Card 467, appended last, same rule.
             new FieldProbe("toolResultElision", p -> p.toolResultElision),
             // Card 466, appended last, same rule.
-            new FieldProbe("toolGroupsOff", p -> p.toolGroupsOff));
+            new FieldProbe("toolGroupsOff", p -> p.toolGroupsOff),
+            // Card 492, appended last, same rule.
+            new FieldProbe("careParagraph", p -> p.careParagraph));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -2498,7 +2532,7 @@ public record SpectroConfig(
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff);
+                toolResultElision, toolGroupsOff, careParagraph);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -3418,6 +3452,8 @@ public record SpectroConfig(
         public String toolResultElision;
         // Card 466: the switched-off tool groups, by wire name.
         public List<String> toolGroupsOff;
+        // Card 492: "on" or "off".
+        public String careParagraph;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -3491,6 +3527,7 @@ public record SpectroConfig(
             // Card 466: a whole list, like autoApprove. A higher scope that
             // names the key replaces the list below it; [] switches all back on.
             out.toolGroupsOff = Optional.ofNullable(higher.toolGroupsOff).orElse(toolGroupsOff);
+            out.careParagraph = Optional.ofNullable(higher.careParagraph).orElse(careParagraph);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -3557,7 +3594,8 @@ public record SpectroConfig(
                             .orElse(DEFAULTS.desktopNotifications()),
                     Optional.ofNullable(toolResultElision)
                             .orElse(DEFAULTS.toolResultElision()),
-                    Optional.ofNullable(toolGroupsOff).orElse(DEFAULTS.toolGroupsOff()));
+                    Optional.ofNullable(toolGroupsOff).orElse(DEFAULTS.toolGroupsOff()),
+                    Optional.ofNullable(careParagraph).orElse(DEFAULTS.careParagraph()));
         }
 
         /**

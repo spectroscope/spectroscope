@@ -188,6 +188,20 @@ public final class Agent {
     /** Card 466: the tool groups this run leaves out, read once when it starts. */
     private volatile Set<ToolGroup> groupsOffThisRun = Set.of();
 
+    /** Card 492: the {@code careParagraph} setting the NEXT run reads. Seeded
+     *  from the options; a face with a live control sets it between runs. */
+    private volatile String careSetting;
+
+    /** Card 492: the helper count the next run's paragraph names. */
+    private volatile int careHelpers = dev.spectroscope.core.session.CareParagraph.DEFAULT_HELPERS;
+
+    /** Card 492: the setting this run read when it started. */
+    private volatile String careSettingThisRun;
+
+    /** Card 492: what this run appends to its system prompt, built once when
+     *  it starts so the text cannot change within the run. Empty when off. */
+    private volatile String careThisRun = "";
+
     /**
      * Card 467: what leaves the outgoing request of an old, large tool result.
      * It lives with the agent for the reason {@link #messages} does: its
@@ -250,6 +264,7 @@ public final class Agent {
      */
     public Agent(AgentOptions options) {
         this.options = options;
+        this.careSetting = options.careParagraph();
         // A tool this agent does not carry cannot be called again, so a stub
         // that says "call it again" would be false: its results stay whole.
         this.elision = new dev.spectroscope.core.session.ToolResultElision(
@@ -499,6 +514,11 @@ public final class Agent {
         // the next run of this already-built agent, and a run never changes
         // the tool list it advertises halfway through.
         groupsOffThisRun = toolGroupsOffNow();
+        // Card 492: after the groups, because the subagent sentence follows
+        // whether this run offers a spawn tool. Read once: the text stays the
+        // same for every request of the run.
+        careSettingThisRun = careSetting;
+        careThisRun = careSuffixFor(careSettingThisRun, groupsOffThisRun);
         ContinuationLeash leash = options.continuationLeash();
         if (leash != null) {
             // The count and the fingerprint are sentences about THIS run, for
@@ -732,9 +752,12 @@ public final class Agent {
                 // build time could not be stated, changed or cleared without a
                 // reconnect, which is a rebuild by another name.
                 RunGoal statedGoal = goal == null ? null : goal.stated();
+                // Card 492: the care paragraph sits between the base prompt and
+                // the goal, so the part that is fixed for the run comes first.
+                String baseForRun = options.systemPrompt() + careThisRun;
                 String systemForTurn = statedGoal == null
-                        ? options.systemPrompt()
-                        : options.systemPrompt() + statedGoal.promptSection();
+                        ? baseForRun
+                        : baseForRun + statedGoal.promptSection();
                 ProviderRequest request = new ProviderRequest(systemForTurn,
                         fenced.messages(), advertisedTools, maxTokens,
                         effectiveReasoning(), effortOverride, signal, tap);
@@ -1564,9 +1587,11 @@ public final class Agent {
         // with a goal by exactly the section the goal adds — and this estimate
         // is what the browser's context ring and the CLI's meter show.
         RunGoal statedForGauge = options.goal() == null ? null : options.goal().stated();
+        // Card 492: the ring reads the care paragraph the request carries.
+        String baseForGauge = options.systemPrompt() + careThisRun;
         String systemForGauge = statedForGauge == null
-                ? options.systemPrompt()
-                : options.systemPrompt() + statedForGauge.promptSection();
+                ? baseForGauge
+                : baseForGauge + statedForGauge.promptSection();
         int systemChars = systemForGauge.length();
         // Card 466: the ring measures what the request carries, so a
         // switched-off group leaves this part exactly as it leaves the request.
@@ -1859,6 +1884,74 @@ public final class Agent {
      */
     public boolean toolResultElision() {
         return dev.spectroscope.core.session.ToolResultElision.enabled(options.toolResultElision());
+    }
+
+    /**
+     * Card 492: sets the {@code careParagraph} value the NEXT run reads. A run
+     * in flight keeps the text it started with.
+     *
+     * @param setting {@code "on"}, {@code "off"}, or null for the shipped off
+     */
+    public void setCareParagraph(String setting) {
+        this.careSetting = setting;
+    }
+
+    /**
+     * Card 492: sets how many helpers the NEXT run's paragraph names. A run in
+     * flight keeps the text it started with. Until a session count per chat
+     * reaches the agent, the default is {@link
+     * dev.spectroscope.core.session.CareParagraph#DEFAULT_HELPERS}.
+     *
+     * @param helpers the subagents that may run at once, at least 1
+     * @throws IllegalArgumentException for a count below 1
+     */
+    public void setCareHelpers(int helpers) {
+        if (helpers < 1) {
+            throw new IllegalArgumentException("careHelpers must be at least 1, was " + helpers);
+        }
+        this.careHelpers = helpers;
+    }
+
+    /**
+     * Card 492: the {@code careParagraph} value the current run read when it
+     * started. A child spawned during the run takes this value. Before the
+     * first run it is the value the next run will read.
+     *
+     * @return the setting, or null for the shipped off
+     */
+    public String careSettingThisRun() {
+        String read = careSettingThisRun;
+        return read != null ? read : careSetting;
+    }
+
+    /**
+     * Card 492: what the current (or last) run appends to its system prompt.
+     *
+     * @return the separator and the paragraph, or empty when the run had it off
+     */
+    public String careParagraphThisRun() {
+        return careThisRun;
+    }
+
+    /**
+     * Card 492: what the NEXT run would append to its system prompt, read the
+     * way the loop reads it when a run starts.
+     *
+     * @return the separator and the paragraph, or empty when it is off
+     */
+    public String careParagraphForNextRun() {
+        return careSuffixFor(careSetting, toolGroupsOffNow());
+    }
+
+    /** The paragraph for a setting, naming subagents only when the run offers
+     *  a spawn tool after the switched-off groups are taken out. */
+    private String careSuffixFor(String setting, Set<ToolGroup> off) {
+        if (!dev.spectroscope.core.session.CareParagraph.enabled(setting) || options.registry() == null) {
+            return "";
+        }
+        boolean spawns = ToolGroup.visible(options.registry().specs(), off).stream()
+                .anyMatch(spec -> spec.name().equals("spawn_agent") || spec.name().equals("spawn_agents"));
+        return dev.spectroscope.core.session.CareParagraph.suffix(setting, careHelpers, spawns);
     }
 
     /**
