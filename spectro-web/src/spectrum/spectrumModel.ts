@@ -290,7 +290,8 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
           tick(event.to, { ts, kind: "subagent", seq });
         } else if (event.role === "status") {
           const from = laneOf(event.from);
-          from.lane.state = "working";
+          // Card 490: "submitted" is a helper waiting for a free slot of its chat.
+          from.lane.state = event.state === "submitted" ? "submitted" : "working";
           from.lane.lastStatus = event.text;
           tick(event.from, { ts, kind: "subagent", seq });
         } else if (event.role === "result") {

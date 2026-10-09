@@ -12,6 +12,10 @@ import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { initialState, reduceAll } from "./reducer";
 import { foldWork } from "./work";
+import { advanceScene, initialScene } from "../lab/labScene";
+import { buildFleetLabScene } from "../lab/fleetLabScene";
+import { foldSeatPool } from "../lab/flowmap/workerGrid";
+import { buildSpectrum } from "../spectrum/spectrumModel";
 
 const WAITING = "Waiting for a free slot: this chat runs at most 2 subagents at the same time.";
 
@@ -78,5 +82,64 @@ describe("a helper waiting for a slot", () => {
     ];
     expect(reduceAll(initialState, reporting).agents.find((a) => a.id === "worker-3")?.state).toBe("working");
     expect(foldWork(reporting).find((i) => i.id === "worker-3")?.lastStatus).toBe("reading the tests");
+  });
+});
+
+// The review of card 490 found three more folds that read every status
+// message as working: the Lab scene, the fleet Lab scene and the spectrum
+// lanes. They keep "submitted" for the waiting message too, and a waiting
+// helper does not take the active highlight, because it is doing nothing.
+describe("a helper waiting for a slot, in the Lab and the spectrum", () => {
+  it("is submitted in the Lab scene, says why, and does not become the active child", () => {
+    const scene = queued.reduce(advanceScene, initialScene());
+    const card = scene.subagents.find((c) => c.id === "worker-3");
+    expect(card?.state).toBe("submitted");
+    expect(card?.lastStatus).toBe(WAITING);
+    expect(scene.activeChild).not.toBe("worker-3");
+  });
+
+  it("is submitted in the fleet Lab scene, says why, and does not become the active node", () => {
+    const scene = buildFleetLabScene({ roster: [], events: queued, frames: [], epochBySender: {} });
+    const node = scene.nodes.find((n) => n.id === "worker-3");
+    expect(node?.state).toBe("submitted");
+    expect(node?.lastStatus).toBe(WAITING);
+    expect(scene.activeNode).not.toBe("worker-3");
+  });
+
+  it("is submitted on its spectrum lane and says why", () => {
+    const lane = buildSpectrum(queued).lanes.find((l) => l.id === "worker-3");
+    expect(lane?.state).toBe("submitted");
+    expect(lane?.lastStatus).toBe(WAITING);
+  });
+
+  it("leaves a report_status message as working in all three", () => {
+    const reporting: RunEvent[] = [
+      ...started,
+      {
+        type: "agent_message",
+        from: "worker-3",
+        to: "main",
+        role: "status",
+        state: "working",
+        text: "reading the tests",
+        ts: 6,
+      },
+    ];
+    const scene = reporting.reduce(advanceScene, initialScene());
+    expect(scene.subagents.find((c) => c.id === "worker-3")?.state).toBe("working");
+    expect(scene.activeChild).toBe("worker-3");
+    const fleet = buildFleetLabScene({ roster: [], events: reporting, frames: [], epochBySender: {} });
+    expect(fleet.nodes.find((n) => n.id === "worker-3")?.state).toBe("working");
+    expect(buildSpectrum(reporting).lanes.find((l) => l.id === "worker-3")?.state).toBe("working");
+  });
+
+  // The seat grid counts every helper that was asked for and has not
+  // reported back, so a helper that was only handed its task already holds a
+  // seat. The waiting message must not change that: a waiting helper sits
+  // exactly where a helper that was only asked for sits.
+  it("holds the same seat in the worker grid as a helper that was only asked for", () => {
+    const asked = queued.filter((e) => !(e.type === "agent_message" && e.role === "status"));
+    expect(foldSeatPool(queued)).toEqual(foldSeatPool(asked));
+    expect(foldSeatPool(queued).seat["worker-3"]).toBeDefined();
   });
 });
