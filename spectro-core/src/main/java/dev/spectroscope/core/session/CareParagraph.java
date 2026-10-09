@@ -1,5 +1,7 @@
 package dev.spectroscope.core.session;
 
+import dev.spectroscope.core.config.governing.Governs;
+
 /**
  * Card 492: the care paragraph, a short request at the end of the system
  * prompt to work in small steps on a backend with little capacity.
@@ -14,9 +16,13 @@ public final class CareParagraph {
     /** What sits between the system prompt and the paragraph. */
     public static final String SEPARATOR = "\n\n";
 
-    /** The helpers named when no session count reaches the agent: the
-     *  concept's default of three model sessions per chat, the main agent
-     *  and two helpers ({@code konzept/RUN-PROFILES.md}, Knobs). */
+    /** The helpers the paragraph names while no session count per chat
+     *  reaches the agent: the concept's default of three model sessions per
+     *  chat, the main agent and two helpers ({@code konzept/RUN-PROFILES.md},
+     *  Knobs). The owner named three sessions; nobody has measured how many
+     *  requests the house test backend serves at once usefully. No shipped
+     *  call site sets another count. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     public static final int DEFAULT_HELPERS = 2;
 
     private CareParagraph() {
