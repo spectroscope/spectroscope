@@ -189,6 +189,18 @@ describe("the switch lands on the chat of the same session", () => {
     });
   });
 
+  it("moves the playbook segment back to the sessions on a switch out of developer (card 481)", () => {
+    for (const mode of ["learn", "light"] as const) {
+      expect(planLanding(onScreen, "playbook", mode), mode).toEqual({
+        leaveFleet: false,
+        nav: "sessions",
+        tab: null,
+        route: null,
+      });
+    }
+    expect(planLanding(onScreen, "playbook", "developer").nav).toBe(null);
+  });
+
   it("leaves an entered fleet for the live chat", () => {
     expect(planLanding({ ...onScreen, enteredFleet: "ctx-1", tab: "spectrum" }, "fleets", "light")).toEqual({
       leaveFleet: true,

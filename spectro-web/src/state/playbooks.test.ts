@@ -220,7 +220,7 @@ describe("toWebTopology", () => {
   it("narrows an unknown kind to direct", () => {
     const odd: LoadedPlaybook = {
       ...LOADED,
-      topology: { ...LOADED.topology, edges: [{ from: "classify", to: "done", kind: "spawn" }] },
+      topology: { ...LOADED.topology!, edges: [{ from: "classify", to: "done", kind: "spawn" }] },
     };
     expect(toWebTopology(odd).edges[0].kind).toBe("direct");
   });

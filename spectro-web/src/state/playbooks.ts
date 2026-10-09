@@ -52,6 +52,7 @@ export interface PlaybookArrow {
 }
 
 export interface LoadedPlaybook {
+  /** Null when the reader refused the file: the findings say why, and nothing is drawn. */
   playbook: {
     id: string;
     name: string;
@@ -61,12 +62,13 @@ export interface LoadedPlaybook {
     arrows: PlaybookArrow[];
     models: Record<string, { primary: ModelRefWire; fallbacks: ModelRefWire[] }>;
     documents: Record<string, { name: string; purpose: string; location: string; sections: string[] }>;
-  };
+  } | null;
+  /** Null exactly when `playbook` is. */
   topology: {
     entry: string;
     nodes: { id: string; label: string }[];
     edges: { from: string; to: string; kind: string; branch?: string }[];
-  };
+  } | null;
   findings: { path: string; message: string }[];
   steps: {
     id: string;
@@ -232,11 +234,13 @@ export async function copyBundled(id: string, dir: string): Promise<{ ok: boolea
 /**
  * The server's topology as the layout engine's input. The branch name is the
  * server's, not the layout's; an edge kind other than conditional is direct.
+ * A refused file has no topology and lays out as an empty graph.
  *
  * @param loaded a loaded playbook
  */
 export function toWebTopology(loaded: LoadedPlaybook): Topology {
   const t = loaded.topology;
+  if (t === null) return { entry: null, nodes: [], edges: [] };
   return {
     entry: t.entry,
     nodes: t.nodes.map((n) => ({ id: n.id, label: n.label })),

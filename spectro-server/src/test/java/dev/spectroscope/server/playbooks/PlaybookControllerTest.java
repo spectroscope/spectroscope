@@ -106,6 +106,22 @@ class PlaybookControllerTest {
     }
 
     @Test
+    void theLoadAnswerCarriesTheKindOfEveryNodeOnTheWire() throws IOException {
+        Path a = playbookFolder("a");
+        controller.register(body("dir", a.toString()), local());
+
+        ResponseEntity<?> loaded = controller.load(a.toString(), null);
+        JsonNode wire = mapper.valueToTree(loaded.getBody());
+        JsonNode nodes = wire.path("playbook").path("nodes");
+        assertEquals(3, nodes.size());
+        assertEquals("step", nodes.get(0).path("kind").asText(null));
+        assertEquals("decision", nodes.get(1).path("kind").asText(null));
+        assertEquals("end", nodes.get(2).path("kind").asText(null));
+        // The web reads the decision's ceiling under this name.
+        assertEquals(2, nodes.get(1).path("maxRounds").asInt());
+    }
+
+    @Test
     void refusesAFolderWithoutAPlaybookAPinToAnUnknownFolderAndALoadOfAnUnregisteredOne() throws IOException {
         Path empty = Files.createDirectories(tmp.resolve("empty"));
         Path stranger = playbookFolder("stranger");

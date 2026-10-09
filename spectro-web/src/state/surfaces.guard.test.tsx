@@ -83,7 +83,7 @@ function navRowsInHead(html: string): string[] {
   );
 }
 
-const SEGMENTS = ["sessions", "fleets", "stategraph"] as const;
+const SEGMENTS = ["sessions", "fleets", "stategraph", "playbook"] as const;
 const ACTIONS = ["newChat", "scenarios", "starters", "skills"] as const;
 
 describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
@@ -131,6 +131,21 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
       for (const tutorial of [false, true]) {
         const html = await renderApp(mode, tutorial);
         expect(html.match(/class="mode-switch" role="radiogroup"/g), `${mode} ${tutorial}`).toHaveLength(1);
+      }
+    }
+  });
+
+  it("draws the playbook segment in developer and in no other mode (card 481)", async () => {
+    // The rail's rows only: the first start picture carries a data-surface for
+    // every table entry in every mode.
+    for (const tutorial of [false, true]) {
+      expect(navRowsInHead(await renderApp("developer", tutorial)), `developer ${tutorial}`).toContain(
+        "playbook",
+      );
+      for (const mode of VIEW_MODES.filter((m) => m !== "developer")) {
+        expect(navRowsInHead(await renderApp(mode, tutorial)), `${mode} ${tutorial}`).not.toContain(
+          "playbook",
+        );
       }
     }
   });

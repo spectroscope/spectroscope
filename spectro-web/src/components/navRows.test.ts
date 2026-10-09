@@ -60,6 +60,29 @@ describe("navSegmentRows", () => {
     expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph"]);
   });
 
+  it("adds the playbook segment last in developer, and only there (card 481)", () => {
+    expect(at({ mode: "developer" }).map((r) => r.id)).toEqual([
+      "sessions",
+      "fleets",
+      "stategraph",
+      "playbook",
+    ]);
+    expect(at({ mode: "learn" }).map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph"]);
+    expect(at({ mode: "light" }).map((r) => r.id)).toEqual(["sessions"]);
+    const playbook = at({ mode: "developer", active: "playbook" }).find((r) => r.id === "playbook");
+    expect(playbook).toMatchObject({
+      labelKey: "nav.playbook",
+      icon: "playbook",
+      disabled: false,
+      active: true,
+    });
+    expect(playbook?.trailing).toBe(null);
+    expect(dict["nav.playbook"]?.de).toBeTruthy();
+    expect(dict["nav.playbook"]?.en).toBeTruthy();
+    const icons = at({ mode: "developer" }).map((r) => r.icon);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
+
   it("lists no browser segment — the browser belongs to a session, not the rail", () => {
     // The owner spotted the contradiction in three words: the rail's browser
     // door opened a browser that belongs to NO session. The session tab

@@ -144,6 +144,7 @@ import {
   FleetSpawnForm,
   GraphView,
   LabView,
+  PlaybookPane,
   prefetchSurfaces,
   SpectrumView,
   StateGraphPane,
@@ -151,6 +152,7 @@ import {
   TraceView,
 } from "./state/surfaceChunks";
 import { ChunkBoundary } from "./components/ChunkBoundary";
+import type { NavSegmentId } from "./components/navRows";
 import { onShellCommand } from "./state/shellCommands";
 import { runShellCommand, type ShellDeps } from "./state/shellCommandRouter";
 import { initialViewState, rememberOrientation, type StateGraphViewState } from "./stategraph/viewState";
@@ -345,7 +347,8 @@ export function App() {
   // the browser is a thing a session has. Since 2026-08-30 it has exactly one
   // door, the workspace's browser card; the session tab that was the other one
   // is gone, because two holes meant two rectangles for one native view.
-  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph">("sessions");
+  // Card 481: the playbook is the fourth segment, developer only.
+  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "playbook">("sessions");
   /*
    * The skills view, card 409. It was a fifth value of `nav` (card 225), and
    * that one value drove the rail's list AND this surface, so opening Skills
@@ -368,7 +371,7 @@ export function App() {
   };
   /** A segment press, from the rail or the desktop menu: it shows that
    *  segment's surface, so the skills view in front of it closes. */
-  const pickSegment = (next: "sessions" | "fleets" | "stategraph"): void => {
+  const pickSegment = (next: NavSegmentId): void => {
     setSkillsOpen(false);
     setNav(next);
   };
@@ -2390,11 +2393,12 @@ export function App() {
         ? t(lang, "hdr.newSession")
         : t(lang, "hdr.archivedSession");
 
-  /* The views that take the WHOLE surface. Neither belongs to one run: a
-     state graph is a topology and the skills view is the product's own
-     catalogue, so the session tab row is suppressed on both. Hoisted out of
-     the ternary because the chain below is already three deep. */
-  const wholeSurface = skillsOpen || nav === "stategraph";
+  /* The views that take the WHOLE surface. None belongs to one run: a
+     state graph is a topology, a playbook is a folder (card 481) and the
+     skills view is the product's own catalogue, so the session tab row is
+     suppressed on all three. Hoisted out of the ternary because the chain
+     below is already three deep. */
+  const wholeSurface = skillsOpen || nav === "stategraph" || nav === "playbook";
 
   /* Card 219: whether a modal is open OVER the dock. The dock's browser panel
      folds this into the segment's `active`, because the native pane cannot be
@@ -2736,6 +2740,9 @@ export function App() {
         <ChunkBoundary resetKey={`${skillsOpen}|${nav}|${enteredFleet ?? ""}|${fleetTab}|${tab}`}>
           {skillsOpen ? (
             <SkillsPane />
+          ) : nav === "playbook" ? (
+            /* Card 481: the workspace the folder chip in the header shows. */
+            <PlaybookPane workspace={(viewingLive ? view.workspace : null)?.path ?? null} />
           ) : nav === "stategraph" ? (
             <StateGraphPane
               run={stateGraphRun}

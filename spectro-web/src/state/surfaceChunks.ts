@@ -73,8 +73,7 @@ export const FleetHome = lazy(() => loadFleetHome().then((m) => ({ default: m.Fl
 export const FleetSpawnForm = lazy(() => loadFleetSpawn().then((m) => ({ default: m.FleetSpawnForm })));
 export const FleetLab = lazy(() => loadFleetLab().then((m) => ({ default: m.FleetLab })));
 export const StateGraphPane = lazy(() => loadStateGraphPane().then((m) => ({ default: m.StateGraphPane })));
-// The lazy PlaybookPane and the segment that draws it arrive with the playbook
-// segment; the chunk drift test wants every lazy view drawn in App.
+export const PlaybookPane = lazy(() => loadPlaybookPane().then((m) => ({ default: m.PlaybookPane })));
 
 /** The loaders of each surface's chunks, in the order of the table's list. */
 export const SURFACE_LOADERS: Partial<Record<SurfaceId, ReadonlyArray<() => Promise<unknown>>>> = {

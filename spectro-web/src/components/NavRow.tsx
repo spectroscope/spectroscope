@@ -1,4 +1,4 @@
-// One row, used nine times: New chat, Scenarios, Starters, the five
+// One row for every rail entry: New chat, Scenarios, Starters, Skills, the
 // segments, and Settings at the foot.
 //
 // It is still a <button> — the rail's controls are pressed, and a div with an
@@ -103,6 +103,13 @@ const PATHS: Record<NavIconId, ReactNode> = {
       <rect x="2" y="2.4" width="5.2" height="4" rx="1" />
       <rect x="8.8" y="9.6" width="5.2" height="4" rx="1" />
       <path d="M4.6 6.4v3.6a1.6 1.6 0 0 0 1.6 1.6h2.6" />
+    </>
+  ),
+  // An open book: the playbook a team keeps of how it builds (card 481).
+  playbook: (
+    <>
+      <path d="M8 4.2C6.4 3.1 4.4 2.7 2.2 2.8v9.4c2.2-.1 4.2.3 5.8 1.4 1.6-1.1 3.6-1.5 5.8-1.4V2.8c-2.2-.1-4.2.3-5.8 1.4z" />
+      <path d="M8 4.2v9.4" />
     </>
   ),
   // A window with a title bar — the pane, not a globe: what this segment shows

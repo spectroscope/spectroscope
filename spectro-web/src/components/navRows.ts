@@ -13,7 +13,16 @@ import type { ViewMode } from "../state/viewMode";
 
 /** Which glyph leads a row. Names, not paths — NavIcon owns the geometry. */
 export type NavIconId =
-  "plus" | "play" | "stack" | "sessions" | "fleets" | "stategraph" | "browser" | "skills" | "gear";
+  | "plus"
+  | "play"
+  | "stack"
+  | "sessions"
+  | "fleets"
+  | "stategraph"
+  | "playbook"
+  | "browser"
+  | "skills"
+  | "gear";
 
 /**
  * The row-level action a segment row carries on its right.
@@ -26,7 +35,7 @@ export type NavIconId =
 export type NavTrailing = "import" | "spawn" | "count" | null;
 
 export type NavActionId = "newChat" | "scenarios" | "starters" | "skills";
-export type NavSegmentId = "sessions" | "fleets" | "stategraph";
+export type NavSegmentId = "sessions" | "fleets" | "stategraph" | "playbook";
 
 export interface NavRowSpec {
   /** The row's entry in the surface table (state/surfaces.ts, card 430). */
@@ -105,6 +114,8 @@ export function navActionRows(input: { skillsOpen: boolean; mode?: ViewMode }): 
  * a note, so the reader's last session was two clicks away. It is an upper
  * row now, in {@link navActionRows}.
  *
+ * <p>The playbook joined with card 481, last, and only developer opens it.
+ *
  * @param input.active       which segment is showing
  * @param input.fleetsLocked the ladder has not opened fleets yet
  * @param input.fleetCount   how many fleets the store holds
@@ -155,6 +166,15 @@ export function navSegmentRows(input: {
       // disk and starts no process, so a level has nothing to protect here.
       disabled: false,
       active: input.active === "stategraph",
+      trailing: null,
+    },
+    {
+      id: "playbook",
+      labelKey: "nav.playbook",
+      icon: "playbook",
+      // Not gated on the fleet lock: the module reads a folder and starts no process.
+      disabled: false,
+      active: input.active === "playbook",
       trailing: null,
     },
   ];

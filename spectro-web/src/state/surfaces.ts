@@ -27,7 +27,7 @@ import type { ViewMode } from "./viewMode";
 export type Presence = "open" | "gone" | "tutorial";
 
 /** Parts of the window that are not a tab and not a nav row. */
-export type PartId = "tabRow" | "dock" | "leveling" | "liveTraceSwitch" | "fleetSettings" | "playbook";
+export type PartId = "tabRow" | "dock" | "leveling" | "liveTraceSwitch" | "fleetSettings";
 
 export type SurfaceId = ViewTab | NavActionId | NavSegmentId | PartId;
 
@@ -78,8 +78,8 @@ export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
     ],
   },
   stategraph: { modes: LEARN_ONLY, chunks: ["stategraph/StateGraphPane.tsx"] },
-  // Card 481: the playbook module, developer only, in a chunk of its own. The
-  // segment row and the pane arrive with the playbook segment.
+  // Card 481: the playbook module, the fourth segment, developer only, in a
+  // chunk of its own.
   playbook: {
     modes: { learn: "gone", light: "gone", developer: "open" },
     chunks: ["playbook/PlaybookPane.tsx"],
