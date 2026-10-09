@@ -6,6 +6,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,6 +32,21 @@ class CopilotCredentialsTest {
 
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(store.path())));
         assertEquals(stored("octo-fixture", "ghu_fixtureAccess"), store.load().orElseThrow());
+    }
+
+    @Test
+    void theTemporaryFileIsOwnerOnlyWhileTheTokenIsInIt() throws Exception {
+        List<String> modes = new ArrayList<>();
+        List<Boolean> holdsToken = new ArrayList<>();
+        CopilotCredentials store = new CopilotCredentials(home.resolve("copilot-account.json"), temp -> {
+            modes.add(PosixFilePermissions.toString(Files.getPosixFilePermissions(temp)));
+            holdsToken.add(Files.readString(temp).contains("fixtureAccess"));
+        });
+
+        store.save(stored("octo-fixture", "ghu_" + "fixtureAccess"));
+
+        assertEquals(List.of("rw-------"), modes, "the mode of the temporary file before it is moved");
+        assertEquals(List.of(true), holdsToken, "the observation saw the written token, not an empty file");
     }
 
     @Test

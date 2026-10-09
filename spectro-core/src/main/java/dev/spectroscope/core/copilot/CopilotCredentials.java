@@ -59,42 +59,39 @@ public final class CopilotCredentials {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final Path file;
+    private final BeforeMove beforeMove;
 
-    /**
-
-     * The sign-in kept in one file.
-
-     *
-
-     * @param file where the sign-in is kept
-
-     */
-    public CopilotCredentials(Path file) {
-        this.file = file;
+    /** Sees the temporary file once the sign-in is written into it and before it is moved; for tests. */
+    interface BeforeMove {
+        /**
+         * Called with the temporary file.
+         *
+         * @param temp the temporary file, holding the new sign-in
+         * @throws IOException when the observer cannot read it
+         */
+        void written(Path temp) throws IOException;
     }
 
     /**
-
-     * Returns {@code ~/.spectro/copilot-account.json}.
-
+     * The sign-in kept in one file.
      *
-
-     * @return {@code ~/.spectro/copilot-account.json}
-
+     * @param file where the sign-in is kept
      */
+    public CopilotCredentials(Path file) {
+        this(file, temp -> { });
+    }
+
+    CopilotCredentials(Path file, BeforeMove beforeMove) {
+        this.file = file;
+        this.beforeMove = beforeMove;
+    }
+
+    /** {@return {@code ~/.spectro/copilot-account.json}} */
     public static Path defaultPath() {
         return Path.of(System.getProperty("user.home"), ".spectro", "copilot-account.json");
     }
 
-    /**
-
-     * Returns the file.
-
-     *
-
-     * @return the file
-
-     */
+    /** {@return the file the sign-in is kept in} */
     public Path path() {
         return file;
     }
@@ -157,6 +154,7 @@ public final class CopilotCredentials {
                 throw new IOException("a temporary file of the same name exists", clash);
             }
             Files.write(temp, bytes);
+            beforeMove.written(temp);
             try {
                 Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException noAtomic) {

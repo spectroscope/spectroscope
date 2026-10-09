@@ -77,21 +77,12 @@ public final class CopilotCliLogin {
     /** One running {@code copilot login}. */
     public interface Run {
         /**
-         * Returns completes when the code and address were printed, fails when the process ended first.
-         *
-         * @return completes when the code and address were printed, fails when the process ended first
+         * {@return a future that completes when the code and address were
+         * printed, and fails when the process ended first}
          */
         CompletableFuture<Prompt> prompt();
 
-        /**
-
-         * Returns completes when the process ended.
-
-         *
-
-         * @return completes when the process ended
-
-         */
+        /** {@return a future that completes when the process ended} */
         CompletableFuture<Outcome> outcome();
 
         /** Stops the process. */

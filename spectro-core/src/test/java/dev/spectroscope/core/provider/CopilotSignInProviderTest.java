@@ -201,6 +201,46 @@ class CopilotSignInProviderTest {
         assertFalse(answer.contains("fixtureShort"), answer);
     }
 
+    private CopilotAccount signedInAccount() throws Exception {
+        new CopilotCredentials(dir.resolve("copilot-account.json")).save(new CopilotCredentials.Stored(
+                CopilotCredentials.Method.GITHUB, "octo-fixture", "gho_" + "fixtureAccess", 0, null, 0));
+        return account(new Refresher(), null);
+    }
+
+    @Test
+    void anAuthorizationErrorOfARunReachesTheAccountInTheRuntimesWords() throws Exception {
+        for (String kind : List.of("authorization", "authentication")) {
+            runtime = new FakeCopilotRuntime();
+            CopilotAccount account = signedInAccount();
+            provider = new CopilotProvider(account.providerOptions("claude-sonnet-5", null), MAC, runtime.cliUrl());
+            runtime.onSend(turn -> turn.event("session.error", FakeCopilotRuntime.object(Map.of(
+                    "errorType", kind, "message", "Words of the runtime for " + kind + "."))));
+
+            assertThrows(RuntimeException.class, () -> drain(provider.stream(ask("hi"))));
+
+            CopilotAccount.Status status = account.status();
+            assertEquals(CopilotAccount.State.REFUSED, status.state(), kind);
+            assertEquals("Words of the runtime for " + kind + ".", status.message(), kind);
+            provider.close();
+            runtime.close();
+        }
+        provider = null;
+        runtime = null;
+    }
+
+    @Test
+    void anErrorOfAnotherKindLeavesTheSignInAlone() throws Exception {
+        runtime = new FakeCopilotRuntime();
+        CopilotAccount account = signedInAccount();
+        provider = new CopilotProvider(account.providerOptions("claude-sonnet-5", null), MAC, runtime.cliUrl());
+        runtime.onSend(turn -> turn.event("session.error", FakeCopilotRuntime.object(Map.of(
+                "errorType", "quota", "message", "You have no AI credits left."))));
+
+        assertThrows(RuntimeException.class, () -> drain(provider.stream(ask("hi"))));
+
+        assertEquals(CopilotAccount.State.SIGNED_IN, account.status().state());
+    }
+
     @Test
     void theProviderReadsTheRuntimesAuthStatus() throws Exception {
         runtime = new FakeCopilotRuntime().authStatus(Map.of("isAuthenticated", true, "authType", "user",

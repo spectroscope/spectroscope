@@ -139,15 +139,7 @@ public interface DeviceFlow {
             this.error = error;
         }
 
-        /**
-
-         * Returns GitHub's error code, or the HTTP status as text.
-
-         *
-
-         * @return GitHub's error code, or the HTTP status as text
-
-         */
+        /** {@return GitHub's error code, or the HTTP status as text} */
         public String error() {
             return error;
         }

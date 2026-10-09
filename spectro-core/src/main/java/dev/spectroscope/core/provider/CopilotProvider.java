@@ -144,6 +144,14 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     static final List<String> TOKEN_VARIABLES = List.of("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
             "GITHUB_COPILOT_API_TOKEN", "COPILOT_API_URL");
 
+    /**
+     * The {@code errorType} values of a {@code session.error} that mean the
+     * credential was refused, as the SDK's {@code SessionErrorEventData} lists
+     * them (copilot-sdk-java 1.0.20-preview.0 sources, read 2026-10-10). Card 495
+     * passes such a refusal to the token source, so the sign-in sheet shows it.
+     */
+    static final Set<String> AUTH_ERRORS = Set.of("authentication", "authorization");
+
     private static final ObjectMapper JSON = new ObjectMapper()
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -225,6 +233,17 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
          * @throws Exception when no token can be had; the runtime then fails the request
          */
         Token token(String host, String reason) throws Exception;
+
+        /**
+         * Told when the runtime refused a run for authentication or
+         * authorization (a {@code session.error} whose {@code errorType} is
+         * {@code authentication} or {@code authorization}), for example a
+         * missing Copilot subscription. Called on the SDK's thread.
+         *
+         * @param words the runtime's message, as it came
+         */
+        default void refused(String words) {
+        }
     }
 
     /**
@@ -237,13 +256,9 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         private static final long serialVersionUID = 1L;
 
         /**
-
          * A refusal for lack of a sign-in.
-
          *
-
          * @param message why there is no token, in words for the user
-
          */
         public NotSignedIn(String message) {
             super(message);
@@ -305,6 +320,11 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      * Visible for the fake-runtime tests: {@code cliUrl} connects to a runtime
      * that is already listening instead of starting one.
      */
+    /** {@return what this provider was built from} */
+    public Options options() {
+        return options;
+    }
+
     CopilotProvider(Options options, String osName, String cliUrl) {
         this.options = Objects.requireNonNull(options, "options");
         this.osName = osName;
@@ -1154,6 +1174,10 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 }
                 case SessionErrorEvent error -> {
                     var data = error.getData();
+                    TokenSource source = options.tokenSource();
+                    if (source != null && data != null && AUTH_ERRORS.contains(data.errorType())) {
+                        source.refused(data.message());
+                    }
                     fail("copilot runtime reported an error: " + (data == null ? "no detail"
                             : data.message() + (data.errorType() == null ? "" : " (" + data.errorType() + ")")));
                 }

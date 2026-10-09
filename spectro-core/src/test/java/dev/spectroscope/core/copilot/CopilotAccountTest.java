@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -242,6 +243,21 @@ class CopilotAccountTest {
     }
 
     @Test
+    void aCodeGitHubStillCallsPendingAfterItsLifetimeEndsTheWaitInTheAppsOwnWords() throws Exception {
+        github.deviceCode("ABCD-1234").pending();
+        account = new CopilotAccount(store, new GitHubDeviceFlow("Iv1.fixtureclient", github.base(), github.base(),
+                HttpClient.newHttpClient()), null, clock, seconds -> clock.epochSecond.addAndGet(seconds));
+
+        account.signInWithGitHub();
+        CopilotAccount.Status status = settled();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertEquals("The code expired before it was confirmed.", status.message());
+        assertTrue(clock.epochSecond.get() > T0 + 900, "the clock passed the code's lifetime");
+        assertFalse(Files.exists(store.path()));
+    }
+
+    @Test
     void cancelStopsTheWaitAndStoresNothing() throws Exception {
         github.deviceCode("ABCD-1234").pending();
         account.signInWithGitHub();
@@ -328,6 +344,17 @@ class CopilotAccountTest {
     }
 
     @Test
+    void aTokenWithExactlyAnHourLeftIsRefreshed() throws Exception {
+        signInAs("octo-fixture", "ghu_" + "fixtureAccess", 28800, "ghr_" + "fixtureRefresh");
+        clock.epochSecond.addAndGet(28800 - 3600);
+        github.granted("ghu_" + "fixtureFresh", 28800, "ghr_" + "fixtureRefresh2");
+
+        CopilotProvider.Token token = account.tokenSource().token("https://github.com", "refresh");
+
+        assertEquals("ghu_fixtureFresh", token.value(), "one hour or less remaining is the refresh mark");
+    }
+
+    @Test
     void aShortLivedTokenIsRefreshedBeforeItExpiresAndTheNewOneIsStored() throws Exception {
         signInAs("octo-fixture", "ghu_" + "fixtureShort", 28800, "ghr_" + "fixtureRefresh");
         clock.epochSecond.addAndGet(28800 - 30);
@@ -363,6 +390,49 @@ class CopilotAccountTest {
         assertEquals("The refresh token passed is incorrect or expired.", status.message());
     }
 
+    // ---- a refusal that comes with a run -------------------------------------------------
+
+    @Test
+    void aRunRefusedForAuthorizationShowsInTheStatusInTheRuntimesWords() throws Exception {
+        signInAs("octo-fixture", "gho_" + "fixtureAccess", 0, null);
+
+        account.tokenSource().refused("Words of the runtime about the missing subscription.");
+        CopilotAccount.Status status = account.status();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertEquals("github", status.method());
+        assertEquals("Words of the runtime about the missing subscription.", status.message());
+        assertTrue(Files.exists(store.path()), "the token stays, an SSO authorisation can make it work");
+    }
+
+    @Test
+    void aSecondSignInOnTheSameAccountClearsTheRunRefusal() throws Exception {
+        signInAs("octo-fixture", "gho_" + "fixtureAccess", 0, null);
+        account.tokenSource().refused("Words of the runtime.");
+
+        github.deviceCode("EFGH-5678").granted("gho_" + "fixtureAgain", 0, null).login("octo-fixture");
+        account.signInWithGitHub();
+
+        assertEquals(CopilotAccount.State.SIGNED_IN, settled().state());
+        assertNull(account.status().message());
+    }
+
+    @Test
+    void signOutClearsARunRefusal() throws Exception {
+        signInAs("octo-fixture", "gho_" + "fixtureAccess", 0, null);
+        account.tokenSource().refused("Words of the runtime.");
+
+        CopilotAccount.Status status = account.signOut();
+
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, status.state());
+        assertNull(status.message());
+    }
+
+    @Test
+    void theMachineHasOneAccountSoTheSheetAndTheProviderShareIt() {
+        assertSame(CopilotAccount.forThisMachine(), CopilotAccount.forThisMachine());
+    }
+
     // ---- what the provider is built with -------------------------------------------------
 
     @Test
@@ -383,6 +453,17 @@ class CopilotAccountTest {
 
         assertFalse(options.useStoredLogin());
         assertEquals("gho_fixtureAccess", options.tokenSource().token("https://github.com", "initial").value());
+    }
+
+    @Test
+    void theAccountBuildsTheProviderWithItsOwnCredentialChoice() throws Exception {
+        try (CopilotProvider provider = account.provider("auto", "/x/copilot")) {
+            CopilotProvider.Options options = provider.options();
+
+            assertNotNull(options.tokenSource(), "credentials come only through the callback");
+            assertFalse(options.useStoredLogin(), "the CLI and gh fallback stay off");
+            assertEquals("/x/copilot", options.cliPath());
+        }
     }
 
     // ---- the Copilot CLI's own sign-in ----------------------------------------------------

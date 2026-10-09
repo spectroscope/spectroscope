@@ -126,15 +126,7 @@ public final class CopilotAccount {
          */
         CopilotCliLogin.Run login() throws IOException;
 
-        /**
-
-         * Returns whether a runtime is there to ask.
-
-         *
-
-         * @return whether a runtime is there to ask
-
-         */
+        /** {@return whether a runtime is there to ask} */
         default boolean available() {
             return true;
         }
@@ -156,13 +148,9 @@ public final class CopilotAccount {
         private static final long serialVersionUID = 1L;
 
         /**
-
          * A refusal for lack of a sign-in.
-
          *
-
          * @param message why
-
          */
         public NotSignedIn(String message) {
             super(message);
@@ -208,6 +196,7 @@ public final class CopilotAccount {
     private volatile boolean refused;
     private volatile CliAuth cliAuth;
     private volatile long cliAuthAt;
+    private volatile String runRefusal;
 
     /**
      * An account over the given parts.
@@ -229,26 +218,28 @@ public final class CopilotAccount {
     /**
      * The account of this machine: the file under {@code ~/.spectro}, the OAuth
      * app named by {@value #CLIENT_ID_VARIABLE} when one is set, and the
-     * Copilot runtime the lookup of card 497 finds.
+     * Copilot runtime the lookup of card 497 finds. It is one object per
+     * process, so the sign-in sheet and the provider share its state.
      *
      * @return the account
      */
     public static CopilotAccount forThisMachine() {
+        return Machine.ACCOUNT;
+    }
+
+    /** Holds the one account of this machine, built on first use. */
+    private static final class Machine {
+        static final CopilotAccount ACCOUNT = build();
+    }
+
+    private static CopilotAccount build() {
         String clientId = SpectroConfig.resolveApiKey(CLIENT_ID_VARIABLE);
         DeviceFlow flow = clientId == null || clientId.isBlank() ? null : GitHubDeviceFlow.forGitHub(clientId.trim());
         return new CopilotAccount(new CopilotCredentials(CopilotCredentials.defaultPath()), flow, machineCli(),
                 Clock.systemUTC(), seconds -> TimeUnit.SECONDS.sleep(seconds));
     }
 
-    /**
-
-     * Returns the CLI side that looks the runtime up on every use.
-
-     *
-
-     * @return the CLI side that looks the runtime up on every use
-
-     */
+    /** {@return the CLI side that looks the runtime up on every use} */
     static Cli machineCli() {
         return new Cli() {
             private Optional<Path> runtime() {
@@ -281,43 +272,19 @@ public final class CopilotAccount {
         };
     }
 
-    /**
-
-     * Returns whether spectroscope's own device flow is configured.
-
-     *
-
-     * @return whether spectroscope's own device flow is configured
-
-     */
+    /** {@return whether spectroscope's own device flow is configured} */
     public boolean gitHubAvailable() {
         return github != null;
     }
 
-    /**
-
-     * Returns whether a Copilot runtime is there for the CLI sign-in.
-
-     *
-
-     * @return whether a Copilot runtime is there for the CLI sign-in
-
-     */
+    /** {@return whether a Copilot runtime is there for the CLI sign-in} */
     public boolean cliAvailable() {
         return cli != null && cli.available();
     }
 
     // ---- status ---------------------------------------------------------------------------
 
-    /**
-
-     * Returns where the sign-in stands.
-
-     *
-
-     * @return where the sign-in stands
-
-     */
+    /** {@return where the sign-in stands} */
     public Status status() {
         Pending p = pending;
         if (p != null) {
@@ -337,19 +304,15 @@ public final class CopilotAccount {
             return new Status(State.NOT_SIGNED_IN, "github", null, null, null, 0,
                     s.accessToken() == null ? note : "The GitHub sign-in expired. Sign in again.");
         }
+        String refusal = runRefusal;
+        if (refusal != null) {
+            return new Status(State.REFUSED, "github", null, null, null, 0, refusal);
+        }
         return new Status(State.SIGNED_IN, "github", s.login(), null, null, 0, note);
     }
 
-    /**
-
-     * Returns the status with the runtime asked again, not taken from the short cache.
-
-     *
-
-     * @return the status with the runtime asked again, not taken from the short cache
-
-     */
-    public Status recheck() {
+    /** {@return the status with the runtime asked again instead of the 30 s cache; tests use it} */
+    Status recheck() {
         cliAuth = null;
         return status();
     }
@@ -420,16 +383,13 @@ public final class CopilotAccount {
     // ---- spectroscope's own device flow ------------------------------------------------------
 
     /**
-
-     * Returns the waiting status with the code to type, or a refusal.
-
+     * Starts spectroscope's own device flow against GitHub.
      *
-
      * @return the waiting status with the code to type, or a refusal
-
      */
     public Status signInWithGitHub() {
         cancel();
+        runRefusal = null;
         if (github == null) {
             return refuse(NO_APP);
         }
@@ -530,16 +490,13 @@ public final class CopilotAccount {
     // ---- the Copilot CLI's sign-in --------------------------------------------------------------
 
     /**
-
-     * Returns signed in through the CLI's stored sign-in, or waiting for the CLI's device flow.
-
+     * Takes the Copilot CLI's stored sign-in, or starts the CLI's own device flow when it has none.
      *
-
      * @return signed in through the CLI's stored sign-in, or waiting for the CLI's device flow
-
      */
     public Status signInWithCli() {
         cancel();
+        runRefusal = null;
         if (cli == null || !cli.available()) {
             return refuse(NO_CLI);
         }
@@ -629,13 +586,9 @@ public final class CopilotAccount {
     // ---- cancel and sign out ----------------------------------------------------------------------
 
     /**
-
-     * Returns the status after a running sign-in was stopped.
-
+     * Stops a running sign-in.
      *
-
-     * @return the status after a running sign-in was stopped
-
+     * @return the status afterwards
      */
     public Status cancel() {
         Pending p;
@@ -661,13 +614,9 @@ public final class CopilotAccount {
     }
 
     /**
-
-     * Returns not signed in; the stored tokens are deleted, and the Copilot CLI's own sign-in is left alone.
-
+     * Deletes the stored tokens, or the choice of the CLI's sign-in. The Copilot CLI's own sign-in is left alone.
      *
-
-     * @return not signed in; the stored tokens are deleted, and the Copilot CLI's own sign-in is left alone
-
+     * @return the status afterwards, not signed in
      */
     public Status signOut() {
         cancel();
@@ -678,6 +627,7 @@ public final class CopilotAccount {
             return refuse("The stored sign-in could not be deleted: " + failure.getMessage());
         }
         cliAuth = null;
+        runRefusal = null;
         note = wasCli ? CLI_LEFT : null;
         refused = false;
         return status();
@@ -686,16 +636,27 @@ public final class CopilotAccount {
     // ---- what the provider gets ---------------------------------------------------------------------
 
     /**
-
-     * Returns the token source the provider passes to the SDK's token callback.
-
+     * The token source the provider passes to the SDK's token callback. A run the runtime refuses for
+     * authentication or authorization reaches {@link CopilotProvider.TokenSource#refused(String)}, and the
+     * status then shows the runtime's words. The reason the runtime gives is
+     * not consulted: it asks for {@code refresh} only when an hour or less
+     * remains and does not replay after a rejection (docs.github.com, Copilot SDK
+     * authentication, read 2026-10-10), which is the mark used here as well.
      *
-
-     * @return the token source the provider passes to the SDK's token callback
-
+     * @return the token source
      */
     public CopilotProvider.TokenSource tokenSource() {
-        return (host, reason) -> token();
+        return new CopilotProvider.TokenSource() {
+            @Override
+            public CopilotProvider.Token token(String host, String reason) throws IOException {
+                return CopilotAccount.this.token();
+            }
+
+            @Override
+            public void refused(String words) {
+                runRefusal = words == null || words.isBlank() ? "Copilot refused the run." : words;
+            }
+        };
     }
 
     private CopilotProvider.Token token() throws IOException {
@@ -758,5 +719,17 @@ public final class CopilotAccount {
         return choseCli
                 ? new CopilotProvider.Options(model, cliPath, null, true)
                 : new CopilotProvider.Options(model, cliPath, tokenSource(), false);
+    }
+
+    /**
+     * A provider built with this account's credential choice. Other code builds
+     * a Copilot provider only through here ({@code CopilotProviderIsBuiltByTheAccountDriftTest}).
+     *
+     * @param model   the model id
+     * @param cliPath the runtime
+     * @return a provider over {@link #providerOptions(String, String)}
+     */
+    public CopilotProvider provider(String model, String cliPath) {
+        return new CopilotProvider(providerOptions(model, cliPath));
     }
 }
