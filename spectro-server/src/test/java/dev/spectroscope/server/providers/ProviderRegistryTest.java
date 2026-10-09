@@ -1,11 +1,14 @@
 package dev.spectroscope.server.providers;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.local.LocalModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -148,6 +151,28 @@ class ProviderRegistryTest {
         assertEquals("builtin", r.kind());
         assertTrue("configured".equals(r.state()) || "needs-download".equals(r.state()));
         assertNull(r.reason());
+    }
+
+    @Test
+    void theBuiltInProviderIsNeverCheckedEvenWithItsModelOnDisk(@TempDir Path bundle) throws IOException {
+        Files.createFile(bundle.resolve(LocalModel.FILE));
+        String before = System.getProperty("spectro.bundle.models");
+        System.setProperty("spectro.bundle.models", bundle.toString());
+        try {
+            ProviderRegistry registry = new ProviderRegistry((p, c) -> {
+                throw new AssertionError("spectro-local must not be dialled: a check would start llama-server");
+            }, now::get);
+            ProviderRow r = registry.check("spectro-local", config());
+            assertEquals("builtin", r.kind());
+            assertEquals("configured", r.state(), "the model file is on disk");
+            assertEquals(0L, r.checkedAt());
+        } finally {
+            if (before == null) {
+                System.clearProperty("spectro.bundle.models");
+            } else {
+                System.setProperty("spectro.bundle.models", before);
+            }
+        }
     }
 
     @Test
