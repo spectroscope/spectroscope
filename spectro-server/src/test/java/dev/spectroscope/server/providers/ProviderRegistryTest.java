@@ -148,11 +148,11 @@ class ProviderRegistryTest {
         assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"),
                 "an OPENAI_API_KEY on this machine changes the key half of the claim");
         // openai owns no address field of its own; it is dialled at the shared baseUrl.
-        writeUserSettings("{ \"baseUrl\": \"http://192.168.1.20:8080\" }");
+        writeUserSettings("{ \"baseUrl\": \"http://192.168.1.10:8080\" }");
         ProviderRegistry registry = new ProviderRegistry(
                 (p, c) -> ListResult.ok(List.of(), c.endpointFor(p)), now::get);
         ProviderRow r = row(registry.rows(config()), "openai");
-        assertEquals("http://192.168.1.20:8080", r.endpoint());
+        assertEquals("http://192.168.1.10:8080", r.endpoint());
         assertEquals("local", r.kind());
         assertEquals("configured", r.state(), "not needs-key: the address is on the operator's network");
     }

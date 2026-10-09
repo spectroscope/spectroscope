@@ -31,7 +31,7 @@ class ConfigProviderStatusTest {
         org.junit.jupiter.api.Assumptions.assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"));
         java.nio.file.Files.createDirectories(SpectroConfig.USER_SETTINGS_PATH.getParent());
         java.nio.file.Files.writeString(SpectroConfig.USER_SETTINGS_PATH,
-                "{ \"baseUrl\": \"http://192.168.1.20:8080\" }");
+                "{ \"baseUrl\": \"http://192.168.1.10:8080\" }");
         try {
             Map<String, Object> config = new SessionsController().config();
             Map<String, String> status = (Map<String, String>) config.get("providerStatus");
