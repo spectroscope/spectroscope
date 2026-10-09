@@ -36,7 +36,7 @@ describe("the reply budget is classified before it is drawn", () => {
     // Measured rather than inherited from its neighbours: Agent's runLoop takes
     // `options.maxTokens()` once, before the first token flows, and there is no
     // setter for it — unlike continuationBudget, which SessionConnection
-    // re-reads per prompt and which is therefore live.
+    // re-reads per prompt and which therefore acts from the next run.
     expect(SETTING_REACH.maxTokens).toBe("next-session");
   });
 

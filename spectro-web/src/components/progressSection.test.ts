@@ -28,8 +28,10 @@ describe("the progress section", () => {
   it("keeps the turn cap and the leash budget in blocks of their own", () => {
     // Card 282, criterion 7. continuationBudget is re-read per prompt and
     // maxTurns is bound at the agent build, so one sentence cannot cover both.
+    // Card 491: per prompt is the start of the next run, so its word is
+    // next-run, not live.
     expect(reachOf(["maxTurns"])).toBe("next-session");
-    expect(reachOf(["continuationBudget"])).toBe("live");
+    expect(reachOf(["continuationBudget"])).toBe("next-run");
     expect(() => reachOf(["maxTurns", "continuationBudget"])).toThrow();
   });
 });

@@ -2094,14 +2094,19 @@ public final class SessionConnection {
      * a reconnect — which is a rebuild by another name. The settings panel
      * already writes this key through {@code SettingsWriter}; this is what makes
      * the number it wrote govern the very next run.</p>
+     *
+     * <p>Card 491: the number comes from {@link #liveConfig()}, which reads the
+     * settings files again. {@link #activeConfig} is written when the agent is
+     * built and by nothing a settings save does, so reading it here kept the
+     * budget the session started with. The key's reach is {@code next-run}.</p>
      */
     void refreshContinuationBudget() {
         if (agent == null || agent.continuationLeash() == null) {
             return;
         }
-        SpectroConfig active = activeConfig.get();
-        if (active != null) {
-            agent.continuationLeash().setBudget(active.continuationBudget());
+        SpectroConfig live = liveConfig();
+        if (live != null) {
+            agent.continuationLeash().setBudget(live.continuationBudget());
         }
     }
 
@@ -2437,12 +2442,15 @@ public final class SessionConnection {
      *
      * <p><b>The answer is the same for all of them.</b> Not "web_search is fixed
      * now" — every setting a tool here reads is read again on the call. What
-     * this method does NOT cover is listed on the card and said on the settings
-     * page: the workspace, the MCP servers, the shell hooks, the system prompt
-     * and its skills, and the CONFIGURED compaction threshold are settled when
-     * the agent is built and stay settled, because changing them mid-session
-     * would mean killing processes or rewriting a conversation that already
-     * happened.</p>
+     * this method does NOT cover is listed on the card and in the reach table
+     * of the config reference chapter: the workspace, the MCP servers, the
+     * shell hooks, the base of the system prompt and its skills, and the
+     * CONFIGURED compaction threshold are settled when the agent is built and
+     * stay settled, because changing them mid-session would mean killing
+     * processes or rewriting a conversation that already happened. Card 491:
+     * only the base of the prompt is settled for the session. A setting with
+     * the reach {@code next-run} may add to the prompt at the start of each
+     * run, so the prompt a run sends is fixed for that run.</p>
      *
      * <p>Half of that last one moved with card 263 and the sentence above would
      * otherwise be the harder kind of stale — true enough to believe. What the
