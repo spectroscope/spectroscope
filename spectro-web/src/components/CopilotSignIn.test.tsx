@@ -2,6 +2,8 @@
 // state at a time: the code and the address while it waits, "signed in as"
 // after, and a refusal in the words it came in.
 
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { dict } from "../i18n/i18n";
@@ -22,12 +24,17 @@ const base: CopilotAccountStatus = {
 
 const noop = (): void => undefined;
 
-function sheet(status: CopilotAccountStatus | null, lang: "en" | "de" = "en"): string {
+function sheet(
+  status: CopilotAccountStatus | null | undefined,
+  lang: "en" | "de" = "en",
+  extra: { busy?: "cli" | "other" | null; readFailed?: boolean } = {},
+): string {
   return renderToStaticMarkup(
     <CopilotSignInSheet
       status={status}
       lang={lang}
-      busy={false}
+      busy={extra.busy ?? null}
+      readFailed={extra.readFailed ?? false}
       onSignIn={noop}
       onCancel={noop}
       onSignOut={noop}
@@ -71,7 +78,59 @@ describe("the sign-in sheet", () => {
     expect(html).toContain("Signed in as octo-fixture");
     expect(html).toContain(dict["cp.viaCli"].en);
     expect(html).toContain(dict["cp.signOut"].en);
+    expect(html).not.toContain(dict["cp.signInCli"].en);
+  });
+
+  it("offers another account while signed in, so a second sign-in can replace the first", () => {
+    const github = sheet({ ...base, state: "SIGNED_IN", method: "github", login: "octo-fixture" });
+    expect(github).toContain(dict["cp.signInOther"].en);
+    expect(github).toContain(dict["cp.signInCli"].en);
+    expect(github).toContain(dict["cp.checkedOnRun"].en);
+    const cli = sheet({ ...base, state: "SIGNED_IN", method: "cli", login: "octo-fixture" });
+    expect(cli).toContain(dict["cp.signInGithub"].en);
+  });
+
+  it("names the code for a screen reader by its content, not by a label over it", () => {
+    const html = sheet({
+      ...base,
+      state: "WAITING",
+      method: "github",
+      userCode: "WXYZ-9876",
+      verificationUri: "https://github.com/login/device",
+    });
+    expect(html).toMatch(/<code[^>]*class="cp-code[^"]*"[^>]*>WXYZ-9876<\/code>/);
+    expect(html).not.toMatch(/aria-label="[^"]*"[^>]*>WXYZ-9876/);
+    expect(html).toContain(dict["cp.codeLabel"].en);
+  });
+
+  it("says what it is doing while a sign-in call runs", () => {
+    const html = sheet(base, "en", { busy: "cli" });
+    expect(html).toMatch(/role="status"[^>]*>[^<]*Copilot CLI/);
+    expect(html).toContain(dict["cp.workingCli"].en);
+    expect(sheet(base, "en", { busy: "other" })).toContain(dict["cp.working"].en);
+  });
+
+  it("keeps the code on screen when one status read failed while it waits", () => {
+    const html = sheet(
+      {
+        ...base,
+        state: "WAITING",
+        method: "github",
+        userCode: "WXYZ-9876",
+        verificationUri: "https://github.com/login/device",
+      },
+      "en",
+      { readFailed: true },
+    );
+    expect(html).toContain("WXYZ-9876");
+    expect(html).toContain(dict["cp.readFailed"].en);
+  });
+
+  it("says it is reading before the first answer and offers nothing yet", () => {
+    const html = sheet(undefined);
+    expect(html).toContain(dict["cp.loading"].en);
     expect(html).not.toContain(dict["cp.signInGithub"].en);
+    expect(html).not.toContain(dict["cp.unreachable"].en);
   });
 
   it("speaks German too", () => {
@@ -96,5 +155,24 @@ describe("the sign-in sheet", () => {
 
   it("says so when the status could not be read", () => {
     expect(sheet(null)).toContain(dict["cp.unreachable"].en);
+  });
+});
+
+describe("the sheet's styles", () => {
+  it("has a rule for every cp- class the sheet uses", () => {
+    const source = readFileSync(fileURLToPath(new URL("./CopilotSignIn.tsx", import.meta.url)), "utf8");
+    const used = [...new Set([...source.matchAll(/\bcp-[a-z-]+/g)].map((m) => m[0]))].filter(
+      (name) => name !== "cp-title",
+    );
+    expect(used.length).toBeGreaterThanOrEqual(3);
+    const dir = fileURLToPath(new URL("../styles/", import.meta.url));
+    const css = readdirSync(dir)
+      .filter((f) => f.endsWith(".css"))
+      .map((f) => readFileSync(dir + f, "utf8"))
+      .join("\n")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const name of used) {
+      expect(css, name).toMatch(new RegExp(`\\.${name}(?![a-z-])[^{]*\\{`));
+    }
   });
 });

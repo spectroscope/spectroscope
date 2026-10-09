@@ -9,27 +9,36 @@ import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import {
   accountLine,
+  afterRead,
   fetchCopilotAccount,
   linkable,
   pollDelayMs,
   postCopilotAccount,
+  type AccountNoteState,
   type CopilotAccountAction,
   type CopilotAccountStatus,
 } from "./copilotAccount";
+
+/** What a running call is: the CLI sign-in, which can take 30 s, or anything else. */
+export type CopilotBusy = "cli" | "other" | null;
 
 /** The sheet itself: what it shows for one status. */
 export function CopilotSignInSheet({
   status,
   lang,
   busy,
+  readFailed,
   onSignIn,
   onCancel,
   onSignOut,
   onClose,
 }: {
-  status: CopilotAccountStatus | null;
+  /** undefined before the first answer, null when it could not be read */
+  status: CopilotAccountStatus | null | undefined;
   lang: Lang;
-  busy: boolean;
+  busy: CopilotBusy;
+  /** The last read failed while an earlier status is still shown. */
+  readFailed: boolean;
   onSignIn: (method: "github" | "cli") => void;
   onCancel: () => void;
   onSignOut: () => void;
@@ -38,6 +47,9 @@ export function CopilotSignInSheet({
   const waiting = status?.state === "WAITING";
   const signedIn = status?.state === "SIGNED_IN";
   const href = linkable(status?.verificationUri ?? null);
+  const offerGithub = !!status && !waiting;
+  const offerCli = !!status && !waiting && !(signedIn && status.method === "cli");
+  const githubLabel = signedIn && status.method === "github" ? "cp.signInOther" : "cp.signInGithub";
   return (
     <div className="modal-backdrop">
       <div className="modal cp-modal" role="dialog" aria-modal="true" aria-labelledby="cp-title">
@@ -47,16 +59,19 @@ export function CopilotSignInSheet({
           </span>
         </div>
 
-        {!status && (
+        {status === null && (
           <p className="import-hint" role="alert">
             {t(lang, "cp.unreachable")}
           </p>
         )}
 
-        {status && <p className="import-hint">{accountLine(status, lang)}</p>}
+        {status !== null && <p className="import-hint">{accountLine(status, lang)}</p>}
 
         {signedIn && (
           <p className="import-hint">{t(lang, status.method === "cli" ? "cp.viaCli" : "cp.viaGithub")}</p>
+        )}
+        {signedIn && status.method === "github" && (
+          <p className="import-hint">{t(lang, "cp.checkedOnRun")}</p>
         )}
 
         {waiting && (
@@ -71,11 +86,18 @@ export function CopilotSignInSheet({
                 <span className="mono">{status.verificationUri}</span>
               )}
             </p>
-            <p className="cp-code mono" aria-label={t(lang, "cp.title")}>
-              {status.userCode}
+            <p className="cp-code-line">
+              <span className="cp-code-label">{t(lang, "cp.codeLabel")}</span>{" "}
+              <code className="cp-code mono">{status.userCode}</code>
             </p>
             <p className="import-hint">{t(lang, "cp.afterConfirm")}</p>
           </>
+        )}
+
+        {readFailed && status && (
+          <p className="import-hint" role="alert">
+            {t(lang, "cp.readFailed")}
+          </p>
         )}
 
         {status?.message && (
@@ -84,47 +106,49 @@ export function CopilotSignInSheet({
           </p>
         )}
 
-        <div className="provider-pop-foot">
+        {busy && (
+          <p className="import-hint" role="status" aria-live="polite">
+            {t(lang, busy === "cli" ? "cp.workingCli" : "cp.working")}
+          </p>
+        )}
+
+        <div className="provider-pop-foot cp-actions">
           {waiting && (
-            <button type="button" className="ob-opt-cta" onClick={onCancel} disabled={busy}>
+            <button type="button" className="ob-opt-cta" onClick={onCancel} disabled={!!busy}>
               {t(lang, "cp.cancel")}
             </button>
           )}
           {signedIn && (
-            <button type="button" className="ob-opt-cta" onClick={onSignOut} disabled={busy}>
+            <button type="button" className="ob-opt-cta" onClick={onSignOut} disabled={!!busy}>
               {t(lang, "cp.signOut")}
             </button>
           )}
-          {status && !waiting && !signedIn && (
-            <>
-              <button
-                type="button"
-                className="soft-primary"
-                onClick={() => onSignIn("github")}
-                disabled={busy || !status.github}
-              >
-                {t(lang, "cp.signInGithub")}
-              </button>
-              <button
-                type="button"
-                className="ob-opt-cta"
-                onClick={() => onSignIn("cli")}
-                disabled={busy || !status.cli}
-              >
-                {t(lang, "cp.signInCli")}
-              </button>
-            </>
+          {offerGithub && (
+            <button
+              type="button"
+              className={signedIn ? "ob-opt-cta" : "soft-primary"}
+              onClick={() => onSignIn("github")}
+              disabled={!!busy || !status.github}
+            >
+              {t(lang, githubLabel)}
+            </button>
+          )}
+          {offerCli && (
+            <button
+              type="button"
+              className="ob-opt-cta"
+              onClick={() => onSignIn("cli")}
+              disabled={!!busy || !status.cli}
+            >
+              {t(lang, "cp.signInCli")}
+            </button>
           )}
           <button type="button" className="ob-opt-cta" onClick={onClose}>
             {t(lang, "cp.close")}
           </button>
         </div>
-        {status && !waiting && !signedIn && !status.github && (
-          <p className="import-hint">{t(lang, "cp.noGithub")}</p>
-        )}
-        {status && !waiting && !signedIn && !status.cli && (
-          <p className="import-hint">{t(lang, "cp.noCli")}</p>
-        )}
+        {offerGithub && !status.github && <p className="import-hint">{t(lang, "cp.noGithub")}</p>}
+        {offerCli && !status.cli && <p className="import-hint">{t(lang, "cp.noCli")}</p>}
       </div>
     </div>
   );
@@ -132,19 +156,19 @@ export function CopilotSignInSheet({
 
 /**
  * The status line under the Copilot provider and the button that opens the
- * sheet. Reads the status when it mounts, and every two seconds while a
- * sign-in waits.
+ * sheet. Reads the status when it mounts, and while a sign-in waits every two
+ * seconds, slower after failed reads. A failed read keeps the last status.
  */
 export function CopilotAccountNote() {
   const lang = useLang();
-  const [status, setStatus] = useState<CopilotAccountStatus | null>(null);
+  const [note, setNote] = useState<AccountNoteState>({ status: undefined, failures: 0 });
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<CopilotBusy>(null);
 
   useEffect(() => {
     let live = true;
     void fetchCopilotAccount().then((s) => {
-      if (live) setStatus(s);
+      if (live) setNote((prev) => afterRead(prev, s));
     });
     return () => {
       live = false;
@@ -152,38 +176,39 @@ export function CopilotAccountNote() {
   }, []);
 
   useEffect(() => {
-    const delay = pollDelayMs(status);
+    const delay = pollDelayMs(note.status, note.failures);
     if (delay === null) return;
     const timer = window.setTimeout(() => {
-      void fetchCopilotAccount().then(setStatus);
+      void fetchCopilotAccount().then((s) => setNote((prev) => afterRead(prev, s)));
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [status]);
+  }, [note]);
 
   const act = useCallback((action: CopilotAccountAction, body: Record<string, string> = {}) => {
-    setBusy(true);
+    setBusy(action === "sign-in" && body.method === "cli" ? "cli" : "other");
     void postCopilotAccount(action, body).then((s) => {
-      setStatus(s);
-      setBusy(false);
+      setNote((prev) => afterRead(prev, s));
+      setBusy(null);
     });
   }, []);
 
   return (
     <div className="provider-local-note">
-      <span>{accountLine(status, lang)}</span>{" "}
+      <span>{accountLine(note.status, lang)}</span>{" "}
       <button type="button" className="ob-opt-cta" onClick={() => setOpen(true)}>
         {t(lang, "cp.manage")}
       </button>
       {open && (
         <CopilotSignInSheet
-          status={status}
+          status={note.status}
           lang={lang}
           busy={busy}
+          readFailed={note.failures > 0 && !!note.status}
           onSignIn={(method) => act("sign-in", { method })}
           onCancel={() => act("cancel")}
           onSignOut={() => act("sign-out")}
           onClose={() => {
-            if (status?.state === "WAITING") act("cancel");
+            if (note.status?.state === "WAITING") act("cancel");
             setOpen(false);
           }}
         />

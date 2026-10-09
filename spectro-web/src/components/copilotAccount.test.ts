@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { dict } from "../i18n/i18n";
 import {
   accountLine,
+  afterRead,
   COPILOT_KEYS,
   fetchCopilotAccount,
   pollDelayMs,
@@ -50,7 +51,12 @@ describe("the provider status line", () => {
     expect(
       accountLine({ ...base, state: "REFUSED", message: "The authorization request was denied." }, "en"),
     ).toBe("Not signed in");
-    expect(accountLine(null, "en")).toBe("Not signed in");
+  });
+
+  it("says it is reading before the first answer, and that the read failed after a failed one", () => {
+    expect(accountLine(undefined, "en")).toBe(dict["cp.loading"].en);
+    expect(accountLine(null, "en")).toBe(dict["cp.unreachable"].en);
+    expect(accountLine(null, "en")).not.toBe("Not signed in");
   });
 
   it("says it waits while a code is out", () => {
@@ -67,6 +73,24 @@ describe("polling", () => {
       expect(pollDelayMs({ ...base, state })).toBeNull();
     }
     expect(pollDelayMs(null)).toBeNull();
+    expect(pollDelayMs(undefined)).toBeNull();
+  });
+
+  it("keeps the last status and goes on polling, slower, when one read fails", () => {
+    const waiting = { ...base, state: "WAITING" as const, userCode: "WXYZ-9876" };
+    const failed = afterRead({ status: waiting, failures: 0 }, null);
+    expect(failed.status).toBe(waiting);
+    expect(failed.failures).toBe(1);
+    expect(pollDelayMs(failed.status, failed.failures)).toBe(4000);
+    expect(pollDelayMs(waiting, 20)).toBe(10000);
+
+    const signedIn = { ...base, state: "SIGNED_IN" as const, login: "octo-fixture" };
+    const read = afterRead(failed, signedIn);
+    expect(read).toEqual({ status: signedIn, failures: 0 });
+  });
+
+  it("shows a failed first read as a failed read", () => {
+    expect(afterRead({ status: undefined, failures: 0 }, null)).toEqual({ status: null, failures: 1 });
   });
 });
 

@@ -47,24 +47,53 @@ export const COPILOT_KEYS = [
   "cp.close",
   "cp.manage",
   "cp.unreachable",
+  "cp.loading",
+  "cp.readFailed",
+  "cp.working",
+  "cp.workingCli",
+  "cp.signInOther",
+  "cp.checkedOnRun",
+  "cp.codeLabel",
 ] as const;
 
 /** How often the sheet asks again while a sign-in waits. */
 export const POLL_MS = 2000;
 
+/** The longest wait between two reads after reads failed. */
+export const POLL_MAX_MS = 10000;
+
+/**
+ * What the status line knows: undefined before the first answer, null when
+ * the last read failed and nothing was known before, and how many reads in a
+ * row failed.
+ */
+export type AccountNoteState = { status: CopilotAccountStatus | null | undefined; failures: number };
+
 /**
  * @return the line the provider status shows: "Signed in as <login>", the
- *         waiting line, or "Not signed in"
+ *         waiting line, "Not signed in", or that it is reading or could not read
  */
-export function accountLine(status: CopilotAccountStatus | null, lang: Lang): string {
-  if (status?.state === "SIGNED_IN" && status.login) return t(lang, "cp.signedInAs", { login: status.login });
-  if (status?.state === "WAITING") return t(lang, "cp.waiting");
+export function accountLine(status: CopilotAccountStatus | null | undefined, lang: Lang): string {
+  if (status === undefined) return t(lang, "cp.loading");
+  if (status === null) return t(lang, "cp.unreachable");
+  if (status.state === "SIGNED_IN" && status.login) return t(lang, "cp.signedInAs", { login: status.login });
+  if (status.state === "WAITING") return t(lang, "cp.waiting");
   return t(lang, "cp.notSignedIn");
 }
 
+/**
+ * @return the state after one read: a failed read keeps the last status, so a
+ *         waiting sign-in goes on polling
+ */
+export function afterRead(prev: AccountNoteState, read: CopilotAccountStatus | null): AccountNoteState {
+  if (read) return { status: read, failures: 0 };
+  return { status: prev.status === undefined ? null : prev.status, failures: prev.failures + 1 };
+}
+
 /** @return the delay before the next status read, or null when nothing waits */
-export function pollDelayMs(status: CopilotAccountStatus | null): number | null {
-  return status?.state === "WAITING" ? POLL_MS : null;
+export function pollDelayMs(status: CopilotAccountStatus | null | undefined, failures = 0): number | null {
+  if (status?.state !== "WAITING") return null;
+  return Math.min(POLL_MS * (1 + failures), POLL_MAX_MS);
 }
 
 /** @return an address the sheet may link to: https only */

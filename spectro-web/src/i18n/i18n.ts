@@ -1036,6 +1036,22 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Der Anmeldestatus konnte nicht gelesen werden.",
     en: "The sign-in status could not be read.",
   },
+  "cp.loading": { de: "Anmeldestatus wird gelesen", en: "Reading the sign-in status" },
+  "cp.readFailed": {
+    de: "Der letzte Abruf des Status ist fehlgeschlagen. Es wird weiter versucht.",
+    en: "The last status read failed. The sheet keeps trying.",
+  },
+  "cp.working": { de: "Einen Moment.", en: "One moment." },
+  "cp.workingCli": {
+    de: "Die Copilot CLI wird gefragt. Das kann bis zu 30 Sekunden dauern.",
+    en: "Asking the Copilot CLI. This can take up to 30 seconds.",
+  },
+  "cp.signInOther": { de: "Mit einem anderen GitHub-Konto anmelden", en: "Sign in with another GitHub account" },
+  "cp.checkedOnRun": {
+    de: "GitHub prüft das Copilot-Abonnement beim ersten Lauf. Lehnt es ab, steht der Grund hier.",
+    en: "GitHub checks the Copilot subscription when a run starts. If it refuses, the reason shows here.",
+  },
+  "cp.codeLabel": { de: "Code", en: "Code" },
   "pp.chipTitle": { de: "LLM-Backend wechseln", en: "Switch LLM backend" },
   "pp.provider": { de: "Provider", en: "Provider" },
   "pp.model": { de: "Modell", en: "Model" },
