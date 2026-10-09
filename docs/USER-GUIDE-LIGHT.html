@@ -5648,7 +5648,7 @@ suite that never needs an API key.</p>
 <h2 id="ch-build-modules">Modules</h2>
 <table class="tbl">
   <tr><th>module</th><th>role</th><th>key facts</th></tr>
-  <tr><td><code>spectro-core</code></td><td>the headless library</td><td>java-library; Jackson is <code>api</code>, through its BOM (JsonNode appears in public contracts); the Anthropic SDK is <code>implementation</code> — no other class may import it; the Copilot SDK is <code>implementation</code> as well, used only by the Copilot provider, with its own Jackson family excluded; Spring <em>Framework</em> as a library (RestClient + HTTP interfaces); cron-utils</td></tr>
+  <tr><td><code>spectro-core</code></td><td>the headless library</td><td>java-library; Jackson is <code>api</code>, through its BOM (JsonNode appears in public contracts); the Anthropic SDK is <code>implementation</code>, and no other class may import it; the Copilot SDK is <code>implementation</code> as well, used only by the Copilot provider, with its own Jackson family excluded; Spring <em>Framework</em> as a library (RestClient + HTTP interfaces); cron-utils</td></tr>
   <tr><td><code>spectro-cli</code></td><td>terminal face</td><td>application; picocli; Logback keeps the console WARN-quiet so the ANSI face stays clean and the diagnostics go to the log file; registers the <code>tour</code> task; stdin wired for the REPL</td></tr>
   <tr><td><code>spectro-server</code></td><td>web backend</td><td>Spring Boot 3.5.3 (only here); starters web + websocket; depends on core <em>and</em> cli; serves the built UI from <code>static/</code></td></tr>
   <tr><td><code>spectro-mcp-notes</code></td><td>example MCP server</td><td>standalone; Jackson only; its test spawns the real child JVM</td></tr>
