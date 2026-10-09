@@ -98,7 +98,7 @@ class SessionCareParagraphTest {
 
         assertThat(connection.agent().careParagraphForNextRun())
                 .as("the session offers spawn tools, so the paragraph names the helpers")
-                .startsWith("\n\nThis chat runs on a local model")
+                .startsWith("\n\nThis chat runs with limited capacity")
                 .contains(HELPERS_SENTENCE)
                 .endsWith("Keep answers short.");
         assertThat(connection.subagents().childCareParagraph())
