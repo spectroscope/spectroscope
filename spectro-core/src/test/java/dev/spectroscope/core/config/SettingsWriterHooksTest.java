@@ -50,6 +50,26 @@ class SettingsWriterHooksTest {
     }
 
     @Test
+    void anEntryThatDiffersInOneRawFieldIsAnotherEntry() throws IOException {
+        Path file = tmp.resolve("settings.json");
+        Files.writeString(file, EXISTING);
+        HookConfig guard = new HookConfig("run_command", "pre_tool_use", "sh /h/guard.sh", null);
+        SettingsWriter.appendHooks(file, List.of(guard));
+        // Same command as guard, one other field each: none of them is guard.
+        HookConfig otherEvent = new HookConfig("run_command", "post_tool_use", "sh /h/guard.sh", null);
+        HookConfig otherMatcher = new HookConfig("write_file", "pre_tool_use", "sh /h/guard.sh", null);
+        HookConfig otherTimeout = new HookConfig("run_command", "pre_tool_use", "sh /h/guard.sh", 30);
+        assertEquals(List.of(), SettingsWriter.removeHooks(file, List.of(otherEvent)), "event is compared");
+        assertEquals(List.of(), SettingsWriter.removeHooks(file, List.of(otherMatcher)), "matcher is compared");
+        assertEquals(List.of(), SettingsWriter.removeHooks(file, List.of(otherTimeout)), "timeout is compared");
+        assertEquals(List.of(otherTimeout), SettingsWriter.appendHooks(file, List.of(otherTimeout)),
+                "an entry that differs only in its timeout is appended");
+        assertTrue(Files.readString(file).contains("\"timeoutSeconds\" : 30"));
+        assertEquals(List.of(guard), SettingsWriter.removeHooks(file, List.of(guard)));
+        assertEquals(List.of(otherTimeout), SettingsWriter.removeHooks(file, List.of(otherTimeout)));
+    }
+
+    @Test
     void aFileThatWouldNotBindIsLeftAlone() throws IOException {
         Path file = tmp.resolve("settings.json");
         String broken = "{ \"maxRetries\": \"many\" }";
