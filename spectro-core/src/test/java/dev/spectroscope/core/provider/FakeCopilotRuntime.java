@@ -60,6 +60,8 @@ final class FakeCopilotRuntime implements AutoCloseable {
     private volatile String sessionId;
     private volatile JsonNode createParams;
     private volatile boolean dead;
+    private volatile boolean closed;
+    private volatile boolean failModels;
 
     FakeCopilotRuntime() throws IOException {
         server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
@@ -71,6 +73,12 @@ final class FakeCopilotRuntime implements AutoCloseable {
     /** @return the address the SDK's {@code cliUrl} option takes */
     String cliUrl() {
         return "http://127.0.0.1:" + server.getLocalPort();
+    }
+
+    /** Makes every {@code models.list} answer with a JSON-RPC error, as a runtime without a login does. */
+    FakeCopilotRuntime failModels() {
+        failModels = true;
+        return this;
     }
 
     /** Queues the script the next {@code session.send} runs. */
@@ -127,6 +135,7 @@ final class FakeCopilotRuntime implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
+        closed = true;
         dead = true;
         Socket s = socket;
         if (s != null) {
@@ -137,30 +146,39 @@ final class FakeCopilotRuntime implements AutoCloseable {
 
     // ---- the wire --------------------------------------------------------
 
+    /** Serves one client after the other: a client that comes back after a death is a new runtime. */
     private void acceptAndRead() {
-        try {
-            Socket s = server.accept();
+        while (!closed) {
+            Socket s;
+            try {
+                s = server.accept();
+            } catch (IOException stopped) {
+                return; // the test closed the runtime
+            }
+            dead = false;
             socket = s;
-            out = s.getOutputStream();
-            InputStream in = s.getInputStream();
-            while (!dead) {
-                JsonNode message = read(in);
-                if (message == null) {
-                    return;
-                }
-                if (message.has("method")) {
-                    requests.add(message);
-                    queue(message.get("method").asText()).add(message.path("params"));
-                    answer(message);
-                } else if (message.has("id")) {
-                    BlockingQueue<JsonNode> waiting = clientAnswers.get(message.get("id").asLong());
-                    if (waiting != null) {
-                        waiting.add(message);
+            try {
+                out = s.getOutputStream();
+                InputStream in = s.getInputStream();
+                while (!dead) {
+                    JsonNode message = read(in);
+                    if (message == null) {
+                        break;
+                    }
+                    if (message.has("method")) {
+                        requests.add(message);
+                        queue(message.get("method").asText()).add(message.path("params"));
+                        answer(message);
+                    } else if (message.has("id")) {
+                        BlockingQueue<JsonNode> waiting = clientAnswers.get(message.get("id").asLong());
+                        if (waiting != null) {
+                            waiting.add(message);
+                        }
                     }
                 }
+            } catch (IOException gone) {
+                // a script made the runtime die, or the client went away
             }
-        } catch (IOException closed) {
-            // the test closed the runtime, or a script made it die
         }
     }
 
@@ -170,6 +188,17 @@ final class FakeCopilotRuntime implements AutoCloseable {
         }
         String method = message.get("method").asText();
         JsonNode params = message.path("params");
+        if ("models.list".equals(method) && failModels) {
+            ObjectNode error = NODES.objectNode();
+            error.put("code", -32603);
+            error.put("message", "not signed in");
+            ObjectNode response = NODES.objectNode();
+            response.put("jsonrpc", "2.0");
+            response.set("id", message.get("id"));
+            response.set("error", error);
+            write(response);
+            return;
+        }
         JsonNode result = switch (method) {
             case "connect" -> object(Map.of("protocolVersion", 3));
             case "session.create" -> {
@@ -179,8 +208,9 @@ final class FakeCopilotRuntime implements AutoCloseable {
             }
             case "session.send" -> {
                 Consumer<Turn> script = scripts.poll();
+                String target = params.path("sessionId").asText();
                 if (script != null) {
-                    Thread t = new Thread(() -> runScript(script), "fake-copilot-turn");
+                    Thread t = new Thread(() -> runScript(script, target), "fake-copilot-turn");
                     t.setDaemon(true);
                     t.start();
                 }
@@ -188,9 +218,10 @@ final class FakeCopilotRuntime implements AutoCloseable {
             }
             case "session.abort" -> {
                 aborted.set(true);
+                String target = params.path("sessionId").asText();
                 Thread t = new Thread(() -> {
                     sleep(20);
-                    Turn turn = new Turn();
+                    Turn turn = new Turn(target);
                     abortTail.accept(turn);
                     turn.event("abort", object(Map.of("reason", "user_initiated")));
                     turn.event("session.idle", object(Map.of("aborted", true)));
@@ -211,9 +242,9 @@ final class FakeCopilotRuntime implements AutoCloseable {
         write(response);
     }
 
-    private void runScript(Consumer<Turn> script) {
+    private void runScript(Consumer<Turn> script, String target) {
         try {
-            script.accept(new Turn());
+            script.accept(new Turn(target));
         } catch (Throwable failure) {
             scriptFailures.add(failure);
         }
@@ -288,6 +319,13 @@ final class FakeCopilotRuntime implements AutoCloseable {
     /** What a script can do: emit events, wait for the SDK, call the SDK, die. */
     final class Turn {
 
+        /** The runtime session this turn belongs to; events go there even after a newer one opened. */
+        private final String target;
+
+        Turn(String target) {
+            this.target = target;
+        }
+
         /** Sends one {@code session.event} notification. */
         void event(String type, ObjectNode data) {
             ObjectNode event = NODES.objectNode();
@@ -297,7 +335,7 @@ final class FakeCopilotRuntime implements AutoCloseable {
             event.put("type", type);
             event.set("data", data);
             ObjectNode params = NODES.objectNode();
-            params.put("sessionId", sessionId);
+            params.put("sessionId", target);
             params.set("event", event);
             ObjectNode notification = NODES.objectNode();
             notification.put("jsonrpc", "2.0");
@@ -355,7 +393,7 @@ final class FakeCopilotRuntime implements AutoCloseable {
         /** Hands one tool call to the SDK and returns the request id to wait on. */
         String requestTool(String toolCallId, String name, Map<String, Object> arguments) {
             String requestId = UUID.randomUUID().toString();
-            event("external_tool.requested", object(Map.of("requestId", requestId, "sessionId", sessionId,
+            event("external_tool.requested", object(Map.of("requestId", requestId, "sessionId", target,
                     "toolCallId", toolCallId, "toolName", name, "arguments", arguments)));
             return requestId;
         }
@@ -414,7 +452,7 @@ final class FakeCopilotRuntime implements AutoCloseable {
         }
 
         String sessionId() {
-            return sessionId;
+            return target;
         }
 
         /** The runtime process dies: the connection drops without a goodbye. */

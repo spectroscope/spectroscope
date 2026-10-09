@@ -89,10 +89,27 @@ import java.util.concurrent.TimeoutException;
  * session, an edit) opens a new runtime session whose first message carries the
  * earlier conversation as plain text.</p>
  *
+ * <p><b>Reasoning.</b> The SDK's one reasoning control is an effort level per
+ * session, and the model list names the levels each model takes
+ * ({@link #reasoningCapability()}). A requested effort is sent only when the
+ * chosen model lists it. {@link ProviderRequest.Reasoning#OFF} sends the level
+ * {@code none} where the model lists it; a model without that level (the Claude
+ * models Copilot serves list none) has no off switch, and nothing is sent.
+ * {@link ProviderRequest.Reasoning#ON} adds nothing to a requested level:
+ * there is no on switch, and a model that lists levels reasons at its default. When the model list is
+ * unavailable or does not describe the model ({@code auto}), no level is sent.
+ * The level is set when a runtime session opens and changed through
+ * {@code setModel} when a later request resolves to another one; a request
+ * that resolves to no level keeps the level the session already runs at,
+ * because the SDK cannot clear it.</p>
+ *
  * <p><b>What is not passed on.</b> {@link ProviderRequest#maxTokens()} has no
- * counterpart in the SDK's session or message options and is ignored. The
- * reasoning effort is set when a session opens and changed through
- * {@code setModel} when a later request names another one.</p>
+ * counterpart in the SDK's session or message options and is ignored, so a
+ * turn ends at the runtime's own output limit ({@code MAX_TOKENS} when the
+ * runtime says {@code length}). An effort the model does not list, and
+ * {@code OFF} on a model without the level {@code none}, are dropped as above.
+ * A document beside a tool result reaches the model as a note naming it, not
+ * as its content.</p>
  *
  * <p><b>Credentials.</b> Token variables are removed from the runtime's
  * environment. A {@link TokenSource} hands a token to the runtime through the
@@ -122,8 +139,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     /**
-     * Runtime sessions kept open at once; the least recently used one closes
-     * first. Nobody has measured how many sessions one runtime holds well.
+     * Runtime sessions kept open at once; the least recently used idle one
+     * closes first. Nobody has measured how many sessions one runtime holds well.
      */
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     private static final int MAX_CONVERSATIONS = 8;
@@ -154,6 +171,15 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.SECONDS)
     private static final long CALL_TIMEOUT_S = 60;
 
+    /**
+     * After a failed model list, how long {@link #vision()}, {@link #contextWindow()}
+     * and {@link #reasoningCapability()} answer "unknown" without asking again.
+     * Each attempt can wait for a runtime start; the getters are asked before
+     * every request.
+     */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
+    private static final long MODELS_RETRY_AFTER_MS = 60_000;
+
     private final Options options;
     private final String osName;
     private final String cliUrl;
@@ -161,6 +187,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     private CopilotClient client;
     private Thread shutdownHook;
     private volatile List<CopilotModel> models;
+    private volatile long modelsFailedAtNanos;
+    private volatile boolean modelsFailed;
 
     /**
      * What the provider is built from.
@@ -205,10 +233,19 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      *
      * @param id            the model id to put into {@link Options#model()}
      * @param name          the display name
-     * @param vision        SEES or BLIND when the runtime says so, UNKNOWN otherwise
-     * @param contextWindow the prompt limit the runtime states, else its context window, else 0
+     * @param vision           SEES or BLIND when the runtime says so, UNKNOWN otherwise
+     * @param contextWindow    the prompt limit the runtime states, else its context window, else 0
+     * @param reasoningEfforts the effort levels the runtime lists for the model, in its order; empty when none
+     * @param defaultEffort    the level the runtime names as the model's default, or null
      */
-    public record CopilotModel(String id, String name, Vision vision, int contextWindow) {}
+    public record CopilotModel(String id, String name, Vision vision, int contextWindow,
+                               List<String> reasoningEfforts, String defaultEffort) {
+
+        /** A null list reads as no levels. */
+        public CopilotModel {
+            reasoningEfforts = reasoningEfforts == null ? List.of() : List.copyOf(reasoningEfforts);
+        }
+    }
 
     /**
      * A provider that starts the runtime at {@link Options#cliPath()} on first use.
@@ -270,6 +307,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
 
     /**
      * The models the runtime offers this account, asked once and remembered.
+     * A failed list is not remembered: this method asks again on every call.
      *
      * @return the runtime's model list, in its order
      */
@@ -277,9 +315,16 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         requireSupportedPlatform();
         List<CopilotModel> known = models;
         if (known == null) {
-            List<ModelInfo> listed = await(client().listModels(), CALL_TIMEOUT_S, "list the models");
-            known = listed.stream().map(CopilotProvider::toModel).toList();
+            try {
+                List<ModelInfo> listed = await(client().listModels(), CALL_TIMEOUT_S, "list the models");
+                known = listed.stream().map(CopilotProvider::toModel).toList();
+            } catch (RuntimeException failure) {
+                modelsFailedAtNanos = System.nanoTime();
+                modelsFailed = true;
+                throw failure;
+            }
             models = known;
+            modelsFailed = false;
         }
         return known;
     }
@@ -295,11 +340,16 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             Integer prompt = capabilities.getLimits().getMaxPromptTokens();
             window = prompt != null && prompt > 0 ? prompt : capabilities.getLimits().getMaxContextWindowTokens();
         }
-        return new CopilotModel(info.getId(), info.getName(), vision, Math.max(0, window));
+        return new CopilotModel(info.getId(), info.getName(), vision, Math.max(0, window),
+                info.getSupportedReasoningEfforts(), info.getDefaultReasoningEffort());
     }
 
     private CopilotModel chosenModel() {
         if (!supportedPlatform(osName)) {
+            return null;
+        }
+        if (models == null && modelsFailed
+                && System.nanoTime() - modelsFailedAtNanos < TimeUnit.MILLISECONDS.toNanos(MODELS_RETRY_AFTER_MS)) {
             return null;
         }
         try {
@@ -335,6 +385,39 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     public Vision vision() {
         CopilotModel model = chosenModel();
         return model == null ? Vision.UNKNOWN : model.vision();
+    }
+
+    /**
+     * What the runtime's model list says about reasoning control for the
+     * chosen model: {@code effort} with the levels it lists, an off switch
+     * where one of them is {@code none}, and {@code none} as the control when
+     * the list names no levels or does not describe the model.
+     *
+     * @return the record the request path acts on, with source {@code api}
+     */
+    public ReasoningCapability reasoningCapability() {
+        CopilotModel model = chosenModel();
+        if (model == null || model.reasoningEfforts().isEmpty()) {
+            return ReasoningCapability.none("api");
+        }
+        List<String> efforts = model.reasoningEfforts();
+        return new ReasoningCapability("effort", !"none".equals(model.defaultEffort()), efforts.contains("none"),
+                efforts, model.defaultEffort(), null, "reasoningEffort", "api");
+    }
+
+    /**
+     * The effort level a request sends, given what the model takes.
+     *
+     * @param capability what the model list says about the model
+     * @param reasoning  what the call site says about reasoning
+     * @param effort     the requested level, or null
+     * @return the level to send, or null to send none
+     */
+    static String effortFor(ReasoningCapability capability, ProviderRequest.Reasoning reasoning, String effort) {
+        if (reasoning == ProviderRequest.Reasoning.OFF) {
+            return capability.offSwitch() ? "none" : null;
+        }
+        return effort != null && capability.efforts().contains(effort) ? effort : null;
     }
 
     // ---- the runtime --------------------------------------------------------
@@ -396,6 +479,35 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         }
     }
 
+    /**
+     * The runtime behind {@code dead} is gone: every session on it goes with it,
+     * and the next request starts a new runtime instead of using a dead client.
+     */
+    private void runtimeGone(CopilotClient dead) {
+        if (dead == null) {
+            return;
+        }
+        List<Conversation> open;
+        synchronized (this) {
+            if (client != dead) {
+                return;
+            }
+            client = null;
+            open = new ArrayList<>(conversations);
+            conversations.clear();
+        }
+        open.forEach(c -> {
+            c.gone = true;
+            c.close();
+        });
+        try {
+            dead.forceStop();
+        } catch (RuntimeException already) {
+            log.debug("copilot: the dead runtime did not stop cleanly", already);
+        }
+        removeShutdownHook();
+    }
+
     private synchronized void removeShutdownHook() {
         if (shutdownHook != null) {
             try {
@@ -421,29 +533,47 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     /** What a request asks of the runtime once it is matched to a conversation. */
     private record Plan(Conversation conversation, boolean deliverResults, ProviderMessage newMessage) {}
 
-    private Plan plan(ProviderRequest request) {
+    /**
+     * Matches a request to the runtime session that has seen its history. A
+     * session that holds parked tool calls while the request continues past
+     * them without their results (the run was cancelled while the tool ran) is
+     * stranded: its calls fail and it closes, instead of waiting for eviction.
+     */
+    private Plan plan(ProviderRequest request, String effort) {
         List<ProviderMessage> history = request.messages();
         if (history.isEmpty() || history.getLast().role() != ProviderMessage.Role.USER) {
             throw new IllegalArgumentException("copilot: a request must end with a user message");
         }
         ProviderMessage last = history.getLast();
+        String system = request.system() == null ? "" : request.system();
+        boolean results = last.content().stream().anyMatch(p -> p instanceof ToolResultContent);
+        Conversation match = null;
+        List<Conversation> stranded = new ArrayList<>();
         synchronized (this) {
             for (Conversation c : conversations) {
-                if (c.busy || !c.system.equals(request.system()) || history.size() != c.seen.size() + 1
+                if (c.busy || !c.system.equals(system) || history.size() <= c.seen.size()
                         || !continues(c.seen, history)) {
                     continue;
                 }
-                boolean results = last.content().stream().anyMatch(p -> p instanceof ToolResultContent);
-                if (results != c.hasParked()) {
-                    continue;
+                if (match == null && history.size() == c.seen.size() + 1 && results == c.hasParked()) {
+                    match = c;
+                } else if (c.hasParked() && !c.seen.isEmpty()
+                        && c.seen.getLast().role() == ProviderMessage.Role.ASSISTANT) {
+                    stranded.add(c);
                 }
-                c.busy = true;
-                conversations.remove(c);
-                conversations.addFirst(c);
-                return new Plan(c, results, last);
+            }
+            conversations.removeAll(stranded);
+            if (match != null) {
+                match.busy = true;
+                conversations.remove(match);
+                conversations.addFirst(match);
             }
         }
-        Conversation fresh = open(request);
+        stranded.forEach(Conversation::close);
+        if (match != null) {
+            return new Plan(match, results, last);
+        }
+        Conversation fresh = open(request, system, effort);
         return new Plan(fresh, false, null);
     }
 
@@ -476,8 +606,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         return true;
     }
 
-    private Conversation open(ProviderRequest request) {
-        Conversation conversation = new Conversation(request.system(), request.effort());
+    private Conversation open(ProviderRequest request, String system, String effort) {
+        Conversation conversation = new Conversation(system, effort);
         conversation.tools(request.tools());
         SessionConfig config = new SessionConfig()
                 .setModel(options.model())
@@ -486,13 +616,13 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 .setAvailableTools(new ToolSet().addCustom("*"))
                 .setExcludedTools(new ToolSet().addBuiltIn("*").addMcp("*"))
                 .setSystemMessage(new SystemMessageConfig().setMode(SystemMessageMode.REPLACE)
-                        .setContent(request.system() == null ? "" : request.system()))
+                        .setContent(system))
                 .setSkipCustomInstructions(true)
                 .setInfiniteSessions(new InfiniteSessionConfig().setEnabled(false))
                 .setOnPermissionRequest((permission, invocation) ->
                         CompletableFuture.completedFuture(conversation.decide(permission)));
-        if (request.effort() != null) {
-            config.setReasoningEffort(request.effort());
+        if (effort != null) {
+            config.setReasoningEffort(effort);
         }
         TokenSource source = options.tokenSource();
         if (source != null) {
@@ -514,12 +644,22 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         synchronized (this) {
             conversation.busy = true;
             conversations.addFirst(conversation);
+            // The least recently used idle session goes. A busy one is skipped:
+            // its stream is still being read, or its reader walked away
+            // without finishing, and that must not keep every other one open.
             while (conversations.size() > MAX_CONVERSATIONS) {
-                Conversation oldest = conversations.getLast();
-                if (oldest.busy) {
+                Conversation idle = null;
+                for (int i = conversations.size() - 1; i >= 0; i--) {
+                    if (!conversations.get(i).busy) {
+                        idle = conversations.get(i);
+                        break;
+                    }
+                }
+                if (idle == null) {
                     break;
                 }
-                evicted.add(conversations.removeLast());
+                conversations.remove(idle);
+                evicted.add(idle);
             }
         }
         evicted.forEach(Conversation::close);
@@ -555,6 +695,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         final Map<String, Parked> parked = new LinkedHashMap<>();
         volatile BlockingQueue<Object> turn;
         boolean busy;
+        /** The runtime died: closing must not wait for an answer from it. */
+        volatile boolean gone;
 
         Conversation(String system, String effort) {
             this.system = system == null ? "" : system;
@@ -639,7 +781,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             } catch (Exception ignored) {
                 // nothing left to unsubscribe
             }
-            if (session != null) {
+            if (session != null && !gone) {
                 try {
                     session.close();
                 } catch (RuntimeException gone) {
@@ -672,10 +814,12 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         private boolean sawDelta;
         private String finishReason;
         private boolean finished;
+        private volatile CopilotClient deadClient;
 
         TurnIterator(ProviderRequest request) {
             this.request = request;
-            Plan plan = plan(request);
+            String effort = effortFor(reasoningCapability(), request.reasoning(), request.effort());
+            Plan plan = plan(request, effort);
             this.conversation = plan.conversation();
             conversation.turn = queue;
             this.unhookCancel = request.signal() == null ? () -> { }
@@ -686,10 +830,10 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                     conversation.tools(request.tools());
                     await(conversation.session.setTools(conversation.definitions), CALL_TIMEOUT_S, "set the tools");
                 }
-                if (!Objects.equals(conversation.effort, request.effort()) && request.effort() != null) {
-                    await(conversation.session.setModel(options.model(), request.effort()), CALL_TIMEOUT_S,
+                if (effort != null && !effort.equals(conversation.effort)) {
+                    await(conversation.session.setModel(options.model(), effort), CALL_TIMEOUT_S,
                             "set the reasoning effort");
-                    conversation.effort = request.effort();
+                    conversation.effort = effort;
                 }
                 if (plan.deliverResults()) {
                     opened = tap("session.tools.handlePendingToolCall", resultsBody(plan.newMessage()));
@@ -845,6 +989,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (ExecutionException | RuntimeException gone) {
+                deadClient = running;
                 queue.add(Signal.RUNTIME_GONE);
             }
         }
@@ -855,8 +1000,11 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             }
             switch (item) {
                 case Signal.CANCEL -> abort();
-                case Signal.RUNTIME_GONE -> fail("copilot runtime: the connection closed mid-stream"
-                        + " (the runtime process exited or was killed)");
+                case Signal.RUNTIME_GONE -> {
+                    runtimeGone(deadClient);
+                    fail("copilot runtime: the connection closed mid-stream"
+                            + " (the runtime process exited or was killed)");
+                }
                 case CallArrived call -> {
                     PToolCall event = new PToolCall(call.callId(), call.name(), call.input());
                     calls.add(event);

@@ -837,7 +837,17 @@
     "kind" : "UNEXAMINED",
     "unit" : "COUNT",
     "key" : "",
-    "explanation" : "Runtime sessions kept open at once; the least recently used one closes first. Nobody has measured how many sessions one runtime holds well."
+    "explanation" : "Runtime sessions kept open at once; the least recently used idle one closes first. Nobody has measured how many sessions one runtime holds well."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "MODELS_RETRY_AFTER_MS",
+    "value" : "60000",
+    "expression" : "60_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "After a failed model list, how long vision(), contextWindow() and reasoningCapability() answer \"unknown\" without asking again. Each attempt can wait for a runtime start; the getters are asked before every request."
   },
   {
     "owner" : "dev.spectroscope.core.provider.CopilotProvider",

@@ -16,7 +16,10 @@ import dev.spectroscope.core.provider.LlmProvider.PUsage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderContent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderEvent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
+import dev.spectroscope.core.provider.LlmProvider.DocumentContent;
+import dev.spectroscope.core.provider.LlmProvider.ImageContent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
+import dev.spectroscope.core.provider.LlmProvider.ProviderRequest.Reasoning;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
@@ -37,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -313,7 +317,7 @@ class CopilotProviderTest {
         start("claude-sonnet-5");
         List<CopilotProvider.CopilotModel> models = provider.models();
 
-        assertEquals(List.of("auto", "claude-sonnet-5", "fixture-blind-model"),
+        assertEquals(List.of("auto", "claude-sonnet-5", "fixture-blind-model", "fixture-switch-model"),
                 models.stream().map(CopilotProvider.CopilotModel::id).toList());
         assertEquals(936_000, provider.contextWindow(), "max_prompt_tokens of the chosen model");
         assertEquals(LlmProvider.Vision.SEES, provider.vision());
@@ -571,6 +575,434 @@ class CopilotProviderTest {
         assertEquals("It says: hello from the harness", text);
         assertEquals("reject", builtInAnswer.get("shell"), "the built-in request was refused");
         assertNotEquals("error", ((RunEvent.RunEnd) events.getLast()).stopReason());
+    }
+
+    // ---- review of 2026-10-09: reasoning control -------------------------------
+
+    private static ProviderRequest ask(String system, List<ProviderMessage> history, List<ToolSpec> tools,
+                                       Reasoning reasoning, String effort, CancelSignal signal) {
+        return new ProviderRequest(system, history, tools, 4096, reasoning, effort, signal);
+    }
+
+    private static Consumer<FakeCopilotRuntime.Turn> says(String text) {
+        return turn -> {
+            turn.delta(text);
+            turn.usage(10, 1, 0, 0, "stop");
+            turn.idle();
+        };
+    }
+
+    private JsonNode createParams(int index) {
+        return runtime.requests("session.create").get(index);
+    }
+
+    @Test
+    void anEffortTheModelListsIsSetWhenTheSessionOpens() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("ok"));
+        drain(provider.stream(ask("s", List.of(user("hi")), List.of(), Reasoning.DEFAULT, "high", new CancelSignal())));
+        assertEquals("high", createParams(0).path("reasoningEffort").asText(), createParams(0).toString());
+    }
+
+    @Test
+    void anEffortTheModelDoesNotListIsNotSent() throws Exception {
+        start("claude-sonnet-5"); // the fixture lists low, medium and high for it
+        runtime.onSend(says("ok"));
+        List<ProviderEvent> events = drain(provider.stream(ask("s", List.of(user("hi")), List.of(),
+                Reasoning.DEFAULT, "max", new CancelSignal())));
+        assertEquals(new PStop(PStop.StopReason.END_TURN), events.getLast());
+        assertTrue(createParams(0).path("reasoningEffort").isMissingNode()
+                || createParams(0).path("reasoningEffort").isNull(), createParams(0).toString());
+    }
+
+    @Test
+    void reasoningOffSendsNoneWhereTheModelListsIt() throws Exception {
+        start("fixture-switch-model");
+        runtime.onSend(says("ok"));
+        drain(provider.stream(ask("s", List.of(user("hi")), List.of(), Reasoning.OFF, "high", new CancelSignal())));
+        assertEquals("none", createParams(0).path("reasoningEffort").asText(), createParams(0).toString());
+    }
+
+    @Test
+    void reasoningOffSendsNothingWhereTheModelHasNoOffSwitch() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("ok"));
+        List<ProviderEvent> events = drain(provider.stream(ask("s", List.of(user("hi")), List.of(),
+                Reasoning.OFF, "high", new CancelSignal())));
+        assertEquals(new PStop(PStop.StopReason.END_TURN), events.getLast());
+        assertTrue(createParams(0).path("reasoningEffort").isMissingNode()
+                || createParams(0).path("reasoningEffort").isNull(), createParams(0).toString());
+    }
+
+    @Test
+    void aModelTheListDoesNotDescribeGetsNoEffort() throws Exception {
+        start("auto");
+        runtime.onSend(says("ok"));
+        drain(provider.stream(ask("s", List.of(user("hi")), List.of(), Reasoning.ON, "high", new CancelSignal())));
+        assertEquals("auto", createParams(0).path("model").asText());
+        assertTrue(createParams(0).path("reasoningEffort").isMissingNode()
+                || createParams(0).path("reasoningEffort").isNull(), createParams(0).toString());
+    }
+
+    @Test
+    void theReasoningCapabilityIsReadFromTheModelList() throws Exception {
+        start("fixture-switch-model");
+        ReasoningCapability withOff = provider.reasoningCapability();
+        assertEquals("effort", withOff.control());
+        assertTrue(withOff.offSwitch());
+        assertEquals(List.of("none", "low", "high"), withOff.efforts());
+        assertEquals("low", withOff.defaultEffort());
+        assertEquals("api", withOff.source());
+
+        // The fake serves one client at a time: the first provider lets go before the next one asks.
+        provider.close();
+        provider = new CopilotProvider(new CopilotProvider.Options("claude-sonnet-5", null, null, false),
+                MAC, runtime.cliUrl());
+        ReasoningCapability noOff = provider.reasoningCapability();
+        assertEquals("effort", noOff.control());
+        assertFalse(noOff.offSwitch());
+        assertEquals(List.of("low", "medium", "high"), noOff.efforts());
+    }
+
+    @Test
+    void aLaterRequestWithAnotherListedEffortSwitchesTheSessionsEffort() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("Blue."));
+        runtime.onSend(says("Green."));
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Pick a colour.")));
+        drain(provider.stream(ask("s", history, List.of(), Reasoning.DEFAULT, "low", new CancelSignal())));
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.of(new TextContent("Blue."))));
+        history.add(user("Another one."));
+        drain(provider.stream(ask("s", history, List.of(), Reasoning.DEFAULT, "high", new CancelSignal())));
+
+        assertEquals(1, runtime.requests("session.create").size());
+        List<JsonNode> switches = runtime.requests("session.model.switchTo");
+        assertEquals(1, switches.size(), runtime.requests().toString());
+        assertEquals("claude-sonnet-5", switches.getFirst().path("modelId").asText());
+        assertEquals("high", switches.getFirst().path("reasoningEffort").asText());
+    }
+
+    // ---- review of 2026-10-09: guarantees no test pinned ----------------------
+
+    @Test
+    void toolsThatChangeMidConversationAreSetOnTheRuntimeSessionAndApproved() throws Exception {
+        start("claude-sonnet-5");
+        Map<String, String> answers = new HashMap<>();
+        runtime.onSend(says("one"));
+        runtime.onSend(turn -> {
+            answers.put("write_file", turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "w1",
+                    "toolName", "write_file")));
+            turn.delta("two");
+            turn.usage(10, 1, 0, 0, "stop");
+            turn.idle();
+        });
+        ToolSpec writeFile = new ToolSpec("write_file", "Writes a file.", JSON.valueToTree(Map.of("type", "object")));
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("first")));
+        drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.of(new TextContent("one"))));
+        history.add(user("second"));
+        drain(provider.stream(ask(history, List.of(readFileSpec(), writeFile), new CancelSignal())));
+
+        assertEquals(1, runtime.requests("session.create").size());
+        List<JsonNode> sets = runtime.requests("session.tools.set");
+        assertEquals(1, sets.size(), runtime.requests().toString());
+        List<String> names = new ArrayList<>();
+        sets.getFirst().path("tools").forEach(t -> names.add(t.path("name").asText()));
+        assertEquals(List.of("read_file", "write_file"), names);
+        assertEquals("approve-once", answers.get("write_file"));
+    }
+
+    @Test
+    void aFailingTokenSourceDoesNotPassItsMessageOn() throws Exception {
+        runtime = new FakeCopilotRuntime();
+        String secret = "gho_" + "fixtureSecretInAMessage42";
+        CopilotProvider.TokenSource source = (host, reason) -> {
+            throw new IllegalStateException("keychain said " + secret);
+        };
+        provider = new CopilotProvider(new CopilotProvider.Options("claude-sonnet-5", null, source, false),
+                MAC, runtime.cliUrl());
+        List<JsonNode> answers = new CopyOnWriteArrayList<>();
+        runtime.onSend(turn -> {
+            answers.add(turn.callClient("gitHubToken.getToken", FakeCopilotRuntime.object(Map.of(
+                    "registrationId", runtime.createParams().path("gitHubTokenProviderRegistrationId").asText(),
+                    "host", "https://github.com", "sessionId", turn.sessionId(), "reason", "initial"))));
+            turn.delta("ok");
+            turn.usage(10, 1, 0, 0, "stop");
+            turn.idle();
+        });
+
+        drain(provider.stream(ask(List.of(user("hi")), List.of(), new CancelSignal())));
+
+        JsonNode answer = answers.getFirst();
+        assertTrue(answer.has("error"), answer.toString());
+        assertTrue(answer.path("error").path("message").asText().contains("the token source gave no token"),
+                answer.toString());
+        assertFalse(answer.toString().contains("fixtureSecretInAMessage"), answer.toString());
+    }
+
+    @Test
+    void aTurnCutOffByTheOutputLimitStopsWithMaxTokens() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("Once upon");
+            turn.usage(10, 4096, 0, 0, "length");
+            turn.idle();
+        });
+        List<ProviderEvent> events = drain(provider.stream(ask(List.of(user("Tell a long story.")), List.of(),
+                new CancelSignal())));
+        assertEquals(new PStop(PStop.StopReason.MAX_TOKENS), events.getLast());
+        assertEquals(1, stops(events));
+    }
+
+    @Test
+    void aConversationWithoutASystemPromptStillReusesItsRuntimeSession() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("Blue."));
+        runtime.onSend(says("Green."));
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Pick a colour.")));
+        drain(provider.stream(ask(null, history, List.of(), Reasoning.DEFAULT, null, new CancelSignal())));
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.of(new TextContent("Blue."))));
+        history.add(user("Another one."));
+        drain(provider.stream(ask(null, history, List.of(), Reasoning.DEFAULT, null, new CancelSignal())));
+
+        assertEquals(1, runtime.requests("session.create").size(), "one runtime session for both turns");
+        assertEquals("Another one.", runtime.requests("session.send").get(1).path("prompt").asText());
+        assertEquals("", createParams(0).path("systemMessage").path("content").asText());
+    }
+
+    @Test
+    void aFailedModelListIsNotAskedAgainOnEveryCapabilityQuestion() throws Exception {
+        start("claude-sonnet-5");
+        runtime.failModels();
+
+        assertEquals(LlmProvider.Vision.UNKNOWN, provider.vision());
+        assertEquals(0, provider.contextWindow());
+        assertEquals(LlmProvider.Vision.UNKNOWN, provider.vision());
+        assertEquals("none", provider.reasoningCapability().control());
+        assertEquals(1, runtime.requests("models.list").size(), "the getters ask once, then wait");
+
+        // An explicit call still asks, and says why it failed.
+        IllegalStateException failure = assertThrows(IllegalStateException.class, provider::models);
+        assertTrue(failure.getMessage().contains("not signed in"), failure.getMessage());
+        assertEquals(2, runtime.requests("models.list").size());
+    }
+
+    @Test
+    void aRuntimeThatDiedIsStartedAgainForTheNextRequest() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("partial");
+            FakeCopilotRuntime.sleep(100);
+            turn.die();
+        });
+        runtime.onSend(says("back"));
+
+        assertThrows(IllegalStateException.class,
+                () -> drain(provider.stream(ask(List.of(user("hi")), List.of(), new CancelSignal()))));
+        List<ProviderEvent> next = drain(provider.stream(ask(List.of(user("hi again")), List.of(),
+                new CancelSignal())));
+
+        assertEquals(List.of(new PTextDelta("back"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), next);
+        assertEquals(2, runtime.requests("connect").size(), "a second runtime connection");
+    }
+
+    @Test
+    void aRuntimeThatDiesUnderTheAgentEndsTheRunWithAnErrorTheOperatorSees() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("partial");
+            FakeCopilotRuntime.sleep(100);
+            turn.die();
+        });
+        Agent agent = new Agent(AgentOptions.builder().provider(provider).systemPrompt("test")
+                .registry(new ToolRegistry()).cwd(Path.of(".")).onPermission(request -> true).build());
+
+        List<RunEvent> events = new ArrayList<>();
+        try (EventStream stream = agent.run("hi", new RunOptions(new CancelSignal(), null))) {
+            stream.forEach(events::add);
+        }
+
+        RunEvent.ErrorEvent error = events.stream().filter(e -> e instanceof RunEvent.ErrorEvent)
+                .map(e -> (RunEvent.ErrorEvent) e).findFirst().orElseThrow(() -> new AssertionError(events));
+        assertTrue(error.message().contains("copilot runtime"), error.message());
+        assertEquals("error", ((RunEvent.RunEnd) events.getLast()).stopReason());
+    }
+
+    @Test
+    void aToolTurnTheHarnessWalkedAwayFromIsClosedNotLeftWaiting() throws Exception {
+        start("claude-sonnet-5");
+        List<JsonNode> delivered = new CopyOnWriteArrayList<>();
+        runtime.onSend(turn -> {
+            turn.usage(538, 50, 0, 0, "tool_calls");
+            turn.message("", List.of(Map.of("toolCallId", "toolu_5", "name", "read_file",
+                    "arguments", Map.of("path", "a.txt"), "type", "function")));
+            turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "toolu_5", "toolName", "read_file"));
+            String requestId = turn.requestTool("toolu_5", "read_file", Map.of("path", "a.txt"));
+            delivered.add(turn.awaitToolResult(requestId, Duration.ofSeconds(20)));
+        });
+        runtime.onSend(says("hi"));
+
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("What is in a.txt?")));
+        List<ProviderEvent> first = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        assertEquals(new PStop(PStop.StopReason.TOOL_USE), first.getLast());
+
+        // The run was cancelled while the tool ran; the operator's next message carries no result.
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.<ProviderContent>of(
+                new ToolCallContent("toolu_5", "read_file", JSON.valueToTree(Map.of("path", "a.txt"))))));
+        history.add(user("Never mind, say hi."));
+        List<ProviderEvent> second = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+
+        assertEquals(new PStop(PStop.StopReason.END_TURN), second.getLast());
+        String stranded = createParams(0).path("sessionId").asText();
+        assertTrue(runtime.requests("session.detach").stream()
+                .anyMatch(d -> stranded.equals(d.path("sessionId").asText())), runtime.requests().toString());
+        JsonNode failed = delivered.getFirst().path("result");
+        assertEquals("error", failed.path("resultType").asText(), delivered.toString());
+        assertEquals("the conversation was closed", failed.path("error").asText());
+    }
+
+    @Test
+    void atMostEightRuntimeSessionsStayOpenAndTheOldestClosesFirst() throws Exception {
+        start("claude-sonnet-5");
+        for (int i = 0; i < 9; i++) {
+            runtime.onSend(says("ok " + i));
+        }
+        for (int i = 0; i < 9; i++) {
+            drain(provider.stream(ask(List.of(user("conversation " + i)), List.of(), new CancelSignal())));
+        }
+
+        List<JsonNode> detached = runtime.requests("session.detach");
+        assertEquals(1, detached.size(), detached.toString());
+        assertEquals(createParams(0).path("sessionId").asText(), detached.getFirst().path("sessionId").asText());
+    }
+
+    @Test
+    void aStreamNobodyFinishedReadingDoesNotKeepOlderSessionsOpen() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("a");
+            FakeCopilotRuntime.sleep(200);
+            turn.idle();
+        });
+        for (int i = 1; i < 9; i++) {
+            runtime.onSend(says("ok " + i));
+        }
+        Iterator<ProviderEvent> abandoned = provider.stream(ask(List.of(user("conversation 0")), List.of(),
+                new CancelSignal())).iterator();
+        assertEquals(new PTextDelta("a"), abandoned.next());
+        for (int i = 1; i < 9; i++) {
+            drain(provider.stream(ask(List.of(user("conversation " + i)), List.of(), new CancelSignal())));
+        }
+
+        // Nine sessions, one of them still marked as streaming: the oldest idle one closes.
+        List<JsonNode> detached = runtime.requests("session.detach");
+        assertEquals(1, detached.size(), detached.toString());
+        assertEquals(createParams(1).path("sessionId").asText(), detached.getFirst().path("sessionId").asText());
+    }
+
+    @Test
+    void imagesAndDocumentsInAUserMessageGoAsBlobAttachments() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("A chart."));
+        ProviderMessage message = new ProviderMessage(ProviderMessage.Role.USER, List.<ProviderContent>of(
+                new TextContent("What is this?"),
+                new ImageContent("image/png", "aW1hZ2U="),
+                new DocumentContent("application/pdf", "cGRm", "report.pdf")));
+        drain(provider.stream(ask(List.of(message), List.of(), new CancelSignal())));
+
+        JsonNode send = runtime.requests("session.send").getFirst();
+        assertEquals("What is this?", send.path("prompt").asText());
+        JsonNode attachments = send.path("attachments");
+        assertEquals(2, attachments.size(), send.toString());
+        assertEquals("blob", attachments.get(0).path("type").asText());
+        assertEquals("aW1hZ2U=", attachments.get(0).path("data").asText());
+        assertEquals("image/png", attachments.get(0).path("mimeType").asText());
+        assertEquals("cGRm", attachments.get(1).path("data").asText());
+        assertEquals("application/pdf", attachments.get(1).path("mimeType").asText());
+        assertEquals("report.pdf", attachments.get(1).path("displayName").asText());
+    }
+
+    @Test
+    void anImageBesideAToolResultRidesOnItAndTextBesideItIsAppended() throws Exception {
+        start("claude-sonnet-5");
+        List<JsonNode> delivered = new CopyOnWriteArrayList<>();
+        runtime.onSend(turn -> {
+            turn.usage(538, 50, 0, 0, "tool_calls");
+            turn.message("", List.of(Map.of("toolCallId", "toolu_3", "name", "read_file",
+                    "arguments", Map.of("path", "shot.png"), "type", "function")));
+            turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "toolu_3", "toolName", "read_file"));
+            String requestId = turn.requestTool("toolu_3", "read_file", Map.of("path", "shot.png"));
+            delivered.add(turn.awaitToolResult(requestId, Duration.ofSeconds(20)));
+            turn.delta("Seen.");
+            turn.usage(700, 2, 538, 0, "stop");
+            turn.idle();
+        });
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Look at shot.png")));
+        drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.<ProviderContent>of(
+                new ToolCallContent("toolu_3", "read_file", JSON.valueToTree(Map.of("path", "shot.png"))))));
+        history.add(new ProviderMessage(ProviderMessage.Role.USER, List.<ProviderContent>of(
+                new ToolResultContent("toolu_3", "an image of 10 by 10 pixels", false),
+                new ImageContent("image/png", "cGl4ZWxz"),
+                new DocumentContent("application/pdf", "cGRm", "notes.pdf"),
+                new TextContent("Operator: hurry up."))));
+        drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+
+        JsonNode result = delivered.getFirst().path("result");
+        String text = result.path("textResultForLlm").asText();
+        assertTrue(text.startsWith("an image of 10 by 10 pixels\n\n"), text);
+        assertTrue(text.contains("Operator: hurry up."), text);
+        assertTrue(text.contains("notes.pdf"), text);
+        JsonNode binaries = result.path("binaryResultsForLlm");
+        assertEquals(1, binaries.size(), result.toString());
+        assertEquals("cGl4ZWxz", binaries.get(0).path("data").asText());
+        assertEquals("image/png", binaries.get(0).path("mimeType").asText());
+        assertEquals("image", binaries.get(0).path("type").asText());
+    }
+
+    @Test
+    void twoToolCallsInOneTurnYieldTwoCallsOneStopAndBothResultsGoBackByCallId() throws Exception {
+        start("claude-sonnet-5");
+        Map<String, JsonNode> delivered = new java.util.concurrent.ConcurrentHashMap<>();
+        runtime.onSend(turn -> {
+            turn.usage(538, 80, 0, 0, "tool_calls");
+            turn.message("", List.of(
+                    Map.of("toolCallId", "toolu_a", "name", "read_file", "arguments", Map.of("path", "a.txt"),
+                            "type", "function"),
+                    Map.of("toolCallId", "toolu_b", "name", "read_file", "arguments", Map.of("path", "b.txt"),
+                            "type", "function")));
+            turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "toolu_a", "toolName", "read_file"));
+            turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "toolu_b", "toolName", "read_file"));
+            String a = turn.requestTool("toolu_a", "read_file", Map.of("path", "a.txt"));
+            String b = turn.requestTool("toolu_b", "read_file", Map.of("path", "b.txt"));
+            delivered.put("toolu_a", turn.awaitToolResult(a, Duration.ofSeconds(20)));
+            delivered.put("toolu_b", turn.awaitToolResult(b, Duration.ofSeconds(20)));
+            turn.delta("Both read.");
+            turn.usage(700, 3, 538, 0, "stop");
+            turn.idle();
+        });
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Read a.txt and b.txt")));
+        List<ProviderEvent> first = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+
+        assertEquals(List.of(
+                new PUsage(538, 80, 0, 0),
+                new PToolCall("toolu_a", "read_file", JSON.valueToTree(Map.of("path", "a.txt"))),
+                new PToolCall("toolu_b", "read_file", JSON.valueToTree(Map.of("path", "b.txt"))),
+                new PStop(PStop.StopReason.TOOL_USE)), first);
+
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.<ProviderContent>of(
+                new ToolCallContent("toolu_a", "read_file", JSON.valueToTree(Map.of("path", "a.txt"))),
+                new ToolCallContent("toolu_b", "read_file", JSON.valueToTree(Map.of("path", "b.txt"))))));
+        // Results in the other order: each goes back to its own call.
+        history.add(new ProviderMessage(ProviderMessage.Role.USER, List.<ProviderContent>of(
+                new ToolResultContent("toolu_b", "bee", false),
+                new ToolResultContent("toolu_a", "ay", false))));
+        List<ProviderEvent> second = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+
+        assertEquals(new PStop(PStop.StopReason.END_TURN), second.getLast());
+        assertEquals("ay", delivered.get("toolu_a").path("result").path("textResultForLlm").asText());
+        assertEquals("bee", delivered.get("toolu_b").path("result").path("textResultForLlm").asText());
     }
 
     /** Collects what the provider puts on the wire record. */

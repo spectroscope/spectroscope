@@ -163,9 +163,10 @@ class CopilotLiveReplayTest {
                     signal.cancel();
                 }
             }
-            line(log, "cancel: stop after " + ms(cancelAt) + " ms from cancel(), events=" + kinds(cancelled));
+            long cancelToStop = ms(cancelAt); // read once: the log line and the summary carry the same number
+            line(log, "cancel: stop after " + cancelToStop + " ms from cancel(), events=" + kinds(cancelled));
             assertEquals(new PStop(PStop.StopReason.ABORTED), cancelled.getLast());
-            summary.put("cancelToStopMs", ms(cancelAt));
+            summary.put("cancelToStopMs", cancelToStop);
             line(log, "runtime processes before close: " + runtimeProcesses());
         }
         long closed = System.nanoTime();
