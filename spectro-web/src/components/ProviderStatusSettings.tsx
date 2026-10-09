@@ -52,8 +52,8 @@ function Row({ row, busy, onCheck }: { row: ProviderRow; busy: boolean; onCheck:
           ? t(lang, row.live ? "prov.models" : "prov.modelsFallback", { n: row.models.length })
           : ""}
       </td>
-      <td>{ageLabel(row.checkedAt, now, lang)}</td>
-      <td>
+      <td className="prov-age">{ageLabel(row.checkedAt, now, lang)}</td>
+      <td className="prov-action">
         {checkable(row) && (
           <button type="button" className="prov-check-one ghost" disabled={busy} onClick={onCheck}>
             {t(lang, "prov.check")}

@@ -803,11 +803,11 @@
 }
 
 /* The provider overview on the settings page (card 480, playbook P1). Tokens
-   only; the wrapper scrolls the table sideways on a narrow window so the page
-   itself never does. */
+   only. The table shrinks to the settings dialog: the address breaks where it
+   must, and below 560 px of its own width each row becomes a short block so
+   neither the page nor the table scrolls sideways. */
 .prov-scroll {
-  overflow-x: auto;
-  max-width: 100%;
+  container: provtable / inline-size;
 }
 .prov-table {
   width: 100%;
@@ -826,7 +826,11 @@
   font-weight: 500;
   white-space: nowrap;
 }
-.prov-table td {
+.prov-table .prov-address {
+  overflow-wrap: anywhere;
+}
+.prov-table .prov-age,
+.prov-table .prov-action {
   white-space: nowrap;
 }
 .prov-row--failed .prov-state {
@@ -837,4 +841,35 @@
 }
 .prov-foot {
   margin-top: 8px;
+}
+@container provtable (max-width: 560px) {
+  .prov-table,
+  .prov-table tbody {
+    display: block;
+  }
+  .prov-table thead {
+    display: none;
+  }
+  .prov-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .prov-table td {
+    padding: 0;
+    border: 0;
+  }
+  .prov-table td:empty {
+    display: none;
+  }
+  .prov-table td:first-child {
+    flex-basis: 100%;
+    font-weight: 500;
+  }
+  .prov-table .prov-action {
+    margin-left: auto;
+  }
 }
