@@ -93,6 +93,8 @@ public final class SettingsWriter {
             "toolResultElision",
             // Card 466: the tool groups a session leaves out of every request.
             "toolGroupsOff",
+            // Card 490: how many model sessions one chat may run at once.
+            "sessionsPerChat",
             // Card 492: whether every run appends the care paragraph.
             "careParagraph");
 

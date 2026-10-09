@@ -94,7 +94,11 @@ public final class SettingFloors {
             new Floor("progressGuardPlanTurns", 0, "the stalled-plan detector is off"),
             new Floor("continuationBudget", 0, "a run that stops with its plan open is not continued"),
             new Floor("questionsPerRun", 0, "the agent never asks a question"),
-            new Floor("chatReserveWidth", 0, "no width is kept back for the chat"));
+            new Floor("chatReserveWidth", 0, "no width is kept back for the chat"),
+            // Card 490: the main agent and one helper. "No helpers" already has
+            // its key, the agents tool group of card 466, and a count of 1
+            // would be a second key for the same state.
+            new Floor("sessionsPerChat", 2, null));
 
     private static final Map<String, Integer> FLOORS = floorsOf(TABLE);
 

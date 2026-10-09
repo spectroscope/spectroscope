@@ -1674,6 +1674,7 @@ public final class SessionConnection {
             buildAgentOnce();
             suggestTitleOnce(text); // card 445: in the background, the run does not wait
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
+            refreshSessionsPerChat(); // card 490: the chat's session count, per prompt
             refreshCareParagraph(); // card 492: the settings as they are now, per prompt
             sendWorkspaceInfo();
             sendGoalInfo(); // card 267: what this run is for, where it is watched
@@ -1998,6 +1999,10 @@ public final class SessionConnection {
                 // (SubagentManager.childToolGroupsOff), so a gear change
                 // mid-run reaches parent and children together at the next run
                 .toolGroupsOff(toolGroupsOff::get)
+                // Card 490: the chat's session count between runs; during a
+                // run the parent agent below holds the live count the slot
+                // pool reads
+                .sessionsPerChat(active.sessionsPerChat())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -2074,6 +2079,10 @@ public final class SessionConnection {
                 .toolResultElision(active.toolResultElision())
                 // Card 466: the gear's tool groups, read at the start of every run
                 .toolGroupsOff(toolGroupsOff::get)
+                // Card 490: this chat's session count. Re-read from the
+                // settings files at the top of every prompt
+                // (refreshSessionsPerChat), so a save reaches the next prompt
+                .sessionsPerChat(active.sessionsPerChat())
                 // Card 492: the care paragraph. The build value is the session
                 // moment's; refreshCareParagraph re-reads it before every prompt
                 .careParagraph(active.careParagraph())
@@ -2093,15 +2102,37 @@ public final class SessionConnection {
      * a reconnect — which is a rebuild by another name. The settings panel
      * already writes this key through {@code SettingsWriter}; this is what makes
      * the number it wrote govern the very next run.</p>
+     *
+     * <p>Card 491: the number comes from {@link #liveConfig()}, which reads the
+     * settings files again. {@link #activeConfig} is written when the agent is
+     * built and by nothing a settings save does, so reading it here kept the
+     * budget the session started with. The key's reach is {@code next-run}.</p>
      */
     void refreshContinuationBudget() {
         if (agent == null || agent.continuationLeash() == null) {
             return;
         }
-        SpectroConfig active = activeConfig.get();
-        if (active != null) {
-            agent.continuationLeash().setBudget(active.continuationBudget());
+        SpectroConfig live = liveConfig();
+        if (live != null) {
+            agent.continuationLeash().setBudget(live.continuationBudget());
         }
+    }
+
+    /**
+     * Re-reads the chat's session count onto the live agent (card 490).
+     *
+     * <p>Called at the top of every prompt, like the continuation budget, but
+     * from the settings files as they stand now ({@link #liveConfig()}), so a
+     * count saved on the settings page or in the folder's local file reaches
+     * the next prompt of a session that is already open. The slot pool reads
+     * the agent's count each time a helper asks for a slot; the spawn tools
+     * describe the count the run started with.</p>
+     */
+    void refreshSessionsPerChat() {
+        if (agent == null) {
+            return;
+        }
+        agent.setSessionsPerChat(liveConfig().sessionsPerChat());
     }
 
     /**
@@ -2435,12 +2466,15 @@ public final class SessionConnection {
      *
      * <p><b>The answer is the same for all of them.</b> Not "web_search is fixed
      * now" — every setting a tool here reads is read again on the call. What
-     * this method does NOT cover is listed on the card and said on the settings
-     * page: the workspace, the MCP servers, the shell hooks, the system prompt
-     * and its skills, and the CONFIGURED compaction threshold are settled when
-     * the agent is built and stay settled, because changing them mid-session
-     * would mean killing processes or rewriting a conversation that already
-     * happened.</p>
+     * this method does NOT cover is listed on the card and in the reach table
+     * of the config reference chapter: the workspace, the MCP servers, the
+     * shell hooks, the base of the system prompt and its skills, and the
+     * CONFIGURED compaction threshold are settled when the agent is built and
+     * stay settled, because changing them mid-session would mean killing
+     * processes or rewriting a conversation that already happened. Card 491:
+     * only the base of the prompt is settled for the session. A setting with
+     * the reach {@code next-run} may add to the prompt at the start of each
+     * run, so the prompt a run sends is fixed for that run.</p>
      *
      * <p>Half of that last one moved with card 263 and the sentence above would
      * otherwise be the harder kind of stale — true enough to believe. What the

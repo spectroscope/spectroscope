@@ -273,6 +273,12 @@ import java.util.function.Function;
  *                              every provider request, by their wire names
  *                              ({@link dev.spectroscope.core.ToolGroup#wireNames()}).
  *                              Ships empty, which sends every tool
+ * @param sessionsPerChat       card 490: how many model sessions one chat may
+ *                              run at once, the main agent and its helpers
+ *                              together. A helper beyond the count waits for a
+ *                              free slot of its chat. Ships unset, which keeps
+ *                              the v0.14.4 behaviour: no limit per chat. Floor
+ *                              2, see {@link SettingFloors}
  * @param careParagraph         card 492: {@code "on"} appends a short paragraph
  *                              to the system prompt of every run, asking the
  *                              model to work in small steps and read in parts;
@@ -342,15 +348,97 @@ public record SpectroConfig(
         String toolResultElision,
         // Card 466: the switched-off tool groups. Appended last, same rule.
         List<String> toolGroupsOff,
+        // Card 490: the session count of one chat. Appended last, same rule.
+        Integer sessionsPerChat,
         // Card 492: "on" or "off". Appended last, same rule.
         String careParagraph) {
+
+    /** Compat: the v0.14.4 arity, which knew no session count per chat
+     *  (card 490). Every caller that built a config positionally against
+     *  v0.14.4 keeps compiling and gets no count, which is the v0.14.4
+     *  behaviour: no limit per chat. Card 492 appended the care paragraph
+     *  after the count; this compat ships it off.
+     *
+     * @param provider              the LLM backend
+     * @param model                 the model id
+     * @param baseUrl               the legacy provider address
+     * @param compactionThreshold   input-token level that triggers compaction
+     * @param permissionMode        ask / auto / readonly
+     * @param autoApprove           the allowlist rules
+     * @param imageProvider         the image backend
+     * @param thinking              TRUE requests the reasoning stream
+     * @param mcpServers            the configured MCP servers
+     * @param maxRetries            provider retries
+     * @param promptCaching         TRUE asks the provider to cache the prompt
+     * @param hooks                 the configured shell hooks
+     * @param workspace             the workspace directory
+     * @param logLevel              file-diagnostics level
+     * @param imageModel            the image model id
+     * @param sttModel              the transcription model id
+     * @param sttProvider           auto / local / openai
+     * @param sttLanguage           auto or a language code
+     * @param chromeBinary          the browser binary
+     * @param otlpEndpoint          the trace endpoint
+     * @param otlpBasicAuth         the trace credentials
+     * @param ollamaBaseUrl         ollama's address
+     * @param lmstudioBaseUrl       LM Studio's address
+     * @param searxngUrl            the SearXNG instance
+     * @param allowLocalhost        TRUE lets the net fence dial loopback
+     * @param headlessMcp           TRUE mounts MCP servers in unattended runs
+     * @param progressGuardWrites   identical-write count that speaks
+     * @param progressGuardFailures failing-call count that speaks
+     * @param progressGuardPlanTurns planless turns that speak
+     * @param continuationBudget    continuations per run
+     * @param maxTurns              the runaway-loop brake
+     * @param llamacppBaseUrl       llama.cpp's address
+     * @param questionsPerRun       the ask budget
+     * @param maxQuestionOptions    options per question
+     * @param maxQuestionChars      characters per question
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth      pixels of chat the dock may never take
+     * @param dockMaxWidth          the dock's ceiling
+     * @param maxTokens             the completion budget
+     * @param subagentBudgetSeconds the child run budget floor
+     * @param rtkFilter             the rtk proxy switch
+     * @param subagentBudgetTokens  a child agent's token budget
+     * @param desktopNotifications  the cron end notification switch
+     * @param toolResultElision     the switch that leaves old, large tool results out
+     * @param toolGroupsOff         the switched-off tool groups */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds, int chatReserveWidth,
+                         int dockMaxWidth, int maxTokens, int subagentBudgetSeconds,
+                         String rtkFilter, int subagentBudgetTokens,
+                         String desktopNotifications, String toolResultElision,
+                         List<String> toolGroupsOff) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks, workspace,
+                logLevel, imageModel, sttModel, sttProvider, sttLanguage, chromeBinary,
+                otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl, searxngUrl,
+                allowLocalhost, headlessMcp, progressGuardWrites, progressGuardFailures,
+                progressGuardPlanTurns, continuationBudget, maxTurns, llamacppBaseUrl,
+                questionsPerRun, maxQuestionOptions, maxQuestionChars, commandTimeoutSeconds,
+                chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
+                subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
+                null, DEFAULT_CARE_PARAGRAPH);
+    }
 
     /** Compat: the arity main had before cards 476, 467 and 466, which knew
      *  no notification switch, no elision switch and no tool groups. Every
      *  caller that built a config positionally keeps compiling, gets the
-     *  shipped {@code on} for both switches and switches no tool group off.
-     *  Card 492 appended the care paragraph after them; this compat ships it
-     *  off, so it still builds the config main built.
+     *  shipped {@code on} for both switches, switches no tool group off,
+     *  sets no session count (card 490) and ships the care paragraph off
+     *  (card 492), so it still builds the config main built.
      *
      * @param provider              the LLM backend
      * @param model                 the model id
@@ -418,7 +506,7 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens,
-                DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(),
+                DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(), null,
                 DEFAULT_CARE_PARAGRAPH);
     }
 
@@ -1186,6 +1274,25 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "subagentBudgetTokens")
     public static final int DEFAULT_SUBAGENT_BUDGET_TOKENS = 10_000_000;
 
+    /** The proposed session count for a chat (card 490): three, the main
+     *  agent and two helpers. It is the owner's figure of 2026-10-09 for a
+     *  chat on a local model ({@code konzept/RUN-PROFILES.md}, Knobs), not a
+     *  measurement; the concurrency of one chat on the house node is measured
+     *  by card 487.
+     *
+     *  <p>The key itself ships unset: a chat that names no count runs as
+     *  v0.14.4 did, with no limit per chat and one {@code spawn_agents} call
+     *  starting up to
+     *  {@link dev.spectroscope.core.subagents.SubagentManager#MAX_PARALLEL_CHILDREN}
+     *  helpers. No code reads this number yet. The settings page has no field
+     *  for the key, and Local mode (card 493), which is to write this number,
+     *  is not built; until then a chat has a count only when a settings file
+     *  sets the key. The floor is 2, in {@link SettingFloors}: a count of 1
+     *  would be a second way to say "no helpers", which the {@code agents}
+     *  tool group already says.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "sessionsPerChat")
+    public static final int DEFAULT_SESSIONS_PER_CHAT = 3;
+
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
         mcpServers = mcpServers == null ? List.of() : List.copyOf(mcpServers);
@@ -1440,7 +1547,7 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, value, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff, careParagraph);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
     }
 
     /**
@@ -1468,7 +1575,7 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, value,
-                toolResultElision, toolGroupsOff, careParagraph);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
     }
 
     /**
@@ -1499,7 +1606,7 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, value, careParagraph);
+                toolResultElision, value, sessionsPerChat, careParagraph);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -2010,7 +2117,7 @@ public record SpectroConfig(
                         base.subagentBudgetSeconds(), base.rtkFilter(),
                         base.subagentBudgetTokens(), base.desktopNotifications(),
                         base.toolResultElision(), base.toolGroupsOff(),
-                        base.careParagraph());
+                        base.sessionsPerChat(), base.careParagraph());
             }
         }
         return base;
@@ -2097,6 +2204,8 @@ public record SpectroConfig(
             new FieldProbe("toolResultElision", p -> p.toolResultElision),
             // Card 466, appended last, same rule.
             new FieldProbe("toolGroupsOff", p -> p.toolGroupsOff),
+            // Card 490, appended last, same rule.
+            new FieldProbe("sessionsPerChat", p -> p.sessionsPerChat),
             // Card 492, appended last, same rule.
             new FieldProbe("careParagraph", p -> p.careParagraph));
 
@@ -2532,7 +2641,7 @@ public record SpectroConfig(
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff, careParagraph);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -3452,6 +3561,8 @@ public record SpectroConfig(
         public String toolResultElision;
         // Card 466: the switched-off tool groups, by wire name.
         public List<String> toolGroupsOff;
+        // Card 490: the session count of one chat.
+        public Integer sessionsPerChat;
         // Card 492: "on" or "off".
         public String careParagraph;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
@@ -3527,6 +3638,7 @@ public record SpectroConfig(
             // Card 466: a whole list, like autoApprove. A higher scope that
             // names the key replaces the list below it; [] switches all back on.
             out.toolGroupsOff = Optional.ofNullable(higher.toolGroupsOff).orElse(toolGroupsOff);
+            out.sessionsPerChat = Optional.ofNullable(higher.sessionsPerChat).orElse(sessionsPerChat);
             out.careParagraph = Optional.ofNullable(higher.careParagraph).orElse(careParagraph);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
@@ -3595,6 +3707,8 @@ public record SpectroConfig(
                     Optional.ofNullable(toolResultElision)
                             .orElse(DEFAULTS.toolResultElision()),
                     Optional.ofNullable(toolGroupsOff).orElse(DEFAULTS.toolGroupsOff()),
+                    // Card 490: unset stays unset, so no limit applies per chat.
+                    Optional.ofNullable(sessionsPerChat).orElse(DEFAULTS.sessionsPerChat()),
                     Optional.ofNullable(careParagraph).orElse(DEFAULTS.careParagraph()));
         }
 

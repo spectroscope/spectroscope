@@ -2,9 +2,14 @@
 // server named, checked while the group is sent to the model; the hint under
 // each lists the tools it holds in this session. The decisions live in
 // state/toolGroups.ts; this file only draws them and reports a change.
+//
+// Card 491: the sentence under the list that says when a change acts comes
+// from the reach table (settingsReach.tsx), where toolGroupsOff is next-run, so
+// the gear and the config reference chapter say the same thing.
 
 import { groupHint, toggleGroup, type ToolGroupsInfo } from "../state/toolGroups";
 import { t, type Lang } from "../i18n/i18n";
+import { ReachBlock } from "./settingsReach";
 
 export function ToolGroupsSection({
   lang,
@@ -61,6 +66,7 @@ export function ToolGroupsSection({
           );
         })}
       </ul>
+      <ReachBlock lang={lang} fields={["toolGroupsOff"]} />
     </div>
   );
 }

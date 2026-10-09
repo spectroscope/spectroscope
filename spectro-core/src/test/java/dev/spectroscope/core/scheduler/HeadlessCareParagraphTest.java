@@ -52,7 +52,7 @@ class HeadlessCareParagraphTest {
                 base.commandTimeoutSeconds(), base.chatReserveWidth(), base.dockMaxWidth(),
                 base.maxTokens(), base.subagentBudgetSeconds(), base.rtkFilter(),
                 base.subagentBudgetTokens(), base.desktopNotifications(),
-                base.toolResultElision(), base.toolGroupsOff(), care);
+                base.toolResultElision(), base.toolGroupsOff(), base.sessionsPerChat(), care);
     }
 
     private static List<String> runWith(String care, Path cwd) {
