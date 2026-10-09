@@ -57,7 +57,28 @@ class SessionWakeTest {
         for (String id : written) {
             Files.deleteIfExists(SessionStore.sessionFile(id));
             Files.deleteIfExists(LlmWireRecorder.fileFor(id));
+            deleteTree(WorkspaceResolver.locate(null, id)); // a folder a broken wake minted
         }
+    }
+
+    private static void deleteTree(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (var walk = Files.walk(root)) {
+            for (Path path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
+    }
+
+    /** Points a session folder at the scripted backend, as the owner's folder points at his. */
+    private void wireBackend(Path folder) throws IOException {
+        String baseUrl = config(null).baseUrl();
+        Files.createDirectories(folder.resolve(".spectro"));
+        Files.writeString(folder.resolve(".spectro/settings.json"), """
+                { "provider": "ollama", "model": "qwen3", "baseUrl": "%s" }
+                """.formatted(baseUrl));
     }
 
     /** A scripted Ollama that answers every chat with one short line. */
@@ -199,6 +220,7 @@ class SessionWakeTest {
     @Test
     void aWakeCostsNoModelCallAndWritesNothing(@TempDir Path folder) throws Exception {
         String id = stored("20261009-210200-w498free", folder.toString());
+        wireBackend(folder);
         Path wire = LlmWireRecorder.fileFor(id);
         Files.deleteIfExists(wire);
         byte[] before = Files.readAllBytes(SessionStore.sessionFile(id));
@@ -206,7 +228,7 @@ class SessionWakeTest {
         SessionConnection connection = fresh(socket, null, new LiveSessions());
 
         connection.onWakeSession(id);
-        Thread.sleep(300); // anything the wake started in the background has had time to speak
+        Thread.sleep(1_500); // anything the wake started in the background has had time to speak
 
         assertThat(wokenFrames(socket)).as("premise: the wake was answered").hasSize(1);
         assertThat(chatBodies).as("the backend received no request at all").isEmpty();
@@ -218,6 +240,15 @@ class SessionWakeTest {
                 "text_delta", "run_end")) {
             assertThat(frames(socket, type)).as("a wake sends no %s", type).isEmpty();
         }
+
+        // The positive half: the backend is wired, so the silence above means
+        // something. One message is one request and one exchange on the wire.
+        connection.onUserMessage("ZETA a real question", null);
+        await(socket, "run_end", 1);
+        assertThat(chatBodies).as("the first message is the first request").hasSize(1);
+        assertThat(Files.readAllLines(wire).stream()
+                .filter(line -> line.contains("\"type\":\"llm_request\"")).count())
+                .as("the wire holds that one request").isEqualTo(1);
     }
 
     @Test
@@ -225,6 +256,7 @@ class SessionWakeTest {
         Path gone = parent.resolve("deleted-project");
         String id = stored("20261009-210300-w498gone", gone.toString());
         Path random = WorkspaceResolver.locate(null, id);
+        deleteTree(random); // a leftover of an earlier, broken run is not this run's doing
         assertThat(Files.exists(random)).as("premise: no temp folder for this session").isFalse();
         FakeSocket socket = new FakeSocket("ws-498-gone", "ws://localhost/ws");
         SessionConnection connection = fresh(socket, null, new LiveSessions());
@@ -247,11 +279,7 @@ class SessionWakeTest {
     void theFirstMessageAfterAWakeSendsWhatAResumeSends(@TempDir Path folder) throws Exception {
         String woken = stored("20261009-210400-w498next", folder.toString());
         String resumed = stored("20261009-210401-w498resu", folder.toString());
-        SpectroConfig base = config(null);
-        Files.createDirectories(folder.resolve(".spectro"));
-        Files.writeString(folder.resolve(".spectro/settings.json"), """
-                { "provider": "ollama", "model": "qwen3", "baseUrl": "%s" }
-                """.formatted(base.baseUrl()));
+        wireBackend(folder);
 
         FakeSocket resumeSocket = new FakeSocket("ws-498-resume", "ws://localhost/ws");
         SessionConnection resume = new SessionConnection(resumeSocket, JSON, config(null), resumed, null,
