@@ -104,7 +104,9 @@ class HeadlessRunnerReachTest {
         Job job = new Job("card-364-reach", "* * * * *", "Loop forever", cwd.toString(),
                 Job.READONLY);
 
+        RecordingNotifier notes = new RecordingNotifier();
         JobState state = new HeadlessRunner(JSON, config, relentless(budgets))
+                .withNotifier(notes)
                 .runJob(job, line -> { });
 
         // One provider call per turn, so the request count IS the turn count —
@@ -114,6 +116,10 @@ class HeadlessRunnerReachTest {
                         + " to keep a nightly job cheap changed nothing and was told nothing");
         assertEquals("max_turns", state.stopReason());
         assertEquals(JobState.FAILED, state.status());
+        // Card 476: this is the job whose banner reached the owner's screen on
+        // every suite run. It is announced to the recording notifier instead.
+        assertEquals(List.of(new RecordingNotifier.Shown("spectroscope: card-364-reach failed",
+                        "max_turns")), notes.shown());
     }
 
     @Test

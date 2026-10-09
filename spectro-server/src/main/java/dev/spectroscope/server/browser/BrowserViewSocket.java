@@ -39,6 +39,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *                                    cast starts if that session has a page open
  * {"type":"unwatch"}                 stop watching
  * {"type":"navigate","sessionId":s,"url":u}
+ * {"type":"open_code_graph","sessionId":s}  card 472: the "Graph ready" chip;
+ *                                    the server mints a one-shot ticket and
+ *                                    navigates to its own code graph view
  * {"type":"back","sessionId":s}      {"type":"forward","sessionId":s}
  * {"type":"reload","sessionId":s}     card 344: a RELOAD, carrying no address
  * {"type":"close_page","sessionId":s} card 346: drop the page, keep the cookies
@@ -140,6 +143,17 @@ public class BrowserViewSocket extends TextWebSocketHandler {
     /** The live sessions' recorders, supervisors and folders (card 227). */
     private final SessionBrowserBridge bridge;
 
+    /** Where the "Graph ready" chip's ticket is minted (card 472). */
+    private volatile dev.spectroscope.server.web.AppPageTickets codeGraphTickets =
+            dev.spectroscope.server.web.AppPageTickets.shared();
+
+    /** The port this server listens on, for the code graph address (card 472). */
+    private volatile java.util.function.IntSupplier ownPort = dev.spectroscope.server.web.OwnPort::get;
+
+    /** The session id shape the code graph view accepts. */
+    private static final java.util.regex.Pattern SESSION_ID =
+            java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
+
     /** Which session each viewer socket is watching. */
     private final Map<String, String> watching = new ConcurrentHashMap<>();
 
@@ -163,6 +177,19 @@ public class BrowserViewSocket extends TextWebSocketHandler {
     }
 
     /**
+     * Test seam (card 472): the tickets and the port the code graph address is
+     * built from.
+     *
+     * @param tickets where the chip press mints its ticket
+     * @param port    the port this server listens on
+     */
+    void useCodeGraphTickets(dev.spectroscope.server.web.AppPageTickets tickets,
+            java.util.function.IntSupplier port) {
+        this.codeGraphTickets = tickets;
+        this.ownPort = port;
+    }
+
+    /**
      * One frame from the viewer.
      *
      * @param socket  the viewer's socket
@@ -183,6 +210,7 @@ public class BrowserViewSocket extends TextWebSocketHandler {
             case "watch" -> watch(socket, sessionId);
             case "unwatch" -> unwatch(socket);
             case "navigate" -> navigate(socket, sessionId, frame.path("url").asText(""));
+            case "open_code_graph" -> openCodeGraph(socket, sessionId);
             case "back", "forward" -> history(socket, sessionId, type);
             case "reload" -> reload(socket, sessionId);
             case "close_page" -> closePage(socket, sessionId);
@@ -243,6 +271,25 @@ public class BrowserViewSocket extends TextWebSocketHandler {
                 reply -> answerVerb(socket, "navigate", reply));
         send(socket, state(sessionId));
         startCastIfLive(socket, sessionId);
+    }
+
+    /**
+     * The "Graph ready" chip (card 472): opens the session folder's code graph
+     * in this session's browser. Only the app's own page speaks this frame;
+     * the agent's tools never send frames on this channel. The ticket is
+     * minted here, after the same checks a navigate makes, so it exists only
+     * for a press that goes on to navigate, and the address is built on this
+     * server's own port rather than taken from the page.
+     */
+    private void openCodeGraph(WebSocketSession socket, String sessionId) {
+        if (!SESSION_ID.matcher(sessionId).matches()) {
+            send(socket, error("open_code_graph needs a sessionId"));
+            return;
+        }
+        if (refuseWhenNoEngine(socket, "navigate") || refuseWhileAgentDrives(socket, sessionId)) {
+            return;
+        }
+        navigate(socket, sessionId, codeGraphTickets.viewAddress(sessionId, ownPort.getAsInt()));
     }
 
     /** back/forward: the two verbs that exist only for a person (card 227). */

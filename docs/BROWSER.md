@@ -516,6 +516,46 @@ call, so a saved setting reaches the next tool call rather than the next launch,
 and it is read by **both** halves of the fence from the same place. The opt-in
 never widens: the LAN, the tailnet and `file://` stay refused with it on.
 
+### The app's own code graph view
+
+One loopback page opens without the opt-in, and only for the operator's own
+press: the app server's `/api/codegraph/view` (card 472). It serves a folder's
+`graph.html` under a CSP sandbox, and the "Graph ready" chip in the header
+opens it in the internal browser.
+
+The press is the only way in. The chip sends `open_code_graph` on the browser
+view socket, a channel only the app's own page speaks. The server mints a
+one-shot ticket there, builds the address on its own port
+(`http://localhost:<port>/api/codegraph/view?sessionId=...&ticket=...`) and
+navigates the session's browser like a typed address. The ticket lives for one
+minute, and the view spends it on the first load. Both halves of the fence let
+the page through only in this shape: plain `http`, a loopback host written as
+`localhost`, `127.0.0.1` or `[::1]`, the port the app's server listens on, no
+userinfo, exactly that path, and exactly one `ticket` parameter whose value is
+live. On the desktop face the server sends the ticket with that one navigate
+command as `settings.appTicket`, and the pane drops it after the first load it
+lets through; on the web face the hop gate asks the server's ticket list for
+every request. The `appPages` rows of `fence-vectors.json` hold both halves to
+this.
+
+What the agent reaches, verb by verb, with the opt-in off:
+
+- `browser_navigate` judges with the plain fence, which knows no app port and
+  no ticket: the view is refused by the loopback rule, ticket or not.
+- `browser_eval`, a `browser_computer` click and a redirect reach the view
+  without a live ticket: the agent never sees one before the view has spent
+  it, and its commands never carry one. The hop gate (web face) and the pane's
+  request hook (desktop face) refuse them by the loopback rule.
+- A request from outside the browser (a REST client, `curl`) gets the view's
+  blank 404 without a live ticket.
+
+What stays outside the fence: an agent with an approved shell can open a
+websocket to the view socket itself, as it can reach any loopback port. The
+fence governs browser verbs; the shell has its own permission gate.
+
+Every other loopback address keeps the loopback rule, the app's other
+endpoints included.
+
 ### Every failure sentence names the address
 
 House rule from cards 193 and 203. `browser_navigate` names its own argument;

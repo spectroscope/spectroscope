@@ -1,0 +1,34 @@
+meta {
+  name: build code graph
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/codegraph/start
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "sessionId": "{{sessionId}}",
+    "mode": "update",
+    "provider": null,
+    "model": null
+  }
+}
+
+docs {
+  Start graphify as a background job of the server against a session's working folder (card 472). mode full runs extract --code-only then cluster-only --no-label, which keeps the community names a graph already has; update runs update; with a provider, either then runs label --missing-only, which names only the communities without a name. provider is one of the harness providers the status lists (null for no labels) and model is required with it; both are checked before they become arguments. 202 started, 400 malformed or refused choice, 404 unknown session, 409 a build already runs for the folder, 503 graphify not installed.
+  
+  CAUTION: Runs graphify, which writes graphify-out/ into the session's folder and, with a provider, calls that model.
+  
+  Fence: host+origin+json. Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

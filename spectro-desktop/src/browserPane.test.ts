@@ -306,6 +306,49 @@ describe("browserPane", () => {
     assert.match(String(reply.error), /rfc1918/, reply.error ?? "");
   });
 
+  it("opens the app's own code graph view with the opt-in off only on the operator's ticket, once (card 472)", async () => {
+    const ticket = "0123456789abcdef0123456789abcdef";
+    const page = `http://localhost:8473/api/codegraph/view?sessionId=s-1&ticket=${ticket}`;
+    const pressed = { allowLocalhost: false, adblock: false, appPort: 8473, appTicket: ticket };
+
+    const reply = await pane.runVerb("navigate", { url: page }, pressed, SESSION);
+    assert.equal(reply.ok, true, reply.error ?? "");
+    assert.equal(rec.loaded.at(-1), page);
+
+    const seen: { cancel?: boolean }[] = [];
+    rec.hook?.({ url: page, resourceType: "mainFrame" }, (r) => seen.push(r));
+    await settle();
+    assert.equal(seen[0]?.cancel, undefined, "the hook lets the page itself load");
+
+    const again: { cancel?: boolean }[] = [];
+    rec.hook?.({ url: page, resourceType: "mainFrame" }, (r) => again.push(r));
+    await settle();
+    assert.equal(again[0]?.cancel, true, "the ticket opened one load; a reload or a redirect back is refused");
+
+    const other: { cancel?: boolean }[] = [];
+    rec.hook?.({ url: "http://localhost:8473/api/codegraph/status", resourceType: "xhr" }, (r) => other.push(r));
+    await settle();
+    assert.equal(other[0]?.cancel, true, "and nothing else on the app's port");
+
+    const noTicket = await pane.runVerb("navigate", { url: page }, { allowLocalhost: false, adblock: false, appPort: 8473 }, SESSION);
+    assert.equal(noTicket.ok, false, "a command that carries no ticket excepts nothing");
+    assert.match(String(noTicket.error), /loopback/);
+  });
+
+  it("refuses the code graph view to an agent's eval that follows the operator's press (card 472)", async () => {
+    const ticket = "0123456789abcdef0123456789abcdef";
+    const page = `http://localhost:8473/api/codegraph/view?sessionId=s-1&ticket=${ticket}`;
+    await pane.runVerb("navigate", { url: page }, { allowLocalhost: false, adblock: false, appPort: 8473, appTicket: ticket }, SESSION);
+
+    // The agent's verbs come with the policy the server sends for them: the
+    // port, never a ticket. Whatever the eval makes the page load is judged by it.
+    await pane.runVerb("eval", { text: `location.href = "${page}"` }, { allowLocalhost: false, adblock: false, appPort: 8473 }, SESSION);
+    const seen: { cancel?: boolean }[] = [];
+    rec.hook?.({ url: page, resourceType: "mainFrame" }, (r) => seen.push(r));
+    await settle();
+    assert.equal(seen[0]?.cancel, true, "the agent's load of the view is refused");
+  });
+
   it("puts a name-based hop through the hook's own resolver, not only literals", async () => {
     // The wiring, which neither browserFence.test.ts nor the guard covers: the
     // pane's request hook must actually be the async, resolving one. With the

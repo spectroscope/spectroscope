@@ -230,6 +230,13 @@ public final class AskUserQuestionTool implements Tool {
         return false;
     }
 
+    /** A second call does new work; the earlier result cannot be fetched (card 467).
+     *  @return false */
+    @Override
+    public boolean resultRepeatable() {
+        return false;
+    }
+
     /**
      * Validates the call, spends one of the run's questions, publishes the
      * question, parks on the person, and publishes what came back.

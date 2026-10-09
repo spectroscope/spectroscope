@@ -80,6 +80,18 @@ import java.util.List;
  *                            spawns; null sets nothing and leaves the loop
  *                            byte-identical to before. The loop reads it at the
  *                            top of every turn, the shape card 267's goal uses
+ * @param toolResultElision   card 467: {@code "on"} or {@code "off"}, the
+ *                            settings key of the same name. On, a tool result
+ *                            more than a few turns old and above a size leaves
+ *                            the outgoing request as a one-line stub, while the
+ *                            history and the session file keep it whole. Null
+ *                            is the shipped value, on
+ * @param toolGroupsOff       card 466: the tool groups the operator switched off
+ *                            for this session, read once at the start of every
+ *                            run. A switched-off group is left out of the
+ *                            provider request and out of the context ring, and
+ *                            a call to one of its tools is refused as unknown.
+ *                            Null switches nothing off, which is the shipped state
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
@@ -93,7 +105,55 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                            dev.spectroscope.core.goal.SessionGoal goal,
                            dev.spectroscope.core.steering.SteeringInbox steering,
                            dev.spectroscope.core.tools.RtkFilter rtkFilter,
-                           dev.spectroscope.core.session.SessionWindow sessionWindow) {
+                           dev.spectroscope.core.session.SessionWindow sessionWindow,
+                           String toolResultElision,
+                           java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff) {
+
+    /** Compat: the arity before cards 467 and 466, which knew no elision
+     *  switch and no tool groups. A caller without them gets the shipped
+     *  elision, on, and sends every registered tool, as before.
+     *
+     * @param provider            the LLM backend the loop streams from
+     * @param systemPrompt        system prompt sent with every provider request
+     * @param registry            the tool belt
+     * @param cwd                 working directory the file tools resolve against
+     * @param onPermission        blocking human gate
+     * @param agentId             id stamped on every emitted event
+     * @param parentId            the spawning agent's id; null for the main agent
+     * @param initialMessages     history seed of a resumed session
+     * @param providerName        build-time provider label for run_start
+     * @param maxTokens           output-token budget per provider call
+     * @param compactionThreshold input-token level that triggers compaction
+     * @param introspection       TRUE emits a context_info estimate each turn
+     * @param thinking            TRUE requests the model's reasoning stream
+     * @param hooks               external shell hooks around tool calls
+     * @param llmWire             the session's backend-to-LLM recorder
+     * @param latency             the session's shared window of exchange durations
+     * @param progressGuard       the harness's eye on a run going nowhere
+     * @param maxTurns            the runaway-loop brake, in turns per run
+     * @param continuationLeash   the leash that keeps an unfinished run going
+     * @param goal                what this run is FOR, and the check that decides it
+     * @param steering            what the operator typed while the run was working
+     * @param rtkFilter           the rtk rewrite of a shell line before the gate
+     * @param sessionWindow       the context window the operator set for this session */
+    public AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
+                        Path cwd, PermissionBroker onPermission, String agentId, String parentId,
+                        List<ProviderMessage> initialMessages, String providerName,
+                        Integer maxTokens, Integer compactionThreshold, Boolean introspection,
+                        Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire,
+                        dev.spectroscope.core.provider.ExchangeLatency latency,
+                        dev.spectroscope.core.progress.ProgressGuard progressGuard,
+                        Integer maxTurns,
+                        dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
+                        dev.spectroscope.core.goal.SessionGoal goal,
+                        dev.spectroscope.core.steering.SteeringInbox steering,
+                        dev.spectroscope.core.tools.RtkFilter rtkFilter,
+                        dev.spectroscope.core.session.SessionWindow sessionWindow) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
+                initialMessages, providerName, maxTokens, compactionThreshold, introspection,
+                thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
+                goal, steering, rtkFilter, sessionWindow, null, null);
+    }
 
     /** Compat: the arity before card 390, with cards 379 and 380 in it. Never
      *  released. A caller without a session window sets nothing, and the
@@ -381,6 +441,8 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private dev.spectroscope.core.steering.SteeringInbox steering; // nullable, never steered
         private dev.spectroscope.core.tools.RtkFilter rtkFilter; // nullable, rewrites nothing
         private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable, sets nothing
+        private String toolResultElision; // nullable, the shipped "on"
+        private java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff; // nullable, nothing off
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -493,13 +555,35 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
             return this;
         }
 
+        /** Card 466: the tool groups this session switched off, read once at
+         *  the start of every run so a change reaches the NEXT run of an agent
+         *  that is already built.
+         *  @param value the reader; null switches nothing off
+         *  @return this builder */
+        public Builder toolGroupsOff(java.util.function.Supplier<java.util.Set<ToolGroup>> value) {
+            this.toolGroupsOff = value;
+            return this;
+        }
+
+        /**
+         * Card 467: whether old, large tool results leave the outgoing request.
+         *
+         * @param value {@code "on"}, {@code "off"}, or null for the shipped on
+         * @return this builder
+         */
+        public Builder toolResultElision(String value) {
+            this.toolResultElision = value;
+            return this;
+        }
+
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
             return new AgentOptions(provider, systemPrompt, registry, cwd, onPermission,
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
                     introspection, thinking, hooks, llmWire, latency, progressGuard,
-                    maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow);
+                    maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow,
+                    toolResultElision, toolGroupsOff);
         }
     }
 }

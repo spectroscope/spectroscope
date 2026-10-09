@@ -59,8 +59,25 @@ public final class OpenAiCompatProvider implements LlmProvider {
      *                dialects with rows of their own are the keys of
      *                {@code reasoning/capabilities.json}; the reasoning fields
      *                differ per dialect, nothing else does
+     * @param promptCaching the {@code promptCaching} setting: on, a llama.cpp
+     *                server gets {@code cache_prompt: true}; off, the field
+     *                is left out (card 468)
      */
-    public record Options(String baseUrl, String model, String apiKey, String dialect) {
+    public record Options(String baseUrl, String model, String apiKey, String dialect,
+                          boolean promptCaching) {
+
+        /**
+         * Options without an explicit caching choice: prompt caching on, the
+         * setting's own default.
+         *
+         * @param baseUrl the server root
+         * @param model   the model name requests are sent to
+         * @param apiKey  optional bearer key
+         * @param dialect the provider label, or null to infer from the base URL
+         */
+        public Options(String baseUrl, String model, String apiKey, String dialect) {
+            this(baseUrl, model, apiKey, dialect, true);
+        }
 
         /**
          * Dialect-free options — pre-card-88 call sites; the dialect is
@@ -72,7 +89,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
          * @param apiKey  optional bearer key
          */
         public Options(String baseUrl, String model, String apiKey) {
-            this(baseUrl, model, apiKey, null);
+            this(baseUrl, model, apiKey, null, true);
         }
     }
 
@@ -86,6 +103,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
 
     /** The provider label this endpoint answers to — decides the reasoning fields. */
     private final String dialect;
+
+    /** The {@code promptCaching} setting this provider was built with (card 468). */
+    private final boolean promptCaching;
 
     /** Kept for the wire record's headers: the tap gets the REAL value, the recorder redacts. */
     private final String apiKey;
@@ -159,6 +179,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
         this.model = options.model();
         this.baseUrl = options.baseUrl();
         this.dialect = options.dialect();
+        this.promptCaching = options.promptCaching();
         this.apiKey = options.apiKey();
     }
 
@@ -414,6 +435,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * @param maxTokens           the classic completion cap (local servers), or null
      * @param maxCompletionTokens the modern cap (api.openai.com), or null
      * @param streamOptions       asks the server to append the trailing usage chunk
+     * @param cachePrompt         llama.cpp's prompt cache switch, or null to omit
+     *                            the field (promptCaching off, or an endpoint that
+     *                            is not a llama.cpp server, card 468)
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ChatRequest(String model, boolean stream, List<WireMessage> messages,
@@ -428,7 +452,8 @@ public final class OpenAiCompatProvider implements LlmProvider {
                        // qwen3 templates gate reasoning on enable_thinking; a
                        // template without the variable ignores it.
                        @JsonProperty("chat_template_kwargs") Map<String, Object> chatTemplateKwargs,
-                       @JsonProperty("stream_options") StreamOptions streamOptions) {}
+                       @JsonProperty("stream_options") StreamOptions streamOptions,
+                       @JsonProperty("cache_prompt") Boolean cachePrompt) {}
 
     /**
      * One chat message on the OpenAI wire; the static factories cover the four roles.
@@ -624,9 +649,10 @@ public final class OpenAiCompatProvider implements LlmProvider {
      *
      * @param choices the delta-carrying choices (usually exactly one)
      * @param usage   token counts — present only on the final usage chunk
+     * @param timings llama.cpp's per-request timings, null on other servers
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record Chunk(List<Choice> choices, Usage usage) {}
+    record Chunk(List<Choice> choices, Usage usage, Timings timings) {}
 
     /**
      * One choice inside a chunk.
@@ -674,12 +700,68 @@ public final class OpenAiCompatProvider implements LlmProvider {
     /**
      * The final chunk's token counts.
      *
-     * @param promptTokens     input tokens billed for the request
-     * @param completionTokens output tokens generated
+     * @param promptTokens        input tokens of the request, cached ones included
+     * @param completionTokens    output tokens generated
+     * @param promptTokensDetails the cached share of the prompt, when reported
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Usage(@JsonProperty("prompt_tokens") Integer promptTokens,
-                 @JsonProperty("completion_tokens") Integer completionTokens) {}
+                 @JsonProperty("completion_tokens") Integer completionTokens,
+                 @JsonProperty("prompt_tokens_details") PromptTokensDetails promptTokensDetails) {}
+
+    /**
+     * The OpenAI usage breakdown of the prompt side.
+     *
+     * @param cachedTokens prompt tokens the server took from its cache
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record PromptTokensDetails(@JsonProperty("cached_tokens") Integer cachedTokens) {}
+
+    /**
+     * llama.cpp's {@code timings} object. Its README defines the context of a
+     * request as {@code prompt_n + cache_n + predicted_n}.
+     *
+     * @param cacheN  prompt tokens reused from the cache
+     * @param promptN prompt tokens processed for this request
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record Timings(@JsonProperty("cache_n") Integer cacheN,
+                   @JsonProperty("prompt_n") Integer promptN) {}
+
+    /**
+     * The neutral usage event for one response (card 468). The harness keeps
+     * Anthropic's split: {@code inputTokens} is the uncached remainder and the
+     * cache read rides apart, so the loop and the ring add them back to the
+     * full prompt. The OpenAI shape counts cached tokens inside
+     * {@code prompt_tokens}, so they are taken out here.
+     *
+     * <p>{@code prompt_tokens_details.cached_tokens} is read first. A server
+     * that reports llama.cpp {@code timings} only falls back to
+     * {@code prompt_n} and {@code cache_n}. A reported zero equals the
+     * two-argument usage, and the loop puts no cache count on the wire for a
+     * zero, so sessions without a cache hit stay byte-identical.</p>
+     *
+     * @param usage   the trailing usage object, or null
+     * @param timings llama.cpp's timings, or null
+     * @return the usage event the stream emits
+     */
+    static PUsage usageEvent(Usage usage, Timings timings) {
+        int prompt = usage == null ? 0 : Optional.ofNullable(usage.promptTokens()).orElse(0);
+        int completion = usage == null ? 0 : Optional.ofNullable(usage.completionTokens()).orElse(0);
+        Integer cached = usage == null || usage.promptTokensDetails() == null
+                ? null : usage.promptTokensDetails().cachedTokens();
+        if (cached != null) {
+            return new PUsage(Math.max(prompt - cached, 0), completion, cached, 0);
+        }
+        // llama.cpp declares both fields unsigned, starting at 0 (server-common.h,
+        // read 2026-10-09). A server that copies the shape may send a negative
+        // count, and a negative count would shrink the context the loop adds up.
+        if (timings != null && timings.cacheN() != null && timings.promptN() != null) {
+            return new PUsage(Math.max(timings.promptN(), 0), completion,
+                    Math.max(timings.cacheN(), 0), 0);
+        }
+        return new PUsage(prompt, completion);
+    }
 
     /** One partially assembled tool call (fragments arrive per index). */
     private static final class PendingCall {
@@ -759,6 +841,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
         private final ThinkSplitter thinkSplitter = new ThinkSplitter();
         private final Map<Integer, PendingCall> calls = new LinkedHashMap<>();
         private Usage usage;
+        private Timings timings;
         private String finishReason;
         private boolean finished = false;
 
@@ -917,6 +1000,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
             if (chunk.usage() != null) {
                 usage = chunk.usage(); // arrives in the final usage chunk
             }
+            if (chunk.timings() != null) {
+                timings = chunk.timings();
+            }
             Optional.ofNullable(chunk.choices()).stream()
                     .flatMap(List::stream)
                     .forEach(choice -> {
@@ -964,9 +1050,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
                     call.id.isBlank() ? "openai-call-" + System.nanoTime() : call.id,
                     call.name.toString(),
                     parseArguments(call.arguments.toString()))));
-            pending.add(new PUsage(
-                    usage != null ? Optional.ofNullable(usage.promptTokens()).orElse(0) : 0,
-                    usage != null ? Optional.ofNullable(usage.completionTokens()).orElse(0) : 0));
+            pending.add(usageEvent(usage, timings));
             boolean wantsTools = "tool_calls".equals(finishReason) || !calls.isEmpty();
             pending.add(new PStop(wantsTools
                     ? PStop.StopReason.TOOL_USE
@@ -1148,7 +1232,32 @@ public final class OpenAiCompatProvider implements LlmProvider {
         return new ChatRequest(model, true, messages, tools.isEmpty() ? null : tools,
                 cloud ? null : cap, cloud ? cap : null,
                 reasoning.reasoningEffort(), reasoning.reasoning(), reasoning.chatTemplateKwargs(),
-                new StreamOptions(true));
+                new StreamOptions(true), cachePromptFor(dialect, promptCaching));
+    }
+
+    /**
+     * The {@code cache_prompt} value one request carries (card 468).
+     *
+     * <p>Only a llama.cpp server gets the field: its README lists
+     * {@code cache_prompt} among the {@code /completion} options (default
+     * true) and says those options are also accepted on
+     * {@code /v1/chat/completions} (read 2026-10-09). The two dialects that ARE
+     * a llama-server are the ones {@link #readsWindowFromProps} names. LM
+     * Studio and the OpenAI reference document no such field, and an endpoint
+     * of unknown make gets no guessed one.</p>
+     *
+     * <p>With the setting off the field is left out and the server's own
+     * default decides; a stock llama-server then still reuses its cache. A
+     * config that turned {@code promptCaching} off for Anthropic keeps its
+     * llama.cpp turns as fast as before.</p>
+     *
+     * @param dialect       the provider label, or null
+     * @param promptCaching the {@code promptCaching} setting
+     * @return {@code true} for a llama.cpp server with the setting on, null to
+     *         leave the field off the wire
+     */
+    static Boolean cachePromptFor(String dialect, boolean promptCaching) {
+        return promptCaching && readsWindowFromProps(dialect) ? Boolean.TRUE : null;
     }
 
     /**

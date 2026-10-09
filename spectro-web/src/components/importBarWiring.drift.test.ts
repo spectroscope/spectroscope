@@ -23,7 +23,10 @@ describe("App shows the import bar card 440 describes", () => {
   // One call gives the notes and whether the file is an agent's transcript, so
   // the bar cannot carry the subagent note and still call the file a session.
   it("builds the notes for special kinds of file in one place", () => {
-    expect(openImport()).toMatch(/\.\.\.importBarAbout\(lang, \{ kind, subagent, run, extra: note \}\),/);
+    // Card 473 added the found sentence as its own field, in the same call.
+    expect(openImport()).toMatch(
+      /\.\.\.importBarAbout\(lang, \{ kind, subagent, run, extra: note, found: foundNote \}\),/,
+    );
     expect(openImport()).not.toContain("importBarNote(");
   });
 

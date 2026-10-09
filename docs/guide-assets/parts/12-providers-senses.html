@@ -123,14 +123,30 @@ Knobs: <code>maxRetries</code> (default 2, <code>SPECTRO_MAX_RETRIES</code>; 0 d
 
 <!--MERMAID:07-retry-flow|The retry window: establish + first event inside the loop, transient-only, capped backoff with jitter, cancel-aware — and never after the first event.-->
 
-<h2 id="ch-providers-caching">Prompt caching (Anthropic)</h2>
-<p>With <code>promptCaching</code> on (default), spectroscope places two <code>cache_control</code>
+<h2 id="ch-providers-caching">Prompt caching</h2>
+<p>On Anthropic, with <code>promptCaching</code> on (default), spectroscope places two <code>cache_control</code>
 breakpoints per request: one covering the stable prefix (system prompt + tool list), one
-on the last <em>stable</em> message — the one just before the current turn. Costs and
-latency drop on every consecutive turn. The wire stays honest: the <code>usage</code>
-event reports the provider's raw token counts, while the cache-read/-creation counts are
-folded only into the <em>compaction trigger</em> — cached tokens still occupy the context
-window, so the threshold must see them (chapter 28).</p>
+on the last <em>stable</em> message, the one just before the current turn. Costs and
+latency drop on every consecutive turn. The <code>usage</code> event reports the input
+tokens no cache served, and the cache-read and cache-creation counts ride beside them.
+The compaction trigger adds them back, because cached tokens still occupy the context
+window (chapter 28). The OTLP export sends the uncached input as
+<code>gen_ai.usage.input_tokens</code> and leaves the cache counts out.</p>
+<p>A llama.cpp server (<code>llamacpp</code>, and the bundled <code>spectro-local</code>) gets the
+request field <code>cache_prompt</code>. With it on, the server keeps the part of the chat it has
+already read and only reads the new turn. Measured on 2026-10-09 with Qwen3-1.7B on llama-server
+b10090, twelve turns of a chat whose prompt grows from about 1,850 to 2,070 tokens: about 36&nbsp;ms to the first token on
+turns 2 to 12 with the cache, about 1,000&nbsp;ms on every turn without it. A stock llama-server
+caches even without the field, so the field changes the outcome when a server was started with
+<code>--no-cache-prompt</code>. With <code>promptCaching</code> off the <code>llamacpp</code> provider
+leaves the field out and the server's own default decides, so a stock llama-server keeps its cache.
+The bundled <code>spectro-local</code> runtime always sends <code>true</code>; the setting does not
+reach it. When the response
+reports cached prompt tokens (<code>usage.prompt_tokens_details.cached_tokens</code>, or llama.cpp's
+<code>timings.cache_n</code>), they arrive as the cache read on the <code>usage</code> event,
+the same way as Anthropic's: the cached share is taken out of the input count and the context ring adds
+it back. The OTLP export treats them as it treats Anthropic's. Ollama reuses its cache by itself (measured with 0.32.1) and takes no field; LM Studio documents
+no such field, so it gets none either.</p>
 
 <h2 id="ch-providers-wrappers">The wrapper chain</h2>
 <pre>Agent loop
@@ -533,7 +549,9 @@ Lab's map lights the whole MCP chain: client → network stack → boundary → 
       a normal session file (full audit) and its outcome into
       <code>~/.spectro/jobs-state.json</code>.</li>
   <li><strong>Notifications:</strong> macOS notification per finished job (terminal bell
-      elsewhere); the desktop shell (chapter 10) adds native click-to-open notifications.</li>
+      elsewhere); the desktop shell (chapter 10) adds native click-to-open notifications.
+      <code>"desktopNotifications": "off"</code> in <code>~/.spectro/settings.json</code>
+      turns the first kind off and keeps the line in the job&rsquo;s log (chapter 30).</li>
   <li><strong>Container-free:</strong> cron-utils computes the times, a single
       ScheduledExecutorService thread fires them — no Spring scheduling in the core.</li>
 </ul>

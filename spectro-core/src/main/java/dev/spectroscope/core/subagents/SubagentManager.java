@@ -101,6 +101,8 @@ public final class SubagentManager {
     /** Set per run (run()); volatile because children read them from their own threads. */
     private volatile MergedEventStream currentStream;
     private volatile CancelSignal currentParentSignal;
+    /** Card 466: the parent whose run is in flight, null between runs. */
+    private volatile Agent currentParent;
 
     /**
      * Production entry: the per-child budget the config carries, which is
@@ -161,6 +163,26 @@ public final class SubagentManager {
     }
 
     /**
+     * Card 466: the tool groups a child spawned now would leave out. While a
+     * parent run is in flight that is the set the parent read when its run
+     * started, so a change in the gear during the run cannot reach a child
+     * before it reaches the parent. Between runs it is the configured reader,
+     * which the next run reads at its start.
+     *
+     * @return the switched-off groups, empty when none are or none is wired
+     */
+    public java.util.Set<dev.spectroscope.core.ToolGroup> childToolGroupsOff() {
+        Agent parent = currentParent;
+        if (parent != null) {
+            return parent.toolGroupsOffThisRun();
+        }
+        java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> reader =
+                config.toolGroupsOff();
+        java.util.Set<dev.spectroscope.core.ToolGroup> off = reader == null ? null : reader.get();
+        return off == null ? java.util.Set.of() : java.util.Set.copyOf(off);
+    }
+
+    /**
      * Replaces agent.run() at the call site: pumps the parent's events into
      * the same queue as the children's and returns the merged stream. If the
      * parent's agent loop is blocked inside a spawn tool's execute(), the
@@ -182,6 +204,7 @@ public final class SubagentManager {
         MergedEventStream merged = new MergedEventStream(parentSignal::cancel);
         currentStream = merged;
         currentParentSignal = parentSignal;
+        currentParent = parent;
 
         // Parent pump: ONE forwarder virtual thread drains the parent's own
         // EventStream into the shared queue. The children add themselves as
@@ -199,6 +222,7 @@ public final class SubagentManager {
                 // the parent's loop, run_end comes only afterwards -> end() is safe.
                 currentStream = null;
                 currentParentSignal = null;
+                currentParent = null;
                 merged.end();
             }
         });
@@ -381,6 +405,7 @@ public final class SubagentManager {
         AtomicReference<ScheduledFuture<?>> budgetTimer = new AtomicReference<>();
         AtomicBoolean spoke = new AtomicBoolean(false);
 
+        java.util.Set<dev.spectroscope.core.ToolGroup> childOff = childToolGroupsOff();
         // A subagent is simply another Agent instance from our own core.
         Agent child = new Agent(AgentOptions.builder()
                 .provider(config.provider())          // the model lives in the provider
@@ -401,6 +426,11 @@ public final class SubagentManager {
                 // SAME holder the parent reads, so a change reaches a working
                 // child from its next turn as it reaches the parent.
                 .sessionWindow(config.sessionWindow())
+                // Card 466: the groups of the parent run that spawns this
+                // child, fixed now. Applied by the child's own loop to the
+                // registry registryFor built, so it narrows after the role
+                // policy and after the role's grant and never widens.
+                .toolGroupsOff(() -> childOff)
                 // Card 364, and the same argument card 263 makes one line up: a
                 // ceiling the operator typed governs the TREE. Until this card
                 // `.maxTurns(` had one caller in the whole repository and
@@ -419,6 +449,10 @@ public final class SubagentManager {
                 // spawn, which arrived as "ERROR: unexpected subagent failure"
                 // in the parent's tool result.
                 .thinking(Boolean.TRUE.equals(config.thinking()))
+                // Card 467: the session's elision switch governs the tree. A
+                // child's history grows with its own reads, and a switch that
+                // stopped at the root would leave the busiest readers unruled.
+                .toolResultElision(config.toolResultElision())
                 .build());
 
         StringBuilder lastTurnText = new StringBuilder();
@@ -739,6 +773,14 @@ public final class SubagentManager {
             return spec.name();
         }
 
+        /** A second call starts a new child; the first report cannot be fetched
+         *  again (card 467).
+         *  @return false */
+        @Override
+        public boolean resultRepeatable() {
+            return false;
+        }
+
         /** The spec's description plus the shared worker/skill note. */
         @Override
         public String description() {
@@ -779,6 +821,14 @@ public final class SubagentManager {
             return "spawn_agent";
         }
 
+        /** A second call starts a new child; the first report cannot be fetched
+         *  again (card 467).
+         *  @return false */
+        @Override
+        public boolean resultRepeatable() {
+            return false;
+        }
+
         /** The catalog description — the same text the introspection view shows. */
         @Override
         public String description() {
@@ -816,6 +866,14 @@ public final class SubagentManager {
         @Override
         public String name() {
             return "spawn_agents";
+        }
+
+        /** A second call starts a new child; the first report cannot be fetched
+         *  again (card 467).
+         *  @return false */
+        @Override
+        public boolean resultRepeatable() {
+            return false;
         }
 
         /** The catalog description for the parallel variant. */

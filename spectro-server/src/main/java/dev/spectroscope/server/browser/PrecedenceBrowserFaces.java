@@ -50,7 +50,10 @@ public class PrecedenceBrowserFaces implements BrowserFaces {
      * production fence serving both halves — the hop gate inside the headless
      * directory and the entry judgment {@link #judgeNavigate} runs for an
      * operator-typed address. It reads the {@code allowLocalhost} opt-in fresh
-     * per judgment, the same source every other fence half reads.
+     * per judgment, the same source every other fence half reads, the app
+     * server's own port, and the chip's one-shot tickets: the code graph view
+     * on that port passes only with a live ticket (card 472), so an agent's
+     * eval, click or redirect that reaches it is refused by the hop gate.
      *
      * @param desktop the desktop shell's control channel
      */
@@ -58,7 +61,8 @@ public class PrecedenceBrowserFaces implements BrowserFaces {
     public PrecedenceBrowserFaces(BrowserControlSocket desktop) {
         this(desktop, new HeadlessFence(() -> dev.spectroscope.core.config.SpectroConfig
                 .load(dev.spectroscope.core.config.SpectroConfig.Overrides.none())
-                .allowLocalhost()));
+                .allowLocalhost(), dev.spectroscope.server.web.OwnPort::get,
+                dev.spectroscope.server.web.AppPageTickets.shared()::isLive));
     }
 
     /**

@@ -9,12 +9,13 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { HeaderMenu, HEADER_MENU_TOOLS, menuRows, nextMenuIndex } from "./headerPanelControls";
 import { __resetForTests, toggleDockPanel } from "../state/layout";
 import { DOCK_ORDER } from "./dockModel";
 import { blockOf, read as readSource } from "../testkit/source";
+import { resetCodeGraphForTest, setCodeGraphStatus } from "../codegraph/codeGraphStore";
 
 beforeEach(() => __resetForTests());
 
@@ -60,12 +61,14 @@ describe("the menu holds everything the header used to show", () => {
     expect(rowIds(render({ showDock: false }))).toEqual([...HEADER_MENU_TOOLS]);
   });
 
-  it("puts the keyboard shortcuts and spectro doctor behind a separator", () => {
-    expect([...HEADER_MENU_TOOLS]).toEqual(["keymap", "doctor"]);
+  it("puts the code graph, the keyboard shortcuts and spectro doctor behind a separator", () => {
+    // Card 472 added "Build code graph" as the first tool.
+    expect([...HEADER_MENU_TOOLS]).toEqual(["codegraph", "keymap", "doctor"]);
     const html = render();
     const sep = html.indexOf('role="separator"');
     expect(sep).toBeGreaterThan(0);
     expect(html.indexOf('data-menu-row="images"')).toBeLessThan(sep);
+    expect(html.indexOf('data-menu-row="codegraph"')).toBeGreaterThan(sep);
     expect(html.indexOf('data-menu-row="keymap"')).toBeGreaterThan(sep);
     expect(html.indexOf('data-menu-row="doctor"')).toBeGreaterThan(sep);
   });
@@ -161,5 +164,34 @@ describe("the header", () => {
     expect(source).toContain("toggleDockPanel(");
     expect(source).toContain("openRightPanel(");
     expect(source).toContain("openDockPanel(");
+  });
+});
+
+describe("card 472: the code graph row", () => {
+  afterEach(() => resetCodeGraphForTest());
+
+  it("is called Build code graph", () => {
+    expect(render()).toMatch(/data-menu-row="codegraph"[\s\S]*?hdr-menu-label">Build code graph</);
+  });
+
+  it("explains the install line when graphify is not on the PATH", () => {
+    setCodeGraphStatus(null, {
+      installed: false,
+      binary: null,
+      searched: ["/usr/bin"],
+      install: "uv tool install graphifyy",
+      folder: null,
+      graph: null,
+      job: null,
+      backends: [],
+    });
+    const row = /<button[^>]*data-menu-row="codegraph"[^>]*>([\s\S]*?)<\/button>/.exec(render())?.[1] ?? "";
+    expect(row).toContain("hdr-menu-note");
+    expect(row).toContain("uv tool install graphifyy");
+  });
+
+  it("carries no install note while graphify is installed or not yet known", () => {
+    const row = /<button[^>]*data-menu-row="codegraph"[^>]*>([\s\S]*?)<\/button>/.exec(render())?.[1] ?? "";
+    expect(row).not.toContain("hdr-menu-note");
   });
 });

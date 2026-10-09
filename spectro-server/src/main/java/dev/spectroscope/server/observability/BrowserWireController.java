@@ -62,7 +62,9 @@ public class BrowserWireController {
             "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     /**
-     * The whole sidecar, verbatim: the browser-record twin of the session export.
+     * The whole sidecar: the browser-record twin of the session export. Every
+     * well-formed line is served as written; a malformed byte sequence
+     * anywhere is replaced by U+FFFD (card 473).
      *
      * @param id      the session whose browser record is read
      * @param request the servlet request, for the local fence
@@ -84,7 +86,11 @@ public class BrowserWireController {
                     .header("X-Content-Type-Options", "nosniff")
                     .header("Content-Disposition",
                             "attachment; filename=\"" + id + ".browser.jsonl\"")
-                    .body(Files.readString(file));
+                    // Leniently decoded, as the llm wire's download: a
+                    // malformed byte sequence (a torn tail, a line torn
+                    // mid-file) becomes U+FFFD instead of a 404; every
+                    // well-formed line is served as written.
+                    .body(new String(Files.readAllBytes(file), StandardCharsets.UTF_8));
         } catch (IOException unreadable) {
             return ResponseEntity.status(404).build();
         }
@@ -218,7 +224,9 @@ public class BrowserWireController {
             return null;
         }
         Path file = BrowserWireRecorder.fileFor(id);
-        return Files.isRegularFile(file) ? file : null;
+        // Card 473: the import's local fallback reads through here, so the
+        // file itself must be a wire, not a link that leads out of the folder.
+        return Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS) ? file : null;
     }
 
     /**

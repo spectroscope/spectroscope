@@ -1,7 +1,8 @@
 // Card 442 (owner, 2026-09-25 and 2026-09-29): the header's ⋮ menu holds
 // what the header used to show as icons. One row per panel, and behind a
-// separator the keyboard shortcuts and spectro doctor; every row with its icon
-// and its name. The side panel toggle stays outside, left of the menu.
+// separator "Build code graph" (card 472), the keyboard shortcuts and spectro
+// doctor; every row with its icon and its name. The side panel toggle stays
+// outside, left of the menu.
 //
 // Card 228's rule still holds: the panel rows are the SECOND door to the
 // dock's state, never a copy. Checks read the same `spectroscope:layout`
@@ -15,9 +16,10 @@ import type { DockPanelId } from "../state/layout";
 import { DOCK_ORDER, dockLabelKey, dockModes } from "./dockModel";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { openCodeGraphSheet, useCodeGraph } from "../codegraph/codeGraphStore";
 
 /** The tools behind the separator, in their order. */
-export const HEADER_MENU_TOOLS = ["keymap", "doctor"] as const;
+export const HEADER_MENU_TOOLS = ["codegraph", "keymap", "doctor"] as const;
 type ToolId = (typeof HEADER_MENU_TOOLS)[number];
 
 /** One row of the menu. */
@@ -96,6 +98,14 @@ const GLYPHS: Record<MenuRow["id"], ReactNode> = {
       <path d="M2 11l3.5-3 2.5 2 3-2.5 3 2.5" />
     </>
   ),
+  codegraph: (
+    <>
+      <circle cx="3.5" cy="4" r="1.5" />
+      <circle cx="12.5" cy="5" r="1.5" />
+      <circle cx="7" cy="12" r="1.5" />
+      <path d="M5 4.3l6 .5M4.3 5.3l1.9 5.3M11.6 6.3l-3.6 4.6" />
+    </>
+  ),
   keymap: (
     <>
       <rect x="1.5" y="4" width="13" height="8" rx="1.6" />
@@ -147,6 +157,10 @@ export function HeaderMenu(props: {
   const lang = useLang();
   const layout = useLayout();
   const modes = dockModes(layout);
+  // Card 472: the code graph row explains the install line when the server
+  // said graphify is not on its tool PATH (null: not known yet, no note).
+  const codeGraph = useCodeGraph().status;
+  const codeGraphMissing = codeGraph !== null && !codeGraph.installed;
   const [open, setOpen] = useState(props.menuOpenForTest === true);
   const anchor = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -192,7 +206,10 @@ export function HeaderMenu(props: {
 
   const press = (row: MenuRow): void => {
     if (row.kind === "panel") pressDockPanel(row.id);
-    else if (row.id === "keymap") {
+    else if (row.id === "codegraph") {
+      close(false);
+      openCodeGraphSheet("build");
+    } else if (row.id === "keymap") {
       close(false);
       props.onOpenKeymap();
     } else {
@@ -262,7 +279,14 @@ export function HeaderMenu(props: {
                   >
                     {GLYPHS[row.id]}
                   </svg>
-                  <span className="hdr-menu-label">{t(lang, rowLabelKey(row))}</span>
+                  <span className="hdr-menu-label">
+                    {t(lang, rowLabelKey(row))}
+                    {row.id === "codegraph" && codeGraphMissing && (
+                      <span className="hdr-menu-note">
+                        {t(lang, "hdr.menu.codegraphNote", { install: codeGraph?.install ?? "" })}
+                      </span>
+                    )}
+                  </span>
                   {row.id === "images" && props.imageCount > 0 && (
                     <span className="hdr-menu-count tabular">{props.imageCount}</span>
                   )}

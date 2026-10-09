@@ -539,6 +539,22 @@
   font-family: var(--font-mono);
   color: var(--text-faint);
 }
+/* Card 473: the opener for the LLM exchange behind an answer, as quiet as
+   the footer above it; the opened pane is the trace's exchange pane. */
+.answer-exchange {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-11);
+}
+.answer-exchange-body {
+  margin-top: var(--sp-1);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  max-height: 60vh;
+  overflow: auto;
+  font-size: var(--fs-12);
+}
 /* Card 247: a /skill token in a sent message — the accent voice, because the
    color means "the server expanded this"; an unknown name stays plain ink. */
 .user-text .skill-token {
@@ -685,6 +701,29 @@
 .info-line.warn::before {
   content: "\25CF\00a0\00a0";
   color: var(--warn);
+}
+
+/* Card 471: the mark a /clear leaves. A hairline across the reading width with
+   the label in the middle: the turns above stay, the agent's memory starts
+   below. Colour on the lines only; the label is plain dim text. */
+.chat-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-4) 0;
+  font-size: var(--fs-13);
+  color: var(--text-dim);
+  animation: rise-in 200ms var(--ease) backwards;
+}
+.chat-divider::before,
+.chat-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--sand);
+}
+.chat-divider-label {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* Run errors: card with a 2px error line and a retry action. */

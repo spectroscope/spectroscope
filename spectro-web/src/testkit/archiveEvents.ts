@@ -3,7 +3,7 @@
 // Each cycle is one root run with a child agent under it, and together the
 // cycles carry every event type the reducer folds: the wire frames of the
 // RunEvent union, the socket-only frames (provider_info, workspace_info,
-// permission_mode_info, otlp_export) and the import-only ones (user_message,
+// permission_mode_info, tool_groups_info, otlp_export) and the import-only ones (user_message,
 // tool_result_detail, workflow_state, attachment_image, agent_detail). Which
 // types those are is read off reducer.ts by the test that uses this, so a type
 // the reducer learns later turns that test red until it is added here.
@@ -42,6 +42,11 @@ function cycle(c: number, ts: number): Array<Record<string, unknown>> {
       exists: true,
     });
     push({ type: "permission_mode_info", mode: c % 20 === 0 ? "ask" : "auto" });
+    push({
+      type: "tool_groups_info",
+      off: c % 20 === 0 ? [] : ["browser"],
+      groups: [{ name: "browser", tools: ["browser_click"] }],
+    });
   }
   push({ type: "user_message", text: `question ${c}` });
   push({
@@ -191,7 +196,10 @@ function cycle(c: number, ts: number): Array<Record<string, unknown>> {
     inForce: c % 2 === 0,
     kept: ["model"],
   });
+  push({ type: "compaction_state", active: true });
   push({ type: "compaction", agentId: root, removedTurns: 2, summaryChars: 300 });
+  push({ type: "compaction_state", active: false, outcome: "compacted" });
+  push({ type: "context_cleared", agentId: root, removedMessages: 6 });
   push({
     type: "window_override",
     tokens: 64_000,

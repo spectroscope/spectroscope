@@ -18,6 +18,7 @@ import { connect as realConnect } from "../transport/ws";
 import type { Connection, ConnectionStatus, ConnectOptions } from "../transport/ws";
 import { initialState, type UiState } from "./reducer";
 import { foldLiveBatch, recordLiveOutgoing } from "./modeWork";
+import { commandFrame, type ChatCommandName } from "./chatCommands";
 import { enqueue, removeQueued, type QueuedMessage } from "./sendQueue";
 import { initialSteering, noteFrame, routeSubmit, type SteeringState } from "./steering";
 import { readSessionBusy } from "./liveSessions";
@@ -84,6 +85,8 @@ export interface SlotInit {
   events?: RunEvent[];
   /** Sent as soon as the socket is open. */
   firstMessage?: { text: string; attachments?: PendingAttachment[] };
+  /** Card 471: a command a continued session sends first, once its socket is open. */
+  firstCommand?: ChatCommandName;
   /** Close the record in view and put this one in its place. */
   replace?: boolean;
 }
@@ -93,6 +96,8 @@ interface Internal {
   connection: Connection | null;
   /** From an accepted user_message until its run starts or an error arrives. */
   awaitingRunStart: boolean;
+  /** Card 471: the command waiting for this record's socket to open, sent once. */
+  pendingCommand: ChatCommandName | null;
 }
 
 const eventType = (event: RunEvent): string | undefined => (event as { type?: string }).type;
@@ -193,6 +198,7 @@ export class SessionSet {
       },
       connection: null,
       awaitingRunStart: false,
+      pendingCommand: init.firstCommand ?? null,
     };
     this.records.set(key, record);
     this.viewed = key;
@@ -392,7 +398,10 @@ export class SessionSet {
     if (record === undefined) return;
     const slot = record.slot;
     const open = slot.conn.status === "open";
-    if (slot.state.running && !record.awaitingRunStart && open && slot.queue.length === 0) {
+    // Card 471: a /compact makes the page run without a run to steer; a
+    // sentence typed meanwhile waits and goes out once it has ended.
+    const steerable = slot.state.running && !slot.state.compacting;
+    if (steerable && !record.awaitingRunStart && open && slot.queue.length === 0) {
       const routed = routeSubmit(slot.steering, text, attachments);
       if (routed.action === "drop") return;
       if (routed.action === "steer" && this.sendClient(key, routed.frame)) {
@@ -413,6 +422,20 @@ export class SessionSet {
     const record = this.records.get(key);
     if (record === undefined) return;
     this.patch(key, { queue: removeQueued(record.slot.queue, id) });
+  }
+
+  /**
+   * A command from the composer (card 471): its own frame, now, on this
+   * record's socket. Never a user_message and never a steering_message, which
+   * would hand "/clear" to the model as words, and never the queue: a command
+   * answered after the run would act on a history the reader has moved past.
+   * During a run it still goes out, and the server answers with the refusal a
+   * second prompt gets.
+   *
+   * @return false when the socket is not open; nothing is kept for later
+   */
+  command(key: string, name: ChatCommandName): boolean {
+    return this.sendClient(key, commandFrame(name));
   }
 
   /** The stop button: "stopping" shows only for a frame that reached a running socket. */
@@ -478,6 +501,11 @@ export class SessionSet {
     const record = this.records.get(key);
     if (record === undefined) return;
     const slot = record.slot;
+    if (slot.conn.status === "open" && record.pendingCommand !== null) {
+      const command = record.pendingCommand;
+      record.pendingCommand = null;
+      this.command(key, command);
+    }
     if (
       slot.conn.status !== "open" ||
       slot.state.running ||

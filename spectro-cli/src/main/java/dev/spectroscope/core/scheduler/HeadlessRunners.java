@@ -24,10 +24,12 @@ public final class HeadlessRunners {
      * @param config   the effective configuration (file plus overrides)
      * @param provider the pre-built provider — typically wrapped in a tracing decorator —
      *                 that replaces the one the runner would derive from {@code config}
-     * @return the runner, behaving exactly like a config-built one apart from the injected provider
+     * @return the runner, behaving exactly like a config-built one apart from the injected
+     *         provider; card 476 chains the desktop notifier explicitly, because the
+     *         provider-override constructor defaults to the log-only one for tests
      */
     public static HeadlessRunner withProvider(ObjectMapper mapper, SpectroConfig config,
                                               LlmProvider provider) {
-        return new HeadlessRunner(mapper, config, provider);
+        return new HeadlessRunner(mapper, config, provider).withNotifier(DesktopNotifier.system());
     }
 }

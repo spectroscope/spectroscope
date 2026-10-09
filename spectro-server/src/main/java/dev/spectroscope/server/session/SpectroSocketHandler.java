@@ -152,6 +152,11 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
                     connection.onSetWorkspace(frame.path("mode").asText("set"), frame.path("path").asText(""));
             case "set_permission_mode" ->                      // composer gear, additive
                     connection.onSetPermissionMode(frame.path("mode").asText(""));
+            // Card 466: the composer gear's tool groups. The node goes through
+            // untouched: the connection decides what may be switched off.
+            case "set_tool_groups_off" ->                      // composer gear, additive
+                    connection.onSetToolGroupsOff(frame.path("groups"),
+                            frame.path("save").asBoolean(false));
             // Card 267: the operator states what this run is FOR and the command
             // that decides it. From a person at a browser, never from the model —
             // there is no goal tool in any registry, on purpose.
@@ -165,6 +170,12 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // card 265 drew for question_response, and for the same reason.
             case "steering_message" ->                         // additive (card 380)
                     connection.onSteeringMessage(frame.path("text").asText(""));
+            // Card 471: the web chat's two commands. Their own frames rather
+            // than a user_message with a slash in it, because a command never
+            // reaches the model as a prompt; the composer decides from the
+            // whole draft that it is one.
+            case "compact_context" -> connection.onCompactContext(); // additive (card 471)
+            case "clear_context" -> connection.onClearContext();     // additive (card 471)
             default -> connection.sendError("Unknown message type.");
         }
     }

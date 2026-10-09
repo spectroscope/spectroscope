@@ -13,7 +13,7 @@
 // facts — rows render from the listing and fill in as answers land.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, DragEvent } from "react";
 import type { RunEvent } from "../events";
 import type { ImportKind, ImportSource } from "../import/detect";
 import { detectAndLoad } from "../import/detect";
@@ -35,6 +35,7 @@ import type { TranscriptRow, StoreLimits } from "../import/rowState";
 import { onLoadArgs, openFromStore, type StoreDoor } from "../import/storeDoor";
 import type { SubagentTranscript } from "../import/subagentFile";
 import { useTranscriptFacts } from "../import/useTranscriptFacts";
+import { readSpectroPick, type ImportWires } from "../import/wireImport";
 import { missingGists, useGists } from "../import/useGists";
 import {
   applyFilter,
@@ -72,6 +73,9 @@ export function ImportDialog(props: {
      *  the import because this dialog is gone by the time it is read — the
      *  same reason the children counts do. */
     note?: string,
+    /** Card 473: what came with a spectroscope session file: a bundle's
+     *  entries, or wires picked or dropped beside it. */
+    wires?: ImportWires,
   ) => void;
   onClose: () => void;
 }) {
@@ -226,7 +230,7 @@ export function ImportDialog(props: {
   // Every entry point clears the previous error before it starts. Without this
   // a failed pick left its red line standing while the next attempt succeeded,
   // and only the textarea's onChange ever cleared it.
-  const load = (raw: string, label: string, storePath?: string, note?: string): void => {
+  const load = (raw: string, label: string, storePath?: string, note?: string, wires?: ImportWires): void => {
     setError(null);
     try {
       const { events, kind, source, subagent } = detectAndLoad(raw);
@@ -234,7 +238,7 @@ export function ImportDialog(props: {
       // never what it returned. Say that once, here, rather than leaving the
       // reader to infer it from a screen of empty tool bodies.
       setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
-      props.onLoad(events, label, kind, source, subagent, storePath, undefined, note);
+      props.onLoad(events, label, kind, source, subagent, storePath, undefined, note, wires);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
@@ -296,8 +300,39 @@ export function ImportDialog(props: {
     const list = Array.from(e.target.files ?? []);
     // Same selection twice must fire twice: a file input keeps its value.
     e.target.value = "";
+    takeFiles(list);
+  };
+
+  // Card 473: files dropped on the dialog take the same road as picked ones.
+  const onDrop = (e: DragEvent<HTMLDivElement>): void => {
+    e.preventDefault();
+    takeFiles(Array.from(e.dataTransfer.files));
+  };
+
+  const takeFiles = (list: File[]): void => {
     if (list.length === 0) return;
     setError(null);
+    // Card 473: a bundle, or a session with its wires beside it, goes first.
+    // A pick with neither falls through to the grouping below, unchanged.
+    if (list.some((f) => /\.(spectro\.zip|llm\.jsonl|browser\.jsonl)$/.test(f.name))) {
+      // A bundle is checked and decoded in slices (bundleZip.ts); the dialog
+      // says how far it got, since the opening sign comes only after it closes.
+      void readSpectroPick(list, {
+        onProgress: (done, total) =>
+          setNote(t(lang, "imp.readingBundle", { pct: total <= 0 ? 0 : Math.floor((done / total) * 100) })),
+      })
+        .then((got) => {
+          setNote(null);
+          if (got === null) return;
+          load(got.session.text, got.session.name, undefined, undefined, got.wires);
+        })
+        .catch((err: unknown) => {
+          setNote(null);
+          setError(err instanceof Error ? err.message : String(err));
+          reportBrowserError("import", err);
+        });
+      return;
+    }
     const group = groupPickedFiles(
       list.map((f) => ({
         name: f.name,
@@ -316,7 +351,17 @@ export function ImportDialog(props: {
       const file = list[group.session];
       void file
         .text()
-        .then((raw) => load(raw, file.name))
+        // Card 473: the file's own name, so an old session finds its wire on
+        // this machine by the id convention.
+        .then((raw) =>
+          load(raw, file.name, undefined, undefined, {
+            sessionFileName: file.name,
+            llm: null,
+            browser: null,
+            children: [],
+            from: "files",
+          }),
+        )
         .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
       return;
     }
@@ -387,7 +432,14 @@ export function ImportDialog(props: {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+      <div
+        className="modal import-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="import-title"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDrop}
+      >
         <div className="modal-head">
           <span className="eyebrow sand">Import</span>
           <button
@@ -590,7 +642,14 @@ export function ImportDialog(props: {
           {error !== null && <p className="import-error">{error}</p>}
           {note !== null && <p className="import-note">{note}</p>}
           <div className="modal-actions">
-            <input ref={fileRef} type="file" accept=".jsonl,.json,.txt" multiple hidden onChange={onFile} />
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".jsonl,.json,.txt,.zip"
+              multiple
+              hidden
+              onChange={onFile}
+            />
             {/* webkitdirectory is not in React's input typing; the spread puts
                 the attribute on the element without claiming it is. */}
             <input

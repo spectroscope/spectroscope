@@ -78,8 +78,13 @@ import java.util.function.Function;
  *                            block below it (no deep per-server merge).
  * @param maxRetries          transient-failure retries per provider call (0 disables;
  *                            the wrap happens once in {@link #providerFromConfig()})
- * @param promptCaching       Anthropic prompt caching (cache_control breakpoints);
- *                            a no-op for ollama/openai
+ * @param promptCaching       prompt caching: Anthropic's cache_control breakpoints,
+ *                            and the cache_prompt field of the llamacpp provider:
+ *                            on sends cache_prompt true, off leaves the field out,
+ *                            so the server's own default decides (card 468; the
+ *                            bundled spectro-local runtime always sends true).
+ *                            No field for ollama, LM Studio and the other
+ *                            OpenAI-compatible endpoints, which document none
  * @param hooks               external shell hooks around tool calls (pre_tool_use /
  *                            post_tool_use); never null. A higher layer that defines
  *                            {@code hooks} replaces the whole block below it —
@@ -255,6 +260,19 @@ import java.util.function.Function;
  * @param subagentBudgetTokens  the spend, input plus output as its usage
  *                              reports them, past which ONE child agent is cut
  *                              at its next turn (card 394)
+ * @param desktopNotifications  card 476: {@code "on"} shows the end of a cron
+ *                              job as a desktop notification, {@code "off"}
+ *                              writes it to the job's log only. Ships on; user
+ *                              scope, refused in a workspace scope
+ * @param toolResultElision     card 467: {@code "on"} leaves an old, large tool
+ *                              result out of the outgoing request as a one-line
+ *                              stub, while the history and the session file keep
+ *                              it whole; {@code "off"} sends every result in
+ *                              full on every turn. Ships on
+ * @param toolGroupsOff         card 466: the tool groups a session leaves out of
+ *                              every provider request, by their wire names
+ *                              ({@link dev.spectroscope.core.ToolGroup#wireNames()}).
+ *                              Ships empty, which sends every tool
  */
 public record SpectroConfig(
         String provider,
@@ -313,7 +331,87 @@ public record SpectroConfig(
         // counts from the front.
         String rtkFilter,
         // Card 394: a child agent's token budget. Appended last, same rule.
-        int subagentBudgetTokens) {
+        int subagentBudgetTokens,
+        // Card 476: "on" or "off". Appended last, same rule.
+        String desktopNotifications,
+        // Card 467: "on" or "off". Appended last, same rule.
+        String toolResultElision,
+        // Card 466: the switched-off tool groups. Appended last, same rule.
+        List<String> toolGroupsOff) {
+
+    /** Compat: the arity main had before cards 476, 467 and 466, which knew
+     *  no notification switch, no elision switch and no tool groups. Every
+     *  caller that built a config positionally keeps compiling, gets the
+     *  shipped {@code on} for both switches and switches no tool group off.
+     *
+     * @param provider              the LLM backend
+     * @param model                 the model id
+     * @param baseUrl               the legacy provider address
+     * @param compactionThreshold   input-token level that triggers compaction
+     * @param permissionMode        ask / auto / readonly
+     * @param autoApprove           the allowlist rules
+     * @param imageProvider         the image backend
+     * @param thinking              TRUE requests the reasoning stream
+     * @param mcpServers            the configured MCP servers
+     * @param maxRetries            provider retries
+     * @param promptCaching         TRUE asks the provider to cache the prompt
+     * @param hooks                 the configured shell hooks
+     * @param workspace             the workspace directory
+     * @param logLevel              file-diagnostics level
+     * @param imageModel            the image model id
+     * @param sttModel              the transcription model id
+     * @param sttProvider           auto / local / openai
+     * @param sttLanguage           auto or a language code
+     * @param chromeBinary          the browser binary
+     * @param otlpEndpoint          the trace endpoint
+     * @param otlpBasicAuth         the trace credentials
+     * @param ollamaBaseUrl         ollama's address
+     * @param lmstudioBaseUrl       LM Studio's address
+     * @param searxngUrl            the SearXNG instance
+     * @param allowLocalhost        TRUE lets the net fence dial loopback
+     * @param headlessMcp           TRUE mounts MCP servers in unattended runs
+     * @param progressGuardWrites   identical-write count that speaks
+     * @param progressGuardFailures failing-call count that speaks
+     * @param progressGuardPlanTurns planless turns that speak
+     * @param continuationBudget    continuations per run
+     * @param maxTurns              the runaway-loop brake
+     * @param llamacppBaseUrl       llama.cpp's address
+     * @param questionsPerRun       the ask budget
+     * @param maxQuestionOptions    options per question
+     * @param maxQuestionChars      characters per question
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth      pixels of chat the dock may never take
+     * @param dockMaxWidth          the dock's ceiling
+     * @param maxTokens             the completion budget
+     * @param subagentBudgetSeconds the child run budget floor
+     * @param rtkFilter             the rtk proxy switch
+     * @param subagentBudgetTokens  a child agent's token budget */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds, int chatReserveWidth,
+                         int dockMaxWidth, int maxTokens, int subagentBudgetSeconds,
+                         String rtkFilter, int subagentBudgetTokens) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp, progressGuardWrites,
+                progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
+                llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, rtkFilter, subagentBudgetTokens,
+                DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of());
+    }
 
     /** Compat: the pre-card-394 arity, which knew no token budget for a child.
      *  Every caller that built a config positionally keeps compiling and gets
@@ -1083,6 +1181,7 @@ public record SpectroConfig(
     public SpectroConfig {
         mcpServers = mcpServers == null ? List.of() : List.copyOf(mcpServers);
         hooks = hooks == null ? List.of() : List.copyOf(hooks);
+        toolGroupsOff = toolGroupsOff == null ? List.of() : List.copyOf(toolGroupsOff);
     }
 
     public static final Path CONFIG_PATH =
@@ -1176,6 +1275,53 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "rtkFilter")
     public static final String DEFAULT_RTK_FILTER = RTK_FILTER_OFF;
 
+    /** {@code desktopNotifications} on: the end of a cron job is shown on the
+     *  desktop (card 476). */
+    public static final String DESKTOP_NOTIFICATIONS_ON = "on";
+
+    /** {@code desktopNotifications} off: the end of a cron job goes to the
+     *  job's log only. */
+    public static final String DESKTOP_NOTIFICATIONS_OFF = "off";
+
+    /** {@code desktopNotifications}' known values: the single source for the
+     *  load-time check and {@link SettingsWriter}'s write-time check. */
+    public static final Set<String> KNOWN_DESKTOP_NOTIFICATIONS_VALUES =
+            Set.of(DESKTOP_NOTIFICATIONS_ON, DESKTOP_NOTIFICATIONS_OFF);
+
+    /** The shipped {@code desktopNotifications}: on, the behaviour every cron
+     *  job had before the key existed. A job that fails at night still tells
+     *  the person who scheduled it. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "desktopNotifications")
+    public static final String DEFAULT_DESKTOP_NOTIFICATIONS = DESKTOP_NOTIFICATIONS_ON;
+    /** {@code toolResultElision} on: an old, large tool result leaves the
+     *  outgoing request as a one-line stub (card 467). */
+    public static final String TOOL_RESULT_ELISION_ON = "on";
+
+    /** {@code toolResultElision} off: every tool result rides in full on every
+     *  turn, as before card 467. */
+    public static final String TOOL_RESULT_ELISION_OFF = "off";
+
+    /** {@code toolResultElision}'s known values: the single source for the
+     *  load-time check and {@link SettingsWriter}'s write-time check. */
+    public static final Set<String> KNOWN_TOOL_RESULT_ELISION_VALUES =
+            Set.of(TOOL_RESULT_ELISION_ON, TOOL_RESULT_ELISION_OFF);
+
+    /** The shipped {@code toolResultElision}: on.
+     *
+     *  <p>Measured on 2026-10-09 by replaying 1,387 main-agent requests from
+     *  368 local session files with the shipped rule, each recorded
+     *  compaction applied where it happened, counting conversation chars only
+     *  (no system prompt, tool schemas or images): pooled over all requests
+     *  the saving is 25.7 %, carried by one session of 525 requests; without
+     *  it the saving is 4.9 %, and the per-session mean is 0.37 %. The
+     *  compaction points are those of runs without elision.
+     *  The history, the session file, the trace and the Lab keep every byte;
+     *  only the request changes, so turning it off restores the old requests
+     *  exactly. The rule itself is
+     *  {@link dev.spectroscope.core.session.ToolResultElision}.</p> */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "toolResultElision")
+    public static final String DEFAULT_TOOL_RESULT_ELISION = TOOL_RESULT_ELISION_ON;
+
     private static final SpectroConfig DEFAULTS = new SpectroConfig(
             // compactionThreshold null: unset, so the harness derives it (card 263)
             "anthropic", "claude-opus-4-8", "http://localhost:11434", null, "ask", List.of(),
@@ -1265,7 +1411,67 @@ public record SpectroConfig(
                 progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
-                subagentBudgetSeconds, value, subagentBudgetTokens);
+                subagentBudgetSeconds, value, subagentBudgetTokens, desktopNotifications,
+                toolResultElision, toolGroupsOff);
+    }
+
+    /**
+     * The reading the headless runner and doctor use (card 476).
+     *
+     * @return true unless the operator turned desktop notifications off
+     */
+    public boolean desktopNotificationsOn() {
+        return !DESKTOP_NOTIFICATIONS_OFF.equals(desktopNotifications);
+    }
+
+    /**
+     * A copy with the {@code desktopNotifications} switch set (card 476).
+     *
+     * @param value {@link #DESKTOP_NOTIFICATIONS_ON} or {@link #DESKTOP_NOTIFICATIONS_OFF}
+     * @return a copy carrying that switch and nothing else changed
+     */
+    public SpectroConfig withDesktopNotifications(String value) {
+        return new SpectroConfig(provider, model, baseUrl, compactionThreshold, permissionMode,
+                autoApprove, imageProvider, thinking, mcpServers, maxRetries, promptCaching,
+                hooks, workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp, progressGuardWrites,
+                progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
+                llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, value,
+                toolResultElision, toolGroupsOff);
+    }
+
+    /**
+     * The switched-off groups as the loop reads them (card 466). Every name
+     * here was checked against {@link dev.spectroscope.core.ToolGroup} when
+     * the scope was loaded, so the lookup cannot miss.
+     *
+     * @return the groups to leave out of every provider request, empty for none
+     */
+    public java.util.Set<dev.spectroscope.core.ToolGroup> toolGroupsOffSet() {
+        java.util.Set<dev.spectroscope.core.ToolGroup> off =
+                java.util.EnumSet.noneOf(dev.spectroscope.core.ToolGroup.class);
+        toolGroupsOff.forEach(name -> dev.spectroscope.core.ToolGroup.named(name).ifPresent(off::add));
+        return java.util.Collections.unmodifiableSet(off);
+    }
+
+    /**
+     * @param value the wire names of the groups to switch off
+     * @return a copy carrying that list and nothing else changed
+     */
+    public SpectroConfig withToolGroupsOff(List<String> value) {
+        return new SpectroConfig(provider, model, baseUrl, compactionThreshold, permissionMode,
+                autoApprove, imageProvider, thinking, mcpServers, maxRetries, promptCaching,
+                hooks, workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl,
+                searxngUrl, allowLocalhost, headlessMcp, progressGuardWrites,
+                progressGuardFailures, progressGuardPlanTurns, continuationBudget, maxTurns,
+                llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
+                toolResultElision, value);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -1738,6 +1944,15 @@ public record SpectroConfig(
                 "error, warn, info, debug, trace");
         validateKnown("rtkFilter", base.rtkFilter(), KNOWN_RTK_FILTER_VALUES,
                 RTK_FILTER_OFF + ", " + RTK_FILTER_ON);
+        validateKnown("desktopNotifications", base.desktopNotifications(),
+                KNOWN_DESKTOP_NOTIFICATIONS_VALUES,
+                DESKTOP_NOTIFICATIONS_ON + ", " + DESKTOP_NOTIFICATIONS_OFF);
+        validateKnown("toolResultElision", base.toolResultElision(),
+                KNOWN_TOOL_RESULT_ELISION_VALUES,
+                TOOL_RESULT_ELISION_ON + ", " + TOOL_RESULT_ELISION_OFF);
+        // Card 466: a typo in a group name must not leave the operator believing
+        // a family is off while every request still carries it.
+        requireKnownToolGroups(base.toolGroupsOff());
 
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
@@ -1762,7 +1977,8 @@ public record SpectroConfig(
                         base.commandTimeoutSeconds(), base.chatReserveWidth(),
                         base.dockMaxWidth(), base.maxTokens(),
                         base.subagentBudgetSeconds(), base.rtkFilter(),
-                        base.subagentBudgetTokens());
+                        base.subagentBudgetTokens(), base.desktopNotifications(),
+                        base.toolResultElision(), base.toolGroupsOff());
             }
         }
         return base;
@@ -1842,7 +2058,13 @@ public record SpectroConfig(
             new FieldProbe("subagentBudgetSeconds", p -> p.subagentBudgetSeconds),
             new FieldProbe("rtkFilter", p -> p.rtkFilter),
             // Card 394, appended last, same rule.
-            new FieldProbe("subagentBudgetTokens", p -> p.subagentBudgetTokens));
+            new FieldProbe("subagentBudgetTokens", p -> p.subagentBudgetTokens),
+            // Card 476, appended last, same rule.
+            new FieldProbe("desktopNotifications", p -> p.desktopNotifications),
+            // Card 467, appended last, same rule.
+            new FieldProbe("toolResultElision", p -> p.toolResultElision),
+            // Card 466, appended last, same rule.
+            new FieldProbe("toolGroupsOff", p -> p.toolGroupsOff));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -1944,7 +2166,15 @@ public record SpectroConfig(
                     "is process-global and not allowed in a workspace scope",
                     "the progress guard's counts belong in ~/.spectro/settings.json, not in "
                             + "a folder the agent writes into — a workspace that can set them "
-                            + "to zero can disarm the guard watching it."));
+                            + "to zero can disarm the guard watching it."),
+            // Card 476: whether a finished cron job reaches the owner's desktop.
+            // A folder the agent writes into must not be able to silence the
+            // machine that tells its owner a job failed.
+            new ProcessGlobal("desktopNotifications", p -> p.desktopNotifications,
+                    p -> p.desktopNotifications = null,
+                    "is process-global and not allowed in a workspace scope",
+                    "desktop notifications belong in ~/.spectro/settings.json, not in a"
+                            + " folder the agent writes into."));
 
     /**
      * Card 453: values a workspace scope may not hold for a key it otherwise
@@ -2267,7 +2497,8 @@ public record SpectroConfig(
                 continuationBudget, maxTurns, llamacppBaseUrl,
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
-                subagentBudgetSeconds, rtkFilter, subagentBudgetTokens);
+                subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
+                toolResultElision, toolGroupsOff);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2388,7 +2619,28 @@ public record SpectroConfig(
     }
 
     /**
-     * Fails loudly when a resolved field's value is outside its known set — a
+     * Refuses a {@code toolGroupsOff} list that names a group nobody knows
+     * (card 466). The single check behind the load and {@link SettingsWriter}'s
+     * write, so the two cannot disagree about a name.
+     *
+     * @param names the wire names a scope holds; null and empty pass
+     * @throws IllegalArgumentException on the first unknown or null name
+     */
+    static void requireKnownToolGroups(List<String> names) {
+        if (names == null) {
+            return;
+        }
+        for (String name : names) {
+            if (name == null || dev.spectroscope.core.ToolGroup.named(name).isEmpty()) {
+                throw new IllegalArgumentException("Unknown toolGroupsOff entry: \"" + name
+                        + "\" (allowed: " + String.join(", ", dev.spectroscope.core.ToolGroup.wireNames())
+                        + ")");
+            }
+        }
+    }
+
+    /**
+     * Fails loudly when a resolved field's value is outside its known set: a
      * typo must never silently disable what the user configured. The allowed-
      * value text is passed explicitly rather than derived from {@code known}'s
      * iteration order (which {@link Set#of} does not guarantee) so the message
@@ -2465,7 +2717,9 @@ public record SpectroConfig(
             case "openai", "lmstudio", "llamacpp", "openrouter", "gemini" -> new OpenAiCompatProvider(
                     // The label rides along as the wire dialect — the reasoning
                     // fields differ per provider (card 88), nothing else does.
-                    new OpenAiCompatProvider.Options(endpointFor(provider), model, openAiCompatKey(), provider));
+                    // promptCaching rides along for the llama.cpp cache field (card 468).
+                    new OpenAiCompatProvider.Options(endpointFor(provider), model, openAiCompatKey(),
+                            provider, promptCaching));
             case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
             case "spectro-local" -> throw new IllegalStateException(
                     "spectro-local runs through the bundled local runtime "
@@ -3158,6 +3412,12 @@ public record SpectroConfig(
         public String rtkFilter;
         // Card 394: a child agent's token budget.
         public Integer subagentBudgetTokens;
+        // Card 476: "on" or "off".
+        public String desktopNotifications;
+        // Card 467: "on" or "off".
+        public String toolResultElision;
+        // Card 466: the switched-off tool groups, by wire name.
+        public List<String> toolGroupsOff;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -3224,6 +3484,13 @@ public record SpectroConfig(
             out.rtkFilter = Optional.ofNullable(higher.rtkFilter).orElse(rtkFilter);
             out.subagentBudgetTokens = Optional.ofNullable(higher.subagentBudgetTokens)
                     .orElse(subagentBudgetTokens);
+            out.desktopNotifications = Optional.ofNullable(higher.desktopNotifications)
+                    .orElse(desktopNotifications);
+            out.toolResultElision = Optional.ofNullable(higher.toolResultElision)
+                    .orElse(toolResultElision);
+            // Card 466: a whole list, like autoApprove. A higher scope that
+            // names the key replaces the list below it; [] switches all back on.
+            out.toolGroupsOff = Optional.ofNullable(higher.toolGroupsOff).orElse(toolGroupsOff);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -3285,7 +3552,12 @@ public record SpectroConfig(
                             .orElse(DEFAULTS.subagentBudgetSeconds()),
                     Optional.ofNullable(rtkFilter).orElse(DEFAULTS.rtkFilter()),
                     Optional.ofNullable(subagentBudgetTokens)
-                            .orElse(DEFAULTS.subagentBudgetTokens()));
+                            .orElse(DEFAULTS.subagentBudgetTokens()),
+                    Optional.ofNullable(desktopNotifications)
+                            .orElse(DEFAULTS.desktopNotifications()),
+                    Optional.ofNullable(toolResultElision)
+                            .orElse(DEFAULTS.toolResultElision()),
+                    Optional.ofNullable(toolGroupsOff).orElse(DEFAULTS.toolGroupsOff()));
         }
 
         /**

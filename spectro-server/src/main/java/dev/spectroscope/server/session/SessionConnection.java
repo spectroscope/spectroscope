@@ -8,6 +8,7 @@ import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.EventStream;
 import dev.spectroscope.core.PermissionBroker;
 import dev.spectroscope.core.RunOptions;
+import dev.spectroscope.core.ToolGroup;
 import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
@@ -27,6 +28,7 @@ import dev.spectroscope.core.provider.SwitchableProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.skills.SkillInvocations;
 import dev.spectroscope.core.skills.SkillLibrary;
+import dev.spectroscope.core.subagents.RoleCatalog;
 import dev.spectroscope.core.subagents.SubagentConfig;
 import dev.spectroscope.core.subagents.SubagentManager;
 import dev.spectroscope.core.tools.DefaultHttpFetcher;
@@ -42,6 +44,7 @@ import dev.spectroscope.core.web.DefaultChromeRunner;
 import dev.spectroscope.core.web.WebSearchTool;
 import dev.spectroscope.core.wire.BrowserWireRecorder;
 import dev.spectroscope.core.wire.LlmWireRecorder;
+import dev.spectroscope.core.wire.WireReference;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import dev.spectroscope.server.leveling.ServerLeveling;
@@ -79,11 +82,6 @@ public final class SessionConnection {
     /** Fleet frames a slow browser may buffer before the oldest is dropped. */
     private static final int FLEET_QUEUE = 1024;
 
-    /** The CLI's base system prompt, verbatim. */
-    // Shared with ContextDescriber: /api/context must show EXACTLY this assembly.
-    static final String BASE_SYSTEM_PROMPT =
-            "You are spectroscope, a coding agent in the terminal. Use the tools when they help, "
-                    + "and answer in English. Working directory: ";
 
     private final WebSocketSession socket;
     private final ObjectMapper mapper;
@@ -162,6 +160,27 @@ public final class SessionConnection {
      * switch stays on top via {@code activeConfig}.
      */
     private volatile boolean modeTouched;
+
+    /**
+     * Card 466: the tool groups this session leaves out of the parent's
+     * provider request. The agent reads it once at the start of each run, so
+     * the gear's switch reaches the next run of an agent that is already
+     * built. Between runs it is also the set a child starts from; during a
+     * run a child takes the set its parent's run read
+     * ({@code SubagentManager}), not this one.
+     *
+     * <p>Not on {@link #liveConfig()}, for the reason {@link #allowlistNow()}
+     * gives: the agent can write the workspace's own settings file, and a
+     * live read would let a run change its own tool list between two runs with
+     * nobody at the gear. A saved list is read when a folder is pinned and
+     * again at the session moment, unless the gear has switched it first
+     * ({@link #onSetToolGroupsOff}).</p>
+     */
+    private final AtomicReference<Set<ToolGroup>> toolGroupsOff = new AtomicReference<>(Set.of());
+
+    /** True once the gear has switched a group, so the session moment does
+     *  not overwrite a choice made before the first prompt. */
+    private volatile boolean toolGroupsTouched;
     /** Card 459: true once the operator switched this session's backend. A
      *  switch, even back to the connect-time pair, outranks the workspace. */
     private volatile boolean providerTouched;
@@ -217,6 +236,8 @@ public final class SessionConnection {
      *  store's id and appends across a resume. Null until then: a socket that
      *  never sent a prompt has no id to write under. */
     private BrowserWireRecorder browserWire;
+    /** Card 473: stamps the main run_start with the files beside this session. */
+    private WireReference wireReference;
     private List<ProviderMessage> initial = List.of();
 
     private volatile CancelSignal signal;     // the running run's signal, or null
@@ -381,6 +402,7 @@ public final class SessionConnection {
         this.imageProviderName.set(config.imageProvider());
         this.thinking.set(config.thinking());
         this.permissionMode = config.permissionMode();
+        this.toolGroupsOff.set(config.toolGroupsOffSet());
     }
 
     /**
@@ -432,6 +454,20 @@ public final class SessionConnection {
      */
     void useTitles(SessionTitles titles) {
         this.titles = titles;
+    }
+
+    /** Card 473: the ladder this session reports to; the server's own unless
+     *  a test points it at a recorder in its own folder. */
+    private dev.spectroscope.core.leveling.LevelingRecorder leveling;
+
+    /**
+     * Points this connection at another leveling recorder; the receipt test
+     * uses it to read the marks of one fresh session.
+     *
+     * @param recorder the recorder to report to
+     */
+    void useLeveling(dev.spectroscope.core.leveling.LevelingRecorder recorder) {
+        this.leveling = recorder;
     }
 
     /**
@@ -606,6 +642,11 @@ public final class SessionConnection {
         }
         if (resumeId == null) {
             sendProspectiveWorkspace();
+            // Card 466: after the workspace, so the connect order the
+            // integration suite pins (provider, mode, workspace) stands. A
+            // pinned folder's own list is shown from this moment on.
+            seedToolGroupsFrom(savedToolGroupsFolder());
+            sendToolGroupsInfo();
             return;
         }
         try {
@@ -622,6 +663,8 @@ public final class SessionConnection {
             // 284, the half that survives a restart), then the config.
             workspace = resolveAndRecord(workspaceChoice(), store.id());
             sendWorkspaceInfo();
+            seedToolGroupsFrom(savedToolGroupsFolder()); // card 466
+            sendToolGroupsInfo();
         } catch (Exception missing) {
             // The claim was taken before the load; a session that cannot be
             // loaded must not stay held by a socket that is about to close.
@@ -634,6 +677,149 @@ public final class SessionConnection {
     }
 
     /**
+     * The refusal a frame meets while a run is active: a second prompt, a
+     * {@code /compact} and a {@code /clear} (card 471) all answer with this one
+     * sentence, so the page says the same thing whichever of them was typed.
+     */
+    static final String RUN_ACTIVE = "A run is already active, stop it first.";
+
+    /** The id of the session's own agent: the one {@link #buildAgentOnce}
+     *  builds, and the one a {@code /clear} before that build names. */
+    static final String MAIN_AGENT_ID = "main";
+
+    /**
+     * The web chat's {@code /compact} (card 471): summarizes the history now,
+     * between runs, with the same summary the CLI's {@code /compact} asks for.
+     *
+     * <p>The summary is a model call and can take as long as one on a slow
+     * local backend, so the page is told: a socket-only
+     * {@code compaction_state} frame with {@code active} true opens it and one
+     * with {@code active} false and an {@code outcome} closes it
+     * ({@code compacted}, {@code nothing_to_compact}, {@code stopped} or
+     * {@code failed} with the reason as {@code message}). While it runs it holds the
+     * {@code running} flag, so a prompt or a command meets {@link #RUN_ACTIVE},
+     * the rail of every other window shows the session as busy, and the stop
+     * button cancels it through the same {@code signal} a run's stop cancels.
+     * A stop before the history is folded changes nothing; a stop that lands
+     * after the fold reports {@code compacted} ({@link #compactionOutcome}).</p>
+     *
+     * <p>Only a {@code compaction} event is written to the file, on the
+     * file-then-socket road, so the chat renders it exactly like an automatic
+     * one. The other outcomes changed nothing and stay on the socket.</p>
+     *
+     * <p>A resumed session whose agent is not built yet builds it here, from
+     * the history the resume loaded.</p>
+     */
+    void onCompactContext() {
+        if (running) {
+            sendError(RUN_ACTIVE);
+            return;
+        }
+        if (agent == null && initial.isEmpty()) {
+            sendCompactionState(false, "nothing_to_compact", null);
+            return;
+        }
+        running = true;
+        CancelSignal stop = new CancelSignal();
+        this.signal = stop;
+        reportRunning(true);
+        sendCompactionState(true, null, null);
+        Thread.ofVirtual().name("spectroscope-compact").start(() -> {
+            String outcome = "failed";
+            String message = null;
+            try {
+                buildAgentOnce();
+                java.util.Optional<RunEvent> result = agent.compactNow(stop);
+                outcome = compactionOutcome(result, stop.isCancelled());
+                if ("compacted".equals(outcome)) {
+                    recordAndMirror(result.get());
+                } else if (result.isPresent() && result.get() instanceof RunEvent.ErrorEvent failed) {
+                    // The page words the failure itself; the reason rides along.
+                    message = failed.message().replaceFirst("^Compaction failed: ", "");
+                }
+            } catch (RuntimeException failure) {
+                message = String.valueOf(failure.getMessage());
+            } finally {
+                this.signal = null;
+                running = false;
+                reportRunning(false);
+                sendCompactionState(false, outcome, message);
+            }
+        });
+    }
+
+    /**
+     * How a {@code /compact} ended, as the page is told (card 471, round
+     * three). What happened wins over the stop flag: a stop that lands after
+     * the agent folded the history still reports {@code compacted}, because
+     * the history did change and the event is recorded. Only a compaction
+     * that returned nothing reports the stop.
+     *
+     * @param result  what {@link Agent#compactNow(CancelSignal)} returned
+     * @param stopped whether the stop was pressed
+     * @return {@code compacted}, {@code stopped}, {@code nothing_to_compact} or {@code failed}
+     */
+    static String compactionOutcome(java.util.Optional<RunEvent> result, boolean stopped) {
+        if (result.isPresent()) {
+            return result.get() instanceof RunEvent.Compaction ? "compacted" : "failed";
+        }
+        return stopped ? "stopped" : "nothing_to_compact";
+    }
+
+    /**
+     * The socket-only frame that opens and closes a {@code /compact} (card 471).
+     *
+     * @param active  true when the compaction starts, false when it ends
+     * @param outcome how it ended, or null at the start
+     * @param message the failure in words, or null
+     */
+    private synchronized void sendCompactionState(boolean active, String outcome, String message) {
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "compaction_state");
+        frame.put("active", active);
+        if (outcome != null) {
+            frame.put("outcome", outcome);
+        }
+        if (message != null) {
+            frame.put("message", message);
+        }
+        frame.put("ts", System.currentTimeMillis());
+        sendFrame(frame);
+    }
+
+    /**
+     * The web chat's {@code /clear} (card 471): a fresh context in the SAME
+     * session.
+     *
+     * <p>The CLI's {@code /clear} opens a new session. Here the session keeps
+     * its id, its file and its llm-wire, which is the point for a session that
+     * is bound to a machine: only the agent's history goes, through
+     * {@link Agent#clearContext()}, and the system prompt, the goal and the
+     * tools stay. The {@code context_cleared} marker is written to the file
+     * and sent, and a later resume rebuilds the history only from what follows
+     * it ({@code SessionStore.loadSession}).</p>
+     *
+     * <p>Before the first prompt of a resumed session there is no agent yet;
+     * the history the resume loaded is dropped instead, so the agent the first
+     * prompt builds starts empty. A session with no id yet has nothing on disk
+     * to mark, and the marker only goes to the page.</p>
+     */
+    void onClearContext() {
+        if (running) {
+            sendError(RUN_ACTIVE);
+            return;
+        }
+        RunEvent.ContextCleared cleared;
+        if (agent != null) {
+            cleared = agent.clearContext();
+        } else {
+            cleared = new RunEvent.ContextCleared(MAIN_AGENT_ID, initial.size(), System.currentTimeMillis());
+            initial = List.of();
+        }
+        recordAndMirror(cleared);
+    }
+
+    /**
      * A user_message starts one run on a virtual thread; the Tomcat thread returns.
      *
      * @param text the prompt text as typed in the composer
@@ -642,7 +828,7 @@ public final class SessionConnection {
      */
     public void onUserMessage(String text, JsonNode wireAttachments) {
         if (running) {
-            sendError("A run is already active — stop it first.");
+            sendError(RUN_ACTIVE);
             return;
         }
 
@@ -804,6 +990,155 @@ public final class SessionConnection {
         this.permissionMode = mode;
         this.modeTouched = true; // a live switch must survive buildAgentOnce's session-moment reseed
         sendPermissionModeInfo();
+    }
+
+    /**
+     * The composer gear's tool-group switch (card 466): the groups named here
+     * are left out of the next run's provider request, the parent's and every
+     * child's. In-memory and immediate, like {@link #onSetPermissionMode}.
+     *
+     * <p>With {@code save}, the list is also written to the local settings
+     * scope of this session's pinned folder ({@link #savedToolGroupsFolder}),
+     * so the next session in that folder starts with it. The server writes it
+     * rather than the client because before the first prompt the client has
+     * no session id to address the settings API with, while the folder is
+     * already pinned. A save that cannot happen is reported in the answering
+     * frame's {@code saveError}; the switch for the open session holds either
+     * way.</p>
+     *
+     * <p>The frame is untrusted input. Anything but an array of known group
+     * names is refused with an error frame and changes nothing.</p>
+     *
+     * @param groups the frame's {@code groups} node: the wire names to switch
+     *               off; an empty array switches every group back on
+     * @param save   whether to write the list to the pinned folder's local scope
+     */
+    public void onSetToolGroupsOff(JsonNode groups, boolean save) {
+        if (groups == null || !groups.isArray()) {
+            sendError("Tool groups must be a list (allowed: "
+                    + String.join(", ", ToolGroup.wireNames()) + ").");
+            return;
+        }
+        Set<ToolGroup> off = java.util.EnumSet.noneOf(ToolGroup.class);
+        for (JsonNode entry : groups) {
+            java.util.Optional<ToolGroup> group =
+                    entry.isTextual() ? ToolGroup.named(entry.asText()) : java.util.Optional.empty();
+            if (group.isEmpty()) {
+                sendError("Unknown tool group: \"" + entry.asText() + "\" (allowed: "
+                        + String.join(", ", ToolGroup.wireNames()) + ").");
+                return;
+            }
+            off.add(group.get());
+        }
+        toolGroupsOff.set(java.util.Collections.unmodifiableSet(off));
+        toolGroupsTouched = true;
+        sendToolGroupsInfo(save ? saveToolGroups(off) : null);
+    }
+
+    /**
+     * The gear's switch without a save, for a session that has no folder.
+     *
+     * @param groups the frame's {@code groups} node
+     */
+    public void onSetToolGroupsOff(JsonNode groups) {
+        onSetToolGroupsOff(groups, false);
+    }
+
+    /**
+     * The folder a tool-group save goes to: the folder the run resolved, or
+     * before the first prompt the pinned or configured folder the connect-time
+     * workspace frame names. Null for a session without one (the per-session
+     * temp folder is not a place to keep a choice).
+     *
+     * @return the folder, or null
+     */
+    private Path savedToolGroupsFolder() {
+        String picked = workspaceChoice();
+        if (picked == null || picked.isBlank()) {
+            return null;
+        }
+        return workspace != null ? workspace : WorkspaceResolver.locate(picked, null);
+    }
+
+    /**
+     * Writes the switched-off groups to the pinned folder's local scope.
+     *
+     * @param off the groups to save
+     * @return null when saved, else the reason, which the gear words in its own language
+     */
+    private String saveToolGroups(Set<ToolGroup> off) {
+        Path folder = savedToolGroupsFolder();
+        if (folder == null) {
+            return "this session has no pinned folder";
+        }
+        if (!Files.isDirectory(folder)) {
+            return "the folder " + folder + " does not exist yet";
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode patch = mapper.createObjectNode();
+        com.fasterxml.jackson.databind.node.ArrayNode names = patch.putArray("toolGroupsOff");
+        ToolGroupCatalog.wireNames(off).forEach(names::add);
+        try {
+            SettingsWriter.patch(folder.resolve(SpectroConfig.WS_LOCAL_SETTINGS),
+                    SettingsWriter.Scope.LOCAL, patch);
+            return null;
+        } catch (IOException | RuntimeException failed) {
+            return String.valueOf(failed.getMessage());
+        }
+    }
+
+    /**
+     * Seeds the switch from a folder's own settings, unless the gear already
+     * switched it. Called the moment a folder is pinned (at connect, on a
+     * resume, on a pick), so the gear shows the folder's saved list before
+     * the first prompt; the session moment reads the same files again.
+     *
+     * @param folder the pinned folder, or null for none
+     */
+    private void seedToolGroupsFrom(Path folder) {
+        if (folder == null || toolGroupsTouched) {
+            return;
+        }
+        try {
+            toolGroupsOff.set(SpectroConfig.loadForWorkspace(
+                    SpectroConfig.Overrides.none(), projectDir, folder).toolGroupsOffSet());
+        } catch (IllegalArgumentException unreadable) {
+            // The session moment reports an unreadable workspace scope; until
+            // then the connect-time list stands.
+        }
+    }
+
+    /**
+     * Tells the client which tool groups are switched off and what each group
+     * holds (card 466). A socket-only UI frame like
+     * {@code permission_mode_info}, never appended to the JSONL. The members
+     * are read off the belt this session built, or off the describe-time
+     * assembly before the first prompt.
+     */
+    private void sendToolGroupsInfo() {
+        sendToolGroupsInfo(null);
+    }
+
+    /**
+     * The same frame, carrying why the last save did not happen.
+     *
+     * @param saveError the reason, or null when there is none to report
+     */
+    private synchronized void sendToolGroupsInfo(String saveError) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        ToolRegistry built = belt;
+        List<String> names = built != null
+                ? built.specs().stream().map(LlmProvider.ToolSpec::name).toList()
+                : ToolGroupCatalog.describeTimeNames(activeConfig.get());
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "tool_groups_info");
+        frame.put("off", ToolGroupCatalog.wireNames(toolGroupsOff.get()));
+        frame.put("groups", ToolGroupCatalog.groups(names));
+        if (saveError != null) {
+            frame.put("saveError", saveError);
+        }
+        sendFrame(frame);
     }
 
     /**
@@ -1132,6 +1467,8 @@ public final class SessionConnection {
             SessionWorkspaces.pin(store.id(), picked);
             workspaceAnnounced = false; // re-announce: the Files tab re-roots live
             sendWorkspaceInfo();
+            seedToolGroupsFrom(savedToolGroupsFolder()); // card 466: the picked folder's list
+            sendToolGroupsInfo();
         } catch (RuntimeException rejected) {
             sendError("Workspace rejected: " + rejected.getMessage());
         }
@@ -1217,7 +1554,7 @@ public final class SessionConnection {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
             freshStore = true;            // card 445: only a minted session gets a title asked for
-            openSessionStack(0);          // a fresh file counts its ladder from zero
+            openSessionStack(0);
             // A fresh session becomes live the moment it has an id — that is
             // the first moment anything can be said about it. The claim stays
             // HERE, after the stack and only on the fresh path — the resume
@@ -1247,12 +1584,21 @@ public final class SessionConnection {
      */
     private void openSessionStack(int levelingStartIndex) {
         openLlmWire();                // the sidecar shares the store's id
+        // Card 473: the main run_start names the files beside this session
+        // (the llm wire this connection records, a browser wire once written),
+        // so an import on another machine finds them by reference.
+        wireReference = new WireReference(store.id(), true);
         tracing = new TracingPorts().require(new JsonlSink(store));
         OtlpSink.fromConfig(activeConfig.get(), store.id())
                 .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
-        // Registered, never required: the ladder watches the same stream the UI
-        // renders, and a leveling defect must never cost a run its life.
-        tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(), levelingStartIndex));
+        // The ladder hears every line the FILE gets, with its line number
+        // (card 473): a receipt names an event by its line, and some lines
+        // (a closed exchange, a window override) reach the file without
+        // passing the tracing ports. The store tells it inside the write, and
+        // a leveling defect never costs a line or a run.
+        LevelingPort ladder = new LevelingPort(store.id(),
+                leveling != null ? leveling : ServerLeveling.recorder());
+        store.onLine(ladder::onEventAt, levelingStartIndex);
     }
 
     /**
@@ -1343,7 +1689,9 @@ public final class SessionConnection {
                     : SkillInvocations.expand(text, skillLibrary::find);
             try (EventStream events = subagents.run(agent, text,
                     new RunOptions(runSignal, attachments, expanded.equals(text) ? null : expanded))) {
-                for (RunEvent event : events) {
+                for (RunEvent rawEvent : events) {
+                    // Card 473: the main run_start carries the file reference.
+                    RunEvent event = wireReference.stamp(rawEvent);
                     // File first, socket second; the file and socket get the SAME object.
                     if (!runDrain.record(event)) {
                         break; // sealed by a quit: this drain writes nothing more
@@ -1518,7 +1866,7 @@ public final class SessionConnection {
         // the skill catalog rides in the system prompt, bodies come via use_skill.
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
         this.skillLibrary = skills; // card 247: runPrompt expands /skill tokens against it
-        String systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
+        String systemPrompt = RoleCatalog.BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
                 + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
         // Card 267: the goal is NOT part of that line, on purpose. This assembly
         // is evaluated ONCE per session and the goal has to be re-readable per
@@ -1638,19 +1986,29 @@ public final class SessionConnection {
                 // cut, the number the settings page shows under "tokens per
                 // subagent"
                 .subagentBudgetTokens(active.subagentBudgetTokens())
+                // Card 467: the children follow the session's elision switch
+                .toolResultElision(active.toolResultElision())
+                // Card 466: the SAME reader the parent reads below. A child
+                // spawned during a run takes the set that run started with
+                // (SubagentManager.childToolGroupsOff), so a gear change
+                // mid-run reaches parent and children together at the next run
+                .toolGroupsOff(toolGroupsOff::get)
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
         subagents.devTools().forEach(registry::register);
         this.belt = registry;   // card 222 F4: what this session actually carries
+        // Card 466: the gear's hint now names the tools this session really
+        // carries, MCP tools included, instead of the describe-time stand-ins.
+        sendToolGroupsInfo();
 
         agent = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(systemPrompt)
                 .registry(registry)
                 .cwd(workspace)   // the agent works IN the workspace, not the repo
-                .agentId("main")
+                .agentId(MAIN_AGENT_ID)
                 .onPermission(broker)
                 .initialMessages(initial)
                 .providerName(active.provider())
@@ -1705,6 +2063,12 @@ public final class SessionConnection {
                 // while a turn is in flight. spectro run, a cron fire and a
                 // fleet node wire nothing here on purpose.
                 .steering(steering)
+                // Card 467: old, large tool results leave the request. Read
+                // when the session's agent is built, like maxTurns: a save
+                // reaches the next session.
+                .toolResultElision(active.toolResultElision())
+                // Card 466: the gear's tool groups, read at the start of every run
+                .toolGroupsOff(toolGroupsOff::get)
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
@@ -1800,6 +2164,13 @@ public final class SessionConnection {
         return childBelt;
     }
 
+    /** Test seam (card 466), not called in production: the subagent manager
+     *  {@link #buildAgentOnce} built.
+     *  @return the manager, or null before the first prompt */
+    SubagentManager subagents() {
+        return subagents;
+    }
+
     /**
      * The session moment: the workspace's own {@code .spectro} pair joins the
      * chain now, and what it resolves to becomes this session's active config.
@@ -1845,6 +2216,9 @@ public final class SessionConnection {
         if (!modeTouched) {
             permissionMode = sessionConfig.permissionMode();
         }
+        if (!toolGroupsTouched) {
+            toolGroupsOff.set(sessionConfig.toolGroupsOffSet());
+        }
         if (!thinkingTouched) {
             thinking.set(sessionConfig.thinking());
         }
@@ -1859,6 +2233,7 @@ public final class SessionConnection {
         // switch does. Idempotent and harmless when nothing actually changed.
         sendProviderInfo();
         sendPermissionModeInfo();
+        sendToolGroupsInfo();
         return sessionConfig;
     }
 

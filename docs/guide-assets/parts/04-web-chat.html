@@ -165,6 +165,48 @@ because the lines came in with them.</p>
       disables itself with a setup hint. Chapter 17 has the setup.</li>
 </ul>
 
+<h2 id="ch-chat-commands">Commands</h2>
+
+<p>Two commands live in the composer. Type <code>/</code> at the start of an empty message
+and the picker lists them above the skills, each with one line of help. A click runs a command.
+Enter and Tab write the highlighted command into the message box, and Enter on a message that is
+exactly the command runs it, so a slash and a stray Enter start nothing. A message counts as a
+command only when it is exactly <code>/compact</code> or <code>/clear</code>. A sentence such as
+<code>please /clear the cache</code> is sent to the agent as written. A command never reaches
+the model as text, and while a run is active both answer "A run is already active, stop it
+first." They work in learn and in light.</p>
+
+<!--SHOT:chat-commands-picker|The picker on a slash: the two commands above the skills-->
+
+<div class="callout">
+  <div class="co-title">/compact</div>
+  <p>Summarizes the conversation now instead of waiting for the automatic compaction. The
+  agent keeps the last four messages and a summary of everything before them. The summary is a
+  model call, so while it runs the chat shows "Compacting the history", the footer reads
+  "compacting" and the stop button takes the send button's seat. A sentence you type meanwhile
+  waits and goes out once the compaction is over. Stop cancels the summary and leaves the history
+  as it was; before the backend has sent its first byte the stop waits for it, as it does for a
+  run. A stop that arrives after the summary is done comes too late: the history is compacted, and
+  the chat says so. When it is done the chat shows the same line an automatic compaction leaves,
+  for example "History compacted: 4 turns summarized into 50 characters", and the session file
+  records a <code>compaction</code> event. With a short history there is nothing to fold, and the
+  chat says so in one line. A compaction that fails changes nothing and leaves no line in the
+  session file.</p>
+</div>
+
+<div class="callout">
+  <div class="co-title">/clear</div>
+  <p>Gives the agent a fresh context and keeps the session. The session id, its file and its
+  llm-wire stay the same, so a session bound to one machine stays bound to it. The agent keeps its
+  system prompt, its goal and its tools and forgets the conversation and its plan. The chat keeps
+  every turn on screen and draws a divider "context cleared" with the time; the next prompt is
+  sent with an empty history. The context ring stays on screen: until the next answer reports its
+  usage, it shows an estimate of the system prompt and the tools (their characters divided by
+  four). The session file records a <code>context_cleared</code> line, and a reload or a later
+  resume starts the history after it. The terminal's <code>/clear</code> is different: it opens a
+  new session.</p>
+</div>
+
 <h2 id="ch-chat-permission">The permission gate</h2>
 
 <p>When the agent wants to run a gated tool and no allowlist rule covers it, the run

@@ -13,6 +13,7 @@ import type { AgentInfo } from "../state/reducer";
 import { Markdown } from "./Markdown";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { withoutSwitchedOff, type ToolGroupsInfo } from "../state/toolGroups";
 
 interface ToolInfo {
   name: string;
@@ -112,14 +113,18 @@ export function SystemContextTab({
   provider,
   model,
   thinking,
+  toolGroups = null,
 }: {
   selected: AgentInfo | null;
   provider?: string;
   model?: string;
   thinking: boolean;
+  /** Card 466: the session's last tool_groups_info. The endpoint knows the
+   *  saved list only; the gear's live switch is overlaid from this frame. */
+  toolGroups?: ToolGroupsInfo | null;
 }) {
   const lang = useLang();
-  const [ctx, setCtx] = useState<ContextInfo | null>(null);
+  const [fetched, setCtx] = useState<ContextInfo | null>(null);
   const [error, setError] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
 
@@ -151,7 +156,21 @@ export function SystemContextTab({
   useEffect(() => setRawOpen(false), [selected]);
 
   if (error) return <p className="ctx-empty">{t(lang, "ctx.unavailable")}</p>;
-  if (ctx === null) return <p className="ctx-empty">{t(lang, "ws.loading")}</p>;
+  if (fetched === null) return <p className="ctx-empty">{t(lang, "ws.loading")}</p>;
+
+  // Card 466: what the model gets. A group switched off in the gear leaves the
+  // main list and every child profile, as it leaves the request.
+  const ctx: ContextInfo = {
+    ...fetched,
+    tools: withoutSwitchedOff(fetched.tools, toolGroups),
+    subagentProfiles: fetched.subagentProfiles.map((p) => ({
+      ...p,
+      tools: withoutSwitchedOff(
+        p.tools.map((name) => ({ name })),
+        toolGroups,
+      ).map((tool) => tool.name),
+    })),
+  };
 
   const isMain = selected === null || selected.parentId === null;
 

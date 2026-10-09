@@ -9,6 +9,7 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Predicate;
 
 /**
  * Where a browser-class tool may go (card 199, criterion 5).
@@ -32,7 +33,9 @@ import java.util.Locale;
  *   <li>multicast and the limited broadcast — "every host on this segment" is
  *       not an address a page may send an agent to;</li>
  *   <li>loopback — unless the operator opted in for the local verify loop, which
- *       is the one legitimate reason to point this product at itself.</li>
+ *       is the one legitimate reason to point this product at itself. The one
+ *       exception is the app's own code graph view on the app server's port
+ *       ({@link #APP_PAGES}, card 472), which passes in one exact shape.</li>
  * </ul>
  *
  * <p><b>How far the fence actually reaches, tool by tool.</b> This class judges
@@ -97,18 +100,58 @@ public final class NetFence {
      */
     public record Refusal(String address, String rule, String sentence) {}
 
-    private final boolean allowLocalhost;
-    private final Resolver resolver;
+    /**
+     * The app's own pages a browser may open on loopback without the opt-in
+     * (card 472): the code graph view, which serves a folder's
+     * {@code graph.html} under a CSP sandbox. Exact paths, compared raw.
+     */
+    public static final List<String> APP_PAGES = List.of("/api/codegraph/view");
+
+    /** The loopback host spellings an app page may use, as {@link URI#getHost()} reports them. */
+    private static final List<String> APP_HOSTS = List.of("localhost", "127.0.0.1", "[::1]");
 
     /**
+     * The query parameter that carries the ticket an app page needs (card 472).
+     * The server mints one when the operator presses the "Graph ready" chip; no
+     * agent verb ever carries one.
+     */
+    public static final String APP_TICKET = "ticket";
+
+    private final boolean allowLocalhost;
+    private final Resolver resolver;
+    private final int appPort;
+    private final Predicate<String> liveTicket;
+
+    /**
+     * The fence every tool of the agent judges with: no app page passes it.
+     *
      * @param allowLocalhost the explicit opt-in for the local verify loop; loopback
      *                       stays refused without it, and the opt-in never widens
      *                       to the LAN, the tailnet or a file URL
      * @param resolver       how host names become addresses
      */
     public NetFence(boolean allowLocalhost, Resolver resolver) {
+        this(allowLocalhost, resolver, 0, ticket -> false);
+    }
+
+    /**
+     * The fence for the operator's browser, which may open the app's own pages
+     * with a ticket the server minted.
+     *
+     * @param allowLocalhost the local-verify-loop opt-in
+     * @param resolver       how host names become addresses
+     * @param appPort        the port the app's server listens on, 0 when not
+     *                       known
+     * @param liveTicket     whether a ticket is one the server minted and has
+     *                       not spent; an {@link #APP_PAGES} address on
+     *                       {@code appPort} with exactly one such ticket passes
+     *                       without the opt-in
+     */
+    public NetFence(boolean allowLocalhost, Resolver resolver, int appPort, Predicate<String> liveTicket) {
         this.allowLocalhost = allowLocalhost;
         this.resolver = resolver;
+        this.appPort = appPort;
+        this.liveTicket = liveTicket;
     }
 
     /**
@@ -162,6 +205,9 @@ public final class NetFence {
                 : host;
         String where = uri.getPort() >= 0 ? bare + ":" + uri.getPort() : bare;
 
+        if (isAppPage(uri, lower)) {
+            return null;
+        }
         if (!allowLocalhost && isLoopbackName(bare)) {
             return refusalFor(where, "loopback");
         }
@@ -192,6 +238,50 @@ public final class NetFence {
             }
         }
         return null;
+    }
+
+    /**
+     * Whether this is one of the app's own pages, opened by the operator: plain
+     * http, no userinfo, a loopback host spelled as {@link #APP_HOSTS} lists,
+     * the explicit port the server listens on, a raw path exactly in
+     * {@link #APP_PAGES}, and exactly one {@link #APP_TICKET} parameter whose
+     * value the server minted and has not spent. Nothing else is widened.
+     */
+    private boolean isAppPage(URI uri, String lowerUrl) {
+        if (appPort <= 0
+                || !lowerUrl.startsWith("http://")
+                || uri.getRawUserInfo() != null
+                || uri.getPort() != appPort
+                || !APP_HOSTS.contains(uri.getHost().toLowerCase(Locale.ROOT))
+                || !APP_PAGES.contains(uri.getRawPath())) {
+            return false;
+        }
+        String ticket = ticketOf(uri.getRawQuery());
+        return ticket != null && liveTicket.test(ticket);
+    }
+
+    /**
+     * The value of the one {@link #APP_TICKET} parameter in a raw query, or
+     * null when there is none, more than one, or an empty one.
+     *
+     * @param rawQuery the query as written, without the question mark, or null
+     * @return the ticket, or null
+     */
+    public static String ticketOf(String rawQuery) {
+        if (rawQuery == null || rawQuery.isEmpty()) {
+            return null;
+        }
+        String found = null;
+        int count = 0;
+        for (String part : rawQuery.split("&", -1)) {
+            int eq = part.indexOf('=');
+            String key = eq < 0 ? part : part.substring(0, eq);
+            if (APP_TICKET.equals(key)) {
+                count++;
+                found = eq < 0 ? "" : part.substring(eq + 1);
+            }
+        }
+        return count == 1 && !found.isEmpty() ? found : null;
     }
 
     /** An IPv4 address in any spelling a parser might accept — dotted decimal,

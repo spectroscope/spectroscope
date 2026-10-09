@@ -99,6 +99,10 @@ tasks.test {
     // so it cannot be left on in a green build. Same reason as the two above —
     // a Test JVM inherits none of Gradle's own -D flags.
     System.getProperty("governing.rewrite")?.let { systemProperty("governing.rewrite", it) }
+    // Card 467: ToolResultElisionCensus reads the operator's session store and
+    // writes its table only when both are named on the command line.
+    System.getProperty("elision.census.home")?.let { systemProperty("elision.census.home", it) }
+    System.getProperty("elision.census.out")?.let { systemProperty("elision.census.out", it) }
 }
 
 // Maven Central (card 23): this library publishes through the Central

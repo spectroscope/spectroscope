@@ -13,6 +13,7 @@ import { LogPane } from "./LogPane";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { webSearchCheck, webSearchRowValue, type ServedWebSearch } from "./webSearchSetup";
+import { codeGraphDoctorRow, fetchCodeGraphStatus, type CodeGraphStatus } from "../codegraph/codeGraphModel";
 
 type Verdict = "ok" | "warn" | "error";
 
@@ -47,6 +48,9 @@ export function DoctorPanel(props: {
     { configured: boolean; ok?: boolean; endpoint?: string; message?: string } | null | "failed"
   >(null);
 
+  // Card 472: whether graphify, behind "Build code graph", is on the server's tool PATH.
+  const [codeGraph, setCodeGraph] = useState<CodeGraphStatus | null | "pending">("pending");
+
   const { open, onClose } = props;
 
   // Re-probe on every open — doctor measures, it never caches.
@@ -66,6 +70,8 @@ export function DoctorPanel(props: {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((list) => setSessions((list as SessionMeta[]).length))
       .catch(() => setSessions("failed"));
+    setCodeGraph("pending");
+    void fetchCodeGraphStatus(null).then(setCodeGraph);
     setOtlp(null);
     fetch("/api/otlp/probe")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -145,6 +151,12 @@ export function DoctorPanel(props: {
       key: "doc.webSearch",
       verdict: search.verdict,
       value: webSearchRowValue(search, lang),
+    },
+    {
+      key: "doc.codeGraph",
+      ...(codeGraph === "pending"
+        ? { verdict: "ok" as const, value: "…" }
+        : codeGraphDoctorRow(codeGraph, lang)),
     },
     {
       key: "doc.sessions",

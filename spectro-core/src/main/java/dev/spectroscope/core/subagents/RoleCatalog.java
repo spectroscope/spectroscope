@@ -168,17 +168,52 @@ public final class RoleCatalog {
                     + "Answer as a compact memo WITH SOURCES: every claim names where it came "
                     + "from. Your final text is the only thing your requester sees.");
 
+    /**
+     * Card 470: when the parent reads for itself and when it sends a child. One
+     * constant for every face that builds a main agent: the browser session and
+     * the REPL put it into their base prompt, the headless runner appends it to
+     * its own. Every sentence that mentions a child names
+     * {@code spawn_agent}, because the headless face registers no spawn tools
+     * and must not be told to call one. Tool names stand in backticks: the
+     * System context panel renders the prompt as markdown and reads a bare
+     * underscore inside a word as emphasis.
+     *
+     * <p>Pinned by {@code DiscoveryGuidanceTest} (wording, at most five
+     * sentences, every child sentence conditioned) and by one wiring test
+     * per face.</p>
+     */
+    public static final String DISCOVERY_GUIDANCE =
+            "If your tools include `spawn_agent`, send discovery across many files or folders to an "
+                    + "explore child and work from its digest instead of reading everything yourself. "
+                    + "Read a file you already know you need directly, with offset and limit when it is "
+                    + "large. With `spawn_agent`, hand an edit that is a self-contained subtask to a "
+                    + "worker child. A child from `spawn_agent` sees only its task text, so write it as a complete "
+                    + "assignment and ask for a short digest with path and line, not for file contents.";
+
+    /**
+     * The base system prompt of the two interactive faces, the browser session
+     * and the REPL. Each appends the working directory right after the closing
+     * label and then the project context; {@code ContextDescriber} shows the
+     * same assembly. The headless runner has its own prompt and appends
+     * {@link #DISCOVERY_GUIDANCE} to it.
+     */
+    public static final String BASE_SYSTEM_PROMPT =
+            "You are spectroscope, a coding agent in the terminal. Use the tools when they help, "
+                    + "and answer in English. " + DISCOVERY_GUIDANCE + " Working directory: ";
+
     /** Descriptions of the parent-only spawn tools — also surfaced by the
      *  System-Kontext view, so they live as constants (single source of truth). */
     static final String SPAWN_AGENT_DESC =
             "Starts a subagent with a fresh context and waits for its result. type=explore: "
                     + "read-only (list_dir, read_file, glob, grep), for research. type=worker: all tools, for real "
-                    + "subtasks. The subagent sees ONLY the task text — phrase it as a self-contained "
-                    + "assignment.";
+                    + "subtasks. The subagent sees ONLY the task text, so phrase it as a self-contained "
+                    + "assignment and ask the child for a short digest with path and line, not for file "
+                    + "contents.";
     static final String SPAWN_AGENTS_DESC =
             "Starts up to " + SubagentManager.MAX_PARALLEL_CHILDREN + " subagents IN PARALLEL and waits until "
                     + "all of them are finished. For independent subtasks (e.g. investigating several "
-                    + "directories at the same time).";
+                    + "directories at the same time). Write each task as a self-contained assignment and "
+                    + "ask each child for a short digest with path and line, not for file contents.";
 
     /** One development tool = a role wrapper over a child spawn. Static so both
      *  devTools() (live) and roleProfiles()/parentTools() (introspection) share
@@ -357,6 +392,17 @@ public final class RoleCatalog {
     static List<String> withheldBy(AgentType type, List<String> beltNames) {
         BeltPolicy policy = beltPolicy(type);
         return beltNames.stream().filter(name -> !policy.holds(name)).toList();
+    }
+
+    /**
+     * The wire names of the dev role tools, in catalog order. Card 466 reads
+     * the {@code roles} tool group from here, so a sixth role joins the group
+     * without a second list.
+     *
+     * @return build_plan, write_spec, develop, test and research, today
+     */
+    public static List<String> devToolNames() {
+        return DEV_SPECS.stream().map(DevSpec::name).toList();
     }
 
     /**

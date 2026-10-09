@@ -31,6 +31,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { dismissesMenu, MODAL_LAYER } from "../components/menuDismiss";
 import { t } from "../i18n/i18n";
 import { useBrowserActionCue } from "../state/browserCue";
+import { takeCodeGraphOpen, useBrowserOpenRequest } from "../state/browserOpen";
 import { useLang } from "../state/lang";
 import {
   clickFrame,
@@ -45,6 +46,7 @@ import {
   launchPlayFrame,
   launchSaveFrame,
   navigateFrame,
+  openCodeGraphFrame,
   parseViewMessage,
   screenshotFilename,
   screenshotVerbFrame,
@@ -266,6 +268,9 @@ export function BrowserSegment(props: {
         socket?.send(JSON.stringify(watchFrame(sessionId)));
         // The start page's data rides the same socket (card 227).
         socket?.send(JSON.stringify(launchListFrame(sessionId)));
+        // Card 472: the code graph's ready chip asked this browser to open the
+        // graph before the panel was mounted.
+        if (takeCodeGraphOpen(sessionId)) socket?.send(JSON.stringify(openCodeGraphFrame(sessionId)));
       };
       socket.onmessage = (event: MessageEvent) => {
         const msg = parseViewMessage(event.data);
@@ -382,6 +387,17 @@ export function BrowserSegment(props: {
       socket.send(JSON.stringify(watchFrame(sessionId)));
     }
   }, [cue, sessionId]);
+
+  // Card 472: the same ask arriving while the socket is already open. The
+  // server mints the ticket and navigates through the same fence a typed
+  // address meets, and a refusal comes back as its own sentence.
+  const openRequest = useBrowserOpenRequest();
+  useEffect(() => {
+    if (sessionId === null) return;
+    const socket = socketRef.current;
+    if (socket === null || socket.readyState !== WebSocket.OPEN) return;
+    if (takeCodeGraphOpen(sessionId)) socket.send(JSON.stringify(openCodeGraphFrame(sessionId)));
+  }, [openRequest, sessionId]);
 
   const send = useCallback((frame: Record<string, unknown>): void => {
     const socket = socketRef.current;

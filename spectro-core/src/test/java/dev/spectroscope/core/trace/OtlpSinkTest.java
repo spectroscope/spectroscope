@@ -94,6 +94,130 @@ class OtlpSinkTest {
         assertTrue(sessionAttr, "session id attribute rides along");
     }
 
+    /** The attributes of the first span whose name starts with {@code prefix}. */
+    private static Map<String, String> attributesOf(JsonNode spans, String prefix) {
+        Map<String, String> attrs = new LinkedHashMap<>();
+        for (JsonNode span : spans) {
+            if (span.path("name").asText().startsWith(prefix)) {
+                for (JsonNode attr : span.path("attributes")) {
+                    attrs.put(attr.path("key").asText(), attr.path("value").path("stringValue").asText());
+                }
+                return attrs;
+            }
+        }
+        throw new AssertionError("no span starting with " + prefix + " in " + spans);
+    }
+
+    /** The posted body of one run, fed event by event. */
+    private static String postedBody(String sessionId, List<String> events) throws Exception {
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", sessionId, body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        events.forEach(json -> sink.onEvent(ev(json)));
+        assertTrue(done.await(5, TimeUnit.SECONDS), "the post fires after run_end");
+        return posted.get(0);
+    }
+
+    private JsonNode spansOfOneTurn(String provider, String usageJson) throws Exception {
+        String body = postedBody("sess-468", List.of(
+                "{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\""
+                        + provider + "\",\"ts\":1000}",
+                "{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}",
+                "{\"type\":\"text_delta\",\"agentId\":\"main\",\"text\":\"ok\",\"ts\":1200}",
+                usageJson,
+                "{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1500}"));
+        return mapper.readTree(body)
+                .path("resourceSpans").get(0).path("scopeSpans").get(0).path("spans");
+    }
+
+    /** The gen_ai.usage attributes of a span. */
+    private static Map<String, String> usageAttributes(Map<String, String> attrs) {
+        Map<String, String> usage = new LinkedHashMap<>();
+        attrs.forEach((key, value) -> {
+            if (key.startsWith("gen_ai.usage")) {
+                usage.put(key, value);
+            }
+        });
+        return usage;
+    }
+
+    /** An Anthropic run with two turns that write and then read the prompt
+     *  cache: the usage events carry the uncached input and the cache counts
+     *  apart, as AnthropicProvider reports them. */
+    static final List<String> ANTHROPIC_CACHED_RUN = List.of(
+            "{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"read a.txt\",\"provider\":\"anthropic\",\"ts\":1000}",
+            "{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}",
+            "{\"type\":\"text_delta\",\"agentId\":\"main\",\"text\":\"reading\",\"ts\":1200}",
+            "{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"read_file\",\"input\":{\"path\":\"a.txt\"},\"ts\":1300}",
+            "{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"ok\",\"isError\":false,\"durationMs\":5,\"ts\":1400}",
+            "{\"type\":\"usage\",\"agentId\":\"main\",\"inputTokens\":12,\"outputTokens\":30,\"cacheCreationTokens\":2048,\"ts\":1450}",
+            "{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":2,\"ts\":1500}",
+            "{\"type\":\"text_delta\",\"agentId\":\"main\",\"text\":\"done\",\"ts\":1600}",
+            "{\"type\":\"usage\",\"agentId\":\"main\",\"inputTokens\":9,\"outputTokens\":5,\"cacheReadTokens\":2048,\"cacheCreationTokens\":40,\"ts\":1650}",
+            "{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1700}");
+
+    /** The posted body with each span's attributes sorted by key. OtlpSink
+     *  fills them from a hash map, so their order changes from one JVM to the
+     *  next; every key and value is still compared. */
+    private JsonNode canonical(String body) throws Exception {
+        JsonNode root = mapper.readTree(body);
+        for (JsonNode span : root.path("resourceSpans").get(0).path("scopeSpans").get(0).path("spans")) {
+            List<JsonNode> attrs = new ArrayList<>();
+            span.path("attributes").forEach(attrs::add);
+            attrs.sort(java.util.Comparator.comparing(attr -> attr.path("key").asText()));
+            com.fasterxml.jackson.databind.node.ArrayNode sorted =
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) span).putArray("attributes");
+            attrs.forEach(sorted::add);
+        }
+        return root;
+    }
+
+    @Test
+    void theAnthropicExportMatchesMainSpanForSpan() throws Exception {
+        // Card 468 must not change what an Anthropic session exports. The
+        // fixture is the body OtlpSink posted for this run with the file as it
+        // stands on main (1cba586c, v0.14.3), recorded on 2026-10-09.
+        String expected;
+        try (var in = OtlpSinkTest.class.getResourceAsStream("/trace/otlp-anthropic-cached-run.main.json")) {
+            assertNotNull(in, "the fixture is on the test classpath");
+            expected = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        String actual = postedBody("sess-468-anthropic", ANTHROPIC_CACHED_RUN);
+        assertEquals(canonical(expected), canonical(actual));
+        // The positive half: the fixture does carry the usage it is meant to pin.
+        Map<String, String> turn2 = attributesOf(mapper.readTree(actual).path("resourceSpans").get(0)
+                .path("scopeSpans").get(0).path("spans"), "turn 2");
+        assertEquals("9", turn2.get("gen_ai.usage.input_tokens"), turn2.toString());
+        assertEquals("5", turn2.get("gen_ai.usage.output_tokens"), turn2.toString());
+    }
+
+    @Test
+    void aLlamaCppTurnExportsItsCacheCountsTheWayAnAnthropicTurnDoes() throws Exception {
+        // Card 468: llama.cpp's cache counts reach the usage event in the same
+        // split as Anthropic's, and the export treats both alike: the input
+        // count is the part no cache served, the cache counts stay out.
+        String usage = "{\"type\":\"usage\",\"agentId\":\"main\",\"inputTokens\":20,"
+                + "\"outputTokens\":3,\"cacheReadTokens\":1236,\"cacheCreationTokens\":4,\"ts\":1450}";
+        Map<String, String> llama = attributesOf(spansOfOneTurn("llamacpp", usage), "turn 1");
+        Map<String, String> anthropic = attributesOf(spansOfOneTurn("anthropic", usage), "turn 1");
+        assertEquals("20", llama.get("gen_ai.usage.input_tokens"), llama.toString());
+        assertEquals("3", llama.get("gen_ai.usage.output_tokens"), llama.toString());
+        assertEquals(usageAttributes(anthropic), usageAttributes(llama));
+        assertTrue(llama.keySet().stream().noneMatch(key -> key.contains("cache")), llama.toString());
+    }
+
+    @Test
+    void aTurnWithoutCacheCountsExportsItsInputTokensUnchanged() throws Exception {
+        JsonNode spans = spansOfOneTurn("llamacpp", "{\"type\":\"usage\",\"agentId\":\"main\",\"inputTokens\":10,"
+                + "\"outputTokens\":4,\"ts\":1450}");
+        Map<String, String> turn = attributesOf(spans, "turn 1");
+        assertEquals("10", turn.get("gen_ai.usage.input_tokens"), turn.toString());
+        assertEquals("4", turn.get("gen_ai.usage.output_tokens"), turn.toString());
+    }
+
     @Test
     void aGatedToolSpanStartsAtExecutionNotAtTheRequest() throws Exception {
         // Card 111: the operator parked the call from ts 1310 to 3310; the tool

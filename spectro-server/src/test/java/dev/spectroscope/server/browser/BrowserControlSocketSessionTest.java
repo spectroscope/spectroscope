@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.browser.BrowserFace;
 import dev.spectroscope.core.browser.BrowserFaces;
 import dev.spectroscope.server.session.FakeSocket;
+import dev.spectroscope.server.web.OwnPort;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.CloseStatus;
@@ -47,6 +48,65 @@ class BrowserControlSocketSessionTest {
         assertEquals(A, frame.path("sessionId").asText(),
                 "the shell cannot key a browser to a session it was never told: " + frame);
         assertEquals("navigate", frame.path("verb").asText());
+    }
+
+    @Test
+    void everyCommandCarriesTheAppServersPortSoTheShellsFenceKnowsTheAppsOwnPages() throws Exception {
+        // Card 472: the shell's request hook lets the app's code graph view
+        // through on loopback without the opt-in, and only on the port the
+        // app's server listens on. That port travels with the policy.
+        int before = OwnPort.get();
+        OwnPort.set(8473);
+        try {
+            FakeSocket shell = attachedShell();
+            BrowserControlSocket control = attach(shell);
+
+            JsonNode frame = drive(control, shell, A, "{}", "http://localhost:5173/a").frame();
+
+            assertEquals(8473, frame.path("settings").path("appPort").asInt(), frame.toString());
+            assertTrue(frame.path("settings").path("appPort").isInt(), frame.toString());
+        } finally {
+            OwnPort.set(before);
+        }
+    }
+
+    @Test
+    void onlyANavigateCarryingALiveTicketTellsTheShellItsTicket() throws Exception {
+        // Card 472: the shell's request hook lets the app's code graph view
+        // through without the opt-in only with the ticket the server minted for
+        // the operator's chip press. The ticket travels with that one navigate;
+        // an eval, a click or a navigate with an unknown ticket carries none, so
+        // an agent verb that reaches the view finds the loopback rule.
+        dev.spectroscope.server.web.AppPageTickets tickets =
+                new dev.spectroscope.server.web.AppPageTickets(System::currentTimeMillis);
+        String ticket = tickets.mint(A);
+        String page = "http://localhost:8473/api/codegraph/view?sessionId=" + A + "&ticket=" + ticket;
+        FakeSocket shell = attachedShell();
+        BrowserControlSocket control = attach(shell);
+        control.useAppPage(() -> 8473, tickets::isLive);
+
+        JsonNode navigate = exchangeVerb(control, shell, A, "navigate",
+                JSON.createObjectNode().put("url", page)).frame();
+        assertEquals(ticket, navigate.path("settings").path("appTicket").asText(), navigate.toString());
+
+        JsonNode guessed = exchangeVerb(control, shell, A, "navigate", JSON.createObjectNode()
+                .put("url", "http://localhost:8473/api/codegraph/view?sessionId=" + A
+                        + "&ticket=0123456789abcdef0123456789abcdef")).frame();
+        assertTrue(guessed.path("settings").path("appTicket").isMissingNode(), guessed.toString());
+
+        JsonNode eval = exchangeVerb(control, shell, A, "eval",
+                JSON.createObjectNode().put("text", "location.href='" + page + "'")).frame();
+        assertTrue(eval.path("settings").path("appTicket").isMissingNode(), eval.toString());
+
+        JsonNode input = exchangeVerb(control, shell, A, "input",
+                JSON.createObjectNode().put("action", "left_click").put("url", page)).frame();
+        assertTrue(input.path("settings").path("appTicket").isMissingNode(),
+                "only a navigate carries the ticket, whatever another verb's arguments name: " + input);
+
+        tickets.redeem(ticket, A);
+        JsonNode spent = exchangeVerb(control, shell, A, "navigate",
+                JSON.createObjectNode().put("url", page)).frame();
+        assertTrue(spent.path("settings").path("appTicket").isMissingNode(), spent.toString());
     }
 
     @Test
@@ -222,6 +282,37 @@ class BrowserControlSocketSessionTest {
             String session, String body) throws Exception {
         return exchange(control, shell, session, frameId ->
                 "{\"id\":\"" + frameId + "\"," + body.substring(1)).reply();
+    }
+
+    /**
+     * Sends one verb with arguments of the test's choosing and answers it.
+     *
+     * @param control   the channel
+     * @param shell     the socket playing the shell
+     * @param sessionId whose browser
+     * @param verb      the verb
+     * @param args      its arguments
+     * @return the frame the shell saw and the reply the face produced
+     */
+    private Exchange exchangeVerb(BrowserControlSocket control, FakeSocket shell, String sessionId,
+            String verb, JsonNode args) throws Exception {
+        int before = frames(shell).length;
+        CompletableFuture<BrowserFace.Reply> sent = CompletableFuture.supplyAsync(() ->
+                control.forSession(sessionId).send(verb, args));
+        String raw = null;
+        for (int wait = 0; wait < 200 && raw == null; wait++) {
+            String[] seen = frames(shell);
+            if (seen.length > before) {
+                raw = seen[before];
+            } else {
+                Thread.sleep(10);
+            }
+        }
+        assertNotNull(raw, "the command never reached the shell");
+        JsonNode frame = JSON.readTree(raw);
+        control.handleTextMessage(shell, new TextMessage("{\"id\":\"" + frame.path("id").asText()
+                + "\",\"ok\":true,\"value\":{},\"pageUrl\":\"http://localhost:8473/\"}"));
+        return new Exchange(frame, sent.get());
     }
 
     /**

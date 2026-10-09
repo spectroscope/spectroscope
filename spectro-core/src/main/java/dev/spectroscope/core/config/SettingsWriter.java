@@ -86,7 +86,13 @@ public final class SettingsWriter {
             // Card 379: the rtk proxy switch, off or on.
             "rtkFilter",
             // Card 394: the most tokens one child agent may spend.
-            "subagentBudgetTokens");
+            "subagentBudgetTokens",
+            // Card 476: whether a finished cron job shows on the desktop.
+            "desktopNotifications",
+            // Card 467: whether old, large tool results leave the request.
+            "toolResultElision",
+            // Card 466: the tool groups a session leaves out of every request.
+            "toolGroupsOff");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
@@ -306,6 +312,19 @@ public final class SettingsWriter {
             case "logLevel" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_LOG_LEVELS);
             case "permissionMode" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PERMISSION_MODES);
             case "rtkFilter" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_RTK_FILTER_VALUES);
+            case "desktopNotifications" -> requireOneOf(key, value.asText(),
+                    SpectroConfig.KNOWN_DESKTOP_NOTIFICATIONS_VALUES);
+            case "toolResultElision" ->
+                    requireOneOf(key, value.asText(), SpectroConfig.KNOWN_TOOL_RESULT_ELISION_VALUES);
+            // Card 466: every entry a known group. A non-array is left to the
+            // shape check after this one, which names the type.
+            case "toolGroupsOff" -> {
+                if (value.isArray()) {
+                    List<String> names = new java.util.ArrayList<>();
+                    value.forEach(entry -> names.add(entry.isTextual() ? entry.asText() : null));
+                    SpectroConfig.requireKnownToolGroups(names);
+                }
+            }
             default -> { }
         }
     }

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RunEvent } from "../events";
 import { JsonTree } from "../components/JsonTree";
 import { SummaryLine, TEXT_FIELD_EVENTS } from "../components/eventSummary";
+import { LlmExchangeDetail } from "../components/LlmExchangeDetail";
 import { EventStructured } from "../components/TraceView";
 import { toolCallsById } from "../components/eventDetail";
 import type { ToolCallRef } from "../components/eventDetail";
@@ -60,16 +61,21 @@ function summarize(event: RunEvent): string {
 
 /** The two readings of an opened line: the tree (what the file says) and the
  *  structured face (what the line means). Insight stays the default — the Lab
- *  teaches the JSONL first. */
+ *  teaches the JSONL first. Card 473: an llm_exchange line of a session that
+ *  can read its wire gets a third reading, the recorded exchange itself, and
+ *  opens on it, because the line alone is only the exchange's postmark. */
 const ROW_FACES = ["insight", "structured"] as const;
-type RowFace = (typeof ROW_FACES)[number];
+const EXCHANGE_FACES = ["exchange", "insight", "structured"] as const;
+type RowFace = (typeof EXCHANGE_FACES)[number];
 
-function Row({
+export function LabLine({
   event,
   seq,
   variant,
   calls,
   refCallback,
+  exchangeSessionId = null,
+  defaultOpen = false,
 }: {
   event: RunEvent;
   seq: number;
@@ -77,10 +83,16 @@ function Row({
   /** The run's calls by callId, so an opened tool_result finds its call. */
   calls: ReadonlyMap<string, ToolCallRef>;
   refCallback?: (el: HTMLDivElement | null) => void;
+  /** Card 473: the session the exchange fetch asks under, or null for none. */
+  exchangeSessionId?: string | null;
+  defaultOpen?: boolean;
 }) {
   const lang = useLang();
-  const [open, setOpen] = useState(false);
-  const [face, setFace] = useState<RowFace>("insight");
+  const faces: readonly RowFace[] =
+    event.type === "llm_exchange" && exchangeSessionId !== null ? EXCHANGE_FACES : ROW_FACES;
+  const [open, setOpen] = useState(defaultOpen);
+  const [face, setFace] = useState<RowFace>(faces[0]);
+  const shown: RowFace = faces.includes(face) ? face : faces[0];
   return (
     <div ref={refCallback} className={`lab-line lab-line--${variant}`}>
       <button type="button" className="lab-line-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -96,13 +108,15 @@ function Row({
       {open && (
         <div className="lab-line-body">
           <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
-            {ROW_FACES.map((f) => (
-              <button key={f} type="button" aria-pressed={face === f} onClick={() => setFace(f)}>
+            {faces.map((f) => (
+              <button key={f} type="button" aria-pressed={shown === f} onClick={() => setFace(f)}>
                 {t(lang, `trace.mode.${f}`)}
               </button>
             ))}
           </div>
-          {face === "insight" ? (
+          {shown === "exchange" && exchangeSessionId !== null ? (
+            <LlmExchangeDetail payload={event} sessionId={exchangeSessionId} face="structured" />
+          ) : shown === "insight" ? (
             <JsonTree value={event} defaultDepth={1} rootLabel={event.type} />
           ) : (
             <EventStructured type={event.type} payload={event} calls={calls} />
@@ -117,10 +131,13 @@ export function LabTrace({
   applied,
   queue,
   fireSeq,
+  exchangeSessionId = null,
 }: {
   applied: RunEvent[];
   queue: RunEvent[];
   fireSeq: number;
+  /** Card 473: the session an llm_exchange line reads its bodies under. */
+  exchangeSessionId?: string | null;
 }) {
   const currentRef = useRef<HTMLDivElement | null>(null);
   const lang = useLang();
@@ -167,12 +184,13 @@ export function LabTrace({
           const seq = appliedStart + i + 1;
           const isCurrent = appliedStart + i === applied.length - 1;
           return (
-            <Row
+            <LabLine
               key={`a${seq}`}
               event={event}
               seq={seq}
               variant={isCurrent ? "current" : "applied"}
               calls={calls}
+              exchangeSessionId={exchangeSessionId}
               refCallback={isCurrent ? (el) => (currentRef.current = el) : undefined}
             />
           );
@@ -183,12 +201,13 @@ export function LabTrace({
           <span className="lab-dam-line" />
         </div>
         {shownQueue.map((event, i) => (
-          <Row
+          <LabLine
             key={`q${applied.length + i + 1}`}
             event={event}
             seq={applied.length + i + 1}
             variant="queued"
             calls={calls}
+            exchangeSessionId={exchangeSessionId}
           />
         ))}
         {queue.length > shownQueue.length && (

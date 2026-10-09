@@ -20,6 +20,7 @@
 import type { TraceEntry } from "../state/reducer";
 import { formatBytes } from "../workspace/preview";
 import { formatDuration } from "../format";
+import { heldLlmWire, RECORDER_ID } from "./heldWire";
 
 /** One finished exchange, as the socket frame and the index row both spell it.
  *  Metadata only — the bodies live behind {@link fetchLlmExchange}. */
@@ -552,6 +553,9 @@ export function readExchangeDetail(value: unknown): LlmExchangeDetail | null {
  * caller's next move is the same in all three: merge nothing, offer no link.
  */
 export async function fetchLlmWireIndex(sessionId: string): Promise<LlmExchangeMeta[]> {
+  // Card 473: an imported session that holds its wire answers from it.
+  const held = heldLlmWire(sessionId);
+  if (held !== null) return held.index.map(readExchange).filter((x): x is LlmExchangeMeta => x !== null);
   try {
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/llm-wire/index`);
     if (!res.ok) return [];
@@ -566,6 +570,17 @@ export async function fetchLlmWireIndex(sessionId: string): Promise<LlmExchangeM
 /** One exchange's bodies, on the gesture that asks for them. Null is the one
  *  failure word; the pane says an honest sentence for it. */
 export async function fetchLlmExchange(sessionId: string, xid: string): Promise<LlmExchangeDetail | null> {
+  // Card 473: the held wire answers as the endpoint would, the same shape
+  // check on the xid included.
+  const held = heldLlmWire(sessionId);
+  if (held !== null) {
+    const pair = RECORDER_ID.test(xid) ? held.pairs.get(xid) : undefined;
+    if (pair === undefined) return null;
+    return readExchangeDetail({
+      request: JSON.parse(pair.request) as unknown,
+      response: pair.response === null ? null : (JSON.parse(pair.response) as unknown),
+    });
+  }
   try {
     const res = await fetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/llm-wire/exchange/${encodeURIComponent(xid)}`,

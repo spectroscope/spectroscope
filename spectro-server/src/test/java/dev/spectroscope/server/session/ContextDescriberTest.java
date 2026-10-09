@@ -161,4 +161,30 @@ class ContextDescriberTest {
             restoreUserSettings(previous);
         }
     }
+
+    /**
+     * Card 466: the System context tab shows what the model gets. A group the
+     * workspace's settings switch off is absent from the described tools and
+     * from every child profile, as it is from the session's request.
+     */
+    @Test
+    void theDescribedToolsLeaveOutTheSwitchedOffGroups(@TempDir Path cwd) throws IOException {
+        Path file = cwd.resolve(SpectroConfig.PROJECT_SETTINGS);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "{ \"toolGroupsOff\": [\"browser\", \"launch\"] }");
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
+        ContextInfo all = ContextDescriber.describe(SpectroConfig.load(SpectroConfig.Overrides.none()), cwd);
+        assertThat(all.tools()).as("test premise: the full list has browser tools")
+                .anyMatch(tool -> tool.name().startsWith("browser_"));
+
+        ContextInfo context = ContextDescriber.describe(config, cwd);
+
+        assertThat(context.tools()).noneMatch(tool -> tool.name().startsWith("browser_"))
+                .noneMatch(tool -> tool.name().startsWith("launch_"))
+                .anyMatch(tool -> tool.name().equals("read_file"))
+                .anyMatch(tool -> tool.name().equals("web_fetch"));
+        assertThat(context.subagentProfiles()).isNotEmpty().allSatisfy(profile ->
+                assertThat(profile.tools()).as(profile.type())
+                        .noneMatch(name -> name.startsWith("browser_") || name.startsWith("launch_")));
+    }
 }

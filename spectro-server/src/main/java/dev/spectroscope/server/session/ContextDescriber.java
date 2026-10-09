@@ -1,6 +1,7 @@
 package dev.spectroscope.server.session;
 
 import dev.spectroscope.core.Asker;
+import dev.spectroscope.core.ToolGroup;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
 import dev.spectroscope.core.skills.SkillLibrary;
@@ -13,6 +14,7 @@ import dev.spectroscope.core.tools.UpdatePlanTool;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -75,7 +77,7 @@ final class ContextDescriber {
         String workspaceShown = configuredWorkspace != null
                 ? configuredWorkspace.toString()
                 : Path.of(System.getProperty("java.io.tmpdir"), "spectroscope-ws") + "/<session-id>";
-        String systemPrompt = SessionConnection.BASE_SYSTEM_PROMPT + workspaceShown
+        String systemPrompt = RoleCatalog.BASE_SYSTEM_PROMPT + workspaceShown
                 + SpectroConfig.loadProjectMd(cwd) + SpectroConfig.loadAgentsMd(configuredWorkspace)
                 + skills.systemPromptSection();
 
@@ -93,9 +95,34 @@ final class ContextDescriber {
         // endpoint to describe different belts, which is the exact drift
         // criterion 3 exists to close.
         List<Tool> settingsBelt = SettingsToolBelt.assemble(SettingsToolBelt.describeSeams(config)).tools();
-        return new ContextInfo(systemPrompt, mainAgentTools(settingsBelt, standardTools, skills, config), skillCatalog,
-                mcpServerNames, config.thinking(), config.provider(), config.model(),
-                RoleCatalog.roleProfiles(childBaseToolNames(settingsBelt, standardTools, skills)));
+        // Card 466: the switched-off groups of this config leave the parent's
+        // list and every child profile, as they leave the session's request.
+        // A live switch in the gear is newer than any file; the tab overlays it.
+        Set<ToolGroup> off = config.toolGroupsOffSet();
+        List<ContextInfo.ToolInfo> tools = mainAgentTools(settingsBelt, standardTools, skills, config).stream()
+                .filter(tool -> !ToolGroup.switchedOff(tool.name(), off)).toList();
+        List<RoleCatalog.RoleProfile> profiles = RoleCatalog.roleProfiles(
+                childBaseToolNames(settingsBelt, standardTools, skills)).stream()
+                .map(profile -> withoutSwitchedOff(profile, off)).toList();
+        return new ContextInfo(systemPrompt, tools, skillCatalog,
+                mcpServerNames, config.thinking(), config.provider(), config.model(), profiles);
+    }
+
+    /**
+     * A child profile without the tools of the switched-off groups.
+     *
+     * @param profile the profile as the role catalog describes it
+     * @param off     the switched-off groups
+     * @return the same profile when nothing is off, else a copy with fewer tools
+     */
+    private static RoleCatalog.RoleProfile withoutSwitchedOff(RoleCatalog.RoleProfile profile,
+            Set<ToolGroup> off) {
+        if (off.isEmpty()) {
+            return profile;
+        }
+        return new RoleCatalog.RoleProfile(profile.type(), profile.kind(), profile.systemPrompt(),
+                profile.tools().stream().filter(name -> !ToolGroup.switchedOff(name, off)).toList(),
+                profile.readOnly(), profile.skill(), profile.withholds());
     }
 
     /**

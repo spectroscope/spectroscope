@@ -19,6 +19,30 @@ subprojects {
         // (spectro-core) pins, and TestHomeRedirectGuardTest (one per module)
         // pins this block's reach.
         systemProperty("user.home", layout.buildDirectory.dir("test-home").get().asFile.absolutePath)
+
+        // Card 476: the redirect above and ChildJvmsInheritTheTestHomeDriftTest
+        // keep the test JVM and its children out of the real home. This measures
+        // the result. jobs-state.json in the REAL ~/.spectro is the file the
+        // desktop tray reads, and on 2026-08-14 a test run wrote four fixture
+        // jobs into it ("ghost failed" in the tray to this day). The task fails
+        // when the file's fingerprint (absent, or size, mtime and SHA-256) is not
+        // the same after the tests as before. -Pspectro.realHome=<dir> points
+        // the guard at another home; the guard's own bite uses that.
+        val guarded = File(
+            (findProperty("spectro.realHome") as String?) ?: System.getProperty("user.home"),
+            ".spectro/jobs-state.json")
+        var before = ""
+        doFirst { before = realHomeFingerprint(guarded) }
+        doLast {
+            val after = realHomeFingerprint(guarded)
+            if (after != before) {
+                throw GradleException(
+                    "card 476: $path changed $guarded outside build/test-home." +
+                        " Before: $before. After: $after. A test reached the real home." +
+                        " If a real spectro cron job ran on this machine during the build," +
+                        " run the tests again.")
+            }
+        }
     }
     tasks.withType<Javadoc>().configureEach {
         // javadoc stops PRINTING after -Xmaxwarns warnings — default 100 — and
@@ -35,4 +59,15 @@ subprojects {
         // found number and `did my change add warnings?` has an answer again.
         (options as StandardJavadocDocletOptions).addStringOption("Xmaxwarns", "10000")
     }
+}
+
+/** Card 476: what the real-home guard compares, so a write, a creation and a
+ *  deletion all count. */
+fun realHomeFingerprint(file: File): String {
+    if (!file.isFile) {
+        return "absent"
+    }
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+    val hex = digest.joinToString("") { "%02x".format(it) }
+    return "size ${file.length()}, mtime ${file.lastModified()}, sha256 $hex"
 }

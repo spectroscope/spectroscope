@@ -204,6 +204,35 @@ class PrecedenceBrowserFacesTest {
     }
 
     @Test
+    void theSpringWiringLetsTheCodeGraphViewThroughOnlyWithALiveTicket() {
+        // Card 472: the "Graph ready" chip opens the server's own
+        // /api/codegraph/view in the internal browser. With the loopback opt-in
+        // off (the default), that page on the app's own port passes only with
+        // the ticket the server minted for the press; the same page without
+        // it, a spent ticket, the app's other endpoints and other loopback
+        // ports keep the loopback rule. This one fence is also the hop gate, so
+        // an agent's eval or click that reaches the view is refused the same way.
+        int before = dev.spectroscope.server.web.OwnPort.get();
+        dev.spectroscope.server.web.OwnPort.set(8473);
+        try {
+            PrecedenceBrowserFaces faces = new PrecedenceBrowserFaces(new BrowserControlSocket());
+            dev.spectroscope.server.web.AppPageTickets tickets = dev.spectroscope.server.web.AppPageTickets.shared();
+            String ticket = tickets.mint("s-1");
+            String view = "http://localhost:8473/api/codegraph/view?sessionId=s-1";
+            assertEquals(null, faces.judgeNavigate(view + "&ticket=" + ticket));
+            assertEquals("loopback", faces.judgeNavigate(view).rule());
+            assertEquals("loopback",
+                    faces.judgeNavigate("http://localhost:8473/api/codegraph/status?ticket=" + ticket).rule());
+            assertEquals("loopback",
+                    faces.judgeNavigate("http://localhost:8474/api/codegraph/view?ticket=" + ticket).rule());
+            tickets.redeem(ticket, "s-1");
+            assertEquals("loopback", faces.judgeNavigate(view + "&ticket=" + ticket).rule());
+        } finally {
+            dev.spectroscope.server.web.OwnPort.set(before);
+        }
+    }
+
+    @Test
     void aFlipListenerHearsAttachAndDetach(@TempDir Path base) {
         List<String> flips = new CopyOnWriteArrayList<>();
         BrowserControlSocket control = new BrowserControlSocket();

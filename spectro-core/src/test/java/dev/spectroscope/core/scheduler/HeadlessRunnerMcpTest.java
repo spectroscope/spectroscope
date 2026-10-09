@@ -294,12 +294,16 @@ class HeadlessRunnerMcpTest {
         ScriptedTransport transport = new ScriptedTransport();
 
         Job job = new Job("nightly", "0 0 * * *", "say done", cwd.toString(), "readonly");
+        RecordingNotifier notes = new RecordingNotifier();
         JobState state = new HeadlessRunner(JSON, config(true, List.of(NOTES)), provider)
                 .withMcpLoader(new CountingLoader(loads, transport))
+                .withNotifier(notes)
                 .runJob(job, line -> { });
 
         assertEquals(JobState.OK, state.status(), "the fire itself succeeded — the premise");
         assertEquals(1, loads.get(), "a cron fire mounts when the settings consent, no flag anywhere");
         assertTrue(transport.closed, "and the fire's registry is closed like any run's");
+        assertEquals(List.of(new RecordingNotifier.Shown("spectroscope: nightly ok", "done")),
+                notes.shown(), "card 476: the fire is announced through the injected notifier");
     }
 }

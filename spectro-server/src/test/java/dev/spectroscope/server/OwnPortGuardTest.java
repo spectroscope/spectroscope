@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -26,5 +27,12 @@ class OwnPortGuardTest {
         String text = HostGuard.live().refusal("lsof -ti :" + port + " | xargs kill")
                 .orElseThrow(() -> new AssertionError("lsof on the server's port was not refused"));
         assertTrue(text.contains("protected PID " + ProcessHandle.current().pid() + " "), text);
+    }
+
+    @Test
+    void theServersOwnPortIsTheAppPortTheBrowserFenceUses() {
+        // Card 472: the browser fence lets the app's own code graph view
+        // through on this port and no other.
+        assertEquals(port, dev.spectroscope.server.web.OwnPort.get());
     }
 }

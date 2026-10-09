@@ -93,7 +93,7 @@ describe("the open menu", () => {
     const items = rowMenuItems({ pinned: false, hasTitle: false, deletable: true });
     const html = renderToStaticMarkup(<RowMenuList lang="en" items={items} focus={0} onPick={noop} />);
     expect(html).toContain('role="menu"');
-    expect(html.match(/role="menuitem"/g)).toHaveLength(4);
+    expect(html.match(/role="menuitem"/g)).toHaveLength(5); // card 473: the bundle item
     expect(html).toMatch(/class="row-menu-item row-menu-item--danger"[^>]*>Delete</);
     expect(html).toContain(">Pin<");
     expect(html).toContain(">Rename<");

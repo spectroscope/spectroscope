@@ -93,6 +93,17 @@ import java.util.List;
  *                      report them, past which {@code SubagentManager} cuts ONE
  *                      child at its next turn (card 394). Nullable: the
  *                      shipped default. Zero or less is refused here, by name
+ * @param toolResultElision the session's {@code toolResultElision} (card 467),
+ *                      handed to every child so the tree follows the rule its
+ *                      root follows. Nullable: the shipped value, on
+ * @param toolGroupsOff the parent session's switched-off tool groups (card
+ *                      466), the SAME reader the parent agent is built with.
+ *                      While a parent run is in flight a child takes the set
+ *                      that run read at its start, not this reader, so a gear
+ *                      change mid-run reaches parent and children together at
+ *                      the next run. Applied after the role policy and after
+ *                      the role's grant, so it can only take tools away
+ *                      (nullable: nothing is switched off)
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -110,7 +121,9 @@ public record SubagentConfig(
         Boolean thinking,
         Integer subagentBudgetSeconds,
         dev.spectroscope.core.session.SessionWindow sessionWindow,
-        Integer subagentBudgetTokens) {
+        Integer subagentBudgetTokens,
+        String toolResultElision,
+        java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff) {
 
     /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
      *  and an absent budget to the derived one over an unfed window. The
@@ -136,6 +149,38 @@ public record SubagentConfig(
             throw new IllegalArgumentException(
                     "subagentBudgetTokens must be positive, got " + subagentBudgetTokens);
         }
+    }
+
+    /** Compat: the arity before cards 467 and 466, which knew no elision
+     *  switch and no tool groups. The children get the shipped elision, on,
+     *  and are advertised the whole belt, as before.
+     *
+     * @param provider              the provider the children stream from
+     * @param cwd                   the children's working directory
+     * @param parentAgentId         the spawning agent's id
+     * @param onPermission          the parent's permission broker
+     * @param baseTools             the tools a child may be handed
+     * @param hooks                 the parent's hooks
+     * @param llmWire               the session's wire record
+     * @param webTools              the gated web grant
+     * @param budget                a child's run budget
+     * @param compactionThreshold   the operator's threshold, or null
+     * @param maxTurns              the operator's turn ceiling, or null
+     * @param maxTokens             the operator's completion budget, or null
+     * @param thinking              whether reasoning is surfaced, or null
+     * @param subagentBudgetSeconds the run budget floor, or null
+     * @param sessionWindow         the session's window holder, or null
+     * @param subagentBudgetTokens  a child's token budget, or null */
+    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
+                          PermissionBroker onPermission, List<Tool> baseTools,
+                          HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
+                          ChildBudget budget, Integer compactionThreshold, Integer maxTurns,
+                          Integer maxTokens, Boolean thinking, Integer subagentBudgetSeconds,
+                          dev.spectroscope.core.session.SessionWindow sessionWindow,
+                          Integer subagentBudgetTokens) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
+                webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
+                subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, null, null);
     }
 
     /** The pre-card-394 arity, kept so a caller that does not carry a token
@@ -295,6 +340,8 @@ public record SubagentConfig(
         private Integer subagentBudgetSeconds;   // nullable -> the shipped floor
         private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable -> children derive
         private Integer subagentBudgetTokens;    // nullable -> the shipped budget
+        private String toolResultElision;        // nullable -> the shipped "on"
+        private java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff; // nullable -> none off
 
         private Builder() {
         }
@@ -400,12 +447,33 @@ public record SubagentConfig(
             return this;
         }
 
+        /** Card 466: the parent session's switched-off tool groups.
+         *  @param value the SAME reader the parent agent is built with; null
+         *               switches nothing off
+         *  @return this builder */
+        public Builder toolGroupsOff(
+                java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> value) {
+            this.toolGroupsOff = value;
+            return this;
+        }
+
         /** @return the finished config, normalized by the canonical constructor */
+        /**
+         * Card 467: the session's elision switch, for every child.
+         *
+         * @param value {@code "on"}, {@code "off"}, or null for the shipped on
+         * @return this builder
+         */
+        public Builder toolResultElision(String value) {
+            this.toolResultElision = value;
+            return this;
+        }
+
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
                     baseTools, hooks, llmWire, webTools, budget, compactionThreshold,
                     maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow,
-                    subagentBudgetTokens);
+                    subagentBudgetTokens, toolResultElision, toolGroupsOff);
         }
     }
 }

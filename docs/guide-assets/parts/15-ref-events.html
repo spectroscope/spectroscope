@@ -82,15 +82,22 @@ the whole agent hierarchy lives in these two id fields.</p></div></div>
 <p><code>agentId</code>, <code>removedTurns</code>, <code>summaryChars</code>. An audit line only:
 compaction replaces the <em>in-memory</em> history — the file is never rewritten.</p></div></div>
 
+<div class="ref"><div class="ref-head"><code class="name">context_cleared</code><span class="meta">additive · card 471</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>removedMessages</code>. Written when the operator types
+<code>/clear</code> in the web chat. Nothing before it is removed from the file; a resume rebuilds
+the provider history only from the events after the main agent's last marker.</p></div></div>
+
 <div class="ref"><div class="ref-head"><code class="name">voice_input</code><span class="meta">additive · bonus 2</span></div><div class="ref-body">
 <p><code>agentId</code>, <code>durationMs</code>, <code>model</code> (e.g. <code>"ggml-small"</code>).
 Written <em>before</em> the <code>run_start</code> of a spoken turn; pure provenance — a
 resumed voice turn is byte-identical to a typed one.</p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">usage</code><span class="meta">since stage 3</span></div><div class="ref-body">
-<p><code>agentId</code>, <code>inputTokens</code>, <code>outputTokens</code> — per agent, raw
-provider counts. The wire never includes cache arithmetic (that lives only in the
-compaction trigger) — the token truth.</p></div></div>
+<p><code>agentId</code>, <code>inputTokens</code>, <code>outputTokens</code>, per agent.
+<code>inputTokens</code> is the part of the prompt no cache served. When the provider reported
+a prompt cache, <code>cacheReadTokens</code> and <code>cacheCreationTokens</code> ride beside it
+and are omitted otherwise. The event never adds them up: the compaction trigger and the
+context ring do that.</p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">run_end</code><span class="meta">since stage 3</span></div><div class="ref-body">
 <p><code>runId</code>, <code>stopReason</code> — no <code>agentId</code>. Stop reasons:

@@ -1,0 +1,24 @@
+meta {
+  name: code graph page
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/api/codegraph/view
+  body: none
+  auth: none
+}
+
+params:query {
+  sessionId: {{sessionId}}
+  ticket: minted-by-the-chip-press
+}
+
+docs {
+  The session folder's graphify-out/graph.html, for the internal browser (card 472), served under Content-Security-Policy: sandbox allow-scripts allow-popups so a page from a cloned repository runs with an opaque origin and cannot act as the app. Served once per ticket: the Graph ready chip sends open_code_graph on the browser view socket, the server mints a one-shot ticket and navigates the session's browser here, and this endpoint spends it. A request from a REST client has no ticket and gets 404. 404 no live ticket for this session, unknown session, no graph, or a page that resolves outside the folder.
+  
+  Fence: host. Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

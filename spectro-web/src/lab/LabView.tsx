@@ -110,6 +110,9 @@ export function LabView(props: {
    *  lands the trace on the event that recorded it. Absent = the dock's rows
    *  render but do not navigate. */
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
+  /** Card 473: the session an LLM exchange is read under (an import's held
+   *  wire, or the server's sidecar), for the Lab's chat and JSONL strip. */
+  exchangeSessionId?: string | null;
 }) {
   const st = useStepper();
   const lang = useLang();
@@ -275,6 +278,7 @@ export function LabView(props: {
         readOnlyNote={props.readOnlyNote}
         onDelete={props.onDelete}
         sendClient={props.sendClient}
+        exchangeSessionId={props.exchangeSessionId ?? null}
       />
       <Resizer
         collapsed={!layout.chatOpen}
@@ -433,7 +437,12 @@ export function LabView(props: {
         onResize={resizeTrace}
         onToggle={toggleTrace}
       />
-      <LabTrace applied={st.applied} queue={st.queue} fireSeq={st.fireSeq} />
+      <LabTrace
+        applied={st.applied}
+        queue={st.queue}
+        fireSeq={st.fireSeq}
+        exchangeSessionId={props.exchangeSessionId ?? null}
+      />
 
       {/* The context dock (card 300). Its two neighbours stay MOUNTED while
           collapsed and hide in CSS — the terminal's idiom, where folding must

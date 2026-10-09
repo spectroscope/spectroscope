@@ -34,6 +34,7 @@ import { SessionRowMenu } from "./SessionRowMenu";
 import { SessionRenameField } from "./SessionRenameField";
 import { SessionDeleteDialog } from "./SessionDeleteDialog";
 import {
+  bundleLink,
   renameOpening,
   renameRequest,
   rowMenuItems,
@@ -240,6 +241,14 @@ export function Sidebar(props: {
           return next;
         });
       });
+    } else if (item === "bundle") {
+      // Card 473: a plain link the browser saves, the same one the archive
+      // bar offers; same-origin, so the local fence sees no Origin.
+      const { href, download } = bundleLink(row.id);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = download;
+      link.click();
     } else {
       setDeleting({ row, busy: false, failed: false });
     }

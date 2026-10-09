@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntSupplier;
 
 /**
  * The control channel to the visible browser (cards 200 and 201).
@@ -131,9 +132,36 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
                     .load(dev.spectroscope.core.config.SpectroConfig.Overrides.none())
                     .allowLocalhost();
 
+    /**
+     * The app server's own port, sent with the policy; the shell's request
+     * hook lets the app's code graph view through on it only with the live
+     * ticket a navigate carries (card 472). 0 until the server has bound.
+     */
+    private volatile IntSupplier appPort = dev.spectroscope.server.web.OwnPort::get;
+
+    /**
+     * Whether a ticket is one the server minted for the operator's chip press
+     * and has not spent (card 472). Only a navigate whose address carries such
+     * a ticket tells the shell about it.
+     */
+    private volatile java.util.function.Predicate<String> liveTicket =
+            dev.spectroscope.server.web.AppPageTickets.shared()::isLive;
+
     /** The filter list, on unless the operator says otherwise. */
     private volatile BooleanSupplier adblock =
             () -> !"off".equalsIgnoreCase(String.valueOf(System.getenv("SPECTRO_BROWSER_ADBLOCK")));
+
+    /**
+     * Test seam (card 472): the app server's port and the ticket check the
+     * policy is built from.
+     *
+     * @param port       the port the app's server listens on
+     * @param liveTicket whether a ticket is live
+     */
+    void useAppPage(IntSupplier port, java.util.function.Predicate<String> liveTicket) {
+        this.appPort = port;
+        this.liveTicket = liveTicket;
+    }
 
     /**
      * Overrides where the two settings come from. A seam for tests and for a
@@ -329,6 +357,32 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
     }
 
     /**
+     * The ticket of a navigate to the app's code graph view, when the server
+     * minted it and has not spent it (card 472). Every other verb, address
+     * and ticket gives null, and the shell's fence then keeps the loopback
+     * rule for the view.
+     *
+     * @param args the navigate's arguments
+     * @return the live ticket, or null
+     */
+    private String liveAppTicket(JsonNode args) {
+        String url = args == null ? null : args.path("url").asText(null);
+        if (url == null) {
+            return null;
+        }
+        try {
+            java.net.URI uri = new java.net.URI(url.strip());
+            if (!dev.spectroscope.core.net.NetFence.APP_PAGES.contains(uri.getRawPath())) {
+                return null;
+            }
+            String ticket = dev.spectroscope.core.net.NetFence.ticketOf(uri.getRawQuery());
+            return ticket != null && liveTicket.test(ticket) ? ticket : null;
+        } catch (java.net.URISyntaxException | RuntimeException unreadable) {
+            return null;
+        }
+    }
+
+    /**
      * Sends one verb for one session and waits for its reply.
      *
      * @param sessionId whose browser this is, or null for the window-level
@@ -358,6 +412,11 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
         frame.set("args", args == null ? JSON.createObjectNode() : args);
         ObjectNode settings = JSON.createObjectNode();
         settings.put("allowLocalhost", allowLocalhost.getAsBoolean());
+        settings.put("appPort", appPort.getAsInt());
+        String appTicket = "navigate".equals(verb) ? liveAppTicket(args) : null;
+        if (appTicket != null) {
+            settings.put("appTicket", appTicket);
+        }
         settings.put("adblock", adblock.getAsBoolean());
         frame.set("settings", settings);
 

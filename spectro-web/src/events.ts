@@ -37,8 +37,16 @@ export type RunEvent =
        *  card 284, on runs started without a cwd, and on a triggered node's
        *  run, whose re-stamped run_start drops it (card 439). */
       workspace?: string;
+      /** Card 473: the files beside the session, by file name, on the main
+       *  agent's run_start that carries the reference. `children` is present
+       *  exactly on such a line (an empty list means none); a wire is named
+       *  only when the writer records it, a browser wire only once written.
+       *  Names, never paths: import/wireImport.ts refuses any other shape. */
+      llmWire?: string;
+      browserWire?: string;
+      children?: string[];
       ts: number;
-    } // provider?, model?, attachments?, workspace? all additive
+    } // provider?, model?, attachments?, workspace?, llmWire?, browserWire?, children? all additive
   | { type: "turn_start"; agentId: string; turn: number; ts: number }
   | { type: "text_delta"; agentId: string; text: string; ts: number }
   | { type: "thinking_delta"; agentId: string; text: string; ts: number } // reasoning stream, additive
@@ -73,6 +81,10 @@ export type RunEvent =
     }
   | { type: "agent_spawn"; agentId: string; parentId: string; task: string; ts: number }
   | { type: "compaction"; agentId: string; removedTurns: number; summaryChars: number; ts: number } // additive
+  // Card 471: the operator's /clear. The session keeps its id and its file; the
+  // agent dropped this many history messages, and a resume starts after the
+  // last such line.
+  | { type: "context_cleared"; agentId: string; removedMessages: number; ts: number } // additive
   // Card 184 leg 3: one finished backend-to-model exchange, as the SESSION's own
   // record of it. It was a socket-only frame until the sealed union grew a type
   // for it, which is why a reopened session used to lose the fact that a model
@@ -509,6 +521,9 @@ export type ClientMessage =
   | { type: "set_provider"; provider: string; model?: string } // switch the LLM backend mid-session
   | { type: "set_workspace"; mode?: ChooserOption; path?: string } // pin THIS session's workspace by mode (before the first run)
   | { type: "set_permission_mode"; mode: string } // switch ask/auto/readonly mid-session (composer gear)
+  // Card 466: the tool groups the next run leaves out of the provider request.
+  // The server answers with a socket-only tool_groups_info frame.
+  | { type: "set_tool_groups_off"; groups: string[]; save?: boolean }
   // Card 390: the window for this session, from the context ring. null clears;
   // the server decides the range and answers with a `window_override` event.
   | { type: "set_window_override"; tokens: number | null }
@@ -523,7 +538,12 @@ export type ClientMessage =
   // server refuses a second one; this starts nothing. Text only (owner call 2):
   // the attachment path stores blobs before a run begins, and a mid-run store
   // is a second question with its own failure mode.
-  | { type: "steering_message"; text: string };
+  | { type: "steering_message"; text: string }
+  // Card 471: the chat's two commands. Their own frames, decided from the whole
+  // draft on the client (state/chatCommands.ts), so a command never reaches the
+  // model as a prompt. Both carry nothing; the server refuses them during a run.
+  | { type: "compact_context" }
+  | { type: "clear_context" };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {

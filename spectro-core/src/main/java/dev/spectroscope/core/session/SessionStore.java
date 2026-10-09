@@ -80,6 +80,10 @@ public final class SessionStore {
     private final String id;
     private final Path file;
     private final ReentrantLock appendLock;
+    /** Told of each written line; guarded by appendLock. */
+    private LineListener lineListener;
+    /** The number of the next line written; guarded by appendLock. */
+    private int nextLine;
 
     /** New session with a freshly minted id (headless runs). */
     public SessionStore() {
@@ -167,11 +171,60 @@ public final class SessionStore {
             try {
                 Files.writeString(file, line, StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                if (lineListener != null) {
+                    tell(event);
+                }
             } finally {
                 appendLock.unlock();
             }
         } catch (IOException failure) {
             throw new UncheckedIOException("Cannot append to " + file, failure);
+        }
+    }
+
+    /** Told of every line a store writes, with the line's number in the file. */
+    @FunctionalInterface
+    public interface LineListener {
+        /**
+         * One line was written.
+         *
+         * @param line  the line's number, counted from 0 as the reader counts events
+         * @param event the event the line holds
+         */
+        void written(int line, RunEvent event);
+    }
+
+    /**
+     * Tells {@code listener} of every line this store writes from now on,
+     * with its line number, inside the write's lock, so the numbers follow
+     * the file's own order whichever thread appends. A counter that names
+     * events by their line (the leveling ladder's receipts) listens here
+     * rather than on the tracing stream, because some lines (a closed
+     * exchange, a window override) reach the file without passing the tracing
+     * ports. A listener that throws does not cost the line: it is already
+     * written. The listener runs inside the lock, so it must not append to
+     * this store and should return quickly.
+     *
+     * @param listener who is told
+     * @param nextLine the number of the next line: 0 for a fresh file, the
+     *                 file's event count ({@link #eventCount}) on a resume
+     */
+    public void onLine(LineListener listener, int nextLine) {
+        appendLock.lock();
+        try {
+            this.lineListener = listener;
+            this.nextLine = Math.max(0, nextLine);
+        } finally {
+            appendLock.unlock();
+        }
+    }
+
+    private void tell(RunEvent event) {
+        int line = nextLine++;
+        try {
+            lineListener.written(line, event);
+        } catch (RuntimeException never) {
+            LOG.warn("a line listener failed on {} line {}: {}", id, line, never.toString());
         }
     }
 
@@ -946,7 +999,19 @@ public final class SessionStore {
      * @return the provider-ready history, roles alternating
      */
     public static List<ProviderMessage> loadSession(String id) throws IOException {
-        List<RunEvent> events = readSessionEvents(id);
+        return historyOf(readSessionEvents(id));
+    }
+
+    /**
+     * The fold {@link #loadSession} applies, over events already read. Card 467's
+     * census reads session files from the archives beside the sessions folder,
+     * which {@link #sessionFile} refuses by design, and replays their histories
+     * through the same fold rather than a copy of it.
+     *
+     * @param events one session file's events, in file order
+     * @return the provider-ready history, roles alternating
+     */
+    static List<ProviderMessage> historyOf(List<RunEvent> events) {
         // Interop hardening: the main agent is found STRUCTURALLY (first run_start
         // without a parentId), not by its name — see mainAgentId(). This edition
         // writes "main", but the shared format only promises the structure.
@@ -1033,6 +1098,10 @@ public final class SessionStore {
             // are: a correction handed to a child must not read as a correction
             // of the run that spawned it.
             case RunEvent.SteeringMessage e -> e.agentId();
+            // Card 471: a clear drops ONE agent's history, so the marker
+            // belongs to that agent; a child's clear must not cut the main
+            // agent's conversation on resume.
+            case RunEvent.ContextCleared e -> e.agentId();
             // Card 337: a human's hand on the play button. There is no agent to
             // attribute it to, and inventing one would put an operator's action
             // on some model's rail.
@@ -1099,6 +1168,15 @@ public final class SessionStore {
                 case RunEvent.ToolResult result ->
                         results.put(result.callId(),
                                 new ToolResultContent(result.callId(), result.output(), result.isError()));
+                // Card 471: the operator cleared the context here. What was said
+                // before stays in the file and leaves the history the agent is
+                // handed back; a turn half-buffered at the marker goes with it.
+                case RunEvent.ContextCleared cleared -> {
+                    textBuffer.setLength(0);
+                    calls.clear();
+                    results.clear();
+                    messages.clear();
+                }
                 default -> { } // usage, permission_*, compaction, run_end, error: nothing for the history
             }
         }

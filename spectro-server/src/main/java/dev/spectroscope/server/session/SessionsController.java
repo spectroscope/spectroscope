@@ -311,6 +311,46 @@ public class SessionsController {
         }
     }
 
+    /**
+     * Export one stored session as a bundle (card 473): a zip with the session
+     * file, its llm wire, its browser wire and its child session files, each
+     * entry the file on disk byte for byte. The plain JSONL export above stays.
+     *
+     * <p>Fenced and shape-checked exactly like the plain export. The names
+     * in the session's {@code run_start} reference are caller-shaped too, so
+     * {@link SessionBundle} follows only plain basenames inside the
+     * recorders' own folders.</p>
+     *
+     * @param id      the session to bundle
+     * @param request the servlet request, for the local fence
+     * @return 200 with a zip named {@code <id>.spectro.zip}; 404 for a foreign
+     *         caller, a malformed id or a session that is not there
+     */
+    @GetMapping("/api/sessions/{id}/bundle")
+    public ResponseEntity<org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody>
+            exportBundle(@PathVariable String id, HttpServletRequest request) {
+        if (!LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request)
+                || !SESSION_ID.matcher(id).matches()) {
+            return ResponseEntity.status(404).build();
+        }
+        try {
+            if (!Files.isRegularFile(SessionStore.sessionFile(id))) {
+                return ResponseEntity.status(404).build();
+            }
+            List<SessionBundle.Entry> entries = SessionBundle.entriesFor(id);
+            // A zip is never rendered, and nosniff keeps a legacy sniffer from
+            // promoting it. The id in the filename is safe by the shape check.
+            return ResponseEntity.ok()
+                    .contentType(new MediaType("application", "zip"))
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header("Content-Disposition", String.format("attachment; filename=\"%s.spectro.zip\"", id))
+                    .body(out -> SessionBundle.write(entries, out));
+        } catch (java.io.IOException | RuntimeException unreadable) {
+            return ResponseEntity.status(404).build();
+        }
+    }
+
     /** Session ids as the store mints them (yyyyMMdd-HHmmss-uuid8) plus the
      *  test/CLI-friendly general shape — never a path, never a dot. */
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
@@ -694,6 +734,25 @@ public class SessionsController {
     private static final String ANTHROPIC_VERSION = "2023-06-01";
 
     /**
+     * Which wire a provider's model list is read on (card 472). Anthropic and
+     * ollama have their own; every provider the harness counts as OpenAI
+     * compatible ({@link SpectroConfig#openAiCompatProviders()}) is read on the
+     * OpenAI one, so a provider added to that rule lists its models here
+     * without a second edit.
+     *
+     * @param provider     the provider name
+     * @param openAiCompat whether a provider speaks the OpenAI wire
+     * @return {@code anthropic}, {@code ollama}, {@code openai}, or null for a
+     *         provider without a model list
+     */
+    static String modelWire(String provider, java.util.function.Predicate<String> openAiCompat) {
+        if ("anthropic".equals(provider) || "ollama".equals(provider)) {
+            return provider;
+        }
+        return provider != null && openAiCompat.test(provider) ? "openai" : null;
+    }
+
+    /**
      * Model names for the header picker's per-provider dropdown. The switch
      * below has three arms because there are three WIRE PROTOCOLS, not because
      * there are three backends — every provider in
@@ -726,11 +785,14 @@ public class SessionsController {
      */
     @GetMapping("/api/models")
     public List<String> models(@RequestParam(name = "provider", defaultValue = "") String provider) {
-        return switch (provider) {
+        String wire = modelWire(provider, SpectroConfig.openAiCompatProviders()::contains);
+        if (wire == null) {
+            return List.of();
+        }
+        return switch (wire) {
             case "anthropic" -> anthropicModels();
-            case "openai", "lmstudio", "llamacpp", "openrouter", "gemini" -> openaiModels(provider);
             case "ollama" -> ollamaModels();
-            default -> List.of();
+            default -> openaiModels(provider);
         };
     }
 
@@ -935,14 +997,23 @@ public class SessionsController {
     }
 
     /**
-     * The scheduler's job-state map (the same data `spectroscope cron status` prints).
+     * The scheduler's job-state map (the same data `spectroscope cron status` prints),
+     * plus the code graph builds of this server process under {@code codegraph:<folder>}
+     * (card 472), whose status is {@code running} while they build.
      * The desktop shell polls this every 30 s and raises a native
      * notification when a job's status changes.
      *
-     * @return job name → state, empty when the state file is absent or corrupt
+     * @return job name → state, the scheduler's part empty when its state file
+     *         is absent or corrupt
      */
     @GetMapping("/api/jobs/state")
     public Map<String, JobState> jobsState() {
+        return dev.spectroscope.server.codegraph.CodeGraphJobs.withCodeGraphJobs(
+                schedulerJobsState(), dev.spectroscope.server.codegraph.CodeGraphJobs.shared());
+    }
+
+    /** The scheduler's own file, empty when it is absent or corrupt. */
+    private static Map<String, JobState> schedulerJobsState() {
         Path path = Path.of(System.getProperty("user.home"), ".spectro", "jobs-state.json");
         if (!Files.exists(path)) {
             return Map.of();

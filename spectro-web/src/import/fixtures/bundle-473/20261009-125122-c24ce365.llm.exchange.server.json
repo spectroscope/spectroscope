@@ -1,0 +1,38 @@
+{
+  "request": {
+    "type": "llm_request",
+    "xid": "43c25991-408c-42c8-b861-a9147791b65c",
+    "agentId": "main",
+    "turn": 1,
+    "kind": "chat",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "transport": "http",
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages",
+    "headers": {
+      "content-type": "application/json",
+      "x-api-key": "REDACTED(17 chars)"
+    },
+    "fidelity": "bytes",
+    "body": "{\"model\":\"claude-sonnet-5\",\"messages\":[{\"role\":\"user\",\"content\":\"Grüß mich\"}]}",
+    "bodyBytes": 80,
+    "ts": 1791540000300
+  },
+  "response": {
+    "type": "llm_response",
+    "xid": "43c25991-408c-42c8-b861-a9147791b65c",
+    "agentId": "main",
+    "turn": 1,
+    "status": 200,
+    "fidelity": "bytes",
+    "lines": [
+      "event: message_start",
+      "data: {\"type\":\"message_start\"}",
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"Hallo ✓\"}}"
+    ],
+    "bodyBytes": 115,
+    "durationMs": 650,
+    "ts": 1791540000950
+  }
+}

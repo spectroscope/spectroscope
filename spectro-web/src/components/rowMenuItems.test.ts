@@ -5,17 +5,25 @@ import { describe, expect, it } from "vitest";
 import { t } from "../i18n/i18n";
 import type { SessionMeta } from "../events";
 import { sessionDisplayTitle } from "./sessionRows";
-import { menuKeyStep, renameIntent, renameOpening, renameRequest, rowMenuItems } from "./rowMenuItems";
+import {
+  bundleLink,
+  menuKeyStep,
+  renameIntent,
+  renameOpening,
+  renameRequest,
+  rowMenuItems,
+} from "./rowMenuItems";
 
 describe("the items", () => {
-  it("offers pin, rename, suggest a title and delete for a stored row without a title", () => {
+  // Card 473 adds the bundle download before delete.
+  it("offers pin, rename, suggest a title, the bundle and delete for a stored row without a title", () => {
     const items = rowMenuItems({ pinned: false, hasTitle: false, deletable: true });
-    expect(items.map((item) => item.id)).toEqual(["pin", "rename", "suggest", "delete"]);
+    expect(items.map((item) => item.id)).toEqual(["pin", "rename", "suggest", "bundle", "delete"]);
   });
 
   it("offers unpin for a pinned row", () => {
     const items = rowMenuItems({ pinned: true, hasTitle: true, deletable: true });
-    expect(items.map((item) => item.id)).toEqual(["unpin", "rename", "delete"]);
+    expect(items.map((item) => item.id)).toEqual(["unpin", "rename", "bundle", "delete"]);
   });
 
   it("offers no suggestion for a row that has a title, suggested or typed", () => {
@@ -55,6 +63,7 @@ describe("the items", () => {
       unpin: ["Unpin", "Nicht mehr anheften"],
       rename: ["Rename", "Umbenennen"],
       suggest: ["Suggest a title", "Titel vorschlagen"],
+      bundle: ["Download as bundle (.zip)", "Als Bundle herunterladen (.zip)"],
       delete: ["Delete", "Löschen"],
     });
   });
@@ -145,5 +154,21 @@ describe("what the rename field opened with", () => {
     expect(
       renameRequest({ typed: opened.shown, shown: sessionDisplayTitle(landed, "en"), hasTitle: true }),
     ).toBe("hallo, kannst du mal die release notes gliedern");
+  });
+});
+
+// Card 473: the bundle download is one link, built in one place, for the row
+// menu and the archive bar alike.
+describe("the bundle link", () => {
+  it("names the bundle endpoint and the file it saves as", () => {
+    expect(bundleLink("20261009-125122-c24ce365")).toEqual({
+      href: "/api/sessions/20261009-125122-c24ce365/bundle",
+      download: "20261009-125122-c24ce365.spectro.zip",
+    });
+  });
+
+  it("keeps the bundle usable while a socket holds the session", () => {
+    const held = rowMenuItems({ pinned: false, hasTitle: true, deletable: false });
+    expect(held.find((item) => item.id === "bundle")?.disabled).toBe(false);
   });
 });

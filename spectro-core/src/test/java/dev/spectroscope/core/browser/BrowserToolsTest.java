@@ -167,6 +167,25 @@ class BrowserToolsTest {
     }
 
     @Test
+    void theAgentsNavigateToTheAppsCodeGraphViewIsRefusedEvenWithATicket(@TempDir Path dir) {
+        // Card 472: the operator's "Graph ready" chip opens the server's own
+        // /api/codegraph/view with a ticket minted for that press. The agent's
+        // browser_navigate is not that press: with the opt-in off it is refused
+        // by the loopback rule, ticket or not, and nothing reaches the browser.
+        FakeFace face = new FakeFace(true, Map.of("navigate",
+                BrowserFace.Reply.ok(obj("{\"title\":\"graph\"}"), "http://localhost:8473/")));
+        String page = "http://localhost:8473/api/codegraph/view?sessionId=s-1&ticket="
+                + "0123456789abcdef0123456789abcdef";
+        String refused = byName(tools(face, false, dir), "browser_navigate")
+                .execute(obj("{\"url\":\"" + page + "\"}"),
+                        context(dir, new ArrayList<>(), new ArrayList<>()));
+        assertTrue(refused.startsWith("ERROR"), refused);
+        assertTrue(refused.contains("localhost:8473"), refused);
+        assertTrue(refused.contains("loopback"), refused);
+        assertTrue(face.sent.isEmpty(), "a refused address never reaches the browser");
+    }
+
+    @Test
     void aDetachedFaceIsAnErrorThatNamesTheAddressAndTheFace(@TempDir Path dir) {
         Tool navigate = byName(tools(new FakeFace(false, Map.of()), false, dir), "browser_navigate");
         String out = navigate.execute(obj("{\"url\":\"https://example.com/x\"}"),

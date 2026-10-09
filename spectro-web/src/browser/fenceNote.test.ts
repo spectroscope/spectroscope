@@ -45,6 +45,12 @@ describe("the note says what applies to THIS session", () => {
     }
   });
 
+  it("names the one loopback page that opens without the opt-in: the Graph ready chip's code graph (card 472)", () => {
+    for (const lang of langs) {
+      expect(t(lang, "browser.fence.loopbackOff"), lang).toContain(t(lang, "cg.ready"));
+    }
+  });
+
   it("says loopback is reachable only where it is", () => {
     for (const lang of langs) {
       const reaches = t(lang, "browser.fence.loopbackOn");

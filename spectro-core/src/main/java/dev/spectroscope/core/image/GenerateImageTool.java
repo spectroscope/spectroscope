@@ -82,6 +82,13 @@ public final class GenerateImageTool implements Tool {
         return true;
     }
 
+    /** A second call does new work; the earlier result cannot be fetched (card 467).
+     *  @return false */
+    @Override
+    public boolean resultRepeatable() {
+        return false;
+    }
+
     /**
      * Generates, stores, and announces one image: resolves the current provider (an
      * unset API key degrades to a readable error), writes the bytes to the store,

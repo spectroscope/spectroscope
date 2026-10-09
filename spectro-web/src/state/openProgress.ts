@@ -16,11 +16,14 @@ export interface OpenProgressReading {
   ticket: number;
   folded: number;
   total: number;
+  /** Card 473: "wire" while an import reads its wire under the same sign;
+   *  absent for the fold's event count. */
+  unit?: "wire";
 }
 
 export interface OpenProgress {
   /** A fold's report. Kept and passed on, or dropped inside the quiet time. */
-  report(ticket: number, folded: number, total: number): void;
+  report(ticket: number, folded: number, total: number, unit?: "wire"): void;
   /** The reading last passed on, or null. The same object until the next one. */
   read(): OpenProgressReading | null;
   subscribe(listener: () => void): () => void;
@@ -34,11 +37,11 @@ export function createOpenProgress(now: () => number = () => performance.now()):
   let passedAt = 0;
   const listeners = new Set<() => void>();
   return {
-    report(ticket, folded, total) {
+    report(ticket, folded, total, unit) {
       const at = now();
-      const first = reading === null || reading.ticket !== ticket;
+      const first = reading === null || reading.ticket !== ticket || reading.unit !== unit;
       if (!first && folded < total && at - passedAt < PROGRESS_EVERY_MS) return;
-      reading = { ticket, folded, total };
+      reading = unit === undefined ? { ticket, folded, total } : { ticket, folded, total, unit };
       passedAt = at;
       for (const listener of listeners) listener();
     },
@@ -63,4 +66,9 @@ export function openCount(lang: Lang, folded: number, total: number): string {
     folded: grouped(folded, lang),
     total: grouped(total, lang),
   });
+}
+
+/** Card 473: "reading the wire: 24%", "Wire wird gelesen: 24 %". */
+export function openWire(lang: Lang, done: number, total: number): string {
+  return t(lang, "open.wire", { pct: total <= 0 ? 0 : Math.floor((done / total) * 100) });
 }

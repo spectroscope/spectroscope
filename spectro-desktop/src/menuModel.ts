@@ -20,6 +20,7 @@
 // spectro-web's i18n dictionary, so a German menu is transcription rather than
 // translation; what is missing is the wiring, and that is its own card.
 
+import { cronJobs } from "./jobNotices";
 import { SHELL_COMMAND_IDS, type ShellCommandId } from "./shellCommands";
 
 /**
@@ -85,7 +86,7 @@ export interface TrayStatus {
   port: number;
   /** Whether the last /api/jobs/state fetch resolved AT ALL. Measured, not guessed. */
   serverUp: boolean;
-  /** The last seen cron job states, id -> status. */
+  /** The last seen jobs-state entries, id -> status: cron jobs and code graph builds (card 472). */
   jobs: Record<string, string>;
 }
 
@@ -354,11 +355,11 @@ export function appMenuModel(o: { productName: string; isMac: boolean }): MenuNo
  * a top-level tray row: greying out is not available at this level, so state
  * has nowhere else to go.
  *
- * @param jobs the last /api/jobs/state, id -> status
- * @return "Cron status" when nothing has run yet, otherwise a count
+ * @param jobs the last /api/jobs/state, id -> status; code graph builds are not counted
+ * @return "Cron status" when no cron job has run yet, otherwise a count
  */
 export function cronLabel(jobs: Record<string, string>): string {
-  const states = Object.values(jobs);
+  const states = Object.values(cronJobs(jobs));
   if (states.length === 0) return "Cron status";
   const running = states.filter((s) => s === "running").length;
   const plural = states.length === 1 ? "job" : "jobs";
@@ -404,7 +405,7 @@ export function trayMenuModel(o: { productName: string; status: TrayStatus }): M
  */
 export function trayTooltip(productName: string, s: TrayStatus): string {
   if (!s.serverUp) return `${productName} · server not responding`;
-  const states = Object.values(s.jobs);
+  const states = Object.values(cronJobs(s.jobs));
   const jobs = states.length === 0 ? "no cron jobs yet" : `${states.length} cron ${states.length === 1 ? "job" : "jobs"}`;
   return `${productName} · 127.0.0.1:${s.port} · ${jobs}`;
 }

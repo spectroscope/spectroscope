@@ -228,9 +228,13 @@ describe("the picker hands the popover the focused row", () => {
   it("is fed by the index that both the arrows and the mouse move", () => {
     // The whole of "keyboard focus and hover agree" is that there is ONE index.
     const source = stripComments(read("./SlashPicker.tsx", import.meta.url));
-    expect(source).toMatch(/slashTipView\(options, index\)/);
+    // Card 471: the commands share that index and stand first, so a skill's
+    // place in it is its place in the skill list plus the commands above it.
+    expect(source).toMatch(/slashTipView\(options, index - commands\.length\)/);
     expect(source).toMatch(/onMouseEnter=\{\(\) => setIndex\(at\)\}/);
-    expect(source).toMatch(/setIndex\(\(i\) => \(i \+ step \+ options\.length\) % options\.length\)/);
+    expect(source).toMatch(/const at = commands\.length \+ skillAt;/);
+    expect(source).toMatch(/const rowCount = commands\.length \+ options\.length;/);
+    expect(source).toMatch(/setIndex\(\(i\) => \(i \+ step \+ rowCount\) % rowCount\)/);
   });
 
   it("measures the pop it hangs off, and re-measures when the room changes", () => {

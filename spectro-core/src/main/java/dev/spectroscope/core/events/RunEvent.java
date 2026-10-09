@@ -66,7 +66,8 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.GoalCheck.class,          name = "goal_check"),       // additive (card 267)
     @JsonSubTypes.Type(value = RunEvent.SettingsIgnored.class,    name = "settings_ignored"), // additive (card 285)
     @JsonSubTypes.Type(value = RunEvent.LaunchOutcome.class,      name = "launch_outcome"),   // additive (card 337)
-    @JsonSubTypes.Type(value = RunEvent.SteeringMessage.class, name = "steering_message") // additive (card 380)
+    @JsonSubTypes.Type(value = RunEvent.SteeringMessage.class, name = "steering_message"), // additive (card 380)
+    @JsonSubTypes.Type(value = RunEvent.ContextCleared.class,  name = "context_cleared")  // additive (card 471)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -78,7 +79,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.NoProgress, RunEvent.ProgressIntervention,
         RunEvent.Continuation, RunEvent.GoalCheck,
         RunEvent.SettingsIgnored, RunEvent.LaunchOutcome,
-        RunEvent.SteeringMessage {
+        RunEvent.SteeringMessage, RunEvent.ContextCleared {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -101,6 +102,19 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param workspace   the folder this run actually worked in (additive, card 284),
      *                    so a resume in a later process lands where the run did;
      *                    null on a run that recorded none
+     * @param llmWire     the file name of the session's llm wire
+     *                    ({@code <id>.llm.jsonl}), additive (card 473); null
+     *                    (omitted) when this line names none
+     * @param browserWire the file name of the session's browser wire
+     *                    ({@code <id>.browser.jsonl}), additive (card 473);
+     *                    named only once the wire was written, null otherwise
+     * @param children    the ids of the session's child session files, in
+     *                    order, additive (card 473). Non-null exactly on a line
+     *                    that carries the reference (an empty list is the fact
+     *                    "no child session files"); null on every other line.
+     *                    Today every child agent writes into its parent's
+     *                    file, so the list is empty. The names are file names,
+     *                    never paths, and a reader refuses any other shape.
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -110,7 +124,63 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
                     String trigger,                   // additive (card 72)
                     List<Attachment> attachments,     // from additive
                     String workspace,                 // additive (card 284)
+                    String llmWire,                   // additive (card 473)
+                    String browserWire,               // additive (card 473)
+                    List<String> children,            // additive (card 473)
                     long ts) implements RunEvent {
+
+        /** Defensive copy of the child list; null stays null (no reference).
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param model       the model id serving the run; null when unknown
+         * @param trigger     what woke a triggered node's run; null when none
+         * @param attachments images riding along with the prompt; null when none
+         * @param workspace   the folder this run worked in; null when none
+         * @param llmWire     the llm wire's file name; null when not named
+         * @param browserWire the browser wire's file name; null when not named
+         * @param children    the child session ids; null on a line without the reference
+         * @param ts          epoch millis of emission */
+        public RunStart {
+            children = children == null ? null : List.copyOf(children);
+        }
+
+        /** Pre-card-473 arity: no reference; Jackson keeps using the canonical.
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param model       the model id serving the run; null when unknown
+         * @param trigger     what woke a triggered node's run; null when none
+         * @param attachments images riding along with the prompt; null when none
+         * @param workspace   the folder this run worked in; null when none
+         * @param ts          epoch millis of emission */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, String model, String trigger,
+                        List<Attachment> attachments, String workspace, long ts) {
+            this(runId, agentId, parentId, prompt, provider, model, trigger,
+                    attachments, workspace, null, null, null, ts);
+        }
+
+        /**
+         * This line with the session's file reference (card 473); every other
+         * field, the moment included, is kept.
+         *
+         * @param llmWire     the llm wire's file name, or null
+         * @param browserWire the browser wire's file name, or null
+         * @param children    the child session ids; never null on a reference
+         * @return the copy that names the files
+         */
+        public RunStart withWires(String llmWire, String browserWire, List<String> children) {
+            return new RunStart(runId, agentId, parentId, prompt, provider, model, trigger,
+                    attachments, workspace, llmWire, browserWire,
+                    children == null ? List.of() : children, ts);
+        }
 
         /** Pre-card-284 arity — no workspace; Jackson keeps using the canonical.
          *
@@ -474,6 +544,23 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     record Compaction(String agentId, int removedTurns, int summaryChars, long ts) implements RunEvent {}
 
     /**
+     * The operator cleared the agent's context with {@code /clear} (card 471,
+     * additive). The session keeps its id, its file and its wire; the agent
+     * keeps its system prompt, its goal and its tools, and drops the history.
+     *
+     * <p>Nothing before this line is removed from the file. A resume rebuilds
+     * the provider history only from the events after the last marker of the
+     * main agent ({@code SessionStore.loadSession}), so the clear survives a
+     * restart.</p>
+     *
+     * @param agentId         the agent whose history was dropped
+     * @param removedMessages how many history messages went
+     * @param ts              epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record ContextCleared(String agentId, int removedMessages, long ts) implements RunEvent {}
+
+    /**
      * Optional and additive: marks the provenance of a turn that began as
      * speech. Written to the session file as an audit line BEFORE the {@code run_start},
      * so the trace tab and the JSONL show where a turn came from. It never enters the
@@ -489,15 +576,16 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     record VoiceInput(String agentId, long durationMs, String model, long ts) implements RunEvent {}
 
     /**
-     * The token bill of one provider call, as the provider reported it —
-     * {@code inputTokens} stays the RAW uncached count (byte-identical wire).
-     * With Anthropic prompt caching active the raw count is only the uncached
-     * remainder, so the cache counts ride ADDITIVELY: absent (null, omitted on
-     * the wire) when the provider reported none, present when it did — the UIs
-     * add them to show the true context size.
+     * The token bill of one provider call. {@code inputTokens} is the
+     * uncached prompt count (byte-identical wire when nothing was cached).
+     * Anthropic reports that remainder itself; for an OpenAI-compatible
+     * response that counts cached tokens inside {@code prompt_tokens} the
+     * provider takes them out (card 468). The cache counts ride ADDITIVELY:
+     * absent (null, omitted on the wire) when the provider reported none,
+     * present when it did. The UIs add them to show the true context size.
      *
      * @param agentId             the billed agent
-     * @param inputTokens         prompt-side tokens of the call, the provider's raw count
+     * @param inputTokens         prompt-side tokens of the call that no cache served
      * @param outputTokens        completion-side tokens of the call
      * @param cacheReadTokens     tokens served from the prompt cache (additive; null = not reported)
      * @param cacheCreationTokens tokens freshly written into the cache (additive; null = not reported)
