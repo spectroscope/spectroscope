@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -681,6 +682,106 @@ class LaunchToolsTest {
         assertTrue(said.startsWith("ERROR:"), said);
         assertTrue(said.contains("nothing is up in it"), said);
         supervisor.close();
+    }
+
+    // ---- the clamp follows the window (card 489) -----------------------------
+
+    /** A context that hands the tool a window, as the loop does per turn. */
+    private static Tool.ToolContext context(Path cwd, int window) {
+        return new Tool.ToolContext(cwd, new CancelSignal(), "main", "call-1", event -> { },
+                attachment -> { }, change -> { }, millis -> { }, false, window);
+    }
+
+    /**
+     * Card 489: a long listing is clamped to the window the loop hands the tool.
+     * The bounds are written out (6,144 characters at 8,192 tokens, 10,000 at
+     * 200,000), so a reverted rule cannot move them.
+     */
+    @Test
+    void aLongListingIsClampedToTheWindow(@TempDir Path project) throws Exception {
+        StringBuilder entries = new StringBuilder();
+        for (int i = 0; i < 200; i++) {
+            entries.append(i == 0 ? "" : ",\n").append("{ \"name\": \"web-").append(i)
+                    .append("-").append("y".repeat(60))
+                    .append("\", \"runtimeExecutable\": \"npm\", \"runtimeArgs\": [\"run\", \"dev\"],")
+                    .append(" \"port\": ").append(5_000 + i).append(" }");
+        }
+        writeLaunchFile(project, "{ \"version\": \"0.0.1\", \"configurations\": [\n"
+                + entries + " ] }");
+        LaunchSupervisor supervisor = new LaunchSupervisor((host, port) -> true);
+        try {
+            Tool list = tool(new LaunchTools(supervisor, () -> new RecordingBrowser(true),
+                    () -> fence(true)).all(), "launch_list");
+            assertTrue(list.execute(JSON.createObjectNode(), context(project, 0)).length()
+                    >= 10_000, "the listing is long enough to reach the largest bound");
+            assertEquals(6_144, list.execute(JSON.createObjectNode(), context(project, 8_192))
+                    .length(), "launch_list on a window of 8,192 tokens");
+            assertEquals(10_000, list.execute(JSON.createObjectNode(), context(project, 200_000))
+                    .length(), "launch_list on a window of 200,000 tokens");
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    /**
+     * Card 489: what a configuration printed is clamped to the window, both while
+     * it runs and after it exited. The process prints 200 lines of 101
+     * characters, then waits for a file to exit with code 3.
+     */
+    @Test
+    @EnabledOnOs({OS.MAC, OS.LINUX})
+    void aLongLogIsClampedToTheWindowWhileUpAndAfterItExited(@TempDir Path project)
+            throws Exception {
+        writeLaunchFile(project, """
+                { "version": "0.0.1", "configurations": [
+                  { "name": "web", "runtimeExecutable": "/bin/sh",
+                    "runtimeArgs": ["-c", "yes %s | head -n 200; \
+                while [ ! -f die ]; do sleep 0.05; done; exit 3"],
+                    "port": 5173 } ] }
+                """.formatted("0123456789".repeat(10)));
+        // Nothing answers before the start, the process answers after it.
+        AtomicInteger probes = new AtomicInteger();
+        LaunchSupervisor supervisor = new LaunchSupervisor(
+                (host, port) -> probes.getAndIncrement() > 0);
+        long pid = -1;
+        try {
+            List<Tool> tools = new LaunchTools(supervisor, () -> new RecordingBrowser(true),
+                    () -> fence(true)).all();
+            String started = tool(tools, "launch_start")
+                    .execute(args(Map.of("name", "web")), context(project));
+            assertFalse(started.startsWith("ERROR:"), started);
+            pid = supervisor.running("web").orElseThrow().pid();
+            for (int attempt = 0; attempt < 100
+                    && supervisor.logs("web", 0).text().length() < 20_000; attempt++) {
+                TimeUnit.MILLISECONDS.sleep(100);
+            }
+            assertTrue(supervisor.logs("web", 0).text().length() >= 20_000,
+                    "the process printed its 200 lines");
+
+            ObjectNode everything = JSON.createObjectNode().put("name", "web").put("lines", 0);
+            Tool logs = tool(tools, "launch_logs");
+            assertEquals(6_144, logs.execute(everything, context(project, 8_192)).length(),
+                    "launch_logs while up, on a window of 8,192 tokens");
+            assertEquals(10_000, logs.execute(everything, context(project, 200_000)).length(),
+                    "launch_logs while up, on a window of 200,000 tokens");
+
+            Files.writeString(project.resolve("die"), "now");
+            assertTrue(waitForDeath(pid), "the process exited on cue, pid " + pid);
+            String head = "This is what it printed before it did:\n";
+            for (int[] windowAndBound : new int[][] {{8_192, 6_144}, {200_000, 10_000}}) {
+                String said = logs.execute(everything, context(project, windowAndBound[0]));
+                assertTrue(said.contains("exited with code 3"), said.substring(0, 80));
+                assertEquals(windowAndBound[1],
+                        said.substring(said.indexOf(head) + head.length()).length(),
+                        "launch_logs after the exit, on a window of " + windowAndBound[0]);
+            }
+        } finally {
+            supervisor.close();
+            if (pid > 0) {
+                ProcessHandle.of(pid).filter(ProcessHandle::isAlive)
+                        .ifPresent(ProcessHandle::destroyForcibly);
+            }
+        }
     }
 
     // ---- no browser at all ---------------------------------------------------
