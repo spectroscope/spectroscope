@@ -107,6 +107,31 @@ class SessionCareParagraphTest {
     }
 
     @Test
+    void aRealPromptReadsTheSavedSettingAtItsStart(@TempDir Path workspace)
+            throws IOException, InterruptedException {
+        // The call site in runPrompt, not the method it calls: the test above
+        // calls refreshCareParagraph by hand and stays green without it. The
+        // backend is a closed port on purpose; the run starts, reads the
+        // paragraph and then fails to reach a model, which is all this needs.
+        Files.writeString(SettingsWriter.userSettingsFile(),
+                "{ \"provider\": \"ollama\", \"model\": \"qwen3:latest\","
+                        + " \"baseUrl\": \"http://127.0.0.1:1\" }");
+        SessionConnection connection = builtIn("ws-492-callsite", workspace);
+        assertThat(connection.agent().careParagraphThisRun()).as("premise: no run yet").isEmpty();
+
+        writeLocal(workspace, "{ \"careParagraph\": \"on\" }");
+        connection.onUserMessage("say something", null);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline && connection.agent().careParagraphThisRun().isEmpty()) {
+            Thread.sleep(20);
+        }
+
+        assertThat(connection.agent().careParagraphThisRun())
+                .as("the setting saved between prompts reached the run the next prompt started")
+                .contains(HELPERS_SENTENCE);
+    }
+
+    @Test
     void theGearsAgentsGroupTakesTheSubagentSentenceOut(@TempDir Path workspace) throws IOException {
         writeLocal(workspace, "{ \"careParagraph\": \"on\" }");
         SessionConnection connection = builtIn("ws-492-agents", workspace);
