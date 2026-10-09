@@ -47,7 +47,7 @@ export interface Applied {
 export const NEW_NAMES = { step: "New step", decision: "New decision", end: "Done" } as const;
 
 /** The fields each check kind uses besides its kind; a kind change drops the rest. */
-const CHECK_FIELDS: Record<string, readonly (keyof DocCheck)[]> = {
+export const CHECK_FIELDS: Record<string, readonly (keyof DocCheck)[]> = {
   sections: ["documents", "forbid"],
   open_items: ["documents"],
   command: ["run"],

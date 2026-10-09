@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { useEditorState } from "../state/playbookEditor";
 import {
   copyBundled,
   loadPlaybook,
@@ -19,6 +20,7 @@ import {
   useLoadedPlaybook,
   usePlaybookFolders,
 } from "../state/playbooks";
+import { EditorPanels } from "./editor/panels/EditorPanels";
 import { PlaybookGraph } from "./PlaybookGraph";
 import { StepTable } from "./StepTable";
 
@@ -33,6 +35,7 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
   const lang = useLang();
   const { folders, active } = usePlaybookFolders();
   const loaded = useLoadedPlaybook();
+  const editing = useEditorState().open;
   const [path, setPath] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -167,6 +170,11 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
             <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
             <StepTable loaded={loaded} />
           </section>
+          {editing && (
+            <section className="pb-section">
+              <EditorPanels />
+            </section>
+          )}
         </>
       )}
     </div>

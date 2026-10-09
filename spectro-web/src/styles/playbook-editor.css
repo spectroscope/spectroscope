@@ -194,3 +194,147 @@
   color: var(--text);
   border-color: var(--border-strong);
 }
+
+/* ---------- panels ---------- */
+/* The side panels (playbook/editor/panels). Tokens only; a field is a label
+   over a control, a list field is a fieldset. */
+.pbe-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  color: var(--text);
+  font-size: var(--fs-12);
+}
+.pbe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.pbe-field-label {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pbe-input {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+}
+.pbe-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.pbe-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pbe-mono {
+  font-family: var(--font-mono);
+}
+.pbe-note {
+  margin: 0;
+  color: var(--text-dim);
+}
+.pbe-empty {
+  margin: 0;
+  color: var(--text-dim);
+}
+.pbe-warn {
+  margin: 0;
+  color: var(--error);
+}
+.pbe-btn {
+  align-self: flex-start;
+  font: inherit;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.pbe-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.pbe-link {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.pbe-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.pbe-outcome,
+.pbe-addrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.pbe-readonly {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+.pbe-readonly ul {
+  margin: 0;
+  padding-left: var(--sp-3);
+}
+.pbe-findings {
+  padding: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pbe-findings-title {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.pbe-findings ul {
+  margin: 0;
+  padding-left: var(--sp-3);
+}
+.pbe-panels {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pbe-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.pbe-tab {
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.pbe-tab.is-active {
+  color: var(--text);
+  border-color: var(--accent);
+}
