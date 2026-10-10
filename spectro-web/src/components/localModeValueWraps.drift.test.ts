@@ -31,7 +31,11 @@ function rulesFor(className: string): Rule[] {
 
 function declared(rules: Rule[], prop: string): string[] {
   const values: string[] = [];
-  for (const rule of rules) rule.walkDecls(prop, (d) => values.push(d.value.trim()));
+  for (const rule of rules) {
+    rule.walkDecls(prop, (d) => {
+      values.push(d.value.trim());
+    });
+  }
   return values;
 }
 
