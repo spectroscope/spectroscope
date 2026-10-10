@@ -188,27 +188,98 @@ class CopilotRuntimeTest {
     }
 
     @Test
-    void aWorkspaceThatIsTheHomeFolderDoesNotHideAPerUserInstall() throws IOException {
-        // the install script's default for a non-root user is ~/.local/bin
+    void aWorkspaceThatIsTheHomeFolderStillFencesAPerUserInstall() throws IOException {
+        // Final round, decision 4: the home folder is fenced like any other
+        // workspace. ~/.local/bin is not an install root, so a runtime there
+        // is named and refused, and COPILOT_CLI_PATH is the way to take it.
         Path home = Files.createDirectories(tmp.resolve("home"));
         Path script = executable(home.resolve(".local/bin"));
 
         CopilotRuntime.Lookup lookup = CopilotRuntime.find(env().build(), home);
 
-        assertEquals(CopilotRuntime.Status.FOUND, lookup.status(), lookup.toString());
-        assertEquals(script, lookup.path());
+        assertEquals(CopilotRuntime.Status.REJECTED, lookup.status(), lookup.toString());
+        assertNull(lookup.path());
+        assertTrue(lookup.detail().contains(script.toString()), lookup.detail());
     }
 
     @Test
-    void aWorkspaceAboveTheHomeFolderDoesNotHideAPerUserInstall() throws IOException {
+    void aWorkspaceAboveTheHomeFolderFencesAnNpmPrefixThatIsNotAnInstallRoot() throws IOException {
         Path home = Files.createDirectories(tmp.resolve("home"));
-        Path npm = executable(home.resolve(".npm-global/bin"));
+        executable(home.resolve(".npm-global/bin"));
 
         CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
                 .npmConfigPrefix(home.resolve(".npm-global").toString()).build(), tmp);
 
+        assertEquals(CopilotRuntime.Status.REJECTED, lookup.status(), lookup.toString());
+    }
+
+    @Test
+    void theNpmGlobalPrefixIsAnInstallRootTheFenceLetsThrough() throws IOException {
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Path npm = executable(home.resolve(".npm-global/bin"));
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
+                .npmConfigPrefix(home.resolve(".npm-global").toString())
+                .installRoot(home.resolve(".npm-global")).build(), home);
+
         assertEquals(CopilotRuntime.Status.FOUND, lookup.status(), lookup.toString());
         assertEquals(npm, lookup.path());
+        assertEquals(CopilotRuntime.Source.NPM_GLOBAL, lookup.source());
+    }
+
+    @Test
+    void theHomebrewPrefixIsAnInstallRootTheFenceLetsThrough() throws IOException {
+        Path brew = caskInstall(tmp.resolve("brew"));
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
+                .homebrew(brew.getParent()).installRoot(tmp.resolve("brew")).build(), tmp);
+
+        assertEquals(CopilotRuntime.Status.FOUND, lookup.status(), lookup.toString());
+        assertEquals(brew, lookup.path());
+        assertEquals(CopilotRuntime.Source.HOMEBREW, lookup.source());
+    }
+
+    @Test
+    void anInstallRootCoversItsOwnFolderAndNotASiblingThatSharesItsName() throws IOException {
+        Path planted = executable(tmp.resolve("brewx/bin"));
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
+                .path(planted.getParent().toString()).installRoot(tmp.resolve("brew")).build(), tmp);
+
+        assertEquals(CopilotRuntime.Status.REJECTED, lookup.status(), lookup.toString());
+    }
+
+    @Test
+    void aLinkInAnInstallRootThatPointsOutOfItIntoTheWorkspaceIsStillFenced() throws IOException {
+        Path workspace = Files.createDirectories(tmp.resolve("workspace"));
+        Path planted = executable(workspace.resolve("tools"));
+        Path root = Files.createDirectories(workspace.resolve("brew"));
+        Path bin = Files.createDirectories(root.resolve("bin"));
+        Files.createSymbolicLink(bin.resolve("copilot"), planted);
+
+        CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
+                .homebrew(bin).installRoot(root).build(), workspace);
+
+        assertEquals(CopilotRuntime.Status.REJECTED, lookup.status(), lookup.toString());
+    }
+
+    @Test
+    void theInstallRootsAreTheFixedHomebrewPrefixesAndWhatBrewAndNpmName() {
+        Map<String, Optional<String>> answers = Map.of(
+                "brew --prefix", Optional.of("/opt/homebrew\n"),
+                "npm prefix -g", Optional.of("  /Users/someone/.npm-global  \n"));
+
+        List<String> roots = CopilotRuntime.installRoots(command -> answers.get(String.join(" ", command)));
+
+        assertEquals(List.of("/opt/homebrew", "/usr/local", "/Users/someone/.npm-global"), roots);
+    }
+
+    @Test
+    void anInstallRootCommandThatFailsOrPrintsNoAbsolutePathAddsNothing() {
+        List<String> roots = CopilotRuntime.installRoots(command ->
+                command.get(0).endsWith("brew") ? Optional.empty() : Optional.of("prefix not set"));
+
+        assertEquals(List.of("/opt/homebrew", "/usr/local"), roots);
     }
 
     @Test
@@ -226,15 +297,17 @@ class CopilotRuntimeTest {
     }
 
     @Test
-    void copilotCliPathInsideTheWorkspaceIsRejected() throws IOException {
+    void copilotCliPathIsAnInstallRootEvenInsideTheWorkspace() throws IOException {
+        // Final round, decision 4: the variable is the user's own choice and is on the allowlist.
         Path workspace = Files.createDirectories(tmp.resolve("workspace"));
-        Path planted = executable(workspace.resolve("bin"));
+        Path chosen = executable(workspace.resolve("bin"));
 
         CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()
-                .copilotCliPath(planted.toString()).build(), workspace);
+                .copilotCliPath(chosen.toString()).build(), workspace);
 
-        assertEquals(CopilotRuntime.Status.REJECTED, lookup.status(), lookup.toString());
-        assertTrue(lookup.detail().contains("workspace"), lookup.detail());
+        assertEquals(CopilotRuntime.Status.FOUND, lookup.status(), lookup.toString());
+        assertEquals(chosen, lookup.path());
+        assertEquals(CopilotRuntime.Source.COPILOT_CLI_PATH, lookup.source());
     }
 
     // not installed, and not supported

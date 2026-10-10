@@ -340,6 +340,16 @@
     "explanation" : "The SDK asks for a new token when this many seconds or fewer remain; the refresh happens at the same mark."
   },
   {
+    "owner" : "dev.spectroscope.core.copilot.CopilotRuntime",
+    "field" : "ROOT_COMMAND_TIMEOUT_S",
+    "value" : "5",
+    "expression" : "5",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long brew --prefix or npm prefix -g may take before it is given up."
+  },
+  {
     "owner" : "dev.spectroscope.core.copilot.GitHubDeviceFlow",
     "field" : "SLOW_DOWN_STEP_S",
     "value" : "5",

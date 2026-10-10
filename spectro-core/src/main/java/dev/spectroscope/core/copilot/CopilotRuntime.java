@@ -1,5 +1,6 @@
 package dev.spectroscope.core.copilot;
 
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.tools.ToolPath;
 
 import java.io.File;
@@ -57,10 +58,15 @@ import java.util.regex.Pattern;
  * <p>No candidate may resolve to a file inside the workspace folder, so an agent
  * that writes a program into its workspace cannot make the app run it. When the
  * only runtimes found lie there, the lookup answers {@link Status#REJECTED} and
- * names them. A workspace that is the home folder, or contains it, is not a
- * fence: the per-user install folders ({@code ~/.local/bin}, an npm prefix under
- * the home folder) lie inside it, and an agent that can write there can already
- * write the shell start files and launch agents the system runs.
+ * names them. The fence holds for every workspace, the home folder and the
+ * folders above it included. The exceptions are the known install roots
+ * ({@link #installRoots}): the Homebrew prefix ({@code brew --prefix},
+ * {@code /opt/homebrew} and {@code /usr/local}), the npm global prefix
+ * ({@code npm prefix -g}), and the file {@code COPILOT_CLI_PATH} names. A
+ * runtime whose real path lies in one of them is taken even when the workspace
+ * contains that root. A per-user install outside them, such as the install
+ * script's {@code ~/.local/bin}, is refused under a workspace that contains it;
+ * {@code COPILOT_CLI_PATH} takes it.
  *
  * <p>macOS only. On every other platform the lookup answers
  * {@link Status#UNSUPPORTED} without looking.
@@ -88,6 +94,13 @@ public final class CopilotRuntime {
 
     /** Homebrew's binary folders: Apple silicon first, then Intel. */
     public static final List<String> HOMEBREW_DIRS = List.of("/opt/homebrew/bin", "/usr/local/bin");
+
+    /** Homebrew's prefixes, the install roots that need no command: Apple silicon first, then Intel. */
+    public static final List<String> HOMEBREW_PREFIXES = List.of("/opt/homebrew", "/usr/local");
+
+    /** How long {@code brew --prefix} or {@code npm prefix -g} may take before it is given up. */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.SECONDS)
+    static final long ROOT_COMMAND_TIMEOUT_S = 5;
 
     /**
      * The three variables that override the runtime's stored GitHub login.
@@ -237,9 +250,11 @@ public final class CopilotRuntime {
      * @param inheritedPath   the inherited {@code PATH}, or null
      * @param home            the home folder
      * @param homebrewDirs    the Homebrew folders, in order
+     * @param installRoots    the install roots a runtime may come from even inside the workspace folder
      */
     public record Environment(String osName, String copilotCliPath, String npmConfigPrefix, Path npmrc,
-                              String inheritedPath, Path home, List<String> homebrewDirs) {
+                              String inheritedPath, Path home, List<String> homebrewDirs,
+                              List<String> installRoots) {
 
         /**
          * Copies {@code homebrewDirs}.
@@ -251,9 +266,11 @@ public final class CopilotRuntime {
          * @param inheritedPath   the inherited {@code PATH}, or null
          * @param home            the home folder
          * @param homebrewDirs    the Homebrew folders
+         * @param installRoots    the install roots
          */
         public Environment {
             homebrewDirs = List.copyOf(homebrewDirs);
+            installRoots = List.copyOf(installRoots);
         }
 
         /**
@@ -270,7 +287,8 @@ public final class CopilotRuntime {
                     home.isAbsolute() ? home.resolve(".npmrc") : null,
                     System.getenv("PATH"),
                     home,
-                    HOMEBREW_DIRS);
+                    HOMEBREW_DIRS,
+                    MachineRoots.ROOTS);
         }
 
         /**
@@ -292,6 +310,7 @@ public final class CopilotRuntime {
             private String path;
             private Path home = Path.of("");
             private final List<String> homebrewDirs = new ArrayList<>();
+            private final List<String> installRoots = new ArrayList<>();
 
             private Builder() {
             }
@@ -386,12 +405,24 @@ public final class CopilotRuntime {
             }
 
             /**
+             * Appends one install root.
+             *
+             * @param value the folder
+             * @return this builder
+             */
+            public Builder installRoot(Path value) {
+                installRoots.add(value.toString());
+                return this;
+            }
+
+            /**
              * Builds the inputs.
              *
              * @return the environment
              */
             public Environment build() {
-                return new Environment(osName, copilotCliPath, npmConfigPrefix, npmrc, path, home, homebrewDirs);
+                return new Environment(osName, copilotCliPath, npmConfigPrefix, npmrc, path, home, homebrewDirs,
+                        installRoots);
             }
         }
     }
@@ -429,14 +460,21 @@ public final class CopilotRuntime {
                     "not supported on this platform (macOS only)");
         }
         Path fence = realFolder(workspace);
-        Path home = realFolder(environment.home());
-        if (fence != null && home != null && home.startsWith(fence)) {
-            fence = null;
+        List<Path> roots = new ArrayList<>();
+        for (String root : environment.installRoots()) {
+            try {
+                Path real = realFolder(Path.of(root));
+                if (real != null) {
+                    roots.add(real);
+                }
+            } catch (InvalidPathException unparsable) {
+                // not a folder name
+            }
         }
 
         String chosen = environment.copilotCliPath();
         if (chosen != null && !chosen.isBlank()) {
-            return explicit(chosen.trim(), fence);
+            return explicit(chosen.trim());
         }
 
         Set<String> searched = new LinkedHashSet<>();
@@ -473,7 +511,7 @@ public final class CopilotRuntime {
             if (real.isEmpty()) {
                 continue;
             }
-            if (inside(real.get(), fence)) {
+            if (inside(real.get(), fence) && roots.stream().noneMatch(real.get()::startsWith)) {
                 fenced.add(file);
                 continue;
             }
@@ -574,10 +612,97 @@ public final class CopilotRuntime {
         }
     }
 
+    /**
+     * The install roots the workspace fence lets through: {@link #HOMEBREW_PREFIXES},
+     * then what {@code brew --prefix} and {@code npm prefix -g} print. A command
+     * that fails, or prints no absolute path, adds nothing.
+     *
+     * @param run runs a command, given as program name and arguments, and returns
+     *            its output, or empty when it could not run or failed
+     * @return the roots, without duplicates, in that order
+     */
+    public static List<String> installRoots(java.util.function.Function<List<String>, Optional<String>> run) {
+        List<String> roots = new ArrayList<>(HOMEBREW_PREFIXES);
+        for (List<String> command : List.of(List.of("brew", "--prefix"), List.of("npm", "prefix", "-g"))) {
+            Optional<String> printed = run.apply(command);
+            if (printed == null || printed.isEmpty()) {
+                continue;
+            }
+            String line = printed.get().strip();
+            try {
+                if (!line.isEmpty() && Path.of(line).isAbsolute() && !roots.contains(line)) {
+                    roots.add(line);
+                }
+            } catch (InvalidPathException unparsable) {
+                // not a folder name
+            }
+        }
+        return List.copyOf(roots);
+    }
+
+    /** The install roots of this machine, asked once per process. */
+    private static final class MachineRoots {
+        static final List<String> ROOTS = installRoots(CopilotRuntime::runForRoot);
+    }
+
+    /**
+     * Runs {@code brew} or {@code npm} for {@link #installRoots}: brew from the
+     * Homebrew folders, npm through the tool shell's {@code PATH}, because an
+     * app started from Finder has neither on its own {@code PATH}.
+     */
+    private static Optional<String> runForRoot(List<String> command) {
+        Path home = Path.of(System.getProperty("user.home", ""));
+        String program = null;
+        if ("brew".equals(command.get(0))) {
+            for (String dir : HOMEBREW_DIRS) {
+                if (Files.isExecutable(Path.of(dir, "brew"))) {
+                    program = Path.of(dir, "brew").toString();
+                    break;
+                }
+            }
+        }
+        if (program == null) {
+            program = ToolPath.locate(command.get(0), System.getenv("PATH"), home, ToolPath.TOOLCHAIN_DIRS).found();
+        }
+        if (program == null) {
+            return Optional.empty();
+        }
+        List<String> line = new ArrayList<>(command);
+        line.set(0, program);
+        Process process;
+        try {
+            ProcessBuilder builder = new ProcessBuilder(line)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
+            builder.environment().put("PATH", ToolPath.locate(command.get(0), System.getenv("PATH"), home,
+                    ToolPath.TOOLCHAIN_DIRS).searched().stream().reduce((a, b) -> a + File.pathSeparator + b)
+                    .orElse(""));
+            process = builder.start();
+        } catch (IOException | RuntimeException notStartable) {
+            return Optional.empty();
+        }
+        CompletableFuture<String> output = CompletableFuture.supplyAsync(() -> read(process.getInputStream()));
+        try {
+            if (!process.waitFor(ROOT_COMMAND_TIMEOUT_S, TimeUnit.SECONDS) || process.exitValue() != 0) {
+                return Optional.empty();
+            }
+            return Optional.of(output.get(1, TimeUnit.SECONDS));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+        } catch (Exception unreadable) {
+            return Optional.empty();
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
+
     private record Candidate(String folder, Source source) {
     }
 
-    private static Lookup explicit(String chosen, Path fence) {
+    /** The file {@code COPILOT_CLI_PATH} names is an install root of its own: no fence applies to it. */
+    private static Lookup explicit(String chosen) {
         String prefix = CLI_PATH_VARIABLE + " is " + chosen + ", ";
         Path file;
         try {
@@ -594,9 +719,6 @@ public final class CopilotRuntime {
         Optional<Path> real = realPath(file);
         if (real.isEmpty()) {
             return rejected(prefix + "which cannot be resolved");
-        }
-        if (inside(real.get(), fence)) {
-            return rejected(prefix + "which lies inside the workspace folder");
         }
         return new Lookup(Status.FOUND, file, Source.COPILOT_CLI_PATH, List.of(),
                 "found at " + file + " (" + Source.COPILOT_CLI_PATH.label() + ")");
