@@ -23,33 +23,60 @@ function levelingIn(mode: LevelingSnapshot["mode"]): LevelingSnapshot {
 }
 
 describe("the surface table (criterion 2)", () => {
-  it("answers the card's table, row by row, in both modes", () => {
+  it("answers the card's table, row by row, in all three modes", () => {
     // The card's table, 2026-09-25, plus the owner's decision of 17:25 that
     // the tab row itself is a surface that light shows only with the tutorial on.
-    const card: Record<SurfaceId, [string, string]> = {
-      tabRow: ["open", "tutorial"],
-      chat: ["open", "open"],
-      spectrum: ["open", "gone"],
-      trace: ["open", "gone"],
-      graph: ["open", "gone"],
-      text: ["open", "gone"],
-      lab: ["open", "gone"],
-      newChat: ["open", "open"],
-      scenarios: ["open", "open"],
-      starters: ["open", "open"],
-      skills: ["open", "open"],
-      sessions: ["open", "open"],
-      fleets: ["open", "gone"],
-      stategraph: ["open", "gone"],
-      dock: ["open", "open"],
-      leveling: ["open", "tutorial"],
-      liveTraceSwitch: ["open", "gone"],
-      fleetSettings: ["open", "gone"],
+    // Card 481: developer opens what learn opens, closes the tutorial the way
+    // light does for the level pill, and adds the playbook module.
+    const card: Record<SurfaceId, [string, string, string]> = {
+      tabRow: ["open", "tutorial", "open"],
+      chat: ["open", "open", "open"],
+      spectrum: ["open", "gone", "open"],
+      trace: ["open", "gone", "open"],
+      graph: ["open", "gone", "open"],
+      text: ["open", "gone", "open"],
+      lab: ["open", "gone", "open"],
+      newChat: ["open", "open", "open"],
+      scenarios: ["open", "open", "open"],
+      starters: ["open", "open", "open"],
+      skills: ["open", "open", "open"],
+      sessions: ["open", "open", "open"],
+      fleets: ["open", "gone", "open"],
+      stategraph: ["open", "gone", "open"],
+      playbook: ["gone", "gone", "open"],
+      dock: ["open", "open", "open"],
+      leveling: ["open", "tutorial", "tutorial"],
+      liveTraceSwitch: ["open", "gone", "open"],
+      fleetSettings: ["open", "gone", "open"],
     };
     expect(Object.keys(SURFACES).sort()).toEqual(Object.keys(card).sort());
-    for (const [id, [learn, light]] of Object.entries(card) as [SurfaceId, [string, string]][]) {
-      expect(SURFACES[id].modes, id).toEqual({ learn, light });
+    for (const [id, [learn, light, developer]] of Object.entries(card) as [
+      SurfaceId,
+      [string, string, string],
+    ][]) {
+      expect(SURFACES[id].modes, id).toEqual({ learn, light, developer });
     }
+  });
+
+  it("opens the playbook in developer and nowhere else, in its own chunk", () => {
+    expect(isOpen("playbook", "developer")).toBe(true);
+    expect(isOpen("playbook", "learn")).toBe(false);
+    expect(isOpen("playbook", "light")).toBe(false);
+    expect(isOpen("playbook", "learn", true)).toBe(false);
+    // Card 484: the Spectrolyzr wizard is the pane's second chunk.
+    expect(SURFACES.playbook.chunks).toEqual([
+      "playbook/PlaybookPane.tsx",
+      "playbook/spectrolyzr/SpectrolyzrWizard.tsx",
+    ]);
+  });
+
+  it("opens in developer every surface learn opens, except the level pill, which follows the tutorial", () => {
+    for (const id of Object.keys(SURFACES) as SurfaceId[]) {
+      if (SURFACES[id].modes.learn !== "open") continue;
+      expect(isOpen(id, "developer", false), id).toBe(id !== "leveling");
+    }
+    expect(isOpen("leveling", "developer", false)).toBe(false);
+    expect(isOpen("leveling", "developer", true)).toBe(true);
   });
 
   it("holds every view tab", () => {
@@ -88,6 +115,11 @@ describe("the tab row", () => {
   it("shows the six tabs in learn, in route order", () => {
     expect(tabsShown("learn", false)).toEqual([...VIEW_TABS]);
     expect(tabsShown("learn", true)).toEqual([...VIEW_TABS]);
+  });
+
+  it("shows the six tabs in developer, with the tutorial off as with it on", () => {
+    expect(tabsShown("developer", false)).toEqual([...VIEW_TABS]);
+    expect(tabsShown("developer", true)).toEqual([...VIEW_TABS]);
   });
 
   it("is gone in light with the tutorial off, and holds the chat alone with it on", () => {

@@ -1,0 +1,25 @@
+# @@name@@
+
+An HTTP service with one route, `GET /health`, which answers `{"status":"ok"}`. Every other request answers 404.
+
+## Build
+
+```
+gradle build
+```
+
+Gradle and a JDK 21 are needed. The project has no Gradle wrapper. Run `gradle wrapper` once if you want one.
+
+## Test
+
+```
+@@test_command@@
+```
+
+## Run
+
+```
+gradle run
+```
+
+The service listens on the port in the `PORT` environment variable and on 8080 when it is not set.

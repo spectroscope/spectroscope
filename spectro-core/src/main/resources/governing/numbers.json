@@ -17,7 +17,7 @@
     "kind" : "LOOKS_SETTABLE",
     "unit" : "TOKENS",
     "key" : "",
-    "explanation" : "The completion budget one turn spends when nothing configures it. Public because CompactionThreshold is defined AGAINST it (card 263): the share of the context window kept back has to hold one of these, and a second copy of the number in the derivation would drift the day this one moves."
+    "explanation" : "The completion budget one turn spends when nothing configures it, before the window clamp of card 488 (CompactionThreshold.completionBudget). Public because CompactionThreshold is defined AGAINST it (card 263): the share of the context window kept back has to hold one of these, and a second copy of the number in the derivation would drift the day this one moves."
   },
   {
     "owner" : "dev.spectroscope.core.Agent",
@@ -150,6 +150,26 @@
     "explanation" : "The cap ClaudeTranscriptsController refuses transcripts above, mirrored here because line() reports it at boot and core cannot see into the server module to read it. It is reported, not computed with: floorBytes() ignores it, and this mirror once justified itself by saying the floor was a function of it, which was true of the read that held the file in heap and false from the moment that read was streamed. The mirror is not on trust: HeapFlagDriftTest reads the controller's source and fails when the two drift apart."
   },
   {
+    "owner" : "dev.spectroscope.core.config.LocalMode",
+    "field" : "PRESET_READ_SHARE_PERCENT",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "UNEXAMINED",
+    "unit" : "PERCENT",
+    "key" : "",
+    "explanation" : "The read share Local mode writes, in per cent. A proposal: nobody has measured it. The measurement the concept names is whole reads refused, paged reads, extra turns and wall clock on card 486's task set at 10 and at 25 per cent."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.LocalMode",
+    "field" : "PRESET_SESSIONS_PER_CHAT",
+    "value" : "3",
+    "expression" : "SpectroConfig.DEFAULT_SESSIONS_PER_CHAT",
+    "kind" : "ALIAS",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The session count Local mode writes: the default count of card 490, the main agent and two helpers, the owner's figure."
+  },
+  {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_CHAT_RESERVE_WIDTH",
     "value" : "360",
@@ -271,6 +291,26 @@
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_READ_SHARE_PERCENT",
+    "value" : "25",
+    "expression" : "dev.spectroscope.core.tools.ReadBudget.WINDOW_SHARE_PERCENT",
+    "kind" : "ALIAS",
+    "unit" : "PERCENT",
+    "key" : "",
+    "explanation" : "The shipped readSharePercent (card 493): the value of ReadBudget.WINDOW_SHARE_PERCENT, read from it so the two cannot disagree."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_SESSIONS_PER_CHAT",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "SETTABLE",
+    "unit" : "COUNT",
+    "key" : "sessionsPerChat",
+    "explanation" : "The default session count for a chat (card 490): three, the main agent and two helpers. It is the owner's figure of 2026-10-09 (konzept/RUN-PROFILES.md, Sessions of one chat), not a measurement; the concurrency of one chat on the house node is measured by card 487. Every other number that stands for it is an alias of this one: the count the Local mode switch of the composer gear writes for one chat (LocalMode.PRESET_SESSIONS_PER_CHAT, card 493) and the helpers the care paragraph names while the key is unset (this number minus one, CareParagraph.helpersFor).\n\nThe key itself ships unset, because a chat with the Local mode switch off sends the v0.14.4 request byte for byte (card 493, criterion 6): no limit per chat, no sentence about the count in the spawn tools, and one spawn_agents call starting up to SubagentManager.MAX_PARALLEL_CHILDREN helpers. A chat has a count when the switch writes this default or a settings file sets the key. The floor is 2, in SettingFloors: a count of 1 would be a second way to say \"no helpers\", which the agents tool group already says."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_SUBAGENT_BUDGET_SECONDS",
     "value" : "7200",
     "expression" : "7200",
@@ -288,6 +328,96 @@
     "unit" : "TOKENS",
     "key" : "subagentBudgetTokens",
     "explanation" : "The shipped subagentBudgetTokens: the spend, input plus output as its usage events report them, past which the harness cuts one child agent at its next turn. Ten million.\n\nCard 394. On 2026-09-23 four GLM children on Ollama spent 17,423,655 input tokens in about 340 s and handed back nothing; the 300 s wall clock of that release was the only thing that ended them, and card 372 has since raised that clock to two hours. The owner's words of 2026-09-24: the smaller agents must be able to work, and a middle ground has to be found.\n\nDATED SNAPSHOT, 2026-09-25, from outside this repo. Length: over 8,963 Claude Code subagent transcripts on the owner's machine a subagent makes a median of 16 round trips, p95 110, p99 173. Growth: the four children of 2026-09-23 added 480 to 1,217 input tokens of context per round trip (least-squares slope per child). Extended past their 340 s, those four lines reach ten million after 119, 140, 180 and 198 round trips, all above the p95 length; at the average rate each child showed over its 340 s, extended the same way, each would have reached it 491 to 1,165 s into its run instead of running for two hours. Both are extrapolations, not measurements. What the number does not do: four children of one spawn_agents call can still spend forty million together. The scripts and their output are in kanban/evidence/394/loop/ in the product home.\n\nCache reads and cache writes are reported apart and are not counted, as the child's running sum never counted them. A backend without a prompt cache reports the whole resent conversation as input, which is where the budget binds. No upper bound is enforced, for the reason DEFAULT_COMMAND_TIMEOUT_SECONDS gives."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "CLI_CACHE_MS",
+    "value" : "30000",
+    "expression" : "30_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a runtime's answer about the CLI sign-in is reused before it is asked again."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "CLI_POLL_S",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How often the CLI's device flow asks the runtime whether the browser confirmed the code (card 495, final round). Each ask starts a runtime for a moment, so the pace is a little slower than GitHub's own five second device-flow interval would allow."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "CLI_PROMPT_TIMEOUT_S",
+    "value" : "30",
+    "expression" : "30",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long to wait for copilot login to print its code."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "DEFAULT_CODE_LIFETIME_S",
+    "value" : "900",
+    "expression" : "900",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "GitHub's default code lifetime, used for the CLI's flow, which prints none."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "NO_EXPIRY_LIFETIME_S",
+    "value" : "28800",
+    "expression" : "8 * 60 * 60",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The lifetime reported for a token that does not expire; the SDK docs name eight hours as the common value."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "REFRESH_MARGIN_S",
+    "value" : "3600",
+    "expression" : "60 * 60",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The SDK asks for a new token when this many seconds or fewer remain; the refresh happens at the same mark."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotRuntime",
+    "field" : "ROOT_COMMAND_TIMEOUT_S",
+    "value" : "5",
+    "expression" : "5",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long brew --prefix or npm prefix -g may take before it is given up."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.GitHubDeviceFlow",
+    "field" : "SLOW_DOWN_STEP_S",
+    "value" : "5",
+    "expression" : "5",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "GitHub adds five seconds to the interval on every slow_down."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.GitHubDeviceFlow",
+    "field" : "TIMEOUT",
+    "value" : "30",
+    "expression" : "Duration.ofSeconds(30)",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long one request to GitHub may take, connecting included, before the sign-in reports it unreachable."
   },
   {
     "owner" : "dev.spectroscope.core.goal.CommandGoalCheck",
@@ -427,7 +557,7 @@
     "kind" : "ALIAS",
     "unit" : "CHARACTERS",
     "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
+    "explanation" : "The capture bound on a hook's output, the upper bound of the shared clamp, read from ToolOutput rather than kept as a second copy of the same number. A block reason is clamped to the window afterwards (card 489)."
   },
   {
     "owner" : "dev.spectroscope.core.image.ImageDownscaler",
@@ -760,6 +890,36 @@
     "explanation" : "The separator between the tool segment and the tier qualifier."
   },
   {
+    "owner" : "dev.spectroscope.core.playbook.run.CommandCheck",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "4000",
+    "expression" : "4000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How many characters of a check line's output are kept, the tail, for the sidecar and the failure text."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.CommandCheck",
+    "field" : "TIMEOUT_SECONDS",
+    "value" : "900",
+    "expression" : "900",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The wall clock budget of one check line, in seconds."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.PlaybookRecorder",
+    "field" : "DEFAULT_CEILING_BYTES",
+    "value" : "16777216",
+    "expression" : "16L * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The size at which the sidecar stops growing and writes one truncation line."
+  },
+  {
     "owner" : "dev.spectroscope.core.progress.ProgressGuard",
     "field" : "MAX_PATH_LIST_CHARS",
     "value" : "160",
@@ -801,6 +961,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.provider.AnthropicProvider",
+    "field" : "MIN_THINKING_BUDGET",
+    "value" : "1024",
+    "expression" : "1_024",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The smallest budget_tokens the Messages API accepts on the families that take a token budget (card 488 review). A budget below it is refused, so a request that cannot fit it goes out without thinking."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.AnthropicProvider",
     "field" : "THINKING_BUDGET",
     "value" : "2048",
     "expression" : "2048",
@@ -808,6 +978,86 @@
     "unit" : "TOKENS",
     "key" : "",
     "explanation" : "A modest reasoning budget, capped so maxTokens always stays strictly larger."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "ABORT_SETTLE_MS",
+    "value" : "5000",
+    "expression" : "5_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a cancelled turn waits for the runtime's idle before it returns. Card 478 measured the idle 9 ms after abort; this is a ceiling, not that."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "CALL_TIMEOUT_S",
+    "value" : "60",
+    "expression" : "60",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long one request to the runtime may take before the stream fails."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "MAX_CONVERSATIONS",
+    "value" : "8",
+    "expression" : "8",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Runtime sessions kept open at once; the least recently used idle one closes first. Nobody has measured how many sessions one runtime holds well."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "MODELS_RETRY_AFTER_MS",
+    "value" : "60000",
+    "expression" : "60_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "After a failed model list, how long vision(), contextWindow() and reasoningCapability() answer \"unknown\" without asking again. Each attempt can wait for a runtime start; the getters are asked before every request."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "NANO_PER_CREDIT",
+    "value" : "1.0E9",
+    "expression" : "1e9",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "Nano-AI units in one AI credit: the SDK's usage-and-billing page (read 2026-10-10)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "PING_TIMEOUT_MS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "A ping slower than this counts as a busy runtime, not a dead one."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "PROBE_AFTER_MS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "A silence this long during a stream makes the provider ping the runtime, which is how a runtime that died is told from a model that is thinking."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "START_TIMEOUT_S",
+    "value" : "60",
+    "expression" : "60",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long the runtime may take to start. Card 478 measured 574 and 752 ms."
   },
   {
     "owner" : "dev.spectroscope.core.provider.ExchangeLatency",
@@ -828,6 +1078,16 @@
     "unit" : "TOKENS",
     "key" : "",
     "explanation" : "The largest completion cap this provider ever sends. The harness default (32k) suits Anthropic and local servers, but api.openai.com enforces PER-MODEL caps and rejects a too-large value with HTTP 400 — the smallest cap among current chat models is gpt-4o-mini's 16384, so 16000 is the safe ceiling for everything the picker offers."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CareParagraph",
+    "field" : "DEFAULT_HELPERS",
+    "value" : "2",
+    "expression" : "SpectroConfig.DEFAULT_SESSIONS_PER_CHAT - 1",
+    "kind" : "ALIAS",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The helpers an agent's paragraph names until a face hands it a count through helpersFor: the default session count of a chat (SpectroConfig.DEFAULT_SESSIONS_PER_CHAT) minus the main agent's own session, read from that one constant."
   },
   {
     "owner" : "dev.spectroscope.core.session.Compaction",
@@ -861,13 +1121,43 @@
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
-    "field" : "MIN_SUMMARY_TOKENS",
+    "field" : "IMAGE_TOKENS",
+    "value" : "4784",
+    "expression" : "4_784",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "What one image adds to a request's input estimate, whatever its size in bytes: the most one image costs on any Claude model (the high-resolution tier, 2,576 px on the long edge), from Anthropic's vision documentation, read on 2026-10-10. A backend counts an image by its pixels after its own resizing; counting its base64 characters over four made one 1 MB screenshot read as 349,526 tokens."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "INPUT_RESERVE_TOKENS",
+    "value" : "256",
+    "expression" : "256",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "What the input bound of completionBudget(Derived, int, int) keeps back beyond the estimated input (card 488): the tokens a backend counts and the character estimate does not see, such as the chat template's role markers, the wrapping of each tool definition and the JSON framing. Measured on 2026-10-10 as the backend's count minus the harness's chars/4 estimate: at most 16 on the scripted wire run, and 98 with one tool and 133 with the nine standard tools on the first request of a live Ollama run with qwen2.5:7b, before the backend's own count of an earlier request can raise the estimate."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "MIN_COMPLETION_TOKENS",
     "value" : "512",
     "expression" : "512",
     "kind" : "FIXED",
     "unit" : "TOKENS",
     "key" : "",
-    "explanation" : "The smallest completion a summary can plausibly be written in. A window so small that its reserve is under this has bigger problems than the summarizer; asking for zero tokens would just fail the call."
+    "explanation" : "The smallest completion budget a request is sent with when its window leaves less than this, for a turn and for the summarizer alike (card 488): a window of 1,703 tokens or less, or a turn whose input leaves less than this of the window. Asking for zero tokens would just fail the call."
+  },
+  {
+    "owner" : "dev.spectroscope.core.session.CompactionThreshold",
+    "field" : "PDF_PAGE_TEXT_TOKENS",
+    "value" : "3000",
+    "expression" : "3_000",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The text one PDF page adds to a request's input estimate, on top of IMAGE_TOKENS for the image of the page: the upper end of the 1,500 to 3,000 a page in Anthropic's PDF support documentation, read on 2026-10-10."
   },
   {
     "owner" : "dev.spectroscope.core.session.CompactionThreshold",
@@ -1000,6 +1290,16 @@
     "explanation" : "Card 395: the most bytes the text of one merged delta may take once it is written as JSON (UTF-8, with the escapes JSON needs). The session file writes each line through Files.write, which hands the bytes over in chunks of 8,192, and a second writer landing between two chunks tears the line (card 406; measured on 2026-09-24 with a 12,000-character merged line). This budget leaves 512 bytes for the rest of the line, so a merge never builds a line of that size. A single delta that is larger already is handed out as it came."
   },
   {
+    "owner" : "dev.spectroscope.core.subagents.SessionSlots",
+    "field" : "RECHECK_MS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How often a waiting helper reads the chat's count again when nothing else wakes it: half a second. A finished helper and a cancelled run wake the waiters at once; this interval only bounds how late a RAISED count reaches them, because the setter lives on the parent agent and does not know the pool. Half a second against helpers whose first exchange is measured in tens of seconds on a local model."
+  },
+  {
     "owner" : "dev.spectroscope.core.subagents.SubagentManager",
     "field" : "MAX_PARALLEL_CHILDREN",
     "value" : "4",
@@ -1007,7 +1307,7 @@
     "kind" : "UNEXAMINED",
     "unit" : "COUNT",
     "key" : "",
-    "explanation" : "How many children one spawn_agents call may start at once.\n\nUnchanged by card 270, deliberately: nobody has measured whether the house test backend serves four concurrent completions usefully, and konzept/ORCHESTRATION.md §7 leaves the width an open owner call until someone does. It moves when a number says so, with the number."
+    "explanation" : "How many children one spawn_agents call may start at once.\n\nUnchanged by card 270, deliberately: nobody has measured whether the house test backend serves four concurrent completions usefully, and konzept/ORCHESTRATION.md §7 leaves the width an open owner call until someone does. It moves when a number says so, with the number.\n\nCard 490 left it where it is and made it the width of a chat with no session count. A chat with a count reads SessionCount: its batch width never drops below this constant, and how many of a batch run at once is the chat's count minus the main agent."
   },
   {
     "owner" : "dev.spectroscope.core.tools.AskUserQuestionTool",
@@ -1104,10 +1404,10 @@
     "field" : "WINDOW_SHARE_PERCENT",
     "value" : "25",
     "expression" : "25",
-    "kind" : "FIXED",
+    "kind" : "SETTABLE",
     "unit" : "PERCENT",
-    "key" : "",
-    "explanation" : "The share of the context window one whole-file read may take, in per cent.\n\nCompaction trips at 70 % of the window (CompactionThreshold). A read of a quarter leaves 45 of those 70 points for the system prompt, the tool definitions and the rest of the conversation. A share near 70 % would let one read trip compaction on the next turn, and the summary would fold away the file the model had just asked for. On the owner's loaded window of 250,368 tokens a quarter is 62,592 tokens, about 187 kB."
+    "key" : "readSharePercent",
+    "explanation" : "The share of the context window one whole-file read may take, in per cent.\n\nCompaction trips at 70 % of the window (CompactionThreshold). A read of a quarter leaves 45 of those 70 points for the system prompt, the tool definitions and the rest of the conversation. A share near 70 % would let one read trip compaction on the next turn, and the summary would fold away the file the model had just asked for. On the owner's loaded window of 250,368 tokens a quarter is 62,592 tokens, about 187 kB.\n\nCard 493 made it the shipped value of the key readSharePercent: a run reads its share once when it starts, and the overloads below that take a share judge with it. A share of 0 or less means the run names none, and this value applies."
   },
   {
     "owner" : "dev.spectroscope.core.tools.RtkFilter",
@@ -1201,16 +1501,6 @@
   },
   {
     "owner" : "dev.spectroscope.core.tools.StandardTools",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
-  },
-  {
-    "owner" : "dev.spectroscope.core.tools.StandardTools",
     "field" : "MAX_SOURCE_IMAGE_BYTES",
     "value" : "52428800",
     "expression" : "50L * 1024 * 1024",
@@ -1237,7 +1527,7 @@
     "kind" : "FIXED",
     "unit" : "CHARACTERS",
     "key" : "",
-    "explanation" : "The output clamp every tool/hook result shares."
+    "explanation" : "The upper bound of the clamp on one tool or hook result, in characters.\n\nA tool result takes its clamp from maxOutputChars(int), which lowers this value on a small window (card 489). So does the reason of a blocking hook, which enters the same request. A hook's output is captured at this value before that."
   },
   {
     "owner" : "dev.spectroscope.core.tools.UpdatePlanTool",
@@ -1258,16 +1548,6 @@
     "unit" : "COUNT",
     "key" : "",
     "explanation" : "A rejection is quoted back into the model's context, and every key in it is model-supplied: without these bounds one confused step could carry a megabyte of prose as a key name and the tool result would carry it right back."
-  },
-  {
-    "owner" : "dev.spectroscope.core.tools.WebFetchTool",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
   },
   {
     "owner" : "dev.spectroscope.core.tools.WebFetchTool",
@@ -1348,16 +1628,6 @@
     "unit" : "MILLISECONDS",
     "key" : "",
     "explanation" : "Virtual time granted to page JavaScript (ms) — this is what makes SPAs render."
-  },
-  {
-    "owner" : "dev.spectroscope.core.web.BrowsePageTool",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
   },
   {
     "owner" : "dev.spectroscope.core.web.BrowsePageTool",
@@ -1458,16 +1728,6 @@
     "unit" : "COUNT",
     "key" : "",
     "explanation" : "Hard ceiling on hits per search — more is noise in the context window."
-  },
-  {
-    "owner" : "dev.spectroscope.core.web.WebSearchTool",
-    "field" : "MAX_OUTPUT_CHARS",
-    "value" : "10000",
-    "expression" : "ToolOutput.MAX_OUTPUT_CHARS",
-    "kind" : "ALIAS",
-    "unit" : "CHARACTERS",
-    "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
   },
   {
     "owner" : "dev.spectroscope.core.wire.BrowserWireRecorder",

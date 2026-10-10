@@ -1,8 +1,8 @@
-// Card 430: the header's switch between learn and light. A radio group of two:
-// Tab reaches the checked one, an arrow moves to the other and chooses it, and
-// Enter or Space chooses the one that has the focus. The words are the mode
-// words in both languages (owner call 2); the tooltip in the reader's language
-// says what light turns off.
+// Card 430: the header's switch between the modes (card 481 adds developer as
+// the third). A radio group: Tab reaches the checked one, an arrow moves to the
+// next or previous one and chooses it, and Enter or Space chooses the one that
+// has the focus. The words are the mode words in both languages (owner call 2);
+// the tooltip in the reader's language says what the mode shows or turns off.
 
 import { useRef } from "react";
 import { t } from "../i18n/i18n";
@@ -11,8 +11,9 @@ import { VIEW_MODES, setViewMode, useViewMode, type ViewMode } from "../state/vi
 
 /**
  * The mode a key chooses on a focused radio, or null for a key the switch
- * leaves alone. Any arrow moves to the other of the two, wrapping at both ends
- * as a radio group does; Enter and Space choose the focused one.
+ * leaves alone. Right and Down move to the next mode of VIEW_MODES, Left and Up
+ * to the previous one, wrapping at both ends as a radio group does; Enter and
+ * Space choose the focused one.
  *
  * @param key     the key's `KeyboardEvent.key`
  * @param focused the mode of the radio that has the focus
@@ -44,7 +45,7 @@ export function ModeSwitch() {
           aria-checked={mode === option}
           tabIndex={mode === option ? 0 : -1}
           className={`mode-switch__option mono${mode === option ? " mode-switch__option--on" : ""}`}
-          title={t(lang, option === "light" ? "hdr.mode.lightTitle" : "hdr.mode.learnTitle")}
+          title={t(lang, `hdr.mode.${option}Title`)}
           onClick={() => setViewMode(option)}
           onKeyDown={(e) => {
             const next = modeForKey(e.key, option);
@@ -54,7 +55,7 @@ export function ModeSwitch() {
             buttons.current[next]?.focus();
           }}
         >
-          {t(lang, option === "light" ? "hdr.mode.light" : "hdr.mode.learn")}
+          {t(lang, `hdr.mode.${option}`)}
         </button>
       ))}
     </div>

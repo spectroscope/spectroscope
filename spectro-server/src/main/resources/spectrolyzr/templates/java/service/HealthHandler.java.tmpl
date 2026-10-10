@@ -1,0 +1,25 @@
+package @@java_package@@;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
+public final class HealthHandler implements HttpHandler {
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        boolean health = "GET".equals(exchange.getRequestMethod())
+                && "/health".equals(exchange.getRequestURI().getPath());
+        int status = health ? 200 : 404;
+        String body = health ? "{\"status\":\"ok\"}" : "{\"error\":\"not found\"}";
+        byte[] payload = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, payload.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(payload);
+        }
+    }
+}

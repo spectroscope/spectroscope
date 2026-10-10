@@ -125,6 +125,16 @@ const GROUPS: Group[] = [
       { keys: ["r"], icon: "reset", label: { en: "reset to the start", de: "zurück zum start" } },
     ],
   },
+  // Card 483: the playbook editor's keys. Undo and redo pause while a text
+  // field has the focus; delete is React Flow's own key on the canvas.
+  {
+    title: { en: "the playbook editor", de: "der playbook-editor" },
+    rows: [
+      { keys: ["⌘", "Z"], icon: "back", label: { en: "undo", de: "rückgängig" } },
+      { keys: ["⌘", "⇧", "Z"], icon: "step", label: { en: "redo", de: "wiederholen" } },
+      { keys: ["⌫", "⌦"], icon: "close", label: { en: "delete the selection", de: "auswahl löschen" } },
+    ],
+  },
 ];
 
 export function Keymap(props: { open: boolean; onClose: () => void }) {

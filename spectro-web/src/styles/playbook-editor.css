@@ -1,0 +1,443 @@
+/* ============================================================ playbook editor
+   The canvas of the playbook editor (card 483): playbook/editor/EditorCanvas.tsx,
+   nodes.tsx and ArrowEdge.tsx. Imported by app.css, because a surface chunk may
+   carry no stylesheet of its own (surfaceChunks.guard.test.ts).
+
+   Tokens only. A selected box or arrow gets an outline or a stroke in the
+   accent, never a wider border: a border change resizes the box and walks it
+   out from under the routed arrows (stategraph.css says the same of .sg-card). */
+
+.pbe {
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+  /* The quiet tiers carry facts here (a step's model choice, a ghost's reason),
+     so they are floored as the state graph floors them;
+     quietTiersFloor.drift.test.ts resolves this arithmetic for every design. */
+  --text-faint: color-mix(in srgb, var(--text) 62%, var(--bg));
+  --text-dim: color-mix(in srgb, var(--text) 78%, var(--bg));
+}
+
+.pbe-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ---------- boxes ---------- */
+.pbe-node {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 var(--sp-2);
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.pbe-node--step {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+}
+.pbe-node--end,
+.pbe-node--start {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.pbe-node--ghost {
+  align-items: center;
+  background: var(--error-soft);
+  border: 1px dashed var(--error);
+  border-radius: var(--radius-card);
+}
+.pbe-node--decision {
+  align-items: center;
+  padding: 0;
+}
+.pbe-diamond {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.pbe-diamond polygon {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.pbe-decision-text {
+  position: relative;
+  max-width: 70%;
+  text-align: center;
+}
+.pbe-node.is-selected {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.pbe-node--decision.is-selected {
+  outline: none;
+}
+.pbe-node--decision.is-selected .pbe-diamond polygon {
+  stroke: var(--accent);
+}
+
+.pbe-name {
+  overflow: hidden;
+  font-size: var(--fs-12);
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.pbe-meta {
+  overflow: hidden;
+  font-size: var(--fs-11);
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+.pbe-node--ghost .pbe-meta {
+  color: var(--error);
+}
+
+/* ---------- handles ---------- */
+/* The drop target covers the box so a drag lands anywhere on it. It sits
+   under the visible handles and takes no part in starting a drag. */
+.pbe .react-flow__handle.pbe-drop {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  transform: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  opacity: 0;
+}
+.pbe .react-flow__handle.pbe-out {
+  width: 9px;
+  height: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  z-index: 1;
+}
+.pbe .react-flow__handle.pbe-out:hover,
+.pbe .react-flow__handle.pbe-out.connectingfrom {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- arrows ---------- */
+.pbe .react-flow__edge-path.pbe-arrow {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.25;
+}
+.pbe .react-flow__edge-path.pbe-arrow--back {
+  stroke: var(--sand);
+}
+.pbe .react-flow__edge-path.pbe-arrow--dangling {
+  stroke: var(--error);
+  stroke-dasharray: 4 3;
+}
+.pbe .react-flow__edge-path.pbe-arrow.is-selected {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.pbe-arrowhead {
+  fill: var(--border-strong);
+}
+
+.pbe-label {
+  position: absolute;
+  padding: 0 var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  pointer-events: none;
+}
+.pbe-label.is-selected {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.pbe-label--dangling {
+  border-color: var(--error);
+}
+
+/* ---------- controls ---------- */
+.pbe-fit {
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.pbe-fit:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* ---------- panels ---------- */
+/* The side panels (playbook/editor/panels). Tokens only; a field is a label
+   over a control, a list field is a fieldset. */
+.pbe-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  color: var(--text);
+  font-size: var(--fs-12);
+}
+.pbe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.pbe-field-label {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pbe-input {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+}
+.pbe-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.pbe-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pbe-mono {
+  font-family: var(--font-mono);
+}
+.pbe-note {
+  margin: 0;
+  color: var(--text-dim);
+}
+.pbe-empty {
+  margin: 0;
+  color: var(--text-dim);
+}
+.pbe-warn {
+  margin: 0;
+  color: var(--error);
+}
+.pbe-btn {
+  align-self: flex-start;
+  font: inherit;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.pbe-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.pbe-link {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.pbe-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.pbe-outcome,
+.pbe-addrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.pbe-readonly {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+.pbe-readonly ul {
+  margin: 0;
+  padding-left: var(--sp-3);
+}
+.pbe-findings {
+  padding: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pbe-findings-title {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.pbe-findings ul {
+  margin: 0;
+  padding-left: var(--sp-3);
+}
+.pbe-panels {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pbe-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.pbe-tab {
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.pbe-tab.is-active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ---------- pane and toolbar (Task 11) ---------- */
+.pbe-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.pbe-bar:empty {
+  display: none;
+}
+.pb-pane .pbe-edit {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pbe-note-line,
+.pbe-notice {
+  margin: 0;
+  max-width: 64ch;
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text);
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-2);
+}
+.pbe-notice {
+  margin-bottom: var(--sp-2);
+}
+.pb-pane button:disabled,
+.pb-pane input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pb-pane button:disabled:hover {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.pbe-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+.pbe-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.pbe-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.pb-pane .pbe-btn--primary {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pbe-state {
+  margin-left: auto;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pbe-state--refused,
+.pbe-state--changed,
+.pbe-state--failed {
+  color: var(--text);
+  border-left: 2px solid var(--error);
+  padding-left: var(--sp-2);
+}
+.pbe-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+.pbe-stage {
+  min-width: 0;
+  height: clamp(360px, 62vh, 680px);
+  border-right: 1px solid var(--border);
+}
+.pbe-side {
+  min-width: 0;
+  max-height: clamp(360px, 62vh, 680px);
+  overflow: auto;
+}
+@media (max-width: 720px) {
+  .pbe-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pbe-stage {
+    height: 60vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .pbe-side {
+    max-height: none;
+  }
+}

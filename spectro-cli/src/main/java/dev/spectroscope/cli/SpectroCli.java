@@ -228,13 +228,14 @@ public final class SpectroCli implements Runnable {
         }
 
         // First-run onboarding (the CLI twin of the web's first-run sheet): if the
-        // configured API provider has no key, don't fail with a terse line — tell a
+        // configured API provider has no key, or a provider that signs in has no
+        // sign-in (card 496), don't fail with a terse line; tell a
         // newcomer how to get a backend running. A keyless local backend (every
         // member of SpectroConfig.keylessLocalServers) is left to try; an
         // unreachable one fails clearly on the first call.
-        if ("needs-key".equals(
-                SpectroConfig.onboardingStatus(config.provider(), providerKeyPresent(config.provider())))) {
-            System.err.print(firstRunHint(config.provider()));
+        String firstRun = firstRunMessage(config);
+        if (firstRun != null) {
+            System.err.print(firstRun);
             return;
         }
 
@@ -419,6 +420,84 @@ public final class SpectroCli implements Runnable {
      */
     List<Tool> childBelt() {
         return childBelt;
+    }
+
+    /** Whether the first-run hint stops the start: a keyless cloud call judged
+     *  against the endpoint it would dial (the same rule the server and the
+     *  doctor use), or a provider that signs in and has no stored sign-in.
+     *  @param config the effective configuration
+     *  @return true when the first-run hint should stop the start */
+    static boolean needsFirstRunHint(SpectroConfig config) {
+        return firstRunMessage(config) != null;
+    }
+
+    /**
+     * The first-run message for the effective configuration. The status is
+     * judged against the endpoint the provider would dial when it has a preset
+     * one, so openai at the operator's own network reads "local" and starts
+     * (card 480); a provider that signs in gets the sign-in hint (card 496).
+     *
+     * @param config the effective configuration
+     * @return the hint, or null when the provider is left to try
+     */
+    static String firstRunMessage(SpectroConfig config) {
+        String provider = config.provider();
+        boolean present = credentialPresent(provider);
+        String status = SpectroConfig.presetEndpointFor(provider) == null
+                ? SpectroConfig.onboardingStatus(provider, present)
+                : SpectroConfig.onboardingStatusAt(provider, config.endpointFor(provider), present);
+        return firstRunMessageFor(provider, status);
+    }
+
+    /**
+     * What the terminal says before the first prompt when the configured
+     * provider cannot answer yet (the CLI twin of the web's first-run sheet):
+     * the key hint for a provider without its key, the sign-in hint for a
+     * provider that signs in and has no stored sign-in (card 496), nothing
+     * otherwise.
+     *
+     * @param provider          the configured provider
+     * @param credentialPresent {@link #credentialPresent} for it
+     * @return the hint, or null when the provider is left to try
+     */
+    static String firstRunMessage(String provider, boolean credentialPresent) {
+        return firstRunMessageFor(provider, SpectroConfig.onboardingStatus(provider, credentialPresent));
+    }
+
+    private static String firstRunMessageFor(String provider, String status) {
+        return switch (status) {
+            case "needs-key" -> firstRunHint(provider);
+            case "needs-signin" -> signInHint(provider);
+            default -> null;
+        };
+    }
+
+    /**
+     * Whether the provider has what it needs to be asked: its key for a keyed
+     * provider, a stored sign-in for one that signs in (read from the file
+     * alone, no runtime starts), nothing for a local backend.
+     *
+     * @param provider the provider name
+     * @return whether the credential is there
+     */
+    static boolean credentialPresent(String provider) {
+        if (SpectroConfig.signsIn(provider)) {
+            return dev.spectroscope.core.copilot.CopilotAccount.forThisMachine().hasStoredSignIn();
+        }
+        return providerKeyPresent(provider);
+    }
+
+    /** The first-run hint for a provider that signs in instead of taking a key. */
+    static String signInHint(String provider) {
+        return """
+
+                spectroscope is set to %s, which signs in with GitHub instead of taking a key,
+                and it is not signed in. Sign in from the %s provider in the model menu of the
+                app, then rerun. It needs the Copilot CLI on this Mac: %s
+
+                run `spectro doctor` to check.
+                """
+                .formatted(provider, provider, dev.spectroscope.core.copilot.CopilotRuntime.INSTALL_LINE);
     }
 
     /** Whether this provider's API key is present in the environment. A
@@ -679,6 +758,11 @@ public final class SpectroCli implements Runnable {
         // What `webTools` still does is narrower and unchanged: it is the grant
         // that reaches a RESEARCH child PAST its keep-list, which would otherwise
         // filter the trio out. Same instances either way.
+        // settings-reach: toolGroupsOff | REPL | the tool groups are switched
+        //     in the composer gear of the app window, and the terminal has no
+        //     gear. Card 466 kept the key to a session in the app window, so a
+        //     list in a settings file leaves the REPL and its children with
+        //     every tool.
         subagents = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
                 .cwd(workspace)
@@ -705,6 +789,13 @@ public final class SpectroCli implements Runnable {
                 .subagentBudgetTokens(config.subagentBudgetTokens())
                 // card 467: the children follow the session's elision switch
                 .toolResultElision(config.toolResultElision())
+                // card 490: the chat's session count, between runs; during a
+                // run the parent agent's own count governs the slot pool
+                .sessionsPerChat(config.sessionsPerChat())
+                // card 492: and its care paragraph switch
+                .careParagraph(config.careParagraph())
+                // Card 493: the read share, read when the REPL starts.
+                .readSharePercent(config.readSharePercent())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -828,7 +919,11 @@ public final class SpectroCli implements Runnable {
      * @return the ready agent; the registry and broker are shared, not rebuilt
      */
     private Agent buildAgent(List<ProviderMessage> initialMessages) {
-        return new Agent(AgentOptions.builder()
+        // settings-reach: toolGroupsOff | REPL | the tool groups are switched
+        //     in the composer gear of the app window, and the terminal has no
+        //     gear. Card 466 kept the key to a session in the app window, so a
+        //     list in a settings file leaves the REPL with every tool.
+        Agent built = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(systemPrompt)
                 .registry(registry)
@@ -877,8 +972,17 @@ public final class SpectroCli implements Runnable {
                 .maxTokens(config.maxTokens())
                 // Card 467: old, large tool results leave the request.
                 .toolResultElision(config.toolResultElision())
+                // Card 490: the REPL is one chat; its helpers share its count.
+                .sessionsPerChat(config.sessionsPerChat())
+                // Card 492: the care paragraph, read when the REPL starts.
+                .careParagraph(config.careParagraph())
+                // Card 493: the read share, read when the REPL starts.
+                .readSharePercent(config.readSharePercent())
                 .onPermission(askOnTerminal)
                 .build());
+        // Card 492: the helpers the paragraph names, from the one derivation.
+        built.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(config));
+        return built;
     }
 
     // ---------------------------------------------------------- slash commands

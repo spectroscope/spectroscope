@@ -1,0 +1,12 @@
+export interface Result {
+  code: number;
+  out: string;
+}
+
+export function run(args: string[]): Result {
+  const name = args[0];
+  if (name === undefined || name.trim() === "") {
+    return { code: 2, out: "usage: @@name@@ <name>\n" };
+  }
+  return { code: 0, out: `Hello, ${name}.\n` };
+}

@@ -248,3 +248,13 @@ export function answerLineSegments(
   }
   return segments;
 }
+
+/** GitHub AI credits to two places, in the reader's decimal mark (card 496).
+ *  A cost above zero that rounds to nothing says so instead of reading as free. */
+export function formatCredits(credits: number, lang: string): string {
+  const locale = lang === "de" ? "de-DE" : "en-US";
+  const two = (n: number): string =>
+    n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (credits > 0 && credits < 0.005) return `< ${two(0.01)}`;
+  return two(credits);
+}

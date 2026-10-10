@@ -8,7 +8,7 @@
 // repeatedly, and the guard beside it demands coverage of all three rather
 // than checking a copy against itself.
 //
-// FOUR TABLES ARE AUTHORED HERE, and it is worth saying exactly why that is
+// FIVE TABLES ARE AUTHORED HERE, and it is worth saying exactly why that is
 // not the same thing. None invents an entry; each answers a question no
 // existing data answers, and each is checked against a different source:
 //
@@ -32,6 +32,10 @@
 //    none of these keys. The guard demands that each named component draws
 //    the key and stands outside the page's imports, and that the page does
 //    not draw the key too.
+//  - OFF_PAGE_NO_REACH_KEYS (card 493): the saveable keys whose control
+//    outside the page draws no reach block, or that no control sets at all.
+//    The guard demands that each named module names the key, and that no
+//    module names a key filed as having no control.
 //  - SETTING_FIELD_LABEL_EXCEPTIONS (card 394, wave H3d): the name a field
 //    draws beside its control, for the fields where that name is not the dict
 //    key `set.<key>`, or where the field draws none. The name is drawn in JSX
@@ -202,7 +206,37 @@ export function settingFieldLabelKey(key: string): string | null | undefined {
 export const OFF_PAGE_SETTING_KEYS = {
   // Card 379: the last section of the composer's settings menu.
   rtkFilter: "RtkFilterSection.tsx",
+  // Card 466, reach note since card 491: the composer gear's tool groups.
+  toolGroupsOff: "ToolGroupsSection.tsx",
 } as const satisfies Partial<Record<SettingKey, string>>;
+
+/** Card 493: the saveable keys the settings page draws no field for and no
+ *  reach block anywhere draws, with the module that holds their control. null:
+ *  no control in the app sets the key; a settings file or the server does.
+ *  The manifest carries no field for these. The guard demands that a named
+ *  module names the key, stands outside the page and draws no reach block for
+ *  it, and that no module besides the reach table and this one names a key
+ *  filed as null. */
+export const OFF_PAGE_NO_REACH_KEYS = {
+  // The composer gear's folder overrides (Task 17).
+  baseUrl: "workspaceGear.ts",
+  maxRetries: "workspaceGear.ts",
+  promptCaching: "workspaceGear.ts",
+  compactionThreshold: "workspaceGear.ts",
+  // The gear's mode list moves the open session; a settings file sets the
+  // key a session starts with.
+  permissionMode: "ComposerGear.tsx",
+  // Card 493: the rows of the Local mode switch in the composer gear.
+  sessionsPerChat: "LocalModeSection.tsx",
+  readSharePercent: "LocalModeSection.tsx",
+  careParagraph: "LocalModeSection.tsx",
+  // Read where the agent is built; set in a settings file.
+  toolResultElision: null,
+  // Card 476: read by the cron daemon; set in a settings file.
+  desktopNotifications: null,
+  // Card 493: written by the Local mode switch, never by a control.
+  localModeKeys: null,
+} as const satisfies Partial<Record<SettingKey, string | null>>;
 
 /** The room a section stands in, read off the grouping table. */
 function tabOf(section: string): SettingsTab {

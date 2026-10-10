@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { run } from "../src/cli.js";
+
+test("a name gives the greeting and exit code 0", () => {
+  assert.deepEqual(run(["Ada"]), { code: 0, out: "Hello, Ada.\n" });
+});
+
+test("no name gives the usage line and exit code 2", () => {
+  const result = run([]);
+  assert.equal(result.code, 2);
+  assert.match(result.out, /^usage: /);
+});

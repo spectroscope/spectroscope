@@ -167,8 +167,8 @@ public final class Spectro {
                     : UNATTENDED_PROMPT + "\nThe workspace is " + workspace + "."
                             + dev.spectroscope.core.config.SpectroConfig.loadAgentsMd(workspace);
             // settings-reach: compactionThreshold, thinking, maxTurns, maxTokens,
-            //     toolResultElision
-            //     | embedded library | this agent is built by a JVM program that
+            //     toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+            //     readSharePercent | embedded library | this agent is built by a JVM program that
             //     embedded spectroscope as a dependency, and its configuration is
             //     the code above, not the operator's ~/.spectro/settings.json. A
             //     library that read a settings file off whatever machine it happens

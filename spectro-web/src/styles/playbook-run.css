@@ -1,0 +1,257 @@
+/* ============================================================ playbook run
+   A playbook run (card 482): playbook/PlaybookStartSheet.tsx, the confirmation
+   before a run, and playbook/PlaybookRunView.tsx, the run under the graph.
+   Imported by app.css, because a surface chunk may carry no stylesheet of its
+   own (surfaceChunks.guard.test.ts).
+
+   Tokens only, the rule playbook.css states: colour on lines, no shadows,
+   depth as a surface step plus a hairline, both designs from the same names. */
+
+.pb-run-hint {
+  margin: 0 0 var(--sp-2);
+  max-width: 64ch;
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text-dim);
+  border-left: 2px solid var(--sand);
+  padding-left: var(--sp-2);
+}
+.pb-pane .pb-run-build {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pb-pane .pb-run-build:disabled {
+  color: var(--text-dim);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+/* ---------- run view ---------- */
+.pb-run-status {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  border-left: 2px solid var(--border-strong);
+  padding-left: var(--sp-2);
+}
+.pb-run-status.is-live {
+  color: var(--text);
+  border-left-color: var(--accent);
+}
+.pb-run-graph {
+  height: 520px;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+/* ---------- confirmation sheet ---------- */
+.pb-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  background: var(--scrim);
+}
+.pb-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+}
+.pb-sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.pb-sheet-title {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 500;
+  color: var(--text);
+}
+.pb-sheet-dir {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.pb-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+}
+.pb-sheet-section {
+  margin-top: var(--sp-4);
+}
+.pb-sheet-canvas {
+  overflow: hidden;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+}
+/* The whole drawing, scaled to the sheet: the SVG keeps its viewBox, so a
+   fixed box shows every node at once instead of one corner of it. */
+.pb-sheet-canvas .pb-graph {
+  width: 100%;
+  height: 300px;
+}
+.pb-run-skills,
+.pb-run-commands,
+.pb-run-refusals ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-run-skills li {
+  font-size: var(--fs-12);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.pb-run-skills .is-playbook .pb-state,
+.pb-run-skills .is-installed .pb-state {
+  color: var(--ok);
+}
+.pb-run-skills .is-missing .pb-state {
+  color: var(--warn);
+}
+.pb-run-commands li {
+  margin-bottom: var(--sp-1);
+}
+.pb-run-commands code {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--warn);
+  border-radius: var(--radius-chip);
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pb-run-hash {
+  margin: var(--sp-4) 0 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pb-run-changed,
+.pb-run-not-installed {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.pb-run-changed {
+  color: var(--text);
+  border-left: 2px solid var(--warn);
+  padding: 2px 0 2px var(--sp-2);
+}
+.pb-run-not-installed {
+  color: var(--text-dim);
+}
+.pb-run-contents-hash {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pb-run-hash-label {
+  color: var(--text-dim);
+}
+.pb-run-refusals li {
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text);
+  border-left: 2px solid var(--error);
+  padding: 2px 0 2px var(--sp-2);
+  margin-bottom: var(--sp-1);
+  overflow-wrap: anywhere;
+}
+.pb-sheet-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--border);
+}
+.pb-sheet button {
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition:
+    color var(--t-fast),
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+.pb-sheet button:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.pb-sheet .pb-run-start {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pb-sheet .pb-run-start:disabled {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: var(--surface);
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .pb-sheet-backdrop {
+    padding: var(--sp-2);
+  }
+  .pb-sheet-head,
+  .pb-sheet-body,
+  .pb-sheet-foot {
+    padding-left: var(--sp-3);
+    padding-right: var(--sp-3);
+  }
+  .pb-sheet-canvas .pb-graph {
+    height: 200px;
+  }
+}
+
+/* Under the state graph's narrow breakpoint (stategraph.css, 900px) its side
+   panel stacks under the canvas, and a fixed box gave the whole height to the
+   header, the transport and the panel: the canvas measured 0 px at 390 px.
+   Here the box grows and the canvas keeps a reserved height. */
+@media (max-width: 900px) {
+  .pb-run-graph {
+    height: auto;
+  }
+  .pb-run-graph .sg {
+    height: auto;
+  }
+  .pb-run-graph .sg-canvas {
+    min-height: var(--pb-run-canvas-min);
+  }
+}

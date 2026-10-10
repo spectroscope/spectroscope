@@ -1,0 +1,6 @@
+export function greeting(name: string): string {
+  if (name.trim() === "") {
+    throw new Error("name must not be blank");
+  }
+  return `Hello, ${name}.`;
+}

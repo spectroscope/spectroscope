@@ -1,0 +1,20 @@
+{ "schema_version": 1, "id": "spectro", "name": "spectro fixture", "description": "d",
+  "models": { "fast": { "primary": { "provider": "ollama", "model": "qwen3:8b" } } },
+  "documents": { "spec": { "name": "Spec", "purpose": "design", "location": "docs/{slug}.md",
+                           "template": "templates/spec.md", "sections": ["Goal"] } },
+  "checks": { "spec_ok": { "kind": "sections", "documents": ["spec"] } },
+  "start": "write",
+  "nodes": [
+    { "kind": "step", "id": "write", "name": "Write", "skills": ["spectropowers:brainstorming"],
+      "model": "fast", "produces": ["spec"] },
+    { "kind": "decision", "id": "ok", "name": "Spec ok", "check": "spec_ok", "max_rounds": 2 },
+    { "kind": "end", "id": "done", "result": "done" }
+  ],
+  "arrows": [
+    { "from": "write", "to": "ok" },
+    { "from": "ok", "to": "done", "on": "pass" },
+    { "from": "ok", "to": "write", "on": "fail" },
+    { "from": "ok", "to": "done", "on": "exhausted" }
+  ],
+  "contents": { "skills": ["skills/spectropowers"] } }
+

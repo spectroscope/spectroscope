@@ -22,6 +22,10 @@ import dev.spectroscope.core.image.ImageStore;
 import dev.spectroscope.core.leveling.LevelingPort;
 import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.permission.Allowlist;
+import dev.spectroscope.core.playbook.run.Permissions;
+import dev.spectroscope.core.playbook.run.PinnedPlaybook;
+import dev.spectroscope.core.playbook.run.PlaybookRecorder;
+import dev.spectroscope.core.playbook.run.PlaybookRunner;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.SwitchableProvider;
@@ -32,6 +36,7 @@ import dev.spectroscope.core.subagents.RoleCatalog;
 import dev.spectroscope.core.subagents.SubagentConfig;
 import dev.spectroscope.core.subagents.SubagentManager;
 import dev.spectroscope.core.tools.DefaultHttpFetcher;
+import dev.spectroscope.core.tools.HostGuard;
 import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
@@ -48,6 +53,12 @@ import dev.spectroscope.core.wire.WireReference;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import dev.spectroscope.server.leveling.ServerLeveling;
+import dev.spectroscope.server.playbooks.InstallLedger;
+import dev.spectroscope.server.playbooks.PlaybookFolders;
+import dev.spectroscope.server.playbooks.PlaybookLoader;
+import dev.spectroscope.server.playbooks.PlaybookRunsLive;
+import dev.spectroscope.server.providers.ProviderRegistry;
+import dev.spectroscope.server.providers.ProviderRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.TextMessage;
@@ -68,6 +79,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * The per-connection state and run wiring: one agent, one session, one run at a
@@ -154,6 +166,17 @@ public final class SessionConnection {
     private volatile String permissionMode;
 
     /**
+     * Card 482: the permission of the playbook step that runs now, or null.
+     * The gate reads {@link #effectiveMode()}, the stricter of this and
+     * {@link #permissionMode}, so a playbook can narrow the session and never
+     * widen it. Set and cleared by the runner through the host.
+     */
+    private volatile String permissionFloor;
+
+    /** Card 482: the session's gate, kept so a playbook run hands the same one to its checks. */
+    private volatile PermissionBroker broker;
+
+    /**
      * True once {@link #onSetPermissionMode} has been called at least once — a
      * live pre-build switch must survive {@link #buildAgentOnce}'s session-moment
      * reseed from the workspace-scoped config, exactly like a pre-build provider
@@ -181,6 +204,37 @@ public final class SessionConnection {
     /** True once the gear has switched a group, so the session moment does
      *  not overwrite a choice made before the first prompt. */
     private volatile boolean toolGroupsTouched;
+
+    /**
+     * Card 493: the Local mode switch of this chat, a record of what it wrote
+     * (Alternative A of {@code konzept/RUN-PROFILES.md}). The server folds
+     * nothing for a mode: switching on writes ordinary values into this
+     * session and, with a pinned folder, into that folder's local file.
+     */
+    private final dev.spectroscope.core.config.LocalModeState localMode =
+            new dev.spectroscope.core.config.LocalModeState();
+
+    /**
+     * Card 493: the values this chat holds for the knobs of the switch other
+     * than the tool groups, which live in {@link #toolGroupsOff}. A key held
+     * here wins over the settings files, the touched flag per key that keeps
+     * the session moment and an agent's edit of the local file from undoing a
+     * live switch. A key absent here is read from the files at the top of
+     * every prompt, as cards 490 and 492 built it.
+     */
+    private final Map<String, JsonNode> heldKnobs = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Card 493: true once the switch was used in this session, so a folder
+     *  pinned later does not turn it on from the folder's record. */
+    private volatile boolean localModeTouched;
+
+    /** Card 493: why the last write of the switch into the local file did not
+     *  happen, or null. */
+    private volatile String localModeSaveError;
+
+    /** Card 493: the folder whose local file holds what the switch wrote, or
+     *  null while the switch is off or the chat has no pinned folder. */
+    private volatile Path localModeFolder;
     /** Card 459: true once the operator switched this session's backend. A
      *  switch, even back to the connect-time pair, outranks the workspace. */
     private volatile boolean providerTouched;
@@ -308,6 +362,12 @@ public final class SessionConnection {
     private SwitchableProvider switchable;   // the agent's provider indirection
     /** Card 247: the catalog runPrompt expands /skill tokens against — set with the agent. */
     private SkillLibrary skillLibrary;
+    /** Card 482: builds a provider from a config; a test hands in its own. */
+    private Function<SpectroConfig, LlmProvider> providerBuilder = ServerProviders::build;
+    /** Card 482: the registry's bounded check of one provider; a test hands in its own. */
+    private Function<String, ProviderRow> providerCheck = this::registryCheck;
+    /** The install ledger agent roles resolve through at Start; null reads the one in the home (card 485). */
+    private volatile InstallLedger installLedger;
 
     /** The process-wide live-session registry, or null — then this connection
      *  claims nothing and announces nothing, frame for frame the pre-212 one. */
@@ -502,8 +562,10 @@ public final class SessionConnection {
         if (pinned != null && !pinned.isBlank()) {
             return new WorkspacePick(pinned, "set", null);
         }
-        String recorded = resumeId == null
-                ? null : dev.spectroscope.core.session.SessionStore.recordedWorkspace(resumeId);
+        // Card 498: a socket woken on a stored session reads its record too.
+        String recordId = resumeId != null ? resumeId : wokenId;
+        String recorded = recordId == null
+                ? null : dev.spectroscope.core.session.SessionStore.recordedWorkspace(recordId);
         String gone = null;
         if (recorded != null && !recorded.isBlank()) {
             // Only if it is still THERE. resolve() calls createDirectories, so
@@ -646,7 +708,9 @@ public final class SessionConnection {
             // integration suite pins (provider, mode, workspace) stands. A
             // pinned folder's own list is shown from this moment on.
             seedToolGroupsFrom(savedToolGroupsFolder());
+            seedLocalModeFrom(savedToolGroupsFolder()); // card 493: the folder's record
             sendToolGroupsInfo();
+            sendLocalModeInfo();
             return;
         }
         try {
@@ -664,7 +728,9 @@ public final class SessionConnection {
             workspace = resolveAndRecord(workspaceChoice(), store.id());
             sendWorkspaceInfo();
             seedToolGroupsFrom(savedToolGroupsFolder()); // card 466
+            seedLocalModeFrom(savedToolGroupsFolder()); // card 493
             sendToolGroupsInfo();
+            sendLocalModeInfo();
         } catch (Exception missing) {
             // The claim was taken before the load; a session that cannot be
             // loaded must not stay held by a socket that is about to close.
@@ -674,6 +740,141 @@ public final class SessionConnection {
             sendError("Session " + resumeId + " not found.");
             close();
         }
+    }
+
+    /** Card 498: the shape a session id must have before it touches the store. */
+    private static final java.util.regex.Pattern WAKE_ID =
+            java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
+
+    /** Card 498: the stored session a wake bound this socket to, or null. */
+    private volatile String wokenId;
+
+    /**
+     * Wakes a stored session on this socket (card 498): the owner clicked into
+     * the message box and has sent nothing yet.
+     *
+     * <p>This is the resume that {@link #start} performs for {@code ?resume=<id>},
+     * minus the run: the id is claimed in the live set, the history is loaded
+     * into the agent's first prompt, the store reopens the same file, the
+     * backend the record names is restored, and the session's own folder is
+     * announced with its {@code sessionId}, so Finder, Terminal and the code
+     * graph can act on it. No agent is built, no run starts and no request
+     * reaches a model; the first message afterwards runs exactly as it runs on
+     * a resumed socket.</p>
+     *
+     * <p>Nothing is created on disk. A folder that exists is recorded as this
+     * session's; a recorded folder that is gone is named in the frame, and the
+     * first run falls back as a resume does. A folder only the first message
+     * would create is not announced at all.</p>
+     *
+     * <p>A socket that already holds a session (this one, woken twice, or
+     * another) ignores the frame. A session another socket holds is refused
+     * with {@code session_busy} and this socket stays as it was. An id that is
+     * not the shape of a session id, or names no session of this store, is
+     * answered "Session not found." and the caller's text is not echoed.</p>
+     *
+     * @param sessionId the stored session to wake, untrusted input
+     */
+    void onWakeSession(String sessionId) {
+        if (store != null || running) {
+            return;
+        }
+        if (sessionId == null || !WAKE_ID.matcher(sessionId).matches() || !storedSessionExists(sessionId)) {
+            sendError("Session not found.");
+            return;
+        }
+        if (liveSessions != null && !liveSessions.claim(socket.getId(), sessionId)) {
+            sendSessionBusy(sessionId);
+            return;
+        }
+        try {
+            List<ProviderMessage> history = SessionStore.loadSession(sessionId);
+            int lines = SessionStore.eventCount(sessionId);
+            restoreSessionWindow(sessionId);
+            initial = history;
+            wokenId = sessionId;
+            store = new SessionStore(sessionId);
+            openSessionStack(lines);
+        } catch (Exception unreadable) {
+            if (liveSessions != null) {
+                liveSessions.release(socket.getId());
+            }
+            sendError("Session not found.");
+            return;
+        }
+        SpectroConfig before = activeConfig.get();
+        restoreSessionBackend(sessionId);
+        if (activeConfig.get() != before) {
+            sendProviderInfo();
+        }
+        announceWokenWorkspace();
+        seedToolGroupsFrom(savedToolGroupsFolder()); // card 466, as a resume does
+        sendToolGroupsInfo();
+    }
+
+    /**
+     * Whether the store holds a session file of this id.
+     *
+     * @param sessionId an id that already passed the shape check
+     * @return true when the file is there; false for anything else
+     */
+    private static boolean storedSessionExists(String sessionId) {
+        try {
+            return Files.isRegularFile(SessionStore.sessionFile(sessionId));
+        } catch (IOException | RuntimeException outside) {
+            return false;
+        }
+    }
+
+    /**
+     * Names the woken session's folder without creating anything (card 498).
+     * {@link WorkspaceResolver#locate} only, never {@code resolve}: a wake is
+     * not a run, and a folder minted here would be a choice nobody made.
+     *
+     * <p>Three answers. A recorded folder that is gone is named as
+     * {@code unavailable}. A folder that is on disk is recorded and announced.
+     * A folder that is not on disk and was never recorded (the temp folder, or
+     * a configured one not made yet) is one the first message would create, so
+     * nothing is said about it and the page's chip stays as it was.</p>
+     */
+    private void announceWokenWorkspace() {
+        WorkspacePick pick = workspacePick();
+        if (pick.unavailable() != null) {
+            sendWokenWorkspace(pick.unavailable(), pick.unavailable());
+            return;
+        }
+        Path target = WorkspaceResolver.locate(pick.path(), store.id());
+        if (Files.isDirectory(target)) {
+            workspace = target;
+            SessionWorkspaces.resolved(store.id(), target.toString());
+            sendWorkspaceInfo();
+        }
+    }
+
+    /**
+     * The workspace frame of a woken session whose recorded folder is gone: a
+     * socket-only UI frame, never appended to the JSONL. It carries the
+     * {@code sessionId} like the resolved frame, says {@code exists} false and
+     * names the gone folder as {@code unavailable}.
+     *
+     * @param path        the folder the record names
+     * @param unavailable the same folder, the one that is gone
+     */
+    private synchronized void sendWokenWorkspace(String path, String unavailable) {
+        if (!socket.isOpen() || store == null) {
+            return;
+        }
+        String configured = config.workspace();
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "workspace_info");
+        frame.put("resolved", false);
+        frame.put("mode", "recorded");
+        frame.put("exists", false);
+        frame.put("sessionId", store.id());
+        frame.put("path", path);
+        frame.put("configured", configured != null && !configured.isBlank());
+        frame.put("unavailable", unavailable);
+        sendFrame(frame);
     }
 
     /**
@@ -686,6 +887,9 @@ public final class SessionConnection {
     /** The id of the session's own agent: the one {@link #buildAgentOnce}
      *  builds, and the one a {@code /clear} before that build names. */
     static final String MAIN_AGENT_ID = "main";
+
+    /** Card 482: the answer to a start whose folder changed since the confirmation showed its hash. */
+    static final String PLAYBOOK_CHANGED = "The playbook changed since the confirmation. Open it again.";
 
     /**
      * The web chat's {@code /compact} (card 471): summarizes the history now,
@@ -993,6 +1197,364 @@ public final class SessionConnection {
     }
 
     /**
+     * The composer gear's Local mode switch (card 493). In memory and at once,
+     * like {@link #onSetPermissionMode}: switching on writes the preset of
+     * {@link dev.spectroscope.core.config.LocalMode} for every knob the
+     * operator has not set by hand, an edit or a reset changes one value, and
+     * switching off gives every knob back what the chat held before. With a
+     * pinned folder the values and the record of what the switch wrote also
+     * go into that folder's local file, so the next session in the folder
+     * starts with the switch on. The server writes it, for the reason
+     * {@link #onSetToolGroupsOff} gives.
+     *
+     * <p>The frame is untrusted input: {@code on} (a boolean), {@code values}
+     * (an object of knob keys) and {@code reset} (a list of knob keys). Every
+     * part is checked before anything changes; a refused part changes
+     * nothing and is answered with an error frame.</p>
+     *
+     * @param frame the {@code set_local_mode} frame
+     */
+    public void onSetLocalMode(JsonNode frame) {
+        JsonNode on = frame.path("on");
+        JsonNode values = frame.path("values");
+        JsonNode reset = frame.path("reset");
+        if (!on.isMissingNode() && !on.isBoolean()) {
+            sendError("Local mode: \"on\" must be true or false.");
+            return;
+        }
+        if (!values.isMissingNode() && !values.isObject()) {
+            sendError("Local mode: \"values\" must be an object of settings keys.");
+            return;
+        }
+        if (!reset.isMissingNode() && !reset.isArray()) {
+            sendError("Local mode: \"reset\" must be a list of settings keys.");
+            return;
+        }
+        boolean willBeOn = on.isBoolean() ? on.asBoolean() : localMode.on();
+        if ((values.size() > 0 || reset.size() > 0) && !willBeOn) {
+            sendError("Local mode is off; switch it on to change its values.");
+            return;
+        }
+        for (java.util.Map.Entry<String, JsonNode> entry : values.properties()) {
+            String refused = dev.spectroscope.core.config.LocalMode.refusal(entry.getKey(), entry.getValue());
+            if (refused != null) {
+                sendError("Local mode: " + refused + ".");
+                return;
+            }
+        }
+        for (JsonNode key : reset) {
+            if (!key.isTextual() || !dev.spectroscope.core.config.LocalMode.knobs().contains(key.asText())) {
+                sendError("Local mode: \"" + key.asText() + "\" is not a value of the switch.");
+                return;
+            }
+        }
+        localModeTouched = true;
+        if (on.isBoolean()) {
+            applyLocalModePlan(on.asBoolean() ? switchLocalModeOn() : localMode.switchOff());
+            localModeFolder = localMode.on() ? savedToolGroupsFolder() : null;
+        }
+        for (java.util.Map.Entry<String, JsonNode> entry : values.properties()) {
+            applyLocalModePlan(localMode.edit(entry.getKey(), entry.getValue()));
+        }
+        for (JsonNode key : reset) {
+            applyLocalModePlan(localMode.reset(key.asText()));
+        }
+        sendToolGroupsInfo();
+        sendLocalModeInfo();
+    }
+
+    /** Switches on with what the chat and its folder hold now.
+     *  @return the plan to apply */
+    private dev.spectroscope.core.config.LocalModeState.Plan switchLocalModeOn() {
+        SpectroConfig live = liveConfig();
+        JsonNode local = readLocalFile(savedToolGroupsFolder());
+        Map<String, JsonNode> held = new java.util.LinkedHashMap<>();
+        Map<String, JsonNode> effective = new java.util.LinkedHashMap<>();
+        Map<String, JsonNode> file = new java.util.LinkedHashMap<>();
+        java.util.Set<String> handSet = new java.util.LinkedHashSet<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            held.put(key, heldKnob(key));
+            effective.put(key, knobNow(key, live));
+            file.put(key, local.path(key));
+            // Set by hand: in the folder's local file, the scope the switch
+            // writes, or switched in this session's gear before Local mode.
+            if (local.has(key) || ("toolGroupsOff".equals(key) && toolGroupsTouched)) {
+                handSet.add(key);
+            }
+        }
+        file.put(dev.spectroscope.core.config.LocalMode.RECORD_KEY,
+                local.path(dev.spectroscope.core.config.LocalMode.RECORD_KEY));
+        return localMode.switchOn(held, effective, handSet, file);
+    }
+
+    /**
+     * Turns the switch on from a folder's record, when a session starts in
+     * that folder or pins it, unless the switch was used in this session.
+     *
+     * @param folder the pinned or resolved folder, or null
+     */
+    private void seedLocalModeFrom(Path folder) {
+        if (folder == null) {
+            return;
+        }
+        if (localModeTouched) {
+            if (localMode.on()) {
+                moveLocalModeTo(savedToolGroupsFolder());
+            }
+            return;
+        }
+        if (localMode.on()) {
+            if (folder.equals(localModeFolder)) {
+                return;
+            }
+            // Turned on by another folder's record and not used here: that
+            // record stays where it is, and this folder speaks for itself.
+            applyLocalModePlan(localMode.drop());
+            localModeFolder = null;
+        }
+        SpectroConfig folderConfig;
+        try {
+            folderConfig = SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, folder);
+        } catch (IllegalArgumentException unreadable) {
+            return; // the session moment reports an unreadable workspace scope
+        }
+        List<String> record = folderConfig.localModeKeys();
+        if (record.isEmpty()) {
+            return;
+        }
+        JsonNode local = readLocalFile(folder);
+        Map<String, JsonNode> effective = new java.util.LinkedHashMap<>();
+        Map<String, JsonNode> file = new java.util.LinkedHashMap<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            effective.put(key, dev.spectroscope.core.config.LocalMode.valueIn(folderConfig, key));
+            file.put(key, local.path(key));
+        }
+        file.put(dev.spectroscope.core.config.LocalMode.RECORD_KEY,
+                local.path(dev.spectroscope.core.config.LocalMode.RECORD_KEY));
+        applyLocalModePlan(localMode.adopt(record, effective, file));
+        localModeFolder = folder;
+    }
+
+    /**
+     * Takes a switch used in this session to the chat's folder when that
+     * folder changes: pinned after the switch went on, or another folder
+     * picked before the first prompt. The folder it leaves gets back what it
+     * held when the switch arrived; the new folder gets the switch's values
+     * and record, and keeps every key its file holds by hand.
+     *
+     * @param target the chat's pinned folder now, or null
+     */
+    private void moveLocalModeTo(Path target) {
+        Path left = localModeFolder;
+        if (java.util.Objects.equals(target, left)) {
+            return;
+        }
+        JsonNode local = readLocalFile(target);
+        Map<String, JsonNode> file = new java.util.LinkedHashMap<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            file.put(key, local.path(key));
+        }
+        file.put(dev.spectroscope.core.config.LocalMode.RECORD_KEY,
+                local.path(dev.spectroscope.core.config.LocalMode.RECORD_KEY));
+        dev.spectroscope.core.config.LocalModeState.Move move = localMode.moveFolder(file);
+        if (left != null) {
+            String failed = saveLocalModeIn(left, move.oldFile());
+            if (failed != null) {
+                localModeSaveError = failed;
+            }
+        }
+        localModeFolder = target;
+        applyLocalModePlan(move.plan());
+    }
+
+    /**
+     * Applies one plan of the switch: the file half first, so a key the chat
+     * releases is read from the file as it now stands, then the session half,
+     * then the values reach the built agent.
+     *
+     * @param plan what the switch decided
+     */
+    private void applyLocalModePlan(dev.spectroscope.core.config.LocalModeState.Plan plan) {
+        if (!plan.file().isEmpty()) {
+            localModeSaveError = saveLocalMode(plan.file());
+        }
+        plan.session().forEach(this::holdKnob);
+        pushKnobsToAgent();
+    }
+
+    /**
+     * Holds one knob in the chat, or releases it to the settings files.
+     *
+     * @param key   the knob
+     * @param value the value, or {@link com.fasterxml.jackson.databind.node.MissingNode} to release
+     */
+    private void holdKnob(String key, JsonNode value) {
+        boolean release = value == null || value.isMissingNode();
+        if ("toolGroupsOff".equals(key)) {
+            if (release) {
+                toolGroupsTouched = false;
+                toolGroupsOff.set(releasedToolGroups());
+            } else {
+                java.util.Set<ToolGroup> off = java.util.EnumSet.noneOf(ToolGroup.class);
+                value.forEach(name -> ToolGroup.named(name.asText()).ifPresent(off::add));
+                toolGroupsOff.set(java.util.Collections.unmodifiableSet(off));
+                toolGroupsTouched = true;
+            }
+            return;
+        }
+        if (release) {
+            heldKnobs.remove(key);
+        } else {
+            heldKnobs.put(key, value);
+        }
+    }
+
+    /** The tool groups the settings files give this session once nothing
+     *  holds them: the pinned folder's scopes, else the session-moment config.
+     *  @return the switched-off groups */
+    private java.util.Set<ToolGroup> releasedToolGroups() {
+        Path folder = savedToolGroupsFolder();
+        if (folder != null) {
+            try {
+                return SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, folder)
+                        .toolGroupsOffSet();
+            } catch (IllegalArgumentException unreadable) {
+                // fall through to the config the session already holds
+            }
+        }
+        return activeConfig.get().toolGroupsOffSet();
+    }
+
+    /** Hands the built agent the values the chat holds now, so a switch
+     *  reaches the slot pool at once and the next run's text and share. */
+    private void pushKnobsToAgent() {
+        Agent built = agent;
+        if (built == null) {
+            return;
+        }
+        SpectroConfig live = liveConfig();
+        Integer sessions = sessionsPerChatNow(live);
+        built.setSessionsPerChat(sessions);
+        built.setCareParagraph(careParagraphNow(live));
+        built.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(sessions));
+        built.setReadSharePercent(readSharePercentNow(live));
+    }
+
+    /**
+     * Card 493: hands the agent the read share the chat holds, or the one the
+     * settings hold now, so a saved change reaches the next run of this
+     * session (reach {@code next-run}). The run reads it once when it starts.
+     */
+    void refreshReadShare() {
+        if (agent == null) {
+            return;
+        }
+        agent.setReadSharePercent(readSharePercentNow(liveConfig()));
+    }
+
+    /** @param key a knob @return what the chat holds for it, MissingNode when nothing */
+    private JsonNode heldKnob(String key) {
+        if ("toolGroupsOff".equals(key)) {
+            return toolGroupsTouched
+                    ? dev.spectroscope.core.config.LocalMode.groups(toolGroupsOff.get())
+                    : com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
+        return heldKnobs.getOrDefault(key, com.fasterxml.jackson.databind.node.MissingNode.getInstance());
+    }
+
+    /** @param key a knob @param live the settings now @return the value in force for this chat */
+    private JsonNode knobNow(String key, SpectroConfig live) {
+        if ("toolGroupsOff".equals(key)) {
+            return dev.spectroscope.core.config.LocalMode.groups(toolGroupsOff.get());
+        }
+        JsonNode held = heldKnobs.get(key);
+        return held != null ? held : dev.spectroscope.core.config.LocalMode.valueIn(live, key);
+    }
+
+    /** @param live the settings now @return the chat's session count, null for none */
+    private Integer sessionsPerChatNow(SpectroConfig live) {
+        JsonNode held = heldKnobs.get("sessionsPerChat");
+        if (held == null) {
+            return live.sessionsPerChat();
+        }
+        return held.isNull() ? null : held.asInt();
+    }
+
+    /** @param live the settings now @return the chat's care paragraph setting */
+    private String careParagraphNow(SpectroConfig live) {
+        JsonNode held = heldKnobs.get("careParagraph");
+        return held != null ? held.asText() : live.careParagraph();
+    }
+
+    /** @param live the settings now @return the chat's read share in per cent */
+    private int readSharePercentNow(SpectroConfig live) {
+        JsonNode held = heldKnobs.get("readSharePercent");
+        return held != null ? held.asInt() : live.readSharePercent();
+    }
+
+    /**
+     * Reads a folder's local settings file as it stands, for what the
+     * operator set there by hand.
+     *
+     * @param folder the folder, or null
+     * @return the file's object, or an empty object when there is none
+     */
+    private JsonNode readLocalFile(Path folder) {
+        if (folder == null) {
+            return mapper.createObjectNode();
+        }
+        Path file = folder.resolve(SpectroConfig.WS_LOCAL_SETTINGS);
+        try {
+            if (Files.isRegularFile(file)) {
+                JsonNode read = mapper.readTree(file.toFile());
+                if (read != null && read.isObject()) {
+                    return read;
+                }
+            }
+        } catch (IOException | RuntimeException unreadable) {
+            // The session moment reports an unreadable scope; the switch then
+            // treats the file as holding nothing set by hand.
+        }
+        return mapper.createObjectNode();
+    }
+
+    /**
+     * Writes the file half of a plan into the pinned folder's local scope.
+     *
+     * @param values key to value; MissingNode removes the key
+     * @return null when written or when there is no folder to write to, else the reason
+     */
+    private String saveLocalMode(Map<String, JsonNode> values) {
+        return saveLocalModeIn(savedToolGroupsFolder(), values);
+    }
+
+    /**
+     * Writes the file half of a plan into one folder's local scope.
+     *
+     * @param folder the folder, or null for none
+     * @param values key to value; MissingNode removes the key
+     * @return null when written or when there is no folder to write to, else the reason
+     */
+    private String saveLocalModeIn(Path folder, Map<String, JsonNode> values) {
+        if (folder == null) {
+            return null;
+        }
+        if (!Files.isDirectory(folder)) {
+            return "the folder " + folder + " does not exist yet";
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode patch = mapper.createObjectNode();
+        values.forEach((key, value) -> patch.set(key,
+                value == null || value.isMissingNode() ? mapper.nullNode() : value));
+        try {
+            SettingsWriter.patch(folder.resolve(SpectroConfig.WS_LOCAL_SETTINGS),
+                    SettingsWriter.Scope.LOCAL, patch);
+            return null;
+        } catch (IOException | RuntimeException failed) {
+            return String.valueOf(failed.getMessage());
+        }
+    }
+
+    /**
      * The composer gear's tool-group switch (card 466): the groups named here
      * are left out of the next run's provider request, the parent's and every
      * child's. In-memory and immediate, like {@link #onSetPermissionMode}.
@@ -1033,6 +1595,13 @@ public final class SessionConnection {
         toolGroupsOff.set(java.util.Collections.unmodifiableSet(off));
         toolGroupsTouched = true;
         sendToolGroupsInfo(save ? saveToolGroups(off) : null);
+        // Card 493: with Local mode on, the chat's own list replaces the
+        // preset, and the switch's row says it changed from Local mode.
+        if (localMode.on()) {
+            applyLocalModePlan(localMode.edit("toolGroupsOff",
+                    dev.spectroscope.core.config.LocalMode.groups(off)));
+            sendLocalModeInfo();
+        }
     }
 
     /**
@@ -1367,10 +1936,24 @@ public final class SessionConnection {
      *        default (gemini, openrouter) needs an explicit model.
      */
     public void onSetProvider(String providerName, String model) {
+        String refused = switchProvider(providerName, model);
+        if (refused != null) {
+            sendError(refused);
+        }
+    }
+
+    /**
+     * Card 482: the body of {@link #onSetProvider}, which a playbook's chat
+     * step calls too. Answers the refusal instead of sending it.
+     *
+     * @param providerName the provider to switch to
+     * @param model        the model; blank picks the provider's default
+     * @return null when switched, else the refusal text
+     */
+    String switchProvider(String providerName, String model) {
         if (!SpectroConfig.isKnownProvider(providerName)) {
-            sendError("Unknown provider: \"" + providerName + "\" (allowed: "
-                    + SpectroConfig.KNOWN_PROVIDERS_DISPLAY + ").");
-            return;
+            return "Unknown provider: \"" + providerName + "\" (allowed: "
+                    + SpectroConfig.KNOWN_PROVIDERS_DISPLAY + ").";
         }
         // Refuse a key-requiring cloud provider with no key AT SWITCH TIME, so the
         // header chip never flips to a backend whose only failure mode is a deferred
@@ -1378,9 +1961,8 @@ public final class SessionConnection {
         // SpectroConfig#switchRequiresKey).
         if (SpectroConfig.switchRequiresKey(providerName)
                 && !SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(providerName))) {
-            sendError("\"" + providerName + "\" needs " + SpectroConfig.keyEnvFor(providerName)
-                    + " — set a key in Settings, then switch.");
-            return;
+            return "\"" + providerName + "\" needs " + SpectroConfig.keyEnvFor(providerName)
+                    + " — set a key in Settings, then switch.";
         }
         SpectroConfig current = activeConfig.get();
         String useModel;
@@ -1392,17 +1974,15 @@ public final class SessionConnection {
             // own default; a provider with no honest default needs an explicit model.
             useModel = SpectroConfig.defaultModelFor(providerName);
             if (useModel == null) {
-                sendError("\"" + providerName + "\" needs a model — pick one in the picker.");
-                return;
+                return "\"" + providerName + "\" needs a model — pick one in the picker.";
             }
         }
         SpectroConfig derived = current.withProvider(providerName, useModel);
         LlmProvider next;
         try {
-            next = ServerProviders.build(derived); // spectro-local -> local runtime; else factory + key check
+            next = providerBuilder.apply(derived); // spectro-local -> local runtime; else factory + key check
         } catch (RuntimeException rejected) {
-            sendError(rejected.getMessage());
-            return;
+            return rejected.getMessage();
         }
         activeConfig.set(derived);
         providerTouched = true;
@@ -1414,6 +1994,7 @@ public final class SessionConnection {
         // (trace row, header chip, map locality) instead of trusting its own
         // optimistic state.
         sendProviderInfo();
+        return null;
     }
 
     /**
@@ -1468,7 +2049,9 @@ public final class SessionConnection {
             workspaceAnnounced = false; // re-announce: the Files tab re-roots live
             sendWorkspaceInfo();
             seedToolGroupsFrom(savedToolGroupsFolder()); // card 466: the picked folder's list
+            seedLocalModeFrom(savedToolGroupsFolder()); // card 493: the picked folder's record
             sendToolGroupsInfo();
+            sendLocalModeInfo();
         } catch (RuntimeException rejected) {
             sendError("Workspace rejected: " + rejected.getMessage());
         }
@@ -1674,6 +2257,9 @@ public final class SessionConnection {
             buildAgentOnce();
             suggestTitleOnce(text); // card 445: in the background, the run does not wait
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
+            refreshSessionsPerChat(); // card 490: the chat's session count, per prompt
+            refreshCareParagraph(); // card 492: the settings as they are now, per prompt
+            refreshReadShare(); // card 493: the read share, per prompt
             sendWorkspaceInfo();
             sendGoalInfo(); // card 267: what this run is for, where it is watched
 
@@ -1690,14 +2276,8 @@ public final class SessionConnection {
             try (EventStream events = subagents.run(agent, text,
                     new RunOptions(runSignal, attachments, expanded.equals(text) ? null : expanded))) {
                 for (RunEvent rawEvent : events) {
-                    // Card 473: the main run_start carries the file reference.
-                    RunEvent event = wireReference.stamp(rawEvent);
-                    // File first, socket second; the file and socket get the SAME object.
-                    if (!runDrain.record(event)) {
+                    if (!drainOne(rawEvent, runDrain)) {
                         break; // sealed by a quit: this drain writes nothing more
-                    }
-                    if (runDrain.sending()) {
-                        send(event);
                     }
                 }
             }
@@ -1712,6 +2292,173 @@ public final class SessionConnection {
             this.drain = null;
             releasePending();          // orphaned questions: deny them
         }
+    }
+
+    /**
+     * Card 482: one event of a run's merged stream onto the session's road,
+     * file first and socket second, with the main run_start stamped (card 473).
+     *
+     * @param rawEvent the next event as the stream gave it
+     * @param runDrain the run's drain
+     * @return false once the drain is sealed by a quit; the event was not written
+     */
+    private boolean drainOne(RunEvent rawEvent, RunDrain runDrain) {
+        RunEvent event = wireReference.stamp(rawEvent);
+        if (!runDrain.record(event)) {
+            return false;
+        }
+        if (runDrain.sending()) {
+            send(event);
+        }
+        return true;
+    }
+
+    /**
+     * Card 482: the Start of the confirmation sheet. Starts only when the
+     * folder is registered and its bytes still hash to what the sheet showed.
+     * Agent roles resolve through the install ledger, as in the preview.
+     *
+     * @param dir  the playbook folder
+     * @param hash the hash the confirmation showed
+     */
+    public void onStartPlaybook(String dir, String hash) {
+        if (running) {
+            sendError(RUN_ACTIVE);
+            return;
+        }
+        PinnedPlaybook pinned;
+        try {
+            Path folder = dir == null || dir.isBlank() ? null : Path.of(dir).toRealPath();
+            if (folder == null || !PlaybookFolders.inHome().read().folders().contains(folder.toString())) {
+                sendError("This folder is not a registered playbook folder.");
+                return;
+            }
+            PlaybookLoader.Loaded loaded = PlaybookLoader.load(folder, workspace != null ? workspace : projectDir,
+                    activeConfig.get());
+            if (loaded.playbook() == null || !loaded.findings().isEmpty()) {
+                // The sheet disables Start on a finding; the frame is a second
+                // gate, so a client that skips the sheet cannot start a
+                // playbook the validator refused.
+                sendError("The playbook does not load: " + loaded.findings());
+                return;
+            }
+            InstallLedger ledger = installLedger != null ? installLedger : InstallLedger.inHome();
+            String id = loaded.playbook().id();
+            pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody,
+                    source -> ledger.itemHash(id, "agent", source));
+        } catch (IOException | RuntimeException unreadable) {
+            sendError("The playbook could not be read: " + unreadable.getMessage());
+            return;
+        }
+        if (!pinned.hash().equals(hash)) {
+            sendError(PLAYBOOK_CHANGED);
+            return;
+        }
+        running = true;
+        Thread.ofVirtual().name("spectroscope-run").start(() -> runPlaybook(pinned));
+    }
+
+    /**
+     * @param name a skill name
+     * @return its installed body, or null
+     */
+    private String installedSkillBody(String name) {
+        SkillLibrary skills = skillLibrary != null
+                ? skillLibrary : SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
+        return skills.find(name).map(dev.spectroscope.core.skills.Skill::body).orElse(null);
+    }
+
+    /**
+     * Card 482: one playbook run on the virtual thread. Holds the run slot,
+     * the run signal and the drain exactly as {@link #runPrompt} does, and
+     * always releases them, the step floor included.
+     *
+     * @param pinned the bytes the confirmation showed
+     */
+    private void runPlaybook(PinnedPlaybook pinned) {
+        CancelSignal runSignal = new CancelSignal();
+        this.signal = runSignal;
+        runSignal.onCancel(asker::releaseAllPending);
+        ensureStore();
+        reportRunning(true);
+        RunDrain runDrain = new RunDrain(runSignal);
+        this.drain = runDrain;
+        QuitFlush.register(runDrain);
+        String runId = PlaybookRunner.newRunId();
+        String sessionId = store.id();
+        PlaybookRunsLive.started(sessionId, runId);
+        try (PlaybookRecorder recorder = new PlaybookRecorder(PlaybookRecorder.fileFor(sessionId),
+                PlaybookRecorder.DEFAULT_CEILING_BYTES)) {
+            buildAgentOnce();
+            SessionPlaybookHost host = new SessionPlaybookHost(workspace, event -> drainOne(event, runDrain),
+                    subagents, agent, activeConfig::get, this::switchProvider, providerBuilder, providerCheck,
+                    this::providerKind, this::permissionFloor, broker, asker);
+            new PlaybookRunner(new PlaybookRunner.Setup(pinned, runId,
+                    PlaybookRecorder.graphFileFor(sessionId, runId), recorder, runSignal, permissionMode),
+                    host, subagents, HostGuard.live()::refusal).run();
+        } catch (RuntimeException failure) {
+            sendError("Playbook run ended with an error: " + failure.getMessage());
+        } finally {
+            PlaybookRunsLive.ended(sessionId, runId);
+            permissionFloor = null;
+            runDrain.finished();
+            QuitFlush.unregister(runDrain);
+            running = false;
+            reportRunning(false);
+            this.signal = null;
+            this.drain = null;
+            releasePending();
+        }
+    }
+
+    /**
+     * An unknown provider reads as cloud, the stricter assumption for the privacy rules.
+     *
+     * @param provider a provider name
+     * @return local, cloud or builtin from the registry rows, without a request
+     */
+    private String providerKind(String provider) {
+        return ProviderRegistry.shared().rows(activeConfig.get()).stream()
+                .filter(r -> r.id().equals(provider)).map(ProviderRow::kind).findFirst().orElse("cloud");
+    }
+
+    /**
+     * @param provider a provider name
+     * @return the P1 registry's row after its bounded check, under the live config
+     */
+    private ProviderRow registryCheck(String provider) {
+        return ProviderRegistry.shared().check(provider, activeConfig.get());
+    }
+
+    /** @return the stricter of the live mode and the playbook step's floor */
+    String effectiveMode() {
+        String floor = permissionFloor;
+        return floor == null ? permissionMode : Permissions.effective(permissionMode, floor);
+    }
+
+    /** @param mode the running step's permission, or null to clear it */
+    void permissionFloor(String mode) {
+        this.permissionFloor = mode;
+    }
+
+    /** @return the session's gate, or null before the agent is built */
+    PermissionBroker broker() {
+        return broker;
+    }
+
+    /** @param builder what builds a provider from a config in this connection, for tests */
+    void providerBuilderForTest(Function<SpectroConfig, LlmProvider> builder) {
+        this.providerBuilder = builder;
+    }
+
+    /** @param ledger the install ledger the start frame resolves agent roles through, for tests */
+    void installLedgerForTest(InstallLedger ledger) {
+        this.installLedger = ledger;
+    }
+
+    /** @param check what answers the registry check of one provider in this connection, for tests */
+    void providerCheckForTest(Function<String, ProviderRow> check) {
+        this.providerCheck = check;
     }
 
     /**
@@ -1856,12 +2603,12 @@ public final class SessionConnection {
 
         SpectroConfig sessionConfig = adoptSessionConfig();
 
-        PermissionBroker broker = parkingBroker();
+        broker = parkingBroker();
 
         // The provider is wrapped in a SwitchableProvider so the header picker can
         // swap the backend mid-session (activeConfig carries any pre-run switch).
         SpectroConfig active = activeConfig.get();
-        switchable = new SwitchableProvider(ServerProviders.build(active), active.provider());
+        switchable = new SwitchableProvider(providerBuilder.apply(active), active.provider());
         LlmProvider provider = switchable;
         // the skill catalog rides in the system prompt, bodies come via use_skill.
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
@@ -1988,11 +2735,22 @@ public final class SessionConnection {
                 .subagentBudgetTokens(active.subagentBudgetTokens())
                 // Card 467: the children follow the session's elision switch
                 .toolResultElision(active.toolResultElision())
+                // Card 492: the session's care paragraph switch. A child of a
+                // run takes the value that run started with
+                // (SubagentManager.childCareParagraph)
+                .careParagraph(active.careParagraph())
+                // Card 493: the read share; refreshReadShare re-reads it before
+                // every prompt, and the Local mode switch may hold it
+                .readSharePercent(active.readSharePercent())
                 // Card 466: the SAME reader the parent reads below. A child
                 // spawned during a run takes the set that run started with
                 // (SubagentManager.childToolGroupsOff), so a gear change
                 // mid-run reaches parent and children together at the next run
                 .toolGroupsOff(toolGroupsOff::get)
+                // Card 490: the chat's session count between runs; during a
+                // run the parent agent below holds the live count the slot
+                // pool reads
+                .sessionsPerChat(active.sessionsPerChat())
                 .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
@@ -2069,6 +2827,16 @@ public final class SessionConnection {
                 .toolResultElision(active.toolResultElision())
                 // Card 466: the gear's tool groups, read at the start of every run
                 .toolGroupsOff(toolGroupsOff::get)
+                // Card 490: this chat's session count. Re-read from the
+                // settings files at the top of every prompt
+                // (refreshSessionsPerChat), so a save reaches the next prompt
+                .sessionsPerChat(active.sessionsPerChat())
+                // Card 492: the care paragraph. The build value is the session
+                // moment's; refreshCareParagraph re-reads it before every prompt
+                .careParagraph(active.careParagraph())
+                // Card 493: the read share; refreshReadShare re-reads it before
+                // every prompt, and the Local mode switch may hold it
+                .readSharePercent(active.readSharePercent())
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
@@ -2085,15 +2853,55 @@ public final class SessionConnection {
      * a reconnect — which is a rebuild by another name. The settings panel
      * already writes this key through {@code SettingsWriter}; this is what makes
      * the number it wrote govern the very next run.</p>
+     *
+     * <p>Card 491: the number comes from {@link #liveConfig()}, which reads the
+     * settings files again. {@link #activeConfig} is written when the agent is
+     * built and by nothing a settings save does, so reading it here kept the
+     * budget the session started with. The key's reach is {@code next-run}.</p>
      */
     void refreshContinuationBudget() {
         if (agent == null || agent.continuationLeash() == null) {
             return;
         }
-        SpectroConfig active = activeConfig.get();
-        if (active != null) {
-            agent.continuationLeash().setBudget(active.continuationBudget());
+        SpectroConfig live = liveConfig();
+        if (live != null) {
+            agent.continuationLeash().setBudget(live.continuationBudget());
         }
+    }
+
+    /**
+     * Re-reads the chat's session count onto the live agent (card 490).
+     *
+     * <p>Called at the top of every prompt, like the continuation budget, but
+     * from the settings files as they stand now ({@link #liveConfig()}), so a
+     * count saved on the settings page or in the folder's local file reaches
+     * the next prompt of a session that is already open. The slot pool reads
+     * the agent's count each time a helper asks for a slot; the spawn tools
+     * describe the count the run started with.</p>
+     */
+    void refreshSessionsPerChat() {
+        if (agent == null) {
+            return;
+        }
+        // Card 493: a count the Local mode switch holds wins over the files.
+        agent.setSessionsPerChat(sessionsPerChatNow(liveConfig()));
+    }
+
+    /**
+     * Card 492: hands the agent the {@code careParagraph} value the settings
+     * hold now, and the helper count derived from them, so a saved change
+     * reaches the next run of this session (reach {@code next-run}). Read
+     * through {@link #liveConfig()}, the same chain the belt reads per call.
+     * The run reads both once when it starts.
+     */
+    void refreshCareParagraph() {
+        if (agent == null) {
+            return;
+        }
+        SpectroConfig live = liveConfig();
+        // Card 493: values the Local mode switch holds win over the files.
+        agent.setCareParagraph(careParagraphNow(live));
+        agent.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(sessionsPerChatNow(live)));
     }
 
     /** Card 379: the oracle the next {@link #buildAgentOnce} hands the rtk
@@ -2126,7 +2934,33 @@ public final class SessionConnection {
         }
         titleAsked = true;
         SpectroConfig config = activeConfig.get();
-        titles.suggestInBackground(store.id(), prompt, () -> ServerProviders.build(config));
+        titles.suggestInBackground(store.id(), prompt, () -> ServerProviders.build(config),
+                usage -> titleUsageEvent(usage, System.currentTimeMillis()).ifPresent(this::recordAndMirror));
+    }
+
+    /**
+     * The agent a title call's usage is billed to (card 496). It is not the
+     * run's agent, so the context ring does not read the title call's prompt
+     * as the size of the conversation.
+     */
+    static final String TITLE_AGENT_ID = "session-title";
+
+    /**
+     * The usage event a title call adds to the session's record: only for a
+     * call that reported AI credits, so a Copilot session's credit total counts
+     * every call it paid for. A provider that reports no credits adds nothing,
+     * and its session's token totals stay as they were before card 496.
+     *
+     * @param usage the title call's usage
+     * @param ts    epoch millis of the event
+     * @return the event, or empty when the call reported no credits
+     */
+    static java.util.Optional<RunEvent.Usage> titleUsageEvent(LlmProvider.PUsage usage, long ts) {
+        if (usage == null || usage.aiCredits() == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new RunEvent.Usage(TITLE_AGENT_ID, usage.inputTokens(), usage.outputTokens(),
+                usage.cacheReadTokens(), usage.cacheCreationTokens(), usage.aiCredits(), ts));
     }
 
     /** This session's id — the basename its JSONL, its llm-wire sidecar and its
@@ -2219,6 +3053,8 @@ public final class SessionConnection {
         if (!toolGroupsTouched) {
             toolGroupsOff.set(sessionConfig.toolGroupsOffSet());
         }
+        // Card 493: a folder resolved only now may carry the switch's record.
+        seedLocalModeFrom(workspace);
         if (!thinkingTouched) {
             thinking.set(sessionConfig.thinking());
         }
@@ -2234,6 +3070,7 @@ public final class SessionConnection {
         sendProviderInfo();
         sendPermissionModeInfo();
         sendToolGroupsInfo();
+        sendLocalModeInfo();
         return sessionConfig;
     }
 
@@ -2411,12 +3248,15 @@ public final class SessionConnection {
      *
      * <p><b>The answer is the same for all of them.</b> Not "web_search is fixed
      * now" — every setting a tool here reads is read again on the call. What
-     * this method does NOT cover is listed on the card and said on the settings
-     * page: the workspace, the MCP servers, the shell hooks, the system prompt
-     * and its skills, and the CONFIGURED compaction threshold are settled when
-     * the agent is built and stay settled, because changing them mid-session
-     * would mean killing processes or rewriting a conversation that already
-     * happened.</p>
+     * this method does NOT cover is listed on the card and in the reach table
+     * of the config reference chapter: the workspace, the MCP servers, the
+     * shell hooks, the base of the system prompt and its skills, and the
+     * CONFIGURED compaction threshold are settled when the agent is built and
+     * stay settled, because changing them mid-session would mean killing
+     * processes or rewriting a conversation that already happened. Card 491:
+     * only the base of the prompt is settled for the session. A setting with
+     * the reach {@code next-run} may add to the prompt at the start of each
+     * run, so the prompt a run sends is fixed for that run.</p>
      *
      * <p>Half of that last one moved with card 263 and the sentence above would
      * otherwise be the harder kind of stale — true enough to believe. What the
@@ -2620,7 +3460,7 @@ public final class SessionConnection {
             @Override
             public boolean reachesOutsideTheWorkingDirectory() {
                 // Card 453: the live mode, read once per tool call.
-                return SpectroConfig.PERMISSION_MODE_EXTENDED.equals(permissionMode);
+                return SpectroConfig.PERMISSION_MODE_EXTENDED.equals(effectiveMode());
             }
         };
     }
@@ -2635,7 +3475,7 @@ public final class SessionConnection {
      * @return {@code "mode:<mode>"}, {@code "allowlist"}, or null
      */
     private String answeredWithoutAsking(PermissionRequest request, Allowlist.Verdict verdict) {
-        String mode = permissionMode;
+        String mode = effectiveMode();
         if (PermissionModes.decide(mode, request) != null) {
             return "mode:" + mode;
         }
@@ -2994,6 +3834,46 @@ public final class SessionConnection {
                 "provider", active.provider(),
                 "model", active.model(),
                 "host", active.providerHost()));
+    }
+
+    /**
+     * Tells the gear where the Local mode switch stands and what each of its
+     * rows holds (card 493): a socket-only UI frame like
+     * {@code tool_groups_info}, never appended to the JSONL. Sent at connect,
+     * when a folder is pinned, at the session moment and after every change of
+     * the switch or of the tool groups.
+     */
+    private synchronized void sendLocalModeInfo() {
+        if (!socket.isOpen()) {
+            return;
+        }
+        SpectroConfig live = liveConfig();
+        Map<String, JsonNode> effective = new java.util.LinkedHashMap<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            effective.put(key, knobNow(key, live));
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (dev.spectroscope.core.config.LocalModeState.Row row : localMode.rows(effective)) {
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("key", row.key());
+            out.put("value", row.value());
+            out.put("preset", row.preset());
+            out.put("changed", row.changed());
+            Integer floor = dev.spectroscope.core.config.SettingFloors.floors().get(row.key());
+            if (floor != null) {
+                out.put("floor", floor);
+            }
+            rows.add(out);
+        }
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "local_mode_info");
+        frame.put("on", localMode.on());
+        frame.put("rows", rows);
+        String saveError = localModeSaveError;
+        if (saveError != null) {
+            frame.put("saveError", saveError);
+        }
+        sendFrame(frame);
     }
 
     /**

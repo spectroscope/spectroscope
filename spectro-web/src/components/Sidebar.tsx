@@ -321,6 +321,7 @@ export function Sidebar(props: {
     sessions: () => props.onNav("sessions"),
     fleets: () => props.onNav("fleets"),
     stategraph: () => props.onNav("stategraph"),
+    playbook: () => props.onNav("playbook"),
   };
 
   /**
@@ -586,6 +587,9 @@ export function Sidebar(props: {
               ))}
             </nav>
           </>
+        ) : nav === "playbook" ? (
+          /* Card 481: the module itself holds the folders; the rail says what it is. */
+          <p className="sidebar-note">{t(lang, "nav.playbookNote")}</p>
         ) : nav === "stategraph" ? (
           /* The scenario rail, the fleet list's idiom — offered PERMANENTLY,
            because the empty-state shelf disappears the moment a run loads

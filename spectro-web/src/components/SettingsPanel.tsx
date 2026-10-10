@@ -51,7 +51,8 @@ import { SttSettings } from "./SttSettings";
 import { FleetSettings } from "./FleetSettings";
 import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
-import { PROVIDERS } from "./providerPickerMode";
+import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
+import { CopilotSettingsNote } from "./CopilotSettingsNote";
 import { addressOverrideNote, addressSpecFor } from "./providerAddress";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { settingsMayAutoPick } from "./settingsModelPolicy";
@@ -59,6 +60,8 @@ import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings } from "./SkillsMcpSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
+import { ProviderStatusSettings } from "./ProviderStatusSettings";
+import { checkProviders } from "../state/providerRegistry";
 import { AllowlistSettings } from "./AllowlistSettings";
 import { HooksSettings } from "./HooksSettings";
 import type { Leveling } from "../state/useLeveling";
@@ -898,7 +901,7 @@ export function SettingsPanel({
                       >
                         {PROVIDERS.map((p) => (
                           <option key={p} value={p}>
-                            {p}
+                            {providerDisplayName(p)}
                           </option>
                         ))}
                       </select>
@@ -920,7 +923,11 @@ export function SettingsPanel({
                         providerStatus={providerStatus}
                         providerAddress={providerAddress}
                         keyAffordance="inline"
-                        onKeySaved={onKeySaved}
+                        onKeySaved={() => {
+                          onKeySaved?.();
+                          // Card 480: a key save checks that one provider once.
+                          void checkProviders(String(view.effective.provider ?? ""));
+                        }}
                         markAbsent
                       />
                       {settingsModelMode !== "needs-key" && (
@@ -932,6 +939,7 @@ export function SettingsPanel({
                         />
                       )}
                     </label>
+                    <CopilotSettingsNote provider={String(view.effective.provider ?? "")} lang={lang} />
                     {/* Card 193: the address beside the provider that needs it.
                     Which providers those are is addressSpecFor's answer, not a
                     list repeated here — each owns a field and a preset of its
@@ -1008,6 +1016,8 @@ export function SettingsPanel({
                     </div>
                   </div>
                 )}
+                {/* Card 480: every provider, configured or not, and whether it answers. */}
+                <ProviderStatusSettings anchorId="providers" />
                 {/* The image pair reaches an open session — generate_image
                   resolves BOTH its backend and its model on the call
                   (SessionConnection#liveImageBackend). They are two blocks and

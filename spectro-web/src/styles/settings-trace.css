@@ -580,6 +580,48 @@
   font-size: var(--fs-13);
 }
 
+/* Card 495: the Copilot sign-in sheet. The code is the thing to read, so it
+   is large and selectable; the address can be long and wraps. */
+.cp-modal {
+  width: min(440px, calc(100vw - var(--sp-6)));
+}
+.cp-address {
+  margin: var(--sp-2) 0;
+  font-size: var(--fs-13);
+  overflow-wrap: anywhere;
+}
+.cp-address a {
+  color: var(--accent);
+}
+.cp-code-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin: var(--sp-3) 0;
+}
+.cp-code-label {
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.cp-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-20);
+  letter-spacing: 0.12em;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--sp-1) var(--sp-3);
+  user-select: all;
+}
+.cp-actions {
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
 /* Card 88: the reasoning seg — the house .trace-seg shape, condensed so the
    full ladder (off + five efforts) sits inside the 260px picker popover; a
    record with longer tokens wraps instead of clipping. Same block serves the

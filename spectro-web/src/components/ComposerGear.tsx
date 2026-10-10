@@ -45,6 +45,16 @@ import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { savesToolGroups, switchToolGroups, type ToolGroupsInfo } from "../state/toolGroups";
 import { ToolGroupsSection } from "./ToolGroupsSection";
+import {
+  editLocalModeValue,
+  parseToolUse,
+  resetLocalModeValue,
+  switchLocalMode,
+  toolUseUrl,
+  type LocalModeInfo,
+  type ToolUseAnswer,
+} from "../state/localMode";
+import { LocalModeSection } from "./LocalModeSection";
 
 /** The value a key would carry into the editor: what it resolves to today,
  *  as text. An unset field (imageModel/sttModel default to null) starts
@@ -91,6 +101,9 @@ export function ComposerGear({
   workspaceInfo,
   permissionMode,
   toolGroups,
+  localMode = null,
+  provider = "",
+  model: modelName = "",
   sendClient,
 }: {
   /** This session's workspace announcement (the socket-only workspace_info
@@ -102,6 +115,13 @@ export function ComposerGear({
   /** Card 466: the server's last tool_groups_info (state.toolGroups), or null
    *  before the first one. Wire truth, like the mode above. */
   toolGroups: ToolGroupsInfo | null;
+  /** Card 493: the server's last local_mode_info (state.localMode), or null
+   *  before the first one. Wire truth, like the mode and the groups. */
+  localMode?: LocalModeInfo | null;
+  /** Card 493: the chat's backend and model, for the warning when the model
+   *  cannot call tools. */
+  provider?: string;
+  model?: string;
   sendClient: (msg: ClientMessage) => boolean;
 }) {
   const lang = useLang();
@@ -136,6 +156,30 @@ export function ComposerGear({
   const [hooksError, setHooksError] = useState<string | null>(null);
 
   const sessionId = workspaceInfo?.sessionId;
+
+  // Card 493: whether the chat's model can call tools, asked while the
+  // popover is open with Local mode on. A server that does not answer leaves
+  // the warning out rather than guessing.
+  const [toolUse, setToolUse] = useState<ToolUseAnswer | null>(null);
+  const localOn = localMode?.on === true;
+  useEffect(() => {
+    if (!open || !localOn || provider === "" || modelName === "") {
+      setToolUse(null);
+      return;
+    }
+    let alive = true;
+    fetch(toolUseUrl(provider, modelName))
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: unknown) => {
+        if (alive) setToolUse(parseToolUse(body));
+      })
+      .catch(() => {
+        if (alive) setToolUse(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, localOn, provider, modelName]);
   // Only a RESOLVED workspace reaches the gear. The connect-time frame names
   // where a run would work, which is not the same as a folder that exists with
   // a .spectro to persist rules into.
@@ -397,6 +441,16 @@ export function ComposerGear({
           </div>
 
           {!model.pinned && <p className="wsg-hint">{t(lang, "wsg.unpinned")}</p>}
+
+          <LocalModeSection
+            lang={lang}
+            info={localMode}
+            toolUse={toolUse}
+            model={modelName}
+            onSwitch={(on) => switchLocalMode(on, sendClient)}
+            onEdit={(key, value) => editLocalModeValue(key, value, sendClient)}
+            onReset={(key) => resetLocalModeValue(key, sendClient)}
+          />
 
           <div className="wsg-section">
             <div className="wsg-section-head">

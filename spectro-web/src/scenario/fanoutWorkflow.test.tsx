@@ -377,6 +377,8 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     agentId: null,
     cacheReadTokens: null,
     cacheCreationTokens: null,
+    // Card 496: the session's credit total is the context ring's, not the lab's.
+    aiCredits: null,
     ts: null,
   },
   run_end: { type: "LabTrace.tsx:88", stopReason: "LabTrace.tsx:42-43", runId: null, ts: null },

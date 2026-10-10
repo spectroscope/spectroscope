@@ -45,4 +45,17 @@ public final class ToolRegistry {
                 .map(tool -> new ToolSpec(tool.name(), tool.description(), tool.inputSchema()))
                 .toList();
     }
+
+    /**
+     * Card 493: the advertisement for one run, each tool described with what
+     * the run read when it started ({@link Tool#descriptionForRun}).
+     *
+     * @param run what the run read when it started
+     * @return one spec per tool, in registration order
+     */
+    public List<ToolSpec> specs(Tool.RunFacts run) {
+        return tools.values().stream()
+                .map(tool -> new ToolSpec(tool.name(), tool.descriptionForRun(run), tool.inputSchema()))
+                .toList();
+    }
 }

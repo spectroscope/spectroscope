@@ -341,9 +341,9 @@ class ConfigDocDriftTest {
      *
      * <p><b>What it deliberately cannot check</b> is derived too. A row prints
      * the JSON shape of a collection ({@code {}} for the server map,
-     * {@code []} for the three lists) and a Java {@code toString} is not that
-     * shape, so those four sit out, and the set is asserted, not assumed, so a
-     * fifth such component joins it visibly rather than silently. Everything
+     * {@code []} for the four lists) and a Java {@code toString} is not that
+     * shape, so those five sit out, and the set is asserted, not assumed, so a
+     * sixth such component joins it visibly rather than silently. Everything
      * else is checkable including the nulls: an unset default has one printed
      * form in this table, {@code <em>unset</em>}, and twelve rows use it.</p>
      */
@@ -358,12 +358,13 @@ class ConfigDocDriftTest {
                 unchecked.add(component.getName());
             }
         }
-        // Card 466 added toolGroupsOff, a list printed as [] like autoApprove.
-        assertEquals(List.of("autoApprove", "hooks", "mcpServers", "toolGroupsOff"),
+        // Card 466 added toolGroupsOff, a list printed as [] like autoApprove,
+        // and card 493 localModeKeys, another such list.
+        assertEquals(List.of("autoApprove", "hooks", "localModeKeys", "mcpServers", "toolGroupsOff"),
                 unchecked.stream().sorted().toList(),
                 "the set of key rows whose default this guard cannot read has changed. A"
                         + " collection prints as a JSON shape in the table and as a Java"
-                        + " toString here, which is why those four sit out; anything else"
+                        + " toString here, which is why those five sit out; anything else"
                         + " arriving in this list is a row nobody is checking, and it has to"
                         + " be looked at rather than accepted");
 
@@ -516,6 +517,52 @@ class ConfigDocDriftTest {
     }
 
     @Test
+    void theSettledSystemPromptPromiseIsTheSentenceCard491Pins() throws IOException {
+        // Card 492, criterion 7. The care paragraph is appended to the system
+        // prompt at the start of every run, so "the system prompt stays
+        // settled for the session" stopped being true. Card 491 rewrote and
+        // pins that sentence on its own branch; until it lands, this card
+        // carries the same sentence word for word, so the two changes to the
+        // paragraph are one change when they meet.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String settled = paragraphContaining(Files.readString(source), "stay settled for that session");
+        assertFalse(settled.isEmpty(), "the paragraph about what a session settles is gone");
+        assertFalse(settled.contains("and the <strong>system prompt</strong>"),
+                "the chapter still says the whole system prompt is settled for the session,"
+                        + " which the care paragraph appended per run makes false. Paragraph: " + settled);
+        assertTrue(settled.contains("the base of the <strong>system prompt</strong>"),
+                "the paragraph must name the base of the system prompt as what the session settles."
+                        + " Paragraph: " + settled);
+        assertTrue(settled.contains("the system prompt a run sends is fixed for that run"),
+                "the paragraph must carry card 491's sentence. Paragraph: " + settled);
+    }
+
+    @Test
+    void theCareParagraphRowSaysWhichFaceReadsItWhen() throws IOException {
+        // Review finding of 2026-10-09: the row said a saved change "applies
+        // from the next run of an open session" for every face, and only the
+        // browser session reads the settings again before a prompt. The REPL
+        // keeps the value it started with. The row also carried a roadmap
+        // note, "(two until the session count per chat exists)".
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String html = Files.readString(source);
+        int at = html.indexOf("<tr><td><code>careParagraph</code></td>");
+        assertTrue(at >= 0, "the reference table has no careParagraph row");
+        String row = html.substring(at, html.indexOf("</tr>", at));
+        assertTrue(row.contains("The browser session reads the settings again before every message,"
+                        + " so a saved change applies from its next run"),
+                "the row must say that the browser session takes a saved change from its next run. Row: " + row);
+        assertTrue(row.contains("the REPL, the cron daemon and a fleet node read it when they start"),
+                "the row must say that the REPL reads the key when it starts. Row: " + row);
+        assertFalse(row.contains("of an open session"),
+                "the row promises the next run of any open session, which the REPL does not keep. Row: " + row);
+        assertFalse(row.contains("until the session count"),
+                "a roadmap note does not belong in the shipped guide. Row: " + row);
+    }
+
+    @Test
     void theChapterCarriesTheOneConditionOnTheLivePromise() throws IOException {
         // Card 222, review finding F5. The live promise has exactly one
         // exception, and this is the second round in which it went unwritten.
@@ -549,6 +596,38 @@ class ConfigDocDriftTest {
                         + " saved imageProvider for the rest of the session — the one condition"
                         + " on the promise above it, and the one the app used to trigger by"
                         + " itself. Paragraph: " + exception);
+    }
+
+    /** Card 491: the phrase that replaced "the system prompt stays settled for
+     *  the session". A setting with the reach {@code next-run} may add a
+     *  paragraph to the system prompt at the start of each run, so the promise
+     *  is about the base of the prompt, and the prompt a run sends is fixed for
+     *  that run. */
+    static final String SYSTEM_PROMPT_PHRASE =
+            "the system prompt a run sends is fixed for that run";
+
+    @Test
+    void theSystemPromptPromiseHoldsWhenAParagraphIsAddedPerRun() throws IOException {
+        // Card 491. The chapter used to list "the system prompt" among the four
+        // things settled for the whole session. A paragraph appended at the
+        // start of each run (card 492) makes that false, so the paragraph now
+        // promises the BASE of the prompt for the session and the whole prompt
+        // for one run, and this pins both halves.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String settled = paragraphContaining(Files.readString(source), "stay settled for that session");
+        assertFalse(settled.isEmpty(), "the paragraph about what a session settles is gone");
+        assertFalse(settled.contains("and the <strong>system prompt</strong>"),
+                "the chapter still says the whole system prompt is settled for the session,"
+                        + " which a paragraph added per run makes false. Paragraph: " + settled);
+        assertTrue(settled.contains("the base of the <strong>system prompt</strong>"),
+                "the paragraph must name the base of the system prompt as what the session"
+                        + " settles. Paragraph: " + settled);
+        assertTrue(settled.contains(SYSTEM_PROMPT_PHRASE),
+                "the paragraph must say \"" + SYSTEM_PROMPT_PHRASE + "\". Paragraph: " + settled);
+        assertTrue(settled.contains("next-run"),
+                "the paragraph must name the reach that adds to the prompt. Paragraph: "
+                        + settled);
     }
 
     /** The one {@code <p>} carrying {@code marker}, so an assertion about a

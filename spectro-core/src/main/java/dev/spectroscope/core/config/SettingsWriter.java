@@ -15,7 +15,7 @@ import java.util.Set;
 
 /**
  * The one writer for every settings file the settings-productization API touches.
- * Two capabilities:
+ * Three capabilities:
  *
  * <p>{@link #appendAutoApprove} appends an {@code autoApprove} rule into
  * {@code <cwd>/.spectro/settings.json} — the persist path behind a web "always allow ·
@@ -29,6 +29,11 @@ import java.util.Set;
  * against any settings file in any {@link Scope} — the settings API's PUT endpoint
  * (Tasks 9/10) calls this so a user/project/local write can never brick the file
  * {@link SpectroConfig#load} later reads.</p>
+ *
+ * <p>{@link #appendHooks} and {@link #removeHooks} add and take away entries of
+ * the {@code hooks} array of one settings file, compared in all four raw fields,
+ * for the playbook installer (card 485). The merged file must bind before it is
+ * written.</p>
  *
  * <p>{@code SpectroConfig} only reads settings; this is the sole writer.</p>
  *
@@ -92,7 +97,14 @@ public final class SettingsWriter {
             // Card 467: whether old, large tool results leave the request.
             "toolResultElision",
             // Card 466: the tool groups a session leaves out of every request.
-            "toolGroupsOff");
+            "toolGroupsOff",
+            // Card 490: how many model sessions one chat may run at once.
+            "sessionsPerChat",
+            // Card 492: whether every run appends the care paragraph.
+            "careParagraph",
+            // Card 493: the read share, and the record of the Local mode switch.
+            "readSharePercent",
+            "localModeKeys");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
@@ -172,6 +184,159 @@ public final class SettingsWriter {
         }
         root.set("autoApprove", approve);
         writeAtomically(file, JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+    }
+
+    /**
+     * Appends hook entries to the {@code hooks} array of a settings file in one
+     * synchronized read, merge and write. An entry equal in all four raw fields
+     * (event, matcher, command, timeoutSeconds) to one already in the file is not
+     * added again. Each entry is written as an object in the order event, matcher,
+     * command, timeoutSeconds, with a null matcher or timeout left out, the order
+     * the web settings page writes. Every other key and every other hook survives.
+     * The merged file must bind as a whole; when it does not, nothing is written.
+     * The file and its parent directory are created when absent.
+     *
+     * @param file    the settings file to read, merge and write
+     * @param entries the hooks to append, in order
+     * @return the entries that were added, in the order given
+     * @throws IOException              when the file cannot be read or written
+     * @throws IllegalArgumentException when the file is not a JSON object, its
+     *                                  {@code hooks} is not an array, or the
+     *                                  merged file does not bind
+     */
+    public static synchronized List<HookConfig> appendHooks(Path file, List<HookConfig> entries)
+            throws IOException {
+        ObjectNode root = readRootForHooks(file);
+        ArrayNode hooks = hooksArray(root);
+        List<HookConfig> added = new java.util.ArrayList<>();
+        for (HookConfig entry : entries) {
+            boolean present = false;
+            for (JsonNode node : hooks) {
+                if (entry.equals(asHook(node))) {
+                    present = true;
+                    break;
+                }
+            }
+            if (!present) {
+                hooks.add(hookNode(entry));
+                added.add(entry);
+            }
+        }
+        root.set("hooks", hooks);
+        bindOrThrow(root);
+        if (!added.isEmpty()) {
+            writeAtomically(file, JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        return List.copyOf(added);
+    }
+
+    /**
+     * Removes hook entries equal in all four raw fields (event, matcher, command,
+     * timeoutSeconds) from the {@code hooks} array of a settings file, in one
+     * synchronized read, merge and write. Every other key and every other hook
+     * survives. A missing file removes nothing and is not created.
+     *
+     * @param file    the settings file to read, merge and write
+     * @param entries the hooks to remove
+     * @return the entries that matched at least one hook in the file, in the order given
+     * @throws IOException              when the file cannot be read or written
+     * @throws IllegalArgumentException when the file is not a JSON object, its
+     *                                  {@code hooks} is not an array, or the
+     *                                  merged file does not bind
+     */
+    public static synchronized List<HookConfig> removeHooks(Path file, List<HookConfig> entries)
+            throws IOException {
+        if (!Files.exists(file)) {
+            return List.of();
+        }
+        ObjectNode root = readRootForHooks(file);
+        ArrayNode hooks = hooksArray(root);
+        List<HookConfig> removed = new java.util.ArrayList<>();
+        for (HookConfig entry : entries) {
+            boolean hit = false;
+            for (int i = hooks.size() - 1; i >= 0; i--) {
+                if (entry.equals(asHook(hooks.get(i)))) {
+                    hooks.remove(i);
+                    hit = true;
+                }
+            }
+            if (hit) {
+                removed.add(entry);
+            }
+        }
+        if (root.has("hooks")) {
+            root.set("hooks", hooks);
+        }
+        bindOrThrow(root);
+        if (!removed.isEmpty()) {
+            writeAtomically(file, JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        return List.copyOf(removed);
+    }
+
+    /** The settings file as an object for a hooks merge: a new object when the
+     *  file is absent, a refusal when it holds anything but an object, so a merge
+     *  never replaces content it could not read.
+     *  @param file the settings file
+     *  @return the root object to merge into
+     *  @throws IOException              when the file cannot be read
+     *  @throws IllegalArgumentException when the file is not a JSON object */
+    private static ObjectNode readRootForHooks(Path file) throws IOException {
+        if (!Files.exists(file)) {
+            return JSON.createObjectNode();
+        }
+        JsonNode tree = JSON.readTree(Files.readString(file, StandardCharsets.UTF_8));
+        if (tree == null || tree.isMissingNode()) {
+            return JSON.createObjectNode();
+        }
+        if (!tree.isObject()) {
+            throw new IllegalArgumentException("settings file " + file + " is not a JSON object");
+        }
+        return (ObjectNode) tree;
+    }
+
+    /** The root's {@code hooks} array, or a new empty one when the key is absent.
+     *  @param root the settings object
+     *  @return the array to merge into
+     *  @throws IllegalArgumentException when {@code hooks} is present and not an array */
+    private static ArrayNode hooksArray(ObjectNode root) {
+        JsonNode hooks = root.get("hooks");
+        if (hooks == null || hooks.isNull()) {
+            return JSON.createArrayNode();
+        }
+        if (!hooks.isArray()) {
+            throw new IllegalArgumentException("settings value has the wrong shape: hooks is not an array");
+        }
+        return (ArrayNode) hooks;
+    }
+
+    /** One hook node of a file read as the reader binds it, or null when it does
+     *  not bind; a null never equals an entry, so such a node is kept as it is.
+     *  @param node one element of the hooks array
+     *  @return the bound hook, or null */
+    private static HookConfig asHook(JsonNode node) {
+        try {
+            return JSON.treeToValue(node, HookConfig.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException unreadable) {
+            return null;
+        }
+    }
+
+    /** A hook as the object the settings page writes: event, matcher, command,
+     *  timeoutSeconds, with a null matcher or timeout left out.
+     *  @param hook the hook to write
+     *  @return the JSON object */
+    private static ObjectNode hookNode(HookConfig hook) {
+        ObjectNode node = JSON.createObjectNode();
+        node.put("event", hook.event());
+        if (hook.matcher() != null) {
+            node.put("matcher", hook.matcher());
+        }
+        node.put("command", hook.command());
+        if (hook.timeoutSeconds() != null) {
+            node.put("timeoutSeconds", hook.timeoutSeconds());
+        }
+        return node;
     }
 
     /** The user scope's file — the ONE place its path is answered for writers.
@@ -316,6 +481,8 @@ public final class SettingsWriter {
                     SpectroConfig.KNOWN_DESKTOP_NOTIFICATIONS_VALUES);
             case "toolResultElision" ->
                     requireOneOf(key, value.asText(), SpectroConfig.KNOWN_TOOL_RESULT_ELISION_VALUES);
+            case "careParagraph" ->
+                    requireOneOf(key, value.asText(), SpectroConfig.KNOWN_CARE_PARAGRAPH_VALUES);
             // Card 466: every entry a known group. A non-array is left to the
             // shape check after this one, which names the type.
             case "toolGroupsOff" -> {
@@ -323,6 +490,14 @@ public final class SettingsWriter {
                     List<String> names = new java.util.ArrayList<>();
                     value.forEach(entry -> names.add(entry.isTextual() ? entry.asText() : null));
                     SpectroConfig.requireKnownToolGroups(names);
+                }
+            }
+            // Card 493: the record names only keys the Local mode switch writes.
+            case "localModeKeys" -> {
+                if (value.isArray()) {
+                    List<String> names = new java.util.ArrayList<>();
+                    value.forEach(entry -> names.add(entry.isTextual() ? entry.asText() : null));
+                    SpectroConfig.requireKnownLocalModeKeys(names);
                 }
             }
             default -> { }

@@ -1,0 +1,19 @@
+meta {
+  name: provider registry rows
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/providers
+  body: none
+  auth: none
+}
+
+docs {
+  One row per provider the config knows: kind, state (needs-key, needs-download, configured, reachable, failed), keyPresent as a boolean, endpoint, models, live, reason and checkedAt. Sends no request to any provider; it shows presence plus the answer of the last check.
+  
+  Fence: host. Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

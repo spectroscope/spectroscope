@@ -1,0 +1,481 @@
+<!-- ============================== CH 15d ============================== -->
+<h1 data-ch="15d" id="ch-playbooks"><span class="ch-num">Chapter 15d</span>Playbooks: a way of working, drawn</h1>
+
+<p class="lead">A playbook is a folder that says how a team builds: which steps come in
+which order, where the work branches, which skill and which model each step uses, and which
+handover document passes from one step to the next. The developer mode reads such a folder,
+checks it, draws it and lets you edit it. It can install the skills, commands, hooks and
+agents the folder brings, and it can run a session by it: each step on the model it names, with
+the handover checked before the next step starts.</p>
+
+<h2 id="ch-playbooks-what">What a playbook is</h2>
+
+<p>The central file is <code>playbook.json</code>. It describes a graph of three kinds of
+node. A <b>step</b> is work: it names who does it (the chat or a child agent), which skills it
+uses, which model choice it runs on, whether it stays private or may use a cheaper hosted
+model, which documents it takes in and which it hands on, and whether it waits for your nod.
+A <b>decision</b> is a check with named outcomes, for example <code>pass</code> and
+<code>fail</code>, and every outcome has exactly one arrow leaving it. An <b>end</b> closes
+the path with a result. Arrows connect them, and an arrow that leads back to an earlier node
+is a loop.</p>
+
+<p>Every loop has a ceiling. A decision that sits on a loop carries <code>max_rounds</code>, and
+when the rounds are used up the decision takes a further outcome called
+<code>exhausted</code>. A playbook whose loop has no such decision is refused when it is
+loaded, and the finding names the arrow.</p>
+
+<p>The file chooses a model by name, never by address. The names are model choices, a small set
+that the playbook defines once, and each choice holds a provider and a model with an optional
+list of fallbacks. A step says <code>strong</code> or <code>fast</code>, and the choice
+resolves to whatever your own installation has. This is what lets a team share a playbook
+without sharing a machine.</p>
+
+<h2 id="ch-playbooks-folder">The folder</h2>
+
+<p>The playbook that ships with the product shows the layout. These are the entries at the
+top of the folder:</p>
+
+<table>
+  <tr><th>Entry</th><th>What it holds</th></tr>
+  <tr><td><code>playbook.json</code></td><td>The graph, the model choices, the document types and the checks. This is the only file the loader must find.</td></tr>
+  <tr><td><code>skills/</code></td><td>The skills the steps name. The shipped folder holds the pack <code>spectropowers</code>, fourteen skills.</td></tr>
+  <tr><td><code>templates/</code></td><td>One Markdown template per document type, so a handover document always has the same sections.</td></tr>
+  <tr><td><code>docs/</code></td><td>A generated <code>index.html</code>: the graph as a picture, one section per step and one per document type.</td></tr>
+  <tr><td><code>LICENSE</code></td><td>The licence text of the material the playbook was built from.</td></tr>
+  <tr><td><code>PROVENANCE.md</code></td><td>Where the material came from, as which version, and every file that was changed.</td></tr>
+</table>
+
+<p>The format also has places for <code>agents/</code>, <code>hooks/</code>,
+<code>commands/</code> and <code>workflows/</code>. The shipped playbook leaves them empty, and
+version 1 only reads the paths the <code>contents</code> list of <code>playbook.json</code>
+names. The loader reads <code>playbook.json</code> and those files and nothing else, at most 1 MB
+per file and 200 files per folder, and only a folder you have registered. What the installation
+does with those entries is described under &ldquo;Installing what a playbook brings&rdquo;.</p>
+
+<h2 id="ch-playbooks-mode">The developer mode</h2>
+
+<p>developer is the third view mode, next to learn and light (chapter 6c). It opens everything
+learn opens, without the tutorial, and adds one segment to the sidebar: <b>Playbook</b>. The
+choice is offered in the first question of a new window, and the mode switch at the top right
+changes it later. In learn and light the segment does not exist and its code is never
+requested.</p>
+
+<p>The Playbook segment has five parts.</p>
+
+<ul>
+  <li><b>Folders.</b> The folders you have registered, kept in <code>~/.spectro/playbooks.json</code>.
+  A field adds a folder by its absolute path. A button next to each other folder,
+  &ldquo;Use for this workspace&rdquo;, pins it to the working folder of the window.</li>
+  <li><b>The graph.</b> Steps are cards that show the step name, the model choice and who
+  performs it. Decisions are diamonds, ends are rounded boxes. Each arrow out of a decision
+  carries its outcome as a label, and a loop is drawn as a loop with its round limit, for
+  example &ldquo;up to 5 rounds&rdquo;. The colors follow the active design, light or dark.</li>
+  <li><b>The steps.</b> One table row per step: who performs it, each skill with
+  &ldquo;installed&rdquo; or &ldquo;not installed&rdquo; (read from the skills your installation
+  has), the model choice with the provider it names and that provider's state on this machine,
+  the privacy switch, the documents the step takes and hands on, and whether it waits for a
+  nod.</li>
+  <li><b>Findings.</b> The problems found in the file, one line each, naming the node or key.
+  The list appears only when there is something to report. A file the reader refuses, for
+  example one with an unknown field or a forbidden key, is not drawn at all. A file that
+  reads but breaks a rule, such as a loop without a ceiling, is drawn with its findings above
+  the graph.</li>
+  <li><b>Build by this.</b> A button above the graph that starts a run in the open session. The
+  next section describes what it does. Under it, once a run exists, the segment draws that run.</li>
+</ul>
+
+<p>With no folder pinned the segment shows the folder picker and the copy button and nothing
+else. Under the title a sentence says that a run follows the playbook step by step, each step on
+its own model. With a folder pinned and no session open, &ldquo;Build by this&rdquo; stays
+disabled.</p>
+
+<h2 id="ch-playbooks-spectro">The spectro playbook</h2>
+
+<p>The product ships one playbook, <code>spectro</code>. It holds
+10 steps, 8 decisions and 2 ends. A first decision classifies the work as a spike, a bounded change or an architectural
+change, and each class takes its own path.</p>
+
+<ul>
+  <li>The <b>architectural</b> path brainstorms with you, checks that the spec has its sections,
+  waits for your nod, writes a plan, checks the plan, waits for your nod again, sets up a
+  worktree and then enters the build loop: implement a task, review it, fix what the review
+  found, for at most 5 rounds per task. A final review follows, and then the branch is
+  finished.</li>
+  <li>The <b>bounded</b> path is a short design in the chat, an implementation test first, and
+  the finish.</li>
+  <li>The <b>spike</b> path is a probe that ends in a recommendation.</li>
+</ul>
+
+<p>The model choices are <code>fast</code>, <code>standard</code>, <code>strong</code> and
+<code>judge</code>. The document types are Ticket, Spec, Plan, Task report and Review report,
+and every step names the ones it takes in and hands on. The skills come from
+<code>spectropowers</code>, a copy of the superpowers skills with house rules worked into the
+text. <code>LICENSE</code> carries the MIT text of the source, and <code>PROVENANCE.md</code>
+names the source version and lists every edited file.</p>
+
+<h2 id="ch-playbooks-copy">Copying it into a folder</h2>
+
+<p>Choose a folder you want to keep the playbook in, ideally one that is its own repository,
+type its absolute path into the field and press &ldquo;Copy the spectro playbook into a
+folder&rdquo;. The server writes the bundled files there and registers the folder. It never
+overwrites. If any target file already exists,
+nothing is written, the answer is a conflict, and the window lists the files that stand in the
+way. After a copy you can edit <code>playbook.json</code> in your own editor or in the segment's editor,
+which the next section describes. The segment reads the file each time it loads the folder, so the
+graph shows what the file says now.</p>
+
+<h2 id="ch-playbooks-spectrolyzr">Spectrolyzr</h2>
+
+<p>Spectrolyzr writes a new project and, if you ask for it, a playbook for it. It sits in the
+Playbook segment behind the tab &ldquo;New project&rdquo;, next to the tab that shows the
+playbook. The project is small, builds, and ships one test that passes. The same choices always
+produce the same files, byte for byte. The files come from templates inside the app, so nothing
+is fetched from the network, and no generated project depends on a spectroscope package.</p>
+
+<p>The wizard has three steps.</p>
+
+<ul>
+  <li><b>Project.</b> Pick an archetype, a language and a name. The archetypes are
+  <b>Service</b>, an HTTP server with one <code>/health</code> route; <b>Library</b>, one public
+  function; and <b>Command line tool</b>, a command that greets a name and returns an exit code.
+  The languages are <b>TypeScript</b>, <b>Python</b> and <b>Java</b>. A name starts with a lower
+  case letter, holds lower case letters and digits, may join parts with single hyphens, and has
+  at most 40 characters. A name that turns into a reserved word of Java or Python is refused, and
+  the field says so.</li>
+  <li><b>Add-ons.</b> Any of three, in any combination. <b>Quality gate</b> adds one command that
+  runs the type or lint check and the tests, and fails when no test ran. <b>CI</b> adds a GitHub
+  Actions workflow that runs that check on every push and pull request. <b>spectro playbook</b>
+  writes the playbook of chapter 15d into a folder of its own. With this add-on on, a field
+  &ldquo;Playbook folder&rdquo; appears.</li>
+  <li><b>Review.</b> A file tree on the left, with the project and, when you chose it, the
+  playbook as two roots. Select a file to read its content and, under &ldquo;Why this file&rdquo;,
+  one sentence on why it is there. The summary names your choices, the number of files per folder
+  and two commands: the test command, and the check command, which is the gate command when you
+  chose the quality gate. Below the summary you pick the project folder with &ldquo;Pick&rdquo;,
+  or you type its absolute path where the system has no folder dialog. &ldquo;Generate&rdquo; writes
+  the files.</li>
+</ul>
+
+<h3 id="ch-playbooks-spectrolyzr-folder">The playbook folder</h3>
+
+<p>The playbook does not go inside the project. The field starts as a sibling of the project
+folder, named after the project with <code>-playbook</code> at the end, and you can change it. It
+may not be the project folder, inside it, or around it. Generate writes the spectro playbook
+there, sets its <code>test</code> variable to the check command of your project, registers the
+folder, and pins it to the new project folder. The pin shows in the Playbook segment once the
+project folder is the working folder of the window. Spectrolyzr does not change the working
+folder for you.</p>
+
+<h3 id="ch-playbooks-spectrolyzr-refuse">What Generate refuses</h3>
+
+<p>Generate never overwrites. It looks at both folders first. If any target file already exists,
+nothing is written, and the window lists the files that stand in the way, per folder. A choice
+the server does not know, or a name it refuses, comes back as a message that marks the field.
+After a successful run the window names both folders, says the playbook is pinned to the project,
+and offers a button that copies the path.</p>
+
+<p>A generated Java project has no Gradle wrapper yet, so the command <code>gradle test</code>
+needs Gradle on your machine, next to Java 21. The product's own CI builds every archetype in
+every language, once bare and once with all three add-ons, and runs its check command, so a
+template that stops building turns that job red.</p>
+
+<h2 id="ch-playbooks-edit">Editing a playbook</h2>
+
+<p>The segment edits the file with the mouse. The &ldquo;Edit&rdquo; button in the header opens
+the editor for the folder you are looking at. It is offered when the file can be rewritten
+without losing anything. A file that carries fields the reader does not know stays read only,
+and the header says why. Nothing on disk changes until you press &ldquo;Save&rdquo;.</p>
+
+<p>The editor puts a toolbar above the graph and a panel beside it, or below it on a narrow
+window. The graph is the picture of the read view, with one difference: the layout engine
+places every box again after each change, so no box can be dragged to a spot of your choosing.
+The left mouse button selects and draws arrows. The right and the middle button pan, the wheel
+zooms, and &ldquo;Fit&rdquo; brings the whole playbook back into view.</p>
+
+<p>To add a box, select a step, a decision or an arrow and press &ldquo;Add step&rdquo;,
+&ldquo;Add decision&rdquo; or &ldquo;Add end&rdquo;. After a step or an arrow the new box is
+inserted into the arrow that leaves the step, or into the selected arrow, so the path stays
+whole. After a decision it takes the first outcome that has no arrow yet. A new box gets the
+next free id, such as <code>decision_1</code>, and a plain English name that you can change in
+the panel.</p>
+
+<p>To connect two boxes, drag from a handle on the right edge of the first and let go anywhere
+on the second. A step has one handle and a decision has one per outcome, each named when you
+hover over it. An outcome has exactly one arrow, so dragging from a handle that already has an
+arrow points that arrow at the new target. Select an arrow and the panel shows its target and,
+for an arrow that leaves a decision, its outcome, both of which you can change there.
+&ldquo;Delete&rdquo; removes the selected box with its arrows, or the selected arrow. On the
+canvas, Backspace and Delete do the same.</p>
+
+<p>The panel has three tabs. Selection edits the selected node: a step has an id, a name, a
+goal, who performs it, a role for a child agent, its skills (each marked when it is not
+installed), a model choice that shows the provider's state, privacy, permission, the documents
+it takes and hands on, and the human nod. A decision has an id, a name, a check, its outcomes
+and its maximum rounds, and an end has a result. Documents and Checks edit the document types
+and the checks. Model choices, vars and contents are read only in this version. A text field
+saves when you leave it or press Enter, Escape brings the old text back, and Backspace in a
+field never deletes the selected box.</p>
+
+<p>&ldquo;Undo&rdquo; and &ldquo;Redo&rdquo; step through the last 50 changes. Ctrl or Cmd with Z
+does the same outside a text field, with Shift for redo. A box that an arrow names but nobody
+defined is drawn as a dashed box marked &ldquo;missing&rdquo;, and its arrow can still be
+selected, so the mistake stays visible and nothing disappears silently.</p>
+
+<p>The list of findings under the panel is the check of the read view. The server runs it on
+your draft a moment after each change. &ldquo;Save&rdquo; is refused while a finding exists: the
+status reads &ldquo;Not saved&rdquo; with the number of findings, the list names each one, and
+the file on disk stays as it was. A file you wrote by hand in another layout is rewritten in
+the editor's fixed form on the first save, which may reformat the whole file. The editor
+announces that before you save, because the first diff is then larger than your change. After
+that a save writes structure only, with no coordinates and the keys in one fixed order, so a
+diff shows your change and nothing else.</p>
+
+<p>If the file changed on disk after you opened it, for example in your own editor, the save is
+refused with the message that the file changed on disk, and your draft stays on screen.
+&ldquo;Revert&rdquo; drops your changes and reads the file again. &ldquo;Stop editing&rdquo; closes
+the editor. While there are unsaved changes it is disabled, and so is the folder list.</p>
+
+<p>As an example, a review round after <i>Implement task</i> in the spectro playbook takes
+these steps. Select <i>Implement task</i> and press &ldquo;Add decision&rdquo;. Choose the check
+<code>task_review</code> and type 3 into the maximum rounds. Select the arrow from the new
+decision to <i>Review task</i> and set its outcome to <code>pass</code>. Drag the
+<code>fail</code> handle to <i>Implement task</i> and the <code>exhausted</code> handle to the
+end <code>cancelled</code>. Press &ldquo;Save&rdquo;. The file gains one node and three
+arrows, one existing arrow now points at the new decision, and no other line differs.</p>
+
+<h2 id="ch-playbooks-install">Installing what a playbook brings</h2>
+
+<p>A playbook can carry five kinds of content. The Playbook segment shows a Contents row with
+the count of each kind and two buttons, Install and Remove. Install opens a list first. The list
+shows every item with its source path inside the folder, the first twelve characters of its
+SHA-256 hash (the full hash is in the tooltip), its state, and how far it reaches. Nothing is
+written before you press Install in that list, and the click is bound to the list you saw: if the
+folder changed in the meantime, nothing is written, the list is reloaded and the window says
+why.</p>
+
+<table>
+  <tr><th>Kind</th><th>In the folder</th><th>What it becomes</th></tr>
+  <tr><td>Skills</td><td><code>skills/</code>, one pack folder holding one folder per skill</td><td>Copied to <code>~/.spectro/skills/</code> as a pack, each skill with the playbook's <code>LICENSE</code>, its <code>PROVENANCE.md</code> and a <code>spectro-install.json</code> that names the playbook, the folder and the hash. They are advertised as <code>pack:skill</code>. Every new session sees them, in every mode.</td></tr>
+  <tr><td>Commands</td><td><code>commands/</code>, one Markdown file per command</td><td>A one-file skill under the playbook's id, invoked in the message box as <code>/&lt;playbook id&gt;:&lt;name&gt;</code>, with the rest of the message as arguments.</td></tr>
+  <tr><td>Hooks</td><td><code>hooks/</code>, a <code>hooks.json</code> and the scripts beside it</td><td>Entries appended to the <code>hooks</code> list of your user settings. The scripts are copied to <code>~/.spectro/playbook-hooks/</code>, in a folder named after the playbook id, and the placeholder <code>{hooks}</code> in a command becomes the path of that folder.</td></tr>
+  <tr><td>Agents</td><td><code>agents/</code>, one Markdown file per agent with a name, a description, a type and a preamble</td><td>Nothing is copied. The agent file is listed with its hash and checked, and the install records that hash. A child step may name it as the role <code>agent:name</code>, and the run starts that child on the type and preamble of the agent file. The run does not start when the agent was never installed (&ldquo;agent not installed&rdquo;) or when the file is no longer the one that was installed (&ldquo;agent changed since install&rdquo;). The agent file cannot set a model, a permission or a tool list.</td></tr>
+  <tr><td>Workflows</td><td><code>workflows/</code>, script files</td><td>Listed with their hash and never copied. The product has no workflow runner, so a workflow file is not run.</td></tr>
+</table>
+
+<p>Hooks have their own tick in the list, and it is off by default. A hook runs before the
+permission check on every tool call of every new session, and a before-tool hook that exits with
+an error blocks the call, so the list shows each resolved command in full and the full text of every
+script beside it. When the project settings of the current workspace set their own hooks, the
+list says that the installed ones do not run there, because the project block replaces the user
+block.</p>
+
+<p>The list also shows a prompt cost line. Every installed skill and command adds one line to
+the system prompt of every new session, and the line says how many characters that is in total.
+The cost weighs more on a local model with a short context window.</p>
+
+<p>A skill that a step names and the installation lacks gets an &ldquo;Install from this
+playbook&rdquo; link in the step table when the playbook carries it. The link opens the same
+list.</p>
+
+<p>The installation writes a record of its work to <code>~/.spectro/playbook-installs.json</code>:
+which playbook, from which folder, on which day, and every item with its hash. It is not a
+settings file and nothing reads it as one. A second install of the same playbook is refused with
+the folder and date of the first, so remove it first. An install is also refused when a target
+already exists for another reason, for example a catalogue pack with the same name, and the
+refusal names the target and who owns it. The size limits of the skill catalogue apply to
+everything one install writes: 400 files and 24 MB together. A symbolic link under a content
+path is refused, and so is a folder without a <code>LICENSE</code> or a
+<code>PROVENANCE.md</code>.</p>
+
+<p>Each skill is built in a staging folder next to the skills folder and moved into place in one
+step, so a failed install leaves nothing half written. Remove takes out what the record lists
+and the hook entries that equal the recorded ones, and nothing else. An installed copy you
+edited after the install is not removed, and the window names it. A new session picks up
+what was installed or removed. A session that is already open keeps what it started with.</p>
+
+<h2 id="ch-playbooks-run">Running a playbook</h2>
+
+<p>A run follows the drawing. The playbook becomes one graph on the product's own state
+graph engine: a step is a node that does the work, a decision is a node that runs its check and
+returns an outcome, and an arrow is followed only by the outcome it is labelled with. The next
+step starts after the handover of the previous one has passed its checks.</p>
+
+<h3>The confirmation</h3>
+
+<p>Pin a folder to the working folder, open a session and press &ldquo;Build by this&rdquo;.
+Nothing starts yet. The window asks the server for a preview and shows a sheet with the
+drawing and these parts:</p>
+
+<ul>
+  <li>One row per step: who performs it, the provider and the model its model choice resolves to
+  on this machine, the state of that provider, the privacy switch, the permission and whether the
+  step waits for your nod.</li>
+  <li>&ldquo;Skills&rdquo;, each with its source: from the playbook, installed, or missing.</li>
+  <li>&ldquo;Commands this run may execute&rdquo;, every command of a <code>command</code> check
+  word for word, so a command written in a shared folder is read before it can run.</li>
+  <li>&ldquo;What this playbook brings&rdquo;: the list the install shows, for reading only,
+  with each item's source, state and hash. One line names every item changed since the install,
+  in the playbook folder or in the installed copy, one line counts the items that are not
+  installed, and the full contents hash follows the list. The contents are shown here and are not
+  part of the run hash.</li>
+  <li>&ldquo;Hash&rdquo;: a sha256 over <code>playbook.json</code>, every template, every
+  file under the skill folders and every agent file a step names. The sheet shows the first
+  characters.</li>
+</ul>
+
+<p>&ldquo;Start&rdquo; stays disabled while the sheet lists reasons under
+&ldquo;The run does not start because&rdquo;. The reasons are a finding in the file, a skill that is missing, a
+private step whose model sits on a cloud provider, a step that asks for the permission extended,
+a <code>human</code> check with more than four outcomes, which is more than a question can offer,
+and a nod or a <code>human</code> check when nobody can be asked. Pressing Start sends the hash to the
+server, which loads the folder again and compares. If any file changed since the sheet opened,
+the run does not start and the answer is &ldquo;The playbook changed since the confirmation.
+Open it again.&rdquo; The run keeps the copy it pinned, so an edit while it runs applies to the
+next run. No tool of the chat agent can start a run. A playbook that the chat agent wrote
+reaches a run only through this sheet and your click.</p>
+
+<h3>What a step does</h3>
+
+<p>A <b>chat step</b> runs as a turn of the main agent. If the step's model differs from the
+chat's current model, the chat is switched to it first and the conversation travels along. The
+prompt is a short text that the session keeps and a long text that the model receives: the
+goal, the documents the step reads and writes with their required sections, the full text of
+each named skill and the template of each document it hands on. When the run ends the chat
+returns to the model it had before.</p>
+
+<p>A <b>child step</b> runs as a child agent in the role the step names (<code>worker</code> when
+it names none), on the provider of its own model choice, whatever the chat uses. A role
+<code>agent:name</code> runs on the type and preamble of that agent file, as pinned at the start.
+It draws one slot from the chat's pool like any other helper.</p>
+
+<p>After a step the runner looks for the files that changed under the location of each document
+the step produces. If the step carries a nod, you are asked whether to approve the handover, and
+anything but approval ends the run.</p>
+
+<h3>The checks</h3>
+
+<p>A decision runs one check and takes the outcome it returns. Five kinds exist.</p>
+
+<table>
+  <tr><th>Kind</th><th>What it does</th><th>Outcomes</th></tr>
+  <tr><td><code>sections</code></td><td>Every listed document exists, every required section is a heading with text under it, and no forbidden string appears.</td><td>pass, fail</td></tr>
+  <tr><td><code>open_items</code></td><td>No line of the documents is an unchecked task, a list item that starts with <code>[ ]</code>.</td><td>pass, fail</td></tr>
+  <tr><td><code>command</code></td><td>Runs a command from <code>vars</code> in the working folder. It passes the same host guard and the same permission gate as a command the agent runs, and the gate sees it as <code>playbook_check</code>. Exit code 0 is pass.</td><td>pass, fail</td></tr>
+  <tr><td><code>review</code></td><td>A child agent on the model the check names reads the listed documents, cannot write, and answers with one outcome as the last line of its answer. A reviewer runs under the stricter privacy of the steps that produced the documents it reads.</td><td>the labels of the check</td></tr>
+  <tr><td><code>human</code></td><td>Asks you the question of the check and waits. An answer outside the labels counts as no answer.</td><td>the labels of the check</td></tr>
+</table>
+
+<p>A decision that sits on a loop carries <code>max_rounds</code>. The number counts how often the
+decision may send the run back. At the limit it takes the outcome <code>exhausted</code>, which
+the playbook routes to an end. The engine's own step limit stays as a second guard.</p>
+
+<h3>Privacy and model choice</h3>
+
+<p>Every step has a privacy switch, and the confirmation shows it as private or cheap.</p>
+
+<ul>
+  <li>A <code>private</code> step uses only the primary model of its choice. Its fallbacks are never
+  tried, and a primary on a cloud provider is refused before the run. If the model does not answer
+  when the step starts, the run stops and asks whether to retry or stop. The question names the
+  provider, the model, the address that was tried and the reason.</li>
+  <li>A <code>cheap</code> step tries the primary model and then its fallbacks in order and takes
+  the first that answers. The walk is recorded.</li>
+  <li>If a chat step would switch to a cloud model after a private step ran earlier in the same
+  run, the run asks first. The history of the chat would reach that provider, so the question
+  names it and offers to continue or stop. It is asked once per run and provider.</li>
+</ul>
+
+<h3>Permission</h3>
+
+<p>A step may name a permission. The mode that applies is the stricter of the session's current
+mode and the step's, from strictest to widest: read only, ask, auto, extended. A playbook cannot
+widen what the session allows, and the step's limit ends with the step.</p>
+
+<h3>Watching and stopping</h3>
+
+<p>The plan tab shows one line per node on the forward path of the playbook, marked in progress
+while the node runs and completed afterwards. Under the drawing, the segment draws the latest run
+from the graph file the runner writes, lights the node that runs and asks again every second while
+the run lasts. A line above it says &ldquo;The run is in progress.&rdquo; or how the run ended:
+the result, which is the label of the end the path reached, and the stop reason.
+The footer does not call a chat step unfinished because later steps are still open. Stop ends the
+run: the running step is cancelled and the graph file still ends cleanly.</p>
+
+<p>A run ends with one of these words, recorded as the <code>stopReason</code> and shown in plain
+language in the segment.</p>
+
+<table>
+  <tr><th>Word</th><th>Meaning</th></tr>
+  <tr><td><code>done</code></td><td>The path reached one of its ends. The result names which one; in the spectro playbook it is <code>cancelled</code> when a loop ran out of rounds.</td></tr>
+  <tr><td><code>aborted</code></td><td>You pressed Stop.</td></tr>
+  <tr><td><code>step_failed</code></td><td>A step ended with an error or a child reported one.</td></tr>
+  <tr><td><code>model_unavailable</code></td><td>A model did not answer and you chose to stop.</td></tr>
+  <tr><td><code>chat_switch_refused</code></td><td>The chat could not switch to the model of a step.</td></tr>
+  <tr><td><code>privacy_declined</code></td><td>You declined the switch to a cloud model after a private step.</td></tr>
+  <tr><td><code>unanswered</code></td><td>A question of a <code>human</code> check was not answered.</td></tr>
+  <tr><td><code>review_unlabelled</code></td><td>A review named none of its outcomes.</td></tr>
+  <tr><td><code>nod_refused</code></td><td>A handover was not approved.</td></tr>
+  <tr><td><code>recursion_limit</code></td><td>The engine's step limit stopped the run.</td></tr>
+  <tr><td><code>refused</code></td><td>The run was not allowed to start, for example because nobody can be asked and the playbook needs an answer.</td></tr>
+</table>
+
+<p>A window that is closed or a server that is stopped during a run leaves no end record. The
+segment then says &ldquo;The run ended without a record.&rdquo;</p>
+
+<h3>What a run leaves behind</h3>
+
+<p>Two kinds of file live in <code>~/.spectro/playbook-runs/</code>, outside the sessions folder so
+that the session list does not read them. Both are removed when the session is deleted.</p>
+
+<ul>
+  <li><code>&lt;session&gt;.&lt;run&gt;.graph.jsonl</code> is the graph artifact of one run: the
+  topology and one record each time a node starts or ends and each time an arrow is taken. The
+  state graph view reads it.</li>
+  <li><code>&lt;session&gt;.playbook.jsonl</code> is the sidecar of the session, one line per
+  fact, several runs one after the other. The session file itself is not changed, so the sidecar is
+  found by the session id. Its record types are
+  <code>playbook_start</code> (playbook, folder, hash, the session's permission mode and the chat's
+  model before the run), <code>step_start</code> (step, model choice, provider, model, address,
+  the probe with its state and reason, the walk over fallbacks, the effective permission),
+  <code>step_end</code> (the child, whether the step succeeded, how long it took, the error),
+  <code>check</code> (the check, its kind, the outcome, the loop count, a short detail),
+  <code>nod</code> (the answer and how long it took), <code>privacy</code> (the provider asked
+  about and the answer) and <code>playbook_end</code> (the stop reason, the result and the number
+  of steps). The sidecar answers which model served which step. Every string passes the same
+  redaction as the other recordings, and the file stops growing at 16 MiB with a line that says
+  so.</li>
+</ul>
+
+<h2 id="ch-playbooks-refused">What a playbook file may not carry</h2>
+
+<p>A shared folder must not be able to route your material or widen your rights. A key named
+<code>apiKey</code>, <code>key</code>, <code>baseUrl</code>, <code>endpoint</code>,
+<code>address</code>, <code>hooks</code>, <code>mcpServers</code> or <code>autoApprove</code>,
+anywhere in <code>playbook.json</code> except inside the <code>contents</code> list, is refused
+with its path, for example <code>nodes[1].baseUrl</code>. The permission of a step can be
+<code>inherit</code>, <code>readonly</code>, <code>ask</code> or <code>auto</code>, and never
+<code>extended</code>. Node kinds for splitting and joining paths, a fallback chain on a step
+and a nested playbook are recognised and refused as not supported in version 1.</p>
+
+<h2 id="ch-playbooks-limits">What version 1 does not do</h2>
+
+<ul>
+  <li>A run does not resume after a restart. A quit or a server stop ends it, and starting again
+  begins at the first node.</li>
+  <li>There is no headless entry. A run starts from the window, and a playbook with a
+  <code>human</code> check or a nod is refused when nobody can be asked.</li>
+  <li>A shared folder cannot start a run. Only the confirmation sheet does, after you read the
+  commands, the contents and the hash.</li>
+  <li>An item changed since the install is named in the sheet and does not stop a run by itself.
+  Only an agent file that a step names has to be the file that was installed, or the run does
+  not start.</li>
+  <li>Between two steps the chat is idle and its composer is enabled. A message typed then is
+  refused with the usual note that a run is active.</li>
+  <li>You cannot place a box by hand. The graph carries no coordinates, and the layout engine
+  decides where each box goes.</li>
+  <li>Workflow files are listed and not run, because the product has no workflow runner.
+  Hooks are written to your settings only when you tick them, and they apply to every
+  session, not only to the runs of one playbook. A playbook is updated by removing it and
+  installing it again.</li>
+  <li>Paths that split into parallel branches and join again are not part of the format yet.</li>
+</ul>

@@ -14,7 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LevelingSnapshot } from "./leveling";
 import { isOpen, tabsShown } from "./surfaces";
-import type { ViewMode } from "./viewMode";
+import { VIEW_MODES, type ViewMode } from "./viewMode";
 
 const windowStandIn = Object.assign(new EventTarget(), {
   setTimeout: (task: () => void, ms: number) => setTimeout(task, ms) as unknown as number,
@@ -83,11 +83,11 @@ function navRowsInHead(html: string): string[] {
   );
 }
 
-const SEGMENTS = ["sessions", "fleets", "stategraph"] as const;
+const SEGMENTS = ["sessions", "fleets", "stategraph", "playbook"] as const;
 const ACTIONS = ["newChat", "scenarios", "starters", "skills"] as const;
 
 describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
-  for (const mode of ["learn", "light"] as const) {
+  for (const mode of VIEW_MODES) {
     for (const tutorial of [false, true]) {
       it(`${mode}, tutorial ${tutorial ? "on" : "off"}: every tab on screen is one the table opens`, async () => {
         const html = await renderApp(mode, tutorial);
@@ -95,8 +95,8 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
         const tabs = tabsShown(mode, tutorial);
         // The rail's segment rows come first in the markup, then the tab row.
         expect(surfacesWithRole(html, "tab")).toEqual([...segments, ...tabs]);
-        // A positive promise beside the negative one: learn draws all six.
-        if (mode === "learn") expect(tabs).toHaveLength(6);
+        // A positive promise beside the negative one: learn and developer draw all six.
+        if (mode !== "light") expect(tabs).toHaveLength(6);
       });
 
       it(`${mode}, tutorial ${tutorial ? "on" : "off"}: every nav row in the rail's head is one the table opens`, async () => {
@@ -118,13 +118,34 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
     expect(on).toContain("lvl-pill");
     const learn = await renderApp("learn", false);
     expect(learn).toContain('class="tab-nav"');
+    // Developer keeps the tab row with the tutorial off, and the level pill only with it on.
+    const developerOff = await renderApp("developer", false);
+    expect(developerOff).toContain('class="tab-nav"');
+    expect(developerOff).not.toContain("lvl-pill");
+    const developerOn = await renderApp("developer", true);
+    expect(developerOn).toContain("lvl-pill");
   });
 
-  it("draws the learn and light switch in both modes (criterion 3)", async () => {
-    for (const mode of ["learn", "light"] as const) {
+  it("draws the mode switch in every mode (criterion 3)", async () => {
+    for (const mode of VIEW_MODES) {
       for (const tutorial of [false, true]) {
         const html = await renderApp(mode, tutorial);
         expect(html.match(/class="mode-switch" role="radiogroup"/g), `${mode} ${tutorial}`).toHaveLength(1);
+      }
+    }
+  });
+
+  it("draws the playbook segment in developer and in no other mode (card 481)", async () => {
+    // The rail's rows only: the first start picture carries a data-surface for
+    // every table entry in every mode.
+    for (const tutorial of [false, true]) {
+      expect(navRowsInHead(await renderApp("developer", tutorial)), `developer ${tutorial}`).toContain(
+        "playbook",
+      );
+      for (const mode of VIEW_MODES.filter((m) => m !== "developer")) {
+        expect(navRowsInHead(await renderApp(mode, tutorial)), `${mode} ${tutorial}`).not.toContain(
+          "playbook",
+        );
       }
     }
   });

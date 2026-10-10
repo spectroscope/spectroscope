@@ -416,7 +416,8 @@ public final class BrowserTools {
                 if (value.isMissingNode() || value.isNull()) {
                     return "undefined";
                 }
-                return ToolOutput.clip(value.toString(), ToolOutput.MAX_OUTPUT_CHARS);
+                return ToolOutput.clip(value.toString(),
+                        ToolOutput.maxOutputChars(context.contextWindow()));
             }
         };
     }
@@ -457,8 +458,8 @@ public final class BrowserTools {
                             + " — " + reply.error();
                 }
                 return "# " + where(browser, reply) + "\n"
-                        + ToolOutput.clip(reply.value().path("tree").asText(""),
-                                ToolOutput.MAX_OUTPUT_CHARS - 200);
+                        + ToolOutput.clip(reply.value().path("tree").asText(""), Math.max(1,
+                                ToolOutput.maxOutputChars(context.contextWindow()) - 200));
             }
         };
     }
@@ -499,7 +500,8 @@ public final class BrowserTools {
                 return matches.isBlank()
                         ? "Nothing on " + where(browser, reply) + " matches \"" + clean(query)
                                 + "\" — read the page again, it may have changed."
-                        : ToolOutput.clip(matches, ToolOutput.MAX_OUTPUT_CHARS);
+                        : ToolOutput.clip(matches,
+                                ToolOutput.maxOutputChars(context.contextWindow()));
             }
         };
     }
@@ -542,7 +544,8 @@ public final class BrowserTools {
                 String lines = reply.value().path("lines").asText("");
                 return lines.isBlank()
                         ? "The console of " + where(browser, reply) + " is empty."
-                        : ToolOutput.clip(lines, ToolOutput.MAX_OUTPUT_CHARS);
+                        : ToolOutput.clip(lines,
+                                ToolOutput.maxOutputChars(context.contextWindow()));
             }
         };
     }

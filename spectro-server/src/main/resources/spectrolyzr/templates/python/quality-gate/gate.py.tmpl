@@ -1,0 +1,38 @@
+"""Quality gate: compile every module, then run the tests and fail when none ran."""
+
+import re
+import subprocess
+import sys
+
+
+def run(command):
+    result = subprocess.run(command, capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result
+
+
+def main():
+    compiled = run([sys.executable, "-m", "compileall", "-q", "@@py_module@@", "tests"])
+    if compiled.returncode != 0:
+        print("gate: compiling the sources failed", file=sys.stderr)
+        return 1
+
+    tests = run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-v"])
+    if tests.returncode != 0:
+        print("gate: the tests failed", file=sys.stderr)
+        return 1
+
+    summary = re.search(r"^Ran (\d+) tests?", tests.stderr + tests.stdout, re.MULTILINE)
+    if summary is None:
+        print("gate: no summary line found, so the number of tests is unknown", file=sys.stderr)
+        return 1
+    if int(summary.group(1)) == 0:
+        print("gate: zero tests ran", file=sys.stderr)
+        return 1
+    print(f"gate: passed with {summary.group(1)} tests")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,51 @@
+package @@java_package@@;
+
+import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class AppTest {
+
+    private HttpServer server;
+    private String base;
+
+    @BeforeEach
+    void start() throws IOException {
+        server = App.createServer(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0));
+        server.start();
+        base = "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    @AfterEach
+    void stop() {
+        server.stop(0);
+    }
+
+    private HttpResponse<String> get(String path) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(base + path)).GET().build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void healthAnswers200AndTheStatus() throws Exception {
+        HttpResponse<String> response = get("/health");
+        assertEquals(200, response.statusCode());
+        assertEquals("{\"status\":\"ok\"}", response.body());
+    }
+
+    @Test
+    void anyOtherRouteAnswers404() throws Exception {
+        assertEquals(404, get("/missing").statusCode());
+    }
+}

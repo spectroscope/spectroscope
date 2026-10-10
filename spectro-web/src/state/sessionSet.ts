@@ -55,6 +55,9 @@ export interface SessionSlot {
   readonly used: boolean;
   /** Card 459: a run is up and the model has said nothing in it yet. */
   readonly modelSilent: boolean;
+  /** Card 498: opened by a wake and not continued yet. Out of the rail, out
+   *  of view, until the first message adopts it (continueWoken). */
+  readonly woken: boolean;
 }
 
 /** Where a batch came from, for the side effects App routes. */
@@ -89,6 +92,19 @@ export interface SlotInit {
   firstCommand?: ChatCommandName;
   /** Close the record in view and put this one in its place. */
   replace?: boolean;
+  /** Card 498: wake this stored session. The record opens out of view on a
+   *  plain socket that sends wake_session once it is open. */
+  wake?: string;
+}
+
+/** Card 498: what the first message hands the record its wake opened. */
+export interface WokenContinuation {
+  /** The history folded the way a resume folds it. */
+  state: UiState;
+  /** The session's stored events. */
+  events: RunEvent[];
+  firstMessage?: { text: string; attachments?: PendingAttachment[] };
+  firstCommand?: ChatCommandName;
 }
 
 interface Internal {
@@ -98,6 +114,8 @@ interface Internal {
   awaitingRunStart: boolean;
   /** Card 471: the command waiting for this record's socket to open, sent once. */
   pendingCommand: ChatCommandName | null;
+  /** Card 498: the session a wake_session names, sent once the socket is open. */
+  pendingWake: string | null;
 }
 
 const eventType = (event: RunEvent): string | undefined => (event as { type?: string }).type;
@@ -143,10 +161,9 @@ export class SessionSet {
     return this.view().key;
   }
 
-  /** Every record, oldest first. The same array until something changes. */
-  slots(): readonly SessionSlot[] {
-    return this.list;
-  }
+  /** Every record, oldest first. The same array until something changes.
+   *  Bound, so it can be handed to useSyncExternalStore as it is. */
+  readonly slots = (): readonly SessionSlot[] => this.list;
 
   get(key: string): SessionSlot | undefined {
     return this.records.get(key)?.slot;
@@ -176,7 +193,8 @@ export class SessionSet {
     const previous = init.replace === true ? this.viewed : null;
     this.counter += 1;
     const key = `s${this.counter}`;
-    const resumeId = init.resumeId ?? null;
+    const wake = init.wake ?? null;
+    const resumeId = wake !== null ? null : (init.resumeId ?? null);
     let queue: QueuedMessage[] = [];
     if (init.firstMessage !== undefined) {
       queue = enqueue(queue, init.firstMessage.text, init.firstMessage.attachments);
@@ -184,7 +202,7 @@ export class SessionSet {
     const record: Internal = {
       slot: {
         key,
-        sessionId: resumeId,
+        sessionId: wake ?? resumeId,
         resumeId,
         state: init.state ?? initialState,
         events: init.events ?? [],
@@ -195,13 +213,16 @@ export class SessionSet {
         createdAt: (this.deps.now ?? Date.now)(),
         used: resumeId !== null,
         modelSilent: false,
+        woken: wake !== null,
       },
       connection: null,
       awaitingRunStart: false,
       pendingCommand: init.firstCommand ?? null,
+      pendingWake: wake,
     };
     this.records.set(key, record);
-    this.viewed = key;
+    // Card 498: a wake stays out of view; the stored session stays on screen.
+    if (wake === null || this.viewed === null) this.viewed = key;
     if (previous !== null) this.dropRecord(previous);
     if (this.active) this.attach(key);
     this.electCarrier();
@@ -288,6 +309,40 @@ export class SessionSet {
       });
       const timer = setTimeout(finish, timeoutMs);
     });
+  }
+
+  /**
+   * The first message of a stored session whose wake opened a record (card
+   * 498): the record takes the history the resume folded, replays on top of
+   * it the frames its socket already brought (the order a resume's socket
+   * would have delivered them in), queues the message and comes into view.
+   * The socket stays; the server already holds the session on it.
+   */
+  continueWoken(key: string, init: WokenContinuation): void {
+    const record = this.records.get(key);
+    if (record === undefined || !record.slot.woken) return;
+    const arrived = record.slot.events;
+    const state =
+      arrived.length === 0
+        ? init.state
+        : foldLiveBatch(init.state, arrived, this.deps.mode(), this.deps.traceWanted());
+    let queue = record.slot.queue;
+    if (init.firstMessage !== undefined) {
+      queue = enqueue(queue, init.firstMessage.text, init.firstMessage.attachments);
+    }
+    record.pendingCommand = init.firstCommand ?? record.pendingCommand;
+    record.slot = {
+      ...record.slot,
+      state,
+      events: [...init.events, ...arrived],
+      resumeId: record.slot.sessionId,
+      used: true,
+      woken: false,
+      queue,
+    };
+    this.viewed = key;
+    this.changed();
+    this.drain(key);
   }
 
   /** Puts a record in view. Sockets are not touched. */
@@ -501,6 +556,11 @@ export class SessionSet {
     const record = this.records.get(key);
     if (record === undefined) return;
     const slot = record.slot;
+    if (slot.conn.status === "open" && record.pendingWake !== null) {
+      const wake = record.pendingWake;
+      record.pendingWake = null;
+      this.sendClient(key, { type: "wake_session", sessionId: wake });
+    }
     if (slot.conn.status === "open" && record.pendingCommand !== null) {
       const command = record.pendingCommand;
       record.pendingCommand = null;
@@ -596,7 +656,7 @@ function firstPromptOf(state: UiState): string {
 export function heldRowsOf(slots: readonly SessionSlot[]): HeldRow[] {
   const rows: HeldRow[] = [];
   for (const slot of slots) {
-    if (slot.sessionId === null) continue;
+    if (slot.sessionId === null || slot.woken) continue;
     rows.push({
       id: slot.sessionId,
       firstPrompt: firstPromptOf(slot.state),

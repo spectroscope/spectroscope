@@ -1,9 +1,13 @@
 package dev.spectroscope.cli;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.copilot.CopilotRuntime;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -116,5 +120,69 @@ class SpectroCliTest {
         String hint = SpectroCli.firstRunHint("gemini");
         assertFalse(Pattern.compile("^\\s+gemini\\s+\\(local, free\\)", Pattern.MULTILINE)
                 .matcher(hint).find(), hint);
+    }
+
+    /**
+     * The first-run gate judges openai against the endpoint it would dial. At
+     * the operator's own network and with no key it is a local server, the same
+     * word the doctor and /api/config give, so the gate lets it through.
+     */
+    @Test
+    void theFirstRunGateLetsOpenaiAtAPrivateAddressThrough() {
+        org.junit.jupiter.api.Assumptions.assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"));
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "openai", null, "http://192.168.1.10:8080", null, null, null));
+        assertFalse(SpectroCli.needsFirstRunHint(config),
+                "openai pointed at the operator's own network is not a keyless cloud call");
+    }
+
+    /** Positive twin: openai at its public address and no key still needs the hint. */
+    @Test
+    void theFirstRunGateStillStopsKeylessOpenaiAtItsPublicAddress() {
+        org.junit.jupiter.api.Assumptions.assumeFalse(SpectroConfig.hasApiKey("OPENAI_API_KEY"));
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "openai", null, null, null, null, null));
+        assertTrue(SpectroCli.needsFirstRunHint(config),
+                "a keyless cloud call is the case the hint exists for");
+    }
+
+    // ---- review of 2026-10-10: the terminal twin of the first-run sheet knows sign-in
+
+    @Test
+    void aSignInProviderWithNoStoredSignInGetsTheSignInHint() {
+        assertFalse(SpectroConfig.signInProviders().isEmpty());
+        for (String provider : SpectroConfig.signInProviders()) {
+            String message = SpectroCli.firstRunMessage(provider, false);
+            assertNotNull(message, provider + " without a sign-in starts with no word about it");
+            assertTrue(message.contains(provider), message);
+            assertTrue(message.contains("not signed in"), message);
+            assertTrue(message.contains("spectro doctor"), message);
+            assertFalse(message.contains("API_KEY"), "a sign-in is not a key: " + message);
+            assertNull(SpectroCli.firstRunMessage(provider, true), provider + " signed in starts without a hint");
+        }
+    }
+
+    @Test
+    void theCopilotSignInHintNamesTheRuntimeItNeeds() {
+        String message = SpectroCli.firstRunMessage(CopilotRuntime.PROVIDER, false);
+        assertTrue(message.contains(CopilotRuntime.INSTALL_LINE), message);
+        assertFalse(message.toLowerCase(java.util.Locale.ROOT).contains("token"), message);
+    }
+
+    @Test
+    void theKeyHintAndTheLocalPathAreUnchanged() {
+        assertEquals(SpectroCli.firstRunHint("anthropic"), SpectroCli.firstRunMessage("anthropic", false));
+        assertNull(SpectroCli.firstRunMessage("anthropic", true));
+        assertNull(SpectroCli.firstRunMessage("ollama", false), "a local backend is left to try");
+    }
+
+    @Test
+    void aSignInProviderHasNoCredentialUntilASignInIsStored() {
+        // The test home stores none. The old check counted a provider with no
+        // key variable as ready, so copilot read "signed-in" and the hint never fired.
+        for (String provider : SpectroConfig.signInProviders()) {
+            assertFalse(SpectroCli.credentialPresent(provider), provider);
+        }
+        assertTrue(SpectroCli.credentialPresent("ollama"), "a local backend needs none");
     }
 }

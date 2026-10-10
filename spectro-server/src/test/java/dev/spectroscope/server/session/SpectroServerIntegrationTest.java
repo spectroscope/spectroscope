@@ -155,9 +155,12 @@ class SpectroServerIntegrationTest {
                 """.formatted(ollamaMock.getAddress().getPort()));
     }
 
+    /** Removes the config.json written above: it points every provider at 127.0.0.1,
+     *  and the test home outlives this class and a {@code --rerun-tasks} run. */
     @AfterAll
-    static void stopMock() {
+    static void stopMockAndRemoveConfig() throws IOException {
         ollamaMock.stop(0);
+        Files.deleteIfExists(Path.of(System.getProperty("user.home"), ".spectro", "config.json"));
     }
 
     @Test
@@ -258,6 +261,10 @@ class SpectroServerIntegrationTest {
         JsonNode groups = lastOfType(events, "tool_groups_info");
         assertEquals(7, groups.path("groups").size(), "seven tool groups, got " + groups);
         assertEquals(0, groups.path("off").size(), "nothing is switched off as shipped, got " + groups);
+        // Card 493: and the Local mode switch, off as shipped, with its four rows.
+        JsonNode localMode = lastOfType(events, "local_mode_info");
+        assertEquals(false, localMode.path("on").asBoolean(true), "Local mode is off as shipped, got " + localMode);
+        assertEquals(4, localMode.path("rows").size(), "four rows, got " + localMode);
         // The socket-only frames precede the first run (none of them is ever
         // stored in the JSONL): provider_info + permission_mode_info + the
         // PROSPECTIVE workspace_info on connect, the SAME provider pair again
@@ -396,9 +403,12 @@ class SpectroServerIntegrationTest {
         // reason live_sessions does: the gear hears it on connect, at the
         // session moment and once the belt is built, and none of that is part
         // of the order this suite pins. Its arrival is asserted on its own.
+        // Card 493: local_mode_info, the switch beside it in the same gear,
+        // leaves the sequence for the same reason.
         return events.stream()
                 .filter(e -> !"live_sessions".equals(e.path("type").asText()))
                 .filter(e -> !"tool_groups_info".equals(e.path("type").asText()))
+                .filter(e -> !"local_mode_info".equals(e.path("type").asText()))
                 .toList();
     }
 

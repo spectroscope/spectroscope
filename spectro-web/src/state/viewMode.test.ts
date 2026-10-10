@@ -1,10 +1,11 @@
-// Card 430, criterion 1: the mode is learn or light, learn by default, kept in
+// Card 430, criterion 1 and card 481: the mode is learn, light or developer, learn by default, kept in
 // local storage under one key, and followed by every open window through the
 // browser's `storage` event. One test per path, the listener included.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_VIEW_MODE,
+  VIEW_MODES,
   VIEW_MODE_KEY,
   __resetViewModeForTests,
   __setViewModeStorage,
@@ -73,8 +74,33 @@ describe("the mode store (criterion 1)", () => {
     expect(currentViewMode()).toBe("light");
   });
 
-  it("reads a stored value that is neither word as learn", () => {
-    for (const odd of ["LIGHT", "edu", "", "developer", '"light"']) {
+  it("lists the three modes, learn first", () => {
+    expect([...VIEW_MODES]).toEqual(["learn", "light", "developer"]);
+  });
+
+  it("reads a stored developer before the first render", () => {
+    __setViewModeStorage(memory({ [VIEW_MODE_KEY]: "developer" }));
+    __resetViewModeForTests();
+    expect(currentViewMode()).toBe("developer");
+  });
+
+  it("stores developer under the one key and reads it back after a reload", () => {
+    setViewMode("developer");
+    expect([...store.data.entries()]).toEqual([[VIEW_MODE_KEY, "developer"]]);
+    __resetViewModeForTests();
+    expect(currentViewMode()).toBe("developer");
+  });
+
+  it("follows a switch to developer made in another window", () => {
+    const win = windowLike();
+    const stop = followOtherWindows(win);
+    win.dispatchEvent(storageEvent(VIEW_MODE_KEY, "developer"));
+    expect(currentViewMode()).toBe("developer");
+    stop();
+  });
+
+  it("reads a stored value that is none of the three words as learn", () => {
+    for (const odd of ["LIGHT", "edu", "", "Developer", "dev", '"light"']) {
       __setViewModeStorage(memory({ [VIEW_MODE_KEY]: odd }));
       expect(readViewMode(), odd).toBe("learn");
     }

@@ -1,0 +1,16 @@
+import unittest
+
+from @@py_module@@.core import greeting
+
+
+class GreetingTest(unittest.TestCase):
+    def test_greeting_returns_the_greeting_text(self):
+        self.assertEqual(greeting("Ada"), "Hello, Ada.")
+
+    def test_greeting_refuses_a_blank_name(self):
+        with self.assertRaisesRegex(ValueError, "blank"):
+            greeting("   ")
+
+
+if __name__ == "__main__":
+    unittest.main()

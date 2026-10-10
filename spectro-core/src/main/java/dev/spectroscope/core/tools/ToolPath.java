@@ -79,8 +79,9 @@ public final class ToolPath {
      * Package-manager prefixes, in resolution order: Apple-silicon homebrew
      * first (the machine this was measured on), then the Intel/hand-built
      * prefix. {@code sbin} is included because homebrew installs there too.
+     * Public so the Copilot runtime's child (card 497) gets the same folders.
      */
-    static final List<String> TOOLCHAIN_DIRS = List.of(
+    public static final List<String> TOOLCHAIN_DIRS = List.of(
             "/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin");
 
     /**

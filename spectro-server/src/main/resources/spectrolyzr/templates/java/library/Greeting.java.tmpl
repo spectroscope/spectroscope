@@ -1,0 +1,14 @@
+package @@java_package@@;
+
+public final class Greeting {
+
+    private Greeting() {
+    }
+
+    public static String greeting(String name) {
+        if (name.isBlank()) {
+            throw new IllegalArgumentException("name must not be blank");
+        }
+        return "Hello, " + name + ".";
+    }
+}

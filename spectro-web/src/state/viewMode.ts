@@ -1,7 +1,9 @@
 // Card 430: the window's mode. `learn` shows every surface, as the app always
 // did; `light` keeps the chat, the workspace dock, the sessions and the skills,
-// and stops the background work of everything else. Which surface is open in
-// which mode is the table in state/surfaces.ts; this module only holds the word.
+// and stops the background work of everything else. Card 481 adds `developer`:
+// everything learn shows, with no tutorial, plus the playbook module. Which
+// surface is open in which mode is the table in state/surfaces.ts; this module
+// only holds the word.
 //
 // A browser mode (owner decision 2 of 2026-09-24): the server records every
 // session as it always does. The word lives in local storage under one key,
@@ -12,10 +14,10 @@
 
 import { useSyncExternalStore } from "react";
 
-export type ViewMode = "learn" | "light";
+export type ViewMode = "learn" | "light" | "developer";
 
-/** Both modes, learn first. */
-export const VIEW_MODES: readonly ViewMode[] = ["learn", "light"];
+/** The three modes, learn first. */
+export const VIEW_MODES: readonly ViewMode[] = ["learn", "light", "developer"];
 
 /** Owner call 1, at its default: nothing changes for anybody until they switch. */
 export const DEFAULT_VIEW_MODE: ViewMode = "learn";
@@ -43,9 +45,9 @@ const browserStorage: Storage = {
 
 let storage: Storage = browserStorage;
 
-/** A stored or received value as a mode: either word, and learn for anything else. */
+/** A stored or received value as a mode: one of the three words, and learn for anything else. */
 function asMode(raw: string | null): ViewMode {
-  return raw === "light" || raw === "learn" ? raw : DEFAULT_VIEW_MODE;
+  return (VIEW_MODES as readonly string[]).includes(raw ?? "") ? (raw as ViewMode) : DEFAULT_VIEW_MODE;
 }
 
 /** The stored mode. A value that is neither word, and a storage that throws, read as learn. */
@@ -147,7 +149,7 @@ export function useViewMode(): ViewMode {
  * Follow the switches other windows of this origin make. The browser fires
  * `storage` only in the windows that did not write, so following writes
  * nothing back. A removed key, `localStorage.clear()` (a null key) and a value
- * that is neither word all read as learn. The mode screen's mark is followed
+ * that is none of the three words all read as learn. The mode screen's mark is followed
  * the same way: a choice in another window closes the screen here too, and a
  * cleared storage reads as not chosen.
  *

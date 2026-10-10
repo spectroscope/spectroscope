@@ -9,13 +9,60 @@
 // hidden attribution, and Controls without the interactive lock toggle.
 
 import { Background, Controls, ReactFlow } from "@xyflow/react";
-import type { Edge as FlowEdge, EdgeTypes, Node as FlowNode, NodeTypes } from "@xyflow/react";
+import type {
+  Edge as FlowEdge,
+  EdgeTypes,
+  Node as FlowNode,
+  NodeTypes,
+  OnBeforeDelete,
+  OnConnect,
+  OnEdgesChange,
+  OnNodesChange,
+  ReactFlowProps,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { MouseEvent, ReactNode } from "react";
 
 /** Right + middle mouse button pan; left is left for click/drag. Owner rule. */
 const PAN_ON_DRAG: number[] = [1, 2];
 const PRO_OPTIONS = { hideAttribution: true } as const;
+
+/** The handlers an editing surface supplies (card 483). React Flow reports
+ *  intents through them; the surface's store holds the document. */
+export interface GraphCanvasEditing {
+  onNodesChange: OnNodesChange;
+  onEdgesChange: OnEdgesChange;
+  onConnect: OnConnect;
+  onBeforeDelete: OnBeforeDelete;
+}
+
+/**
+ * The props editing adds. Undefined editing adds nothing, so the canvases that
+ * only show a graph do not change. With editing, every default that lets the
+ * left button do something other than select or connect is switched off:
+ * Space would turn a left drag into a pan, Shift would draw a marquee.
+ *
+ * @param editing the handlers, or undefined for a canvas that only shows
+ * @return the props to spread into ReactFlow
+ */
+export function editingProps(editing: GraphCanvasEditing | undefined): Partial<ReactFlowProps> {
+  if (editing === undefined) return {};
+  return {
+    onNodesChange: editing.onNodesChange,
+    onEdgesChange: editing.onEdgesChange,
+    onConnect: editing.onConnect,
+    onBeforeDelete: editing.onBeforeDelete,
+    nodesDraggable: false,
+    nodesConnectable: true,
+    elementsSelectable: true,
+    deleteKeyCode: ["Backspace", "Delete"],
+    panActivationKeyCode: null,
+    selectionKeyCode: null,
+    multiSelectionKeyCode: null,
+    selectionOnDrag: false,
+    zoomOnDoubleClick: false,
+  };
+}
 
 export interface GraphCanvasProps {
   nodes: FlowNode[];
@@ -41,6 +88,8 @@ export interface GraphCanvasProps {
   miniMap?: ReactNode;
   /** Extra overlays rendered inside <ReactFlow> (panels, spawn UI, legends). */
   children?: ReactNode;
+  /** Edit mode (card 483); omitted, the canvas only shows. */
+  editing?: GraphCanvasEditing;
 }
 
 export function GraphCanvas({
@@ -56,6 +105,7 @@ export function GraphCanvas({
   background,
   miniMap,
   children,
+  editing,
 }: GraphCanvasProps) {
   return (
     <div className={className} onContextMenu={suppressContextMenu ? (e) => e.preventDefault() : undefined}>
@@ -68,6 +118,7 @@ export function GraphCanvas({
         fitView
         fitViewOptions={fitViewPadding !== undefined ? { padding: fitViewPadding } : undefined}
         minZoom={minZoom}
+        {...editingProps(editing)}
         panOnDrag={PAN_ON_DRAG}
         proOptions={PRO_OPTIONS}
       >

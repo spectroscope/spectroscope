@@ -157,6 +157,10 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             case "set_tool_groups_off" ->                      // composer gear, additive
                     connection.onSetToolGroupsOff(frame.path("groups"),
                             frame.path("save").asBoolean(false));
+            // Card 493: the composer gear's Local mode switch. The frame goes
+            // through untouched: the connection checks every part of it.
+            case "set_local_mode" ->                           // composer gear, additive
+                    connection.onSetLocalMode(frame);
             // Card 267: the operator states what this run is FOR and the command
             // that decides it. From a person at a browser, never from the model —
             // there is no goal tool in any registry, on purpose.
@@ -176,6 +180,15 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // whole draft that it is one.
             case "compact_context" -> connection.onCompactContext(); // additive (card 471)
             case "clear_context" -> connection.onClearContext();     // additive (card 471)
+            // Card 482: the confirmation sheet's Start. The hash is the one the
+            // sheet showed; the connection refuses when the folder moved since.
+            case "start_playbook" -> connection.onStartPlaybook(frame.path("dir").asText(""),
+                    frame.path("hash").asText(""));
+            // Card 498: a click into the message box of a stored session. Binds
+            // the session to this socket and announces its folder; starts no
+            // run and calls no model.
+            case "wake_session" ->                             // additive (card 498)
+                    connection.onWakeSession(frame.path("sessionId").asText(""));
             default -> connection.sendError("Unknown message type.");
         }
     }

@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { greeting } from "../src/index.js";
+
+test("greeting returns the greeting text", () => {
+  assert.equal(greeting("Ada"), "Hello, Ada.");
+});
+
+test("greeting refuses a blank name", () => {
+  assert.throws(() => greeting("   "), /blank/);
+});

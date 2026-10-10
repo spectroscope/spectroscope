@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { modelFieldMode, pickModel, PROVIDERS, providerDisplayName } from "./providerPickerMode";
+import {
+  modelFieldMode,
+  pickerOption,
+  pickModel,
+  PROVIDERS,
+  providerDisplayName,
+} from "./providerPickerMode";
+import type { ProviderRow } from "../state/providerRegistry";
 
 describe("the built-in provider", () => {
   it("is its own selectable entry", () => {
@@ -85,6 +92,70 @@ describe("modelFieldMode", () => {
       "openrouter",
       "gemini",
       "spectro-local",
+      "copilot",
     ]);
+  });
+});
+
+const row = (over: Partial<ProviderRow>): ProviderRow => ({
+  id: "ollama",
+  kind: "local",
+  state: "configured",
+  keyPresent: false,
+  endpoint: "http://localhost:11434",
+  models: [],
+  live: false,
+  reason: null,
+  checkedAt: 0,
+  ...over,
+});
+
+describe("pickerOption (D9: grey out, never hide)", () => {
+  it("disables a provider that needs a sign-in and says so (card 478 form)", () => {
+    expect(
+      pickerOption(row({ id: "copilot", kind: "cloud", state: "needs-signin", endpoint: null }), "ollama"),
+    ).toEqual({ disabled: true, reasonKey: "pp.optNeedsSignin" });
+  });
+  it("disables a provider that needs a key and says so", () => {
+    expect(
+      pickerOption(row({ id: "openrouter", kind: "cloud", state: "needs-key", endpoint: null }), "ollama"),
+    ).toEqual({ disabled: true, reasonKey: "pp.optNeedsKey" });
+  });
+  it("disables a failed local server and names the address and the reason", () => {
+    expect(pickerOption(row({ state: "failed", reason: "refused" }), "anthropic")).toEqual({
+      disabled: true,
+      reasonKey: "pp.optFailedAt",
+      vars: { addr: "http://localhost:11434", reason: "refused" },
+    });
+  });
+  it("disables a failed cloud provider with the reason alone", () => {
+    expect(
+      pickerOption(
+        row({ id: "openai", kind: "cloud", state: "failed", endpoint: null, reason: "rejected-key" }),
+        "ollama",
+      ),
+    ).toEqual({ disabled: true, reasonKey: "pp.optFailed", vars: { reason: "rejected-key" } });
+  });
+  it("never disables the provider the chat runs on", () => {
+    expect(pickerOption(row({ state: "failed", reason: "refused" }), "ollama").disabled).toBe(false);
+  });
+  it("keeps a server that answers with no model selectable, with a note", () => {
+    expect(pickerOption(row({ state: "reachable", models: [] }), "anthropic")).toEqual({
+      disabled: false,
+      reasonKey: "pp.optNoModels",
+    });
+  });
+  it("enables a configured or reachable provider with models, with no reason", () => {
+    expect(pickerOption(row({ state: "configured" }), "anthropic")).toEqual({
+      disabled: false,
+      reasonKey: null,
+    });
+    expect(pickerOption(row({ state: "reachable", models: ["qwen3:8b"], live: true }), "anthropic")).toEqual({
+      disabled: false,
+      reasonKey: null,
+    });
+  });
+  it("enables an unknown row, so an old server changes nothing", () => {
+    expect(pickerOption(undefined, "ollama")).toEqual({ disabled: false, reasonKey: null });
   });
 });

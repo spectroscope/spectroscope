@@ -1,0 +1,521 @@
+/* ============================================================ playbook
+   The playbook module (card 481): playbook/PlaybookPane.tsx, PlaybookGraph.tsx
+   and StepTable.tsx. Imported by app.css, because a surface chunk may carry no
+   stylesheet of its own (surfaceChunks.guard.test.ts).
+
+   Tokens only, the rule stategraph.css states: colour on lines, no shadows,
+   depth as a surface step plus a hairline, both designs from the same names. */
+
+.pb-pane {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-5) var(--sp-5) var(--sp-6);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.pb-head {
+  margin-bottom: var(--sp-4);
+}
+.pb-title {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-20);
+  font-weight: 500;
+  color: var(--text);
+}
+.pb-description {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-13);
+  color: var(--text-dim);
+}
+
+.pb-h {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-11);
+  font-weight: 500;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.pb-picker,
+.pb-section {
+  margin-top: var(--sp-4);
+}
+
+.pb-pane button {
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition:
+    color var(--t-fast),
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+.pb-pane button:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.pb-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0 0 var(--sp-2);
+  padding: 0;
+  list-style: none;
+}
+.pb-folder-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pb-pane .pb-folder {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.pb-pane .pb-folder.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.pb-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.pb-path {
+  flex: 1 1 260px;
+  min-width: 0;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 8px;
+}
+.pb-path:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.pb-pane .pb-copy {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pb-notice {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-2);
+  overflow-wrap: anywhere;
+}
+
+.pb-findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-finding {
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text);
+  border-left: 2px solid var(--error);
+  padding: 2px 0 2px var(--sp-2);
+  margin-bottom: var(--sp-1);
+  overflow-wrap: anywhere;
+}
+.pb-mono {
+  font-family: var(--font-mono);
+}
+
+/* ---------- graph ---------- */
+.pb-canvas {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.pb-graph {
+  display: block;
+}
+.pb-step {
+  fill: var(--bg);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.pb-decision {
+  fill: var(--bg);
+  stroke: var(--sand);
+  stroke-width: 1.25;
+}
+.pb-terminal {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.pb-label {
+  fill: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.pb-meta {
+  fill: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.pb-rounds {
+  fill: var(--sand);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.pb-edge {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.25;
+}
+.pb-edge--cond {
+  stroke-dasharray: 5 4;
+}
+.pb-edge--back {
+  stroke: var(--sand);
+  stroke-dasharray: none;
+}
+.pb-arrowhead {
+  fill: var(--border-strong);
+}
+.pb-arrowhead--back {
+  fill: var(--sand);
+}
+.pb-outcome {
+  fill: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+}
+
+/* ---------- step table ---------- */
+.pb-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.pb-steps {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-12);
+}
+.pb-steps th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+.pb-steps td {
+  vertical-align: top;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
+}
+.pb-steps tr:last-child td {
+  border-bottom: none;
+}
+.pb-cell-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.pb-skills {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-skills li {
+  white-space: nowrap;
+}
+.pb-state {
+  color: var(--text-dim);
+}
+.pb-skills .is-installed .pb-state {
+  color: var(--ok);
+}
+.pb-skills .is-missing .pb-state {
+  color: var(--warn);
+}
+.pb-model {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pb-meta-line {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* ---------- ends, ghosts and marked arrows (card 483) ---------- */
+.pb-end {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.pb-ghost {
+  fill: none;
+  stroke: var(--error);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.pb-edge--dangling {
+  stroke: var(--error);
+  stroke-dasharray: 3 3;
+}
+
+/* ---------- contents (card 485) ----------
+   The step table's install link, the contents row, the contents list and the
+   confirmation dialog. Same rule as above: tokens only, colour on lines. */
+.pb-pane .pb-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pb-pane .pb-link:hover {
+  background: none;
+  color: var(--text);
+}
+.pb-note {
+  color: var(--text-dim);
+}
+.pb-skills .is-disabled .pb-state {
+  color: var(--text-dim);
+}
+
+.pc-counts {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pc-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.pb-pane .pc-row-actions button:disabled,
+.pb-pane .pc-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.pc-kind-h,
+.pc-group-h {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-11);
+  font-weight: 500;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--sand);
+}
+.pc-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pc-item {
+  min-width: 0;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.pc-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.pc-name {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--text);
+}
+.pc-state {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pc-state[data-state="new"] {
+  color: var(--sand);
+}
+.pc-state[data-state="same"] {
+  color: var(--ok);
+}
+.pc-state[data-state="source-changed"],
+.pc-state[data-state="copy-changed"],
+.pc-state[data-state="taken"] {
+  color: var(--warn);
+}
+.pc-hash,
+.pc-source {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pc-hash {
+  margin-left: auto;
+}
+.pc-scope {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.pc-command {
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pc-file {
+  margin-top: var(--sp-2);
+}
+.pc-file-path {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pc-pre {
+  max-height: 240px;
+  margin: 2px 0 0;
+  padding: var(--sp-2);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  white-space: pre;
+}
+
+.pc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  backdrop-filter: blur(3px);
+}
+.pc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: min(720px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  color: var(--text);
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pc-title {
+  font-size: var(--fs-16);
+  font-weight: 500;
+  color: var(--text);
+}
+.pb-pane .pc-close {
+  padding: 0 var(--sp-1);
+  border: 0;
+  background: none;
+  font-size: var(--fs-20);
+  line-height: 1;
+}
+.pc-note {
+  margin: 0;
+  max-width: 64ch;
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pc-note--warn {
+  color: var(--text);
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-2);
+}
+.pc-tick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+.pc-hooks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.pc-outcome {
+  /* Keeps the answer clear of the sticky action row when it scrolls into view. */
+  scroll-margin-bottom: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  border-left: 2px solid var(--sand);
+  padding-left: var(--sp-2);
+}
+.pc-actions {
+  position: sticky;
+  bottom: calc(-1 * var(--sp-5));
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0 calc(-1 * var(--sp-5)) calc(-1 * var(--sp-5));
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.pb-pane .pc-primary {
+  color: var(--accent);
+  border-color: var(--accent);
+}

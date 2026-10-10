@@ -104,6 +104,23 @@ import java.util.List;
  *                      the next run. Applied after the role policy and after
  *                      the role's grant, so it can only take tools away
  *                      (nullable: nothing is switched off)
+ * @param sessionsPerChat the chat's session count (card 490), the main agent
+ *                      and its helpers together. The manager's slot pool
+ *                      admits at most this count minus one helper at a time;
+ *                      while a parent run is in flight the pool reads the
+ *                      parent agent's live count instead, so this value
+ *                      governs between runs and for a parent built without
+ *                      one. Nullable: no count, as in v0.14.4. A value below
+ *                      its floor of 2 is refused here, by name
+ * @param careParagraph the session's {@code careParagraph} (card 492). While a
+ *                      parent run is in flight a child takes the setting that
+ *                      run read at its start, not this value. A child offers
+ *                      no spawn tool, so its paragraph never carries the
+ *                      sentence about subagents (nullable: the shipped off)
+ * @param readSharePercent the session's {@code readSharePercent} (card 493).
+ *                      While a parent run is in flight a child takes the share
+ *                      that run read at its start, not this value (nullable:
+ *                      the shipped 25)
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -123,7 +140,10 @@ public record SubagentConfig(
         dev.spectroscope.core.session.SessionWindow sessionWindow,
         Integer subagentBudgetTokens,
         String toolResultElision,
-        java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff) {
+        java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff,
+        Integer sessionsPerChat,
+        String careParagraph,
+        Integer readSharePercent) {
 
     /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
      *  and an absent budget to the derived one over an unfed window. The
@@ -149,6 +169,44 @@ public record SubagentConfig(
             throw new IllegalArgumentException(
                     "subagentBudgetTokens must be positive, got " + subagentBudgetTokens);
         }
+        // Card 490: the same refusal, by name, for a count below its floor.
+        SessionCount.of(sessionsPerChat);
+    }
+
+    /** Compat: the arity of v0.14.4, which knew no session count (card 490).
+     *  Its children run with no limit per chat, as before.
+     *
+     * @param provider      the provider the children run on
+     * @param cwd           sandbox root, same as the parent's
+     * @param parentAgentId agentId of the parent agent
+     * @param onPermission  the same blocking broker the parent uses
+     * @param baseTools     the belt a child inherits, WITHOUT the spawn tools
+     * @param hooks         the parent's hooks (nullable → none)
+     * @param llmWire       the session's recorder (nullable → children record nothing)
+     * @param webTools      the parent's web tools (nullable → none)
+     * @param budget        what a child may spend in time (nullable → derived)
+     * @param compactionThreshold the parent's explicit threshold (nullable → derived)
+     * @param maxTurns      the parent's turn ceiling (nullable → the default)
+     * @param maxTokens     the parent's completion budget (nullable → the default)
+     * @param thinking      whether reasoning is surfaced (nullable → the provider's default)
+     * @param subagentBudgetSeconds the operator's floor (nullable → the shipped one)
+     * @param sessionWindow the parent session's window holder (nullable → children derive)
+     * @param subagentBudgetTokens a child's token budget (nullable → the shipped one)
+     * @param toolResultElision the session's elision switch (nullable → on)
+     * @param toolGroupsOff the parent session's switched-off groups (nullable → none) */
+    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
+                          PermissionBroker onPermission, List<Tool> baseTools,
+                          HookRunner hooks, LlmWireRecorder llmWire, List<Tool> webTools,
+                          ChildBudget budget, Integer compactionThreshold, Integer maxTurns,
+                          Integer maxTokens, Boolean thinking, Integer subagentBudgetSeconds,
+                          dev.spectroscope.core.session.SessionWindow sessionWindow,
+                          Integer subagentBudgetTokens, String toolResultElision,
+                          java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>>
+                                  toolGroupsOff) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
+                webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
+                subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, toolResultElision,
+                toolGroupsOff, null, null, null);
     }
 
     /** Compat: the arity before cards 467 and 466, which knew no elision
@@ -180,7 +238,8 @@ public record SubagentConfig(
                           Integer subagentBudgetTokens) {
         this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
                 webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
-                subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, null, null);
+                subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, null, null, null,
+                null, null);
     }
 
     /** The pre-card-394 arity, kept so a caller that does not carry a token
@@ -342,6 +401,9 @@ public record SubagentConfig(
         private Integer subagentBudgetTokens;    // nullable -> the shipped budget
         private String toolResultElision;        // nullable -> the shipped "on"
         private java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff; // nullable -> none off
+        private Integer sessionsPerChat;         // nullable -> no count per chat
+        private String careParagraph;            // nullable -> the shipped "off"
+        private Integer readSharePercent;        // nullable -> the shipped 25
 
         private Builder() {
         }
@@ -457,7 +519,6 @@ public record SubagentConfig(
             return this;
         }
 
-        /** @return the finished config, normalized by the canonical constructor */
         /**
          * Card 467: the session's elision switch, for every child.
          *
@@ -469,11 +530,43 @@ public record SubagentConfig(
             return this;
         }
 
+        /** Card 490: the chat's session count, the main agent and its helpers.
+         *  @param value the count; null sets none, as v0.14.4 did
+         *  @return this builder */
+        public Builder sessionsPerChat(Integer value) {
+            this.sessionsPerChat = value;
+            return this;
+        }
+
+        /**
+         * Card 492: the session's care paragraph switch, for every child.
+         *
+         * @param value {@code "on"}, {@code "off"}, or null for the shipped off
+         * @return this builder
+         */
+        public Builder careParagraph(String value) {
+            this.careParagraph = value;
+            return this;
+        }
+
+        /**
+         * Card 493: the session's read share, for every child.
+         *
+         * @param value the share in per cent, or null for the shipped 25
+         * @return this builder
+         */
+        public Builder readSharePercent(Integer value) {
+            this.readSharePercent = value;
+            return this;
+        }
+
+        /** @return the finished config, normalized by the canonical constructor */
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
                     baseTools, hooks, llmWire, webTools, budget, compactionThreshold,
                     maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow,
-                    subagentBudgetTokens, toolResultElision, toolGroupsOff);
+                    subagentBudgetTokens, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                    readSharePercent);
         }
     }
 }

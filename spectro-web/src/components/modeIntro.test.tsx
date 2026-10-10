@@ -7,10 +7,10 @@
 // walked in a browser under criterion 9.
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ModeIntro, PICTURE_SKIPS } from "./ModeIntro";
 import { SURFACES, isOpen, type SurfaceId } from "../state/surfaces";
-import { VIEW_MODES, type ViewMode } from "../state/viewMode";
+import { VIEW_MODES } from "../state/viewMode";
 import { dict } from "../i18n/i18n";
 
 const markup = (): string => renderToStaticMarkup(<ModeIntro onChoose={() => {}} />);
@@ -123,21 +123,27 @@ describe("the picture follows the table (criterion 1b)", () => {
   });
 });
 
-describe("a third mode in the list", () => {
-  afterEach(() => {
-    vi.doUnmock("../state/viewMode");
-    vi.resetModules();
+describe("the third mode", () => {
+  it("is developer, offered as a third choice after learn and light", () => {
+    const modes = choiceTags(markup()).map((tag) => /data-mode="([a-z]+)"/.exec(tag)?.[1]);
+    expect(modes).toEqual(["learn", "light", "developer"]);
   });
 
-  it("gets a third choice", async () => {
-    vi.resetModules();
-    vi.doMock("../state/viewMode", async (importOriginal) => {
-      const real = await importOriginal<typeof import("../state/viewMode")>();
-      return { ...real, VIEW_MODES: [...real.VIEW_MODES, "developer" as ViewMode] };
-    });
-    const { ModeIntro: Fresh } = await import("./ModeIntro");
-    const html = renderToStaticMarkup(<Fresh onChoose={() => {}} />);
-    const modes = choiceTags(html).map((tag) => /data-mode="([a-z]+)"/.exec(tag)?.[1]);
-    expect(modes).toEqual([...VIEW_MODES, "developer"]);
+  it("draws developer's picture with the playbook filled and the lab filled", () => {
+    const html = markup();
+    expect(picture(html, "developer").playbook).toBe("true");
+    expect(picture(html, "developer").lab).toBe("true");
+    expect(picture(html, "learn").playbook).toBe("false");
+    expect(picture(html, "light").playbook).toBe("false");
+  });
+
+  it("names the other two modes' switch without listing two words", () => {
+    for (const mode of VIEW_MODES) {
+      for (const lang of ["de", "en"] as const) {
+        expect(dict[`mode.intro.${mode}.switch`][lang], `${mode} ${lang}`).not.toMatch(
+          /learn und light|learn and light/,
+        );
+      }
+    }
   });
 });

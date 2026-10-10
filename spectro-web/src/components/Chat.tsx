@@ -151,6 +151,9 @@ export function Chat(props: {
    *  composer stands under its history instead of the archive bar, and the
    *  view opens at its end like a live one. */
   continuable?: boolean;
+  /** Card 498: the message box took the focus. A stored session wakes its
+   *  folder on the server here, before anything is sent. */
+  onComposerFocus?: () => void;
   /** Card 458: the one line an archive that cannot be continued shows where
    *  the composer would be (an import, a scenario, a session another window
    *  holds). Absent, the bar says it is an archive. */
@@ -1348,6 +1351,7 @@ export function Chat(props: {
                         showsPlaceholder(draft, voice.provisional) ? t(lang, "chat.placeholder") : ""
                       }
                       aria-label={t(lang, "chat.placeholder")}
+                      onFocus={props.onComposerFocus}
                       onChange={(e) => {
                         setDraft(e.target.value);
                         setCaret(e.target.selectionStart ?? e.target.value.length);
@@ -1533,6 +1537,9 @@ export function Chat(props: {
                   workspaceInfo={state.workspace}
                   permissionMode={state.permissionMode}
                   toolGroups={state.toolGroups}
+                  localMode={state.localMode}
+                  provider={props.composerMeta?.provider}
+                  model={props.composerMeta?.model}
                   sendClient={props.sendClient}
                 />
                 {/* Card 463: the model, the thinking level and the context
@@ -1542,6 +1549,7 @@ export function Chat(props: {
                     {...props.composerMeta}
                     liveView={props.liveView}
                     lastInputTokens={state.lastInputTokens}
+                    aiCredits={state.aiCredits}
                     context={state.context}
                     onWindowOverride={props.onWindowOverride}
                   />
@@ -1616,6 +1624,7 @@ export function Chat(props: {
                   {...props.composerMeta}
                   liveView={false}
                   lastInputTokens={state.lastInputTokens}
+                  aiCredits={state.aiCredits}
                   context={state.context}
                 />
               )}

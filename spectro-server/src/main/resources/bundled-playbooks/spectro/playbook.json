@@ -1,0 +1,360 @@
+{
+  "schema_version": 1,
+  "id": "spectro",
+  "name": "spectro",
+  "description": "Classify the request, then brainstorm, spec, plan, build with review and finish; a bounded change takes a short design, a spike ends in a recommendation.",
+  "models": {
+    "fast": {
+      "primary": { "provider": "ollama", "model": "qwen3.5:27b-q4_K_M" },
+      "fallbacks": []
+    },
+    "standard": {
+      "primary": { "provider": "anthropic", "model": "claude-sonnet-5-5" },
+      "fallbacks": []
+    },
+    "strong": {
+      "primary": { "provider": "anthropic", "model": "claude-opus-5-5" },
+      "fallbacks": []
+    },
+    "judge": {
+      "primary": { "provider": "anthropic", "model": "claude-fable-5-1" },
+      "fallbacks": []
+    }
+  },
+  "documents": {
+    "ticket": {
+      "name": "Ticket",
+      "purpose": "What is wanted and why, with acceptance criteria and scenarios",
+      "location": "kanban/{n}-{slug}.md",
+      "template": "templates/ticket.md",
+      "sections": ["Story", "Value", "Context", "Acceptance criteria", "Non functional criteria", "Scenario", "Provenance"]
+    },
+    "spec": {
+      "name": "Spec",
+      "purpose": "The design the owner approved",
+      "location": "docs/superpowers/specs/{date}-{slug}-design.md",
+      "template": "templates/spec.md",
+      "sections": ["Goal", "Design", "Requirements", "Out of scope", "Acceptance scenarios"]
+    },
+    "plan": {
+      "name": "Plan",
+      "purpose": "The numbered tasks that build the spec, each with its files and its failing test",
+      "location": "docs/superpowers/plans/{date}-{slug}.md",
+      "template": "templates/plan.md",
+      "sections": ["Goal", "Architecture", "Tech Stack", "Spec", "Ticket", "Global Constraints", "Tasks"]
+    },
+    "task_report": {
+      "name": "Task report",
+      "purpose": "What one task built, with its red and green runs",
+      "location": ".superpowers/sdd/{slug}/task-{n}-report.md",
+      "template": "templates/task-report.md",
+      "sections": ["Task", "Red run", "Green run", "Files", "Open points"]
+    },
+    "review_report": {
+      "name": "Review report",
+      "purpose": "The findings of a review and its verdict",
+      "location": ".superpowers/sdd/{slug}/review-{n}.md",
+      "template": "templates/review-report.md",
+      "sections": ["Strengths", "Critical", "Important", "Minor", "Verdict"]
+    }
+  },
+  "checks": {
+    "classify_check": {
+      "kind": "human",
+      "reads": ["ticket"],
+      "ask": "Which path does this request take: spike, bounded or architectural?",
+      "labels": ["spike", "bounded", "architectural"]
+    },
+    "spec_sections": {
+      "kind": "sections",
+      "documents": ["spec"]
+    },
+    "spec_nod": {
+      "kind": "human",
+      "reads": ["spec"],
+      "ask": "Does the spec say what you want built?",
+      "labels": ["yes", "no"]
+    },
+    "plan_sections": {
+      "kind": "sections",
+      "documents": ["plan"]
+    },
+    "plan_nod": {
+      "kind": "human",
+      "reads": ["plan"],
+      "ask": "Does the plan build the spec the way you want?",
+      "labels": ["yes", "no"]
+    },
+    "plan_open": {
+      "kind": "open_items",
+      "documents": ["plan"]
+    },
+    "tests_green": {
+      "kind": "command",
+      "run": "{test}"
+    },
+    "task_review": {
+      "kind": "review",
+      "model": "standard",
+      "reads": ["plan", "task_report"],
+      "labels": ["pass", "fail"]
+    },
+    "final_review": {
+      "kind": "review",
+      "model": "judge",
+      "reads": ["spec", "plan"],
+      "labels": ["pass", "fail"]
+    }
+  },
+  "vars": {
+    "test": "./gradlew test --rerun-tasks --no-build-cache"
+  },
+  "start": "classify",
+  "nodes": [
+    {
+      "kind": "decision",
+      "id": "classify",
+      "name": "Classify",
+      "check": "classify_check"
+    },
+    {
+      "kind": "step",
+      "id": "brainstorm",
+      "name": "Brainstorm",
+      "goal": "An approved design written down as a spec",
+      "performer": "chat",
+      "skills": ["spectropowers:brainstorming"],
+      "model": "strong",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["ticket"],
+      "produces": ["spec"],
+      "nod": false
+    },
+    {
+      "kind": "decision",
+      "id": "spec_ok",
+      "name": "Spec complete",
+      "check": "spec_sections",
+      "max_rounds": 3
+    },
+    {
+      "kind": "decision",
+      "id": "spec_nod",
+      "name": "Spec nod",
+      "check": "spec_nod"
+    },
+    {
+      "kind": "step",
+      "id": "write_plan",
+      "name": "Write plan",
+      "goal": "Numbered tasks that build the spec, test first",
+      "performer": "chat",
+      "skills": ["spectropowers:writing-plans"],
+      "model": "strong",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["ticket", "spec"],
+      "produces": ["plan"],
+      "nod": false
+    },
+    {
+      "kind": "decision",
+      "id": "plan_ok",
+      "name": "Plan complete",
+      "check": "plan_sections",
+      "max_rounds": 3
+    },
+    {
+      "kind": "decision",
+      "id": "plan_nod",
+      "name": "Plan nod",
+      "check": "plan_nod"
+    },
+    {
+      "kind": "step",
+      "id": "setup",
+      "name": "Set up worktree",
+      "goal": "An isolated worktree with a green baseline",
+      "performer": "chat",
+      "skills": ["spectropowers:using-git-worktrees"],
+      "model": "fast",
+      "privacy": "private",
+      "permission": "inherit",
+      "consumes": ["plan"],
+      "produces": [],
+      "nod": false
+    },
+    {
+      "kind": "step",
+      "id": "implement",
+      "name": "Implement task",
+      "goal": "The next open task of the plan, failing test first",
+      "performer": "child",
+      "role": "worker",
+      "skills": ["spectropowers:test-driven-development"],
+      "model": "standard",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["plan"],
+      "produces": ["task_report"],
+      "nod": false
+    },
+    {
+      "kind": "decision",
+      "id": "review_task",
+      "name": "Review task",
+      "check": "task_review",
+      "max_rounds": 5
+    },
+    {
+      "kind": "step",
+      "id": "fix",
+      "name": "Fix findings",
+      "goal": "Every open finding of the task review addressed",
+      "performer": "child",
+      "role": "worker",
+      "skills": ["spectropowers:test-driven-development"],
+      "model": "strong",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["plan", "task_report", "review_report"],
+      "produces": ["task_report"],
+      "nod": false
+    },
+    {
+      "kind": "decision",
+      "id": "more_tasks",
+      "name": "Tasks left",
+      "check": "plan_open"
+    },
+    {
+      "kind": "decision",
+      "id": "final_review",
+      "name": "Final review",
+      "check": "final_review",
+      "max_rounds": 2
+    },
+    {
+      "kind": "step",
+      "id": "final_fix",
+      "name": "Fix final findings",
+      "goal": "Every open finding of the final review addressed in one fix pass",
+      "performer": "child",
+      "role": "worker",
+      "skills": ["spectropowers:test-driven-development"],
+      "model": "strong",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["spec", "plan", "review_report"],
+      "produces": ["task_report"],
+      "nod": false
+    },
+    {
+      "kind": "step",
+      "id": "finish",
+      "name": "Finish branch",
+      "goal": "The branch merged, kept or handed over as the owner chooses",
+      "performer": "chat",
+      "skills": ["spectropowers:finishing-a-development-branch"],
+      "model": "standard",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["ticket"],
+      "produces": [],
+      "nod": true
+    },
+    {
+      "kind": "step",
+      "id": "design_in_chat",
+      "name": "Short design",
+      "goal": "A short design in chat, approved and written into the ticket as a numbered plan",
+      "performer": "chat",
+      "skills": ["spectropowers:brainstorming"],
+      "model": "standard",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["ticket"],
+      "produces": ["ticket"],
+      "nod": true
+    },
+    {
+      "kind": "step",
+      "id": "implement_bounded",
+      "name": "Implement",
+      "goal": "The bounded change, failing test first",
+      "performer": "chat",
+      "skills": ["spectropowers:test-driven-development"],
+      "model": "standard",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["ticket"],
+      "produces": [],
+      "nod": false
+    },
+    {
+      "kind": "step",
+      "id": "probe",
+      "name": "Probe",
+      "goal": "An answer to the feasibility question and a recommendation; anything built stays throwaway",
+      "performer": "chat",
+      "skills": ["spectropowers:brainstorming"],
+      "model": "standard",
+      "privacy": "cheap",
+      "permission": "inherit",
+      "consumes": ["ticket"],
+      "produces": [],
+      "nod": false
+    },
+    {
+      "kind": "end",
+      "id": "done",
+      "result": "done"
+    },
+    {
+      "kind": "end",
+      "id": "cancelled",
+      "result": "cancelled"
+    }
+  ],
+  "arrows": [
+    { "from": "classify", "to": "probe", "on": "spike" },
+    { "from": "classify", "to": "design_in_chat", "on": "bounded" },
+    { "from": "classify", "to": "brainstorm", "on": "architectural" },
+    { "from": "brainstorm", "to": "spec_ok" },
+    { "from": "spec_ok", "to": "spec_nod", "on": "pass" },
+    { "from": "spec_ok", "to": "brainstorm", "on": "fail" },
+    { "from": "spec_ok", "to": "cancelled", "on": "exhausted" },
+    { "from": "spec_nod", "to": "write_plan", "on": "yes" },
+    { "from": "spec_nod", "to": "brainstorm", "on": "no" },
+    { "from": "write_plan", "to": "plan_ok" },
+    { "from": "plan_ok", "to": "plan_nod", "on": "pass" },
+    { "from": "plan_ok", "to": "write_plan", "on": "fail" },
+    { "from": "plan_ok", "to": "cancelled", "on": "exhausted" },
+    { "from": "plan_nod", "to": "setup", "on": "yes" },
+    { "from": "plan_nod", "to": "write_plan", "on": "no" },
+    { "from": "setup", "to": "implement" },
+    { "from": "implement", "to": "review_task" },
+    { "from": "review_task", "to": "more_tasks", "on": "pass" },
+    { "from": "review_task", "to": "fix", "on": "fail" },
+    { "from": "review_task", "to": "cancelled", "on": "exhausted" },
+    { "from": "fix", "to": "review_task" },
+    { "from": "more_tasks", "to": "final_review", "on": "pass" },
+    { "from": "more_tasks", "to": "implement", "on": "fail" },
+    { "from": "final_review", "to": "finish", "on": "pass" },
+    { "from": "final_review", "to": "final_fix", "on": "fail" },
+    { "from": "final_review", "to": "cancelled", "on": "exhausted" },
+    { "from": "final_fix", "to": "final_review" },
+    { "from": "finish", "to": "done" },
+    { "from": "design_in_chat", "to": "implement_bounded" },
+    { "from": "implement_bounded", "to": "finish" },
+    { "from": "probe", "to": "done" }
+  ],
+  "contents": {
+    "skills": ["skills/spectropowers"],
+    "agents": [],
+    "hooks": [],
+    "commands": [],
+    "workflows": []
+  }
+}

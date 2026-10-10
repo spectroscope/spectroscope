@@ -36,7 +36,7 @@ describe("the reply budget is classified before it is drawn", () => {
     // Measured rather than inherited from its neighbours: Agent's runLoop takes
     // `options.maxTokens()` once, before the first token flows, and there is no
     // setter for it — unlike continuationBudget, which SessionConnection
-    // re-reads per prompt and which is therefore live.
+    // re-reads per prompt and which therefore acts from the next run.
     expect(SETTING_REACH.maxTokens).toBe("next-session");
   });
 
@@ -83,24 +83,27 @@ describe("the reply budget has a control and a sentence in both languages", () =
     }
   });
 
-  it("keeps the thinking warning on the one family and the one value it is true of", () => {
-    // The other half, and it shipped unconditionally in both languages until
-    // this card's review measured it: "set it too low and extended thinking
-    // turns off". AnthropicProvider only ever builds a token budget for the
-    // models in BUDGET_THINKING_MODEL_PREFIXES, and that budget is only ever
-    // zero — the one value that omits thinking — at maxTokens <= 1, which the
-    // control's own min={1} makes a single reachable value. Anthropic's
-    // adaptive models (the shipped default among them) and every other backend
-    // are unaffected at any value, so the unscoped sentence described nothing a
-    // reader of this page could reach. AnthropicProviderTest
-    // .TheOneValueThatTurnsThinkingOff pins the arithmetic; this pins the copy.
+  it("keeps the thinking warning on the one family and the range it is true of", () => {
+    // Card 364 scoped the sentence to the older Anthropic models and to the
+    // value 1. Card 488's review found the API refuses a reasoning budget
+    // below 1,024, so on those models every value up to 1,024 goes out without
+    // thinking (AnthropicProvider.MIN_THINKING_BUDGET, pinned in
+    // AnthropicProviderTest.TheRangeThatTurnsThinkingOff). This pins the copy.
     for (const lang of ["en", "de"] as const) {
       const note = t(lang, "set.maxTokensNote" as never);
       expect(
         note,
         `${lang}: the note never names Anthropic, so the warning still reads as a property of every backend`,
       ).toMatch(/Anthropic/);
-      expect(note, `${lang}: the note does not say the value it is true of`).toMatch(/\b1\b/);
+      expect(note, `${lang}: the note does not say the range it is true of`).toMatch(/1[,.]024/);
     }
+  });
+
+  it("says that a known window lowers the budget a call asks for", () => {
+    // Card 488: every request asks for at most what the window keeps back
+    // for the answer, so a person who types 32,000 on a small model sees a
+    // smaller number on the wire. The note says so before they look.
+    expect(t("en", "set.maxTokensNote" as never)).toMatch(/window/);
+    expect(t("de", "set.maxTokensNote" as never)).toMatch(/Kontextfenster/);
   });
 });

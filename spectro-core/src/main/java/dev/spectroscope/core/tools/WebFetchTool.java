@@ -39,11 +39,6 @@ public final class WebFetchTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
-     *  kept as a second copy of the same number. */
-    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
-    private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
-
     /** How many redirects one call may take before it gives up. Every one of
      *  them is fenced, so the budget is about loops and latency, not safety. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
@@ -156,7 +151,7 @@ public final class WebFetchTool implements Tool {
                                 + url + ".";
                     }
                     String text = HtmlText.strip(fetched.body() == null ? "" : fetched.body());
-                    text = ToolOutput.clip(text, MAX_OUTPUT_CHARS);
+                    text = ToolOutput.clip(text, ToolOutput.maxOutputChars(context.contextWindow()));
                     return text.isBlank() ? "(no readable text)" : text;
                 }
                 if (taken >= MAX_REDIRECTS) {

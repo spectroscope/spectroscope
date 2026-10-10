@@ -104,6 +104,12 @@ final class ContextDescriber {
         List<RoleCatalog.RoleProfile> profiles = RoleCatalog.roleProfiles(
                 childBaseToolNames(settingsBelt, standardTools, skills)).stream()
                 .map(profile -> withoutSwitchedOff(profile, off)).toList();
+        // Card 492: the care paragraph the next run of a session on this
+        // config appends, naming helpers only while a spawn tool is listed.
+        boolean spawns = tools.stream()
+                .anyMatch(tool -> tool.name().equals("spawn_agent") || tool.name().equals("spawn_agents"));
+        systemPrompt = systemPrompt + dev.spectroscope.core.session.CareParagraph.suffix(
+                config.careParagraph(), dev.spectroscope.core.session.CareParagraph.helpersFor(config), spawns);
         return new ContextInfo(systemPrompt, tools, skillCatalog,
                 mcpServerNames, config.thinking(), config.provider(), config.model(), profiles);
     }
@@ -175,8 +181,12 @@ final class ContextDescriber {
                 : Stream.of(skills.useSkillTool(), skills.readSkillFileTool());
         Stream<ContextInfo.ToolInfo> registered = Stream.of(standardTools.stream(), extras.stream(), useSkill)
                 .flatMap(tools -> tools)
-                .map(ContextDescriber::asToolInfo);
-        Stream<ContextInfo.ToolInfo> parentOnly = RoleCatalog.parentTools().stream()
+                .map(tool -> asToolInfo(tool, config));
+        // Card 490: the spawn tools name the chat's session count when one is
+        // set, so the view describes them with this config's count.
+        Stream<ContextInfo.ToolInfo> parentOnly = RoleCatalog.parentTools(
+                        dev.spectroscope.core.subagents.SessionCount.of(config.sessionsPerChat()))
+                .stream()
                 .map(summary -> new ContextInfo.ToolInfo(summary.name(), summary.description(), false));
         return Stream.concat(registered, parentOnly).toList();
     }
@@ -216,11 +226,15 @@ final class ContextDescriber {
     }
 
     /**
-     * Projects one live tool onto its introspection triple.
+     * Projects one live tool onto its introspection triple, with the
+     * description a run of this config carries (card 493: {@code read_file}
+     * and {@code read_skill_file} name the config's read share).
      *
-     * @param tool the real tool object — name, description and gate flag are read from it
+     * @param tool   the real tool object: name, description and gate flag are read from it
+     * @param config the config the run would start with
      */
-    private static ContextInfo.ToolInfo asToolInfo(Tool tool) {
-        return new ContextInfo.ToolInfo(tool.name(), tool.description(), tool.needsPermission());
+    private static ContextInfo.ToolInfo asToolInfo(Tool tool, SpectroConfig config) {
+        return new ContextInfo.ToolInfo(tool.name(),
+                tool.descriptionForRun(new Tool.RunFacts(config.readSharePercent())), tool.needsPermission());
     }
 }

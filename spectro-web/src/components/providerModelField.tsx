@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { localDownNote } from "./providerAddress";
-import { modelFieldMode, pickModel, type ModelFieldMode } from "./providerPickerMode";
+import { listIsAuthoritative, modelFieldMode, pickModel, type ModelFieldMode } from "./providerPickerMode";
 import { modelAbsentFromList } from "./settingsModelPolicy";
 
 /** Sentinel option that reveals the free-text "custom model" input. */
@@ -66,7 +66,7 @@ export function useProviderModels(
           // A local backend AND a keyed ("ready") cloud provider both return
           // their real list — authoritative — so a bogus seed (opus carried over,
           // or "local-model" left on a keyed openai) snaps to the first real one.
-          const authoritative = status?.[provider] === "local" || status?.[provider] === "ready";
+          const authoritative = listIsAuthoritative(status?.[provider]);
           const picked = pickModel(cur, ms, authoritative);
           if (picked !== cur) change(picked);
         }

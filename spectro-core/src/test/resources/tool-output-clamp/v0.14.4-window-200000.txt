@@ -1,0 +1,11 @@
+# Card 489: tool results at a window of 200,000 tokens, captured from v0.14.4
+# (commit 8d7fcf48) by ToolOutputFollowsTheWindowTest. One line per call:
+# label, length in characters, sha256 of the UTF-8 bytes.
+grep-large 10000 ead9cfab61e9741ad28dc797fda13ae18caee83506422ef04f13701e6f0fc29a
+grep-medium 9062 1d5ab6cacb37896a6e507063457b4119ce659b1b8e7d9a4ce1ed14c810ced59c
+run_command-large 10000 34696a5f49b90c75ff836b5218737df1293e99563f18018dab2b5bbe3a72fa57
+run_command-medium 8000 916b917c93884ba3d899839cbbf0684f57e7bb30129ea486c5f42f2e0495d102
+run_command-small 3000 cca9d40e71a9e9da0a1514993719d2f2c88a6de71d96a74d95685dca4b8ab1fe
+web_fetch-large 10000 90e58ddf0fa3ff84f641ddc0c72869f3d31d135825f274d471897d17fcf30a2b
+web_search-large 10000 dad87f57883a698855f05643d1f41642961470925327fb8b6712e945d992186c
+browse_page-large 10000 9d6b8461d20199bbd5dde896c20d513e394cb8bda1f09750bf3e331bd68a5da8

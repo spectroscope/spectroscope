@@ -1,0 +1,13 @@
+import sys
+
+
+def run(args: list[str]) -> tuple[int, str]:
+    if not args or args[0].strip() == "":
+        return 2, "usage: @@name@@ <name>\n"
+    return 0, f"Hello, {args[0]}.\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    code, out = run(sys.argv[1:] if argv is None else argv)
+    sys.stdout.write(out)
+    return code

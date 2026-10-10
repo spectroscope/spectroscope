@@ -457,6 +457,43 @@ class BrowserToolsTest {
         assertNull(refused.sha256(), "no blob was stored, so no blob may be named");
     }
 
+    /**
+     * Card 489: the four readers clamp what they hand back to the window the
+     * loop gives the tool. The expected bounds are written out (6,144 characters
+     * at 8,192 tokens, 10,000 at 200,000), so a reverted rule cannot move them.
+     * {@code browser_read_page} keeps 200 characters for its heading line, as
+     * before the card.
+     */
+    @Test
+    void theFourReadersClampTheirResultToTheWindow(@TempDir Path dir) {
+        String big = "x".repeat(20_000);
+        String page = "http://127.0.0.1:9/last";
+        FakeFace face = new FakeFace(true, Map.of(
+                "eval", BrowserFace.Reply.ok(JSON.createObjectNode().put("value", big), page),
+                "read_page", BrowserFace.Reply.ok(JSON.createObjectNode().put("tree", big), page),
+                "find", BrowserFace.Reply.ok(JSON.createObjectNode().put("matches", big), page),
+                "console", BrowserFace.Reply.ok(JSON.createObjectNode().put("lines", big), page)));
+        BrowserTools family = tools(face, false, dir);
+        for (int[] windowAndBound : new int[][] {{8_192, 6_144}, {200_000, 10_000}}) {
+            int window = windowAndBound[0];
+            int bound = windowAndBound[1];
+            Tool.ToolContext context = new Tool.ToolContext(dir, new CancelSignal(), "main",
+                    "call-1", event -> { }, attachment -> { }, change -> { }, millis -> { },
+                    false, window);
+            String eval = byName(family, "browser_eval")
+                    .execute(obj("{\"action\":\"javascript_exec\",\"text\":\"1\"}"), context);
+            assertEquals(bound, eval.length(), "browser_eval on a window of " + window);
+            String find = byName(family, "browser_find").execute(obj("{\"query\":\"q\"}"), context);
+            assertEquals(bound, find.length(), "browser_find on a window of " + window);
+            String console = byName(family, "browser_read_console").execute(obj("{}"), context);
+            assertEquals(bound, console.length(), "browser_read_console on a window of " + window);
+            String read = byName(family, "browser_read_page").execute(obj("{}"), context);
+            assertTrue(read.startsWith("# "), read.substring(0, 40));
+            String tree = read.substring(read.indexOf('\n') + 1);
+            assertEquals(bound - 200, tree.length(), "browser_read_page on a window of " + window);
+        }
+    }
+
     private static Tool byName(BrowserTools family, String name) {
         return family.all().stream().filter(t -> name.equals(t.name())).findFirst().orElseThrow();
     }

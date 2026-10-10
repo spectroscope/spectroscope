@@ -1,0 +1,21 @@
+# @@name@@
+
+An HTTP service with one route, `GET /health`, which answers `{"status":"ok"}`. Every other request answers 404.
+
+## Build
+
+Nothing to build. The service runs from the sources with Python 3.11 or newer.
+
+## Test
+
+```
+@@test_command@@
+```
+
+## Run
+
+```
+python3 -m @@py_module@@
+```
+
+The service listens on the port in the `PORT` environment variable and on 8080 when it is not set.

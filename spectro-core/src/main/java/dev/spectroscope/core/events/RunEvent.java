@@ -589,12 +589,29 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * @param outputTokens        completion-side tokens of the call
      * @param cacheReadTokens     tokens served from the prompt cache (additive; null = not reported)
      * @param cacheCreationTokens tokens freshly written into the cache (additive; null = not reported)
+     * @param aiCredits           what the call cost in GitHub AI credits (additive, card 496;
+     *                            null = the provider reported none)
      * @param ts                  epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Usage(String agentId, int inputTokens, int outputTokens,
-                 Integer cacheReadTokens, Integer cacheCreationTokens,
+                 Integer cacheReadTokens, Integer cacheCreationTokens, Double aiCredits,
                  long ts) implements RunEvent {
+
+        /**
+         * The shape before AI credits: every provider that reports none.
+         *
+         * @param agentId             the billed agent
+         * @param inputTokens         prompt-side tokens of the call that no cache served
+         * @param outputTokens        completion-side tokens of the call
+         * @param cacheReadTokens     tokens served from the prompt cache (null = not reported)
+         * @param cacheCreationTokens tokens freshly written into the cache (null = not reported)
+         * @param ts                  epoch millis of emission
+         */
+        public Usage(String agentId, int inputTokens, int outputTokens,
+                     Integer cacheReadTokens, Integer cacheCreationTokens, long ts) {
+            this(agentId, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, null, ts);
+        }
 
         /**
          * The pre-caching shape — providers without cache counts (and every
@@ -606,7 +623,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param ts           epoch millis of emission
          */
         public Usage(String agentId, int inputTokens, int outputTokens, long ts) {
-            this(agentId, inputTokens, outputTokens, null, null, ts);
+            this(agentId, inputTokens, outputTokens, null, null, null, ts);
         }
     }
 

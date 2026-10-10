@@ -156,6 +156,35 @@ class ProviderListDriftTest {
         }
     }
 
+    /**
+     * The first-run sheet has an option for every backend that SIGNS IN
+     * instead of taking a key (card 496), tagged as one, with the status line
+     * that links to the sign-in sheet.
+     *
+     * <p>Derived from {@link SpectroConfig#signInProviders()}: a fourth
+     * provider added there and to {@code KNOWN_PROVIDERS}, with no TypeScript
+     * touched, turns this red.</p>
+     */
+    @Test
+    void theFirstRunSheetHasASignInOptionForEverySignInBackend() throws IOException {
+        assumeTrue(sourceCheckout(), "not running from a source checkout");
+        assertTrue(!SpectroConfig.signInProviders().isEmpty(), "no sign-in backend left to check");
+        String source = Files.readString(repoRoot().resolve(ONBOARDING), StandardCharsets.UTF_8);
+        for (String provider : new TreeSet<>(SpectroConfig.signInProviders())) {
+            int start = source.indexOf("badge=\"" + provider + "\"");
+            assertTrue(start > 0, "the first-run sheet has no option for the sign-in backend \""
+                    + provider + "\", so a reader with that subscription is told to find a key. ("
+                    + ONBOARDING + ")");
+            Matcher close = Pattern.compile("\\R\\s*/>\\R").matcher(source);
+            assertTrue(close.find(start), "the " + provider + " option never closes");
+            String option = source.substring(start, close.start());
+            assertTrue(option.contains("tag=\"signin\""),
+                    "the " + provider + " option is not tagged as a sign-in:\n" + option);
+            assertTrue(option.contains("AccountNote"),
+                    "the " + provider + " option does not show the sign-in status with its sheet:\n" + option);
+        }
+    }
+
     /** The {@code ob-remote} paragraph of the first-run sheet, both locales. */
     private static String remoteHint() throws IOException {
         String source = Files.readString(repoRoot().resolve(ONBOARDING), StandardCharsets.UTF_8);

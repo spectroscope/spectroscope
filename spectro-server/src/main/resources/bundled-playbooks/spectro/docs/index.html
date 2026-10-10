@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spectro</title>
+<style>
+:root {
+  --bg: #fbfaf7;
+  --panel: #ffffff;
+  --fg: #1c1c1e;
+  --muted: #5b5b61;
+  --line: #8a8a92;
+  --rule: #dcdad3;
+  --step-fill: #eef3fb;
+  --step-stroke: #3b6ea8;
+  --decision-fill: #fdf3df;
+  --decision-stroke: #a7701c;
+  --end-fill: #e8f3ea;
+  --end-stroke: #3f7d4f;
+  --loop: #9c3d5e;
+  --link: #1f5f9e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141517;
+    --panel: #1d1f22;
+    --fg: #ececee;
+    --muted: #a3a3ab;
+    --line: #7d7d86;
+    --rule: #34363a;
+    --step-fill: #1b2a3d;
+    --step-stroke: #6fa3dc;
+    --decision-fill: #3a2d14;
+    --decision-stroke: #d9a14a;
+    --end-fill: #1a3322;
+    --end-stroke: #6dbb82;
+    --loop: #e07a9d;
+    --link: #8bbcf0;
+  }
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  padding: 24px 16px 64px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 980px; margin: 0 auto; }
+h1 { font-size: 1.9rem; margin: 0 0 4px; }
+h2 { font-size: 1.3rem; margin: 40px 0 12px; padding-top: 16px; border-top: 1px solid var(--rule); }
+h3 { font-size: 1.05rem; margin: 0 0 8px; }
+p { margin: 0 0 12px; }
+.lead { color: var(--muted); }
+.note { color: var(--muted); font-size: 0.92rem; }
+a { color: var(--link); }
+nav ul { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.figure {
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 8px;
+}
+.figure svg { display: block; max-width: none; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 12px;
+}
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font: 0.85rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; display: block; overflow-x: auto; }
+th, td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+th { color: var(--muted); font-weight: 600; }
+.node-step { fill: var(--step-fill); stroke: var(--step-stroke); stroke-width: 1.5; }
+.node-decision { fill: var(--decision-fill); stroke: var(--decision-stroke); stroke-width: 1.5; }
+.node-end { fill: var(--end-fill); stroke: var(--end-stroke); stroke-width: 1.5; }
+.arrow { fill: none; stroke: var(--line); stroke-width: 1.4; }
+.loop { fill: none; stroke: var(--loop); stroke-width: 1.6; stroke-linejoin: round; }
+.head { fill: var(--line); stroke: none; }
+.head-loop { fill: var(--loop); stroke: none; }
+.t-name { fill: var(--fg); stroke: none; font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.t-sub { fill: var(--muted); stroke: none; font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.t-edge { fill: var(--muted); stroke: var(--bg); stroke-width: 4px; paint-order: stroke; font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.t-loop { fill: var(--loop); stroke: var(--bg); stroke-width: 4px; paint-order: stroke; font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; }
+@media (max-width: 560px) {
+  dl { grid-template-columns: 1fr; gap: 0; }
+  dt { margin-top: 6px; }
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>spectro</h1>
+<p class="lead">Classify the request, then brainstorm, spec, plan, build with review and finish; a bounded change takes a short design, a spike ends in a recommendation.</p>
+<p class="note">Schema version 1. This page describes the playbook. Runs do not follow the playbook yet.</p>
+<nav aria-label="Sections"><ul><li><a href="#graph">Graph</a></li><li><a href="#steps">Steps</a></li><li><a href="#decisions">Decisions</a></li><li><a href="#documents">Documents</a></li><li><a href="#models">Models</a></li><li><a href="#licence">Licence</a></li><li><a href="#provenance">Provenance</a></li></ul></nav>
+</header>
+<h2 id="graph">Graph</h2>
+<p class="note">10 steps, 8 decisions. Rectangles are steps, diamonds are decisions, rounded boxes are ends. A coloured loop under a row leads back, labelled with the outcome that takes it and the number of rounds it may run.</p>
+<div class="figure"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="graph-title graph-desc" width="3516" height="808" viewBox="0 0 3516 808">
+<title id="graph-title">spectro graph</title>
+<desc id="graph-desc">Steps are rectangles, decisions are diamonds, ends are rounded boxes. Arrows run left to right; a coloured loop under a row leads back to an earlier node.</desc>
+<defs>
+<marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0 L10 5 L0 10 z"/></marker>
+<marker id="head-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="head-loop" d="M0 0 L10 5 L0 10 z"/></marker>
+</defs>
+<path class="arrow" d="M208 74 L284 746" marker-end="url(#head)"/>
+<path class="arrow" d="M208 74 L284 626" marker-end="url(#head)"/>
+<path class="arrow" d="M208 74 L284 74" marker-end="url(#head)"/>
+<path class="arrow" d="M460 74 L536 74" marker-end="url(#head)"/>
+<path class="arrow" d="M712 74 L788 74" marker-end="url(#head)"/>
+<path class="arrow" d="M712 74 L3086 378" marker-end="url(#head)"/>
+<path class="arrow" d="M964 74 L1040 74" marker-end="url(#head)"/>
+<path class="arrow" d="M1216 74 L1292 74" marker-end="url(#head)"/>
+<path class="arrow" d="M1468 74 L1544 74" marker-end="url(#head)"/>
+<path class="arrow" d="M1468 74 L3086 378" marker-end="url(#head)"/>
+<path class="arrow" d="M1720 74 L1796 74" marker-end="url(#head)"/>
+<path class="arrow" d="M1972 74 L2048 74" marker-end="url(#head)"/>
+<path class="arrow" d="M2224 74 L2300 74" marker-end="url(#head)"/>
+<path class="arrow" d="M2476 74 L2552 74" marker-end="url(#head)"/>
+<path class="arrow" d="M2476 74 L2552 484" marker-end="url(#head)"/>
+<path class="arrow" d="M2476 74 L3086 378" marker-end="url(#head)"/>
+<path class="arrow" d="M2728 74 L2804 74" marker-end="url(#head)"/>
+<path class="arrow" d="M2980 74 L3056 74" marker-end="url(#head)"/>
+<path class="arrow" d="M2980 74 L3056 250" marker-end="url(#head)"/>
+<path class="arrow" d="M2980 74 L3086 378" marker-end="url(#head)"/>
+<path class="arrow" d="M3232 74 L3338 74" marker-end="url(#head)"/>
+<path class="arrow" d="M460 626 L536 626" marker-end="url(#head)"/>
+<path class="arrow" d="M712 626 L3056 74" marker-end="url(#head)"/>
+<path class="arrow" d="M460 746 L3338 74" marker-end="url(#head)"/>
+<path class="loop" d="M624 120 L624 142 L365 142 L365 108" marker-end="url(#head-loop)"/>
+<path class="loop" d="M876 120 L876 164 L379 164 L379 108" marker-end="url(#head-loop)"/>
+<path class="loop" d="M1380 120 L1380 142 L1121 142 L1121 108" marker-end="url(#head-loop)"/>
+<path class="loop" d="M1632 120 L1632 164 L1135 164 L1135 108" marker-end="url(#head-loop)"/>
+<path class="loop" d="M2640 518 L2640 540 L2388 540 L2388 120" marker-end="url(#head-loop)"/>
+<path class="loop" d="M2640 120 L2640 142 L2136 142 L2136 108" marker-end="url(#head-loop)"/>
+<path class="loop" d="M3144 284 L3144 306 L2892 306 L2892 120" marker-end="url(#head-loop)"/>
+<g id="node-classify">
+<title>Classify</title>
+<polygon class="node-decision" points="120,28 208,74 120,120 32,74"/>
+<text class="t-name" x="120" y="78" text-anchor="middle">Classify</text>
+</g>
+<g id="node-brainstorm">
+<title>Brainstorm</title>
+<rect class="node-step" x="284" y="40" width="176" height="68" rx="8"/>
+<text class="t-name" x="372" y="70" text-anchor="middle">Brainstorm</text>
+<text class="t-sub" x="372" y="86" text-anchor="middle">chat · strong</text>
+</g>
+<g id="node-spec_ok">
+<title>Spec complete</title>
+<polygon class="node-decision" points="624,28 712,74 624,120 536,74"/>
+<text class="t-name" x="624" y="70" text-anchor="middle">Spec complete</text>
+<text class="t-sub" x="624" y="86" text-anchor="middle">up to 3 rounds</text>
+</g>
+<g id="node-spec_nod">
+<title>Spec nod</title>
+<polygon class="node-decision" points="876,28 964,74 876,120 788,74"/>
+<text class="t-name" x="876" y="78" text-anchor="middle">Spec nod</text>
+</g>
+<g id="node-write_plan">
+<title>Write plan</title>
+<rect class="node-step" x="1040" y="40" width="176" height="68" rx="8"/>
+<text class="t-name" x="1128" y="70" text-anchor="middle">Write plan</text>
+<text class="t-sub" x="1128" y="86" text-anchor="middle">chat · strong</text>
+</g>
+<g id="node-plan_ok">
+<title>Plan complete</title>
+<polygon class="node-decision" points="1380,28 1468,74 1380,120 1292,74"/>
+<text class="t-name" x="1380" y="70" text-anchor="middle">Plan complete</text>
+<text class="t-sub" x="1380" y="86" text-anchor="middle">up to 3 rounds</text>
+</g>
+<g id="node-plan_nod">
+<title>Plan nod</title>
+<polygon class="node-decision" points="1632,28 1720,74 1632,120 1544,74"/>
+<text class="t-name" x="1632" y="78" text-anchor="middle">Plan nod</text>
+</g>
+<g id="node-setup">
+<title>Set up worktree</title>
+<rect class="node-step" x="1796" y="40" width="176" height="68" rx="8"/>
+<text class="t-name" x="1884" y="70" text-anchor="middle">Set up worktree</text>
+<text class="t-sub" x="1884" y="86" text-anchor="middle">chat · fast</text>
+</g>
+<g id="node-implement">
+<title>Implement task</title>
+<rect class="node-step" x="2048" y="40" width="176" height="68" rx="8"/>
+<text class="t-name" x="2136" y="70" text-anchor="middle">Implement task</text>
+<text class="t-sub" x="2136" y="86" text-anchor="middle">child worker · standard</text>
+</g>
+<g id="node-review_task">
+<title>Review task</title>
+<polygon class="node-decision" points="2388,28 2476,74 2388,120 2300,74"/>
+<text class="t-name" x="2388" y="70" text-anchor="middle">Review task</text>
+<text class="t-sub" x="2388" y="86" text-anchor="middle">up to 5 rounds</text>
+</g>
+<g id="node-fix">
+<title>Fix findings</title>
+<rect class="node-step" x="2552" y="450" width="176" height="68" rx="8"/>
+<text class="t-name" x="2640" y="480" text-anchor="middle">Fix findings</text>
+<text class="t-sub" x="2640" y="496" text-anchor="middle">child worker · strong</text>
+</g>
+<g id="node-more_tasks">
+<title>Tasks left</title>
+<polygon class="node-decision" points="2640,28 2728,74 2640,120 2552,74"/>
+<text class="t-name" x="2640" y="78" text-anchor="middle">Tasks left</text>
+</g>
+<g id="node-final_review">
+<title>Final review</title>
+<polygon class="node-decision" points="2892,28 2980,74 2892,120 2804,74"/>
+<text class="t-name" x="2892" y="70" text-anchor="middle">Final review</text>
+<text class="t-sub" x="2892" y="86" text-anchor="middle">up to 2 rounds</text>
+</g>
+<g id="node-final_fix">
+<title>Fix final findings</title>
+<rect class="node-step" x="3056" y="216" width="176" height="68" rx="8"/>
+<text class="t-name" x="3144" y="246" text-anchor="middle">Fix final findings</text>
+<text class="t-sub" x="3144" y="262" text-anchor="middle">child worker · strong</text>
+</g>
+<g id="node-finish">
+<title>Finish branch</title>
+<rect class="node-step" x="3056" y="40" width="176" height="68" rx="8"/>
+<text class="t-name" x="3144" y="70" text-anchor="middle">Finish branch</text>
+<text class="t-sub" x="3144" y="86" text-anchor="middle">chat · standard · nod</text>
+</g>
+<g id="node-design_in_chat">
+<title>Short design</title>
+<rect class="node-step" x="284" y="592" width="176" height="68" rx="8"/>
+<text class="t-name" x="372" y="622" text-anchor="middle">Short design</text>
+<text class="t-sub" x="372" y="638" text-anchor="middle">chat · standard · nod</text>
+</g>
+<g id="node-implement_bounded">
+<title>Implement</title>
+<rect class="node-step" x="536" y="592" width="176" height="68" rx="8"/>
+<text class="t-name" x="624" y="622" text-anchor="middle">Implement</text>
+<text class="t-sub" x="624" y="638" text-anchor="middle">chat · standard</text>
+</g>
+<g id="node-probe">
+<title>Probe</title>
+<rect class="node-step" x="284" y="712" width="176" height="68" rx="8"/>
+<text class="t-name" x="372" y="742" text-anchor="middle">Probe</text>
+<text class="t-sub" x="372" y="758" text-anchor="middle">chat · standard</text>
+</g>
+<g id="node-done">
+<title>done</title>
+<rect class="node-end" x="3338" y="54" width="116" height="40" rx="20"/>
+<text class="t-name" x="3396" y="70" text-anchor="middle">done</text>
+<text class="t-sub" x="3396" y="86" text-anchor="middle">done</text>
+</g>
+<g id="node-cancelled">
+<title>cancelled</title>
+<rect class="node-end" x="3086" y="358" width="116" height="40" rx="20"/>
+<text class="t-name" x="3144" y="374" text-anchor="middle">cancelled</text>
+<text class="t-sub" x="3144" y="390" text-anchor="middle">cancelled</text>
+</g>
+<text class="t-edge" x="221.7" y="189">spike</text>
+<text class="t-edge" x="221.7" y="167.4">bounded</text>
+<text class="t-edge" x="221.7" y="68">architectural</text>
+<text class="t-edge" x="725.7" y="68">pass</text>
+<text class="t-edge" x="1139.3" y="122.7">exhausted</text>
+<text class="t-edge" x="977.7" y="68">yes</text>
+<text class="t-edge" x="1481.7" y="68">pass</text>
+<text class="t-edge" x="1759.2" y="122.7">exhausted</text>
+<text class="t-edge" x="1733.7" y="68">yes</text>
+<text class="t-edge" x="2489.7" y="68">pass</text>
+<text class="t-edge" x="2489.7" y="141.8">fail</text>
+<text class="t-edge" x="2585.8" y="122.7">exhausted</text>
+<text class="t-edge" x="2741.7" y="68">pass</text>
+<text class="t-edge" x="2993.7" y="68">pass</text>
+<text class="t-edge" x="2993.7" y="99.7">fail</text>
+<text class="t-edge" x="2999.1" y="122.7">exhausted</text>
+<text class="t-loop" x="494.5" y="137" text-anchor="middle">fail, up to 3 rounds</text>
+<text class="t-loop" x="627.5" y="159" text-anchor="middle">no</text>
+<text class="t-loop" x="1250.5" y="137" text-anchor="middle">fail, up to 3 rounds</text>
+<text class="t-loop" x="1383.5" y="159" text-anchor="middle">no</text>
+<text class="t-loop" x="2388" y="137" text-anchor="middle">fail</text>
+</svg></div>
+<h2 id="steps">Steps</h2>
+<section class="card" id="step-brainstorm"><h3>Brainstorm</h3><dl><dt>Goal</dt><dd>An approved design written down as a spec</dd><dt>Performer</dt><dd>chat</dd><dt>Model choice</dt><dd>strong (anthropic claude-opus-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:brainstorming</code></dd><dt>Consumes</dt><dd><a href="#document-ticket">Ticket</a></dd><dt>Produces</dt><dd><a href="#document-spec">Spec</a></dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>Spec complete</dd></dl></section>
+<section class="card" id="step-write_plan"><h3>Write plan</h3><dl><dt>Goal</dt><dd>Numbered tasks that build the spec, test first</dd><dt>Performer</dt><dd>chat</dd><dt>Model choice</dt><dd>strong (anthropic claude-opus-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:writing-plans</code></dd><dt>Consumes</dt><dd><a href="#document-ticket">Ticket</a>, <a href="#document-spec">Spec</a></dd><dt>Produces</dt><dd><a href="#document-plan">Plan</a></dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>Plan complete</dd></dl></section>
+<section class="card" id="step-setup"><h3>Set up worktree</h3><dl><dt>Goal</dt><dd>An isolated worktree with a green baseline</dd><dt>Performer</dt><dd>chat</dd><dt>Model choice</dt><dd>fast (ollama qwen3.5:27b-q4_K_M)</dd><dt>Privacy</dt><dd>private</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:using-git-worktrees</code></dd><dt>Consumes</dt><dd><a href="#document-plan">Plan</a></dd><dt>Produces</dt><dd>none</dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>Implement task</dd></dl></section>
+<section class="card" id="step-implement"><h3>Implement task</h3><dl><dt>Goal</dt><dd>The next open task of the plan, failing test first</dd><dt>Performer</dt><dd>child, role worker</dd><dt>Model choice</dt><dd>standard (anthropic claude-sonnet-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:test-driven-development</code></dd><dt>Consumes</dt><dd><a href="#document-plan">Plan</a></dd><dt>Produces</dt><dd><a href="#document-task_report">Task report</a></dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>Review task</dd></dl></section>
+<section class="card" id="step-fix"><h3>Fix findings</h3><dl><dt>Goal</dt><dd>Every open finding of the task review addressed</dd><dt>Performer</dt><dd>child, role worker</dd><dt>Model choice</dt><dd>strong (anthropic claude-opus-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:test-driven-development</code></dd><dt>Consumes</dt><dd><a href="#document-plan">Plan</a>, <a href="#document-task_report">Task report</a>, <a href="#document-review_report">Review report</a></dd><dt>Produces</dt><dd><a href="#document-task_report">Task report</a></dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>Review task</dd></dl></section>
+<section class="card" id="step-final_fix"><h3>Fix final findings</h3><dl><dt>Goal</dt><dd>Every open finding of the final review addressed in one fix pass</dd><dt>Performer</dt><dd>child, role worker</dd><dt>Model choice</dt><dd>strong (anthropic claude-opus-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:test-driven-development</code></dd><dt>Consumes</dt><dd><a href="#document-spec">Spec</a>, <a href="#document-plan">Plan</a>, <a href="#document-review_report">Review report</a></dd><dt>Produces</dt><dd><a href="#document-task_report">Task report</a></dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>Final review</dd></dl></section>
+<section class="card" id="step-finish"><h3>Finish branch</h3><dl><dt>Goal</dt><dd>The branch merged, kept or handed over as the owner chooses</dd><dt>Performer</dt><dd>chat</dd><dt>Model choice</dt><dd>standard (anthropic claude-sonnet-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:finishing-a-development-branch</code></dd><dt>Consumes</dt><dd><a href="#document-ticket">Ticket</a></dd><dt>Produces</dt><dd>none</dd><dt>Nod</dt><dd>asks for your approval before it moves on</dd><dt>Next</dt><dd>done</dd></dl></section>
+<section class="card" id="step-design_in_chat"><h3>Short design</h3><dl><dt>Goal</dt><dd>A short design in chat, approved and written into the ticket as a numbered plan</dd><dt>Performer</dt><dd>chat</dd><dt>Model choice</dt><dd>standard (anthropic claude-sonnet-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:brainstorming</code></dd><dt>Consumes</dt><dd><a href="#document-ticket">Ticket</a></dd><dt>Produces</dt><dd><a href="#document-ticket">Ticket</a></dd><dt>Nod</dt><dd>asks for your approval before it moves on</dd><dt>Next</dt><dd>Implement</dd></dl></section>
+<section class="card" id="step-implement_bounded"><h3>Implement</h3><dl><dt>Goal</dt><dd>The bounded change, failing test first</dd><dt>Performer</dt><dd>chat</dd><dt>Model choice</dt><dd>standard (anthropic claude-sonnet-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:test-driven-development</code></dd><dt>Consumes</dt><dd><a href="#document-ticket">Ticket</a></dd><dt>Produces</dt><dd>none</dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>Finish branch</dd></dl></section>
+<section class="card" id="step-probe"><h3>Probe</h3><dl><dt>Goal</dt><dd>An answer to the feasibility question and a recommendation; anything built stays throwaway</dd><dt>Performer</dt><dd>chat</dd><dt>Model choice</dt><dd>standard (anthropic claude-sonnet-5-5)</dd><dt>Privacy</dt><dd>cheap</dd><dt>Permission</dt><dd>inherit</dd><dt>Skills</dt><dd><code>spectropowers:brainstorming</code></dd><dt>Consumes</dt><dd><a href="#document-ticket">Ticket</a></dd><dt>Produces</dt><dd>none</dd><dt>Nod</dt><dd>none</dd><dt>Next</dt><dd>done</dd></dl></section>
+<h2 id="decisions">Decisions</h2>
+<section class="card" id="decision-classify"><h3>Classify</h3><dl><dt>Check</dt><dd>human check: asks “Which path does this request take: spike, bounded or architectural?”</dd><dt>Outcomes</dt><dd>spike to Probe<br>bounded to Short design<br>architectural to Brainstorm</dd></dl></section>
+<section class="card" id="decision-spec_ok"><h3>Spec complete</h3><dl><dt>Check</dt><dd>sections check: reads spec</dd><dt>Outcomes</dt><dd>pass to Spec nod<br>fail to Brainstorm<br>exhausted to cancelled</dd><dt>Ceiling</dt><dd>up to 3 rounds, then the outcome exhausted</dd></dl></section>
+<section class="card" id="decision-spec_nod"><h3>Spec nod</h3><dl><dt>Check</dt><dd>human check: asks “Does the spec say what you want built?”</dd><dt>Outcomes</dt><dd>yes to Write plan<br>no to Brainstorm</dd></dl></section>
+<section class="card" id="decision-plan_ok"><h3>Plan complete</h3><dl><dt>Check</dt><dd>sections check: reads plan</dd><dt>Outcomes</dt><dd>pass to Plan nod<br>fail to Write plan<br>exhausted to cancelled</dd><dt>Ceiling</dt><dd>up to 3 rounds, then the outcome exhausted</dd></dl></section>
+<section class="card" id="decision-plan_nod"><h3>Plan nod</h3><dl><dt>Check</dt><dd>human check: asks “Does the plan build the spec the way you want?”</dd><dt>Outcomes</dt><dd>yes to Set up worktree<br>no to Write plan</dd></dl></section>
+<section class="card" id="decision-review_task"><h3>Review task</h3><dl><dt>Check</dt><dd>review check: model standard (anthropic claude-sonnet-5-5), reads plan, task_report</dd><dt>Outcomes</dt><dd>pass to Tasks left<br>fail to Fix findings<br>exhausted to cancelled</dd><dt>Ceiling</dt><dd>up to 5 rounds, then the outcome exhausted</dd></dl></section>
+<section class="card" id="decision-more_tasks"><h3>Tasks left</h3><dl><dt>Check</dt><dd>open_items check: reads plan</dd><dt>Outcomes</dt><dd>pass to Final review<br>fail to Implement task</dd></dl></section>
+<section class="card" id="decision-final_review"><h3>Final review</h3><dl><dt>Check</dt><dd>review check: model judge (anthropic claude-fable-5-1), reads spec, plan</dd><dt>Outcomes</dt><dd>pass to Finish branch<br>fail to Fix final findings<br>exhausted to cancelled</dd><dt>Ceiling</dt><dd>up to 2 rounds, then the outcome exhausted</dd></dl></section>
+<h2 id="documents">Documents</h2>
+<section class="card" id="document-ticket"><h3>Ticket</h3><dl><dt>Purpose</dt><dd>What is wanted and why, with acceptance criteria and scenarios</dd><dt>Location</dt><dd><code>kanban/{n}-{slug}.md</code></dd><dt>Template</dt><dd><code>templates/ticket.md</code></dd><dt>Sections</dt><dd>Story, Value, Context, Acceptance criteria, Non functional criteria, Scenario, Provenance</dd></dl></section>
+<section class="card" id="document-spec"><h3>Spec</h3><dl><dt>Purpose</dt><dd>The design the owner approved</dd><dt>Location</dt><dd><code>docs/superpowers/specs/{date}-{slug}-design.md</code></dd><dt>Template</dt><dd><code>templates/spec.md</code></dd><dt>Sections</dt><dd>Goal, Design, Requirements, Out of scope, Acceptance scenarios</dd></dl></section>
+<section class="card" id="document-plan"><h3>Plan</h3><dl><dt>Purpose</dt><dd>The numbered tasks that build the spec, each with its files and its failing test</dd><dt>Location</dt><dd><code>docs/superpowers/plans/{date}-{slug}.md</code></dd><dt>Template</dt><dd><code>templates/plan.md</code></dd><dt>Sections</dt><dd>Goal, Architecture, Tech Stack, Spec, Ticket, Global Constraints, Tasks</dd></dl></section>
+<section class="card" id="document-task_report"><h3>Task report</h3><dl><dt>Purpose</dt><dd>What one task built, with its red and green runs</dd><dt>Location</dt><dd><code>.superpowers/sdd/{slug}/task-{n}-report.md</code></dd><dt>Template</dt><dd><code>templates/task-report.md</code></dd><dt>Sections</dt><dd>Task, Red run, Green run, Files, Open points</dd></dl></section>
+<section class="card" id="document-review_report"><h3>Review report</h3><dl><dt>Purpose</dt><dd>The findings of a review and its verdict</dd><dt>Location</dt><dd><code>.superpowers/sdd/{slug}/review-{n}.md</code></dd><dt>Template</dt><dd><code>templates/review-report.md</code></dd><dt>Sections</dt><dd>Strengths, Critical, Important, Minor, Verdict</dd></dl></section>
+<h2 id="models">Models</h2>
+<table><thead><tr><th>Choice</th><th>Primary</th><th>Fallbacks</th></tr></thead><tbody><tr><td>fast</td><td>ollama qwen3.5:27b-q4_K_M</td><td>none</td></tr><tr><td>standard</td><td>anthropic claude-sonnet-5-5</td><td>none</td></tr><tr><td>strong</td><td>anthropic claude-opus-5-5</td><td>none</td></tr><tr><td>judge</td><td>anthropic claude-fable-5-1</td><td>none</td></tr></tbody></table>
+<h2 id="licence">Licence</h2>
+<pre>MIT License
+
+Copyright (c) 2025 Jesse Vincent
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>
+<h2 id="provenance">Provenance</h2>
+<p>spectropowers is a copy of the superpowers skills by Jesse Vincent, renamed as a pack and edited to the spectroscope house rules. The MIT licence of the source is in <code>LICENSE</code> beside this file and travels with every copy.</p>
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Source</td><td>https://github.com/obra/superpowers</td></tr><tr><td>Version</td><td>6.3.0 (tag v6.3.0)</td></tr><tr><td>Commit</td><td>b36e0829c6d0140e93cfef2ca599b1b07d4a7797</td></tr><tr><td>Licence</td><td>MIT, Copyright (c) 2025 Jesse Vincent</td></tr><tr><td>Vendored into spectroscope</td><td>2026-10-09, <code>.spectro/skills-catalogue/superpowers</code></td></tr><tr><td>Copied into this playbook</td><td>2026-10-09, by <code>scripts/copy_spectropowers.py</code></td></tr></tbody></table>
+<h3>Skills</h3>
+<p>Every skill keeps its folder name and structure. One line per skill, source first.</p>
+<ul><li><code>superpowers:brainstorming</code> is <code>spectropowers:brainstorming</code></li><li><code>superpowers:dispatching-parallel-agents</code> is <code>spectropowers:dispatching-parallel-agents</code></li><li><code>superpowers:executing-plans</code> is <code>spectropowers:executing-plans</code></li><li><code>superpowers:finishing-a-development-branch</code> is <code>spectropowers:finishing-a-development-branch</code></li><li><code>superpowers:receiving-code-review</code> is <code>spectropowers:receiving-code-review</code></li><li><code>superpowers:requesting-code-review</code> is <code>spectropowers:requesting-code-review</code></li><li><code>superpowers:subagent-driven-development</code> is <code>spectropowers:subagent-driven-development</code></li><li><code>superpowers:systematic-debugging</code> is <code>spectropowers:systematic-debugging</code></li><li><code>superpowers:test-driven-development</code> is <code>spectropowers:test-driven-development</code></li><li><code>superpowers:using-git-worktrees</code> is <code>spectropowers:using-git-worktrees</code></li><li><code>superpowers:using-superpowers</code> is <code>spectropowers:using-spectropowers</code></li><li><code>superpowers:verification-before-completion</code> is <code>spectropowers:verification-before-completion</code></li><li><code>superpowers:writing-plans</code> is <code>spectropowers:writing-plans</code></li><li><code>superpowers:writing-skills</code> is <code>spectropowers:writing-skills</code></li></ul>
+<h3>Changed Files</h3>
+<p>Each file that differs from its source, with what changed. The list is computed from the two texts by the copy script.</p>
+<table><thead><tr><th>File</th><th>Change</th></tr></thead><tbody><tr><td><code>brainstorming/SKILL.md</code></td><td>a ticket is the input of every path; the bounded path writes a short numbered plan into the ticket; chris-criticism runs on the spec before the user review gate; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>brainstorming/scripts/helper.js</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>brainstorming/scripts/server.cjs</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>brainstorming/scripts/start-server.sh</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>brainstorming/spec-document-reviewer-prompt.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>brainstorming/visual-companion.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>dispatching-parallel-agents/SKILL.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>executing-plans/SKILL.md</code></td><td>the same stop rule for conflicts; progress goes into TASKS.md after every task; skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses; the pack is named spectropowers in prose</td></tr><tr><td><code>finishing-a-development-branch/SKILL.md</code></td><td>the merge uses --no-ff; the rulings list goes into TASKS.md before cleanup; chris-criticism runs once on the branch summary; dashes used as punctuation replaced by commas, colons, semicolons or parentheses; the pack is named spectropowers in prose</td></tr><tr><td><code>receiving-code-review/SKILL.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>requesting-code-review/SKILL.md</code></td><td>the review base is the merge base of the branch, never HEAD~1; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>requesting-code-review/code-reviewer.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>subagent-driven-development/SKILL.md</code></td><td>architecture, language, repository and scope conflicts stop and go to the owner; the ledger is kept and its rulings go into TASKS.md and CLAUDE.md; the failing test comes first in every task; models follow the role rule; reviews may run in the background; skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>subagent-driven-development/implementer-prompt.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>subagent-driven-development/re-review-prompt.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>subagent-driven-development/scripts/sdd-workspace</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>subagent-driven-development/task-reviewer-prompt.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/CREATION-LOG.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/SKILL.md</code></td><td>skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/condition-based-waiting.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/defense-in-depth.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/root-cause-tracing.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/test-pressure-1.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/test-pressure-2.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>systematic-debugging/test-pressure-3.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>test-driven-development/SKILL.md</code></td><td>the mutation probe is real: commit first, break the implementation, see red, restore; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>test-driven-development/writing-good-tests.md</code></td><td>the mental mutation is replaced by the real mutation probe; skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>using-git-worktrees/SKILL.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>using-spectropowers/SKILL.md</code></td><td>the rule that user instructions take precedence over every skill is stated first; skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses; the pack is named spectropowers in prose</td></tr><tr><td><code>using-spectropowers/references/antigravity-tools.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>using-spectropowers/references/codex-tools.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>using-spectropowers/references/gemini-tools.md</code></td><td>skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>verification-before-completion/SKILL.md</code></td><td>gates run with a forced rerun and never through a pipe; UI work is verified in a browser in both themes at two widths; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>writing-plans/SKILL.md</code></td><td>the plan header names the ticket; commit steps stage explicit paths; skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>writing-plans/plan-document-reviewer-prompt.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>writing-skills/SKILL.md</code></td><td>skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>writing-skills/anthropic-best-practices.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>writing-skills/examples/CLAUDE_MD_TESTING.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>writing-skills/persuasion-principles.md</code></td><td>dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr><tr><td><code>writing-skills/testing-skills-with-subagents.md</code></td><td>skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses</td></tr></tbody></table>
+<h3>Unchanged</h3>
+<p>11 files are byte identical to their source.</p>
+<p>Kept as in the source on purpose: the working folders <code>.superpowers/</code> and <code>docs/superpowers/</code> that the skills and their scripts write to, and the branding of the brainstorming companion page.</p>
+</main>
+</body>
+</html>
