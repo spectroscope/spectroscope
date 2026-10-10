@@ -4757,6 +4757,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Nichts nach {dir} kopiert: der Server hat den Ordner abgelehnt.",
     en: "Nothing copied into {dir}: the server refused the folder.",
   },
+  // Card 512: the folder chooser beside the path fields of the Playbook segment.
+  "pick.choose": { de: "Auswählen", en: "Choose" },
+  "pick.busy": { de: "Ein Ordnerdialog ist schon offen.", en: "A folder dialog is already open." },
+  "pick.paste": {
+    de: "Hier gibt es keinen Ordnerdialog. Füge einen absoluten Pfad in das Feld ein.",
+    en: "No folder dialog here. Paste an absolute path into the field.",
+  },
   // Card 482: a run that follows the playbook, its confirmation and its view.
   "pb.run.build": { de: "Danach bauen", en: "Build by this" },
   "pb.run.hint": {
@@ -5545,15 +5552,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "prov.ago": { de: "vor {s} s", en: "{s} s ago" },
   "prov.check": { de: "Prüfen", en: "Check" },
   "prov.checkAll": { de: "Alle prüfen", en: "Check all" },
-  // Card 484: the Spectrolyzr wizard in the playbook segment. The Why sentences
-  // and the names of archetypes and add-ons come from the server's manifest.
-  "lyzr.tab": { de: "Neues Projekt", en: "New project" },
+  // Card 484: Spectrolyzr in the playbook segment, one page since card 515.
+  // The Why sentences and the names of archetypes and add-ons come from the
+  // server's manifest.
+  "lyzr.tab": { de: "Neu", en: "New" },
   "lyzr.title": { de: "Spectrolyzr", en: "Spectrolyzr" },
-  "lyzr.step.project": { de: "Projekt", en: "Project" },
-  "lyzr.step.addons": { de: "Add-ons", en: "Add-ons" },
-  "lyzr.step.review": { de: "Prüfen", en: "Review" },
-  "lyzr.back": { de: "Zurück", en: "Back" },
-  "lyzr.next": { de: "Weiter", en: "Next" },
+  "lyzr.kind": { de: "Was entsteht", en: "What to make" },
+  "lyzr.kind.project": { de: "Projekt", en: "Project" },
+  "lyzr.kind.playbook": { de: "Playbook", en: "Playbook" },
+  "lyzr.addons": { de: "Add-ons", en: "Add-ons" },
+  "lyzr.folders": { de: "Ordner", en: "Folders" },
+  "lyzr.tree": { de: "Dateien", en: "Files" },
+  "lyzr.treeEmpty": {
+    de: "Mit Archetyp, Sprache und Projektname erscheinen hier die Dateien.",
+    en: "The files appear here once an archetype, a language and a project name are set.",
+  },
+  "lyzr.playbookOnlyHint": {
+    de: "Hier entsteht eine Kopie des mitgelieferten spectro-Playbooks. Ein Projekt wird nicht geschrieben.",
+    en: "A copy of the shipped spectro playbook goes into this folder. No project is written.",
+  },
   "lyzr.archetype": { de: "Archetyp", en: "Archetype" },
   "lyzr.language": { de: "Sprache", en: "Language" },
   "lyzr.name": { de: "Projektname", en: "Project name" },
@@ -5569,11 +5586,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lyzr.dir": { de: "Projektordner", en: "Project folder" },
   "lyzr.pick": { de: "Auswählen", en: "Pick" },
   "lyzr.typePath": { de: "Absoluten Pfad eingeben", en: "Type an absolute path" },
-  "lyzr.pickUnavailable": {
-    de: "Hier gibt es keinen Ordnerdialog. Gib einen absoluten Pfad ein.",
-    en: "No folder dialog here. Type an absolute path.",
-  },
-  "lyzr.pickBusy": { de: "Ein Ordnerdialog ist schon offen.", en: "A folder dialog is already open." },
   "lyzr.why": { de: "Warum diese Datei", en: "Why this file" },
   "lyzr.summary": { de: "Zusammenfassung", en: "Summary" },
   "lyzr.files": { de: "{n} Dateien", en: "{n} files" },
@@ -5587,6 +5599,21 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lyzr.pinned": { de: "Das Playbook ist mit dem Projekt verknüpft.", en: "The playbook is pinned to the project." },
   "lyzr.conflicts": { de: "Nichts geschrieben, diese Dateien gibt es schon:", en: "Nothing written, these files already exist:" },
   "lyzr.copyPath": { de: "Pfad kopieren", en: "Copy path" },
+  // Card 515 part two: the model choices of a new playbook.
+  "lyzr.models": { de: "Modelle", en: "Models" },
+  "lyzr.model.fast": { de: "Schnell (fast)", en: "Fast (fast)" },
+  "lyzr.model.standard": { de: "Standard (standard)", en: "Standard (standard)" },
+  "lyzr.model.strong": { de: "Stark (strong)", en: "Strong (strong)" },
+  "lyzr.model.judge": { de: "Urteil (judge)", en: "Judge (judge)" },
+  "lyzr.model.keep": { de: "Modell des spectro-Playbooks behalten", en: "Keep the spectro playbook's model" },
+  "lyzr.modelsNone": {
+    de: "Noch hat kein Anbieter seine Modelle gemeldet, also behält jede Rolle das Modell des spectro-Playbooks. Eine Prüfung in den Anbieter-Einstellungen listet sie.",
+    en: "No provider has listed its models yet, so each role keeps the spectro playbook's model. A check in the provider settings lists them.",
+  },
+  "lyzr.playbookListed": {
+    de: "Der Ordner steht jetzt im Tab Playbook, mit seinem Inhalt und seinen Workflows. Mit keinem Arbeitsbereich verknüpft.",
+    en: "The folder is now listed in the Playbook tab with its contents and workflows. It is not pinned to any workspace.",
+  },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

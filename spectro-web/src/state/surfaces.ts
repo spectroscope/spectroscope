@@ -8,8 +8,8 @@
 // Light is a browser mode: the server records every session as it always did
 // (owner decision 2, 2026-09-24). Leveling is a second axis and never removes
 // a button (state/leveling.ts); the mode does. Developer (card 481) opens what
-// learn opens and the playbook besides; its level pill follows the tutorial
-// the way light's does.
+// learn opens and the playbook besides; its level pill and (card 513) its tab
+// row follow the tutorial the way light's do.
 
 import type { NavActionId, NavSegmentId } from "../components/navRows";
 import type { LevelingSnapshot } from "./leveling";
@@ -50,7 +50,7 @@ const LEARN_ONLY: Record<ViewMode, Presence> = { learn: "open", light: "gone", d
 export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
   // The row that holds the tabs, the back and forward steps, the translate
   // toggle and the level pill.
-  tabRow: { modes: { learn: "open", light: "tutorial", developer: "open" } },
+  tabRow: { modes: { learn: "open", light: "tutorial", developer: "tutorial" } },
   chat: { modes: EVERYWHERE },
   spectrum: { modes: LEARN_ONLY, chunks: ["spectrum/SpectrumView.tsx"] },
   trace: { modes: LEARN_ONLY, chunks: ["components/TraceView.tsx"] },
@@ -79,10 +79,10 @@ export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
   },
   stategraph: { modes: LEARN_ONLY, chunks: ["stategraph/StateGraphPane.tsx"] },
   // Card 481: the playbook module, the fourth segment, developer only, in a
-  // chunk of its own. Card 484: the Spectrolyzr wizard is a second chunk.
+  // chunk of its own. Card 484: Spectrolyzr is a second chunk, one page since card 515.
   playbook: {
     modes: { learn: "gone", light: "gone", developer: "open" },
-    chunks: ["playbook/PlaybookPane.tsx", "playbook/spectrolyzr/SpectrolyzrWizard.tsx"],
+    chunks: ["playbook/PlaybookPane.tsx", "playbook/spectrolyzr/SpectrolyzrPage.tsx"],
   },
   // Files, terminal and browser beside the chat.
   dock: { modes: EVERYWHERE },
@@ -124,13 +124,16 @@ export function tabsShown(mode: ViewMode, tutorial: boolean): ViewTab[] {
 
 /**
  * The tab the window shows for the tab that was chosen: the chosen one where
- * the mode opens it, else the chat of the same place. App reads every `tab`
- * through this, so where the mode and the leveling ladder both speak, the mode
- * wins: a tab light closes is never shown, and so never shown as a teaser
- * either (criterion 8).
+ * the mode opens it and the tab row is drawn, else the chat of the same place.
+ * App reads every `tab` through this, so where the mode and the leveling ladder
+ * both speak, the mode wins: a tab light closes is never shown, and so never
+ * shown as a teaser either (criterion 8). Card 513: where the row is hidden (a
+ * developer window with the tutorial off) a tab chosen earlier, by address or
+ * by reload, would stand on screen with no row to leave it by, so the chat shows
+ * until the row is back.
  */
-export function shownTab(chosen: ViewTab, mode: ViewMode): ViewTab {
-  return isOpen(chosen, mode) ? chosen : "chat";
+export function shownTab(chosen: ViewTab, mode: ViewMode, tutorial = false): ViewTab {
+  return isOpen(chosen, mode) && (chosen === "chat" || isOpen("tabRow", mode, tutorial)) ? chosen : "chat";
 }
 
 /**

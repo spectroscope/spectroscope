@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetLyzr,
   choose,
+  chooseKind,
   generate,
-  goTo,
   loadCatalog,
   suggestPlaybookDir,
   useLyzr,
@@ -129,9 +129,9 @@ describe("choices and the preview", () => {
     await loadCatalog();
   });
 
-  it("starts empty on step 1", () => {
+  it("starts empty, on a new project", () => {
     const s = probe();
-    expect(s.step).toBe(1);
+    expect(s.kind).toBe("project");
     expect(s.choices).toEqual({
       archetype: null,
       language: null,
@@ -213,21 +213,32 @@ describe("choices and the preview", () => {
     expect(probe().preview?.commands.test).toBe("newest");
   });
 
-  it("moves between steps", () => {
-    goTo(3);
-    expect(probe().step).toBe(3);
-    goTo(1);
-    expect(probe().step).toBe(1);
+  it("switches between a new project and a new playbook, keeps the choices and clears the last answer", async () => {
+    choose({ archetype: "service", language: "java", addons: ["ci"], name: "ledger-api", dir: "relative" });
+    await vi.waitFor(() => expect(probe().preview).not.toBeNull());
+    serve({
+      "/api/spectrolyzr/generate": () => answer(400, { message: "dir must be absolute", field: "dir" }),
+    });
+    await generate();
+    expect(probe().result).not.toBeNull();
+    chooseKind("playbook");
+    const s = probe();
+    expect(s.kind).toBe("playbook");
+    expect(s.result).toBeNull();
+    expect(s.choices.archetype).toBe("service");
+    expect(s.choices.name).toBe("ledger-api");
+    chooseKind("project");
+    expect(probe().kind).toBe("project");
   });
 
   it("keeps its choices after the subscribers unmount and a new one mounts", async () => {
     choose({ archetype: "service", language: "java", addons: ["ci"], name: "ledger-api" });
-    goTo(2);
+    chooseKind("playbook");
     await vi.waitFor(() => expect(probe().preview).not.toBeNull());
     // renderToStaticMarkup mounts and unmounts a subscriber per probe: a second
     // one reads what the first left.
     const again = probe();
-    expect(again.step).toBe(2);
+    expect(again.kind).toBe("playbook");
     expect(again.choices.archetype).toBe("service");
     expect(again.choices.name).toBe("ledger-api");
     expect(again.catalog).toEqual(CATALOG);

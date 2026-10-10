@@ -23,6 +23,8 @@ function header(over: Partial<Parameters<typeof AppHeader>[0]> = {}): string {
       doctorOpen={false}
       onToggleDoctor={() => {}}
       onOpenKeymap={() => {}}
+      canGoBack={false}
+      canGoForward={false}
       {...over}
     />,
   );

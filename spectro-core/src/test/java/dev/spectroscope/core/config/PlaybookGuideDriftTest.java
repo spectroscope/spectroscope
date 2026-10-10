@@ -391,7 +391,6 @@ class PlaybookGuideDriftTest {
     @Test
     void theSpectrolyzrSectionSaysWhereThePlaybookGoesAndWhatItDoesNotDo() throws IOException {
         String section = spectrolyzrSection(rootOrSkip());
-        assertTrue(section.contains("New project"), "the section never names the tab");
         assertTrue(section.contains("sibling"),
                 "the section never says the playbook lives in a sibling folder");
         assertTrue(section.contains("pinned"), "the section never says the playbook is pinned");
@@ -564,6 +563,129 @@ class PlaybookGuideDriftTest {
             assertTrue(edition.contains(INSTALL_ANCHOR),
                     name + " has no install section: rebuild it (docs/guide-assets/"
                             + "build_user_guide.py, both themes, then the PDFs and --stamp)");
+        }
+    }
+
+    private static String quoted(String i18n, String key) {
+        return "&ldquo;" + english(i18n, key) + "&rdquo;";
+    }
+
+    private static String collapse(String s) {
+        return s.replaceAll("\\s+", " ");
+    }
+
+    private static final Path WEB_CHAT = Path.of("docs/guide-assets/parts/04-web-chat.html");
+    private static final Path SESSIONS = Path.of("docs/guide-assets/parts/07-sessions.html");
+    private static final Path FLEET = Path.of("docs/guide-assets/parts/11b-fleet.html");
+    private static final Path SURFACES = Path.of("spectro-web/src/state/surfaces.ts");
+    private static final Path APP_HEADER = Path.of("spectro-web/src/components/AppHeader.tsx");
+
+    @Test
+    void theSpectrolyzrSectionDescribesOnePageWithTheSwitchInTheWordsTheWindowShows() throws IOException {
+        Path root = rootOrSkip();
+        String section = collapse(spectrolyzrSection(root));
+        String i18n = Files.readString(root.resolve(I18N));
+        List<String> missing = new ArrayList<>();
+        for (String key : List.of("lyzr.tab", "lyzr.kind", "lyzr.kind.project", "lyzr.kind.playbook",
+                "lyzr.folders", "lyzr.tree", "lyzr.why", "lyzr.generate", "lyzr.pick", "pick.choose", "lyzr.models",
+                "lyzr.model.keep")) {
+            if (!section.contains(quoted(i18n, key))) {
+                missing.add(key + " = \"" + english(i18n, key) + "\"");
+            }
+        }
+        assertEquals(List.of(), missing,
+                "the Spectrolyzr section does not quote, in &ldquo; and &rdquo;, the English text the page shows for these keys");
+        assertTrue(section.contains("one page"), "the section never says that Spectrolyzr is one page");
+        assertTrue(section.contains("No project is written"),
+                "the section never says that a new playbook writes no project");
+        assertTrue(section.contains("copy of the shipped spectro playbook"),
+                "the section never says that a new playbook is a copy of the shipped pack");
+        for (String stale : List.of("three steps", "The wizard", "&ldquo;New project&rdquo;",
+                "<b>Review.</b>", "Next&rdquo;")) {
+            assertFalse(section.contains(stale), "the section still describes the three step wizard: " + stale);
+        }
+    }
+
+    @Test
+    void theSpectrolyzrSectionNamesTheFourModelRolesAndWhereTheNewPlaybookIsListed() throws IOException {
+        Path root = rootOrSkip();
+        String section = collapse(spectrolyzrSection(root));
+        List<String> missing = new ArrayList<>();
+        playbook(root).get("models").fieldNames().forEachRemaining(k -> {
+            if (!section.contains("<code>" + k + "</code>")) {
+                missing.add(k);
+            }
+        });
+        assertEquals(List.of(), missing, "the section leaves out model roles of the shipped playbook");
+        assertTrue(section.contains("contents row"),
+                "the section never says where the workflows of the new playbook are listed");
+        boolean none = playbook(root).get("contents").get("workflows").isEmpty();
+        assertTrue(none, "the shipped playbook declares workflows now: rewrite the sentence below and this check");
+        assertTrue(section.contains("declares no workflows"),
+                "the section never says that the shipped playbook declares no workflows");
+    }
+
+    @Test
+    void theChapterDescribesTheChooseButtonOnEveryFolderFieldAndItsTwoNotes() throws IOException {
+        Path root = rootOrSkip();
+        String part = collapse(chapter(root));
+        String i18n = Files.readString(root.resolve(I18N));
+        for (String key : List.of("pick.busy", "pick.paste")) {
+            assertTrue(part.contains(quoted(i18n, key)),
+                    "the chapter does not quote the note the window shows for " + key);
+        }
+        String segment = part.substring(part.indexOf("id=\"ch-playbooks-mode\""));
+        segment = segment.substring(0, segment.indexOf("<h2 ", 10));
+        assertTrue(segment.contains(quoted(i18n, "pick.choose")),
+                "the Folders part of the segment never names the Choose button");
+    }
+
+    @Test
+    void theModeChapterSaysDeveloperHidesTheTabRowUntilTheTutorialIsOnAndTheTableAgrees() throws IOException {
+        Path root = rootOrSkip();
+        String table = Files.readString(root.resolve(SURFACES));
+        assertTrue(table.contains("tabRow: { modes: { learn: \"open\", light: \"tutorial\", developer: \"tutorial\" } }"),
+                "the surface table no longer hides the tab row in developer: correct this test and the mode chapter");
+        String modes = collapse(Files.readString(root.resolve(MODES)));
+        assertTrue(modes.contains("In developer and in light the row of tabs above the chat is drawn only while the tutorial is on"),
+                "the mode chapter never says that developer shares light's rule for the row of tabs");
+        assertTrue(modes.contains("a fresh developer window opens on the chat alone"),
+                "the mode chapter never says that a fresh developer window shows the chat alone");
+    }
+
+    @Test
+    void backAndForwardStandLeftOfTheModeSwitchAndTheGuideSaysSoEverywhere() throws IOException {
+        Path root = rootOrSkip();
+        String header = Files.readString(root.resolve(APP_HEADER));
+        assertTrue(header.indexOf("<NavSteps") > 0 && header.indexOf("<NavSteps") < header.indexOf("<ModeSwitch"),
+                "the header no longer draws back and forward left of the mode switch");
+        String chat = collapse(Files.readString(root.resolve(WEB_CHAT)));
+        assertTrue(chat.contains("the back and forward buttons, left of the mode switch"),
+                "the header description never names back and forward left of the mode switch");
+        String sessions = collapse(Files.readString(root.resolve(SESSIONS)));
+        assertFalse(sessions.contains("The tab row draws its own back"),
+                "the sessions chapter still puts back and forward in the tab row");
+        assertTrue(sessions.contains("The header draws back and forward chevrons"),
+                "the sessions chapter never says that the header draws back and forward");
+        String fleet = collapse(Files.readString(root.resolve(FLEET)));
+        assertFalse(fleet.contains("chevrons are absent here"),
+                "the fleet chapter still says the chevrons are absent while a fleet is entered");
+    }
+
+    @Test
+    void bothBuiltEditionsCarryTheOnePageTheHeaderPairAndTheDeveloperRule() throws IOException {
+        Path root = rootOrSkip();
+        for (String name : EDITIONS) {
+            String edition = collapse(Files.readString(root.resolve(name)));
+            for (String needle : List.of("&ldquo;What to make&rdquo;", "No project is written",
+                    "the back and forward buttons, left of the mode switch",
+                    "a fresh developer window opens on the chat alone",
+                    "The header draws back and forward chevrons")) {
+                assertTrue(edition.contains(needle),
+                        name + " lacks \"" + needle + "\": rebuild it (docs/guide-assets/build_user_guide.py, "
+                                + "both themes, then the PDFs and --stamp)");
+            }
+            assertFalse(edition.contains("chevrons are absent here"), name + " carries the old fleet sentence");
         }
     }
 }

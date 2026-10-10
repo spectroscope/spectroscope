@@ -64,7 +64,12 @@ requested.</p>
 
 <ul>
   <li><b>Folders.</b> The folders you have registered, kept in <code>~/.spectro/playbooks.json</code>.
-  A field adds a folder by its absolute path. A button next to each other folder,
+  A field adds a folder by its absolute path, and the button &ldquo;Choose&rdquo; beside it fills
+  the field from the system's folder dialog. The same field is the target of &ldquo;Copy the
+  spectro playbook into a folder&rdquo;. A pick changes nothing by itself: &ldquo;Add&rdquo; and
+  the copy button act on the field, and a picked folder is checked exactly like a typed one.
+  The playbook folder of Spectrolyzr has the same &ldquo;Choose&rdquo; button, and its project
+  folder has one named &ldquo;Pick&rdquo;. A button next to each other folder,
   &ldquo;Use for this workspace&rdquo;, pins it to the working folder of the window.</li>
   <li><b>The graph.</b> Steps are cards that show the step name, the model choice and who
   performs it. Decisions are diamonds, ends are rounded boxes. Each arrow out of a decision
@@ -126,35 +131,62 @@ graph shows what the file says now.</p>
 
 <h2 id="ch-playbooks-spectrolyzr">Spectrolyzr</h2>
 
-<p>Spectrolyzr writes a new project and, if you ask for it, a playbook for it. It sits in the
-Playbook segment behind the tab &ldquo;New project&rdquo;, next to the tab that shows the
-playbook. The project is small, builds, and ships one test that passes. The same choices always
-produce the same files, byte for byte. The files come from templates inside the app, so nothing
-is fetched from the network, and no generated project depends on a spectroscope package.</p>
+<p>Spectrolyzr writes a new project and, if you ask for it, a playbook for it. It can also write
+a playbook alone. It is one page in the Playbook segment, behind the tab &ldquo;New&rdquo;, next
+to the tab that shows the playbook. Every choice stands on the page at once, so nothing hides
+behind a step. The project is small, builds, and ships one test that passes. The same choices
+always produce the same files, byte for byte. The files come from templates inside the app, so
+nothing is fetched from the network, and no generated project depends on a spectroscope
+package.</p>
 
-<p>The wizard has three steps.</p>
+<p>At the top of the page the switch &ldquo;What to make&rdquo; offers two options,
+&ldquo;Project&rdquo; and &ldquo;Playbook&rdquo;. The page below it changes with the option.</p>
+
+<p>With &ldquo;Project&rdquo; the choices stand in one column and the files beside them. On a
+narrow window the files move under the choices.</p>
 
 <ul>
-  <li><b>Project.</b> Pick an archetype, a language and a name. The archetypes are
-  <b>Service</b>, an HTTP server with one <code>/health</code> route; <b>Library</b>, one public
-  function; and <b>Command line tool</b>, a command that greets a name and returns an exit code.
-  The languages are <b>TypeScript</b>, <b>Python</b> and <b>Java</b>. A name starts with a lower
-  case letter, holds lower case letters and digits, may join parts with single hyphens, and has
-  at most 40 characters. A name that turns into a reserved word of Java or Python is refused, and
-  the field says so.</li>
+  <li><b>Archetype, language and name.</b> Pick an archetype and a language and type a name. The
+  archetypes are <b>Service</b>, an HTTP server with one <code>/health</code> route;
+  <b>Library</b>, one public function; and <b>Command line tool</b>, a command that greets a name
+  and returns an exit code. The languages are <b>TypeScript</b>, <b>Python</b> and <b>Java</b>. A
+  name starts with a lower case letter, holds lower case letters and digits, may join parts with
+  single hyphens, and has at most 40 characters. A name that turns into a reserved word of Java
+  or Python is refused, and the field says so.</li>
   <li><b>Add-ons.</b> Any of three, in any combination. <b>Quality gate</b> adds one command that
   runs the type or lint check and the tests, and fails when no test ran. <b>CI</b> adds a GitHub
   Actions workflow that runs that check on every push and pull request. <b>spectro playbook</b>
   writes the playbook of chapter 15d into a folder of its own. With this add-on on, a field
-  &ldquo;Playbook folder&rdquo; appears.</li>
-  <li><b>Review.</b> A file tree on the left, with the project and, when you chose it, the
-  playbook as two roots. Select a file to read its content and, under &ldquo;Why this file&rdquo;,
-  one sentence on why it is there. The summary names your choices, the number of files per folder
-  and two commands: the test command, and the check command, which is the gate command when you
-  chose the quality gate. Below the summary you pick the project folder with &ldquo;Pick&rdquo;,
-  or you type its absolute path where the system has no folder dialog. &ldquo;Generate&rdquo; writes
-  the files.</li>
+  &ldquo;Playbook folder&rdquo; appears under &ldquo;Folders&rdquo;.</li>
+  <li><b>Folders.</b> The project folder and, when the playbook add-on is on, the playbook
+  folder. Each field takes an absolute path. The button beside it, &ldquo;Pick&rdquo; at the
+  project folder and &ldquo;Choose&rdquo; at the playbook folder, opens the system's folder
+  dialog and puts the path into the field. A pick changes nothing on disk,
+  and you can still type or paste into the field. Where the system has no folder dialog, the
+  page says &ldquo;No folder dialog here. Paste an absolute path into the field.&rdquo; If a
+  dialog is already open, it says &ldquo;A folder dialog is already open.&rdquo;</li>
+  <li><b>Files.</b> Under the heading &ldquo;Files&rdquo; stands a file tree with the project and, when you chose it, the playbook as two
+  roots. Select a file to read its content and, under &ldquo;Why this file&rdquo;, one sentence on
+  why it is there. The summary names the number of files per folder and two commands: the test
+  command, and the check command, which is the gate command when you chose the quality gate. The
+  tree fills in as soon as an archetype, a language and a name are set.</li>
 </ul>
+
+<p>&ldquo;Generate&rdquo; stands at the bottom and writes the files. It stays off until the
+project folder is set, and in the &ldquo;Playbook&rdquo; option until the playbook folder is
+set.</p>
+
+<p>With &ldquo;Playbook&rdquo; the page asks for less. It shows the &ldquo;Playbook folder&rdquo;
+with its &ldquo;Choose&rdquo; button and the section &ldquo;Models&rdquo;, with one choice for
+each of the four model roles of the shipped playbook, <code>fast</code>, <code>standard</code>,
+<code>strong</code> and <code>judge</code>. A choice offers &ldquo;Keep the spectro playbook's
+model&rdquo; first and then every model the provider registry lists, provider by provider. A role
+you leave on the first option keeps the model of the shipped playbook. &ldquo;Generate&rdquo;
+writes a copy of the shipped spectro playbook into the folder, sets the model of each role you
+chose, and registers the folder. No project is written, and the playbook is pinned to no
+workspace. The folder then appears in the Playbook tab. The contents row of the loaded folder lists its
+skills, commands, hooks, agents and workflows, each with its hash. The shipped playbook declares
+no workflows, so the row shows none for a playbook made this way.</p>
 
 <h3 id="ch-playbooks-spectrolyzr-folder">The playbook folder</h3>
 

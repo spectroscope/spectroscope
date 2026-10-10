@@ -1,5 +1,5 @@
-// The app header: sidebar toggle, eyebrow and title, the learn and light
-// switch and the ⋮ menu (card 442). A run stops from the composer's own stop
+// The app header: sidebar toggle, eyebrow and title, back and forward, the
+// mode switch and the ⋮ menu (card 442, card 514). A run stops from the composer's own stop
 // seat. Pure presentation: every piece of state stays in App and arrives as
 // props.
 
@@ -8,6 +8,7 @@ import { useLang } from "../state/lang";
 import { replayEyebrow } from "./replayEyebrow";
 import { HeaderMenu } from "../panels/headerPanelControls";
 import { ModeSwitch } from "./ModeSwitch";
+import { NavSteps } from "./NavSteps";
 import { WorkspaceChip } from "./WorkspaceChip";
 import { CodeGraphHeaderStatus } from "../codegraph/CodeGraphHeaderStatus";
 import type { WorkspaceInfo } from "../state/reducer";
@@ -42,6 +43,10 @@ export function AppHeader(props: {
   onPickFolder?: () => void;
   /** Whether the folder may change now (card 428: before the first message, not during a run). */
   canPickFolder?: boolean;
+  /** Card 514: whether a back step lands on an entry the app wrote. */
+  canGoBack: boolean;
+  /** Card 514: whether a forward step lands on an entry the app wrote. */
+  canGoForward: boolean;
 }) {
   const lang = useLang();
 
@@ -90,6 +95,9 @@ export function AppHeader(props: {
 
       {/* Card 472: the code graph build of this folder, or its ready chip. */}
       <CodeGraphHeaderStatus />
+
+      {/* Card 514: back and forward, immediately left of the mode switch. */}
+      <NavSteps lang={lang} canBack={props.canGoBack} canForward={props.canGoForward} />
 
       {/* Card 430: learn or light, in every nav state. */}
       <ModeSwitch />

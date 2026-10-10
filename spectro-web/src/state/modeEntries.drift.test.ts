@@ -83,7 +83,7 @@ describe("a fleet and a tab ask the mode", () => {
 describe("the tab on screen asks the mode (criterion 8)", () => {
   it("is the chosen tab through shownTab, and the chosen tab is state nobody else reads", () => {
     expect(app).toContain('const [chosenTab, setTab] = useState<ViewTab>("chat");');
-    expect(app).toContain("const tab = shownTab(chosenTab, viewMode);");
+    expect(app).toContain("const tab = shownTab(chosenTab, viewMode, tutorial);");
     expect(app.split("chosenTab").length - 1).toBe(2);
   });
 });

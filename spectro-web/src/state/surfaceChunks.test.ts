@@ -81,8 +81,8 @@ describe("fetching the chunks on idle", () => {
     expect(learnCalls.length).toBeGreaterThanOrEqual(13);
   });
 
-  it("fetches the Spectrolyzr wizard's chunk in developer and never in learn or light (card 484)", () => {
-    const wizard = "playbook/spectrolyzr/SpectrolyzrWizard.tsx";
+  it("fetches the Spectrolyzr page's chunk in developer and never in learn or light (cards 484, 515)", () => {
+    const wizard = "playbook/spectrolyzr/SpectrolyzrPage.tsx";
     for (const mode of ["learn", "light"] as const) {
       const { host, idle } = idleHost();
       const { loaders, calls } = countingLoaders();

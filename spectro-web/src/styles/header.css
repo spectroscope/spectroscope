@@ -13,6 +13,15 @@
   z-index: var(--z-sticky);
 }
 
+/* Card 514: on a narrow window the header carries back and forward beside the
+   mode switch and the menu. The title is already at zero there, so the gaps
+   give up the width the pair needs. */
+@media (max-width: 767px) {
+  .header {
+    gap: var(--sp-2);
+  }
+}
+
 /* Session titles are headings, not labels: Book weight, tracked like the DS.
    Card 477: the title starts from nothing and grows up to its own text, so a
    short row cuts the title first and the folder chip beside it keeps its full
@@ -217,12 +226,44 @@
   background: none;
 }
 
+/* Back and forward (card 179), left of the mode switch since card 514. The
+   pair carries the push to the right that the switch carried before, so the
+   title gives up the width and the controls keep theirs. */
+.nav-steps {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.nav-steps__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.nav-steps__step:hover:not(:disabled) {
+  color: var(--accent);
+}
+/* Dark because there is nothing there: the app counts its own entries. */
+.nav-steps__step:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 /* Card 430: the learn and light switch. Two words in one chip, the checked one
    filled; it sits beside the language toggle and shares its chip idiom. */
 .mode-switch {
   display: inline-flex;
   flex: none;
-  margin-left: auto;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-chip);
   overflow: hidden;
@@ -246,6 +287,27 @@
 .mode-switch__option:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* Card 514, below 480 px: the gaps alone are not enough. This block stands after
+   the pair and the switch rules, which it overrides. At 390 px, with a session's
+   folder chip at its floor (card 465) and learn, light and developer in the
+   switch, the menu's right edge stood at 457 px and the panel toggle at 389 px,
+   outside the window. The chip keeps its name, so the width comes from the
+   padding, the gaps, the pair and the switch. Measured live on 2026-10-10 after
+   this block: the menu's right edge at 382 px of 390. */
+@media (max-width: 480px) {
+  .header {
+    padding: 0 var(--sp-2);
+    gap: var(--sp-1);
+  }
+  .nav-steps__step {
+    width: 20px;
+  }
+  .mode-switch__option {
+    padding: 3px 3px;
+    font-size: 10px;
+  }
 }
 
 /* Card 472: the install note under the ⋮ menu's code graph row. */

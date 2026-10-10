@@ -402,8 +402,8 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
   });
 });
 
-describe("PlaybookPane tabs (card 484)", () => {
-  it("offers Playbook and New project, opens on Playbook and does not draw the wizard there", () => {
+describe("PlaybookPane tabs (card 484, named New by card 515)", () => {
+  it("offers Playbook and New, opens on Playbook and does not draw the Spectrolyzr page there", () => {
     const out = renderToStaticMarkup(
       <PlaybookPane
         workspace="/ws"
@@ -414,8 +414,8 @@ describe("PlaybookPane tabs (card 484)", () => {
     );
     expect(out).toMatch(/role="tablist"/);
     expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Playbook</);
-    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="false"[^>]*>New project</);
-    expect(out).toContain(dict["lyzr.tab"].en);
+    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="false"[^>]*>New</);
+    expect(dict["lyzr.tab"]).toEqual({ en: "New", de: "Neu" });
     expect(out).not.toContain("wizard-probe");
     expect(out).toContain('class="pb-folders"');
   });

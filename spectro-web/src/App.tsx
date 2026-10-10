@@ -152,7 +152,7 @@ import {
   LabView,
   PlaybookPane,
   prefetchSurfaces,
-  SpectrolyzrWizard,
+  SpectrolyzrPage,
   SpectrumView,
   StateGraphPane,
   TextView,
@@ -465,8 +465,9 @@ export function App() {
   const tutorial = tutorialOn(leveling.snapshot);
   // The tab on screen: the one chosen where the mode opens it, else the chat.
   // Every reader below sees this one, so a tab the mode closes is never drawn,
-  // and never drawn as the ladder's teaser either (criterion 8).
-  const tab = shownTab(chosenTab, viewMode);
+  // and never drawn as the ladder's teaser either (criterion 8). Card 513: with
+  // the tab row hidden the chat shows, whatever tab was chosen before.
+  const tab = shownTab(chosenTab, viewMode, tutorial);
   // Held in a ref because onEvents is memoised with no dependencies; reading the
   // callback fresh here is the same stale-closure guard providerModelField uses.
   const refreshLeveling = useRef(leveling.refresh);
@@ -2576,6 +2577,8 @@ export function App() {
           })}
           onPickFolder={pickWorkspace}
           canPickFolder={viewingLive && canPickWorkspace}
+          canGoBack={canGoBack(depth)}
+          canGoForward={canGoForward(depth)}
         />
 
         {conn.status !== "open" && (
@@ -2657,56 +2660,6 @@ export function App() {
             />
           ) : !isOpen("tabRow", viewMode, tutorial) ? null : (
             <nav className="tab-nav" role="tablist" aria-label="View">
-              {/* Back and forward, because the desktop shell has no URL bar and
-                therefore no browser chrome to supply them. Dark when there is
-                genuinely nothing there — the app stamps every entry it writes
-                and counts, since the DOM reports no forward availability. */}
-              <span className="tab-nav-history">
-                <button
-                  type="button"
-                  className="tab-nav-step"
-                  disabled={!canGoBack(depth)}
-                  onClick={() => window.history.back()}
-                  title={t(lang, "nav.back")}
-                  aria-label={t(lang, "nav.back")}
-                >
-                  <svg
-                    viewBox="0 0 16 16"
-                    width="13"
-                    height="13"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M10 3.5 5.5 8l4.5 4.5" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="tab-nav-step"
-                  disabled={!canGoForward(depth)}
-                  onClick={() => window.history.forward()}
-                  title={t(lang, "nav.forward")}
-                  aria-label={t(lang, "nav.forward")}
-                >
-                  <svg
-                    viewBox="0 0 16 16"
-                    width="13"
-                    height="13"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M6 3.5 10.5 8 6 12.5" />
-                  </svg>
-                </button>
-              </span>
               {/* Card 430: the tabs come from the surface table, in route order,
                 and only the ones open in this mode. */}
               {tabsShown(viewMode, tutorial).map((id) => (
@@ -2806,7 +2759,7 @@ export function App() {
               onStartPlaybook={(dir, hash) => sendClient({ type: "start_playbook", dir, hash })}
               wizard={
                 <ChunkBoundary>
-                  <SpectrolyzrWizard />
+                  <SpectrolyzrPage />
                 </ChunkBoundary>
               }
             />

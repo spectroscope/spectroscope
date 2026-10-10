@@ -9,9 +9,13 @@
 // anything, and an open editor replaces the graph and the table with the edit
 // layout. While the draft has unsaved changes the folder picker is locked.
 //
-// Card 484 (Task 11): the header carries two tabs, Playbook and New project.
-// The second draws the Spectrolyzr wizard App hands in, so its chunk is
-// requested only when the tab opens or when developer prefetches it.
+// Card 484 (Task 11): the header carries two tabs, Playbook and New (named
+// New project until card 515). The second draws the Spectrolyzr page App
+// hands in, so its chunk is requested only when the tab opens or when
+// developer prefetches it.
+//
+// Card 512: a Choose button beside the path field opens the native folder
+// dialog through the folder chip's endpoint and only fills the field.
 //
 // Card 485: a contents row under the step table counts what the folder brings
 // and opens the install and remove confirmations.
@@ -25,6 +29,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { t } from "../i18n/i18n";
+import { chooseFolder, usePickNote } from "../state/folderPick";
 import { useLang } from "../state/lang";
 import { closeEditor, loadView, openEditor, useEditorState } from "../state/playbookEditor";
 import {
@@ -58,7 +63,7 @@ function messageOf(error: unknown): string {
 
 /**
  * @param props.workspace       the workspace the folder chip in the header shows
- * @param props.wizard          the Spectrolyzr wizard App built under a ChunkBoundary; the New project tab draws it (card 484, Task 11)
+ * @param props.wizard          the Spectrolyzr page App built under a ChunkBoundary; the New tab draws it (cards 484, 515)
  * @param props.sessionId       the live or stored session a run starts in and whose runs the run view draws (card 482)
  * @param props.onStartPlaybook sends the start frame; true when it reached the socket (card 482)
  */
@@ -83,6 +88,7 @@ export function PlaybookPane({
   const [path, setPath] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const pickNote = usePickNote("pane");
   const [dialog, setDialog] = useState<"install" | "remove" | null>(null);
   const contents = usePlaybookContents();
   const [preview, setPreview] = useState<StartPreview | null>(null);
@@ -277,19 +283,29 @@ export function PlaybookPane({
           )}
         </div>
         <div className="pb-add-row">
-          <input
-            className="pb-path"
-            type="text"
-            value={path}
-            placeholder={t(lang, "pb.addFolder")}
-            aria-label={t(lang, "pb.addFolder")}
-            spellCheck={false}
-            disabled={locked}
-            onChange={(e) => setPath(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") add();
-            }}
-          />
+          <div className="pb-path-field">
+            <input
+              className="pb-path"
+              type="text"
+              value={path}
+              placeholder={t(lang, "pb.addFolder")}
+              aria-label={t(lang, "pb.addFolder")}
+              spellCheck={false}
+              disabled={locked}
+              onChange={(e) => setPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") add();
+              }}
+            />
+            <button
+              type="button"
+              className="pb-choose"
+              disabled={locked}
+              onClick={() => void chooseFolder("pane", setPath)}
+            >
+              {t(lang, "pick.choose")}
+            </button>
+          </div>
           <button type="button" className="pb-add" disabled={locked} onClick={add}>
             {t(lang, "pb.add")}
           </button>
@@ -297,6 +313,11 @@ export function PlaybookPane({
             {t(lang, "pb.copyBundled")}
           </button>
         </div>
+        {pickNote !== null && (
+          <p className="pb-notice" role="status">
+            {pickNote}
+          </p>
+        )}
         {locked && (
           <p className="pb-notice" role="status">
             {t(lang, "pbe.folderLocked")}

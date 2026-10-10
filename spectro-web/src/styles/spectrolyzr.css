@@ -1,10 +1,10 @@
 /* ============================================================ spectrolyzr
-   The Spectrolyzr wizard (card 484): playbook/spectrolyzr/*.tsx, and the two
-   tabs of the playbook pane header. Imported by app.css, because a surface
+   Spectrolyzr (card 484, one page since card 515): playbook/spectrolyzr/*.tsx,
+   and the two tabs of the playbook pane header. Imported by app.css, because a surface
    chunk may carry no stylesheet of its own (surfaceChunks.guard.test.ts).
 
    Tokens only, the rule playbook.css follows: colour on lines, no shadows,
-   depth as a surface step plus a hairline. The wizard sits inside .pb-pane,
+   depth as a surface step plus a hairline. The page sits inside .pb-pane,
    whose button rule it builds on; overrides carry the .lyzr scope to win. */
 
 /* ---------- the pane's tabs ---------- */
@@ -49,44 +49,69 @@
   text-transform: uppercase;
   color: var(--sand);
 }
-.lyzr-step {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  min-width: 0;
-}
 
-/* ---------- the rail ---------- */
-.lyzr-rail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.lyzr .lyzr-rail-step {
+/* ---------- the switch: a new project or a new playbook ---------- */
+.lyzr-kind {
   display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
 }
-.lyzr .lyzr-rail-step.is-current {
+.lyzr .lyzr-kind-option {
+  border-color: var(--bg);
+  border-radius: var(--radius-chip);
+  background: var(--bg);
+  color: var(--text-dim);
+}
+.lyzr .lyzr-kind-option.is-on {
   color: var(--accent);
   border-color: var(--accent);
+  background: var(--surface-2);
 }
-.lyzr .lyzr-rail-step:disabled,
-.lyzr .lyzr-next:disabled,
-.lyzr .lyzr-back:disabled,
+
+/* ---------- the page: the choices beside the files, stacked when narrow ---------- */
+.lyzr-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 400px);
+  gap: var(--sp-5);
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .lyzr-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lyzr-form,
+.lyzr-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.lyzr-files {
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 760px) {
+  .lyzr-files {
+    padding-left: 0;
+    padding-top: var(--sp-4);
+    border-left-width: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+.lyzr-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
 .lyzr .lyzr-generate:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.lyzr-rail-n {
-  font-family: var(--font-mono);
-  font-size: var(--fs-11);
-}
 
-/* ---------- step 1 ---------- */
+/* ---------- archetype and language ---------- */
 .lyzr-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -143,7 +168,8 @@
   font-size: var(--fs-12);
   color: var(--text-dim);
 }
-.lyzr-input {
+.lyzr-input,
+.lyzr-model {
   min-width: 0;
   font: inherit;
   font-family: var(--font-mono);
@@ -154,12 +180,19 @@
   border-radius: var(--radius-chip);
   padding: 5px 8px;
 }
-.lyzr-input:focus-visible {
+.lyzr-input:focus-visible,
+.lyzr-model:focus-visible {
   outline: 1px solid var(--accent);
   border-color: var(--accent);
 }
 .lyzr-input.is-invalid {
   border-color: var(--error);
+}
+/* Card 515 part two: the four model choices of a new playbook, one row each. */
+.lyzr-model-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
 }
 .lyzr-hint {
   margin: 0;
@@ -177,7 +210,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ---------- step 2 ---------- */
+/* ---------- add-ons ---------- */
 .lyzr-addons {
   display: flex;
   flex-direction: column;
@@ -207,23 +240,12 @@
   color: var(--text-dim);
 }
 
-/* ---------- step 3: the tree beside the reader, stacked when narrow ---------- */
-.lyzr-review {
-  display: grid;
-  grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
-  gap: var(--sp-3);
-  align-items: start;
-}
-@media (max-width: 760px) {
-  .lyzr-review {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+/* ---------- the files: the tree over the reader ---------- */
 /* A block, not a flex column: rows with overflow hidden would shrink to nothing
    inside a capped flex container. */
 .lyzr-tree {
   display: block;
-  max-height: 440px;
+  max-height: 320px;
   overflow: auto;
   padding: var(--sp-1) 0;
   background: var(--surface);
@@ -297,7 +319,7 @@
 }
 .lyzr-content {
   margin: 0;
-  max-height: 380px;
+  max-height: 300px;
   overflow: auto;
   padding: var(--sp-2);
   font-family: var(--font-mono);
@@ -336,14 +358,14 @@
     margin-bottom: var(--sp-1);
   }
 }
+/* A folder field and its chooser button on one row, also at phone width (card 512). */
 .lyzr-target {
   display: flex;
-  flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--sp-2);
 }
 .lyzr-target .lyzr-field {
-  flex: 1 1 320px;
+  flex: 1 1 0;
 }
 .lyzr-go {
   display: flex;
@@ -381,17 +403,4 @@
   padding-left: var(--sp-4);
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
-}
-
-/* ---------- Back and Next ---------- */
-.lyzr-nav {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--border);
-}
-.lyzr .lyzr-next {
-  color: var(--accent);
-  border-color: var(--accent);
 }
