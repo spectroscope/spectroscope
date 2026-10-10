@@ -20,12 +20,12 @@ public final class CareParagraph {
     /** What sits between the system prompt and the paragraph. */
     public static final String SEPARATOR = "\n\n";
 
-    /** The helpers the paragraph names while no session count per chat
-     *  reaches the agent: the concept's default of three model sessions per
-     *  chat, the main agent and two helpers ({@code konzept/RUN-PROFILES.md},
-     *  Knobs). The owner named three sessions; nobody has measured how many
-     *  requests the house test backend serves at once usefully. Read only
-     *  through {@link #helpersFor}. */
+    /** The helpers an agent's paragraph names until a face hands it a count
+     *  through {@link #helpersFor}: the concept's default of three model
+     *  sessions per chat, the main agent and two helpers
+     *  ({@code konzept/RUN-PROFILES.md}, Knobs). The owner named three
+     *  sessions; nobody has measured how many requests the house test backend
+     *  serves at once usefully. */
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
     public static final int DEFAULT_HELPERS = 2;
 
@@ -37,11 +37,9 @@ public final class CareParagraph {
      * offers a spawn tool takes the count from here, so the chat's session
      * count reaches the paragraph through one method.
      *
-     * <p>Card 490 brings that count as {@code sessionsPerChat}; it is on no
-     * branch this card builds on, so the answer is {@link #DEFAULT_HELPERS}.
-     * When the two cards meet, this method returns {@code sessionsPerChat - 1}
-     * (the main agent holds one session), and
-     * {@code DEFAULT_SESSIONS_PER_CHAT - 1} while the key is unset.
+     * <p>The count is the chat's {@code sessionsPerChat} (card 490) minus the
+     * main agent's own session. While the key is unset the paragraph names
+     * {@code DEFAULT_SESSIONS_PER_CHAT - 1}, the proposed count's helpers.
      * {@code CareHelperWiringDriftTest} fails in a tree where the config
      * declares the key and this method does not read it.</p>
      *
@@ -49,7 +47,10 @@ public final class CareParagraph {
      * @return the subagents that may run at once, at least 1
      */
     public static int helpersFor(dev.spectroscope.core.config.SpectroConfig config) {
-        return DEFAULT_HELPERS;
+        Integer count = config.sessionsPerChat();
+        int sessions = count != null ? count
+                : dev.spectroscope.core.config.SpectroConfig.DEFAULT_SESSIONS_PER_CHAT;
+        return sessions - 1;
     }
 
     /**
@@ -73,7 +74,8 @@ public final class CareParagraph {
      */
     public static String text(int helpers, boolean subagents) {
         String subagentSentence = subagents
-                ? " Start at most " + helpers + " subagents at once; more wait for a free slot."
+                ? " Start at most " + helpers + (helpers == 1 ? " subagent" : " subagents")
+                        + " at once; more wait for a free slot."
                 : "";
         return "This chat runs with limited capacity, so every request takes time."
                 + " Work in small steps."

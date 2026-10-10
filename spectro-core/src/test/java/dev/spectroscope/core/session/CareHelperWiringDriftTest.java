@@ -22,11 +22,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * can offer a spawn tool takes it from there.
  *
  * <p>Card 490 brings the session count per chat as the key
- * {@code sessionsPerChat}. It is on no branch this card builds on, so
- * {@code helpersFor} returns {@link CareParagraph#DEFAULT_HELPERS} today. The
- * tripwire below turns red in any tree where {@code SpectroConfig} declares
- * that key and {@code CareParagraph} does not read it, so the integration of
- * the two cards cannot leave the paragraph naming a fixed two.</p>
+ * {@code sessionsPerChat}, and this branch carries it. The tripwire below
+ * turns red in any tree where {@code SpectroConfig} declares that key and
+ * {@code CareParagraph} does not read it; it went red when card 490 was merged
+ * here and green when {@code helpersFor} began to read the key. The numbers
+ * themselves are held by {@code CareParagraphTest} and, on the browser face,
+ * by {@code SessionCareParagraphTest}.</p>
  */
 class CareHelperWiringDriftTest {
 

@@ -847,7 +847,7 @@
     "kind" : "UNEXAMINED",
     "unit" : "COUNT",
     "key" : "",
-    "explanation" : "The helpers the paragraph names while no session count per chat reaches the agent: the concept's default of three model sessions per chat, the main agent and two helpers (konzept/RUN-PROFILES.md, Knobs). The owner named three sessions; nobody has measured how many requests the house test backend serves at once usefully. Read only through helpersFor."
+    "explanation" : "The helpers an agent's paragraph names until a face hands it a count through helpersFor: the concept's default of three model sessions per chat, the main agent and two helpers (konzept/RUN-PROFILES.md, Knobs). The owner named three sessions; nobody has measured how many requests the house test backend serves at once usefully."
   },
   {
     "owner" : "dev.spectroscope.core.session.Compaction",

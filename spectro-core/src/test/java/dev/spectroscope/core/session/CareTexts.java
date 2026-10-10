@@ -39,6 +39,14 @@ public final class CareTexts {
             + "files in parts with offset and limit. Do not list or search the whole workspace in one call. "
             + "Check each result before the next step. Keep answers short.";
 
+    /** The shipped text for one helper, a chat at the floor of two sessions,
+     *  350 characters: the noun is singular. */
+    public static final String ONE_HELPER = "This chat runs with limited capacity, so every "
+            + "request takes time. Work in small steps. Read only the file you need next, and read large "
+            + "files in parts with offset and limit. Do not list or search the whole workspace in one call. "
+            + "Start at most 1 subagent at once; more wait for a free slot. Check each result before the "
+            + "next step. Keep answers short.";
+
     private CareTexts() {
     }
 }
