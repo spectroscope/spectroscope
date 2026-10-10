@@ -468,8 +468,9 @@ public final class CompactionThreshold {
      * OpenAI-compatible path caps at 16,000) still applies on top.</p>
      *
      * <p>Every source is clamped, an explicit {@code compactionThreshold}
-     * included. Under one the backend is not asked for its window, and the
-     * window is then the one the threshold implies. An explicit threshold at
+     * included. Under one the backend is not asked for its window: a model
+     * with a published window keeps it, and where none is known the window
+     * is the one the threshold implies ({@link #impliedWindow}). An explicit threshold at
      * or above a known window leaves no reserve, so the budget is the floor.
      * Only a run that learned no window and has no explicit threshold keeps
      * {@code maxTokens}: there is nothing to hold it against.</p>
