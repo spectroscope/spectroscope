@@ -873,7 +873,14 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             });
         }
 
-        /** Registers the harness tools as custom tools; their handlers park. */
+        /**
+         * Registers the harness tools as custom tools; their handlers park.
+         * Every one is marked as overriding a built-in: the harness names
+         * several of its tools as the runtime's built-ins are named
+         * ({@code glob}, {@code grep}), and the runtime refuses a turn whose
+         * tool collides with a built-in unless the tool says so (measured
+         * live on card 496 against CLI 1.0.94).
+         */
         void tools(List<ToolSpec> specs) {
             List<ToolSpec> given = specs == null ? List.of() : List.copyOf(specs);
             List<ToolDefinition> defs = new ArrayList<>();
@@ -881,7 +888,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             for (ToolSpec spec : given) {
                 names.add(spec.name());
                 defs.add(ToolDefinition.create(spec.name(), spec.description() == null ? "" : spec.description(),
-                        schemaOf(spec.inputSchema()), this::park));
+                        schemaOf(spec.inputSchema()), this::park).overridesBuiltInTool(true));
             }
             toolSpecs = given;
             definitions = List.copyOf(defs);

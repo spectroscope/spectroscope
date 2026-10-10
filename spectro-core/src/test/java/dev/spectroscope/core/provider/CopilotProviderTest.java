@@ -204,6 +204,27 @@ class CopilotProviderTest {
         assertEquals(List.of("read_file"), toolNames);
     }
 
+    @Test
+    void everyHarnessToolOverridesTheBuiltInOfTheSameName() throws Exception {
+        // Card 496, live: the runtime refused the first turn of a real chat with
+        // 'External tool "glob" conflicts with a built-in tool of the same name.
+        // Set overridesBuiltInTool: true to explicitly override it.' The harness
+        // has glob, grep and more under the built-ins' own names, and runs them itself.
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("ok");
+            turn.usage(10, 1, 0, 0, "stop");
+            turn.idle();
+        });
+        ToolSpec glob = new ToolSpec("glob", "Finds files.", JSON.valueToTree(Map.of("type", "object")));
+
+        drain(provider.stream(ask(List.of(user("hi")), List.of(readFileSpec(), glob), new CancelSignal())));
+
+        JsonNode tools = runtime.createParams().path("tools");
+        assertEquals(2, tools.size(), tools.toString());
+        tools.forEach(t -> assertTrue(t.path("overridesBuiltInTool").asBoolean(false), t.toString()));
+    }
+
     private static List<String> strings(JsonNode array) {
         List<String> out = new ArrayList<>();
         array.forEach(n -> out.add(n.asText()));
