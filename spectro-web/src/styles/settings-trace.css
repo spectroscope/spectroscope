@@ -590,6 +590,9 @@
   font-size: var(--fs-13);
   overflow-wrap: anywhere;
 }
+.cp-address a {
+  color: var(--accent);
+}
 .cp-code-line {
   display: flex;
   align-items: baseline;
