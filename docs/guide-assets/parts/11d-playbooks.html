@@ -118,6 +118,61 @@ way. After a copy you can edit <code>playbook.json</code> in your own editor or 
 which the next section describes. The segment reads the file each time it loads the folder, so the
 graph shows what the file says now.</p>
 
+<h2 id="ch-playbooks-spectrolyzr">Spectrolyzr</h2>
+
+<p>Spectrolyzr writes a new project and, if you ask for it, a playbook for it. It sits in the
+Playbook segment behind the tab &ldquo;New project&rdquo;, next to the tab that shows the
+playbook. The project is small, builds, and ships one test that passes. The same choices always
+produce the same files, byte for byte. The files come from templates inside the app, so nothing
+is fetched from the network, and no generated project depends on a spectroscope package.</p>
+
+<p>The wizard has three steps.</p>
+
+<ul>
+  <li><b>Project.</b> Pick an archetype, a language and a name. The archetypes are
+  <b>Service</b>, an HTTP server with one <code>/health</code> route; <b>Library</b>, one public
+  function; and <b>Command line tool</b>, a command that greets a name and returns an exit code.
+  The languages are <b>TypeScript</b>, <b>Python</b> and <b>Java</b>. A name starts with a lower
+  case letter, holds lower case letters and digits, may join parts with single hyphens, and has
+  at most 40 characters. A name that turns into a reserved word of Java or Python is refused, and
+  the field says so.</li>
+  <li><b>Add-ons.</b> Any of three, in any combination. <b>Quality gate</b> adds one command that
+  runs the type or lint check and the tests, and fails when no test ran. <b>CI</b> adds a GitHub
+  Actions workflow that runs that check on every push and pull request. <b>spectro playbook</b>
+  writes the playbook of chapter 15d into a folder of its own. With this add-on on, a field
+  &ldquo;Playbook folder&rdquo; appears.</li>
+  <li><b>Review.</b> A file tree on the left, with the project and, when you chose it, the
+  playbook as two roots. Select a file to read its content and, under &ldquo;Why this file&rdquo;,
+  one sentence on why it is there. The summary names your choices, the number of files per folder
+  and two commands: the test command, and the check command, which is the gate command when you
+  chose the quality gate. Below the summary you pick the project folder with &ldquo;Pick&rdquo;,
+  or you type its absolute path where the system has no folder dialog. &ldquo;Generate&rdquo; writes
+  the files.</li>
+</ul>
+
+<h3 id="ch-playbooks-spectrolyzr-folder">The playbook folder</h3>
+
+<p>The playbook does not go inside the project. The field starts as a sibling of the project
+folder, named after the project with <code>-playbook</code> at the end, and you can change it. It
+may not be the project folder, inside it, or around it. Generate writes the spectro playbook
+there, sets its <code>test</code> variable to the check command of your project, registers the
+folder, and pins it to the new project folder. The pin shows in the Playbook segment once the
+project folder is the working folder of the window. Spectrolyzr does not change the working
+folder for you.</p>
+
+<h3 id="ch-playbooks-spectrolyzr-refuse">What Generate refuses</h3>
+
+<p>Generate never overwrites. It looks at both folders first. If any target file already exists,
+nothing is written, and the window lists the files that stand in the way, per folder. A choice
+the server does not know, or a name it refuses, comes back as a message that marks the field.
+After a successful run the window names both folders, says the playbook is pinned to the project,
+and offers a button that copies the path.</p>
+
+<p>A generated Java project has no Gradle wrapper yet, so the command <code>gradle test</code>
+needs Gradle on your machine, next to Java 21. The product's own CI builds every archetype in
+every language, once bare and once with all three add-ons, and runs its check command, so a
+template that stops building turns that job red.</p>
+
 <h2 id="ch-playbooks-edit">Editing a playbook</h2>
 
 <p>The segment edits the file with the mouse. The &ldquo;Edit&rdquo; button in the header opens

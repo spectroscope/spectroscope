@@ -33,6 +33,8 @@ class PlaybookGuideDriftTest {
     private static final Path MODES = Path.of("docs/guide-assets/parts/06b-leveling.html");
     private static final Path BUNDLE =
             Path.of("spectro-server/src/main/resources/bundled-playbooks/spectro");
+    private static final Path MANIFEST =
+            Path.of("spectro-server/src/main/resources/spectrolyzr/manifest.json");
     private static final List<String> EDITIONS =
             List.of("docs/USER-GUIDE.html", "docs/USER-GUIDE-LIGHT.html");
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -207,6 +209,71 @@ class PlaybookGuideDriftTest {
                     name + " still describes two modes: rebuild it");
             assertTrue(edition.contains("id=\"ch-playbooks-edit\""),
                     name + " has no section on editing a playbook: rebuild it");
+        }
+    }
+
+    /** The text of the Spectrolyzr section: from its heading to the next h2. */
+    private static String spectrolyzrSection(Path root) throws IOException {
+        String part = chapter(root);
+        int start = part.indexOf("<h2 id=\"ch-playbooks-spectrolyzr\">Spectrolyzr</h2>");
+        assertTrue(start >= 0,
+                PART + " has no section \"Spectrolyzr\" (id ch-playbooks-spectrolyzr)");
+        String section = part.substring(start);
+        int next = section.indexOf("<h2 ", 10);
+        return next > 0 ? section.substring(0, next) : section;
+    }
+
+    @Test
+    void theSpectrolyzrSectionNamesEveryArchetypeLanguageAndAddonOfTheManifest()
+            throws IOException {
+        Path root = rootOrSkip();
+        assumeTrue(Files.isRegularFile(root.resolve(MANIFEST)), "no Spectrolyzr manifest");
+        String section = spectrolyzrSection(root);
+        JsonNode manifest = JSON.readTree(Files.readString(root.resolve(MANIFEST)));
+        List<String> wanted = new ArrayList<>();
+        for (JsonNode a : manifest.get("archetypes")) {
+            wanted.add(a.get("name").get("en").asText());
+        }
+        for (JsonNode l : manifest.get("languages")) {
+            wanted.add(l.get("name").asText());
+        }
+        for (JsonNode a : manifest.get("addons")) {
+            wanted.add(a.get("name").get("en").asText());
+        }
+        assertEquals(3 + 3 + 3, wanted.size(),
+                "the manifest no longer holds three archetypes, languages and add-ons");
+        List<String> missing = new ArrayList<>();
+        for (String name : wanted) {
+            if (!section.contains(name)) {
+                missing.add(name);
+            }
+        }
+        assertEquals(List.of(), missing,
+                "the Spectrolyzr section never names these choices of the manifest");
+    }
+
+    @Test
+    void theSpectrolyzrSectionSaysWhereThePlaybookGoesAndWhatItDoesNotDo() throws IOException {
+        String section = spectrolyzrSection(rootOrSkip());
+        assertTrue(section.contains("New project"), "the section never names the tab");
+        assertTrue(section.contains("sibling"),
+                "the section never says the playbook lives in a sibling folder");
+        assertTrue(section.contains("pinned"), "the section never says the playbook is pinned");
+        assertTrue(section.contains("never overwrites"),
+                "the section never says generate does not overwrite");
+        assertTrue(section.contains("no Gradle wrapper"),
+                "the section never says a generated Java project has no wrapper yet");
+        assertTrue(section.contains("Generate"), "the section never names the Generate button");
+    }
+
+    @Test
+    void bothBuiltEditionsCarryTheSpectrolyzrSection() throws IOException {
+        Path root = rootOrSkip();
+        for (String name : EDITIONS) {
+            String edition = Files.readString(root.resolve(name));
+            assertTrue(edition.contains("id=\"ch-playbooks-spectrolyzr\""),
+                    name + " has no Spectrolyzr section: rebuild it (docs/guide-assets/"
+                            + "build_user_guide.py, both themes, then the PDFs and --stamp)");
         }
     }
 }
