@@ -1,5 +1,6 @@
 package dev.spectroscope.core.playbook.run;
 
+import dev.spectroscope.core.playbook.AgentFile;
 import dev.spectroscope.core.playbook.Playbook;
 
 import java.util.ArrayList;
@@ -58,5 +59,20 @@ public final class StepPrompt {
             }
         }
         return new Prompt(record, model.toString());
+    }
+
+    /**
+     * The text a child of an {@code agent:<name>} role runs on: the agent
+     * file's preamble, the report instruction and the step's model text, in
+     * the order the static role tools compose them. The role text comes from
+     * the file only; the step contributes the task.
+     *
+     * @param agent the resolved agent file
+     * @param task  the step's model text
+     * @return the composed text
+     */
+    public static String forAgent(AgentFile agent, String task) {
+        return agent.preamble() + "\n\nReport progress at each milestone via the "
+                + "report_status tool (one short sentence each).\n\nTASK:\n" + task.strip();
     }
 }

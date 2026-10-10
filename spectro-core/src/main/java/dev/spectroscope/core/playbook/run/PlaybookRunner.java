@@ -12,6 +12,7 @@ import dev.spectroscope.core.graph.RunConfig;
 import dev.spectroscope.core.graph.StateGraph;
 import dev.spectroscope.core.graph.StateSchema;
 import dev.spectroscope.core.graph.StateUpdate;
+import dev.spectroscope.core.playbook.AgentFile;
 import dev.spectroscope.core.playbook.Playbook;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.subagents.AgentType;
@@ -33,7 +34,8 @@ import java.util.function.Function;
 /**
  * Runs one playbook on the StateGraph engine. Steps and decisions are nodes,
  * arrows are edges, ends set the result. A step runs on the model its choice
- * names, as a chat turn through the host or as a child through runStep; a
+ * names, as a chat turn through the host or as a child through runStep (an
+ * {@code agent:<name>} role runs on the pinned agent file's type and preamble); a
  * decision runs its check and routes by label. The engine writes the graph
  * artifact; this class writes the plan and the sidecar.
  */
@@ -101,6 +103,7 @@ public final class PlaybookRunner {
         Playbook p = pinned.playbook();
         List<String> out = new ArrayList<>();
         pinned.missingSkills().forEach(name -> out.add("skill not found: " + name));
+        out.addAll(pinned.missingAgents().values());
         for (Playbook.Node n : p.nodes()) {
             if (n instanceof Playbook.Step s) {
                 if ("extended".equals(s.permission())) {
@@ -215,16 +218,19 @@ public final class PlaybookRunner {
         long t0 = System.currentTimeMillis();
         String childId = null;
         try {
+            AgentFile agent = agentOf(s);
             ModelResolver.Resolved model = resolveOrAsk(s.id(), s.model(), s.privacy());
-            recordStepStart(s, model);
+            recordStepStart(s, model, agent);
             Map<String, String> found = documents(state);
             Map<String, Map<Path, Long>> before = snapshots(s.produces());
             StepPrompt.Prompt prompt = StepPrompt.of(setup.pinned(), s, found);
             host.permissionFloor("inherit".equals(s.permission()) ? null : s.permission());
             if ("child".equals(s.performer())) {
                 LlmProvider provider = provider(model.ref());
-                AgentType role = AgentType.fromId(s.role() == null ? "worker" : s.role()).orElse(AgentType.WORKER);
-                SubagentManager.StepResult r = manager.runStep(new SubagentManager.StepChild(role, prompt.model(),
+                AgentType role = AgentType.fromId(agent != null ? agent.type()
+                        : s.role() == null ? "worker" : s.role()).orElse(AgentType.WORKER);
+                String task = agent != null ? StepPrompt.forAgent(agent, prompt.model()) : prompt.model();
+                SubagentManager.StepResult r = manager.runStep(new SubagentManager.StepChild(role, task,
                         prompt.record(), "playbook:" + s.id(), provider), host::emit, stepSignal);
                 childId = r.childId();
                 stopIfCancelled(s.id());
@@ -510,11 +516,31 @@ public final class PlaybookRunner {
         return id;
     }
 
-    private void recordStepStart(Playbook.Step s, ModelResolver.Resolved model) {
+    /**
+     * @param s a step
+     * @return the pinned agent file of an {@code agent:<name>} child step, null for a static role
+     */
+    private AgentFile agentOf(Playbook.Step s) {
+        if (!"child".equals(s.performer()) || s.role() == null || !s.role().startsWith(PinnedPlaybook.AGENT_ROLE)) {
+            return null;
+        }
+        String name = s.role().substring(PinnedPlaybook.AGENT_ROLE.length());
+        AgentFile agent = setup.pinned().agents().get(name);
+        if (agent == null) {
+            // refusals() stops such a run before any node; a step never falls back to a bare worker.
+            throw new RunStopped(RunStop.REFUSED, s.id() + ": agent " + name + " did not resolve");
+        }
+        return agent;
+    }
+
+    private void recordStepStart(Playbook.Step s, ModelResolver.Resolved model, AgentFile agent) {
         Map<String, Object> f = new LinkedHashMap<>();
         f.put("run", setup.runId());
         f.put("node", s.id());
         f.put("performer", s.performer());
+        if (agent != null) {
+            f.put("agent", agent.name());
+        }
         f.put("choice", s.model());
         f.put("provider", model.ref().provider());
         f.put("model", model.ref().model());

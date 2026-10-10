@@ -1,5 +1,6 @@
 package dev.spectroscope.core.playbook.run;
 
+import dev.spectroscope.core.playbook.AgentFile;
 import dev.spectroscope.core.playbook.ContentHash;
 import dev.spectroscope.core.playbook.Playbook;
 
@@ -9,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -17,11 +19,14 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * The bytes a run holds for its whole length: the file, the templates and the
- * skills, read once at start, with the hash the confirmation showed.
+ * The bytes a run holds for its whole length: the file, the templates, the
+ * skills and the agent files its steps name, read once at start, with the
+ * hash the confirmation showed.
  *
  * @param playbook      the playbook read from the folder
  * @param dir           the folder's real path
@@ -29,11 +34,21 @@ import java.util.stream.Stream;
  * @param skills        the body of every skill a step names that resolved, by name
  * @param templates     the template text by document id
  * @param missingSkills the skill names that resolved nowhere, in node order
+ * @param agents        the agent file of every {@code agent:<name>} role that resolved, by name
+ * @param missingAgents the agent names that did not resolve, in node order, each with the refusal sentence
  */
 public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<String, SkillBody> skills,
-                             Map<String, String> templates, List<String> missingSkills) {
+                             Map<String, String> templates, List<String> missingSkills,
+                             Map<String, AgentFile> agents, Map<String, String> missingAgents) {
+
+    /** The role prefix of a step that runs an agent file of the playbook. */
+    public static final String AGENT_ROLE = "agent:";
+
+    private static final Pattern PLAIN_NAME = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{N}_-]*");
 
     /**
+     * Pins with no agent installed: every {@code agent:<name>} role is refused.
+     *
      * @param dir           the playbook folder
      * @param p             the playbook read from it
      * @param installedBody an installed skill's body by name, or null when not installed
@@ -41,6 +56,19 @@ public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<Strin
      * @throws IOException when a pinned file cannot be read
      */
     public static PinnedPlaybook pin(Path dir, Playbook p, Function<String, String> installedBody) throws IOException {
+        return pin(dir, p, installedBody, source -> false);
+    }
+
+    /**
+     * @param dir            the playbook folder
+     * @param p              the playbook read from it
+     * @param installedBody  an installed skill's body by name, or null when not installed
+     * @param agentInstalled whether the install ledger holds the agent file at this playbook relative path
+     * @return the pinned copy
+     * @throws IOException when a pinned file cannot be read
+     */
+    public static PinnedPlaybook pin(Path dir, Playbook p, Function<String, String> installedBody,
+                                     Predicate<String> agentInstalled) throws IOException {
         Path root = dir.toRealPath();
         SortedMap<String, byte[]> files = new TreeMap<>();
         files.put("playbook.json", Files.readAllBytes(root.resolve("playbook.json")));
@@ -103,7 +131,50 @@ public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<Strin
                 missing.add(name);
             }
         }
-        return new PinnedPlaybook(p, root, hash(files), Map.copyOf(skills), Map.copyOf(templates), List.copyOf(missing));
+        Map<String, AgentFile> agents = new LinkedHashMap<>();
+        Map<String, String> missingAgents = new LinkedHashMap<>();
+        for (Playbook.Node n : p.nodes()) {
+            if (n instanceof Playbook.Step s && "child".equals(s.performer()) && s.role() != null
+                    && s.role().startsWith(AGENT_ROLE)) {
+                String name = s.role().substring(AGENT_ROLE.length());
+                if (!agents.containsKey(name) && !missingAgents.containsKey(name)) {
+                    pinAgent(root, name, agentInstalled, files, agents, missingAgents);
+                }
+            }
+        }
+        return new PinnedPlaybook(p, root, hash(files), Map.copyOf(skills), Map.copyOf(templates), List.copyOf(missing),
+                Collections.unmodifiableMap(agents), Collections.unmodifiableMap(missingAgents));
+    }
+
+    /**
+     * Reads one agent file into the pinned bytes, so the start hash covers the
+     * preamble the child runs on, and resolves it only when the install ledger
+     * holds it.
+     */
+    private static void pinAgent(Path root, String name, Predicate<String> agentInstalled,
+                                 SortedMap<String, byte[]> files, Map<String, AgentFile> agents,
+                                 Map<String, String> missingAgents) throws IOException {
+        String source = "agents/" + name + ".md";
+        Path f = root.resolve(source).normalize();
+        if (!PLAIN_NAME.matcher(name).matches() || !f.startsWith(root)
+                || !Files.isRegularFile(f, LinkOption.NOFOLLOW_LINKS) || !f.toRealPath().startsWith(root)) {
+            missingAgents.put(name, "agent not found: " + name + " (" + source + " is not a file in the playbook folder)");
+            return;
+        }
+        byte[] bytes = Files.readAllBytes(f);
+        files.put(source, bytes);
+        if (!agentInstalled.test(source)) {
+            missingAgents.put(name, "agent not installed: " + name + " (" + source
+                    + " is listed in contents.agents; install the playbook's contents first)");
+            return;
+        }
+        AgentFile.Read read = AgentFile.read(new String(bytes, StandardCharsets.UTF_8), source);
+        if (read.agent() == null || !read.findings().isEmpty()) {
+            missingAgents.put(name, "agent " + name + ": " + String.join("; ", read.findings().stream()
+                    .map(finding -> finding.path() + ": " + finding.message()).toList()));
+            return;
+        }
+        agents.put(name, read.agent());
     }
 
     /**

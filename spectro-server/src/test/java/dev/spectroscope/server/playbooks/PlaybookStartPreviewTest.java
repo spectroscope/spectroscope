@@ -186,6 +186,35 @@ class PlaybookStartPreviewTest {
     }
 
     @Test
+    void theRouteResolvesAnAgentRoleThroughTheInstallLedger() throws IOException {
+        String json = BUNDLE.replace("\"role\": \"worker\"", "\"role\": \"agent:reviewer\"")
+                .replace("\"contents\": { \"skills\": [\"skills/spectropowers\"] }",
+                        "\"contents\": { \"skills\": [\"skills/spectropowers\"], \"agents\": [\"agents/reviewer.md\"] }");
+        Path dir = folder(json);
+        Files.createDirectories(dir.resolve("agents"));
+        Files.writeString(dir.resolve("agents/reviewer.md"),
+                "---\nname: reviewer\ndescription: Reads the diff.\ntype: explore\n---\nYou are the reviewer.\n");
+        PlaybookFolders folders = new PlaybookFolders(tmp.resolve("playbooks.json"));
+        folders.register(dir);
+        InstallLedger ledger = new InstallLedger(tmp.resolve("ledger.json"));
+        PlaybookController controller = new PlaybookController(folders, "none", ledger, tmp.resolve("home"), tmp,
+                tmp.resolve("home/settings.json"), config -> List.of(row("ollama", "local", "reachable"),
+                        row("anthropic", "cloud", "configured")));
+
+        PlaybookStartPreview before = controller.startPreview(dir.toString(), tmp.toString(),
+                new MockHttpServletRequest()).getBody();
+        assertTrue(before.refusals().stream().anyMatch(r -> r.startsWith("agent not installed: reviewer")),
+                before.refusals().toString());
+
+        ledger.put(new InstallLedger.Install("b", dir.toRealPath().toString(), "h", "2026-10-10",
+                List.of(new InstallLedger.Item("agent", "reviewer", "agents/reviewer.md", "x", null, List.of(), null))));
+        PlaybookStartPreview after = controller.startPreview(dir.toString(), tmp.toString(),
+                new MockHttpServletRequest()).getBody();
+        assertTrue(after.refusals().stream().noneMatch(r -> r.contains("reviewer")), after.refusals().toString());
+        assertTrue(after.refusals().contains("skill not found: nowhere"), "the other refusals stay: " + after.refusals());
+    }
+
+    @Test
     void theRouteRefusesAForeignCallerAndAFolderThatIsNotRegistered() throws IOException {
         Path dir = folder(BUNDLE);
         MockHttpServletRequest remote = new MockHttpServletRequest();

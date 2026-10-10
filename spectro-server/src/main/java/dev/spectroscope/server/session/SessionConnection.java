@@ -53,6 +53,7 @@ import dev.spectroscope.core.wire.WireReference;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import dev.spectroscope.server.leveling.ServerLeveling;
+import dev.spectroscope.server.playbooks.InstallLedger;
 import dev.spectroscope.server.playbooks.PlaybookFolders;
 import dev.spectroscope.server.playbooks.PlaybookLoader;
 import dev.spectroscope.server.playbooks.PlaybookRunsLive;
@@ -1772,6 +1773,7 @@ public final class SessionConnection {
     /**
      * Card 482: the Start of the confirmation sheet. Starts only when the
      * folder is registered and its bytes still hash to what the sheet showed.
+     * Agent roles resolve through the install ledger, as in the preview.
      *
      * @param dir  the playbook folder
      * @param hash the hash the confirmation showed
@@ -1797,7 +1799,10 @@ public final class SessionConnection {
                 sendError("The playbook does not load: " + loaded.findings());
                 return;
             }
-            pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody);
+            InstallLedger ledger = InstallLedger.inHome();
+            String id = loaded.playbook().id();
+            pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody,
+                    source -> ledger.holds(id, "agent", source));
         } catch (IOException | RuntimeException unreadable) {
             sendError("The playbook could not be read: " + unreadable.getMessage());
             return;

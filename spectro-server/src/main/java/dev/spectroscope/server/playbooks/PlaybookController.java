@@ -414,7 +414,9 @@ public class PlaybookController {
      * confirmation of a run (card 482). Fenced like every write, because the
      * hash it returns is what a start frame must repeat. Provider rows come
      * from the registry without a request, and a browser can answer a
-     * question, so the preview assumes someone is there to ask.
+     * question, so the preview assumes someone is there to ask. An
+     * {@code agent:<name>} role resolves only when the install ledger holds
+     * its file for this playbook (card 485).
      *
      * @param dir       a registered playbook folder
      * @param workspace the session's working folder, for installed skills
@@ -439,8 +441,10 @@ public class PlaybookController {
         if (loaded.playbook() != null && loaded.findings().isEmpty()) {
             SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(ws));
             try {
+                String id = loaded.playbook().id();
                 pinned = PinnedPlaybook.pin(real, loaded.playbook(),
-                        name -> skills.find(name).map(Skill::body).orElse(null));
+                        name -> skills.find(name).map(Skill::body).orElse(null),
+                        source -> ledger.holds(id, "agent", source));
             } catch (IOException | RuntimeException unreadable) {
                 return ResponseEntity.badRequest().build();
             }
