@@ -2,6 +2,11 @@ package dev.spectroscope.server.playbooks;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.playbook.run.PinnedPlaybook;
+import dev.spectroscope.core.skills.Skill;
+import dev.spectroscope.core.skills.SkillLibrary;
+import dev.spectroscope.server.providers.ProviderRegistry;
+import dev.spectroscope.server.providers.ProviderRow;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.Resource;
@@ -23,6 +28,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -45,14 +51,22 @@ public class PlaybookController {
 
     private final PlaybookFolders folders;
     private final String bundleRoot;
+    private final Function<SpectroConfig, List<ProviderRow>> providerRows;
 
     public PlaybookController() {
         this(PlaybookFolders.inHome(), BUNDLE_ROOT);
     }
 
     PlaybookController(PlaybookFolders folders, String bundleRoot) {
+        this(folders, bundleRoot, config -> ProviderRegistry.shared().rows(config));
+    }
+
+    /** Seam for tests: the provider rows the start preview reads, without a request to any provider. */
+    PlaybookController(PlaybookFolders folders, String bundleRoot,
+                       Function<SpectroConfig, List<ProviderRow>> providerRows) {
         this.folders = folders;
         this.bundleRoot = bundleRoot;
+        this.providerRows = providerRows;
     }
 
     /** GET /api/playbooks?workspace= : the known folders and the one pinned to the workspace. */
@@ -108,6 +122,47 @@ public class PlaybookController {
         }
         Path ws = workspace == null || workspace.isBlank() ? real : Path.of(workspace);
         return ResponseEntity.ok(PlaybookLoader.load(real, ws, SpectroConfig.load(SpectroConfig.Overrides.none())));
+    }
+
+    /**
+     * {@code GET /api/playbooks/start-preview?dir=&workspace=} : the
+     * confirmation of a run (card 482). Fenced like every write, because the
+     * hash it returns is what a start frame must repeat. Provider rows come
+     * from the registry without a request, and a browser can answer a
+     * question, so the preview assumes someone is there to ask.
+     *
+     * @param dir       a registered playbook folder
+     * @param workspace the session's working folder, for installed skills
+     * @param request   the servlet request, for the local fence
+     * @return 200 with the preview; 400 for a folder that is not registered or cannot be pinned; 404 for a foreign caller
+     */
+    @GetMapping("/api/playbooks/start-preview")
+    public ResponseEntity<PlaybookStartPreview> startPreview(@RequestParam("dir") String dir,
+                                                             @RequestParam("workspace") String workspace,
+                                                             HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null || workspace == null || workspace.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
+        Path ws = Path.of(workspace);
+        PlaybookLoader.Loaded loaded = PlaybookLoader.load(real, ws, config);
+        PinnedPlaybook pinned = null;
+        if (loaded.playbook() != null && loaded.findings().isEmpty()) {
+            SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(ws));
+            try {
+                pinned = PinnedPlaybook.pin(real, loaded.playbook(),
+                        name -> skills.find(name).map(Skill::body).orElse(null));
+            } catch (IOException | RuntimeException unreadable) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        Map<String, ProviderRow> rows = new LinkedHashMap<>();
+        providerRows.apply(config).forEach(r -> rows.put(r.id(), r));
+        return ResponseEntity.ok(PlaybookStartPreview.of(loaded, pinned, rows::get, true));
     }
 
     /**
