@@ -437,7 +437,7 @@
     "kind" : "ALIAS",
     "unit" : "CHARACTERS",
     "key" : "",
-    "explanation" : "The shared tool-output clamp, read from ToolOutput rather than kept as a second copy of the same number."
+    "explanation" : "The capture bound on a hook's output, the upper bound of the shared clamp, read from ToolOutput rather than kept as a second copy of the same number. A block reason is clamped to the window afterwards (card 489)."
   },
   {
     "owner" : "dev.spectroscope.core.image.ImageDownscaler",
@@ -1287,7 +1287,7 @@
     "kind" : "FIXED",
     "unit" : "CHARACTERS",
     "key" : "",
-    "explanation" : "The upper bound of the clamp on one tool or hook result, in characters.\n\nA tool result takes its clamp from maxOutputChars(int), which lowers this value on a small window (card 489). A hook result keeps it as it is: a hook runs around a tool call and is handed no window."
+    "explanation" : "The upper bound of the clamp on one tool or hook result, in characters.\n\nA tool result takes its clamp from maxOutputChars(int), which lowers this value on a small window (card 489). So does the reason of a blocking hook, which enters the same request. A hook's output is captured at this value before that."
   },
   {
     "owner" : "dev.spectroscope.core.tools.UpdatePlanTool",

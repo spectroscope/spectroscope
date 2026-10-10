@@ -311,4 +311,41 @@ class HookRunnerTest {
                 HookRunner.Verdict.TIMED_OUT, null);
         assertEquals(1, new HookRunner.HookOutcome(false, null, List.of(timeout)).runs().size());
     }
+
+    /**
+     * Card 489, round three: a block reason enters the request as a tool result
+     * does, so the hook's own text in it is clamped by the rule for the window
+     * the loop hands over: 6,144 characters at 8,192 tokens, 10,000 at 200,000
+     * and when no window is given. The {@code exit N: } in front stays whole.
+     */
+    @Test
+    void aBlockingHooksReasonFollowsTheWindow() {
+        String printed = "h".repeat(20_000);
+        HookRunner byExit = new HookRunner(List.of(pre()),
+                (cmd, env, cwd, timeout, signal) ->
+                        new HookRunner.CommandRunner.Result(1, printed, false),
+                10);
+        HookRunner byJson = new HookRunner(List.of(pre()),
+                (cmd, env, cwd, timeout, signal) -> new HookRunner.CommandRunner.Result(0,
+                        "{\"decision\":\"block\",\"reason\":\"" + printed + "\"}", false),
+                10);
+        for (int[] windowAndBound : new int[][] {{8_192, 6_144}, {200_000, 10_000}}) {
+            int window = windowAndBound[0];
+            String kept = "h".repeat(windowAndBound[1]);
+            assertEquals("exit 1: " + kept,
+                    byExit.preToolUse("run_command", INPUT, CWD, new CancelSignal(), window)
+                            .reason(), "an exit reason on a window of " + window);
+            assertEquals(kept,
+                    byJson.preToolUse("run_command", INPUT, CWD, new CancelSignal(), window)
+                            .reason(), "a JSON reason on a window of " + window);
+        }
+        assertEquals("exit 1: " + "h".repeat(10_000),
+                byExit.preToolUse("run_command", INPUT, CWD, new CancelSignal()).reason(),
+                "no window given: the clamp of an unknown window");
+        assertEquals("exit 2: nope", new HookRunner(List.of(pre()),
+                (cmd, env, cwd, timeout, signal) ->
+                        new HookRunner.CommandRunner.Result(2, "nope", false), 10)
+                .preToolUse("run_command", INPUT, CWD, new CancelSignal(), 8_192).reason(),
+                "a short reason is untouched");
+    }
 }

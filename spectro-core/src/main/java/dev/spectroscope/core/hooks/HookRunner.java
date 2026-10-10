@@ -32,8 +32,10 @@ public final class HookRunner {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
-     *  kept as a second copy of the same number. */
+    /** The capture bound on a hook's output, the upper bound of the shared
+     *  clamp, read from {@link ToolOutput} rather than kept as a second copy of
+     *  the same number. A block reason is clamped to the window afterwards
+     *  (card 489). */
     @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
 
@@ -184,6 +186,9 @@ public final class HookRunner {
      *  indistinguishable from a guard that agreed, in the tool result and
      *  everywhere downstream of it.</p>
      *
+     *  <p>The block reason is clamped as for an unknown window, see
+     *  {@link #preToolUse(String, JsonNode, Path, CancelSignal, int)}.</p>
+     *
      *  @param toolName the tool about to run, matched against each hook's glob
      *  @param input    the model-supplied arguments, exported as SPECTRO_TOOL_INPUT
      *  @param cwd      working directory for the hook processes
@@ -191,6 +196,27 @@ public final class HookRunner {
      *  @return the first blocking verdict, or a pass when every hook agrees —
      *          carrying every notable hook run either way */
     public HookOutcome preToolUse(String toolName, JsonNode input, Path cwd, CancelSignal signal) {
+        return preToolUse(toolName, input, cwd, signal, 0);
+    }
+
+    /** Evaluates every matching pre_tool_use hook under the window of the turn;
+     *  the first block wins.
+     *
+     *  <p>Card 489: a block reason reaches the model as the tool result, so the
+     *  hook's own text in it is clamped by the rule a tool result follows,
+     *  {@link ToolOutput#maxOutputChars(int)} for this window. The
+     *  {@code exit N: } in front of it stays whole.</p>
+     *
+     *  @param toolName the tool about to run, matched against each hook's glob
+     *  @param input    the model-supplied arguments, exported as SPECTRO_TOOL_INPUT
+     *  @param cwd      working directory for the hook processes
+     *  @param signal   cooperative cancel forwarded to each process
+     *  @param window   the window the loop hands the tool, 0 or less when unknown
+     *  @return the first blocking verdict, or a pass when every hook agrees,
+     *          carrying every notable hook run either way */
+    public HookOutcome preToolUse(String toolName, JsonNode input, Path cwd, CancelSignal signal,
+                                  int window) {
+        int clamp = ToolOutput.maxOutputChars(window);
         List<HookRun> runs = new ArrayList<>();
         for (HookConfig hook : hooks) {
             if (!appliesTo(hook, "pre_tool_use", toolName)) {
@@ -209,9 +235,11 @@ public final class HookRunner {
             String reason = null;
             if (result.exitCode() != 0) {
                 reason = "exit " + result.exitCode()
-                        + (result.stdout().isBlank() ? "" : ": " + result.stdout().strip());
+                        + (result.stdout().isBlank() ? ""
+                                : ": " + ToolOutput.clip(result.stdout().strip(), clamp));
             } else {
-                reason = blockReason(result.stdout());
+                String stated = blockReason(result.stdout());
+                reason = stated == null ? null : ToolOutput.clip(stated, clamp);
             }
             if (reason != null) {
                 runs.add(record(hook, timeout, Verdict.BLOCKED, reason));

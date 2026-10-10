@@ -1450,7 +1450,7 @@ public final class Agent {
      * @param agentId the agent the call runs under
      * @param signal  cooperative cancellation, handed to hooks and the tool
      * @param emit    sink for the permission events and tool-emitted domain events
-     * @param window  the context window handed to the tool, see {@link #toolWindow}
+     * @param window  the context window handed to the tool and to the pre_tool_use hooks, see {@link #toolWindow}
      * @return the timed outcome — output, execution time, and the gate wait when one parked the call
      */
     private GuardedResult runGuarded(Tool tool, PToolCall originalCall, String agentId,
@@ -1478,7 +1478,8 @@ public final class Agent {
         // Card 195 added those because the ERROR string names a reason and no
         // hook, and a timed-out hook used to leave no trace at all.
         if (options.hooks() != null) {
-            var pre = options.hooks().preToolUse(call.name(), call.input(), options.cwd(), signal);
+            var pre = options.hooks().preToolUse(call.name(), call.input(), options.cwd(), signal,
+                    window);
             emitHookRuns(pre.runs(), call, agentId, emit);
             if (pre.blocked()) {
                 return new GuardedResult("ERROR: blocked by pre_tool_use hook"

@@ -192,12 +192,11 @@ public final class LaunchTools {
                     }
                     said.append("\n");
                 }
-                if (file.skipped() > 0) {
-                    said.append(file.skipped())
-                            .append(" entry without a \"name\" was skipped: there is no way to "
-                                    + "address it.\n");
-                }
-                return ToolOutput.clip(said.toString(),
+                String skipped = file.skipped() > 0
+                        ? file.skipped() + " entry without a \"name\" was skipped: there is no way"
+                                + " to address it.\n"
+                        : "";
+                return ToolOutput.clipBefore(said.toString(), skipped,
                         ToolOutput.maxOutputChars(context.contextWindow()));
             }
         };

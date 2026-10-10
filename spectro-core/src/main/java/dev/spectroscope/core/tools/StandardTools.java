@@ -1175,9 +1175,9 @@ public final class StandardTools {
                     if (overFuse.isEmpty()) {
                         return answer;
                     }
-                    return ToolOutput.clip((out.isEmpty() ? answer + "\n" : answer)
-                            + "(not searched, over the fixed fuse of " + FUSE_BYTES
-                            + " bytes: " + String.join(", ", overFuse) + ")", clamp);
+                    return ToolOutput.clipBefore(out.isEmpty() ? answer + "\n" : answer,
+                            "(not searched, over the fixed fuse of " + FUSE_BYTES
+                                    + " bytes: " + String.join(", ", overFuse) + ")", clamp);
                 } catch (IOException | RuntimeException error) {
                     return "ERROR: " + error.getMessage();
                 }
