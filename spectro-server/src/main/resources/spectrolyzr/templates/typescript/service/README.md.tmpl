@@ -1,0 +1,24 @@
+# @@name@@
+
+An HTTP service with one route, `GET /health`, which answers `{"status":"ok"}`. Every other route answers 404.
+
+## Build
+
+```
+npm install
+npm run build
+```
+
+## Test
+
+```
+@@test_command@@
+```
+
+## Run
+
+```
+npm start
+```
+
+The service listens on the port in the `PORT` environment variable and on 8080 when it is not set.

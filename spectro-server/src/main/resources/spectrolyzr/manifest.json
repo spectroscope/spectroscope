@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "archetypes": [
+    {
+      "id": "service",
+      "name": {
+        "en": "Service",
+        "de": "Dienst"
+      },
+      "description": {
+        "en": "An HTTP server with a health route and its test.",
+        "de": "Ein HTTP-Server mit einer Health-Route und ihrem Test."
+      }
+    },
+    {
+      "id": "library",
+      "name": {
+        "en": "Library",
+        "de": "Bibliothek"
+      },
+      "description": {
+        "en": "One public function and the tests that pin it.",
+        "de": "Eine öffentliche Funktion und die Tests, die sie festhalten."
+      }
+    },
+    {
+      "id": "cli",
+      "name": {
+        "en": "Command line tool",
+        "de": "Kommandozeilenprogramm"
+      },
+      "description": {
+        "en": "A command that greets a name and returns an exit code, with its tests.",
+        "de": "Ein Befehl, der einen Namen begrüßt und einen Exit-Code liefert, samt Tests."
+      }
+    }
+  ],
+  "languages": [
+    {
+      "id": "typescript",
+      "name": "TypeScript",
+      "commands": {
+        "test": "npm test",
+        "gate": "node scripts/gate.mjs"
+      }
+    }
+  ],
+  "addons": [
+    {
+      "id": "quality-gate",
+      "name": {
+        "en": "Quality gate",
+        "de": "Quality Gate"
+      },
+      "description": {
+        "en": "One command that runs the type or lint check and the tests, and fails when no test ran.",
+        "de": "Ein Befehl, der die Typ- oder Lint-Prüfung und die Tests ausführt und scheitert, wenn kein Test lief."
+      }
+    },
+    {
+      "id": "ci",
+      "name": {
+        "en": "CI",
+        "de": "CI"
+      },
+      "description": {
+        "en": "A GitHub Actions workflow that runs the check on every push and pull request.",
+        "de": "Ein GitHub-Actions-Workflow, der die Prüfung bei jedem Push und Pull Request ausführt."
+      }
+    },
+    {
+      "id": "spectro-playbook",
+      "name": {
+        "en": "spectro playbook",
+        "de": "spectro-Playbook"
+      },
+      "description": {
+        "en": "A playbook folder next to the project that the app pins to it.",
+        "de": "Ein Playbook-Ordner neben dem Projekt, den die App an das Projekt bindet."
+      }
+    }
+  ],
+  "parts": [
+    {
+      "id": "typescript-common",
+      "when": {
+        "language": "typescript"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "tsconfig.json",
+          "template": "typescript/common/tsconfig.json.tmpl",
+          "why": {
+            "en": "Tells the TypeScript compiler which folders to build and how, so the sources and the tests compile the same way everywhere.",
+            "de": "Sagt dem TypeScript-Compiler, welche Ordner er wie übersetzt, sodass Quellen und Tests überall gleich kompiliert werden."
+          }
+        },
+        {
+          "path": ".gitignore",
+          "template": "typescript/common/gitignore.tmpl",
+          "why": {
+            "en": "Keeps build output and local caches out of the repository.",
+            "de": "Hält Build-Ausgaben und lokale Caches aus dem Repository heraus."
+          }
+        },
+        {
+          "path": "CLAUDE.md",
+          "template": "typescript/common/CLAUDE.md.tmpl",
+          "why": {
+            "en": "Tells a coding agent the layout, the test command and that a change starts with a failing test.",
+            "de": "Sagt einem Coding-Agenten den Aufbau, den Testbefehl und dass jede Änderung mit einem fehlschlagenden Test beginnt."
+          }
+        }
+      ]
+    },
+    {
+      "id": "typescript-service",
+      "when": {
+        "language": "typescript",
+        "archetype": "service"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "package.json",
+          "template": "typescript/service/package.json.tmpl",
+          "why": {
+            "en": "Declares the project's name, version and toolchain in the form its build tool reads, so a fresh checkout needs no setup beyond that tool.",
+            "de": "Legt Name, Version und Toolchain des Projekts in der Form fest, die das Build-Werkzeug liest, sodass ein frischer Checkout nur dieses Werkzeug braucht."
+          }
+        },
+        {
+          "path": "README.md",
+          "template": "typescript/service/README.md.tmpl",
+          "why": {
+            "en": "Says what the project is and the three commands a person needs: build, test, run.",
+            "de": "Sagt, was das Projekt ist, und nennt die drei Befehle, die man braucht: bauen, testen, starten."
+          }
+        },
+        {
+          "path": "src/server.ts",
+          "template": "typescript/service/server.ts.tmpl",
+          "why": {
+            "en": "Holds the behaviour the test pins; the place a first real change goes.",
+            "de": "Enthält das Verhalten, das der Test festhält; hier beginnt die erste echte Änderung."
+          }
+        },
+        {
+          "path": "src/main.ts",
+          "template": "typescript/service/main.ts.tmpl",
+          "why": {
+            "en": "Starts the program; kept thin so the logic stays testable without it.",
+            "de": "Startet das Programm und bleibt dünn, damit die Logik auch ohne ihn testbar bleibt."
+          }
+        },
+        {
+          "path": "test/server.test.ts",
+          "template": "typescript/service/server.test.ts.tmpl",
+          "why": {
+            "en": "The first test, so the test command reports at least one test and a green run means something.",
+            "de": "Der erste Test, damit der Testbefehl mindestens einen Test meldet und ein grüner Lauf etwas bedeutet."
+          }
+        }
+      ]
+    },
+    {
+      "id": "typescript-library",
+      "when": {
+        "language": "typescript",
+        "archetype": "library"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "package.json",
+          "template": "typescript/library/package.json.tmpl",
+          "why": {
+            "en": "Declares the project's name, version and toolchain in the form its build tool reads, so a fresh checkout needs no setup beyond that tool.",
+            "de": "Legt Name, Version und Toolchain des Projekts in der Form fest, die das Build-Werkzeug liest, sodass ein frischer Checkout nur dieses Werkzeug braucht."
+          }
+        },
+        {
+          "path": "README.md",
+          "template": "typescript/library/README.md.tmpl",
+          "why": {
+            "en": "Says what the project is and the three commands a person needs: build, test, run.",
+            "de": "Sagt, was das Projekt ist, und nennt die drei Befehle, die man braucht: bauen, testen, starten."
+          }
+        },
+        {
+          "path": "src/index.ts",
+          "template": "typescript/library/index.ts.tmpl",
+          "why": {
+            "en": "Holds the behaviour the test pins; the place a first real change goes.",
+            "de": "Enthält das Verhalten, das der Test festhält; hier beginnt die erste echte Änderung."
+          }
+        },
+        {
+          "path": "test/index.test.ts",
+          "template": "typescript/library/index.test.ts.tmpl",
+          "why": {
+            "en": "The first test, so the test command reports at least one test and a green run means something.",
+            "de": "Der erste Test, damit der Testbefehl mindestens einen Test meldet und ein grüner Lauf etwas bedeutet."
+          }
+        }
+      ]
+    },
+    {
+      "id": "typescript-cli",
+      "when": {
+        "language": "typescript",
+        "archetype": "cli"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "package.json",
+          "template": "typescript/cli/package.json.tmpl",
+          "why": {
+            "en": "Declares the project's name, version and toolchain in the form its build tool reads, so a fresh checkout needs no setup beyond that tool.",
+            "de": "Legt Name, Version und Toolchain des Projekts in der Form fest, die das Build-Werkzeug liest, sodass ein frischer Checkout nur dieses Werkzeug braucht."
+          }
+        },
+        {
+          "path": "README.md",
+          "template": "typescript/cli/README.md.tmpl",
+          "why": {
+            "en": "Says what the project is and the three commands a person needs: build, test, run.",
+            "de": "Sagt, was das Projekt ist, und nennt die drei Befehle, die man braucht: bauen, testen, starten."
+          }
+        },
+        {
+          "path": "src/cli.ts",
+          "template": "typescript/cli/cli.ts.tmpl",
+          "why": {
+            "en": "Holds the behaviour the test pins; the place a first real change goes.",
+            "de": "Enthält das Verhalten, das der Test festhält; hier beginnt die erste echte Änderung."
+          }
+        },
+        {
+          "path": "src/main.ts",
+          "template": "typescript/cli/main.ts.tmpl",
+          "why": {
+            "en": "Starts the program; kept thin so the logic stays testable without it.",
+            "de": "Startet das Programm und bleibt dünn, damit die Logik auch ohne ihn testbar bleibt."
+          }
+        },
+        {
+          "path": "test/cli.test.ts",
+          "template": "typescript/cli/cli.test.ts.tmpl",
+          "why": {
+            "en": "The first test, so the test command reports at least one test and a green run means something.",
+            "de": "Der erste Test, damit der Testbefehl mindestens einen Test meldet und ein grüner Lauf etwas bedeutet."
+          }
+        }
+      ]
+    }
+  ]
+}

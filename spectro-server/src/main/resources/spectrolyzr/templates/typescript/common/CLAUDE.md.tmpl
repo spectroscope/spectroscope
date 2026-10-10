@@ -1,0 +1,15 @@
+# @@name@@
+
+This is a TypeScript project on Node 22 or newer. It uses ES modules and the built in `node:test` runner.
+
+## Layout
+
+`src/` holds the program and `test/` holds the tests. `dist/` is the compiler output and stays out of the repository.
+
+## Commands
+
+Install once with `npm install`. Build with `npm run build`. Run the tests with `@@test_command@@`, which compiles first and then runs every compiled test.
+
+## Working rules
+
+Every change starts with a failing test. Run `@@test_command@@` and read the output before you report a result.
