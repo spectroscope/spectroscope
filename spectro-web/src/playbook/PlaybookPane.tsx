@@ -9,9 +9,10 @@
 // anything, and an open editor replaces the graph and the table with the edit
 // layout. While the draft has unsaved changes the folder picker is locked.
 //
-// Card 484 (Task 11): the header carries two tabs, Playbook and New project.
-// The second draws the Spectrolyzr wizard App hands in, so its chunk is
-// requested only when the tab opens or when developer prefetches it.
+// Card 484 (Task 11): the header carries two tabs, Playbook and New (named
+// New project until card 515). The second draws the Spectrolyzr page App
+// hands in, so its chunk is requested only when the tab opens or when
+// developer prefetches it.
 //
 // Card 512: a Choose button beside the path field opens the native folder
 // dialog through the folder chip's endpoint and only fills the field.
@@ -62,7 +63,7 @@ function messageOf(error: unknown): string {
 
 /**
  * @param props.workspace       the workspace the folder chip in the header shows
- * @param props.wizard          the Spectrolyzr wizard App built under a ChunkBoundary; the New project tab draws it (card 484, Task 11)
+ * @param props.wizard          the Spectrolyzr page App built under a ChunkBoundary; the New tab draws it (cards 484, 515)
  * @param props.sessionId       the live or stored session a run starts in and whose runs the run view draws (card 482)
  * @param props.onStartPlaybook sends the start frame; true when it reached the socket (card 482)
  */

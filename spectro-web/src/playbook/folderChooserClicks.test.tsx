@@ -14,7 +14,7 @@
 // that lands after the render has finished. So the pane tests hand the path to
 // the button's own apply in the next pass, as the helper does once the answer
 // is back, and check separately that the helper delivered exactly that path to
-// that apply. The wizard keeps its folders in a store, so its tests wait for
+// that apply. The Spectrolyzr page keeps its folders in a store, so its tests wait for
 // the real answer and read the field afterwards.
 
 import { renderToStaticMarkup } from "react-dom/server";
@@ -24,11 +24,10 @@ import { __resetFolderPick } from "../state/folderPick";
 import { setLang } from "../state/lang";
 import { __resetPlaybookEditor } from "../state/playbookEditor";
 import { __resetPlaybooks } from "../state/playbooks";
-import { __resetLyzr, choose, goTo, loadCatalog, type LyzrCatalog } from "../state/spectrolyzr";
+import { __resetLyzr, choose, loadCatalog, type LyzrCatalog } from "../state/spectrolyzr";
 import { drive, type El } from "../testkit/driveComponent";
 import { PlaybookPane } from "./PlaybookPane";
-import { StepAddons } from "./spectrolyzr/StepAddons";
-import { StepReview } from "./spectrolyzr/StepReview";
+import { PAGE_PARTS, SpectrolyzrPage } from "./spectrolyzr/SpectrolyzrPage";
 
 type Press = { slot: PickSlot; apply: (path: string) => void; delivered: string[]; done: Promise<void> };
 
@@ -184,38 +183,35 @@ describe("the pane's Choose button", () => {
   });
 });
 
-describe("the wizard's Choose button on the playbook folder", () => {
+describe("the page's Choose button on the playbook folder", () => {
   it("posts to the chooser for its own slot and puts the picked path into the playbook folder field", async () => {
     choose({ archetype: "service", language: "java", name: "ledger-api", dir: "/w/ledger-api" });
     choose({ addons: ["spectro-playbook"] });
     await flush();
-    goTo(2);
     pickAnswer = () => Promise.resolve(answer(200, { path: "/picked/pb" }));
     const before = pickRequests();
-    drive(<StepAddons invalid={null} />, [StepAddons], [press("lyzr-choose")]);
+    drive(<SpectrolyzrPage />, [SpectrolyzrPage, ...PAGE_PARTS], [press("lyzr-choose")]);
     expect(pickRequests()).toBe(before + 1);
     expect(presses.map((p) => p.slot)).toEqual(["lyzrPlaybook"]);
     await presses[0].done;
     expect(presses[0].delivered).toEqual(["/picked/pb"]);
-    const out = renderToStaticMarkup(<StepAddons invalid={null} />);
+    const out = renderToStaticMarkup(<SpectrolyzrPage />);
     expect(out).toMatch(/<input[^>]*class="lyzr-playbook-dir[^"]*"[^>]*value="\/picked\/pb"/);
   });
 });
 
-describe("the wizard's Pick button on the project folder", () => {
+describe("the page's Pick button on the project folder", () => {
   it("posts to the chooser for its own slot and puts the picked path into the project folder field", async () => {
     choose({ archetype: "service", language: "java", name: "ledger-api", dir: "/w/ledger-api" });
     await flush();
-    goTo(3);
     pickAnswer = () => Promise.resolve(answer(200, { path: "/picked/project" }));
-    const review = <StepReview invalid={null} busy={false} onGenerate={() => {}} />;
     const before = pickRequests();
-    drive(review, [StepReview], [press("lyzr-pick")]);
+    drive(<SpectrolyzrPage />, [SpectrolyzrPage, ...PAGE_PARTS], [press("lyzr-pick")]);
     expect(pickRequests()).toBe(before + 1);
     expect(presses.map((p) => p.slot)).toEqual(["lyzrDir"]);
     await presses[0].done;
     expect(presses[0].delivered).toEqual(["/picked/project"]);
-    expect(renderToStaticMarkup(review)).toMatch(
+    expect(renderToStaticMarkup(<SpectrolyzrPage />)).toMatch(
       /<input[^>]*class="lyzr-dir[^"]*"[^>]*value="\/picked\/project"/,
     );
   });

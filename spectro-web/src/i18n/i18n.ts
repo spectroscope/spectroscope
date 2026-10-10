@@ -5552,15 +5552,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "prov.ago": { de: "vor {s} s", en: "{s} s ago" },
   "prov.check": { de: "Prüfen", en: "Check" },
   "prov.checkAll": { de: "Alle prüfen", en: "Check all" },
-  // Card 484: the Spectrolyzr wizard in the playbook segment. The Why sentences
-  // and the names of archetypes and add-ons come from the server's manifest.
-  "lyzr.tab": { de: "Neues Projekt", en: "New project" },
+  // Card 484: Spectrolyzr in the playbook segment, one page since card 515.
+  // The Why sentences and the names of archetypes and add-ons come from the
+  // server's manifest.
+  "lyzr.tab": { de: "Neu", en: "New" },
   "lyzr.title": { de: "Spectrolyzr", en: "Spectrolyzr" },
-  "lyzr.step.project": { de: "Projekt", en: "Project" },
-  "lyzr.step.addons": { de: "Add-ons", en: "Add-ons" },
-  "lyzr.step.review": { de: "Prüfen", en: "Review" },
-  "lyzr.back": { de: "Zurück", en: "Back" },
-  "lyzr.next": { de: "Weiter", en: "Next" },
+  "lyzr.kind": { de: "Was entsteht", en: "What to make" },
+  "lyzr.kind.project": { de: "Projekt", en: "Project" },
+  "lyzr.kind.playbook": { de: "Playbook", en: "Playbook" },
+  "lyzr.addons": { de: "Add-ons", en: "Add-ons" },
+  "lyzr.folders": { de: "Ordner", en: "Folders" },
+  "lyzr.tree": { de: "Dateien", en: "Files" },
+  "lyzr.treeEmpty": {
+    de: "Mit Archetyp, Sprache und Projektname erscheinen hier die Dateien.",
+    en: "The files appear here once an archetype, a language and a project name are set.",
+  },
+  "lyzr.playbookOnlyHint": {
+    de: "Hier entsteht eine Kopie des mitgelieferten spectro-Playbooks. Ein Projekt wird nicht geschrieben.",
+    en: "A copy of the shipped spectro playbook goes into this folder. No project is written.",
+  },
   "lyzr.archetype": { de: "Archetyp", en: "Archetype" },
   "lyzr.language": { de: "Sprache", en: "Language" },
   "lyzr.name": { de: "Projektname", en: "Project name" },

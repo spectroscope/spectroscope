@@ -64,10 +64,10 @@ describe("the surface table (criterion 2)", () => {
     expect(isOpen("playbook", "learn")).toBe(false);
     expect(isOpen("playbook", "light")).toBe(false);
     expect(isOpen("playbook", "learn", true)).toBe(false);
-    // Card 484: the Spectrolyzr wizard is the pane's second chunk.
+    // Card 484: Spectrolyzr is the pane's second chunk; one page since card 515.
     expect(SURFACES.playbook.chunks).toEqual([
       "playbook/PlaybookPane.tsx",
-      "playbook/spectrolyzr/SpectrolyzrWizard.tsx",
+      "playbook/spectrolyzr/SpectrolyzrPage.tsx",
     ]);
   });
 

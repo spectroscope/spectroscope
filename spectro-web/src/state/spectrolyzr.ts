@@ -1,11 +1,11 @@
-// The web store of the Spectrolyzr wizard (card 484, spec P5).
+// The web store of Spectrolyzr (card 484, spec P5; one page since card 515).
 //
 // One module store read with useSyncExternalStore, the idiom of state/
-// playbooks.ts: the catalog the server offers, the choices made on the three
-// steps, the preview of the files those choices render, and the last answer of
-// the generate route. It lives here and not in the wizard so a switch of
-// segment does not lose the choices; the server owns every fact, this file
-// mirrors its answers.
+// playbooks.ts: what the page makes (a new project or a new playbook), the
+// catalog the server offers, the choices made on the page, the preview of the
+// files those choices render, and the last answer of the generate route. It
+// lives here and not in the page so a switch of segment does not lose the
+// choices; the server owns every fact, this file mirrors its answers.
 //
 // The preview is fetched on every change of archetype, language, add-ons or
 // name once those are set. Answers are applied in the order the choices were
@@ -54,10 +54,11 @@ export type LyzrResult =
   | { kind: "invalid"; field: string; message: string }
   | { kind: "failed"; message: string };
 
-type Step = 1 | 2 | 3;
+/** What the page makes: a project (with the playbook add-on, its playbook too) or a playbook alone (card 515). */
+export type LyzrKind = "project" | "playbook";
 
 interface LyzrState {
-  step: Step;
+  kind: LyzrKind;
   choices: LyzrChoices;
   catalog: LyzrCatalog | null;
   preview: LyzrPreview | null;
@@ -77,7 +78,13 @@ const EMPTY_CHOICES: LyzrChoices = {
   playbookDir: "",
 };
 
-const INITIAL: LyzrState = { step: 1, choices: EMPTY_CHOICES, catalog: null, preview: null, result: null };
+const INITIAL: LyzrState = {
+  kind: "project",
+  choices: EMPTY_CHOICES,
+  catalog: null,
+  preview: null,
+  result: null,
+};
 
 let state: LyzrState = INITIAL;
 let previewSeq = 0;
@@ -93,7 +100,7 @@ function subscribe(cb: () => void): () => void {
   return () => void listeners.delete(cb);
 }
 
-/** The wizard's step, choices, catalog, preview and last result. */
+/** What the page makes, its choices, the catalog, the preview and the last result. */
 export function useLyzr(): LyzrState {
   return useSyncExternalStore(
     subscribe,
@@ -131,7 +138,7 @@ function inCatalogOrder(addons: string[], catalog: LyzrCatalog | null): string[]
   return [...addons].sort((a, b) => rank(a) - rank(b));
 }
 
-/** Whether a project name passes the server's rule; the wizard enables Next on it. */
+/** Whether a project name passes the server's rule; the page enables Generate on it. */
 export function nameUsable(name: string): boolean {
   return name.length <= NAME_MAX && NAME_RULE.test(name);
 }
@@ -187,13 +194,18 @@ export function choose(patch: Partial<LyzrChoices>): void {
   if (affectsPreview) void refreshPreview();
 }
 
-/** Go to a step of the wizard. */
-export function goTo(step: Step): void {
-  if (state.step !== step) set({ ...state, step });
+/**
+ * Switch between a new project and a new playbook. The choices stay; the last
+ * result goes, because Generate now means something else.
+ *
+ * @param kind what the page makes from now on
+ */
+export function chooseKind(kind: LyzrKind): void {
+  if (state.kind !== kind) set({ ...state, kind, result: null });
 }
 
 /**
- * The folder the wizard proposes for the playbook: a sibling of the project
+ * The folder the page proposes for the playbook: a sibling of the project
  * folder, named after the project. Empty while either is not set.
  *
  * @param dir  the project folder
@@ -220,7 +232,7 @@ function written(value: unknown): { dir: string; written: string[] } {
 
 /**
  * Generate the project, and with the playbook add-on the playbook folder, with
- * the current choices. A refusal is a result, not a throw: the wizard shows the
+ * the current choices. A refusal is a result, not a throw: the page shows the
  * conflicting paths or marks the named field. The result also stays in the store.
  */
 export async function generate(): Promise<LyzrResult> {

@@ -152,7 +152,7 @@ import {
   LabView,
   PlaybookPane,
   prefetchSurfaces,
-  SpectrolyzrWizard,
+  SpectrolyzrPage,
   SpectrumView,
   StateGraphPane,
   TextView,
@@ -2759,7 +2759,7 @@ export function App() {
               onStartPlaybook={(dir, hash) => sendClient({ type: "start_playbook", dir, hash })}
               wizard={
                 <ChunkBoundary>
-                  <SpectrolyzrWizard />
+                  <SpectrolyzrPage />
                 </ChunkBoundary>
               }
             />

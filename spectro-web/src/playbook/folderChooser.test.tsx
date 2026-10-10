@@ -17,9 +17,9 @@ import { __resetFolderPick, chooseFolder } from "../state/folderPick";
 import { setLang } from "../state/lang";
 import { __resetPlaybookEditor } from "../state/playbookEditor";
 import { __resetPlaybooks, copyBundled, registerFolder } from "../state/playbooks";
-import { __resetLyzr, choose, generate, goTo, loadCatalog, type LyzrCatalog } from "../state/spectrolyzr";
+import { __resetLyzr, choose, generate, loadCatalog, type LyzrCatalog } from "../state/spectrolyzr";
 import { PlaybookPane } from "./PlaybookPane";
-import { SpectrolyzrWizard } from "./spectrolyzr/SpectrolyzrWizard";
+import { SpectrolyzrPage } from "./spectrolyzr/SpectrolyzrPage";
 
 const PICK = "/api/pick-workspace";
 
@@ -58,7 +58,7 @@ const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 const pane = (): string =>
   renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />);
 
-const wizard = (): string => renderToStaticMarkup(<SpectrolyzrWizard />);
+const wizard = (): string => renderToStaticMarkup(<SpectrolyzrPage />);
 
 /** The calls fetch saw, as [url, init] pairs. */
 const calls = (): [string, RequestInit | undefined][] =>
@@ -200,30 +200,32 @@ describe("the Playbook pane", () => {
 });
 
 describe("the wizard's playbook folder", () => {
-  async function stepTwo(): Promise<void> {
+  async function withPlaybookAddon(): Promise<void> {
     choose({ archetype: "service", language: "java", name: "ledger-api", dir: "/w/ledger-api" });
     choose({ addons: ["spectro-playbook"] });
     await flush();
-    goTo(2);
   }
 
   it("draws a Choose button on the playbook folder field's row", async () => {
-    await stepTwo();
+    await withPlaybookAddon();
     const out = wizard();
-    const row = /<div class="lyzr-target">([\s\S]*?)<\/div>/.exec(out)?.[1] ?? "";
+    const row =
+      [...out.matchAll(/<div class="lyzr-target">([\s\S]*?)<\/div>/g)]
+        .map((m) => m[1])
+        .find((r) => r.includes("lyzr-playbook-dir")) ?? "";
     expect(row).toMatch(/<input[^>]*class="lyzr-playbook-dir[^"]*"/);
     expect(row).toMatch(/<button[^>]*class="lyzr-choose"[^>]*>Choose<\/button>/);
   });
 
   it("puts the picked folder into the field", async () => {
-    await stepTwo();
+    await withPlaybookAddon();
     pickAnswer = () => Promise.resolve(answer(200, { path: "/picked/pb" }));
     await chooseFolder("lyzrPlaybook", (path) => choose({ playbookDir: path }));
     expect(wizard()).toMatch(/<input[^>]*class="lyzr-playbook-dir[^"]*"[^>]*value="\/picked\/pb"/);
   });
 
   it("says a folder dialog is already open after a 409", async () => {
-    await stepTwo();
+    await withPlaybookAddon();
     pickAnswer = () => Promise.resolve(answer(409));
     await chooseFolder("lyzrPlaybook", () => {});
     const out = wizard();
@@ -232,7 +234,7 @@ describe("the wizard's playbook folder", () => {
   });
 
   it("says to paste an absolute path after a 501 and keeps the field editable", async () => {
-    await stepTwo();
+    await withPlaybookAddon();
     pickAnswer = () => Promise.resolve(answer(501));
     await chooseFolder("lyzrPlaybook", () => {});
     const out = wizard();
@@ -248,7 +250,6 @@ describe("the wizard's project folder", () => {
   it("keeps its Pick button and shows the shared helper's notes", async () => {
     choose({ archetype: "service", language: "java", name: "ledger-api", dir: "/w/ledger-api" });
     await flush();
-    goTo(3);
     expect(wizard()).toMatch(/<button[^>]*class="lyzr-pick"/);
     pickAnswer = () => Promise.resolve(answer(409));
     await chooseFolder("lyzrDir", () => {});
