@@ -389,7 +389,22 @@ public class SessionsController {
             // Card 445: the title and the pin are about this session and go
             // with it.
             boolean hadMeta = meta.remove(id);
-            if (!hadSession && !hadWire && !hadBrowser && !hadMeta) {
+            // Card 482: the playbook sidecar and this session's graph files go
+            // with it. The dot in the name keeps a session whose id starts the
+            // same way out of the match.
+            boolean hadPlaybook = Files.deleteIfExists(
+                    dev.spectroscope.core.playbook.run.PlaybookRecorder.fileFor(id));
+            java.util.regex.Pattern own = java.util.regex.Pattern.compile(
+                    java.util.regex.Pattern.quote(id) + "\\.[0-9a-f]{12}\\.graph\\.jsonl");
+            Path runs = dev.spectroscope.core.playbook.run.PlaybookRecorder.folder();
+            if (Files.isDirectory(runs)) {
+                try (java.util.stream.Stream<Path> files = Files.list(runs)) {
+                    for (Path f : files.filter(f -> own.matcher(f.getFileName().toString()).matches()).toList()) {
+                        hadPlaybook |= Files.deleteIfExists(f);
+                    }
+                }
+            }
+            if (!hadSession && !hadWire && !hadBrowser && !hadMeta && !hadPlaybook) {
                 return ResponseEntity.notFound().build();
             }
             return ResponseEntity.noContent().build();

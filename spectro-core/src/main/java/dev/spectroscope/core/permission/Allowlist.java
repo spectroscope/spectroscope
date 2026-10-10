@@ -325,8 +325,9 @@ public final class Allowlist {
             // but it asks this gate with a shell line in a field named "command",
             // so it is scoped exactly as run_command is. The alternative, measured
             // in card 267's review, is a persisted `goal_check#eval-execute` that
-            // approves every command an operator states from then on.
-            case "run_command", "goal_check" -> "command";
+            // approves every command an operator states from then on. A playbook's
+            // command check (card 482) asks the same gate the same way.
+            case "run_command", "goal_check", "playbook_check" -> "command";
             case "write_file", "edit_file" -> "path";
             case "web_fetch", "browse_page" -> "url";
             default -> null;

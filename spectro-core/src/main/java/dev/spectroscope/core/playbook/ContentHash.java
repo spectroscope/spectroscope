@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -50,6 +51,29 @@ public final class ContentHash {
                 continue;
             }
             byte[] body = read(walk, rel);
+            d.update(rel.getBytes(UTF_8));
+            d.update((byte) 0);
+            d.update(Integer.toString(body.length).getBytes(UTF_8));
+            d.update((byte) 0);
+            d.update(body);
+        }
+        return HexFormat.of().formatHex(d.digest());
+    }
+
+    /**
+     * The tree hash of files already in memory: the same entries as {@link #tree(SafeWalk.Walk)},
+     * ordered by their relative path's UTF-8 bytes compared unsigned, as a walk orders them. P3 hashes
+     * the bytes it pinned through this method, so the confirmation's hash names exactly those bytes.
+     *
+     * @param files relative path with {@code /} separators to the file bytes
+     * @return the lowercase hex digest
+     */
+    public static String entries(Map<String, byte[]> files) {
+        List<String> paths = new ArrayList<>(files.keySet());
+        paths.sort((a, b) -> Arrays.compareUnsigned(a.getBytes(UTF_8), b.getBytes(UTF_8)));
+        MessageDigest d = sha256();
+        for (String rel : paths) {
+            byte[] body = files.get(rel);
             d.update(rel.getBytes(UTF_8));
             d.update((byte) 0);
             d.update(Integer.toString(body.length).getBytes(UTF_8));

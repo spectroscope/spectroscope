@@ -4,8 +4,9 @@
 <p class="lead">A playbook is a folder that says how a team builds: which steps come in
 which order, where the work branches, which skill and which model each step uses, and which
 handover document passes from one step to the next. The developer mode reads such a folder,
-checks it, draws it and lets you edit it. It can also install the skills, commands, hooks and
-agents the folder brings. It does not run anything by it yet.</p>
+checks it, draws it and lets you edit it. It can install the skills, commands, hooks and
+agents the folder brings, and it can run a session by it: each step on the model it names, with
+the handover checked before the next step starts.</p>
 
 <h2 id="ch-playbooks-what">What a playbook is</h2>
 
@@ -59,7 +60,7 @@ choice is offered in the first question of a new window, and the mode switch at 
 changes it later. In learn and light the segment does not exist and its code is never
 requested.</p>
 
-<p>The Playbook segment has four parts.</p>
+<p>The Playbook segment has five parts.</p>
 
 <ul>
   <li><b>Folders.</b> The folders you have registered, kept in <code>~/.spectro/playbooks.json</code>.
@@ -79,11 +80,14 @@ requested.</p>
   example one with an unknown field or a forbidden key, is not drawn at all. A file that
   reads but breaks a rule, such as a loop without a ceiling, is drawn with its findings above
   the graph.</li>
+  <li><b>Build by this.</b> A button above the graph that starts a run in the open session. The
+  next section describes what it does. Under it, once a run exists, the segment draws that run.</li>
 </ul>
 
 <p>With no folder pinned the segment shows the folder picker and the copy button and nothing
-else. A sentence under the title states the limit of this version: Runs do not follow the
-playbook yet.</p>
+else. Under the title a sentence says that a run follows the playbook step by step, each step on
+its own model. With a folder pinned and no session open, &ldquo;Build by this&rdquo; stays
+disabled.</p>
 
 <h2 id="ch-playbooks-spectro">The spectro playbook</h2>
 
@@ -289,6 +293,152 @@ and the hook entries that equal the recorded ones, and nothing else. An installe
 edited after the install is not removed, and the window names it. A new session picks up
 what was installed or removed. A session that is already open keeps what it started with.</p>
 
+<h2 id="ch-playbooks-run">Running a playbook</h2>
+
+<p>A run follows the drawing. The playbook becomes one graph on the product's own state
+graph engine: a step is a node that does the work, a decision is a node that runs its check and
+returns an outcome, and an arrow is followed only by the outcome it is labelled with. The next
+step starts after the handover of the previous one has passed its checks.</p>
+
+<h3>The confirmation</h3>
+
+<p>Pin a folder to the working folder, open a session and press &ldquo;Build by this&rdquo;.
+Nothing starts yet. The window asks the server for a preview and shows a sheet with the
+drawing and these parts:</p>
+
+<ul>
+  <li>One row per step: who performs it, the provider and the model its model choice resolves to
+  on this machine, the state of that provider, the privacy switch, the permission and whether the
+  step waits for your nod.</li>
+  <li>&ldquo;Skills&rdquo;, each with its source: from the playbook, installed, or missing.</li>
+  <li>&ldquo;Commands this run may execute&rdquo;, every command of a <code>command</code> check
+  word for word, so a command written in a shared folder is read before it can run.</li>
+  <li>&ldquo;Hash&rdquo;: a sha256 over <code>playbook.json</code>, every template and every
+  file under the skill folders. The sheet shows the first characters.</li>
+</ul>
+
+<p>&ldquo;Start&rdquo; stays disabled while the sheet lists reasons under
+&ldquo;The run does not start because&rdquo;. The reasons are a finding in the file, a skill that is missing, a
+private step whose model sits on a cloud provider, a step that asks for the permission extended,
+a <code>human</code> check with more than four outcomes, which is more than a question can offer,
+and a nod or a <code>human</code> check when nobody can be asked. Pressing Start sends the hash to the
+server, which loads the folder again and compares. If any file changed since the sheet opened,
+the run does not start and the answer is &ldquo;The playbook changed since the confirmation.
+Open it again.&rdquo; The run keeps the copy it pinned, so an edit while it runs applies to the
+next run. No tool of the chat agent can start a run. A playbook that the chat agent wrote
+reaches a run only through this sheet and your click.</p>
+
+<h3>What a step does</h3>
+
+<p>A <b>chat step</b> runs as a turn of the main agent. If the step's model differs from the
+chat's current model, the chat is switched to it first and the conversation travels along. The
+prompt is a short text that the session keeps and a long text that the model receives: the
+goal, the documents the step reads and writes with their required sections, the full text of
+each named skill and the template of each document it hands on. When the run ends the chat
+returns to the model it had before.</p>
+
+<p>A <b>child step</b> runs as a child agent in the role the step names (<code>worker</code> when
+it names none), on the provider of its own model choice, whatever the chat uses. It draws one slot
+from the chat's pool like any other helper.</p>
+
+<p>After a step the runner looks for the files that changed under the location of each document
+the step produces. If the step carries a nod, you are asked whether to approve the handover, and
+anything but approval ends the run.</p>
+
+<h3>The checks</h3>
+
+<p>A decision runs one check and takes the outcome it returns. Five kinds exist.</p>
+
+<table>
+  <tr><th>Kind</th><th>What it does</th><th>Outcomes</th></tr>
+  <tr><td><code>sections</code></td><td>Every listed document exists, every required section is a heading with text under it, and no forbidden string appears.</td><td>pass, fail</td></tr>
+  <tr><td><code>open_items</code></td><td>No line of the documents is an unchecked task, a list item that starts with <code>[ ]</code>.</td><td>pass, fail</td></tr>
+  <tr><td><code>command</code></td><td>Runs a command from <code>vars</code> in the working folder. It passes the same host guard and the same permission gate as a command the agent runs, and the gate sees it as <code>playbook_check</code>. Exit code 0 is pass.</td><td>pass, fail</td></tr>
+  <tr><td><code>review</code></td><td>A child agent on the model the check names reads the listed documents, cannot write, and answers with one outcome as the last line of its answer. A reviewer runs under the stricter privacy of the steps that produced the documents it reads.</td><td>the labels of the check</td></tr>
+  <tr><td><code>human</code></td><td>Asks you the question of the check and waits. An answer outside the labels counts as no answer.</td><td>the labels of the check</td></tr>
+</table>
+
+<p>A decision that sits on a loop carries <code>max_rounds</code>. The number counts how often the
+decision may send the run back. At the limit it takes the outcome <code>exhausted</code>, which
+the playbook routes to an end. The engine's own step limit stays as a second guard.</p>
+
+<h3>Privacy and model choice</h3>
+
+<p>Every step has a privacy switch, and the confirmation shows it as private or cheap.</p>
+
+<ul>
+  <li>A <code>private</code> step uses only the primary model of its choice. Its fallbacks are never
+  tried, and a primary on a cloud provider is refused before the run. If the model does not answer
+  when the step starts, the run stops and asks whether to retry or stop. The question names the
+  provider, the model, the address that was tried and the reason.</li>
+  <li>A <code>cheap</code> step tries the primary model and then its fallbacks in order and takes
+  the first that answers. The walk is recorded.</li>
+  <li>If a chat step would switch to a cloud model after a private step ran earlier in the same
+  run, the run asks first. The history of the chat would reach that provider, so the question
+  names it and offers to continue or stop. It is asked once per run and provider.</li>
+</ul>
+
+<h3>Permission</h3>
+
+<p>A step may name a permission. The mode that applies is the stricter of the session's current
+mode and the step's, from strictest to widest: read only, ask, auto, extended. A playbook cannot
+widen what the session allows, and the step's limit ends with the step.</p>
+
+<h3>Watching and stopping</h3>
+
+<p>The plan tab shows one line per node on the forward path of the playbook, marked in progress
+while the node runs and completed afterwards. Under the drawing, the segment draws the latest run
+from the graph file the runner writes, lights the node that runs and asks again every second while
+the run lasts. A line above it says &ldquo;The run is in progress.&rdquo; or how the run ended:
+the result, which is the label of the end the path reached, and the stop reason.
+The footer does not call a chat step unfinished because later steps are still open. Stop ends the
+run: the running step is cancelled and the graph file still ends cleanly.</p>
+
+<p>A run ends with one of these words, recorded as the <code>stopReason</code> and shown in plain
+language in the segment.</p>
+
+<table>
+  <tr><th>Word</th><th>Meaning</th></tr>
+  <tr><td><code>done</code></td><td>The path reached one of its ends. The result names which one; in the spectro playbook it is <code>cancelled</code> when a loop ran out of rounds.</td></tr>
+  <tr><td><code>aborted</code></td><td>You pressed Stop.</td></tr>
+  <tr><td><code>step_failed</code></td><td>A step ended with an error or a child reported one.</td></tr>
+  <tr><td><code>model_unavailable</code></td><td>A model did not answer and you chose to stop.</td></tr>
+  <tr><td><code>chat_switch_refused</code></td><td>The chat could not switch to the model of a step.</td></tr>
+  <tr><td><code>privacy_declined</code></td><td>You declined the switch to a cloud model after a private step.</td></tr>
+  <tr><td><code>unanswered</code></td><td>A question of a <code>human</code> check was not answered.</td></tr>
+  <tr><td><code>review_unlabelled</code></td><td>A review named none of its outcomes.</td></tr>
+  <tr><td><code>nod_refused</code></td><td>A handover was not approved.</td></tr>
+  <tr><td><code>recursion_limit</code></td><td>The engine's step limit stopped the run.</td></tr>
+  <tr><td><code>refused</code></td><td>The run was not allowed to start, for example because nobody can be asked and the playbook needs an answer.</td></tr>
+</table>
+
+<p>A window that is closed or a server that is stopped during a run leaves no end record. The
+segment then says &ldquo;The run ended without a record.&rdquo;</p>
+
+<h3>What a run leaves behind</h3>
+
+<p>Two kinds of file live in <code>~/.spectro/playbook-runs/</code>, outside the sessions folder so
+that the session list does not read them. Both are removed when the session is deleted.</p>
+
+<ul>
+  <li><code>&lt;session&gt;.&lt;run&gt;.graph.jsonl</code> is the graph artifact of one run: the
+  topology and one record each time a node starts or ends and each time an arrow is taken. The
+  state graph view reads it.</li>
+  <li><code>&lt;session&gt;.playbook.jsonl</code> is the sidecar of the session, one line per
+  fact, several runs one after the other. The session file itself is not changed, so the sidecar is
+  found by the session id. Its record types are
+  <code>playbook_start</code> (playbook, folder, hash, the session's permission mode and the chat's
+  model before the run), <code>step_start</code> (step, model choice, provider, model, address,
+  the probe with its state and reason, the walk over fallbacks, the effective permission),
+  <code>step_end</code> (the child, whether the step succeeded, how long it took, the error),
+  <code>check</code> (the check, its kind, the outcome, the loop count, a short detail),
+  <code>nod</code> (the answer and how long it took), <code>privacy</code> (the provider asked
+  about and the answer) and <code>playbook_end</code> (the stop reason, the result and the number
+  of steps). The sidecar answers which model served which step. Every string passes the same
+  redaction as the other recordings, and the file stops growing at 16 MiB with a line that says
+  so.</li>
+</ul>
+
 <h2 id="ch-playbooks-refused">What a playbook file may not carry</h2>
 
 <p>A shared folder must not be able to route your material or widen your rights. A key named
@@ -303,8 +453,14 @@ and a nested playbook are recognised and refused as not supported in version 1.<
 <h2 id="ch-playbooks-limits">What version 1 does not do</h2>
 
 <ul>
-  <li>Runs do not follow the playbook yet. The chat and the child agents work as they did
-  before, and the playbook only describes how a team means to work.</li>
+  <li>A run does not resume after a restart. A quit or a server stop ends it, and starting again
+  begins at the first node.</li>
+  <li>There is no headless entry. A run starts from the window, and a playbook with a
+  <code>human</code> check or a nod is refused when nobody can be asked.</li>
+  <li>A shared folder cannot start a run. Only the confirmation sheet does, after you read the
+  commands and the hash.</li>
+  <li>Between two steps the chat is idle and its composer is enabled. A message typed then is
+  refused with the usual note that a run is active.</li>
   <li>You cannot place a box by hand. The graph carries no coordinates, and the layout engine
   decides where each box goes.</li>
   <li>Workflow files are listed and not run, because the product has no workflow runner.

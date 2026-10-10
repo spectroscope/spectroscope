@@ -478,7 +478,9 @@ describe("the contents row of the playbook module", () => {
     vi.mocked(fetch).mockResolvedValueOnce(answer(200, LOADED));
     await loadPlaybook("/p", "/ws");
     await seed(p);
-    return renderToStaticMarkup(<PlaybookPane workspace="/ws" />);
+    return renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
+    );
   }
 
   it("counts each kind and offers install and remove", async () => {

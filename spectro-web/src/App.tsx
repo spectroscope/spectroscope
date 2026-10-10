@@ -154,6 +154,7 @@ import {
 } from "./state/surfaceChunks";
 import { ChunkBoundary } from "./components/ChunkBoundary";
 import type { NavSegmentId } from "./components/navRows";
+import { playbookSessionId } from "./state/playbookRuns";
 import { onShellCommand } from "./state/shellCommands";
 import { runShellCommand, type ShellDeps } from "./state/shellCommandRouter";
 import { initialViewState, rememberOrientation, type StateGraphViewState } from "./stategraph/viewState";
@@ -2745,9 +2746,15 @@ export function App() {
             /* Card 481: the workspace the folder chip in the header shows.
                Card 484: the pane draws the wizard in its second tab; the
                element is made here so the lazy view sits under a boundary
-               and App stays the one place that draws a lazy view. */
+               and App stays the one place that draws a lazy view.
+               Card 482: the live session a run starts in, and the start frame. */
             <PlaybookPane
               workspace={(viewingLive ? view.workspace : null)?.path ?? null}
+              sessionId={playbookSessionId(
+                (viewingLive ? view.workspace : null)?.sessionId ?? null,
+                replay?.id ?? null,
+              )}
+              onStartPlaybook={(dir, hash) => sendClient({ type: "start_playbook", dir, hash })}
               wizard={
                 <ChunkBoundary>
                   <SpectrolyzrWizard />

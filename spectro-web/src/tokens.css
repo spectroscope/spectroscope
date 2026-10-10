@@ -135,6 +135,10 @@
      .lab-resizer's flex-basis, .right-panel's cap and ROW_RESIZER_PX in
      state/rowWidths.ts are the three readers, and they read one number. */
   --row-resizer: 8px;
+  /* Card 482: the canvas height the playbook run view reserves where the
+     state graph stacks its panel under the canvas (playbook-run.css). At
+     390 px the canvas measured 0 px before this, so the lit graph was gone. */
+  --pb-run-canvas-min: 320px;
   --z-sticky: 10;
   --z-dropdown: 100;
   --z-modal: 1000;

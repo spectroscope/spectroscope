@@ -176,6 +176,10 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // whole draft that it is one.
             case "compact_context" -> connection.onCompactContext(); // additive (card 471)
             case "clear_context" -> connection.onClearContext();     // additive (card 471)
+            // Card 482: the confirmation sheet's Start. The hash is the one the
+            // sheet showed; the connection refuses when the folder moved since.
+            case "start_playbook" -> connection.onStartPlaybook(frame.path("dir").asText(""),
+                    frame.path("hash").asText(""));
             default -> connection.sendError("Unknown message type.");
         }
     }

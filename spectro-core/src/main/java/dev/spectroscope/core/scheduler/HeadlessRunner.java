@@ -531,6 +531,10 @@ public final class HeadlessRunner {
                 // Card 467: an unattended run reads the same files over many
                 // turns, so its requests are where the elision saves the most.
                 .toolResultElision(config.toolResultElision())
+                // Card 490: carried for the reach, and it limits nothing here:
+                // an unattended run registers no spawn tools, so it has no
+                // helpers to hold slots.
+                .sessionsPerChat(config.sessionsPerChat())
                 .build());
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
         // headless failure behaviour stays exactly the inline sink's. An

@@ -97,7 +97,9 @@ public final class SettingsWriter {
             // Card 467: whether old, large tool results leave the request.
             "toolResultElision",
             // Card 466: the tool groups a session leaves out of every request.
-            "toolGroupsOff");
+            "toolGroupsOff",
+            // Card 490: how many model sessions one chat may run at once.
+            "sessionsPerChat");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is

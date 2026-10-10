@@ -2,7 +2,7 @@
 // and loaded from a chunk of its own. It holds the folder picker (the known
 // folders, the one pinned to this workspace, a path field, and the button that
 // copies the shipped spectro playbook into a folder), and for the folder shown
-// the graph, the step table and the findings. It runs nothing: it says so.
+// the graph, the step table and the findings.
 //
 // Card 483 (Task 11): the graph is drawn from the document the editor store
 // holds, the header offers Edit when the file can be edited without losing
@@ -16,8 +16,12 @@
 // Card 485: a contents row under the step table counts what the folder brings
 // and opens the install and remove confirmations.
 //
-// The stylesheet is styles/playbook.css, imported by app.css: a surface chunk
-// carries no stylesheet of its own.
+// Card 482: Build by this asks the server for the start preview and opens the
+// confirmation sheet; Start sends the start frame with the hash the sheet
+// showed. Under the graph the run view draws this session's latest run.
+//
+// The stylesheets are styles/playbook.css and styles/playbook-run.css,
+// imported by app.css: a surface chunk carries no stylesheet of its own.
 
 import { useEffect, useState, type ReactNode } from "react";
 import { t } from "../i18n/i18n";
@@ -33,10 +37,13 @@ import {
   usePlaybookFolders,
 } from "../state/playbooks";
 import { loadContents, usePlaybookContents, type ContentKind } from "../state/playbookContents";
+import { fetchStartPreview, type StartPreview } from "../state/playbookRuns";
 import { ContentsConfirm } from "./ContentsConfirm";
 import type { PlaybookDoc } from "./editor/doc";
 import { EditorShell } from "./editor/EditorShell";
 import { PlaybookGraph } from "./PlaybookGraph";
+import { PlaybookRunView } from "./PlaybookRunView";
+import { PlaybookStartSheet } from "./PlaybookStartSheet";
 import { StepTable } from "./StepTable";
 
 /** The id of the playbook the product ships. */
@@ -47,10 +54,22 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * @param props.workspace the workspace the folder chip in the header shows
- * @param props.wizard    the Spectrolyzr wizard App built under a ChunkBoundary; the New project tab draws it (card 484, Task 11)
+ * @param props.workspace       the workspace the folder chip in the header shows
+ * @param props.wizard          the Spectrolyzr wizard App built under a ChunkBoundary; the New project tab draws it (card 484, Task 11)
+ * @param props.sessionId       the live or stored session a run starts in and whose runs the run view draws (card 482)
+ * @param props.onStartPlaybook sends the start frame; true when it reached the socket (card 482)
  */
-export function PlaybookPane({ workspace, wizard }: { workspace: string | null; wizard?: ReactNode }) {
+export function PlaybookPane({
+  workspace,
+  wizard,
+  sessionId,
+  onStartPlaybook,
+}: {
+  workspace: string | null;
+  wizard?: ReactNode;
+  sessionId: string | null;
+  onStartPlaybook: (dir: string, hash: string) => boolean;
+}) {
   const lang = useLang();
   const [tab, setTab] = useState<"playbook" | "lyzr">("playbook");
   const { folders, active } = usePlaybookFolders();
@@ -63,6 +82,9 @@ export function PlaybookPane({ workspace, wizard }: { workspace: string | null; 
   const [notice, setNotice] = useState<string | null>(null);
   const [dialog, setDialog] = useState<"install" | "remove" | null>(null);
   const contents = usePlaybookContents();
+  const [preview, setPreview] = useState<StartPreview | null>(null);
+  /** Counts the starts sent, so the run view mounts again and looks for the new run. */
+  const [starts, setStarts] = useState(0);
   const ws = workspace ?? "";
   const shown = picked ?? active;
 
@@ -131,6 +153,28 @@ export function PlaybookPane({ workspace, wizard }: { workspace: string | null; 
       (i) => i.state === "same" || i.state === "source-changed" || i.state === "copy-changed",
     ) ?? false;
 
+  const canBuild = loaded !== null && p !== null && workspace !== null && sessionId !== null;
+
+  const build = (): void => {
+    if (loaded === null || workspace === null) return;
+    run(async () => {
+      setPreview(await fetchStartPreview(loaded.dir, workspace));
+    });
+  };
+
+  const start = (): void => {
+    if (loaded === null || preview === null || preview.hash === null) return;
+    if (onStartPlaybook(loaded.dir, preview.hash)) {
+      setPreview(null);
+      setStarts((n) => n + 1);
+    }
+  };
+
+  // The run view needs only the session: a stored session opened from the
+  // list has no workspace, so no playbook loads, and its runs still show.
+  const runView =
+    sessionId !== null ? <PlaybookRunView key={`${sessionId}#${starts}`} sessionId={sessionId} /> : null;
+
   const tabs = (
     <div className="pb-tabs" role="tablist" aria-label={t(lang, "lyzr.title")}>
       <button
@@ -171,7 +215,12 @@ export function PlaybookPane({ workspace, wizard }: { workspace: string | null; 
       <header className="pb-head">
         <h2 className="pb-title">{title}</h2>
         {description !== "" && <p className="pb-description">{description}</p>}
-        <p className="pb-no-runs">{t(lang, "pb.noRuns")}</p>
+        <p className="pb-run-hint">{t(lang, "pb.run.hint")}</p>
+        {p !== null && (
+          <button type="button" className="pb-run-build" disabled={!canBuild} onClick={build}>
+            {t(lang, "pb.run.build")}
+          </button>
+        )}
         <div className="pbe-bar">
           {editing ? (
             <button type="button" className="pbe-stop" disabled={ed.dirty} onClick={closeEditor}>
@@ -281,6 +330,8 @@ export function PlaybookPane({ workspace, wizard }: { workspace: string | null; 
             </section>
           )}
 
+          {(loaded === null || p === null) && runView}
+
           {doc !== null && (
             <section className="pb-section pb-canvas">
               <PlaybookGraph doc={doc} />
@@ -288,6 +339,7 @@ export function PlaybookPane({ workspace, wizard }: { workspace: string | null; 
           )}
           {loaded !== null && p !== null && (
             <>
+              {runView}
               <section className="pb-section">
                 <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
                 <StepTable loaded={loaded} onInstall={() => setDialog("install")} />
@@ -330,6 +382,15 @@ export function PlaybookPane({ workspace, wizard }: { workspace: string | null; 
           mode={dialog}
           workspace={workspace}
           onClose={() => setDialog(null)}
+        />
+      )}
+
+      {preview !== null && loaded !== null && (
+        <PlaybookStartSheet
+          doc={ed.saved ?? view?.document ?? null}
+          preview={preview}
+          onStart={start}
+          onClose={() => setPreview(null)}
         />
       )}
     </div>

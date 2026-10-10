@@ -35,11 +35,6 @@ public final class WebSearchTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
-     *  kept as a second copy of the same number. */
-    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
-    private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
-
     /** Hits per search when the model does not ask for a count. */
     @Governs(kind = Governs.Kind.MODEL_CHOICE, unit = Governs.Unit.COUNT)
     static final int DEFAULT_MAX_RESULTS = 5;
@@ -204,7 +199,8 @@ public final class WebSearchTool implements Tool {
                 return "No results for \"" + query + "\" ("
                         + WebSearchTiers.label(active.tier()) + ").";
             }
-            return ToolOutput.clip(format(query, hits, active, source), MAX_OUTPUT_CHARS);
+            return ToolOutput.clip(format(query, hits, active, source),
+                    ToolOutput.maxOutputChars(context.contextWindow()));
         } catch (RuntimeException failure) {
             return "ERROR: web_search failed: " + failure.getMessage();
         }

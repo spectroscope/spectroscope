@@ -102,7 +102,9 @@ public final class Agent {
         return options.maxTurns() != null ? options.maxTurns() : DEFAULT_MAX_TURNS;
     }
 
-    /** The completion budget one turn spends when nothing configures it.
+    /** The completion budget one turn spends when nothing configures it, before
+     *  the window clamp of card 488
+     *  ({@link dev.spectroscope.core.session.CompactionThreshold#completionBudget}).
      *  Public because {@link dev.spectroscope.core.session.CompactionThreshold}
      *  is defined AGAINST it (card 263): the share of the context window kept
      *  back has to hold one of these, and a second copy of the number in the
@@ -188,6 +190,14 @@ public final class Agent {
     /** Card 466: the tool groups this run leaves out, read once when it starts. */
     private volatile Set<ToolGroup> groupsOffThisRun = Set.of();
 
+    /** Card 490: the session count of the chat this agent leads, live. Seeded
+     *  from {@link AgentOptions#sessionsPerChat()}; null sets no count. */
+    private volatile Integer sessionsPerChat;
+
+    /** Card 490: {@link #sessionsPerChat} as read when the current run started,
+     *  so the spawn tools describe one number for the whole run. */
+    private volatile Integer sessionsPerChatThisRun;
+
     /**
      * Card 467: what leaves the outgoing request of an old, large tool result.
      * It lives with the agent for the reason {@link #messages} does: its
@@ -250,6 +260,9 @@ public final class Agent {
      */
     public Agent(AgentOptions options) {
         this.options = options;
+        // Card 490: the live seed, refused by name below its floor.
+        this.sessionsPerChat = dev.spectroscope.core.subagents.SessionCount
+                .of(options.sessionsPerChat()).sessions();
         // A tool this agent does not carry cannot be called again, so a stub
         // that says "call it again" would be false: its results stay whole.
         this.elision = new dev.spectroscope.core.session.ToolResultElision(
@@ -499,6 +512,11 @@ public final class Agent {
         // the next run of this already-built agent, and a run never changes
         // the tool list it advertises halfway through.
         groupsOffThisRun = toolGroupsOffNow();
+        // Card 490: read ONCE per run for the same reason. The spawn tools put
+        // the count into their descriptions, the tools come first in every
+        // request, and a description that changed inside a run would throw
+        // away the provider's cached prefix.
+        sessionsPerChatThisRun = sessionsPerChat;
         ContinuationLeash leash = options.continuationLeash();
         if (leash != null) {
             // The count and the fingerprint are sentences about THIS run, for
@@ -556,6 +574,10 @@ public final class Agent {
 
         // Input tokens of the last completed turn — the compaction trigger.
         int lastInputTokens = 0;
+        // Card 488: the characters of the turn request lastInputTokens was
+        // reported for, set with it, so the next request's estimate can use
+        // the backend's own density.
+        long lastRequestChars = 0;
 
         // Card 252: the withholding is stated once per run. The image lives in
         // the history, so the fence closes again on every turn of a tool-using
@@ -674,6 +696,7 @@ public final class Agent {
                     messages.addAll(compacted.messages());
                     emit.accept(compacted.event());
                     lastInputTokens = 0; // re-measure after compaction
+                    lastRequestChars = 0;
                     // The positions the elision remembered no longer hold their
                     // calls or are no longer old, so it drops them on this call.
                     outgoing = elision.requestView(List.copyOf(messages));
@@ -735,8 +758,15 @@ public final class Agent {
                 String systemForTurn = statedGoal == null
                         ? options.systemPrompt()
                         : options.systemPrompt() + statedGoal.promptSection();
+                // Card 488: the completion fits the window this turn compacts
+                // by, and what that window has left after this request's
+                // input, for every provider and every agent, children included.
+                long requestChars = requestChars(systemForTurn, advertisedTools, fenced.messages());
+                int inputEstimate = CompactionThreshold.inputEstimate(requestChars,
+                        lastRequestChars, lastInputTokens);
                 ProviderRequest request = new ProviderRequest(systemForTurn,
-                        fenced.messages(), advertisedTools, maxTokens,
+                        fenced.messages(), advertisedTools,
+                        CompactionThreshold.completionBudget(compaction, maxTokens, inputEstimate),
                         effectiveReasoning(), effortOverride, signal, tap);
 
                 // Card 270: this is the one place every exchange of every agent
@@ -776,6 +806,7 @@ public final class Agent {
                             // and carries the cache counts ADDITIVELY (absent when the
                             // provider reported none — those sessions stay byte-identical).
                             lastInputTokens = contextTokens(usage);
+                            lastRequestChars = requestChars;
                             emit.accept(new Usage(agentId,
                                     usage.inputTokens(), usage.outputTokens(),
                                     usage.cacheReadTokens() > 0 ? usage.cacheReadTokens() : null,
@@ -1596,6 +1627,30 @@ public final class Agent {
                 compaction.window() > 0 ? compaction.window() : null);
     }
 
+    /**
+     * The characters one request carries, counted the way {@link #contextInfo}
+     * counts them: the system prompt, each advertised tool's name, description
+     * and schema, and every content block of the history.
+     *
+     * @param system   the system prompt of the request
+     * @param tools    the tools the request advertises
+     * @param messages the history the request carries
+     * @return the character count behind the request's input estimate
+     */
+    static long requestChars(String system, List<ToolSpec> tools, List<ProviderMessage> messages) {
+        long chars = system == null ? 0 : system.length();
+        for (ToolSpec spec : tools) {
+            chars += spec.name().length() + spec.description().length()
+                    + spec.inputSchema().toString().length();
+        }
+        for (ProviderMessage message : messages) {
+            for (ProviderContent content : message.content()) {
+                chars += charsOf(content);
+            }
+        }
+        return chars;
+    }
+
     /** Context-part texts are capped for the wire — a whole conversation can be
      *  megabytes; the char counts stay the full truth regardless. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
@@ -1894,6 +1949,40 @@ public final class Agent {
      */
     public Set<ToolGroup> toolGroupsOffThisRun() {
         return groupsOffThisRun;
+    }
+
+    /**
+     * Card 490: the session count of the chat this agent leads, as it stands
+     * now. The chat's slot pool reads this value each time a helper asks for a
+     * slot, so a change reaches the next helper that waits.
+     *
+     * @return the main agent and its helpers that may run at once, or null
+     *         when no count is set
+     */
+    public Integer sessionsPerChat() {
+        return sessionsPerChat;
+    }
+
+    /**
+     * Card 490: changes the chat's session count while the agent lives. A
+     * helper that already holds a slot keeps it; the spawn tools describe the
+     * new number from the next run on.
+     *
+     * @param value the new count, or null for none
+     * @throws IllegalArgumentException when the count is below its floor of 2
+     */
+    public void setSessionsPerChat(Integer value) {
+        this.sessionsPerChat = dev.spectroscope.core.subagents.SessionCount.of(value).sessions();
+    }
+
+    /**
+     * Card 490: the session count the current (or last) run read when it
+     * started. Null before the first run and when no count was set.
+     *
+     * @return the count of this run, or null
+     */
+    public Integer sessionsPerChatThisRun() {
+        return sessionsPerChatThisRun;
     }
 
     /** The registry's specs minus the groups this run switched off. */

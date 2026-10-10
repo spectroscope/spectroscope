@@ -13,7 +13,7 @@ import type { AgentInfo, PlanStep, RunSubagents, UiState } from "../state/reduce
 import type { ConnectionStatus } from "../transport/ws";
 import { formatTokens } from "../format";
 import { t, type Lang } from "../i18n/i18n";
-import { openSteps, planVerdict } from "../state/planVerdict";
+import { gradedPlan, openSteps, planVerdict } from "../state/planVerdict";
 import { useLang } from "../state/lang";
 import { stopReasonKey } from "../state/stopReason";
 
@@ -83,10 +83,13 @@ export function runStatusLine(
     compacting?: boolean;
     lastStopReason: string | null;
     plan: PlanStep[] | null;
+    /** Card 482: a playbook's plan is not graded as a chat run. */
+    planAgent?: string | null;
   },
   lang: Lang,
 ): RunStatusLine {
-  const { running, lastStopReason, plan } = state;
+  const { running, lastStopReason } = state;
+  const plan = gradedPlan(state.plan, state.planAgent ?? null);
   if (running && state.compacting === true) return { key: "footer.compacting" };
   if (running) return { key: "footer.runActive" };
   if (lastStopReason === null) return { key: "footer.ready" };
