@@ -1,0 +1,26 @@
+package @@java_package@@;
+
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+public final class App {
+
+    private App() {
+    }
+
+    public static HttpServer createServer(InetSocketAddress address) throws IOException {
+        HttpServer server = HttpServer.create(address, 0);
+        server.createContext("/", new HealthHandler());
+        return server;
+    }
+
+    public static void main(String[] args) throws IOException {
+        String configured = System.getenv("PORT");
+        int port = configured == null ? 8080 : Integer.parseInt(configured);
+        HttpServer server = createServer(new InetSocketAddress(port));
+        server.start();
+        System.out.println("listening on port " + port);
+    }
+}

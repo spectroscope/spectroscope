@@ -216,4 +216,137 @@ class ArchetypeFileSetTest {
             }
         }
     }
+
+    private static final Map<String, List<String>> JAVA = Map.of(
+            "service", List.of("settings.gradle.kts", ".gitignore", "CLAUDE.md", "build.gradle.kts", "README.md",
+                    "src/main/java/ledgerapi/App.java", "src/main/java/ledgerapi/HealthHandler.java",
+                    "src/test/java/ledgerapi/AppTest.java"),
+            "library", List.of("settings.gradle.kts", ".gitignore", "CLAUDE.md", "build.gradle.kts", "README.md",
+                    "src/main/java/ledgerapi/Greeting.java", "src/test/java/ledgerapi/GreetingTest.java"),
+            "cli", List.of("settings.gradle.kts", ".gitignore", "CLAUDE.md", "build.gradle.kts", "README.md",
+                    "src/main/java/ledgerapi/Cli.java", "src/main/java/ledgerapi/Main.java",
+                    "src/test/java/ledgerapi/CliTest.java"));
+
+    private static String content(String archetype, String path) {
+        return render(archetype, "java").stream().filter(f -> f.path().equals(path)).findFirst()
+                .orElseThrow(() -> new AssertionError(archetype + " renders no " + path)).content();
+    }
+
+    @Test
+    void javaRendersExactlyTheSpecTableForEveryArchetype() {
+        for (var e : JAVA.entrySet()) {
+            assertEquals(e.getValue(), paths(render(e.getKey(), "java")), e.getKey());
+        }
+    }
+
+    @Test
+    void javaRunsItsTestsWithGradleTest() {
+        Manifest.Language java = MANIFEST.languages().stream().filter(l -> l.id().equals("java")).findFirst()
+                .orElseThrow(() -> new AssertionError("no java language in the manifest"));
+        assertEquals("gradle test", java.commands().get("test"));
+        assertEquals("gradle gate", java.commands().get("gate"));
+    }
+
+    @Test
+    void everyJavaSourceDeclaresTheDerivedPackageAndLivesInItsFolder() {
+        for (String archetype : JAVA.keySet()) {
+            int seen = 0;
+            for (RenderedFile f : render(archetype, "java")) {
+                if (!f.path().endsWith(".java")) {
+                    continue;
+                }
+                assertTrue(f.path().contains("/ledgerapi/"), archetype + " " + f.path() + " sits in the package folder");
+                assertTrue(f.content().startsWith("package ledgerapi;\n"),
+                        archetype + " " + f.path() + " declares package ledgerapi");
+                assertFalse(f.content().contains("@@"), archetype + " " + f.path() + " has no placeholder left");
+                seen++;
+            }
+            assertTrue(seen > 0, archetype + " renders Java sources, so the scan looked at something");
+        }
+    }
+
+    @Test
+    void everyJavaTestUsesJunitJupiterAndAsserts() {
+        Pattern assertCall = Pattern.compile("\\bassert\\w+\\(");
+        for (String archetype : JAVA.keySet()) {
+            var tests = render(archetype, "java").stream().filter(f -> f.path().startsWith("src/test/")).toList();
+            assertEquals(1, tests.size(), archetype + " ships exactly one test class");
+            for (RenderedFile test : tests) {
+                assertTrue(test.content().contains("import org.junit.jupiter.api.Test;"),
+                        archetype + " " + test.path() + " uses JUnit Jupiter");
+                assertTrue(test.content().contains("@Test"), archetype + " " + test.path() + " has a test");
+                assertTrue(assertCall.matcher(test.content()).find(), archetype + " " + test.path() + " asserts");
+            }
+        }
+    }
+
+    @Test
+    void theJavaSourcesUseTheJdkOnly() {
+        Pattern importLine = Pattern.compile("^import\\s+(?:static\\s+)?(\\S+);", Pattern.MULTILINE);
+        for (String archetype : JAVA.keySet()) {
+            int seen = 0;
+            for (RenderedFile f : render(archetype, "java")) {
+                if (!f.path().endsWith(".java")) {
+                    continue;
+                }
+                Matcher m = importLine.matcher(f.content());
+                while (m.find()) {
+                    String imported = m.group(1);
+                    assertTrue(imported.startsWith("java.") || imported.startsWith("com.sun.net.httpserver.")
+                                    || imported.startsWith("org.junit.jupiter.api."),
+                            archetype + " " + f.path() + " imports " + imported);
+                    seen++;
+                }
+            }
+            assertTrue(seen > 0, archetype + " has imports at all, so the scan looked at something");
+        }
+    }
+
+    @Test
+    void theGradleFilesCarryTheNameTheToolchainAndTheJunitLine() {
+        for (String archetype : JAVA.keySet()) {
+            assertEquals("rootProject.name = \"ledger-api\"\n", content(archetype, "settings.gradle.kts"), archetype);
+            String build = content(archetype, "build.gradle.kts");
+            assertTrue(build.contains("repositories {\n    mavenCentral()\n}"), archetype);
+            assertTrue(build.contains("JavaLanguageVersion.of(21)"), archetype);
+            assertTrue(build.contains("testImplementation(platform(\"org.junit:junit-bom:5.10.2\"))"), archetype);
+            assertTrue(build.contains("testImplementation(\"org.junit.jupiter:junit-jupiter\")"), archetype);
+            assertTrue(build.contains("testRuntimeOnly(\"org.junit.platform:junit-platform-launcher\")"), archetype);
+            assertTrue(build.contains("tasks.test {\n    useJUnitPlatform()\n}"), archetype);
+            assertEquals(archetype.equals("library"), build.contains("`java-library`"), archetype);
+            assertEquals(!archetype.equals("library"), build.contains("application"), archetype);
+        }
+        assertTrue(content("service", "build.gradle.kts").contains("mainClass.set(\"ledgerapi.App\")"));
+        assertTrue(content("cli", "build.gradle.kts").contains("mainClass.set(\"ledgerapi.Main\")"));
+    }
+
+    @Test
+    void noJavaArchetypeShipsAGradleWrapper() {
+        for (String archetype : JAVA.keySet()) {
+            for (String path : paths(render(archetype, "java"))) {
+                assertFalse(path.startsWith("gradle/") || path.startsWith("gradlew"), archetype + " ships " + path);
+            }
+            assertTrue(content(archetype, "README.md").contains("gradle wrapper"),
+                    archetype + " README tells the reader to generate the wrapper once");
+        }
+    }
+
+    @Test
+    void everyJavaFileHasBothWhySentencesAndNoDashAsPunctuation() {
+        char emDash = '\u2014';
+        char enDash = '\u2013';
+        for (String archetype : JAVA.keySet()) {
+            for (RenderedFile f : render(archetype, "java")) {
+                assertFalse(f.why().en().isBlank(), f.path());
+                assertFalse(f.why().de().isBlank(), f.path());
+                assertEquals(-1, f.content().indexOf(emDash), f.path());
+                assertEquals(-1, f.content().indexOf(enDash), f.path());
+                for (String why : new String[] {f.why().en(), f.why().de()}) {
+                    assertEquals(-1, why.indexOf(emDash), f.path() + " why");
+                    assertEquals(-1, why.indexOf(enDash), f.path() + " why");
+                }
+                assertTrue(f.content().endsWith("\n"), f.path() + " ends with a line feed");
+            }
+        }
+    }
 }

@@ -1,0 +1,14 @@
+package @@java_package@@;
+
+public final class Main {
+
+    private Main() {
+    }
+
+    public static void main(String[] args) {
+        Cli.Result result = Cli.run(args);
+        System.out.print(result.out());
+        System.out.flush();
+        System.exit(result.code());
+    }
+}

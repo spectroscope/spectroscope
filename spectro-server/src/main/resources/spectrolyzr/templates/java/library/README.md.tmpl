@@ -1,0 +1,25 @@
+# @@name@@
+
+A small library. It exposes one method, `Greeting.greeting(name)`, which returns `Hello, <name>.` and throws `IllegalArgumentException` for a blank name.
+
+## Build
+
+```
+gradle build
+```
+
+Gradle and a JDK 21 are needed. The project has no Gradle wrapper. Run `gradle wrapper` once if you want one.
+
+## Test
+
+```
+@@test_command@@
+```
+
+## Use
+
+```java
+import @@java_package@@.Greeting;
+
+System.out.println(Greeting.greeting("Ada"));
+```

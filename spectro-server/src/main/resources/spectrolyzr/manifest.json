@@ -51,6 +51,14 @@
         "test": "python3 -m unittest discover -s tests -t . -v",
         "gate": "python3 scripts/gate.py"
       }
+    },
+    {
+      "id": "java",
+      "name": "Java",
+      "commands": {
+        "test": "gradle test",
+        "gate": "gradle gate"
+      }
     }
   ],
   "addons": [
@@ -472,6 +480,181 @@
         {
           "path": "tests/test_cli.py",
           "template": "python/cli/test_cli.py.tmpl",
+          "why": {
+            "en": "The first test, so the test command reports at least one test and a green run means something.",
+            "de": "Der erste Test, damit der Testbefehl mindestens einen Test meldet und ein grüner Lauf etwas bedeutet."
+          }
+        }
+      ]
+    },
+    {
+      "id": "java-common",
+      "when": {
+        "language": "java"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "settings.gradle.kts",
+          "template": "java/common/settings.gradle.kts.tmpl",
+          "why": {
+            "en": "Declares the project's name, version and toolchain in the form its build tool reads, so a fresh checkout needs no setup beyond that tool.",
+            "de": "Legt Name, Version und Toolchain des Projekts in der Form fest, die das Build-Werkzeug liest, sodass ein frischer Checkout nur dieses Werkzeug braucht."
+          }
+        },
+        {
+          "path": ".gitignore",
+          "template": "java/common/gitignore.tmpl",
+          "why": {
+            "en": "Keeps build output and local caches out of the repository.",
+            "de": "Hält Build-Ausgaben und lokale Caches aus dem Repository heraus."
+          }
+        },
+        {
+          "path": "CLAUDE.md",
+          "template": "java/common/CLAUDE.md.tmpl",
+          "why": {
+            "en": "Tells a coding agent the layout, the test command and that a change starts with a failing test.",
+            "de": "Sagt einem Coding-Agenten den Aufbau, den Testbefehl und dass jede Änderung mit einem fehlschlagenden Test beginnt."
+          }
+        }
+      ]
+    },
+    {
+      "id": "java-service",
+      "when": {
+        "language": "java",
+        "archetype": "service"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "build.gradle.kts",
+          "template": "java/service/build.gradle.kts.tmpl",
+          "why": {
+            "en": "Declares the project's name, version and toolchain in the form its build tool reads, so a fresh checkout needs no setup beyond that tool.",
+            "de": "Legt Name, Version und Toolchain des Projekts in der Form fest, die das Build-Werkzeug liest, sodass ein frischer Checkout nur dieses Werkzeug braucht."
+          }
+        },
+        {
+          "path": "README.md",
+          "template": "java/service/README.md.tmpl",
+          "why": {
+            "en": "Says what the project is and the three commands a person needs: build, test, run.",
+            "de": "Sagt, was das Projekt ist, und nennt die drei Befehle, die man braucht: bauen, testen, starten."
+          }
+        },
+        {
+          "path": "src/main/java/@@java_package@@/App.java",
+          "template": "java/service/App.java.tmpl",
+          "why": {
+            "en": "Starts the program; kept thin so the logic stays testable without it.",
+            "de": "Startet das Programm und bleibt dünn, damit die Logik auch ohne ihn testbar bleibt."
+          }
+        },
+        {
+          "path": "src/main/java/@@java_package@@/HealthHandler.java",
+          "template": "java/service/HealthHandler.java.tmpl",
+          "why": {
+            "en": "Holds the behaviour the test pins; the place a first real change goes.",
+            "de": "Enthält das Verhalten, das der Test festhält; hier beginnt die erste echte Änderung."
+          }
+        },
+        {
+          "path": "src/test/java/@@java_package@@/AppTest.java",
+          "template": "java/service/AppTest.java.tmpl",
+          "why": {
+            "en": "The first test, so the test command reports at least one test and a green run means something.",
+            "de": "Der erste Test, damit der Testbefehl mindestens einen Test meldet und ein grüner Lauf etwas bedeutet."
+          }
+        }
+      ]
+    },
+    {
+      "id": "java-library",
+      "when": {
+        "language": "java",
+        "archetype": "library"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "build.gradle.kts",
+          "template": "java/library/build.gradle.kts.tmpl",
+          "why": {
+            "en": "Declares the project's name, version and toolchain in the form its build tool reads, so a fresh checkout needs no setup beyond that tool.",
+            "de": "Legt Name, Version und Toolchain des Projekts in der Form fest, die das Build-Werkzeug liest, sodass ein frischer Checkout nur dieses Werkzeug braucht."
+          }
+        },
+        {
+          "path": "README.md",
+          "template": "java/library/README.md.tmpl",
+          "why": {
+            "en": "Says what the project is and the three commands a person needs: build, test, run.",
+            "de": "Sagt, was das Projekt ist, und nennt die drei Befehle, die man braucht: bauen, testen, starten."
+          }
+        },
+        {
+          "path": "src/main/java/@@java_package@@/Greeting.java",
+          "template": "java/library/Greeting.java.tmpl",
+          "why": {
+            "en": "Holds the behaviour the test pins; the place a first real change goes.",
+            "de": "Enthält das Verhalten, das der Test festhält; hier beginnt die erste echte Änderung."
+          }
+        },
+        {
+          "path": "src/test/java/@@java_package@@/GreetingTest.java",
+          "template": "java/library/GreetingTest.java.tmpl",
+          "why": {
+            "en": "The first test, so the test command reports at least one test and a green run means something.",
+            "de": "Der erste Test, damit der Testbefehl mindestens einen Test meldet und ein grüner Lauf etwas bedeutet."
+          }
+        }
+      ]
+    },
+    {
+      "id": "java-cli",
+      "when": {
+        "language": "java",
+        "archetype": "cli"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "build.gradle.kts",
+          "template": "java/cli/build.gradle.kts.tmpl",
+          "why": {
+            "en": "Declares the project's name, version and toolchain in the form its build tool reads, so a fresh checkout needs no setup beyond that tool.",
+            "de": "Legt Name, Version und Toolchain des Projekts in der Form fest, die das Build-Werkzeug liest, sodass ein frischer Checkout nur dieses Werkzeug braucht."
+          }
+        },
+        {
+          "path": "README.md",
+          "template": "java/cli/README.md.tmpl",
+          "why": {
+            "en": "Says what the project is and the three commands a person needs: build, test, run.",
+            "de": "Sagt, was das Projekt ist, und nennt die drei Befehle, die man braucht: bauen, testen, starten."
+          }
+        },
+        {
+          "path": "src/main/java/@@java_package@@/Cli.java",
+          "template": "java/cli/Cli.java.tmpl",
+          "why": {
+            "en": "Holds the behaviour the test pins; the place a first real change goes.",
+            "de": "Enthält das Verhalten, das der Test festhält; hier beginnt die erste echte Änderung."
+          }
+        },
+        {
+          "path": "src/main/java/@@java_package@@/Main.java",
+          "template": "java/cli/Main.java.tmpl",
+          "why": {
+            "en": "Starts the program; kept thin so the logic stays testable without it.",
+            "de": "Startet das Programm und bleibt dünn, damit die Logik auch ohne ihn testbar bleibt."
+          }
+        },
+        {
+          "path": "src/test/java/@@java_package@@/CliTest.java",
+          "template": "java/cli/CliTest.java.tmpl",
           "why": {
             "en": "The first test, so the test command reports at least one test and a green run means something.",
             "de": "Der erste Test, damit der Testbefehl mindestens einen Test meldet und ein grüner Lauf etwas bedeutet."

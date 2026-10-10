@@ -1,0 +1,23 @@
+package @@java_package@@;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class CliTest {
+
+    @Test
+    void aNameGivesTheGreetingAndExitCode0() {
+        Cli.Result result = Cli.run(new String[] {"Ada"});
+        assertEquals(0, result.code());
+        assertEquals("Hello, Ada.\n", result.out());
+    }
+
+    @Test
+    void noNameGivesTheUsageLineAndExitCode2() {
+        Cli.Result result = Cli.run(new String[] {});
+        assertEquals(2, result.code());
+        assertTrue(result.out().startsWith("usage: "));
+    }
+}

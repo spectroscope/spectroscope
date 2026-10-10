@@ -1,0 +1,17 @@
+package @@java_package@@;
+
+public final class Cli {
+
+    public record Result(int code, String out) {
+    }
+
+    private Cli() {
+    }
+
+    public static Result run(String[] args) {
+        if (args.length == 0 || args[0].isBlank()) {
+            return new Result(2, "usage: @@name@@ <name>\n");
+        }
+        return new Result(0, "Hello, " + args[0] + ".\n");
+    }
+}
