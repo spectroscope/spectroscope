@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "archetypes": [
+    { "id": "a", "name": { "en": "A", "de": "A" },
+      "description": { "en": "The only fixture archetype.", "de": "Der einzige Archetyp der Fixture." } }
+  ],
+  "languages": [
+    { "id": "py", "name": "Py", "commands": { "test": "T", "gate": "G" } }
+  ],
+  "addons": [
+    { "id": "quality-gate", "name": { "en": "QA", "de": "QA" },
+      "description": { "en": "A gate.", "de": "Ein Gate." } },
+    { "id": "pb", "name": { "en": "PB", "de": "PB" },
+      "description": { "en": "A playbook.", "de": "Ein Playbook." } }
+  ],
+  "parts": [
+    { "id": "base", "root": "project",
+      "put": [
+        { "path": "README.md", "template": "base/README.md.tmpl",
+          "why": { "en": "Says what the project is.", "de": "Sagt, was das Projekt ist." } },
+        { "path": "@@py_module@@/x.py", "template": "base/x.py.tmpl",
+          "why": { "en": "Holds the name.", "de": "Hält den Namen." } }
+      ] },
+    { "id": "quality-gate", "when": { "addon": "quality-gate" }, "root": "project",
+      "put": [
+        { "path": "gate.txt", "template": "qa/gate.txt.tmpl",
+          "why": { "en": "Runs the gate.", "de": "Führt das Gate aus." } }
+      ],
+      "append": [ { "path": "README.md", "template": "qa/README.append.tmpl" } ] },
+    { "id": "pb", "when": { "addon": "pb" }, "root": "playbook",
+      "import": { "from": "spectrolyzr-fixture/bundle/",
+                  "set_json": { "playbook.json": { "/vars/test": "@@check_command@@" } },
+                  "why_by_prefix": [
+                    { "prefix": "playbook.json", "why": { "en": "The way of working.", "de": "Die Arbeitsweise." } },
+                    { "prefix": "skills/", "why": { "en": "A skill a step loads.", "de": "Ein Skill, den ein Schritt lädt." } }
+                  ] } }
+  ]
+}
