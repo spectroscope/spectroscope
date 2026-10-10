@@ -4,7 +4,7 @@
 <p class="lead">A playbook is a folder that says how a team builds: which steps come in
 which order, where the work branches, which skill and which model each step uses, and which
 handover document passes from one step to the next. The developer mode reads such a folder,
-checks it and draws it. It does not run anything by it yet.</p>
+checks it, draws it and lets you edit it. It does not run anything by it yet.</p>
 
 <h2 id="ch-playbooks-what">What a playbook is</h2>
 
@@ -114,8 +114,73 @@ type its absolute path into the field and press &ldquo;Copy the spectro playbook
 folder&rdquo;. The server writes the bundled files there and registers the folder. It never
 overwrites. If any target file already exists,
 nothing is written, the answer is a conflict, and the window lists the files that stand in the
-way. After a copy you can edit <code>playbook.json</code> in your editor. The segment reads the file
-each time it loads the folder, so the graph shows what the file says now.</p>
+way. After a copy you can edit <code>playbook.json</code> in your own editor or in the segment's editor,
+which the next section describes. The segment reads the file each time it loads the folder, so the
+graph shows what the file says now.</p>
+
+<h2 id="ch-playbooks-edit">Editing a playbook</h2>
+
+<p>The segment edits the file with the mouse. The &ldquo;Edit&rdquo; button in the header opens
+the editor for the folder you are looking at. It is offered when the file can be rewritten
+without losing anything. A file that carries fields the reader does not know stays read only,
+and the header says why. Nothing on disk changes until you press &ldquo;Save&rdquo;.</p>
+
+<p>The editor puts a toolbar above the graph and a panel beside it, or below it on a narrow
+window. The graph is the picture of the read view, with one difference: the layout engine
+places every box again after each change, so no box can be dragged to a spot of your choosing.
+The left mouse button selects and draws arrows. The right and the middle button pan, the wheel
+zooms, and &ldquo;Fit&rdquo; brings the whole playbook back into view.</p>
+
+<p>To add a box, select a step, a decision or an arrow and press &ldquo;Add step&rdquo;,
+&ldquo;Add decision&rdquo; or &ldquo;Add end&rdquo;. After a step or an arrow the new box is
+inserted into the arrow that leaves the step, or into the selected arrow, so the path stays
+whole. After a decision it takes the first outcome that has no arrow yet. A new box gets the
+next free id, such as <code>decision_1</code>, and a plain English name that you can change in
+the panel.</p>
+
+<p>To connect two boxes, drag from a handle on the right edge of the first and let go anywhere
+on the second. A step has one handle and a decision has one per outcome, each named when you
+hover over it. An outcome has exactly one arrow, so dragging from a handle that already has an
+arrow points that arrow at the new target. Select an arrow and the panel shows its target and,
+for an arrow that leaves a decision, its outcome, both of which you can change there.
+&ldquo;Delete&rdquo; removes the selected box with its arrows, or the selected arrow. On the
+canvas, Backspace and Delete do the same.</p>
+
+<p>The panel has three tabs. Selection edits the selected node: a step has an id, a name, a
+goal, who performs it, a role for a child agent, its skills (each marked when it is not
+installed), a model choice that shows the provider's state, privacy, permission, the documents
+it takes and hands on, and the human nod. A decision has an id, a name, a check, its outcomes
+and its maximum rounds, and an end has a result. Documents and Checks edit the document types
+and the checks. Model choices, vars and contents are read only in this version. A text field
+saves when you leave it or press Enter, Escape brings the old text back, and Backspace in a
+field never deletes the selected box.</p>
+
+<p>&ldquo;Undo&rdquo; and &ldquo;Redo&rdquo; step through the last 50 changes. Ctrl or Cmd with Z
+does the same outside a text field, with Shift for redo. A box that an arrow names but nobody
+defined is drawn as a dashed box marked &ldquo;missing&rdquo;, and its arrow can still be
+selected, so the mistake stays visible and nothing disappears silently.</p>
+
+<p>The list of findings under the panel is the check of the read view. The server runs it on
+your draft a moment after each change. &ldquo;Save&rdquo; is refused while a finding exists: the
+status reads &ldquo;Not saved&rdquo; with the number of findings, the list names each one, and
+the file on disk stays as it was. A file you wrote by hand in another layout is rewritten in
+the editor's fixed form on the first save, which may reformat the whole file. The editor
+announces that before you save, because the first diff is then larger than your change. After
+that a save writes structure only, with no coordinates and the keys in one fixed order, so a
+diff shows your change and nothing else.</p>
+
+<p>If the file changed on disk after you opened it, for example in your own editor, the save is
+refused with the message that the file changed on disk, and your draft stays on screen.
+&ldquo;Revert&rdquo; drops your changes and reads the file again. &ldquo;Stop editing&rdquo; closes
+the editor. While there are unsaved changes it is disabled, and so is the folder list.</p>
+
+<p>As an example, a review round after <i>Implement task</i> in the spectro playbook takes
+these steps. Select <i>Implement task</i> and press &ldquo;Add decision&rdquo;. Choose the check
+<code>task_review</code> and type 3 into the maximum rounds. Select the arrow from the new
+decision to <i>Review task</i> and set its outcome to <code>pass</code>. Drag the
+<code>fail</code> handle to <i>Implement task</i> and the <code>exhausted</code> handle to the
+end <code>cancelled</code>. Press &ldquo;Save&rdquo;. The file gains one node and three
+arrows, one existing arrow now points at the new decision, and no other line differs.</p>
 
 <h2 id="ch-playbooks-refused">What a playbook file may not carry</h2>
 
@@ -133,8 +198,8 @@ and a nested playbook are recognised and refused as not supported in version 1.<
 <ul>
   <li>Runs do not follow the playbook yet. The chat and the child agents work as they did
   before, and the playbook only describes how a team means to work.</li>
-  <li>You cannot edit the graph with the mouse. The file is the source, and the segment shows
-  what the file says.</li>
+  <li>You cannot place a box by hand. The graph carries no coordinates, and the layout engine
+  decides where each box goes.</li>
   <li>The skills, agents, hooks and commands of a playbook are not installed into your
   installation. The step table says whether a named skill is installed, and that is all.</li>
   <li>Paths that split into parallel branches and join again are not part of the format yet.</li>

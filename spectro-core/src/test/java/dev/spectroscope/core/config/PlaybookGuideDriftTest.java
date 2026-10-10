@@ -142,6 +142,39 @@ class PlaybookGuideDriftTest {
         assertTrue(part.contains("<code>playbook.json</code>"), "the chapter never names the file");
     }
 
+    /** The editor's own words the chapter's edit section has to use, as they appear on the screen. */
+    private static final List<String> EDIT_TERMS = List.of(
+            "Edit", "Add step", "Add decision", "Add end", "Undo", "Redo", "Save", "Revert");
+
+    @Test
+    void theChapterHasASectionForEditingAPlaybookWithTheEditorsOwnWords() throws IOException {
+        String part = chapter(rootOrSkip());
+        assertTrue(part.contains("<h2 id=\"ch-playbooks-edit\">Editing a playbook</h2>"),
+                PART + " has no section \"Editing a playbook\" (id ch-playbooks-edit)");
+        String section = part.substring(part.indexOf("id=\"ch-playbooks-edit\""));
+        int next = section.indexOf("<h2 ", 10);
+        if (next > 0) {
+            section = section.substring(0, next);
+        }
+        List<String> missing = new ArrayList<>();
+        for (String term : EDIT_TERMS) {
+            if (!section.contains(term)) {
+                missing.add(term);
+            }
+        }
+        assertEquals(List.of(), missing, "the edit section never names these buttons");
+        assertTrue(section.contains("changed on disk") || section.contains("changed since"),
+                "the edit section never explains the refused save after the file changed");
+        assertTrue(section.contains("reformat"), "the edit section never says why a first save may reformat");
+    }
+
+    @Test
+    void theChapterNoLongerSaysTheGraphCannotBeEditedWithTheMouse() throws IOException {
+        String part = chapter(rootOrSkip());
+        assertFalse(part.contains("You cannot edit the graph with the mouse"),
+                PART + " still lists mouse editing under what version 1 does not do");
+    }
+
     @Test
     void theChapterUsesNoDashAsPunctuation() throws IOException {
         String part = chapter(rootOrSkip());
@@ -172,6 +205,8 @@ class PlaybookGuideDriftTest {
                             + "build_user_guide.py, both themes, then the PDFs and --stamp)");
             assertTrue(edition.contains("learn, light or developer"),
                     name + " still describes two modes: rebuild it");
+            assertTrue(edition.contains("id=\"ch-playbooks-edit\""),
+                    name + " has no section on editing a playbook: rebuild it");
         }
     }
 }
