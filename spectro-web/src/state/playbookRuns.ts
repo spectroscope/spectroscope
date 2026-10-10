@@ -80,3 +80,20 @@ export async function fetchRunGraph(sessionId: string, run: string): Promise<str
   );
   return res.ok ? res.text() : "";
 }
+
+/** The ids the run routes accept (PlaybookRunsController.SESSION_ID). */
+const STORED_ID = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
+
+/**
+ * The session whose playbook runs the pane shows: the stored session opened
+ * from the list when there is one, the live session otherwise. An import or a
+ * scenario has no sidecar on this server, so it shows none, and never the live
+ * session's runs under its name.
+ *
+ * @param liveSessionId the live session's id, null before it has one
+ * @param replayId the id of the session opened from the list, null in the live view
+ */
+export function playbookSessionId(liveSessionId: string | null, replayId: string | null): string | null {
+  if (replayId !== null) return STORED_ID.test(replayId) ? replayId : null;
+  return liveSessionId;
+}

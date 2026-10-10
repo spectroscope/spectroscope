@@ -116,6 +116,11 @@ export function PlaybookPane({
     }
   };
 
+  // The run view needs only the session: a stored session opened from the
+  // list has no workspace, so no playbook loads, and its runs still show.
+  const runView =
+    sessionId !== null ? <PlaybookRunView key={`${sessionId}#${starts}`} sessionId={sessionId} /> : null;
+
   return (
     <div className="pb-pane">
       <header className="pb-head">
@@ -198,12 +203,14 @@ export function PlaybookPane({
         </section>
       )}
 
+      {(loaded === null || p === null) && runView}
+
       {loaded !== null && p !== null && (
         <>
           <section className="pb-section pb-canvas">
             <PlaybookGraph loaded={loaded} />
           </section>
-          {sessionId !== null && <PlaybookRunView key={`${sessionId}#${starts}`} sessionId={sessionId} />}
+          {runView}
           <section className="pb-section">
             <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
             <StepTable loaded={loaded} />

@@ -153,6 +153,7 @@ import {
 } from "./state/surfaceChunks";
 import { ChunkBoundary } from "./components/ChunkBoundary";
 import type { NavSegmentId } from "./components/navRows";
+import { playbookSessionId } from "./state/playbookRuns";
 import { onShellCommand } from "./state/shellCommands";
 import { runShellCommand, type ShellDeps } from "./state/shellCommandRouter";
 import { initialViewState, rememberOrientation, type StateGraphViewState } from "./stategraph/viewState";
@@ -2745,7 +2746,10 @@ export function App() {
                Card 482: the live session a run starts in, and the start frame. */
             <PlaybookPane
               workspace={(viewingLive ? view.workspace : null)?.path ?? null}
-              sessionId={(viewingLive ? view.workspace : null)?.sessionId ?? null}
+              sessionId={playbookSessionId(
+                (viewingLive ? view.workspace : null)?.sessionId ?? null,
+                replay?.id ?? null,
+              )}
               onStartPlaybook={(dir, hash) => sendClient({ type: "start_playbook", dir, hash })}
             />
           ) : nav === "stategraph" ? (
