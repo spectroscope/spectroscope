@@ -36,7 +36,10 @@ export interface Outcome {
 /** The server's refusal as a sentence: translated where the app knows it, else the server's own words. */
 function refusalText(lang: Lang, f: InstallFailure): string {
   if (f.reason === "CHANGED") return t(lang, "pc.changed");
-  const already = /already installed from (.+) on (\S+?);/.exec(f.message);
+  // The server writes the English sentence of pc.already (PlaybookInstallerTest pins the two together).
+  const already = /^Already installed from (.+) on (\S+)\. Remove it first, then install again\.$/.exec(
+    f.message,
+  );
   if (f.reason === "ALREADY" && already !== null) {
     return t(lang, "pc.already", { dir: already[1], date: already[2] });
   }

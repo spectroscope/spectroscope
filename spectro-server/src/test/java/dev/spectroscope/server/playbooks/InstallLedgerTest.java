@@ -36,6 +36,19 @@ class InstallLedgerTest {
     }
 
     @Test
+    void itemHashAnswersTheRecordedHashByPlaybookKindAndSource() {
+        InstallLedger ledger = new InstallLedger(ledgerFile());
+        assertNull(ledger.itemHash("spectropowers", "agent", "agents/reviewer.md"), "a missing file holds nothing");
+        Item agent = new Item("agent", "reviewer", "agents/reviewer.md", "cc33", null, List.of(), null);
+        ledger.put(new Install("spectropowers", "/work/spectropowers", "h1", "2026-10-10", List.of(agent)));
+
+        assertEquals("cc33", ledger.itemHash("spectropowers", "agent", "agents/reviewer.md"));
+        assertNull(ledger.itemHash("other", "agent", "agents/reviewer.md"), "another playbook id");
+        assertNull(ledger.itemHash("spectropowers", "skill", "agents/reviewer.md"), "another kind");
+        assertNull(ledger.itemHash("spectropowers", "agent", "agents/planner.md"), "another source");
+    }
+
+    @Test
     void aMissingFileReadsAsEmpty() {
         InstallLedger ledger = new InstallLedger(ledgerFile());
         assertEquals(List.of(), ledger.all());

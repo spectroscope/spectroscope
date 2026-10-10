@@ -300,6 +300,18 @@ class PlaybookGuideDriftTest {
     }
 
     @Test
+    void theLimitsSayWhichChangeSinceTheInstallStopsARun() throws IOException {
+        String part = chapter(rootOrSkip());
+        String limits = part.substring(part.indexOf("id=\"ch-playbooks-limits\"")).replaceAll("\\s+", " ");
+        assertTrue(limits.contains("after you read the commands, the contents and the hash"),
+                "the limits do not say that the sheet shows the contents before a run");
+        assertTrue(limits.contains("does not stop a run"),
+                "the limits do not say that a changed item is shown and does not stop a run");
+        assertTrue(limits.contains("agent file"),
+                "the limits do not name the agent file as the one change that stops a run");
+    }
+
+    @Test
     void theChapterUsesNoDashAsPunctuation() throws IOException {
         String part = chapter(rootOrSkip());
         for (String dash : List.of("—", "–", "&mdash;", "&ndash;", "&#8212;", "&#8211;", " -- ")) {
@@ -442,14 +454,45 @@ class PlaybookGuideDriftTest {
                 "PlaybookLoader.contentsFindings checks other kinds than the contents record declares");
     }
 
+    /** The refusal words of an agent role in the runner's pin, read from its source. */
+    private static final List<String> AGENT_REFUSALS = List.of("agent not installed", "agent changed since install");
+
     @Test
-    void theAgentsRowPromisesNoRunTheRunnerCannotDoYet() throws IOException {
-        String section = installSection(chapter(rootOrSkip()));
-        assertFalse(section.contains("runs a child agent"),
-                "the Agents row says a step runs a child agent with the preamble: the runner does not resolve "
-                        + "agent:name yet (cards 482 and P3), and the chapter says runs do not follow the playbook");
-        assertTrue(section.contains("once runs follow the playbook"),
-                "the Agents row does not say that using the preamble waits for runs that follow the playbook");
+    void theAgentsRowSaysWhatTheRunnerDoesWithAnAgentRoleAndWhenItRefuses() throws IOException {
+        Path root = rootOrSkip();
+        String section = installSection(chapter(root));
+        String pin = Files.readString(root.resolve(
+                "spectro-core/src/main/java/dev/spectroscope/core/playbook/run/PinnedPlaybook.java"));
+        assertFalse(section.contains("once runs follow the playbook"),
+                "the Agents row still says the preamble waits for runs that follow the playbook: since the card 485 "
+                        + "follow-up the runner resolves agent:name");
+        assertTrue(section.contains("<code>agent:name</code>"), "the Agents row never names the role agent:name");
+        assertTrue(section.contains("type and preamble"),
+                "the Agents row does not say that the child runs on the agent file's type and preamble");
+        List<String> missing = new ArrayList<>();
+        for (String refusal : AGENT_REFUSALS) {
+            assertTrue(pin.contains("\"" + refusal + ": \""),
+                    "PinnedPlaybook no longer refuses with \"" + refusal + "\"; correct this test and the chapter");
+            if (!section.contains("&ldquo;" + refusal + "&rdquo;")) {
+                missing.add(refusal);
+            }
+        }
+        assertEquals(List.of(), missing,
+                "the install section does not quote the refusals a run gives for an agent that is not installed or changed");
+    }
+
+    @Test
+    void theRunSectionNamesTheContentsTheConfirmationListsInTheSheetsOwnWords() throws IOException {
+        Path root = rootOrSkip();
+        String run = runSection(chapter(root)).replaceAll("\\s+", " ");
+        String i18n = Files.readString(root.resolve(I18N));
+        String title = english(i18n, "pc.runTitle");
+        assertTrue(run.contains("&ldquo;" + title + "&rdquo;"),
+                "the run section does not quote the contents section of the sheet: " + title);
+        assertTrue(run.contains("changed since the install"),
+                "the run section does not say that the sheet names what changed since the install");
+        assertTrue(run.contains("every agent file a step names"),
+                "the run section does not say that the run hash covers the agent files the steps name");
     }
 
     @Test

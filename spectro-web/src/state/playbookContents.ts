@@ -119,8 +119,9 @@ function unreachable(error: unknown): InstallFailure {
  *
  * @param dir the registered playbook folder
  * @param workspace the workspace whose settings layers decide the hooks origin, or null
+ * @returns the list as the server answered it, which the store now holds
  */
-export async function loadContents(dir: string, workspace: string | null): Promise<void> {
+export async function loadContents(dir: string, workspace: string | null): Promise<ContentsPreview> {
   lastWorkspace = workspace;
   const query = `dir=${encodeURIComponent(dir)}${workspace === null ? "" : `&workspace=${encodeURIComponent(workspace)}`}`;
   const res = await fetch(`/api/playbooks/contents?${query}`);
@@ -131,7 +132,9 @@ export async function loadContents(dir: string, workspace: string | null): Promi
       typeof body.message === "string" && body.message !== "" ? body.message : `HTTP ${res.status}`,
     );
   }
-  setPreview((await res.json()) as ContentsPreview);
+  const read = (await res.json()) as ContentsPreview;
+  setPreview(read);
+  return read;
 }
 
 /**

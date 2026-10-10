@@ -76,6 +76,19 @@ public final class InstallLedger {
         return load().stream().filter(i -> i.playbook().equals(playbookId)).findFirst();
     }
 
+    /**
+     * @param playbookId the playbook id
+     * @param kind       skill, command, hook, agent or workflow
+     * @param source     the playbook relative path the item was installed from
+     * @return the sha256 the install of that playbook recorded for that item, or null when it recorded none
+     */
+    public synchronized String itemHash(String playbookId, String kind, String source) {
+        return load().stream().filter(i -> i.playbook().equals(playbookId))
+                .flatMap(i -> i.items().stream())
+                .filter(item -> item.kind().equals(kind) && item.source().equals(source))
+                .map(Item::sha256).findFirst().orElse(null);
+    }
+
     /** Records an install, replacing the entry of the same playbook id in place. */
     public synchronized void put(Install install) {
         List<Install> next = new ArrayList<>(load());

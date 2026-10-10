@@ -170,6 +170,20 @@ public final class SubagentManager {
     }
 
     /**
+     * The text a role child runs on: the role's preamble, the report_status
+     * instruction and the task. The static role tools and a playbook step
+     * with role {@code agent:<name>} (card 485) both compose through here.
+     *
+     * @param preamble the role text
+     * @param task     the task, stripped before it is appended
+     * @return the composed text
+     */
+    public static String roleTask(String preamble, String task) {
+        return preamble + "\n\nReport progress at each milestone via the "
+                + "report_status tool (one short sentence each).\n\nTASK:\n" + task.strip();
+    }
+
+    /**
      * The role tools for the PARENT registry — thin wrappers over a child
      * spawn: the four dev roles run as workers (specialization is prompt +
      * skill), the research role (card 205) as the research profile with the
@@ -1029,8 +1043,7 @@ public final class SubagentManager {
             if (task.isBlank()) {
                 return "ERROR: task must be a non-empty string.";
             }
-            String composed = spec.preamble() + "\n\nReport progress at each milestone via the "
-                    + "report_status tool (one short sentence each).\n\nTASK:\n" + task.strip();
+            String composed = roleTask(spec.preamble(), task);
             return runChildrenInParallel(List.of(
                     new ChildRequest(spec.type(), composed, task.strip(), spec.name()))).getFirst();
         }

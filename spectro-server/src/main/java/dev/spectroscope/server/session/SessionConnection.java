@@ -53,6 +53,7 @@ import dev.spectroscope.core.wire.WireReference;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import dev.spectroscope.server.leveling.ServerLeveling;
+import dev.spectroscope.server.playbooks.InstallLedger;
 import dev.spectroscope.server.playbooks.PlaybookFolders;
 import dev.spectroscope.server.playbooks.PlaybookLoader;
 import dev.spectroscope.server.playbooks.PlaybookRunsLive;
@@ -365,6 +366,8 @@ public final class SessionConnection {
     private Function<SpectroConfig, LlmProvider> providerBuilder = ServerProviders::build;
     /** Card 482: the registry's bounded check of one provider; a test hands in its own. */
     private Function<String, ProviderRow> providerCheck = this::registryCheck;
+    /** The install ledger agent roles resolve through at Start; null reads the one in the home (card 485). */
+    private volatile InstallLedger installLedger;
 
     /** The process-wide live-session registry, or null — then this connection
      *  claims nothing and announces nothing, frame for frame the pre-212 one. */
@@ -2313,6 +2316,7 @@ public final class SessionConnection {
     /**
      * Card 482: the Start of the confirmation sheet. Starts only when the
      * folder is registered and its bytes still hash to what the sheet showed.
+     * Agent roles resolve through the install ledger, as in the preview.
      *
      * @param dir  the playbook folder
      * @param hash the hash the confirmation showed
@@ -2338,7 +2342,10 @@ public final class SessionConnection {
                 sendError("The playbook does not load: " + loaded.findings());
                 return;
             }
-            pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody);
+            InstallLedger ledger = installLedger != null ? installLedger : InstallLedger.inHome();
+            String id = loaded.playbook().id();
+            pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody,
+                    source -> ledger.itemHash(id, "agent", source));
         } catch (IOException | RuntimeException unreadable) {
             sendError("The playbook could not be read: " + unreadable.getMessage());
             return;
@@ -2442,6 +2449,11 @@ public final class SessionConnection {
     /** @param builder what builds a provider from a config in this connection, for tests */
     void providerBuilderForTest(Function<SpectroConfig, LlmProvider> builder) {
         this.providerBuilder = builder;
+    }
+
+    /** @param ledger the install ledger the start frame resolves agent roles through, for tests */
+    void installLedgerForTest(InstallLedger ledger) {
+        this.installLedger = ledger;
     }
 
     /** @param check what answers the registry check of one provider in this connection, for tests */

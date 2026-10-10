@@ -17,7 +17,7 @@
 // and opens the install and remove confirmations.
 //
 // Card 482: Build by this asks the server for the start preview and opens the
-// confirmation sheet; Start sends the start frame with the hash the sheet
+// confirmation sheet (since card 485 with the contents read again beside it); Start sends the start frame with the hash the sheet
 // showed. Under the graph the run view draws this session's latest run.
 //
 // The stylesheets are styles/playbook.css and styles/playbook-run.css,
@@ -37,14 +37,17 @@ import {
   usePlaybookFolders,
 } from "../state/playbooks";
 import { loadContents, usePlaybookContents, type ContentKind } from "../state/playbookContents";
-import { fetchStartPreview, type StartPreview } from "../state/playbookRuns";
+import type { StartPreview } from "../state/playbookRuns";
 import { ContentsConfirm } from "./ContentsConfirm";
 import type { PlaybookDoc } from "./editor/doc";
 import { EditorShell } from "./editor/EditorShell";
 import { PlaybookGraph } from "./PlaybookGraph";
 import { PlaybookRunView } from "./PlaybookRunView";
-import { PlaybookStartSheet } from "./PlaybookStartSheet";
+import { PlaybookStartSheet, readConfirmation } from "./PlaybookStartSheet";
 import { StepTable } from "./StepTable";
+
+/** The kinds the contents row counts, in the order the list shows them. */
+const COUNTED: ContentKind[] = ["skill", "command", "hook", "agent", "workflow"];
 
 /** The id of the playbook the product ships. */
 const BUNDLED = "spectro";
@@ -158,7 +161,7 @@ export function PlaybookPane({
   const build = (): void => {
     if (loaded === null || workspace === null) return;
     run(async () => {
-      setPreview(await fetchStartPreview(loaded.dir, workspace));
+      setPreview((await readConfirmation(loaded.dir, workspace)).preview);
     });
   };
 
@@ -348,13 +351,10 @@ export function PlaybookPane({
                 <section className="pb-section pc-row">
                   <h3 className="pb-h">{t(lang, "pc.title")}</h3>
                   <p className="pc-counts">
-                    {t(lang, "pc.row", {
-                      skills: count("skill"),
-                      commands: count("command"),
-                      hooks: count("hook"),
-                      agents: count("agent"),
-                      workflows: count("workflow"),
-                    })}
+                    {COUNTED.map((kind) => {
+                      const n = count(kind);
+                      return n === 1 ? t(lang, `pc.count.${kind}One`) : t(lang, `pc.count.${kind}`, { n });
+                    }).join(", ")}
                   </p>
                   <div className="pc-row-actions">
                     <button type="button" data-action="install" onClick={() => setDialog("install")}>
@@ -389,6 +389,7 @@ export function PlaybookPane({
         <PlaybookStartSheet
           doc={ed.saved ?? view?.document ?? null}
           preview={preview}
+          contents={here}
           onStart={start}
           onClose={() => setPreview(null)}
         />

@@ -1,6 +1,7 @@
 package dev.spectroscope.server.playbooks;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.playbook.PlaybookReader;
 import dev.spectroscope.core.playbook.run.PinnedPlaybook;
 import dev.spectroscope.server.providers.ProviderRow;
 import org.junit.jupiter.api.Test;
@@ -183,6 +184,45 @@ class PlaybookStartPreviewTest {
         assertTrue(res.getBody().hash().startsWith("sha256:"), res.getBody().hash());
         assertEquals("local", res.getBody().steps().get(0).providerKind());
         assertEquals("cloud", res.getBody().steps().get(1).providerKind());
+    }
+
+    @Test
+    void theRouteResolvesAnAgentRoleThroughTheInstallLedger() throws IOException {
+        String json = BUNDLE.replace("\"role\": \"worker\"", "\"role\": \"agent:reviewer\"")
+                .replace("\"contents\": { \"skills\": [\"skills/spectropowers\"] }",
+                        "\"contents\": { \"skills\": [\"skills/spectropowers\"], \"agents\": [\"agents/reviewer.md\"] }");
+        Path dir = folder(json);
+        Files.createDirectories(dir.resolve("agents"));
+        Files.writeString(dir.resolve("agents/reviewer.md"),
+                "---\nname: reviewer\ndescription: Reads the diff.\ntype: explore\n---\nYou are the reviewer.\n");
+        PlaybookFolders folders = new PlaybookFolders(tmp.resolve("playbooks.json"));
+        folders.register(dir);
+        InstallLedger ledger = new InstallLedger(tmp.resolve("ledger.json"));
+        PlaybookController controller = new PlaybookController(folders, "none", ledger, tmp.resolve("home"), tmp,
+                tmp.resolve("home/settings.json"), config -> List.of(row("ollama", "local", "reachable"),
+                        row("anthropic", "cloud", "configured")));
+
+        PlaybookStartPreview before = controller.startPreview(dir.toString(), tmp.toString(),
+                new MockHttpServletRequest()).getBody();
+        assertTrue(before.refusals().stream().anyMatch(r -> r.startsWith("agent not installed: reviewer")),
+                before.refusals().toString());
+
+        ledger.put(new InstallLedger.Install("b", dir.toRealPath().toString(), "h", "2026-10-10",
+                List.of(new InstallLedger.Item("agent", "reviewer", "agents/reviewer.md", "x", null, List.of(), null))));
+        PlaybookStartPreview stale = controller.startPreview(dir.toString(), tmp.toString(),
+                new MockHttpServletRequest()).getBody();
+        assertTrue(stale.refusals().stream().anyMatch(r -> r.startsWith("agent changed since install: reviewer")),
+                "a ledger hash that is not the file's: " + stale.refusals());
+
+        String recorded = PlaybookContents.preview(dir, PlaybookReader.read(json).playbook(), tmp.resolve("home"), tmp,
+                new InstallLedger(tmp.resolve("empty-ledger.json")), null).items().stream()
+                .filter(i -> i.kind().equals("agent")).findFirst().orElseThrow().sha256();
+        ledger.put(new InstallLedger.Install("b", dir.toRealPath().toString(), "h", "2026-10-10",
+                List.of(new InstallLedger.Item("agent", "reviewer", "agents/reviewer.md", recorded, null, List.of(), null))));
+        PlaybookStartPreview after = controller.startPreview(dir.toString(), tmp.toString(),
+                new MockHttpServletRequest()).getBody();
+        assertTrue(after.refusals().stream().noneMatch(r -> r.contains("reviewer")), after.refusals().toString());
+        assertTrue(after.refusals().contains("skill not found: nowhere"), "the other refusals stay: " + after.refusals());
     }
 
     @Test

@@ -161,8 +161,9 @@ public final class PlaybookInstaller {
             return result(Status.FAILED, unreadable.getMessage(), List.of());
         }
         if (earlier.isPresent()) {
-            return result(Status.ALREADY, id + " is already installed from " + earlier.get().dir() + " on "
-                    + earlier.get().installedOn() + "; remove it first.", List.of());
+            // The English sentence of pc.already in the web strings, word for word.
+            return result(Status.ALREADY, "Already installed from " + earlier.get().dir() + " on "
+                    + earlier.get().installedOn() + ". Remove it first, then install again.", List.of());
         }
         List<PlaybookContents.Item> items = preview.items().stream()
                 .filter(i -> withHooks || !i.kind().equals("hook"))

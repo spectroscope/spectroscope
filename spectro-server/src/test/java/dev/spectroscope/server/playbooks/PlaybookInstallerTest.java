@@ -176,6 +176,36 @@ class PlaybookInstallerTest {
         assertTrue(again.message().contains(LocalDate.now().toString()), again.message());
     }
 
+    /** The English text of {@code pc.already} in the web strings, or null outside a source checkout. */
+    private static String alreadyInTheDialog() throws IOException {
+        for (Path at = Path.of("").toAbsolutePath(); at != null; at = at.getParent()) {
+            Path i18n = at.resolve("spectro-web/src/i18n/i18n.ts");
+            if (Files.isRegularFile(at.resolve("settings.gradle.kts")) && Files.isRegularFile(i18n)) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                        "\"pc\\.already\":\\s*\\{\\s*de:\\s*\"(?:[^\"\\\\]|\\\\.)*\",\\s*en:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+                        .matcher(Files.readString(i18n));
+                assertTrue(m.find(), "no English text for pc.already in " + i18n);
+                return m.group(1);
+            }
+        }
+        return null;
+    }
+
+    @Test
+    void theAlreadyRefusalSaysOnTheWireWhatTheDialogSaysInEnglish() throws IOException {
+        assertEquals(Status.INSTALLED, install(true).status());
+
+        Result again = install(true);
+
+        String expected = "Already installed from " + dir + " on " + LocalDate.now()
+                + ". Remove it first, then install again.";
+        assertEquals(expected, again.message(), "the refusal on the wire");
+        String dialog = alreadyInTheDialog();
+        org.junit.jupiter.api.Assumptions.assumeTrue(dialog != null, "not running from a source checkout");
+        assertEquals(expected, dialog.replace("{dir}", dir.toString()).replace("{date}", LocalDate.now().toString()),
+                "the English sentence of pc.already in spectro-web/src/i18n/i18n.ts and the wire differ");
+    }
+
     @Test
     void aShownHashThatIsNotTheCurrentOneIsChangedAndWritesNothing() throws IOException {
         String shown = shownHash();
