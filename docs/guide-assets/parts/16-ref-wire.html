@@ -22,10 +22,11 @@ sealed interface ProviderContent
 
 sealed interface ProviderEvent permits PTextDelta, PThinkingDelta, PToolCall, PUsage, PStop
 record PUsage(int inputTokens, int outputTokens,
-              int cacheReadTokens, int cacheCreationTokens)
+              int cacheReadTokens, int cacheCreationTokens,
+              Double aiCredits /* null unless the provider reports a cost */)
 record PStop(StopReason reason /* END_TURN | TOOL_USE | MAX_TOKENS | ABORTED */)</pre>
 
-<p>Contract points: all three backends return <em>lazy</em> iterables (tokens reach the
+<p>Contract points: all four backends return <em>lazy</em> iterables (tokens reach the
 UI while the HTTP stream is still open); <code>PUsage.inputTokens</code> is the part of
 the prompt no cache served (it feeds the wire <code>usage</code> event) while the two cache
 fields ride separately and are added back only by the compaction trigger and the UIs; a cancel mid-stream surfaces as
@@ -86,6 +87,20 @@ fields ride separately and are added back only by the compaction trigger and the
       <code>https://openrouter.ai/api</code>, <code>gemini</code> &rarr; the Google
       gateway; an explicit <code>baseUrl</code> always wins, and the local ids read
       their own key first (chapter 18). One wire protocol, one host per id.</li>
+</ul>
+
+<h3>Copilot (JSON-RPC to a local runtime, through the Copilot SDK)</h3>
+<ul>
+  <li>The SDK starts the Copilot CLI as a child process; what a call sends goes from there
+      to GitHub's Copilot service, so the host the app names is
+      <code>githubcopilot.com</code>. The runtime keeps one session per conversation and is
+      sent only the new message.</li>
+  <li>The runtime's own tools are off and every harness tool replaces the runtime tool of
+      the same name, so the harness runs every tool.</li>
+  <li><code>assistant.usage</code> carries the tokens and <code>copilotUsage.totalNanoAiu</code>.
+      Divided by 1e9 that is <code>PUsage.aiCredits</code>, the cost of that one call in
+      GitHub AI credits, set only when the runtime calls the cost <code>complete</code>.
+      The premium request multiplier (<code>cost</code>) is never read.</li>
 </ul>
 
 <!-- ============================== CH 25 ============================== -->
