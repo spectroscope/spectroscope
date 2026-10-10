@@ -798,7 +798,8 @@ public final class Agent {
                         : baseForRun + statedGoal.promptSection();
                 // Card 488: the completion fits the window this turn compacts
                 // by, and what that window has left after this request's
-                // input, for every provider and every agent, children included.
+                // estimated input (floor 512), for every provider and every
+                // agent, children included.
                 long requestChars = requestChars(systemForTurn, advertisedTools, fenced.messages());
                 int attachmentTokens = attachmentTokens(fenced.messages());
                 int inputEstimate = CompactionThreshold.inputEstimate(requestChars, attachmentTokens,
