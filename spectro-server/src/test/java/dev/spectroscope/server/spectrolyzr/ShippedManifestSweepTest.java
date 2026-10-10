@@ -66,7 +66,7 @@ class ShippedManifestSweepTest {
                         // Dashes: our templates and every Why sentence. Imported P2 files are held by P2's own tests.
                         for (String s : f.root().equals("project") ? List.of(f.content(), f.why().en(), f.why().de())
                                 : List.of(f.why().en(), f.why().de())) {
-                            assertFalse(s.contains("—") || s.contains("–"), "dash in " + f.path() + " of " + c);
+                            assertFalse(s.indexOf(0x2014) >= 0 || s.indexOf(0x2013) >= 0, "dash in " + f.path() + " of " + c);
                         }
                     }
                     if (addons.contains(PLAYBOOK)) {
