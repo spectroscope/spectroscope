@@ -91,19 +91,24 @@ class ArchetypeFileSetTest {
             assertEquals("tsc -p . && node --test --test-reporter=tap \"dist/test/**/*.test.js\"",
                     pkg.at("/scripts/test").asText(), archetype);
             assertEquals("5.8.3", pkg.at("/devDependencies/typescript").asText(), archetype);
+            assertEquals("22.20.1", pkg.at("/devDependencies/@types~1node").asText(), archetype);
         }
     }
 
     @Test
     void everyTypescriptFileHasBothWhySentencesAndNoDashAsPunctuation() {
-        char emDash = '—';
-        char enDash = '–';
+        char emDash = '\u2014';
+        char enDash = '\u2013';
         for (String archetype : TYPESCRIPT.keySet()) {
             for (RenderedFile f : render(archetype, "typescript")) {
                 assertFalse(f.why().en().isBlank(), f.path());
                 assertFalse(f.why().de().isBlank(), f.path());
                 assertEquals(-1, f.content().indexOf(emDash), f.path());
                 assertEquals(-1, f.content().indexOf(enDash), f.path());
+                for (String why : new String[] {f.why().en(), f.why().de()}) {
+                    assertEquals(-1, why.indexOf(emDash), f.path() + " why");
+                    assertEquals(-1, why.indexOf(enDash), f.path() + " why");
+                }
                 assertTrue(f.content().endsWith("\n"), f.path() + " ends with a line feed");
             }
         }
