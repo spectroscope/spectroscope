@@ -241,6 +241,9 @@ class CopilotRuntimeTest {
 
     @Test
     void anInstallRootCoversItsOwnFolderAndNotASiblingThatSharesItsName() throws IOException {
+        // The root exists, so it resolves like the planted file does; a root that
+        // does not resolve could not match anything and would make this test blind.
+        Files.createDirectories(tmp.resolve("brew"));
         Path planted = executable(tmp.resolve("brewx/bin"));
 
         CopilotRuntime.Lookup lookup = CopilotRuntime.find(env()

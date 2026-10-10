@@ -1126,7 +1126,9 @@ class CopilotProviderTest {
 
     @Test
     void reasoningOnWithoutAnEffortSendsNoLevelBecauseThereIsNoOnSwitch() throws Exception {
-        start("claude-sonnet-5"); // lists low, medium and high
+        // fixture-switch-model lists none, low and high and names low as its
+        // default: ON must not be read as "send the default".
+        start("fixture-switch-model");
         runtime.onSend(says("ok"));
         drain(provider.stream(ask("s", List.of(user("hi")), List.of(), Reasoning.ON, null, new CancelSignal())));
         assertTrue(createParams(0).path("reasoningEffort").isMissingNode()
