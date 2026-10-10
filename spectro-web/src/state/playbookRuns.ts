@@ -38,6 +38,8 @@ export interface PlaybookRunRow {
   startedAt: number;
   /** Null while the run has no end in the sidecar. */
   stopReason: string | null;
+  /** The label of the end the path reached; null while open or when the run stopped before an end. */
+  result: string | null;
   live: boolean;
   graph: string;
 }

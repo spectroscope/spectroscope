@@ -11,22 +11,16 @@
 // Styles: styles/playbook-run.css, imported by app.css.
 
 import { useEffect, useState } from "react";
-import { dict, t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { fetchRunGraph, fetchRuns, type PlaybookRunRow } from "../state/playbookRuns";
 import { StateGraphView } from "../stategraph/StateGraphView";
 import { DEFAULT_VIEW, type StateGraphViewState } from "../stategraph/viewState";
+import { runStatus } from "./runStatus";
 
 /** How often the view asks while the run is going, in milliseconds. */
 const POLL_MS = 1000;
 /** How many asks after mounting go on even when the latest run has ended. */
 const GRACE_TICKS = 5;
-
-/** The stop reason in words, or the raw word when the dictionary has none. */
-function reasonWords(lang: Lang, reason: string): string {
-  const key = `pb.run.stop.${reason}`;
-  return dict[key] !== undefined ? t(lang, key) : reason;
-}
 
 export function PlaybookRunView({ sessionId }: { sessionId: string }) {
   const lang = useLang();
@@ -66,16 +60,17 @@ export function PlaybookRunView({ sessionId }: { sessionId: string }) {
 
   if (row === null) return null;
 
-  const status = row.live
-    ? t(lang, "pb.run.live")
-    : row.stopReason === null
-      ? t(lang, "pb.run.unrecorded")
-      : t(lang, "pb.run.stopped", { reason: reasonWords(lang, row.stopReason) });
+  const status = runStatus(lang, row);
 
   return (
     <section className="pb-section pb-run-view" data-run={row.run}>
-      <p className={`pb-run-status${row.live ? " is-live" : ""}`} role="status">
-        {status}
+      <p
+        className={`pb-run-status${status.live ? " is-live" : ""}`}
+        role="status"
+        data-stop={status.stop ?? undefined}
+        data-result={status.result ?? undefined}
+      >
+        {status.text}
       </p>
       {graph !== "" && (
         <div className="pb-run-graph">

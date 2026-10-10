@@ -43,9 +43,11 @@ public class PlaybookRunsController {
      * @param request the servlet request, for the local fence
      * @return one row per run in order of first appearance: {@code run},
      *         {@code playbook}, {@code startedAt}, {@code stopReason} (null
-     *         while the run has no end), {@code live} and {@code graph}, the
-     *         file name; an empty list for a session that never ran one; 404
-     *         for a foreign caller or a malformed id
+     *         while the run has no end), {@code result} (the label of the end
+     *         the path reached; null while open and when the run stopped
+     *         before an end), {@code live} and {@code graph}, the file name;
+     *         an empty list for a session that never ran one; 404 for a
+     *         foreign caller or a malformed id
      */
     @GetMapping("/api/sessions/{id}/playbook-runs")
     public ResponseEntity<List<Map<String, Object>>> runs(@PathVariable String id, HttpServletRequest request) {
@@ -120,6 +122,7 @@ public class PlaybookRunsController {
                 row.put("playbook", node.path("playbook").asText(null));
                 row.put("startedAt", node.path("ts").asLong(0));
                 row.put("stopReason", null);
+                row.put("result", null);
                 row.put("live", PlaybookRunsLive.live(id, run));
                 row.put("graph", id + "." + run + ".graph.jsonl");
                 byRun.putIfAbsent(run, row);
@@ -128,6 +131,8 @@ public class PlaybookRunsController {
                 Map<String, Object> row = byRun.get(run);
                 if (row != null) {
                     row.put("stopReason", node.path("stopReason").asText(null));
+                    JsonNode result = node.path("result");
+                    row.put("result", result.isTextual() ? result.asText() : null);
                 }
             }
             default -> { }

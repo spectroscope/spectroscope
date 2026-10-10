@@ -4677,8 +4677,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pb.run.close": { de: "Schließen", en: "Close" },
   "pb.run.live": { de: "Der Lauf läuft.", en: "The run is in progress." },
   "pb.run.stopped": { de: "Der Lauf endete: {reason}", en: "The run ended: {reason}" },
+  "pb.run.ended": {
+    de: "Der Lauf endete. Ergebnis: {result}. Grund: {reason}.",
+    en: "The run ended. Result: {result}. Stop reason: {reason}.",
+  },
   "pb.run.unrecorded": { de: "Der Lauf endete ohne Eintrag.", en: "The run ended without a record." },
-  "pb.run.stop.done": { de: "fertig", en: "done" },
+  "pb.run.stop.done": { de: "ein Ende wurde erreicht", en: "an end was reached" },
   "pb.run.stop.aborted": { de: "gestoppt", en: "stopped" },
   "pb.run.stop.step_failed": { de: "ein Schritt ist fehlgeschlagen", en: "a step failed" },
   "pb.run.stop.model_unavailable": { de: "ein Modell antwortet nicht", en: "a model does not answer" },

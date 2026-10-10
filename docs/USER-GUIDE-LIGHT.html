@@ -3872,7 +3872,8 @@ widen what the session allows, and the step's limit ends with the step.</p>
 <p>The plan tab shows one line per node on the forward path of the playbook, marked in progress
 while the node runs and completed afterwards. Under the drawing, the segment draws the latest run
 from the graph file the runner writes, lights the node that runs and asks again every second while
-the run lasts. A line above it says &ldquo;The run is in progress.&rdquo; or how the run ended.
+the run lasts. A line above it says &ldquo;The run is in progress.&rdquo; or how the run ended:
+the result, which is the label of the end the path reached, and the stop reason.
 The footer does not call a chat step unfinished because later steps are still open. Stop ends the
 run: the running step is cancelled and the graph file still ends cleanly.</p>
 
@@ -3881,7 +3882,7 @@ language in the segment.</p>
 
 <table>
   <tr><th>Word</th><th>Meaning</th></tr>
-  <tr><td><code>done</code></td><td>The path reached an end named done.</td></tr>
+  <tr><td><code>done</code></td><td>The path reached one of its ends. The result names which one; in the spectro playbook it is <code>cancelled</code> when a loop ran out of rounds.</td></tr>
   <tr><td><code>aborted</code></td><td>You pressed Stop.</td></tr>
   <tr><td><code>step_failed</code></td><td>A step ended with an error or a child reported one.</td></tr>
   <tr><td><code>model_unavailable</code></td><td>A model did not answer and you chose to stop.</td></tr>

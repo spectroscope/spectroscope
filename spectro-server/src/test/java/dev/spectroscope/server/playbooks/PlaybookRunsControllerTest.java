@@ -74,7 +74,53 @@ class PlaybookRunsControllerTest {
                 "live", false, "graph", id + "." + DONE + ".graph.jsonl"), withoutNulls(runs.get(0)));
         assertEquals(OPEN, runs.get(1).get("run"));
         assertEquals(null, runs.get(1).get("stopReason"));
+        assertTrue(runs.get(1).containsKey("result"), "an open run names its result field, null until the end");
+        assertEquals(null, runs.get(1).get("result"));
         assertEquals(false, runs.get(1).get("live"));
+    }
+
+    /**
+     * The stop reason says how the runner stopped, the result names the end
+     * the path reached. Run 1 of the live check ended on the end
+     * {@code cancelled} with the stop reason {@code done}, and the view said
+     * "done" because the row carried only the stop reason.
+     */
+    @Test
+    void aRunThatReachedTheCancelledEndCarriesThatResultBesideItsStopReason() throws IOException {
+        String id = freshId();
+        Files.createDirectories(PlaybookRecorder.folder());
+        Files.writeString(PlaybookRecorder.fileFor(id), String.join("\n",
+                "{\"type\":\"playbook_start\",\"run\":\"" + DONE + "\",\"playbook\":\"spectro\",\"ts\":1000}",
+                "{\"type\":\"playbook_end\",\"run\":\"" + DONE
+                        + "\",\"stopReason\":\"done\",\"result\":\"cancelled\",\"ts\":3000}",
+                "{\"type\":\"playbook_start\",\"run\":\"" + OPEN + "\",\"playbook\":\"spectro\",\"ts\":4000}",
+                "{\"type\":\"playbook_end\",\"run\":\"" + OPEN
+                        + "\",\"stopReason\":\"aborted\",\"result\":null,\"ts\":5000}",
+                ""), StandardCharsets.UTF_8);
+
+        List<Map<String, Object>> runs = rows(controller.runs(id, local()));
+
+        assertEquals("done", runs.get(0).get("stopReason"));
+        assertEquals("cancelled", runs.get(0).get("result"));
+        assertEquals("aborted", runs.get(1).get("stopReason"));
+        assertTrue(runs.get(1).containsKey("result"), "a stopped run still names its result field");
+        assertEquals(null, runs.get(1).get("result"));
+    }
+
+    @Test
+    void aRunThatReachedTheDoneEndCarriesTheResultDone() throws IOException {
+        String id = freshId();
+        Files.createDirectories(PlaybookRecorder.folder());
+        Files.writeString(PlaybookRecorder.fileFor(id), String.join("\n",
+                "{\"type\":\"playbook_start\",\"run\":\"" + DONE + "\",\"playbook\":\"spectro\",\"ts\":1000}",
+                "{\"type\":\"playbook_end\",\"run\":\"" + DONE
+                        + "\",\"stopReason\":\"done\",\"result\":\"done\",\"ts\":3000}",
+                ""), StandardCharsets.UTF_8);
+
+        Map<String, Object> row = rows(controller.runs(id, local())).get(0);
+
+        assertEquals("done", row.get("stopReason"));
+        assertEquals("done", row.get("result"));
     }
 
     @Test
