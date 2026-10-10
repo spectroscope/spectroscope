@@ -97,8 +97,15 @@
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
-.pb-path {
+/* Card 512: the field and its Choose button share a row that never wraps. */
+.pb-path-field {
+  display: flex;
   flex: 1 1 260px;
+  min-width: 0;
+  gap: var(--sp-2);
+}
+.pb-path {
+  flex: 1 1 0;
   min-width: 0;
   font: inherit;
   font-family: var(--font-mono);

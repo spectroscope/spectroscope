@@ -336,14 +336,14 @@
     margin-bottom: var(--sp-1);
   }
 }
+/* A folder field and its chooser button on one row, also at phone width (card 512). */
 .lyzr-target {
   display: flex;
-  flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--sp-2);
 }
 .lyzr-target .lyzr-field {
-  flex: 1 1 320px;
+  flex: 1 1 0;
 }
 .lyzr-go {
   display: flex;

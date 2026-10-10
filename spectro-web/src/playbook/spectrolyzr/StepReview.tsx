@@ -1,10 +1,12 @@
 // Step 3 of the Spectrolyzr wizard (card 484): the file tree beside the reader
 // (the selected file's Why sentence and content), the summary, the project
-// folder with the native picker, Generate, and what the last answer said:
-// the written files, the conflicting paths per folder, or a refused field.
+// folder with the native picker (the shared helper of card 512), Generate,
+// and what the last answer said: the written files, the conflicting paths per
+// folder, or a refused field.
 
 import { useState } from "react";
 import { t, type Lang } from "../../i18n/i18n";
+import { chooseFolder, usePickNote } from "../../state/folderPick";
 import { useLang } from "../../state/lang";
 import { choose, useLyzr, type LyzrFile, type LyzrResult } from "../../state/spectrolyzr";
 import { FileTree, fileKey } from "./FileTree";
@@ -79,7 +81,7 @@ export function StepReview({
   const lang = useLang();
   const { catalog, choices, preview, result } = useLyzr();
   const [selected, setSelected] = useState<string | null>(null);
-  const [pickNote, setPickNote] = useState<string | null>(null);
+  const pickNote = usePickNote("lyzrDir");
 
   const files: LyzrFile[] = preview?.files ?? [];
   const shown = files.find((f) => fileKey(f) === selected) ?? files[0] ?? null;
@@ -94,23 +96,6 @@ export function StepReview({
     .map((a) => a.name[lang]);
   const ready = preview !== null && choices.dir.trim() !== "" && (!playbookOn || playbookDir !== "") && !busy;
   const notSet = t(lang, "lyzr.notSet");
-
-  const pick = async (): Promise<void> => {
-    setPickNote(null);
-    try {
-      const res = await fetch("/api/pick-workspace", { method: "POST" });
-      if (res.status === 200) {
-        const { path } = (await res.json()) as { path: string };
-        choose(followingPlaybookDir(choices, { dir: path }));
-      } else if (res.status === 409) {
-        setPickNote(t(lang, "lyzr.pickBusy"));
-      } else if (res.status !== 204) {
-        setPickNote(t(lang, "lyzr.pickUnavailable"));
-      }
-    } catch {
-      setPickNote(t(lang, "lyzr.pickUnavailable"));
-    }
-  };
 
   return (
     <div className="lyzr-step">
@@ -169,7 +154,13 @@ export function StepReview({
             onChange={(e) => choose(followingPlaybookDir(choices, { dir: e.target.value }))}
           />
         </label>
-        <button type="button" className="lyzr-pick" onClick={() => void pick()}>
+        <button
+          type="button"
+          className="lyzr-pick"
+          onClick={() =>
+            void chooseFolder("lyzrDir", (path) => choose(followingPlaybookDir(choices, { dir: path })))
+          }
+        >
           {t(lang, "lyzr.pick")}
         </button>
       </div>

@@ -4757,6 +4757,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Nichts nach {dir} kopiert: der Server hat den Ordner abgelehnt.",
     en: "Nothing copied into {dir}: the server refused the folder.",
   },
+  // Card 512: the folder chooser beside the path fields of the Playbook segment.
+  "pick.choose": { de: "Auswählen", en: "Choose" },
+  "pick.busy": { de: "Ein Ordnerdialog ist schon offen.", en: "A folder dialog is already open." },
+  "pick.paste": {
+    de: "Hier gibt es keinen Ordnerdialog. Füge einen absoluten Pfad in das Feld ein.",
+    en: "No folder dialog here. Paste an absolute path into the field.",
+  },
   // Card 482: a run that follows the playbook, its confirmation and its view.
   "pb.run.build": { de: "Danach bauen", en: "Build by this" },
   "pb.run.hint": {
@@ -5569,11 +5576,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lyzr.dir": { de: "Projektordner", en: "Project folder" },
   "lyzr.pick": { de: "Auswählen", en: "Pick" },
   "lyzr.typePath": { de: "Absoluten Pfad eingeben", en: "Type an absolute path" },
-  "lyzr.pickUnavailable": {
-    de: "Hier gibt es keinen Ordnerdialog. Gib einen absoluten Pfad ein.",
-    en: "No folder dialog here. Type an absolute path.",
-  },
-  "lyzr.pickBusy": { de: "Ein Ordnerdialog ist schon offen.", en: "A folder dialog is already open." },
   "lyzr.why": { de: "Warum diese Datei", en: "Why this file" },
   "lyzr.summary": { de: "Zusammenfassung", en: "Summary" },
   "lyzr.files": { de: "{n} Dateien", en: "{n} files" },
