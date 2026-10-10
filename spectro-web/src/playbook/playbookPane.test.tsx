@@ -352,3 +352,17 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     expect(dirty).toContain(dict["pbe.folderLocked"].en);
   });
 });
+
+describe("PlaybookPane tabs (card 484)", () => {
+  it("offers Playbook and New project, opens on Playbook and does not draw the wizard there", () => {
+    const out = renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" wizard={<i className="wizard-probe" />} />,
+    );
+    expect(out).toMatch(/role="tablist"/);
+    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Playbook</);
+    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="false"[^>]*>New project</);
+    expect(out).toContain(dict["lyzr.tab"].en);
+    expect(out).not.toContain("wizard-probe");
+    expect(out).toContain('class="pb-folders"');
+  });
+});

@@ -131,7 +131,8 @@ function inCatalogOrder(addons: string[], catalog: LyzrCatalog | null): string[]
   return [...addons].sort((a, b) => rank(a) - rank(b));
 }
 
-function nameUsable(name: string): boolean {
+/** Whether a project name passes the server's rule; the wizard enables Next on it. */
+export function nameUsable(name: string): boolean {
   return name.length <= NAME_MAX && NAME_RULE.test(name);
 }
 

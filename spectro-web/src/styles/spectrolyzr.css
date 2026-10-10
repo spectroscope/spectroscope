@@ -1,0 +1,392 @@
+/* ============================================================ spectrolyzr
+   The Spectrolyzr wizard (card 484): playbook/spectrolyzr/*.tsx, and the two
+   tabs of the playbook pane header. Imported by app.css, because a surface
+   chunk may carry no stylesheet of its own (surfaceChunks.guard.test.ts).
+
+   Tokens only, the rule playbook.css follows: colour on lines, no shadows,
+   depth as a surface step plus a hairline. The wizard sits inside .pb-pane,
+   whose button rule it builds on; overrides carry the .lyzr scope to win. */
+
+/* ---------- the pane's tabs ---------- */
+.pb-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.pb-pane .pb-tab {
+  border-radius: var(--radius-chip) var(--radius-chip) 0 0;
+  border-bottom-color: var(--border);
+  margin-bottom: -1px;
+}
+.pb-pane .pb-tab.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-bottom-color: var(--bg);
+  background: var(--bg);
+}
+
+/* ---------- frame ---------- */
+.lyzr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  max-width: 1120px;
+  min-width: 0;
+}
+.lyzr-title {
+  margin: 0;
+  font-size: var(--fs-20);
+  font-weight: 500;
+  color: var(--text);
+}
+.lyzr-h {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-11);
+  font-weight: 500;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--sand);
+}
+.lyzr-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+/* ---------- the rail ---------- */
+.lyzr-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lyzr .lyzr-rail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.lyzr .lyzr-rail-step.is-current {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.lyzr .lyzr-rail-step:disabled,
+.lyzr .lyzr-next:disabled,
+.lyzr .lyzr-back:disabled,
+.lyzr .lyzr-generate:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.lyzr-rail-n {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+
+/* ---------- step 1 ---------- */
+.lyzr-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-2);
+}
+.lyzr .lyzr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  text-align: left;
+  white-space: normal;
+  border-radius: var(--radius-card);
+}
+.lyzr .lyzr-card.is-on,
+.lyzr .lyzr-lang.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.lyzr-card-name {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--text);
+}
+.lyzr-card-line {
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lyzr-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.lyzr-cards.is-invalid,
+.lyzr-langs.is-invalid,
+.lyzr-addons.is-invalid {
+  border-left: 2px solid var(--error);
+  padding-left: var(--sp-2);
+}
+
+/* ---------- fields ---------- */
+.lyzr-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex: 1 1 320px;
+  max-width: 560px;
+  min-width: 0;
+}
+.lyzr-label {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.lyzr-input {
+  min-width: 0;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 8px;
+}
+.lyzr-input:focus-visible {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.lyzr-input.is-invalid {
+  border-color: var(--error);
+}
+.lyzr-hint {
+  margin: 0;
+  max-width: 64ch;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lyzr-error {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+  border-left: 2px solid var(--error);
+  padding-left: var(--sp-2);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- step 2 ---------- */
+.lyzr-addons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.lyzr-addon-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+.lyzr-addon {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.lyzr-addon-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lyzr-addon-name {
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+.lyzr-addon-line {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+/* ---------- step 3: the tree beside the reader, stacked when narrow ---------- */
+.lyzr-review {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .lyzr-review {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lyzr-tree {
+  display: flex;
+  flex-direction: column;
+  max-height: 440px;
+  overflow: auto;
+  padding: var(--sp-1) 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.lyzr-tree:focus-visible {
+  outline: 1px solid var(--accent);
+}
+.lyzr-root {
+  padding: var(--sp-1) 6px;
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--sand);
+}
+.lyzr .lyzr-folder,
+.lyzr .lyzr-file {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  padding-top: 2px;
+  padding-bottom: 2px;
+  background: var(--surface);
+  border: 1px solid var(--surface);
+  border-left: 2px solid var(--surface);
+  border-radius: 0;
+}
+.lyzr .lyzr-folder {
+  color: var(--text-dim);
+}
+.lyzr .lyzr-file {
+  color: var(--text);
+}
+.lyzr .lyzr-file.is-selected {
+  color: var(--accent);
+  background: var(--surface-2);
+  border-color: var(--surface-2);
+  border-left-color: var(--accent);
+}
+.lyzr-caret {
+  display: inline-block;
+  width: 1.2em;
+  color: var(--text-dim);
+}
+.lyzr-reader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.lyzr-why {
+  margin: 0;
+  font-size: var(--fs-13);
+  line-height: 1.55;
+  color: var(--text);
+  border-left: 2px solid var(--sand);
+  padding-left: var(--sp-2);
+}
+.lyzr-path {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.lyzr-content {
+  margin: 0;
+  max-height: 380px;
+  overflow: auto;
+  padding: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+/* ---------- summary, folder, generate ---------- */
+.lyzr-summary dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+}
+.lyzr-summary dt {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.lyzr-summary dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .lyzr-summary dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lyzr-summary dd {
+    margin-bottom: var(--sp-1);
+  }
+}
+.lyzr-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+.lyzr-go {
+  display: flex;
+}
+.lyzr .lyzr-generate {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.lyzr-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-left: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text);
+  border-left: 2px solid var(--ok);
+}
+.lyzr-result.is-conflict {
+  border-left-color: var(--warn);
+}
+.lyzr-result p {
+  margin: 0;
+}
+.lyzr-written {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  overflow-wrap: anywhere;
+}
+.lyzr-conflicts {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-4);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Back and Next ---------- */
+.lyzr-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.lyzr .lyzr-next {
+  color: var(--accent);
+  border-color: var(--accent);
+}

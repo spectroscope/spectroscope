@@ -9,6 +9,10 @@
 // anything, and an open editor replaces the graph and the table with the edit
 // layout. While the draft has unsaved changes the folder picker is locked.
 //
+// Card 484 (Task 11): the header carries two tabs, Playbook and New project.
+// The second draws the Spectrolyzr wizard App hands in, so its chunk is
+// requested only when the tab opens or when developer prefetches it.
+//
 // The stylesheet is styles/playbook.css, imported by app.css: a surface chunk
 // carries no stylesheet of its own.
 
@@ -41,8 +45,9 @@ function messageOf(error: unknown): string {
  * @param props.workspace the workspace the folder chip in the header shows
  * @param props.wizard    the Spectrolyzr wizard App built under a ChunkBoundary; the New project tab draws it (card 484, Task 11)
  */
-export function PlaybookPane({ workspace }: { workspace: string | null; wizard?: ReactNode }) {
+export function PlaybookPane({ workspace, wizard }: { workspace: string | null; wizard?: ReactNode }) {
   const lang = useLang();
+  const [tab, setTab] = useState<"playbook" | "lyzr">("playbook");
   const { folders, active } = usePlaybookFolders();
   const loaded = useLoadedPlaybook();
   const ed = useEditorState();
@@ -107,8 +112,43 @@ export function PlaybookPane({ workspace }: { workspace: string | null; wizard?:
   const description = doc?.description ?? p?.description ?? "";
   const dir = ed.dir ?? shown;
 
+  const tabs = (
+    <div className="pb-tabs" role="tablist" aria-label={t(lang, "lyzr.title")}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "playbook"}
+        className={`pb-tab${tab === "playbook" ? " is-on" : ""}`}
+        onClick={() => setTab("playbook")}
+      >
+        {t(lang, "pb.title")}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "lyzr"}
+        className={`pb-tab${tab === "lyzr" ? " is-on" : ""}`}
+        onClick={() => setTab("lyzr")}
+      >
+        {t(lang, "lyzr.tab")}
+      </button>
+    </div>
+  );
+
+  if (tab === "lyzr") {
+    return (
+      <div className="pb-pane">
+        {tabs}
+        <div className="pb-lyzr" role="tabpanel">
+          {wizard}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="pb-pane">
+      {tabs}
       <header className="pb-head">
         <h2 className="pb-title">{title}</h2>
         {description !== "" && <p className="pb-description">{description}</p>}

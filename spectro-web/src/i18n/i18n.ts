@@ -5315,6 +5315,48 @@ export const dict: Record<string, { de: string; en: string }> = {
   "prov.ago": { de: "vor {s} s", en: "{s} s ago" },
   "prov.check": { de: "Prüfen", en: "Check" },
   "prov.checkAll": { de: "Alle prüfen", en: "Check all" },
+  // Card 484: the Spectrolyzr wizard in the playbook segment. The Why sentences
+  // and the names of archetypes and add-ons come from the server's manifest.
+  "lyzr.tab": { de: "Neues Projekt", en: "New project" },
+  "lyzr.title": { de: "Spectrolyzr", en: "Spectrolyzr" },
+  "lyzr.step.project": { de: "Projekt", en: "Project" },
+  "lyzr.step.addons": { de: "Add-ons", en: "Add-ons" },
+  "lyzr.step.review": { de: "Prüfen", en: "Review" },
+  "lyzr.back": { de: "Zurück", en: "Back" },
+  "lyzr.next": { de: "Weiter", en: "Next" },
+  "lyzr.archetype": { de: "Archetyp", en: "Archetype" },
+  "lyzr.language": { de: "Sprache", en: "Language" },
+  "lyzr.name": { de: "Projektname", en: "Project name" },
+  "lyzr.nameRule": {
+    de: "Kleinbuchstaben, Ziffern und einzelne Bindestriche, höchstens 40 Zeichen.",
+    en: "Lower case letters, digits and single hyphens, at most 40 characters.",
+  },
+  "lyzr.playbookDir": { de: "Ordner für das Playbook", en: "Playbook folder" },
+  "lyzr.playbookDirHint": {
+    de: "Ein eigener Ordner neben dem Projekt. Die App verknüpft ihn mit dem Projekt.",
+    en: "A folder of its own beside the project. The app pins it to the project.",
+  },
+  "lyzr.dir": { de: "Projektordner", en: "Project folder" },
+  "lyzr.pick": { de: "Auswählen", en: "Pick" },
+  "lyzr.typePath": { de: "Absoluten Pfad eingeben", en: "Type an absolute path" },
+  "lyzr.pickUnavailable": {
+    de: "Hier gibt es keinen Ordnerdialog. Gib einen absoluten Pfad ein.",
+    en: "No folder dialog here. Type an absolute path.",
+  },
+  "lyzr.pickBusy": { de: "Ein Ordnerdialog ist schon offen.", en: "A folder dialog is already open." },
+  "lyzr.why": { de: "Warum diese Datei", en: "Why this file" },
+  "lyzr.summary": { de: "Zusammenfassung", en: "Summary" },
+  "lyzr.files": { de: "{n} Dateien", en: "{n} files" },
+  "lyzr.none": { de: "keine", en: "none" },
+  "lyzr.notSet": { de: "nicht gesetzt", en: "not set" },
+  "lyzr.loading": { de: "Der Katalog wird gelesen.", en: "Reading the catalog." },
+  "lyzr.testCommand": { de: "Testbefehl", en: "Test command" },
+  "lyzr.checkCommand": { de: "Prüfbefehl", en: "Check command" },
+  "lyzr.generate": { de: "Erzeugen", en: "Generate" },
+  "lyzr.written": { de: "{n} Dateien geschrieben in {dir}", en: "Wrote {n} files into {dir}" },
+  "lyzr.pinned": { de: "Das Playbook ist mit dem Projekt verknüpft.", en: "The playbook is pinned to the project." },
+  "lyzr.conflicts": { de: "Nichts geschrieben, diese Dateien gibt es schon:", en: "Nothing written, these files already exist:" },
+  "lyzr.copyPath": { de: "Pfad kopieren", en: "Copy path" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

@@ -31,6 +31,7 @@
 @import "./styles/stategraph.css";
 @import "./styles/playbook-editor.css"; /* The playbook editor canvas (card 483) */
 @import "./styles/playbook.css"; /* The playbook module (card 481) */
+@import "./styles/spectrolyzr.css"; /* The Spectrolyzr wizard and the pane tabs (card 484) */
 /* The settings page's own list and switch rules. This line was missing: the
    sheet existed, both blocks in it were written and reviewed, and neither had
    ever reached a browser — card 199's whole allowlist list shipped unstyled and
