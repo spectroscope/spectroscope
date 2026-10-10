@@ -258,7 +258,7 @@ why.</p>
   <tr><td>Skills</td><td><code>skills/</code>, one pack folder holding one folder per skill</td><td>Copied to <code>~/.spectro/skills/</code> as a pack, each skill with the playbook's <code>LICENSE</code>, its <code>PROVENANCE.md</code> and a <code>spectro-install.json</code> that names the playbook, the folder and the hash. They are advertised as <code>pack:skill</code>. Every new session sees them, in every mode.</td></tr>
   <tr><td>Commands</td><td><code>commands/</code>, one Markdown file per command</td><td>A one-file skill under the playbook's id, invoked in the message box as <code>/&lt;playbook id&gt;:&lt;name&gt;</code>, with the rest of the message as arguments.</td></tr>
   <tr><td>Hooks</td><td><code>hooks/</code>, a <code>hooks.json</code> and the scripts beside it</td><td>Entries appended to the <code>hooks</code> list of your user settings. The scripts are copied to <code>~/.spectro/playbook-hooks/</code>, in a folder named after the playbook id, and the placeholder <code>{hooks}</code> in a command becomes the path of that folder.</td></tr>
-  <tr><td>Agents</td><td><code>agents/</code>, one Markdown file per agent with a name, a description, a type and a preamble</td><td>Nothing is copied. The agent file is listed with its hash and checked. A step may name it as the role <code>agent:name</code>, and a playbook run will use its preamble once runs follow the playbook. The agent file cannot set a model, a permission or a tool list.</td></tr>
+  <tr><td>Agents</td><td><code>agents/</code>, one Markdown file per agent with a name, a description, a type and a preamble</td><td>Nothing is copied. The agent file is listed with its hash and checked, and the install records that hash. A child step may name it as the role <code>agent:name</code>, and the run starts that child on the type and preamble of the agent file. The run does not start when the agent was never installed (&ldquo;agent not installed&rdquo;) or when the file is no longer the one that was installed (&ldquo;agent changed since install&rdquo;). The agent file cannot set a model, a permission or a tool list.</td></tr>
   <tr><td>Workflows</td><td><code>workflows/</code>, script files</td><td>Listed with their hash and never copied. The product has no workflow runner, so a workflow file is not run.</td></tr>
 </table>
 
@@ -313,8 +313,14 @@ drawing and these parts:</p>
   <li>&ldquo;Skills&rdquo;, each with its source: from the playbook, installed, or missing.</li>
   <li>&ldquo;Commands this run may execute&rdquo;, every command of a <code>command</code> check
   word for word, so a command written in a shared folder is read before it can run.</li>
-  <li>&ldquo;Hash&rdquo;: a sha256 over <code>playbook.json</code>, every template and every
-  file under the skill folders. The sheet shows the first characters.</li>
+  <li>&ldquo;What this playbook brings&rdquo;: the list the install shows, for reading only,
+  with each item's source, state and hash. One line names every item changed since the install,
+  in the playbook folder or in the installed copy, one line counts the items that are not
+  installed, and the full contents hash follows the list. The contents are shown here and are not
+  part of the run hash.</li>
+  <li>&ldquo;Hash&rdquo;: a sha256 over <code>playbook.json</code>, every template, every
+  file under the skill folders and every agent file a step names. The sheet shows the first
+  characters.</li>
 </ul>
 
 <p>&ldquo;Start&rdquo; stays disabled while the sheet lists reasons under
@@ -338,8 +344,9 @@ each named skill and the template of each document it hands on. When the run end
 returns to the model it had before.</p>
 
 <p>A <b>child step</b> runs as a child agent in the role the step names (<code>worker</code> when
-it names none), on the provider of its own model choice, whatever the chat uses. It draws one slot
-from the chat's pool like any other helper.</p>
+it names none), on the provider of its own model choice, whatever the chat uses. A role
+<code>agent:name</code> runs on the type and preamble of that agent file, as pinned at the start.
+It draws one slot from the chat's pool like any other helper.</p>
 
 <p>After a step the runner looks for the files that changed under the location of each document
 the step produces. If the step carries a nod, you are asked whether to approve the handover, and
@@ -458,7 +465,10 @@ and a nested playbook are recognised and refused as not supported in version 1.<
   <li>There is no headless entry. A run starts from the window, and a playbook with a
   <code>human</code> check or a nod is refused when nobody can be asked.</li>
   <li>A shared folder cannot start a run. Only the confirmation sheet does, after you read the
-  commands and the hash.</li>
+  commands, the contents and the hash.</li>
+  <li>An item changed since the install is named in the sheet and does not stop a run by itself.
+  Only an agent file that a step names has to be the file that was installed, or the run does
+  not start.</li>
   <li>Between two steps the chat is idle and its composer is enabled. A message typed then is
   refused with the usual note that a run is active.</li>
   <li>You cannot place a box by hand. The graph carries no coordinates, and the layout engine
