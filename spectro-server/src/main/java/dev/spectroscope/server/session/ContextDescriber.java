@@ -181,7 +181,7 @@ final class ContextDescriber {
                 : Stream.of(skills.useSkillTool(), skills.readSkillFileTool());
         Stream<ContextInfo.ToolInfo> registered = Stream.of(standardTools.stream(), extras.stream(), useSkill)
                 .flatMap(tools -> tools)
-                .map(ContextDescriber::asToolInfo);
+                .map(tool -> asToolInfo(tool, config));
         // Card 490: the spawn tools name the chat's session count when one is
         // set, so the view describes them with this config's count.
         Stream<ContextInfo.ToolInfo> parentOnly = RoleCatalog.parentTools(
@@ -226,11 +226,15 @@ final class ContextDescriber {
     }
 
     /**
-     * Projects one live tool onto its introspection triple.
+     * Projects one live tool onto its introspection triple, with the
+     * description a run of this config carries (card 493: {@code read_file}
+     * and {@code read_skill_file} name the config's read share).
      *
-     * @param tool the real tool object — name, description and gate flag are read from it
+     * @param tool   the real tool object: name, description and gate flag are read from it
+     * @param config the config the run would start with
      */
-    private static ContextInfo.ToolInfo asToolInfo(Tool tool) {
-        return new ContextInfo.ToolInfo(tool.name(), tool.description(), tool.needsPermission());
+    private static ContextInfo.ToolInfo asToolInfo(Tool tool, SpectroConfig config) {
+        return new ContextInfo.ToolInfo(tool.name(),
+                tool.descriptionForRun(new Tool.RunFacts(config.readSharePercent())), tool.needsPermission());
     }
 }

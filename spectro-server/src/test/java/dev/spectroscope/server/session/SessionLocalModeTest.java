@@ -284,6 +284,87 @@ class SessionLocalModeTest {
         assertThat(readLocal(workspace).has("localModeKeys")).isFalse();
     }
 
+    /** Review of card 493: switched on in an unpinned chat, then a folder
+     *  that holds a key set by hand is pinned. Switching off must leave that
+     *  key in the file, and the chat must read it again. */
+    @Test
+    void aFolderPinnedAfterSwitchingOnKeepsTheKeyTheOperatorSetThereByHand(@TempDir Path workspace)
+            throws IOException {
+        writeLocal(workspace, "{ \"sessionsPerChat\": 5 }");
+        FakeSocket socket = new FakeSocket("ws-493-k", "ws://localhost/ws");
+        SessionConnection connection = unpinned(socket);
+        connection.onSetLocalMode(on());
+        connection.onSetWorkspace("set", workspace.toString());
+        assertThat(row(lastFrame(socket, "local_mode_info"), "sessionsPerChat").path("value").asInt())
+                .as("the folder's hand-set value, as if the switch went on in that folder").isEqualTo(5);
+
+        connection.onSetLocalMode(off());
+        JsonNode saved = readLocal(workspace);
+        assertThat(saved.path("sessionsPerChat").asInt()).as("the folder's own hand-set key").isEqualTo(5);
+        assertThat(saved.has("readSharePercent")).isFalse();
+        assertThat(saved.has("localModeKeys")).isFalse();
+        built(connection);
+        topOfPrompt(connection);
+        assertThat(connection.agent().sessionsPerChat()).as("the chat reads the file again").isEqualTo(5);
+    }
+
+    @Test
+    void aFolderPinnedAfterSwitchingOnReceivesTheValuesAndTheRecord(@TempDir Path workspace)
+            throws IOException {
+        FakeSocket socket = new FakeSocket("ws-493-l", "ws://localhost/ws");
+        SessionConnection connection = unpinned(socket);
+        connection.onSetLocalMode(on());
+        connection.onSetLocalMode(edit("readSharePercent", 12));
+        connection.onSetWorkspace("set", workspace.toString());
+        JsonNode saved = readLocal(workspace);
+        assertThat(saved.path("sessionsPerChat").asInt()).isEqualTo(3);
+        assertThat(saved.path("readSharePercent").asInt()).as("the chat's edit").isEqualTo(12);
+        assertThat(saved.path("careParagraph").asText()).isEqualTo("on");
+        assertThat(saved.path("localModeKeys").toString())
+                .isEqualTo("[\"sessionsPerChat\",\"toolGroupsOff\",\"readSharePercent\",\"careParagraph\"]");
+        connection.onSetLocalMode(off());
+        JsonNode after = readLocal(workspace);
+        assertThat(after.has("sessionsPerChat")).isFalse();
+        assertThat(after.has("readSharePercent")).isFalse();
+        assertThat(after.has("localModeKeys")).isFalse();
+    }
+
+    @Test
+    void pickingAnotherFolderGivesTheFirstOneBackWhatItHeld(@TempDir Path first, @TempDir Path second)
+            throws IOException {
+        writeLocal(first, "{ \"maxTurns\": 40 }");
+        SessionConnection connection = sessionIn(new FakeSocket("ws-493-m", "ws://localhost/ws"), first);
+        connection.onSetLocalMode(on());
+        assertThat(readLocal(first).has("localModeKeys")).isTrue();
+        connection.onSetWorkspace("set", second.toString());
+        JsonNode left = readLocal(first);
+        assertThat(left.path("maxTurns").asInt()).isEqualTo(40);
+        assertThat(left.has("sessionsPerChat")).as("the switch's value stayed in the folder it left").isFalse();
+        assertThat(left.has("localModeKeys")).isFalse();
+        assertThat(readLocal(second).path("readSharePercent").asInt()).isEqualTo(10);
+        connection.onSetLocalMode(off());
+        assertThat(readLocal(second).has("localModeKeys")).isFalse();
+    }
+
+    @Test
+    void aSwitchReadFromOneFolderIsNotCarriedIntoAnotherOne(@TempDir Path first, @TempDir Path second)
+            throws IOException {
+        built(sessionIn(new FakeSocket("ws-493-n1", "ws://localhost/ws"), first)).onSetLocalMode(on());
+        JsonNode recorded = readLocal(first);
+
+        FakeSocket socket = new FakeSocket("ws-493-n2", "ws://localhost/ws");
+        SessionConnection connection = sessionIn(socket, first);
+        assertThat(lastFrame(socket, "local_mode_info").path("on").asBoolean()).isTrue();
+        connection.onSetWorkspace("set", second.toString());
+        assertThat(lastFrame(socket, "local_mode_info").path("on").asBoolean())
+                .as("the second folder holds no record").isFalse();
+        assertThat(readLocal(first)).as("the first folder's record was rewritten").isEqualTo(recorded);
+        assertThat(readLocal(second).has("localModeKeys")).isFalse();
+        built(connection);
+        topOfPrompt(connection);
+        assertThat(connection.agent().readSharePercent()).isEqualTo(25);
+    }
+
     @Test
     void anUnpinnedSessionSwitchesInMemoryAndSavesNothing() throws IOException {
         FakeSocket socket = new FakeSocket("ws-493-i", "ws://localhost/ws");

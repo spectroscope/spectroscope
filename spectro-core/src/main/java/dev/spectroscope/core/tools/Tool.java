@@ -63,7 +63,8 @@ public interface Tool {
 
     /**
      * Card 493: the description this tool carries in the requests of one run.
-     * Every tool but {@code read_file} carries {@link #description()}.
+     * Every tool but {@code read_file} and {@code read_skill_file} carries
+     * {@link #description()}.
      *
      * @param run what the run read when it started
      * @return the description

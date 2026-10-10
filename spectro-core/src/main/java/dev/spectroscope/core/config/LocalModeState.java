@@ -63,12 +63,26 @@ public final class LocalModeState {
     public record Row(String key, JsonNode value, JsonNode preset, boolean changed, boolean owned) {
     }
 
+    /**
+     * What to apply when the chat's folder changes while the switch is on.
+     *
+     * @param oldFile key to the value the folder the switch leaves holds now;
+     *                {@link MissingNode} removes the key
+     * @param plan    what to apply to the chat and to the new folder's file
+     */
+    public record Move(Map<String, JsonNode> oldFile, Plan plan) {
+    }
+
     private boolean on;
     private final Set<String> owned = new LinkedHashSet<>();
     /** What the chat held for every knob when the switch went on. */
     private final Map<String, JsonNode> before = new LinkedHashMap<>();
-    /** What the local file held for every knob and the record when it went on. */
+    /** What the local file held for every knob and the record before the
+     *  switch wrote anything there: what switching off gives it back. */
     private final Map<String, JsonNode> fileAtOn = new LinkedHashMap<>();
+    /** What the local file held for every knob and the record when this
+     *  session's switch arrived in the folder: what leaving it gives it back. */
+    private final Map<String, JsonNode> fileFound = new LinkedHashMap<>();
     /** Values the operator set in the switch's rows, kept across off and on. */
     private final Map<String, JsonNode> edits = new LinkedHashMap<>();
 
@@ -112,6 +126,7 @@ public final class LocalModeState {
         owned.clear();
         before.clear();
         fileAtOn.clear();
+        fileFound.clear();
         Map<String, JsonNode> session = new LinkedHashMap<>();
         Map<String, JsonNode> written = new LinkedHashMap<>();
         Map<String, JsonNode> preset = LocalMode.preset();
@@ -128,10 +143,91 @@ public final class LocalModeState {
             }
         }
         fileAtOn.put(LocalMode.RECORD_KEY, file.getOrDefault(LocalMode.RECORD_KEY, MISSING));
+        fileFound.putAll(fileAtOn);
         if (!owned.isEmpty()) {
             written.put(LocalMode.RECORD_KEY, record());
         }
         return new Plan(session, written);
+    }
+
+    /**
+     * The chat's folder changes while the switch is on: the folder is pinned
+     * after the switch went on, or another folder is picked before the first
+     * prompt. The folder the switch leaves gets back what it held when the
+     * switch arrived there, for every key the switch owns and for the record.
+     * In the new folder the switch acts as if it went on there: a knob its
+     * file holds by hand is left as it is and the chat holds the file's value;
+     * every other knob the switch owns is written there with the value the
+     * chat holds. A knob its file holds and its record names was written by
+     * an earlier switch, not by hand. A knob the switch did not own stays as
+     * the chat holds it.
+     *
+     * @param file what the new folder's local file holds per knob and for
+     *             {@link LocalMode#RECORD_KEY}, {@link MissingNode} where it
+     *             holds nothing
+     * @return what to write into the old folder and what to apply
+     * @throws IllegalStateException while the switch is off
+     */
+    public synchronized Move moveFolder(Map<String, JsonNode> file) {
+        if (!on) {
+            throw new IllegalStateException("Local mode is off; there is nothing to move");
+        }
+        Map<String, JsonNode> oldFile = new LinkedHashMap<>();
+        for (String key : owned) {
+            oldFile.put(key, fileFound.getOrDefault(key, MISSING));
+        }
+        oldFile.put(LocalMode.RECORD_KEY, fileFound.getOrDefault(LocalMode.RECORD_KEY, MISSING));
+
+        Set<String> recorded = new LinkedHashSet<>();
+        file.getOrDefault(LocalMode.RECORD_KEY, MISSING).forEach(name -> recorded.add(name.asText()));
+        fileAtOn.clear();
+        fileFound.clear();
+        Map<String, JsonNode> session = new LinkedHashMap<>();
+        Map<String, JsonNode> written = new LinkedHashMap<>();
+        Map<String, JsonNode> preset = LocalMode.preset();
+        for (String key : preset.keySet()) {
+            JsonNode there = file.getOrDefault(key, MISSING);
+            fileFound.put(key, there);
+            boolean handSet = !there.isMissingNode() && !recorded.contains(key);
+            fileAtOn.put(key, recorded.contains(key) ? MISSING : there);
+            if (handSet) {
+                owned.remove(key);
+                session.put(key, LocalMode.canonical(key, there));
+            } else if (owned.contains(key)) {
+                written.put(key, edits.getOrDefault(key, preset.get(key)));
+            }
+        }
+        JsonNode record = file.getOrDefault(LocalMode.RECORD_KEY, MISSING);
+        fileFound.put(LocalMode.RECORD_KEY, record);
+        fileAtOn.put(LocalMode.RECORD_KEY, recorded.isEmpty() ? record : MISSING);
+        if (!owned.isEmpty()) {
+            written.put(LocalMode.RECORD_KEY, record());
+        }
+        return new Move(oldFile, new Plan(session, written));
+    }
+
+    /**
+     * Turns off a switch that was turned on by a folder's record and not used
+     * in this session, when the chat moves to another folder. Writes nothing:
+     * the record stays in the folder it was read from. The values read from
+     * that folder do not come back on the next switch-on.
+     *
+     * @return what to apply: every knob back to what the chat held before
+     */
+    public synchronized Plan drop() {
+        if (!on) {
+            return new Plan(Map.of(), Map.of());
+        }
+        Map<String, JsonNode> session = new LinkedHashMap<>();
+        for (String key : LocalMode.preset().keySet()) {
+            session.put(key, before.getOrDefault(key, MISSING));
+        }
+        on = false;
+        owned.clear();
+        edits.clear();
+        fileAtOn.clear();
+        fileFound.clear();
+        return new Plan(session, Map.of());
     }
 
     /**
@@ -228,10 +324,12 @@ public final class LocalModeState {
         owned.clear();
         before.clear();
         fileAtOn.clear();
+        fileFound.clear();
         Map<String, JsonNode> preset = LocalMode.preset();
         Map<String, JsonNode> session = new LinkedHashMap<>();
         for (String key : preset.keySet()) {
             before.put(key, MISSING);
+            fileFound.put(key, file.getOrDefault(key, MISSING));
             JsonNode value = LocalMode.canonical(key, effective.get(key));
             session.put(key, value);
             if (record.contains(key)) {
@@ -247,6 +345,7 @@ public final class LocalModeState {
             }
         }
         fileAtOn.put(LocalMode.RECORD_KEY, MISSING);
+        fileFound.put(LocalMode.RECORD_KEY, file.getOrDefault(LocalMode.RECORD_KEY, MISSING));
         return new Plan(session, Map.of());
     }
 

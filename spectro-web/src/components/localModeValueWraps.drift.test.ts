@@ -7,7 +7,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import postcss, { type Rule } from "postcss";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { LocalModeSection } from "./LocalModeSection";
 
 const sheet = postcss.parse(readFileSync(join(__dirname, "..", "styles", "workspace-gear.css"), "utf8"));
 
@@ -53,5 +56,79 @@ describe("the Local mode value shows the whole list", () => {
   it("neither forbids the break nor cuts the list with an ellipsis", () => {
     expect(declared(rules, "white-space")).not.toContain("nowrap");
     expect(declared(rules, "text-overflow")).not.toContain("ellipsis");
+  });
+});
+
+/** The class lists of the elements that enclose the first element carrying
+ *  `className`, outermost first, read off rendered markup. */
+function ancestorClasses(html: string, className: string): string[][] {
+  const VOID = new Set(["input", "br", "hr", "img"]);
+  const open: string[][] = [];
+  for (const m of html.matchAll(/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:"[^"]*"|[^">])*)(\/?)>/g)) {
+    const name = (m[2] ?? "").toLowerCase();
+    if (m[1] === "/") {
+      open.pop();
+      continue;
+    }
+    const classes = (/\bclass="([^"]*)"/.exec(m[3] ?? "")?.[1] ?? "").split(/\s+/).filter(Boolean);
+    if (classes.includes(className)) return open.map((c) => [...c]);
+    if (m[4] !== "/" && !VOID.has(name)) open.push(classes);
+  }
+  throw new Error(`no element carries ${className}`);
+}
+
+/** Declarations that clip a box or cut its text, as "prop: value". */
+function clipping(rules: Rule[]): string[] {
+  const out: string[] = [];
+  for (const rule of rules) {
+    rule.walkDecls((d) => {
+      const prop = d.prop.toLowerCase();
+      const value = d.value.trim().toLowerCase();
+      const clips =
+        (/^overflow(-x|-y)?$/.test(prop) && /\b(hidden|clip)\b/.test(value)) ||
+        prop === "max-height" ||
+        prop === "height" ||
+        /line-clamp$/.test(prop) ||
+        (prop === "white-space" && value.includes("nowrap")) ||
+        (prop === "text-overflow" && value.includes("ellipsis"));
+      if (clips) out.push(`${rule.selector} { ${d.prop}: ${d.value} }`);
+    });
+  }
+  return out;
+}
+
+describe("nothing around the Local mode value cuts it off", () => {
+  const groups = ["browser", "launch", "images", "roles"];
+  const html = renderToStaticMarkup(
+    createElement(LocalModeSection, {
+      lang: "de",
+      info: {
+        on: true,
+        rows: [{ key: "toolGroupsOff", value: groups, preset: groups, changed: false, floor: null }],
+      },
+      toolUse: null,
+      model: "some-model",
+      onSwitch: () => {},
+      onEdit: () => {},
+      onReset: () => {},
+    }),
+  );
+  const ancestors = ancestorClasses(html, "wsg-lm-value");
+
+  it("reads the enclosing elements off the rendered row", () => {
+    const flat = ancestors.flat();
+    expect(flat).toContain("wsg-local-mode");
+    expect(flat).toContain("wsg-lm-line");
+  });
+
+  it("finds a clip when one is declared", () => {
+    const fixture = postcss.parse(".a { overflow: hidden } .b { max-height: 2em } .c { overflow: auto }");
+    expect(clipping(fixture.nodes as Rule[])).toEqual([".a { overflow: hidden }", ".b { max-height: 2em }"]);
+  });
+
+  it("declares no clip, no fixed height and no cut text on the value or any element around it", () => {
+    const classes = [...new Set([...ancestors.flat(), "wsg-lm-value"])];
+    const found = classes.flatMap((c) => clipping(rulesFor(c)));
+    expect(found).toEqual([]);
   });
 });

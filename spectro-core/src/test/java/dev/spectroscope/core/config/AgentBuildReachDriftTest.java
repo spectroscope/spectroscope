@@ -18,6 +18,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -271,6 +272,34 @@ class AgentBuildReachDriftTest {
                         + " whichever face happens to read it and no other, which is card 364");
     }
 
+    /** A live reading of the right name and the right type. */
+    private record RightLiveReading(java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff) {
+    }
+
+    /** A live reading of the right name and the wrong element type. */
+    private record WrongLiveReading(java.util.function.Supplier<String> toolGroupsOff) {
+    }
+
+    /** A live reading of a key no entry of the table names. */
+    private record UnlistedLiveReading(java.util.function.Supplier<Integer> maxTurns) {
+    }
+
+    /**
+     * Review of card 493: a {@code Supplier} counts as carrying a key only
+     * when the table of live readings names that key with that exact type. A
+     * Supplier of the right name and the wrong type, or of a key the table
+     * does not name, carries nothing.
+     */
+    @Test
+    void aLiveReadingCarriesAKeyOnlyAtTheTypeTheTableNames() {
+        List<String> keys = List.of("toolGroupsOff", "maxTurns");
+        assertEquals(List.of("toolGroupsOff"), keysCarriedBy(RightLiveReading.class, keys));
+        assertEquals(List.of(), keysCarriedBy(WrongLiveReading.class, keys),
+                "a Supplier of the wrong element type was taken as the key");
+        assertEquals(List.of(), keysCarriedBy(UnlistedLiveReading.class, keys),
+                "a Supplier of a key the table does not name was taken as the key");
+    }
+
     @Test
     void everyRefusalIsNamedInThePublishedRowOfTheKeyItRefuses() throws IOException {
         Path root = repoRoot();
@@ -430,19 +459,49 @@ class AgentBuildReachDriftTest {
         for (var component : SpectroConfig.class.getRecordComponents()) {
             Class<?> configType = boxed(component.getType());
             for (Map<String, Class<?>> target : targets) {
-                Class<?> targetType = target.get(component.getName());
-                // Card 493: a Supplier of the same name is a LIVE reading of the
-                // key, which is how card 466 hands toolGroupsOff to an agent.
-                // The type rule alone left that key governed by nothing, and it
-                // is a key the Local mode switch writes.
-                if (configType.equals(targetType)
-                        || java.util.function.Supplier.class.equals(targetType)) {
+                if (configType.equals(target.get(component.getName()))) {
                     keys.add(component.getName());
                     break;
                 }
             }
+            if (!keys.contains(component.getName())) {
+                for (Chain chain : CHAINS) {
+                    if (isListedLiveReading(chain.target(), component.getName())) {
+                        keys.add(component.getName());
+                        break;
+                    }
+                }
+            }
         }
         return keys;
+    }
+
+    /**
+     * Card 493: the keys an agent reads LIVE, through a {@code Supplier}
+     * rather than a value, with the exact type of that Supplier. Card 466
+     * hands {@code toolGroupsOff} to an agent this way, parsed into groups,
+     * and the Local mode switch writes that key. The type rule above cannot
+     * see it, because the config holds the names and the agent the groups.
+     * A Supplier of another type, or of a key this table does not name,
+     * carries nothing.
+     */
+    private static final Map<String, String> LIVE_READINGS = Map.of(
+            "toolGroupsOff",
+            "java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>>");
+
+    /** @param record a target record @param key a settings key
+     *  @return whether the record reads the key live, at the type {@link #LIVE_READINGS} names */
+    private static boolean isListedLiveReading(Class<?> record, String key) {
+        String type = LIVE_READINGS.get(key);
+        if (type == null) {
+            return false;
+        }
+        for (var component : record.getRecordComponents()) {
+            if (component.getName().equals(key)) {
+                return type.equals(component.getGenericType().getTypeName());
+            }
+        }
+        return false;
     }
 
     /** One record's components, by name, with primitives boxed.
@@ -459,8 +518,8 @@ class AgentBuildReachDriftTest {
 
     /** Which of the governed keys one builder's target record can carry, by the
      *  same rule that produced the keys: a component of the same name whose
-     *  boxed type matches {@link SpectroConfig}', or a {@code Supplier} of the
-     *  same name (card 493).
+     *  boxed type matches {@link SpectroConfig}', or a live reading of the
+     *  exact type {@link #LIVE_READINGS} names (card 493).
      *
      *  <p>The comparison is against the CONFIG's type rather than any one
      *  target's, because a key is governed as soon as some target matches the
@@ -480,8 +539,7 @@ class AgentBuildReachDriftTest {
         List<String> keys = new ArrayList<>();
         for (String key : governed) {
             Class<?> here = carried.get(key);
-            if (here != null && (here.equals(config.get(key))
-                    || java.util.function.Supplier.class.equals(here))) {
+            if (here != null && (here.equals(config.get(key)) || isListedLiveReading(target, key))) {
                 keys.add(key);
             }
         }

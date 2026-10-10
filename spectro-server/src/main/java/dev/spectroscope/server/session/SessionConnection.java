@@ -208,6 +208,10 @@ public final class SessionConnection {
     /** Card 493: why the last write of the switch into the local file did not
      *  happen, or null. */
     private volatile String localModeSaveError;
+
+    /** Card 493: the folder whose local file holds what the switch wrote, or
+     *  null while the switch is off or the chat has no pinned folder. */
+    private volatile Path localModeFolder;
     /** Card 459: true once the operator switched this session's backend. A
      *  switch, even back to the connect-time pair, outranks the workspace. */
     private volatile boolean providerTouched;
@@ -1078,6 +1082,7 @@ public final class SessionConnection {
         localModeTouched = true;
         if (on.isBoolean()) {
             applyLocalModePlan(on.asBoolean() ? switchLocalModeOn() : localMode.switchOff());
+            localModeFolder = localMode.on() ? savedToolGroupsFolder() : null;
         }
         for (java.util.Map.Entry<String, JsonNode> entry : values.properties()) {
             applyLocalModePlan(localMode.edit(entry.getKey(), entry.getValue()));
@@ -1120,8 +1125,23 @@ public final class SessionConnection {
      * @param folder the pinned or resolved folder, or null
      */
     private void seedLocalModeFrom(Path folder) {
-        if (folder == null || localModeTouched || localMode.on()) {
+        if (folder == null) {
             return;
+        }
+        if (localModeTouched) {
+            if (localMode.on()) {
+                moveLocalModeTo(savedToolGroupsFolder());
+            }
+            return;
+        }
+        if (localMode.on()) {
+            if (folder.equals(localModeFolder)) {
+                return;
+            }
+            // Turned on by another folder's record and not used here: that
+            // record stays where it is, and this folder speaks for itself.
+            applyLocalModePlan(localMode.drop());
+            localModeFolder = null;
         }
         SpectroConfig folderConfig;
         try {
@@ -1140,7 +1160,42 @@ public final class SessionConnection {
             effective.put(key, dev.spectroscope.core.config.LocalMode.valueIn(folderConfig, key));
             file.put(key, local.path(key));
         }
+        file.put(dev.spectroscope.core.config.LocalMode.RECORD_KEY,
+                local.path(dev.spectroscope.core.config.LocalMode.RECORD_KEY));
         applyLocalModePlan(localMode.adopt(record, effective, file));
+        localModeFolder = folder;
+    }
+
+    /**
+     * Takes a switch used in this session to the chat's folder when that
+     * folder changes: pinned after the switch went on, or another folder
+     * picked before the first prompt. The folder it leaves gets back what it
+     * held when the switch arrived; the new folder gets the switch's values
+     * and record, and keeps every key its file holds by hand.
+     *
+     * @param target the chat's pinned folder now, or null
+     */
+    private void moveLocalModeTo(Path target) {
+        Path left = localModeFolder;
+        if (java.util.Objects.equals(target, left)) {
+            return;
+        }
+        JsonNode local = readLocalFile(target);
+        Map<String, JsonNode> file = new java.util.LinkedHashMap<>();
+        for (String key : dev.spectroscope.core.config.LocalMode.preset().keySet()) {
+            file.put(key, local.path(key));
+        }
+        file.put(dev.spectroscope.core.config.LocalMode.RECORD_KEY,
+                local.path(dev.spectroscope.core.config.LocalMode.RECORD_KEY));
+        dev.spectroscope.core.config.LocalModeState.Move move = localMode.moveFolder(file);
+        if (left != null) {
+            String failed = saveLocalModeIn(left, move.oldFile());
+            if (failed != null) {
+                localModeSaveError = failed;
+            }
+        }
+        localModeFolder = target;
+        applyLocalModePlan(move.plan());
     }
 
     /**
@@ -1301,7 +1356,17 @@ public final class SessionConnection {
      * @return null when written or when there is no folder to write to, else the reason
      */
     private String saveLocalMode(Map<String, JsonNode> values) {
-        Path folder = savedToolGroupsFolder();
+        return saveLocalModeIn(savedToolGroupsFolder(), values);
+    }
+
+    /**
+     * Writes the file half of a plan into one folder's local scope.
+     *
+     * @param folder the folder, or null for none
+     * @param values key to value; MissingNode removes the key
+     * @return null when written or when there is no folder to write to, else the reason
+     */
+    private String saveLocalModeIn(Path folder, Map<String, JsonNode> values) {
         if (folder == null) {
             return null;
         }

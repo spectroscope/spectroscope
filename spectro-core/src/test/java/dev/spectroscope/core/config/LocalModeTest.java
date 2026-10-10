@@ -166,6 +166,94 @@ class LocalModeTest {
         assertFalse(off.file().containsKey("careParagraph"), "a key the record does not name was removed");
     }
 
+    /** A folder's local file: every knob MISSING, then the given entries. */
+    private static Map<String, JsonNode> fileWith(Map<String, JsonNode> entries) {
+        Map<String, JsonNode> file = nothingHeld();
+        file.put(LocalMode.RECORD_KEY, MISSING);
+        file.putAll(entries);
+        return file;
+    }
+
+    /** Review of card 493: a folder pinned after the switch went on, with a
+     *  key the operator set there by hand. */
+    @Test
+    void aFolderPinnedAfterSwitchingOnKeepsItsHandSetKeyAndReceivesTheRest() {
+        LocalModeState state = new LocalModeState();
+        state.switchOn(nothingHeld(), shipped(), Set.of(), nothingHeld());
+        state.edit("readSharePercent", NODES.numberNode(12));
+
+        LocalModeState.Move move = state.moveFolder(fileWith(Map.of("sessionsPerChat", NODES.numberNode(5))));
+        assertEquals(5, move.plan().session().get("sessionsPerChat").asInt(),
+                "the folder's hand-set value must win, as if the switch went on in that folder");
+        assertFalse(state.owned().contains("sessionsPerChat"));
+        assertFalse(move.plan().file().containsKey("sessionsPerChat"), "the switch overwrote a hand-set key");
+        assertEquals(12, move.plan().file().get("readSharePercent").asInt(), "the chat's edit must reach the folder");
+        assertEquals("on", move.plan().file().get("careParagraph").asText());
+        assertEquals("[\"toolGroupsOff\",\"readSharePercent\",\"careParagraph\"]",
+                move.plan().file().get(LocalMode.RECORD_KEY).toString());
+
+        LocalModeState.Plan off = state.switchOff();
+        assertFalse(off.file().containsKey("sessionsPerChat"), "switching off touched the folder's hand-set key");
+        assertTrue(off.file().get("readSharePercent").isMissingNode());
+        assertTrue(off.file().get(LocalMode.RECORD_KEY).isMissingNode());
+        assertTrue(off.session().get("sessionsPerChat").isMissingNode(),
+                "the chat must read the key from the files again, where the hand-set 5 still stands");
+    }
+
+    @Test
+    void leavingAFolderGivesItBackWhatItHeldWhenTheSwitchArrived() {
+        LocalModeState state = new LocalModeState();
+        Map<String, JsonNode> fileA = fileWith(Map.of("sessionsPerChat", NODES.numberNode(4)));
+        Map<String, JsonNode> effective = shipped();
+        effective.put("sessionsPerChat", NODES.numberNode(4));
+        state.switchOn(nothingHeld(), effective, Set.of("sessionsPerChat"), fileA);
+
+        LocalModeState.Move move = state.moveFolder(fileWith(Map.of()));
+        assertFalse(move.oldFile().containsKey("sessionsPerChat"), "the old folder's hand-set key was touched");
+        for (String key : List.of("toolGroupsOff", "readSharePercent", "careParagraph", LocalMode.RECORD_KEY)) {
+            assertTrue(move.oldFile().get(key).isMissingNode(), key + " stays in the folder the switch left");
+        }
+        assertFalse(move.plan().session().containsKey("sessionsPerChat"),
+                "a key the switch does not own keeps the value the chat holds");
+        assertEquals(10, move.plan().file().get("readSharePercent").asInt());
+    }
+
+    @Test
+    void aRecordInTheNewFolderIsTheSwitchsOwnWritingAndLeavesWithIt() {
+        LocalModeState state = new LocalModeState();
+        state.switchOn(nothingHeld(), shipped(), Set.of(), nothingHeld());
+        LocalModeState.Move move = state.moveFolder(fileWith(Map.of(
+                "readSharePercent", NODES.numberNode(12),
+                LocalMode.RECORD_KEY, JSON.createArrayNode().add("readSharePercent"))));
+        assertTrue(state.owned().contains("readSharePercent"), "a key the folder's record names is the switch's");
+        assertEquals(10, move.plan().file().get("readSharePercent").asInt(), "the chat's switch value must win");
+        LocalModeState.Plan off = state.switchOff();
+        assertTrue(off.file().get("readSharePercent").isMissingNode());
+        assertTrue(off.file().get(LocalMode.RECORD_KEY).isMissingNode());
+    }
+
+    @Test
+    void anAdoptedSwitchIsDroppedWithoutWritingAndItsValuesDoNotComeBack() {
+        LocalModeState state = new LocalModeState();
+        Map<String, JsonNode> fromFile = new LinkedHashMap<>(LocalMode.preset());
+        fromFile.put("sessionsPerChat", NODES.numberNode(2));
+        state.adopt(List.of("sessionsPerChat"), fromFile, fileWith(Map.of()));
+        LocalModeState.Plan dropped = state.drop();
+        assertFalse(state.on());
+        assertTrue(dropped.file().isEmpty(), "dropping must not write the folder");
+        for (String key : LocalMode.preset().keySet()) {
+            assertTrue(dropped.session().get(key).isMissingNode(), key + " is still held");
+        }
+        LocalModeState.Plan again = state.switchOn(nothingHeld(), shipped(), Set.of(), nothingHeld());
+        assertEquals(3, again.session().get("sessionsPerChat").asInt(), "the other folder's value came back");
+    }
+
+    @Test
+    void theFolderDoesNotMoveWhileTheSwitchIsOff() {
+        LocalModeState state = new LocalModeState();
+        assertThrows(IllegalStateException.class, () -> state.moveFolder(fileWith(Map.of())));
+    }
+
     @Test
     void theValueOfEveryKnobIsCheckedAgainstItsFloorAndItsKnownValues() {
         assertNull(LocalMode.refusal("sessionsPerChat", NODES.numberNode(2)));
