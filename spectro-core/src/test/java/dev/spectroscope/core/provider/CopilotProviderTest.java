@@ -1108,6 +1108,118 @@ class CopilotProviderTest {
         assertEquals("bee", delivered.get("toolu_b").path("result").path("textResultForLlm").asText());
     }
 
+    // ---- final round, 2026-10-10: the reasoning contract and the reviewer's open pins ----
+
+    @Test
+    void theCompletionBudgetNeverReachesTheRuntime() throws Exception {
+        // ProviderRequest#maxTokens has no counterpart in the SDK: it is dropped, and nothing claims otherwise.
+        start("claude-sonnet-5");
+        runtime.onSend(says("ok"));
+        drain(provider.stream(new ProviderRequest("s", List.of(user("hi")), List.of(), 7777, Reasoning.DEFAULT,
+                null, new CancelSignal())));
+        String everything = runtime.requests().toString();
+        assertTrue(runtime.requests("session.send").size() == 1, everything);
+        assertFalse(everything.contains("7777"), everything);
+        assertFalse(everything.toLowerCase(java.util.Locale.ROOT).contains("maxtokens")
+                || everything.contains("max_tokens") || everything.contains("maxOutputTokens"), everything);
+    }
+
+    @Test
+    void reasoningOnWithoutAnEffortSendsNoLevelBecauseThereIsNoOnSwitch() throws Exception {
+        start("claude-sonnet-5"); // lists low, medium and high
+        runtime.onSend(says("ok"));
+        drain(provider.stream(ask("s", List.of(user("hi")), List.of(), Reasoning.ON, null, new CancelSignal())));
+        assertTrue(createParams(0).path("reasoningEffort").isMissingNode()
+                || createParams(0).path("reasoningEffort").isNull(), createParams(0).toString());
+        assertEquals(1, runtime.requests("session.create").size());
+    }
+
+    @Test
+    void reasoningOnWithAListedEffortSendsThatEffortAndNothingMore() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("ok"));
+        drain(provider.stream(ask("s", List.of(user("hi")), List.of(), Reasoning.ON, "medium", new CancelSignal())));
+        assertEquals("medium", createParams(0).path("reasoningEffort").asText(), createParams(0).toString());
+    }
+
+    @Test
+    void aLaterRequestThatResolvesToNoLevelKeepsTheLevelTheSessionRunsAt() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("Blue."));
+        runtime.onSend(says("Green."));
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Pick a colour.")));
+        drain(provider.stream(ask("s", history, List.of(), Reasoning.DEFAULT, "high", new CancelSignal())));
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.of(new TextContent("Blue."))));
+        history.add(user("Another one."));
+        drain(provider.stream(ask("s", history, List.of(), Reasoning.DEFAULT, "max", new CancelSignal())));
+
+        assertEquals("high", createParams(0).path("reasoningEffort").asText());
+        assertEquals(1, runtime.requests("session.create").size());
+        assertEquals(List.of(), runtime.requests("session.model.switchTo"), runtime.requests().toString());
+        assertEquals(2, runtime.requests("session.send").size());
+    }
+
+    @Test
+    void theRuntimeStartsWithNoTokenInAnyEnvironmentVariableOrClientOption() {
+        Map<String, String> env = new HashMap<>(Map.of("PATH", "/usr/bin", "HOME", "/home/someone"));
+        CopilotProvider.TOKEN_VARIABLES.forEach(name -> env.put(name, "fixtureTokenNotReal-" + name));
+        CopilotProvider.TokenSource source = (host, reason) -> new CopilotProvider.Token("fixtureTokenNotReal", 60);
+
+        var withSource = CopilotProvider.clientOptions(
+                new CopilotProvider.Options("claude-sonnet-5", "/opt/homebrew/bin/copilot", source, false), env);
+        var storedLogin = CopilotProvider.clientOptions(
+                new CopilotProvider.Options("claude-sonnet-5", "/opt/homebrew/bin/copilot", null, true), env);
+        var neither = CopilotProvider.clientOptions(
+                new CopilotProvider.Options("claude-sonnet-5", "/opt/homebrew/bin/copilot", null, false), env);
+
+        for (var options : List.of(withSource, storedLogin, neither)) {
+            assertEquals(Map.of("PATH", "/usr/bin", "HOME", "/home/someone"), options.getEnvironment());
+            assertNull(options.getGitHubToken(), "a token is never a client option");
+            assertEquals("/opt/homebrew/bin/copilot", options.getCliPath());
+            assertFalse(String.valueOf(options.getCliArgs() == null ? "" : String.join(" ", options.getCliArgs()))
+                    .contains("fixtureTokenNotReal"));
+        }
+        assertEquals(java.util.Optional.of(false), withSource.getUseLoggedInUser(),
+                "a token source means the stored login is never read");
+        assertEquals(java.util.Optional.of(true), storedLogin.getUseLoggedInUser(),
+                "the stored login only when the user chose it");
+        assertEquals(java.util.Optional.of(false), neither.getUseLoggedInUser());
+    }
+
+    @Test
+    void theRealHarnessToolsKeepTheirNamesAndOverrideTheBuiltInsWithoutSkippingThePermissionCheck()
+            throws Exception {
+        List<ToolSpec> belt = dev.spectroscope.core.tools.StandardTools.all(60).stream()
+                .map(tool -> new ToolSpec(tool.name(), tool.description(), tool.inputSchema()))
+                .toList();
+        List<String> names = belt.stream().map(ToolSpec::name).toList();
+        assertTrue(names.contains("glob") && names.contains("grep"), names.toString());
+        start("claude-sonnet-5");
+        Map<String, String> answers = new HashMap<>();
+        runtime.onSend(turn -> {
+            answers.put("glob", turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "c1",
+                    "toolName", "glob")));
+            answers.put("shell", turn.askPermission(Map.of("kind", "shell", "toolCallId", "c2",
+                    "fullCommandText", "ls")));
+            turn.delta("ok");
+            turn.usage(10, 1, 0, 0, "stop");
+            turn.idle();
+        });
+
+        drain(provider.stream(ask(List.of(user("hi")), belt, new CancelSignal())));
+
+        JsonNode tools = runtime.createParams().path("tools");
+        List<String> registered = new ArrayList<>();
+        tools.forEach(t -> registered.add(t.path("name").asText()));
+        assertEquals(names, registered, "every harness tool, under its own name, in the belt's order");
+        tools.forEach(t -> {
+            assertTrue(t.path("overridesBuiltInTool").asBoolean(false), t.toString());
+            assertFalse(t.path("skipPermission").asBoolean(false), "the permission request still comes: " + t);
+        });
+        assertEquals("approve-once", answers.get("glob"), answers.toString());
+        assertEquals("reject", answers.get("shell"), answers.toString());
+    }
+
     /** Collects what the provider puts on the wire record. */
     private static final class RecordingTap implements LlmWireTap {
         final List<WireRequest> requests = new CopyOnWriteArrayList<>();

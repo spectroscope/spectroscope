@@ -154,6 +154,28 @@ public interface LlmProvider {
     /**
      * Everything one model call needs — the loop assembles it fresh per turn.
      *
+     * <p><b>What a provider may drop.</b> A field a provider has no counterpart
+     * for is dropped, and the drop is written here. {@link CopilotProvider}
+     * (card 494) drops these, each pinned in {@code CopilotProviderTest}:</p>
+     * <ul>
+     * <li>{@code maxTokens}, always: the Copilot SDK has no output limit per
+     * session or per message, so a turn ends at the runtime's own limit.</li>
+     * <li>{@code reasoning} {@link Reasoning#ON}: the SDK has no on switch. A
+     * model that lists effort levels reasons at its default unless
+     * {@code effort} names a listed level.</li>
+     * <li>{@code reasoning} {@link Reasoning#OFF} on a model whose list has no
+     * {@code none} level (the Claude models Copilot serves).</li>
+     * <li>{@code effort} when the chosen model does not list it, and every
+     * effort when the model list is unavailable or does not describe the
+     * model ({@code auto}).</li>
+     * <li>The change itself when a later request resolves to no level: the
+     * runtime session keeps the level it runs at, because the SDK cannot clear
+     * one.</li>
+     * </ul>
+     * <p>{@code system}, {@code messages}, {@code tools}, {@code signal} and
+     * {@code tap} are used in full, except that a document beside a tool result
+     * reaches a Copilot model as a note naming it.</p>
+     *
      * @param system    the system prompt sent with every request
      * @param messages  the conversation history, oldest first
      * @param tools     the tools advertised to the model (may be empty)

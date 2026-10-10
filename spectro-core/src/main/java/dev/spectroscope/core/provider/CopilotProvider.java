@@ -399,6 +399,25 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         return copy;
     }
 
+    /**
+     * What the runtime process is started with. No token travels as a client
+     * option or in an environment variable: the environment is
+     * {@link #runtimeEnvironment(Map)}, the token reaches the runtime through
+     * the session's token callback only, and the stored CLI login is read only
+     * when the user chose it and no token source is given.
+     *
+     * @param options the provider options
+     * @param env     the environment to start from
+     * @return the client options for a runtime started from {@code options.cliPath()}
+     */
+    static CopilotClientOptions clientOptions(Options options, Map<String, String> env) {
+        return new CopilotClientOptions()
+                .setCliPath(options.cliPath())
+                .setLogLevel("warning")
+                .setUseLoggedInUser(options.tokenSource() == null && options.useStoredLogin())
+                .setEnvironment(runtimeEnvironment(env));
+    }
+
     private void requireSupportedPlatform() {
         if (!supportedPlatform(osName)) {
             throw new UnsupportedOperationException("copilot: not supported on this platform (" + osName
@@ -585,19 +604,16 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         if (client != null) {
             return client;
         }
-        CopilotClientOptions clientOptions = new CopilotClientOptions();
+        CopilotClientOptions clientOptions;
         if (cliUrl != null) {
-            clientOptions.setCliUrl(cliUrl);
+            clientOptions = new CopilotClientOptions().setCliUrl(cliUrl);
         } else {
             String path = options.cliPath();
             if (path == null || path.isBlank()) {
                 throw new IllegalStateException("copilot: no runtime is configured; install the Copilot CLI"
                         + " and name the path of its copilot executable");
             }
-            clientOptions.setCliPath(path)
-                    .setLogLevel("warning")
-                    .setUseLoggedInUser(options.tokenSource() == null && options.useStoredLogin())
-                    .setEnvironment(runtimeEnvironment(System.getenv()));
+            clientOptions = clientOptions(options, System.getenv());
         }
         CopilotClient started = new CopilotClient(clientOptions);
         try {
