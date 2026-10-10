@@ -2,6 +2,7 @@ package dev.spectroscope.core.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.playbook.Playbook;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -193,11 +194,46 @@ class PlaybookGuideDriftTest {
                 PART + " has no h2 \"Installing what a playbook brings\"");
     }
 
+    /** The folder names a playbook can carry: the components of the contents record, read by reflection. */
+    private static List<String> contentKinds() {
+        List<String> kinds = new ArrayList<>();
+        for (java.lang.reflect.RecordComponent c : Playbook.Contents.class.getRecordComponents()) {
+            kinds.add(c.getName());
+        }
+        return kinds;
+    }
+
+    @Test
+    void theLoaderChecksTheSameKindsTheContentsRecordNames() throws IOException {
+        Path root = rootOrSkip();
+        String loader = Files.readString(root.resolve(
+                "spectro-server/src/main/java/dev/spectroscope/server/playbooks/PlaybookLoader.java"));
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("lists\\.put\\(\"([a-z]+)\"").matcher(loader);
+        List<String> checked = new ArrayList<>();
+        while (m.find()) {
+            checked.add(m.group(1));
+        }
+        assertEquals(contentKinds().stream().sorted().toList(), checked.stream().sorted().toList(),
+                "PlaybookLoader.contentsFindings checks other kinds than the contents record declares");
+    }
+
+    @Test
+    void theAgentsRowPromisesNoRunTheRunnerCannotDoYet() throws IOException {
+        String section = installSection(chapter(rootOrSkip()));
+        assertFalse(section.contains("runs a child agent"),
+                "the Agents row says a step runs a child agent with the preamble: the runner does not resolve "
+                        + "agent:name yet (cards 482 and P3), and the chapter says runs do not follow the playbook");
+        assertTrue(section.contains("once runs follow the playbook"),
+                "the Agents row does not say that using the preamble waits for runs that follow the playbook");
+    }
+
     @Test
     void theInstallSectionNamesEveryKindAndWhatEachBecomes() throws IOException {
         String section = installSection(chapter(rootOrSkip()));
         List<String> missing = new ArrayList<>();
-        for (String kind : List.of("skills", "commands", "hooks", "agents", "workflows")) {
+        List<String> kinds = contentKinds();
+        assertTrue(kinds.size() >= 5, "the contents record lost kinds: " + kinds);
+        for (String kind : kinds) {
             if (!section.contains("<code>" + kind + "/</code>")) {
                 missing.add(kind);
             }
