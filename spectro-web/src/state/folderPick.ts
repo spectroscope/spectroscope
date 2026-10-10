@@ -4,9 +4,11 @@
 // uses (WorkspacePickController). It answers 200 with the path, 204 on a
 // cancel, 409 while another dialog is open and 501 where the platform has no
 // dialog. A pick only fills the field; a note per field says what went wrong,
-// and it lives here so a static render can read it.
+// and it lives here so a static render can read it. A field clears its own
+// note when it mounts and when it unmounts, so a note never greets the next
+// visit to the segment.
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "./lang";
 
@@ -57,6 +59,10 @@ export async function chooseFolder(slot: PickSlot, apply: (path: string) => void
 /** The note of a slot in the current language, or null. */
 export function usePickNote(slot: PickSlot): string | null {
   const lang = useLang();
+  useEffect(() => {
+    setNote(slot, null);
+    return () => setNote(slot, null);
+  }, [slot]);
   const key = useSyncExternalStore(
     subscribe,
     () => notes[slot],
