@@ -41,7 +41,7 @@ class SessionLocalModeTest {
         Path file = SettingsWriter.userSettingsFile();
         previousUserSettings = Files.exists(file) ? Files.readString(file) : null;
         Files.createDirectories(file.getParent());
-        Files.writeString(file, "{ \"provider\": \"ollama\", \"model\": \"qwen3:latest\" }");
+        Files.writeString(file, "{ \"provider\": \"ollama\", \"model\": \"qwen2.5:7b\" }");
     }
 
     @AfterEach
