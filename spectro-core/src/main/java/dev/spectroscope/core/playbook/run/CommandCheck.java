@@ -3,6 +3,7 @@ package dev.spectroscope.core.playbook.run;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.PermissionBroker;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.tools.ShellCommand;
 
@@ -24,7 +25,10 @@ public final class CommandCheck {
     /** The name the check asks the permission gate under. */
     public static final String GATE_NAME = "playbook_check";
     /** The wall clock budget of one check line, in seconds. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     public static final long TIMEOUT_SECONDS = 900;
+    /** How many characters of a check line's output are kept, the tail, for the sidecar and the failure text. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     static final int MAX_OUTPUT_CHARS = 4000;
     private static final Pattern VAR = Pattern.compile("\\{([A-Za-z_][A-Za-z0-9_]*)}");
 

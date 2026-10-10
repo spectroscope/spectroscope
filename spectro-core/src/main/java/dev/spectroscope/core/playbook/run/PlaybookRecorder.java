@@ -1,6 +1,7 @@
 package dev.spectroscope.core.playbook.run;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.graph.Redaction;
 
 import java.io.IOException;
@@ -25,6 +26,8 @@ import java.util.regex.Pattern;
  */
 public final class PlaybookRecorder implements AutoCloseable {
 
+    /** The size at which the sidecar stops growing and writes one truncation line. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     public static final long DEFAULT_CEILING_BYTES = 16L * 1024 * 1024;
     public static final Set<String> TYPES = Set.of("playbook_start", "step_start", "step_end", "check", "nod",
             "privacy", "playbook_end");

@@ -770,6 +770,36 @@
     "explanation" : "The separator between the tool segment and the tier qualifier."
   },
   {
+    "owner" : "dev.spectroscope.core.playbook.run.CommandCheck",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "4000",
+    "expression" : "4000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How many characters of a check line's output are kept, the tail, for the sidecar and the failure text."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.CommandCheck",
+    "field" : "TIMEOUT_SECONDS",
+    "value" : "900",
+    "expression" : "900",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The wall clock budget of one check line, in seconds."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.PlaybookRecorder",
+    "field" : "DEFAULT_CEILING_BYTES",
+    "value" : "16777216",
+    "expression" : "16L * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The size at which the sidecar stops growing and writes one truncation line."
+  },
+  {
     "owner" : "dev.spectroscope.core.progress.ProgressGuard",
     "field" : "MAX_PATH_LIST_CHARS",
     "value" : "160",
