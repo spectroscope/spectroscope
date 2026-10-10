@@ -1,6 +1,7 @@
 package dev.spectroscope.server.playbooks;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.playbook.PlaybookReader;
 import dev.spectroscope.core.playbook.run.PinnedPlaybook;
 import dev.spectroscope.server.providers.ProviderRow;
 import org.junit.jupiter.api.Test;
@@ -208,6 +209,16 @@ class PlaybookStartPreviewTest {
 
         ledger.put(new InstallLedger.Install("b", dir.toRealPath().toString(), "h", "2026-10-10",
                 List.of(new InstallLedger.Item("agent", "reviewer", "agents/reviewer.md", "x", null, List.of(), null))));
+        PlaybookStartPreview stale = controller.startPreview(dir.toString(), tmp.toString(),
+                new MockHttpServletRequest()).getBody();
+        assertTrue(stale.refusals().stream().anyMatch(r -> r.startsWith("agent changed since install: reviewer")),
+                "a ledger hash that is not the file's: " + stale.refusals());
+
+        String recorded = PlaybookContents.preview(dir, PlaybookReader.read(json).playbook(), tmp.resolve("home"), tmp,
+                new InstallLedger(tmp.resolve("empty-ledger.json")), null).items().stream()
+                .filter(i -> i.kind().equals("agent")).findFirst().orElseThrow().sha256();
+        ledger.put(new InstallLedger.Install("b", dir.toRealPath().toString(), "h", "2026-10-10",
+                List.of(new InstallLedger.Item("agent", "reviewer", "agents/reviewer.md", recorded, null, List.of(), null))));
         PlaybookStartPreview after = controller.startPreview(dir.toString(), tmp.toString(),
                 new MockHttpServletRequest()).getBody();
         assertTrue(after.refusals().stream().noneMatch(r -> r.contains("reviewer")), after.refusals().toString());

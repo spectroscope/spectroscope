@@ -15,7 +15,6 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,16 +36,16 @@ class InstallLedgerTest {
     }
 
     @Test
-    void holdsAnswersByPlaybookKindAndSource() {
+    void itemHashAnswersTheRecordedHashByPlaybookKindAndSource() {
         InstallLedger ledger = new InstallLedger(ledgerFile());
-        assertFalse(ledger.holds("spectropowers", "agent", "agents/reviewer.md"), "a missing file holds nothing");
+        assertNull(ledger.itemHash("spectropowers", "agent", "agents/reviewer.md"), "a missing file holds nothing");
         Item agent = new Item("agent", "reviewer", "agents/reviewer.md", "cc33", null, List.of(), null);
         ledger.put(new Install("spectropowers", "/work/spectropowers", "h1", "2026-10-10", List.of(agent)));
 
-        assertTrue(ledger.holds("spectropowers", "agent", "agents/reviewer.md"));
-        assertFalse(ledger.holds("other", "agent", "agents/reviewer.md"), "another playbook id");
-        assertFalse(ledger.holds("spectropowers", "skill", "agents/reviewer.md"), "another kind");
-        assertFalse(ledger.holds("spectropowers", "agent", "agents/planner.md"), "another source");
+        assertEquals("cc33", ledger.itemHash("spectropowers", "agent", "agents/reviewer.md"));
+        assertNull(ledger.itemHash("other", "agent", "agents/reviewer.md"), "another playbook id");
+        assertNull(ledger.itemHash("spectropowers", "skill", "agents/reviewer.md"), "another kind");
+        assertNull(ledger.itemHash("spectropowers", "agent", "agents/planner.md"), "another source");
     }
 
     @Test

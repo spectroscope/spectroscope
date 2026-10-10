@@ -335,6 +335,8 @@ public final class SessionConnection {
     private Function<SpectroConfig, LlmProvider> providerBuilder = ServerProviders::build;
     /** Card 482: the registry's bounded check of one provider; a test hands in its own. */
     private Function<String, ProviderRow> providerCheck = this::registryCheck;
+    /** The install ledger agent roles resolve through at Start; null reads the one in the home (card 485). */
+    private volatile InstallLedger installLedger;
 
     /** The process-wide live-session registry, or null — then this connection
      *  claims nothing and announces nothing, frame for frame the pre-212 one. */
@@ -1799,10 +1801,10 @@ public final class SessionConnection {
                 sendError("The playbook does not load: " + loaded.findings());
                 return;
             }
-            InstallLedger ledger = InstallLedger.inHome();
+            InstallLedger ledger = installLedger != null ? installLedger : InstallLedger.inHome();
             String id = loaded.playbook().id();
             pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody,
-                    source -> ledger.holds(id, "agent", source));
+                    source -> ledger.itemHash(id, "agent", source));
         } catch (IOException | RuntimeException unreadable) {
             sendError("The playbook could not be read: " + unreadable.getMessage());
             return;
@@ -1906,6 +1908,11 @@ public final class SessionConnection {
     /** @param builder what builds a provider from a config in this connection, for tests */
     void providerBuilderForTest(Function<SpectroConfig, LlmProvider> builder) {
         this.providerBuilder = builder;
+    }
+
+    /** @param ledger the install ledger the start frame resolves agent roles through, for tests */
+    void installLedgerForTest(InstallLedger ledger) {
+        this.installLedger = ledger;
     }
 
     /** @param check what answers the registry check of one provider in this connection, for tests */

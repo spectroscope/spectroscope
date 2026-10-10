@@ -10,7 +10,10 @@ import dev.spectroscope.core.playbook.PlaybookReader;
 import dev.spectroscope.core.playbook.run.PinnedPlaybook;
 import dev.spectroscope.core.playbook.run.PlaybookRecorder;
 import dev.spectroscope.core.provider.LlmProvider;
+import dev.spectroscope.server.playbooks.InstallLedger;
+import dev.spectroscope.server.playbooks.PlaybookContents;
 import dev.spectroscope.server.playbooks.PlaybookFolders;
+import dev.spectroscope.server.playbooks.PlaybookInstaller;
 import dev.spectroscope.server.providers.ProviderRow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -61,8 +64,34 @@ class PlaybookStartFrameTest {
           ] }
         """;
 
+    /** One child step whose role is an agent file of the playbook (card 485). */
+    private static final String AGENT_STEP = """
+        { "schema_version": 1, "id": "agentpb", "name": "A", "description": "d",
+          "models": { "strong": { "primary": { "provider": "ollama", "model": "qwen3:8b" } } },
+          "documents": {},
+          "checks": {},
+          "contents": { "agents": ["agents/reviewer.md"] },
+          "start": "review",
+          "nodes": [
+            { "kind": "step", "id": "review", "name": "Review", "goal": "Review the diff.",
+              "performer": "child", "role": "agent:reviewer", "model": "strong" },
+            { "kind": "end", "id": "done", "result": "done" }
+          ],
+          "arrows": [ { "from": "review", "to": "done" } ] }
+        """;
+
+    private static final String REVIEWER = """
+        ---
+        name: reviewer
+        description: Reads the diff and returns pass or fail.
+        type: explore
+        ---
+        You are the reviewer. Read the diff and never edit a file.
+        """;
+
     @TempDir Path workspace;
     @TempDir Path playbookDir;
+    @TempDir Path installs;
 
     private FakeSocket socket;
 
@@ -222,5 +251,87 @@ class PlaybookStartFrameTest {
         assertThat(connection.effectiveMode()).isEqualTo("auto");
         assertThat(connection.broker().reachesOutsideTheWorkingDirectory())
                 .as("a floor below extended keeps the file tools inside the folder").isFalse();
+    }
+
+    /** The agent playbook in a registered folder, with the licence files an install needs. */
+    private Path writeAgentPlaybook() throws IOException {
+        Files.writeString(playbookDir.resolve("playbook.json"), AGENT_STEP);
+        Files.createDirectories(playbookDir.resolve("agents"));
+        Files.writeString(playbookDir.resolve("agents/reviewer.md"), REVIEWER);
+        Files.writeString(playbookDir.resolve("LICENSE"), "MIT\n");
+        Files.writeString(playbookDir.resolve("PROVENANCE.md"), "Written for this test.\n");
+        PlaybookFolders.inHome().register(playbookDir);
+        return playbookDir.toRealPath();
+    }
+
+    /** Installs the folder's contents through the real installer into the given ledger. */
+    private void install(Path dir, InstallLedger ledger) throws IOException {
+        Playbook p = PlaybookReader.read(AGENT_STEP).playbook();
+        Path home = installs.resolve("spectro-home");
+        Path projectSkills = installs.resolve("project/.spectro/skills");
+        String shown = PlaybookContents.preview(dir, p, home, projectSkills, ledger, null).contentsHash();
+        PlaybookInstaller.Result result = new PlaybookInstaller(home, projectSkills, installs.resolve("settings.json"),
+                ledger).install(dir, p, shown, false);
+        assertThat(result.status()).as(result.message()).isEqualTo(PlaybookInstaller.Status.INSTALLED);
+    }
+
+    /** Starts the agent playbook on the hash the confirmation shows and returns its playbook_end line. */
+    private String startAndAwaitTheEnd(Path dir, InstallLedger ledger, String socketId) throws Exception {
+        String hash = PinnedPlaybook.pin(dir, PlaybookReader.read(AGENT_STEP).playbook(), n -> null).hash();
+        SessionConnection connection = session(socketId, new CountDownLatch(0));
+        connection.installLedgerForTest(ledger);
+        connection.onSetPermissionMode("auto");
+
+        connection.onStartPlaybook(dir.toString(), hash);
+
+        assertThat(errors()).as("the frame itself is accepted").isEmpty();
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < until) {
+            String id = connection.sessionId();
+            if (id != null) {
+                Path sidecar = PlaybookRecorder.fileFor(id);
+                if (Files.exists(sidecar) && Files.readString(sidecar).contains("\"playbook_end\"")) {
+                    return Files.readString(sidecar);
+                }
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError("the run did not end in 20 s");
+    }
+
+    @Test
+    void anAgentStepRunsWhenTheLedgerHoldsItsFileAsInstalled() throws Exception {
+        Path dir = writeAgentPlaybook();
+        InstallLedger ledger = new InstallLedger(installs.resolve("playbook-installs.json"));
+        install(dir, ledger);
+
+        String lines = startAndAwaitTheEnd(dir, ledger, "ws-485-installed");
+
+        assertThat(lines).contains("\"stopReason\":\"done\"").contains("\"agent\":\"reviewer\"")
+                .doesNotContain("agent not installed");
+    }
+
+    @Test
+    void anAgentStepWithoutALedgerEntryIsRefusedAtStartByName() throws Exception {
+        Path dir = writeAgentPlaybook();
+        InstallLedger ledger = new InstallLedger(installs.resolve("playbook-installs.json"));
+
+        String lines = startAndAwaitTheEnd(dir, ledger, "ws-485-absent");
+
+        assertThat(lines).contains("\"stopReason\":\"refused\"").contains("agent not installed: reviewer")
+                .doesNotContain("\"step_start\"");
+    }
+
+    @Test
+    void anAgentFileEditedAfterTheInstallIsRefusedAtStart() throws Exception {
+        Path dir = writeAgentPlaybook();
+        InstallLedger ledger = new InstallLedger(installs.resolve("playbook-installs.json"));
+        install(dir, ledger);
+        Files.writeString(dir.resolve("agents/reviewer.md"), REVIEWER.replace("never edit a file", "edit every file"));
+
+        String lines = startAndAwaitTheEnd(dir, ledger, "ws-485-edited");
+
+        assertThat(lines).contains("\"stopReason\":\"refused\"").contains("agent changed since install: reviewer")
+                .doesNotContain("\"step_start\"");
     }
 }

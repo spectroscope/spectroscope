@@ -444,7 +444,7 @@ public class PlaybookController {
                 String id = loaded.playbook().id();
                 pinned = PinnedPlaybook.pin(real, loaded.playbook(),
                         name -> skills.find(name).map(Skill::body).orElse(null),
-                        source -> ledger.holds(id, "agent", source));
+                        source -> ledger.itemHash(id, "agent", source));
             } catch (IOException | RuntimeException unreadable) {
                 return ResponseEntity.badRequest().build();
             }
