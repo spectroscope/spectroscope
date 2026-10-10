@@ -217,8 +217,8 @@ class AddonTest {
 
     @Test
     void noGateOrWorkflowTextCarriesADashAsPunctuation() {
-        char emDash = '—';
-        char enDash = '–';
+        char emDash = (char) 0x2014;
+        char enDash = (char) 0x2013;
         for (String language : LANGUAGES) {
             for (RenderedFile f : render("service", language, "quality-gate", "ci")) {
                 assertEquals(-1, f.content().indexOf(emDash), language + " " + f.path());
