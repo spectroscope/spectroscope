@@ -223,10 +223,7 @@ export async function copyBundled(id: string, dir: string): Promise<{ ok: boolea
   }
   if (res.ok) {
     const body = (await res.json().catch(() => ({}))) as { dir?: unknown };
-    const where = typeof body.dir === "string" ? body.dir : dir;
-    if (!foldersState.folders.includes(where)) {
-      setFolders({ folders: [...foldersState.folders, where], active: foldersState.active });
-    }
+    noteFolder(typeof body.dir === "string" ? body.dir : dir);
     return { ok: true };
   }
   if (res.status === 409) {
@@ -237,6 +234,19 @@ export async function copyBundled(id: string, dir: string): Promise<{ ok: boolea
     return { ok: false, conflicts };
   }
   return { ok: false };
+}
+
+/**
+ * Add a folder the server registered to the known list, once, and keep the
+ * pin: the copy route registers what it writes and pins nothing (Spectrolyzr's
+ * new playbook of card 515 relies on that too).
+ *
+ * @param dir the folder as the server answered it
+ */
+export function noteFolder(dir: string): void {
+  if (!foldersState.folders.includes(dir)) {
+    setFolders({ folders: [...foldersState.folders, dir], active: foldersState.active });
+  }
 }
 
 /**

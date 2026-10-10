@@ -5599,6 +5599,21 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lyzr.pinned": { de: "Das Playbook ist mit dem Projekt verknüpft.", en: "The playbook is pinned to the project." },
   "lyzr.conflicts": { de: "Nichts geschrieben, diese Dateien gibt es schon:", en: "Nothing written, these files already exist:" },
   "lyzr.copyPath": { de: "Pfad kopieren", en: "Copy path" },
+  // Card 515 part two: the model choices of a new playbook.
+  "lyzr.models": { de: "Modelle", en: "Models" },
+  "lyzr.model.fast": { de: "Schnell (fast)", en: "Fast (fast)" },
+  "lyzr.model.standard": { de: "Standard (standard)", en: "Standard (standard)" },
+  "lyzr.model.strong": { de: "Stark (strong)", en: "Strong (strong)" },
+  "lyzr.model.judge": { de: "Urteil (judge)", en: "Judge (judge)" },
+  "lyzr.model.keep": { de: "Modell des spectro-Playbooks behalten", en: "Keep the spectro playbook's model" },
+  "lyzr.modelsNone": {
+    de: "Noch hat kein Anbieter seine Modelle gemeldet, also behält jede Rolle das Modell des spectro-Playbooks. Eine Prüfung in den Anbieter-Einstellungen listet sie.",
+    en: "No provider has listed its models yet, so each role keeps the spectro playbook's model. A check in the provider settings lists them.",
+  },
+  "lyzr.playbookListed": {
+    de: "Der Ordner steht jetzt im Tab Playbook, mit seinem Inhalt und seinen Workflows. Mit keinem Arbeitsbereich verknüpft.",
+    en: "The folder is now listed in the Playbook tab with its contents and workflows. It is not pinned to any workspace.",
+  },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

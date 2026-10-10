@@ -4,7 +4,11 @@
 // file. A switch at the top says what the page makes, a new project or a new
 // playbook. For a project every choice is in sight at once (archetype,
 // language, name, add-ons, the folders), the file tree with the Why sentence
-// sits beside them, Generate is at the bottom. The choices live in
+// sits beside them, Generate is at the bottom. For a playbook the page shows
+// the playbook folder and the four model choices, offered from the provider
+// registry's rows as the editor's step panel offers them; Generate copies the
+// shipped spectro pack there with those models (card 515 part two). The
+// choices live in
 // state/spectrolyzr.ts, so a switch of segment keeps them. The stylesheet is
 // styles/spectrolyzr.css, imported by app.css: a surface chunk carries no
 // stylesheet of its own.
@@ -13,16 +17,21 @@ import { useEffect, useState } from "react";
 import { t, type Lang } from "../../i18n/i18n";
 import { chooseFolder, usePickNote } from "../../state/folderPick";
 import { useLang } from "../../state/lang";
+import { refreshProviders, useProviderRows, type ProviderRow } from "../../state/providerRegistry";
 import {
   choose,
   chooseKind,
+  chooseModel,
   generate,
+  generatePlaybook,
   loadCatalog,
+  MODEL_ROLES,
   nameUsable,
   useLyzr,
   type LyzrFile,
   type LyzrKind,
   type LyzrResult,
+  type ModelPick,
 } from "../../state/spectrolyzr";
 import { FileTree, fileKey } from "./FileTree";
 import { effectivePlaybookDir, followingPlaybookDir, PLAYBOOK_ADDON } from "./folders";
@@ -266,6 +275,68 @@ export function PlaybookDirField({ invalid, kind }: { invalid: Invalid; kind: Ly
   );
 }
 
+/** The option value of a pick: the provider id, a slash, the model id. A provider id holds no slash. */
+function pickValue(p: ModelPick): string {
+  return `${p.provider}/${p.model}`;
+}
+
+/** One option per model the registry lists, provider by provider, in the registry's order. */
+function modelPicks(rows: ProviderRow[]): ModelPick[] {
+  return rows.flatMap((r) => r.models.map((model) => ({ provider: r.id, model })));
+}
+
+/**
+ * The four model choices of a new playbook. Each offers the pack's own model
+ * first and then every model the provider registry lists, labelled and
+ * stated the way the step panel of the editor labels a choice.
+ */
+export function ModelChoices() {
+  const lang = useLang();
+  const { models } = useLyzr();
+  const rows = useProviderRows();
+  useEffect(() => {
+    void refreshProviders();
+  }, []);
+  const picks = modelPicks(rows);
+  return (
+    <section className="lyzr-section lyzr-models">
+      <h3 className="lyzr-h">{t(lang, "lyzr.models")}</h3>
+      {picks.length === 0 && <p className="lyzr-hint">{t(lang, "lyzr.modelsNone")}</p>}
+      {MODEL_ROLES.map((role) => {
+        const chosen = models[role];
+        const state = chosen === undefined ? undefined : rows.find((r) => r.id === chosen.provider)?.state;
+        return (
+          <div key={role} className="lyzr-model-row">
+            <label className="lyzr-field">
+              <span className="lyzr-label">{t(lang, `lyzr.model.${role}`)}</span>
+              <select
+                className="lyzr-model"
+                data-role={role}
+                value={chosen === undefined ? "" : pickValue(chosen)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const at = v.indexOf("/");
+                  chooseModel(role, at < 0 ? null : { provider: v.slice(0, at), model: v.slice(at + 1) });
+                }}
+              >
+                <option value="">{t(lang, "lyzr.model.keep")}</option>
+                {picks.map((p) => (
+                  <option key={pickValue(p)} value={pickValue(p)}>
+                    {`${p.provider} ${p.model}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {chosen !== undefined && state !== undefined && (
+              <p className="lyzr-hint">{t(lang, "pbe.model.state", { provider: chosen.provider, state })}</p>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 /** The file tree beside the choices, the selected file's Why sentence and content, and the summary. */
 export function FilesColumn() {
   const lang = useLang();
@@ -328,7 +399,10 @@ export function FilesColumn() {
 function Outcome({ result, lang }: { result: LyzrResult | null; lang: Lang }) {
   if (result === null) return null;
   if (result.kind === "written") {
-    const roots = [result.project, ...(result.playbook === null ? [] : [result.playbook])];
+    const roots = [
+      ...(result.project === null ? [] : [result.project]),
+      ...(result.playbook === null ? [] : [result.playbook]),
+    ];
     return (
       <div className="lyzr-result is-done" role="status">
         {roots.map((r) => (
@@ -340,6 +414,7 @@ function Outcome({ result, lang }: { result: LyzrResult | null; lang: Lang }) {
           </p>
         ))}
         {result.pinned && <p className="lyzr-pinned">{t(lang, "lyzr.pinned")}</p>}
+        {result.project === null && <p className="lyzr-hint">{t(lang, "lyzr.playbookListed")}</p>}
       </div>
     );
   }
@@ -392,19 +467,17 @@ export function SpectrolyzrPage() {
   const project = s.kind === "project";
   const invalid = s.result?.kind === "invalid" ? { field: s.result.field, message: s.result.message } : null;
   const playbookOn = c.addons.includes(PLAYBOOK_ADDON);
-  // The playbook side is drawn here; its Generate is wired by card 515 part two.
   const ready =
-    project &&
-    s.preview !== null &&
-    c.dir.trim() !== "" &&
-    (!playbookOn || effectivePlaybookDir(c) !== "") &&
-    !busy;
+    !busy &&
+    (project
+      ? s.preview !== null && c.dir.trim() !== "" && (!playbookOn || effectivePlaybookDir(c) !== "")
+      : c.playbookDir.trim() !== "");
 
   const run = async (): Promise<void> => {
-    if (playbookOn && c.playbookDir === "") choose({ playbookDir: effectivePlaybookDir(c) });
+    if (project && playbookOn && c.playbookDir === "") choose({ playbookDir: effectivePlaybookDir(c) });
     setBusy(true);
     try {
-      await generate();
+      await (project ? generate() : generatePlaybook());
     } finally {
       setBusy(false);
     }
@@ -432,10 +505,13 @@ export function SpectrolyzrPage() {
               </section>
             </>
           ) : (
-            <section className="lyzr-section">
-              <h3 className="lyzr-h">{t(lang, "lyzr.folders")}</h3>
-              <PlaybookDirField invalid={invalid} kind="playbook" />
-            </section>
+            <>
+              <section className="lyzr-section">
+                <h3 className="lyzr-h">{t(lang, "lyzr.folders")}</h3>
+                <PlaybookDirField invalid={invalid} kind="playbook" />
+              </section>
+              <ModelChoices />
+            </>
           )}
         </div>
         {project && <FilesColumn />}
@@ -457,4 +533,10 @@ export function SpectrolyzrPage() {
 }
 
 /** The parts the page draws that keep hooks of their own, for the drive kit of the click tests. */
-export const PAGE_PARTS: unknown[] = [ProjectChoices, ProjectDirField, PlaybookDirField, FilesColumn];
+export const PAGE_PARTS: unknown[] = [
+  ProjectChoices,
+  ProjectDirField,
+  PlaybookDirField,
+  ModelChoices,
+  FilesColumn,
+];

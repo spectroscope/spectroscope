@@ -338,8 +338,9 @@ describe("the switch Project or Playbook", () => {
     expect(form).toMatch(/<button[^>]*class="lyzr-choose"[^>]*>Choose<\/button>/);
     expect(out).toContain(dict["lyzr.playbookOnlyHint"].en);
     expect(out).not.toContain(dict["lyzr.playbookDirHint"].en);
+    // Part two (task 5) wired Generate on this side: the playbook folder is set, so it is on.
     expect(out).toMatch(GENERATE);
-    expect(out).toMatch(GENERATE_OFF);
+    expect(out).not.toMatch(GENERATE_OFF);
   });
 
   it("does not offer the project folder's sibling as a playbook folder on Playbook", async () => {
