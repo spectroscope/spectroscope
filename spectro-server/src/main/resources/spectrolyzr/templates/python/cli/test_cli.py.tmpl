@@ -1,0 +1,17 @@
+import unittest
+
+from @@py_module@@.cli import run
+
+
+class CliTest(unittest.TestCase):
+    def test_a_name_gives_the_greeting_and_exit_code_0(self):
+        self.assertEqual(run(["Ada"]), (0, "Hello, Ada.\n"))
+
+    def test_no_name_gives_the_usage_line_and_exit_code_2(self):
+        code, out = run([])
+        self.assertEqual(code, 2)
+        self.assertRegex(out, r"^usage: ")
+
+
+if __name__ == "__main__":
+    unittest.main()

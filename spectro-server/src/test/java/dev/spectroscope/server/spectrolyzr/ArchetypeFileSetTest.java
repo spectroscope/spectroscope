@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -109,6 +111,107 @@ class ArchetypeFileSetTest {
                     assertEquals(-1, why.indexOf(emDash), f.path() + " why");
                     assertEquals(-1, why.indexOf(enDash), f.path() + " why");
                 }
+                assertTrue(f.content().endsWith("\n"), f.path() + " ends with a line feed");
+            }
+        }
+    }
+
+    private static final Map<String, List<String>> PYTHON = Map.of(
+            "service", List.of(".gitignore", "CLAUDE.md", "pyproject.toml", "README.md",
+                    "ledger_api/__init__.py", "ledger_api/server.py", "ledger_api/__main__.py",
+                    "tests/__init__.py", "tests/test_server.py"),
+            "library", List.of(".gitignore", "CLAUDE.md", "pyproject.toml", "README.md",
+                    "ledger_api/__init__.py", "ledger_api/core.py",
+                    "tests/__init__.py", "tests/test_core.py"),
+            "cli", List.of(".gitignore", "CLAUDE.md", "pyproject.toml", "README.md",
+                    "ledger_api/__init__.py", "ledger_api/cli.py", "ledger_api/__main__.py",
+                    "tests/__init__.py", "tests/test_cli.py"));
+
+    /** Top level modules a generated Python file may import besides its own package. */
+    private static final Set<String> STDLIB = Set.of("http", "json", "threading", "unittest", "urllib", "sys", "os",
+            "argparse");
+
+    private static final Pattern IMPORT_LINE = Pattern.compile("^(?:from\\s+(\\S+)\\s+import\\b|import\\s+(\\S+))",
+            Pattern.MULTILINE);
+
+    @Test
+    void pythonRendersExactlyTheSpecTableForEveryArchetype() {
+        for (var e : PYTHON.entrySet()) {
+            assertEquals(e.getValue(), paths(render(e.getKey(), "python")), e.getKey());
+        }
+    }
+
+    @Test
+    void pythonRunsItsTestsWithUnittestDiscover() {
+        Manifest.Language py = MANIFEST.languages().stream().filter(l -> l.id().equals("python")).findFirst()
+                .orElseThrow(() -> new AssertionError("no python language in the manifest"));
+        assertEquals("python3 -m unittest discover -s tests -t . -v", py.commands().get("test"));
+        assertEquals("python3 scripts/gate.py", py.commands().get("gate"));
+    }
+
+    @Test
+    void everyPythonTestFileUsesUnittestAndAsserts() {
+        Pattern assertCall = Pattern.compile("self\\.assert\\w+\\(");
+        for (String archetype : PYTHON.keySet()) {
+            var tests = render(archetype, "python").stream()
+                    .filter(f -> f.path().startsWith("tests/test_")).toList();
+            assertEquals(1, tests.size(), archetype + " ships exactly one test module");
+            for (RenderedFile test : tests) {
+                assertTrue(test.content().contains("unittest.TestCase"), archetype + " " + test.path() + " is a TestCase");
+                assertTrue(assertCall.matcher(test.content()).find(), archetype + " " + test.path() + " asserts");
+            }
+        }
+    }
+
+    @Test
+    void noPythonFileImportsAnythingOutsideTheStandardLibrary() {
+        for (String archetype : PYTHON.keySet()) {
+            int seen = 0;
+            for (RenderedFile f : render(archetype, "python")) {
+                if (!f.path().endsWith(".py")) {
+                    continue;
+                }
+                Matcher m = IMPORT_LINE.matcher(f.content());
+                while (m.find()) {
+                    String module = m.group(1) != null ? m.group(1) : m.group(2);
+                    if (module.startsWith(".")) {
+                        seen++;
+                        continue;
+                    }
+                    String top = module.split("\\.")[0];
+                    assertTrue(STDLIB.contains(top) || top.equals("ledger_api"),
+                            archetype + " " + f.path() + " imports " + module);
+                    seen++;
+                }
+            }
+            assertTrue(seen > 0, archetype + " has imports at all, so the scan looked at something");
+        }
+    }
+
+    @Test
+    void thePythonProjectFilesCarryTheNameTheVersionAndNoDependency() {
+        for (String archetype : PYTHON.keySet()) {
+            String pyproject = render(archetype, "python").stream()
+                    .filter(f -> f.path().equals("pyproject.toml")).findFirst().orElseThrow().content();
+            assertTrue(pyproject.contains("name = \"ledger-api\"\n"), archetype);
+            assertTrue(pyproject.contains("version = \"0.1.0\"\n"), archetype);
+            assertTrue(pyproject.contains("requires-python = \">=3.11\"\n"), archetype);
+            assertFalse(pyproject.contains("dependencies"), archetype + " declares no dependency");
+            assertEquals(archetype.equals("cli"), pyproject.contains("[project.scripts]\nledger-api = \"ledger_api.cli:main\"\n"),
+                    archetype + " declares its entry point exactly when it is a command line tool");
+        }
+    }
+
+    @Test
+    void everyPythonFileHasBothWhySentencesAndNoDashAsPunctuation() {
+        char emDash = '\u2014';
+        char enDash = '\u2013';
+        for (String archetype : PYTHON.keySet()) {
+            for (RenderedFile f : render(archetype, "python")) {
+                assertFalse(f.why().en().isBlank(), f.path());
+                assertFalse(f.why().de().isBlank(), f.path());
+                assertEquals(-1, f.content().indexOf(emDash), f.path());
+                assertEquals(-1, f.content().indexOf(enDash), f.path());
                 assertTrue(f.content().endsWith("\n"), f.path() + " ends with a line feed");
             }
         }
