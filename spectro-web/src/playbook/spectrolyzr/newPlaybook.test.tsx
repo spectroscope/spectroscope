@@ -24,7 +24,8 @@ import {
   MODEL_ROLES,
   type LyzrCatalog,
 } from "../../state/spectrolyzr";
-import { SpectrolyzrPage } from "./SpectrolyzrPage";
+import { drive, type El } from "../../testkit/driveComponent";
+import { PAGE_PARTS, SpectrolyzrPage } from "./SpectrolyzrPage";
 
 const CATALOG: LyzrCatalog = {
   archetypes: [
@@ -383,5 +384,76 @@ describe("the Playbook side of the page", () => {
       "lyzr.playbookListed",
     ])
       expect(out, k).toContain(dict[k].de);
+  });
+});
+
+describe("pressed, not only drawn", () => {
+  const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+  const parts = [SpectrolyzrPage, ...PAGE_PARTS];
+
+  /** The one element of a pass that carries `cls` and, when given, the role. */
+  function one(tree: El[], type: string, cls: string, role?: string): El {
+    const found = tree.filter(
+      (el) =>
+        el.type === type &&
+        String(el.props.className ?? "")
+          .split(/\s+/)
+          .includes(cls) &&
+        (role === undefined || el.props["data-role"] === role),
+    );
+    if (found.length !== 1) throw new Error(`expected one <${type} class="${cls}">, found ${found.length}`);
+    return found[0];
+  }
+
+  it("Generate on Playbook runs the copy chain and never the project generator", async () => {
+    choose({
+      playbookDir: "/w/pb",
+      dir: "/w/project",
+      name: "ledger-api",
+      archetype: "service",
+      language: "java",
+    });
+    await flush();
+    calls = []; // the preview of the project choices above is not part of the chain
+    drive(<SpectrolyzrPage />, parts, [(tree) => one(tree, "button", "lyzr-generate").props.onClick?.()]);
+    for (let i = 0; i < 5; i++) await flush();
+    expect(calls.map((c) => `${c.method} ${c.url.split("?")[0]}`)).toEqual([
+      "POST /api/playbooks/bundled/spectro/copy",
+      "GET /api/playbooks/draft",
+      "PUT /api/playbooks/file",
+    ]);
+    expect(listedFolders()).toEqual([ROOT]);
+  });
+
+  it("a model select sets its role and the first option gives it back to the pack", async () => {
+    __seedProviderRows(ROWS);
+    choose({ playbookDir: "/w/pb" });
+    const pick =
+      (role: string, value: string) =>
+      (tree: El[]): void =>
+        one(tree, "select", "lyzr-model", role).props.onChange?.({ target: { value } });
+    drive(<SpectrolyzrPage />, parts, [
+      pick("judge", "ollama/qwen2.5:7b"),
+      pick("fast", "anthropic/claude-sonnet-5-5"),
+    ]);
+    await generatePlaybook();
+    let put = calls.find((c) => c.method === "PUT")?.body as {
+      playbook: { models: Record<string, unknown> };
+    };
+    expect(put.playbook.models.judge).toEqual({
+      primary: { provider: "ollama", model: "qwen2.5:7b" },
+      fallbacks: [{ provider: "ollama", model: "qwen3:8b" }],
+    });
+    expect(put.playbook.models.fast).toEqual({
+      primary: { provider: "anthropic", model: "claude-sonnet-5-5" },
+      fallbacks: [],
+    });
+
+    drive(<SpectrolyzrPage />, parts, [pick("judge", ""), pick("fast", "")]);
+    calls = [];
+    choose({ playbookDir: "/w/pb2" });
+    await generatePlaybook();
+    put = calls.find((c) => c.method === "PUT")?.body as { playbook: { models: Record<string, unknown> } };
+    expect(put.playbook.models).toEqual(doc().models);
   });
 });
