@@ -6,7 +6,7 @@ authors:
   - family-names: "Ezell"
     given-names: "Christopher"
     email: "chris@spectroscope.ai"
-version: "0.15.0"
+version: "0.15.1"
 date-released: "2026-10-10"
 license: MIT
 url: "https://spectroscope.ai"
