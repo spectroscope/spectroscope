@@ -37,6 +37,19 @@ class CopilotReachesTheFacesTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void aStoredSignInReadsSignedInWithoutAskingTheRuntime() throws IOException {
+        CopilotCredentials store = new CopilotCredentials(CopilotCredentials.defaultPath());
+        store.save(new CopilotCredentials.Stored(CopilotCredentials.Method.CLI, null, null, 0, null, 0));
+        try {
+            Map<String, String> status = (Map<String, String>) new SessionsController().config().get("providerStatus");
+            assertEquals("signed-in", status.get("copilot"), "the stored CLI choice is a sign-in: " + status);
+        } finally {
+            Files.deleteIfExists(CopilotCredentials.defaultPath());
+        }
+    }
+
+    @Test
     void theModelListOfASignInProviderHasItsOwnWire() {
         assertEquals("copilot", SessionsController.modelWire("copilot", p -> false));
     }
