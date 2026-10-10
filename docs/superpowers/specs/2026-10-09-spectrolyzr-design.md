@@ -1,6 +1,6 @@
 # P5 Spectrolyzr Design
 
-Sub-project 5 of the playbook concept (`konzept/PLAYBOOK.md`, sections 4, 8 and 9), card 484. Written 2026-10-09 against `spectroscope-harness/spectro` main `8d7fcf48` (release cut v0.14.4). Target location once the card starts: `docs/superpowers/specs/2026-10-09-spectrolyzr-design.md` in the product repo. Every `file:line` below is at `8d7fcf48` and relative to `spectroscope-harness/spectro` unless it names another root. P2 and P4 names (`PlaybookFolders`, `PlaybookReader`, `PlaybookValidator`, `PlaybookLoader`, the P4 writer) come from their spec and plan; none of that code exists at `8d7fcf48`. Nothing in this file names employer material.
+Sub-project 5 of the playbook concept (`konzept/PLAYBOOK.md`, sections 4, 8 and 9), card 484. Written 2026-10-09 against `spectroscope-harness/spectro` main `8d7fcf48` (release cut of 2026-10-09). Target location once the card starts: `docs/superpowers/specs/2026-10-09-spectrolyzr-design.md` in the product repo. Every `file:line` below is at `8d7fcf48` and relative to `spectroscope-harness/spectro` unless it names another root. P2 and P4 names (`PlaybookFolders`, `PlaybookReader`, `PlaybookValidator`, `PlaybookLoader`, the P4 writer) come from their spec and plan; none of that code exists at `8d7fcf48`. Nothing in this file names employer material.
 
 ## Goal
 
@@ -29,7 +29,7 @@ Measured at `8d7fcf48` (reader `konzept/playbook/readers/484-scaffold-and-starte
 - P2 is not built: `NavSegmentId` has three members (`navRows.ts:29`), `ViewMode` has two (`state/viewMode.ts:15`; `state/surfaces.ts:43 to 45` builds its presence records from the pair).
 - CI: `gate.yml` has three jobs, each with checkout, a toolchain, the gate and an `if: always()` step that reads the real test count and fails on zero (`.github/workflows/gate.yml:1 to 6`, `70 to 101`). No workflow has a matrix, a Python setup or a step that builds a starter.
 - Versions the product builds with: Gradle 9.6.1 (`gradle/wrapper/gradle-wrapper.properties`), JUnit 5.10.2 (`gradle/libs.versions.toml:23`) with the platform launcher (`spectro-core/build.gradle.kts:51`), Node 22 in CI (`gate.yml:111 to 115`), TypeScript `~5.8.3` (`spectro-web/package.json:37`).
-- Registries, checked with curl on 2026-10-09: npm `@spectroscope/sdk` answers 404 and npm `spectroscope` is an unrelated package (reader 484, section 5); PyPI `spectroscope` 0.1.0 exists. Central lists `spectro-core` 0.14.4 as latest, equal to the tree version, and the release process bumps the tree before it publishes (reader 484, section 4, item 6).
+- Registries, checked with curl on 2026-10-09: npm `@spectroscope/sdk` answers 404 and npm `spectroscope` is an unrelated package (reader 484, section 5); PyPI `spectroscope` 0.1.0 exists. Central lists the `spectro-core` of the 2026-10-09 release cut as latest, equal to the tree version, and the release process bumps the tree before it publishes (reader 484, section 4, item 6).
 
 ## Design
 

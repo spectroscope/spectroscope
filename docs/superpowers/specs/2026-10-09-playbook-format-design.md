@@ -1,6 +1,6 @@
 # P2 Playbook Format and the spectro Playbook Design
 
-Sub-project 2 of the playbook concept (home repository, private, sections 3, 4 and 7). Written 2026-10-09 against `spectroscope-harness/spectro` main `1cba586c`. Target location after the 0.14.4 release run: `docs/superpowers/specs/2026-10-09-playbook-format-design.md` in the product repo. Nothing in this file names employer material.
+Sub-project 2 of the playbook concept (home repository, private, sections 3, 4 and 7). Written 2026-10-09 against `spectroscope-harness/spectro` main `1cba586c`. Target location after the previous release run: `docs/superpowers/specs/2026-10-09-playbook-format-design.md` in the product repo. Nothing in this file names employer material.
 
 ## Goal
 
