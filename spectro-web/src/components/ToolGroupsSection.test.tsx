@@ -9,6 +9,7 @@ import { dict, t } from "../i18n/i18n";
 import { blockOf, stripComments, read } from "../testkit/source";
 import { SETTING_REACH } from "./settingsReach";
 import { SURFACES } from "../state/surfaces";
+import { VIEW_MODES } from "../state/viewMode";
 
 const info: ToolGroupsInfo = {
   off: ["launch"],
@@ -108,11 +109,13 @@ describe("when a change in the gear acts", () => {
     expect(render({}, "en", true)).toContain(t("en", "set.reachNextRun"));
   });
 
-  it("is in the gear in learn and in light", () => {
-    // The gear sits in the chat's composer row, and the chat is open in both
-    // modes. Neither the chat's mount of the gear nor the gear's mount of this
-    // section asks the mode, so the sentence is drawn in both.
-    expect(SURFACES.chat.modes).toEqual({ learn: "open", light: "open" });
+  it("is in the gear in every view mode", () => {
+    // The gear sits in the chat's composer row, and the chat is open in every
+    // mode (learn, light and, since the developer mode, developer). Neither the
+    // chat's mount of the gear nor the gear's mount of this section asks the
+    // mode, so the sentence is drawn in all of them.
+    expect(VIEW_MODES).toEqual(expect.arrayContaining(["learn", "light"]));
+    expect(SURFACES.chat.modes).toEqual(Object.fromEntries(VIEW_MODES.map((m) => [m, "open"])));
     const chat = stripComments(read("./Chat.tsx", import.meta.url));
     const gear = stripComments(read("./ComposerGear.tsx", import.meta.url));
     expect(chat).toContain("<ComposerGear");

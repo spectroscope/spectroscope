@@ -68,11 +68,12 @@ const switchButton = (tree: El[]): El => {
 };
 
 describe("the picker's option list", () => {
-  it("lists all eight providers, hiding none, even when the registry knows nothing", () => {
+  it("lists all nine providers, copilot among them, hiding none, even when the registry knows nothing", () => {
     const tree = picker("anthropic", []);
     const listed = tree.filter((el) => el.type === "option").map((el) => el.props.value);
     expect(listed).toEqual([...PROVIDERS]);
-    expect(PROVIDERS).toHaveLength(8);
+    expect(PROVIDERS).toHaveLength(9);
+    expect(listed).toContain("copilot");
     expect(tree.filter((el) => el.type === "option").every((el) => el.props.disabled === false)).toBe(true);
   });
 
