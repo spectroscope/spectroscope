@@ -498,24 +498,25 @@ public final class Spectrolyzr {
     }
 
     private static void dash(String text, String at, List<String> problems) {
-        if (text.indexOf('—') >= 0 || text.indexOf('–') >= 0 || text.contains("--")
+        if (text.indexOf('\u2014') >= 0 || text.indexOf('\u2013') >= 0 || text.contains("--")
                 || text.contains(" - ")) {
             problems.add(at + ": a dash used as punctuation");
         }
     }
 
     private static void why(Manifest.Text why, String at, List<String> problems) {
-        for (Map.Entry<String, String> e : Map.of("en", why.en(), "de", why.de()).entrySet()) {
-            String here = at + "." + e.getKey();
-            String s = e.getValue();
-            if (s == null || s.isBlank()) {
-                problems.add(here + ": missing or blank");
-                continue;
-            }
-            dash(s, here, problems);
-            if (!s.strip().endsWith(".") || SECOND_SENTENCE.matcher(s).find()) {
-                problems.add(here + ": must be one sentence ending in a full stop");
-            }
+        whySentence(why.en(), at + ".en", problems);
+        whySentence(why.de(), at + ".de", problems);
+    }
+
+    private static void whySentence(String s, String here, List<String> problems) {
+        if (s == null || s.isBlank()) {
+            problems.add(here + ": missing or blank");
+            return;
+        }
+        dash(s, here, problems);
+        if (!s.strip().endsWith(".") || SECOND_SENTENCE.matcher(s).find()) {
+            problems.add(here + ": must be one sentence ending in a full stop");
         }
     }
 

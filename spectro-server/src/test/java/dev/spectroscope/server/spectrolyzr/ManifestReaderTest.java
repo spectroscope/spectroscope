@@ -129,9 +129,9 @@ class ManifestReaderTest {
 
     @Test
     void aWhyWithADashIsAProblem() throws IOException {
-        assertNamed(problemsAfter(t -> put(t, 0, 0).with("why").put("en", "Says what — the project is.")),
+        assertNamed(problemsAfter(t -> put(t, 0, 0).with("why").put("en", "Says what \u2014 the project is.")),
                 "parts[0].put[0].why.en", "dash");
-        assertNamed(problemsAfter(t -> put(t, 0, 0).with("why").put("de", "Sagt, was – das Projekt ist.")),
+        assertNamed(problemsAfter(t -> put(t, 0, 0).with("why").put("de", "Sagt, was \u2013 das Projekt ist.")),
                 "parts[0].put[0].why.de", "dash");
     }
 
