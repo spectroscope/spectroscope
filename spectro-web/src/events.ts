@@ -15,6 +15,11 @@ export interface AttachmentRef {
   sha256: string;
 }
 
+/** The agent a session-title call's usage is billed to (card 496), as the
+ *  server names it (SessionConnection.TITLE_AGENT_ID). Its credits count for
+ *  the session; it is not a child of the run. */
+export const TITLE_AGENT_ID = "session-title";
+
 export type RunEvent =
   | {
       type: "run_start";

@@ -2126,7 +2126,33 @@ public final class SessionConnection {
         }
         titleAsked = true;
         SpectroConfig config = activeConfig.get();
-        titles.suggestInBackground(store.id(), prompt, () -> ServerProviders.build(config));
+        titles.suggestInBackground(store.id(), prompt, () -> ServerProviders.build(config),
+                usage -> titleUsageEvent(usage, System.currentTimeMillis()).ifPresent(this::recordAndMirror));
+    }
+
+    /**
+     * The agent a title call's usage is billed to (card 496). It is not the
+     * run's agent, so the context ring does not read the title call's prompt
+     * as the size of the conversation.
+     */
+    static final String TITLE_AGENT_ID = "session-title";
+
+    /**
+     * The usage event a title call adds to the session's record: only for a
+     * call that reported AI credits, so a Copilot session's credit total counts
+     * every call it paid for. A provider that reports no credits adds nothing,
+     * and its session's token totals stay as they were before card 496.
+     *
+     * @param usage the title call's usage
+     * @param ts    epoch millis of the event
+     * @return the event, or empty when the call reported no credits
+     */
+    static java.util.Optional<RunEvent.Usage> titleUsageEvent(LlmProvider.PUsage usage, long ts) {
+        if (usage == null || usage.aiCredits() == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new RunEvent.Usage(TITLE_AGENT_ID, usage.inputTokens(), usage.outputTokens(),
+                usage.cacheReadTokens(), usage.cacheCreationTokens(), usage.aiCredits(), ts));
     }
 
     /** This session's id — the basename its JSONL, its llm-wire sidecar and its

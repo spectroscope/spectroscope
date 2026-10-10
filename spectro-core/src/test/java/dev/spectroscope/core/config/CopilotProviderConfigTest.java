@@ -118,8 +118,30 @@ class CopilotProviderConfigTest {
         SpectroConfig config = SpectroConfig.load(
                 new SpectroConfig.Overrides("copilot", "auto", null, null, null, null), dir);
 
-        assertEquals("githubcopilot.com", config.providerHost(),
+        assertEquals("api.githubcopilot.com", config.providerHost(),
                 "a cloud call labelled as ollama's local port misstates where the data goes");
+    }
+
+    // final round, 2026-10-10: the host follows what the runtime reports for the account
+
+    @Test
+    void aGitHubDotComAccountOrOneNotYetAskedTalksToApiGitHubCopilotCom() {
+        assertEquals("api.githubcopilot.com", SpectroConfig.copilotHost(null));
+        assertEquals("api.githubcopilot.com", SpectroConfig.copilotHost(""));
+        assertEquals("api.githubcopilot.com", SpectroConfig.copilotHost("https://github.com"));
+        assertEquals("api.githubcopilot.com", SpectroConfig.copilotHost("https://github.com/"));
+    }
+
+    @Test
+    void aDataResidencyAccountNamesTheHostTheRuntimeReports() {
+        assertEquals("octocorp.ghe.com", SpectroConfig.copilotHost("https://octocorp.ghe.com"));
+        assertEquals("octocorp.ghe.com", SpectroConfig.copilotHost("octocorp.ghe.com"));
+    }
+
+    @Test
+    void aHostThatCannotBeReadIsNamedAsTheServiceWithoutAnAddress() {
+        assertEquals("GitHub Copilot", SpectroConfig.copilotHost("https://exa mple:x"));
+        assertEquals("GitHub Copilot", SpectroConfig.copilotHost("::"));
     }
 
     @Test

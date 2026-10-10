@@ -1222,9 +1222,12 @@ public record SpectroConfig(
      *  (card 496). A member has no {@link #keyEnvFor} variable and no
      *  {@link #endpointFor} address; its onboarding status is a sign-in word. */
     static final Set<String> SIGN_IN_PROVIDERS = Set.of(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER);
-    /** Where a Copilot call's content goes: the domain of GitHub's Copilot API
-     *  service, per GitHub's allowlist reference (read 2026-10-10). */
-    static final String COPILOT_SERVICE_DOMAIN = "githubcopilot.com";
+    /** Where a Copilot call's content goes for a github.com account: the host
+     *  of GitHub's Copilot API service, under the domain GitHub's allowlist
+     *  reference names (read 2026-10-10). */
+    static final String COPILOT_API_HOST = "api.githubcopilot.com";
+    /** The name a Copilot call gets when the runtime reported a host that cannot be read. */
+    static final String COPILOT_NO_HOST = "GitHub Copilot";
     /** {@code imageProvider}'s known values — the factory's own list rather than
      *  a second spelling of it, so a backend added there is accepted here. */
     static final Set<String> KNOWN_IMAGE_PROVIDERS =
@@ -3209,20 +3212,48 @@ public record SpectroConfig(
      * 193). An unparseable base URL degrades to the raw value.
      *
      * <p>Copilot's runtime is a local process, but what a call sends goes to
-     * GitHub's Copilot service. GitHub's allowlist reference names
-     * {@code *.githubcopilot.com} as the Copilot API service for every plan
-     * (read 2026-10-10); the runtime picks the plan's subdomain itself, so the
-     * domain is what the faces name.</p>
+     * GitHub's Copilot service: {@code api.githubcopilot.com} for a github.com
+     * account, the host the runtime reports for a data-residency account
+     * ({@link #copilotHost(String)}).</p>
      *
-     * @return e.g. "api.anthropic.com", "githubcopilot.com", "localhost:11434",
+     * @return e.g. "api.anthropic.com", "api.githubcopilot.com", "localhost:11434",
      *         "localhost" for the bundled runtime
      */
+    /**
+     * The host a Copilot call talks to, from the GitHub host the runtime
+     * reports for the account ({@code auth.getStatus}, or the host the runtime
+     * names when it asks for a token). A github.com account, and an account the
+     * runtime was not asked about yet, talks to {@link #COPILOT_API_HOST}. A
+     * data-residency account names the host the runtime reports. A host that
+     * cannot be read is named as the service, without an address.
+     *
+     * @param statusHost the host the runtime reported, or null
+     * @return the host to show
+     */
+    static String copilotHost(String statusHost) {
+        if (statusHost == null || statusHost.isBlank()) {
+            return COPILOT_API_HOST;
+        }
+        String text = statusHost.strip();
+        String host;
+        try {
+            host = java.net.URI.create(text.contains("://") ? text : "https://" + text).getHost();
+        } catch (RuntimeException unreadable) {
+            return COPILOT_NO_HOST;
+        }
+        if (host == null || host.isBlank()) {
+            return COPILOT_NO_HOST;
+        }
+        host = host.toLowerCase(java.util.Locale.ROOT);
+        return "github.com".equals(host) ? COPILOT_API_HOST : host;
+    }
+
     public String providerHost() {
         if ("anthropic".equals(provider)) {
             return "api.anthropic.com";
         }
         if (dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER.equals(provider)) {
-            return COPILOT_SERVICE_DOMAIN;
+            return copilotHost(dev.spectroscope.core.copilot.CopilotAccount.reportedHost());
         }
         if ("spectro-local".equals(provider)) {
             // The bundled runtime is a llama-server child on a loopback port

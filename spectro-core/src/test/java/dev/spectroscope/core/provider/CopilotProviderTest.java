@@ -1220,6 +1220,19 @@ class CopilotProviderTest {
         assertEquals("reject", answers.get("shell"), answers.toString());
     }
 
+    @Test
+    void theHostTheRuntimeReportsForTheAccountIsKeptForTheFaces() throws Exception {
+        start("claude-sonnet-5");
+        runtime.authStatus(Map.of("isAuthenticated", true, "authType", "user", "login", "octo-fixture",
+                "host", "https://octocorp.ghe.com"));
+        provider.authStatus();
+        assertEquals("https://octocorp.ghe.com", CopilotProvider.lastAuthHost());
+        runtime.authStatus(Map.of("isAuthenticated", true, "authType", "user", "login", "octo-fixture",
+                "host", "https://github.com"));
+        provider.authStatus();
+        assertEquals("https://github.com", CopilotProvider.lastAuthHost());
+    }
+
     /** Collects what the provider puts on the wire record. */
     private static final class RecordingTap implements LlmWireTap {
         final List<WireRequest> requests = new CopyOnWriteArrayList<>();

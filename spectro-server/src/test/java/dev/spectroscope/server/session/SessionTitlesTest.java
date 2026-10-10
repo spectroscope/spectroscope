@@ -1,5 +1,6 @@
 package dev.spectroscope.server.session;
 
+import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.PStop;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
@@ -268,5 +269,48 @@ class SessionTitlesTest {
         new SessionTitles(store(), SessionTitles.TIME_LIMIT).suggestNow("s1", "  ", of(model));
         assertThat(model.calls.get()).isZero();
         assertThat(store().get("s1")).isEmpty();
+    }
+
+    // ---- card 496, final round: the title call's AI credits count for the session ----
+
+    @Test
+    void theTitleCallsUsageReachesTheListenerWithItsCredits() {
+        Scripted model = new Scripted(new PTextDelta("Release notes"),
+                new LlmProvider.PUsage(120, 6, 0, 0, 0.0412), new PStop(PStop.StopReason.END_TURN));
+        List<LlmProvider.PUsage> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        new SessionTitles(store(), SessionTitles.TIME_LIMIT).suggestNow("s1", "summarise the release notes",
+                of(model), heard::add);
+
+        assertThat(heard).containsExactly(new LlmProvider.PUsage(120, 6, 0, 0, 0.0412));
+        assertThat(store().get("s1").orElseThrow().title()).isEqualTo("Release notes");
+    }
+
+    @Test
+    void aTitleCallWithCreditsBecomesAUsageEventOfTheTitleAgent() {
+        RunEvent.Usage event = SessionConnection.titleUsageEvent(new LlmProvider.PUsage(120, 6, 3, 4, 0.0412), 77L)
+                .orElseThrow();
+
+        assertThat(event.agentId()).isEqualTo(SessionConnection.TITLE_AGENT_ID);
+        assertThat(event.agentId()).isNotEqualTo("main");
+        assertThat(event.aiCredits()).isEqualTo(0.0412);
+        assertThat(event.inputTokens()).isEqualTo(120);
+        assertThat(event.outputTokens()).isEqualTo(6);
+        assertThat(event.cacheReadTokens()).isEqualTo(3);
+        assertThat(event.cacheCreationTokens()).isEqualTo(4);
+        assertThat(event.ts()).isEqualTo(77L);
+    }
+
+    @Test
+    void aTitleCallWithoutCreditsAddsNoEvent() {
+        assertThat(SessionConnection.titleUsageEvent(new LlmProvider.PUsage(120, 6, 0, 0), 77L)).isEmpty();
+    }
+
+    @Test
+    void theSessionHandsTheTitleCallsUsageToItsOwnRecord() throws Exception {
+        String source = java.nio.file.Files.readString(Path.of(
+                "src/main/java/dev/spectroscope/server/session/SessionConnection.java"));
+        assertThat(source).contains("titles.suggestInBackground(store.id(), prompt, () -> ServerProviders.build(config),"
+                + "\n                usage -> titleUsageEvent(usage, System.currentTimeMillis()).ifPresent(this::recordAndMirror));");
     }
 }

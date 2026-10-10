@@ -286,6 +286,17 @@ public final class CopilotAccount {
         };
     }
 
+    /**
+     * The GitHub host a Copilot runtime last reported for the account
+     * ({@link CopilotProvider#lastAuthHost()}), for the config's
+     * {@code providerHost()}.
+     *
+     * @return the host as the runtime wrote it, or null while none reported one
+     */
+    public static String reportedHost() {
+        return CopilotProvider.lastAuthHost();
+    }
+
     /** {@return whether spectroscope's own device flow is configured} */
     public boolean gitHubAvailable() {
         return github != null;

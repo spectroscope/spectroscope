@@ -132,6 +132,9 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(CopilotProvider.class);
 
+    /** See {@link #lastAuthHost()}. */
+    private static volatile String lastAuthHost;
+
     /** The provider label on {@code run_start} and on the wire record. */
     public static final String NAME = "copilot";
 
@@ -435,6 +438,25 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 .setEnvironment(runtimeEnvironment(env));
     }
 
+    /**
+     * The GitHub host the runtime last reported for the account, through
+     * {@code auth.getStatus} or when it asked the token callback for a token.
+     * The config names a Copilot call's host from it
+     * ({@code SpectroConfig.providerHost()}), so a data-residency account is
+     * not shown as github.com once the runtime has said otherwise.
+     *
+     * @return the host as the runtime wrote it, or null while no runtime reported one
+     */
+    public static String lastAuthHost() {
+        return lastAuthHost;
+    }
+
+    private static void noteAuthHost(String host) {
+        if (host != null && !host.isBlank()) {
+            lastAuthHost = host;
+        }
+    }
+
     private void requireSupportedPlatform() {
         if (!supportedPlatform(osName)) {
             throw new UnsupportedOperationException("copilot: not supported on this platform (" + osName
@@ -449,6 +471,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      */
     public AuthStatus authStatus() {
         GetAuthStatusResponse status = await(client().getAuthStatus(), CALL_TIMEOUT_S, "read the sign-in");
+        noteAuthHost(status.getHost());
         String message = status.getStatusMessage();
         return new AuthStatus(status.isAuthenticated(), status.getAuthType(), status.getLogin(),
                 message == null || message.isBlank() ? null : message);
@@ -822,6 +845,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         if (source != null) {
             config.setGitHubTokenProvider(args -> CompletableFuture.supplyAsync(() -> {
                 try {
+                    noteAuthHost(args.host());
                     Token token = source.token(args.host(),
                             args.reason() == null ? null : args.reason().getValue());
                     return GitHubTokenProviderResult.token(token.value(), token.expiresInSeconds());
