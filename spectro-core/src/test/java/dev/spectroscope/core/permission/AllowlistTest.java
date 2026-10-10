@@ -181,6 +181,13 @@ class AllowlistTest {
     }
 
     @Test
+    void aRememberedPlaybookCheckIsScopedToItsCommand() {
+        assertEquals("playbook_check#eval-execute:./gradlew*",
+                Allowlist.rememberRule("playbook_check",
+                        JSON.createObjectNode().put("command", "./gradlew test")));
+    }
+
+    @Test
     void anUnmappedNameIsNotOutOfReachOfAWildcardEntry() {
         // The other half of the same finding: GOAL_CHECK_GATE's javadoc claimed
         // that resolving to eval-execute put goal_check beyond any wildcard.
