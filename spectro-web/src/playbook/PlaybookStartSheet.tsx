@@ -7,12 +7,20 @@
 // Since the merge with card 483 the drawing takes the document of the file on
 // disk, the one a run pins, as the read view draws it.
 //
+// Card 485: the sheet also lists what the playbook brings (skills, commands,
+// hooks, agents, workflows) through the read only contents list, names every
+// item changed since the install, counts what is not installed and shows the
+// full contents hash. The contents are shown, not pinned: the run hash stays
+// the one the server computes.
+//
 // Styles: styles/playbook-run.css, imported by app.css.
 
 import { useEffect } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import type { StartPreview } from "../state/playbookRuns";
+import { changedItems, loadContents, type ContentsPreview } from "../state/playbookContents";
+import { fetchStartPreview, type StartPreview } from "../state/playbookRuns";
+import { ContentsList } from "./ContentsList";
 import type { PlaybookDoc } from "./editor/doc";
 import { PlaybookGraph } from "./PlaybookGraph";
 
@@ -28,14 +36,65 @@ function shortHash(hash: string): string {
   return `sha256:${hex.slice(0, 12)}`;
 }
 
+/**
+ * What the sheet needs, read when Build by this is pressed: the start preview,
+ * and the contents of the same folder read again, so a file changed since the
+ * pane opened shows as changed. A contents read the server refuses leaves the
+ * sheet without a list; it does not keep the sheet closed.
+ *
+ * @param dir the registered playbook folder
+ * @param workspace the session's workspace
+ */
+export async function readConfirmation(
+  dir: string,
+  workspace: string,
+): Promise<{ preview: StartPreview; contents: ContentsPreview | null }> {
+  const [preview, contents] = await Promise.all([
+    fetchStartPreview(dir, workspace),
+    loadContents(dir, workspace).catch(() => null),
+  ]);
+  return { preview, contents };
+}
+
+/** The contents section: the read only list, the changed line, the count not installed, the contents hash. */
+function ContentsSection({ contents }: { contents: ContentsPreview }) {
+  const lang = useLang();
+  const changed = changedItems(contents);
+  const notInstalled = contents.items.filter((i) => i.state === "new").length;
+  return (
+    <section className="pb-sheet-section pb-run-contents">
+      <h3 className="pb-h">{t(lang, "pc.runTitle")}</h3>
+      {changed.length > 0 && (
+        <p className="pb-run-changed" role="status">
+          {t(lang, "pc.runChanged", { names: changed.map((i) => i.name).join(", ") })}
+        </p>
+      )}
+      {notInstalled > 0 && (
+        <p className="pb-run-not-installed">
+          {notInstalled === 1
+            ? t(lang, "pc.notInstalledOne")
+            : t(lang, "pc.notInstalled", { n: notInstalled })}
+        </p>
+      )}
+      <ContentsList preview={contents} readOnly onlyChanged={false} />
+      <p className="pb-run-contents-hash">
+        <span className="pb-run-hash-label">{t(lang, "pc.hash")}</span>{" "}
+        <span className="pb-mono">{contents.contentsHash}</span>
+      </p>
+    </section>
+  );
+}
+
 export function PlaybookStartSheet(props: {
   /** The saved document of the folder; null draws no graph. */
   doc: PlaybookDoc | null;
   preview: StartPreview;
+  /** What the folder brings, read with the preview; null draws no contents section. */
+  contents: ContentsPreview | null;
   onStart: () => void;
   onClose: () => void;
 }) {
-  const { doc, preview, onStart, onClose } = props;
+  const { doc, preview, contents, onStart, onClose } = props;
   const lang = useLang();
 
   useEffect(() => {
@@ -143,6 +202,8 @@ export function PlaybookStartSheet(props: {
               </ul>
             </section>
           )}
+
+          {contents !== null && <ContentsSection contents={contents} />}
 
           {preview.hash !== null && (
             <p className="pb-run-hash">

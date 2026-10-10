@@ -10,6 +10,7 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dict } from "../i18n/i18n";
+import { setLang } from "../state/lang";
 import {
   __resetPlaybookContents,
   loadContents,
@@ -396,16 +397,19 @@ describe("the install confirmation", () => {
   });
 
   it("turns an already installed refusal into the localised sentence, other refusals into the server's words", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
-      answer(409, {
-        reason: "ALREADY",
-        message: "p is already installed from /old on 2026-10-01; remove it first.",
-        names: [],
-      }),
-    );
+    // The server's words, as PlaybookInstaller writes them (PlaybookInstallerTest pins the same sentence).
+    const wire = "Already installed from /old on 2026-10-01. Remove it first, then install again.";
+    vi.mocked(fetch).mockResolvedValueOnce(answer(409, { reason: "ALREADY", message: wire, names: [] }));
     const already = await confirmInstall("en", "/p", preview(), false, null);
+    // The dialog says in English exactly what the wire says.
+    expect(already.message).toBe(wire);
     expect(already.message).toBe(
       dict["pc.already"].en.replace("{dir}", "/old").replace("{date}", "2026-10-01"),
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(answer(409, { reason: "ALREADY", message: wire, names: [] }));
+    const german = await confirmInstall("de", "/p", preview(), false, null);
+    expect(german.message).toBe(
+      dict["pc.already"].de.replace("{dir}", "/old").replace("{date}", "2026-10-01"),
     );
     vi.mocked(fetch).mockResolvedValueOnce(
       answer(413, { reason: "TOO_LARGE", message: "Over the ceiling.", names: [] }),
@@ -488,16 +492,38 @@ describe("the contents row of the playbook module", () => {
     const row = /<section[^>]*class="pb-section pc-row"[\s\S]*?<\/section>/.exec(out)?.[0] ?? "";
     expect(row).not.toBe("");
     expect(row).toContain(dict["pc.title"].en);
-    expect(row).toContain(
-      dict["pc.row"].en
-        .replace("{skills}", "1")
-        .replace("{commands}", "1")
-        .replace("{hooks}", "1")
-        .replace("{agents}", "1")
-        .replace("{workflows}", "1"),
-    );
+    // One of each kind: every count takes its singular form.
+    expect(row).toContain("1 skill, 1 command, 1 hook, 1 agent, 1 workflow");
     expect(row).toContain(dict["pc.install"].en);
     expect(row).toContain(dict["pc.remove"].en);
+  });
+
+  it("uses the plural for two and none, in English and German", async () => {
+    const two = await pane(
+      preview({
+        items: [SKILL, item({ kind: "skill", name: "other", source: "skills/other" }), HOOK, AGENT, COMMAND],
+      }),
+    );
+    expect(two).toContain("2 skills, 1 command, 1 hook, 1 agent, 0 workflows");
+    __resetPlaybookContents();
+    setLang("de");
+    try {
+      const de = await pane(
+        preview({
+          items: [
+            SKILL,
+            COMMAND,
+            AGENT,
+            WORKFLOW,
+            HOOK,
+            item({ kind: "command", name: "deploy", source: "commands/deploy.md" }),
+          ],
+        }),
+      );
+      expect(de).toContain("1 Skill, 2 Befehle, 1 Hook, 1 Agent, 1 Workflow");
+    } finally {
+      setLang("en");
+    }
   });
 
   it("disables remove while nothing is installed and enables it once something is", async () => {
