@@ -137,6 +137,13 @@ describe("the third mode", () => {
     expect(picture(html, "light").playbook).toBe("false");
   });
 
+  it("draws developer's tab row the way light's is drawn, gone until the tutorial is on (card 513)", () => {
+    const html = markup();
+    expect(picture(html, "developer").tabRow).toBe("false");
+    expect(picture(html, "light").tabRow).toBe("false");
+    expect(picture(html, "learn").tabRow).toBe("true");
+  });
+
   it("names the other two modes' switch without listing two words", () => {
     for (const mode of VIEW_MODES) {
       for (const lang of ["de", "en"] as const) {

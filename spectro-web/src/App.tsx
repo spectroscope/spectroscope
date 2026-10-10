@@ -465,8 +465,9 @@ export function App() {
   const tutorial = tutorialOn(leveling.snapshot);
   // The tab on screen: the one chosen where the mode opens it, else the chat.
   // Every reader below sees this one, so a tab the mode closes is never drawn,
-  // and never drawn as the ladder's teaser either (criterion 8).
-  const tab = shownTab(chosenTab, viewMode);
+  // and never drawn as the ladder's teaser either (criterion 8). Card 513: with
+  // the tab row hidden the chat shows, whatever tab was chosen before.
+  const tab = shownTab(chosenTab, viewMode, tutorial);
   // Held in a ref because onEvents is memoised with no dependencies; reading the
   // callback fresh here is the same stale-closure guard providerModelField uses.
   const refreshLeveling = useRef(leveling.refresh);

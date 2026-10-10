@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { VIEW_TABS } from "./route";
-import { SURFACES, isOpen, tabsShown, tutorialOn, type SurfaceId } from "./surfaces";
+import { SURFACES, isOpen, shownTab, tabsShown, tutorialOn, type SurfaceId } from "./surfaces";
 import type { LevelingSnapshot } from "./leveling";
 import { VIEW_MODES } from "./viewMode";
 
@@ -28,8 +28,9 @@ describe("the surface table (criterion 2)", () => {
     // the tab row itself is a surface that light shows only with the tutorial on.
     // Card 481: developer opens what learn opens, closes the tutorial the way
     // light does for the level pill, and adds the playbook module.
+    // Card 513: the tab row follows the tutorial in developer as in light.
     const card: Record<SurfaceId, [string, string, string]> = {
-      tabRow: ["open", "tutorial", "open"],
+      tabRow: ["open", "tutorial", "tutorial"],
       chat: ["open", "open", "open"],
       spectrum: ["open", "gone", "open"],
       trace: ["open", "gone", "open"],
@@ -70,11 +71,13 @@ describe("the surface table (criterion 2)", () => {
     ]);
   });
 
-  it("opens in developer every surface learn opens, except the level pill, which follows the tutorial", () => {
+  it("opens in developer every surface learn opens, except the level pill and the tab row, which follow the tutorial", () => {
     for (const id of Object.keys(SURFACES) as SurfaceId[]) {
       if (SURFACES[id].modes.learn !== "open") continue;
-      expect(isOpen(id, "developer", false), id).toBe(id !== "leveling");
+      expect(isOpen(id, "developer", false), id).toBe(id !== "leveling" && id !== "tabRow");
     }
+    expect(isOpen("tabRow", "developer", false)).toBe(false);
+    expect(isOpen("tabRow", "developer", true)).toBe(true);
     expect(isOpen("leveling", "developer", false)).toBe(false);
     expect(isOpen("leveling", "developer", true)).toBe(true);
   });
@@ -117,9 +120,26 @@ describe("the tab row", () => {
     expect(tabsShown("learn", true)).toEqual([...VIEW_TABS]);
   });
 
-  it("shows the six tabs in developer, with the tutorial off as with it on", () => {
-    expect(tabsShown("developer", false)).toEqual([...VIEW_TABS]);
+  // Card 513: developer hides and returns the row exactly like light.
+  it("is gone in developer with the tutorial off, and holds the six tabs with it on", () => {
+    expect(tabsShown("developer", false)).toEqual([]);
     expect(tabsShown("developer", true)).toEqual([...VIEW_TABS]);
+  });
+
+  it("falls back to the chat for a chosen tab while the row is hidden in developer (card 513)", () => {
+    for (const tab of VIEW_TABS) {
+      expect(shownTab(tab, "developer", false), `off ${tab}`).toBe("chat");
+      expect(shownTab(tab, "developer", true), `on ${tab}`).toBe(tab);
+    }
+  });
+
+  it("shows the chosen tab in learn whatever the tutorial says, and the chat in light", () => {
+    for (const tutorial of [false, true]) {
+      for (const tab of VIEW_TABS) {
+        expect(shownTab(tab, "learn", tutorial), `learn ${tab}`).toBe(tab);
+        expect(shownTab(tab, "light", tutorial), `light ${tab}`).toBe("chat");
+      }
+    }
   });
 
   it("is gone in light with the tutorial off, and holds the chat alone with it on", () => {

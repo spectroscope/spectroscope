@@ -95,8 +95,9 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
         const tabs = tabsShown(mode, tutorial);
         // The rail's segment rows come first in the markup, then the tab row.
         expect(surfacesWithRole(html, "tab")).toEqual([...segments, ...tabs]);
-        // A positive promise beside the negative one: learn and developer draw all six.
-        if (mode !== "light") expect(tabs).toHaveLength(6);
+        // A positive promise beside the negative one: learn draws all six, and so
+        // does developer while the tutorial is on (card 513).
+        if (mode === "learn" || (mode === "developer" && tutorial)) expect(tabs).toHaveLength(6);
       });
 
       it(`${mode}, tutorial ${tutorial ? "on" : "off"}: every nav row in the rail's head is one the table opens`, async () => {
@@ -118,11 +119,13 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
     expect(on).toContain("lvl-pill");
     const learn = await renderApp("learn", false);
     expect(learn).toContain('class="tab-nav"');
-    // Developer keeps the tab row with the tutorial off, and the level pill only with it on.
+    // Card 513: developer hides the tab row with the tutorial off, as light does,
+    // and draws it with the level pill when the tutorial is on.
     const developerOff = await renderApp("developer", false);
-    expect(developerOff).toContain('class="tab-nav"');
+    expect(developerOff).not.toContain('class="tab-nav"');
     expect(developerOff).not.toContain("lvl-pill");
     const developerOn = await renderApp("developer", true);
+    expect(developerOn).toContain('class="tab-nav"');
     expect(developerOn).toContain("lvl-pill");
   });
 
@@ -153,5 +156,12 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
   it("shows the chat in light, with the tab row gone", async () => {
     const html = await renderApp("light", false);
     expect(html).toContain('class="chat-row"');
+  });
+
+  it("opens developer on the chat with no row above it (card 513)", async () => {
+    const html = await renderApp("developer", false);
+    expect(html).toContain('class="chat-row"');
+    expect(html).not.toContain('class="tab-nav"');
+    expect(surfacesWithRole(html, "tab")).toEqual(SEGMENTS.filter((id) => isOpen(id, "developer", false)));
   });
 });
