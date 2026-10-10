@@ -42,6 +42,22 @@ class CopilotReachesTheFacesTest {
     }
 
     @Test
+    void withoutASignInTheRuntimeIsNotAskedForItsModels() {
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+
+        assertEquals(List.of(), SessionsController.copilotModels(false, () -> {
+            asked.incrementAndGet();
+            return List.of("auto");
+        }));
+        assertEquals(0, asked.get(), "a picker that only looks must not start a runtime");
+        assertEquals(List.of("auto", "claude-sonnet-5"),
+                SessionsController.copilotModels(true, () -> List.of("auto", "claude-sonnet-5")));
+        assertEquals(List.of(), SessionsController.copilotModels(true, () -> {
+            throw new IllegalStateException("copilot runtime: not installed");
+        }), "a missing runtime is an empty list, not an error page");
+    }
+
+    @Test
     void withoutASignInTheCopilotModelListIsEmpty() throws IOException {
         Files.deleteIfExists(CopilotCredentials.defaultPath());
 

@@ -817,16 +817,29 @@ public class SessionsController {
     private List<String> copilotModels() {
         dev.spectroscope.core.copilot.CopilotAccount account =
                 dev.spectroscope.core.copilot.CopilotAccount.forThisMachine();
-        if (!account.hasStoredSignIn()) {
+        return copilotModels(account.hasStoredSignIn(), () -> account
+                .shared(SpectroConfig.defaultModelFor(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER),
+                        dev.spectroscope.core.copilot.CopilotRuntime.find(null).requirePath())
+                .models().stream()
+                .map(dev.spectroscope.core.provider.CopilotProvider.CopilotModel::id)
+                .toList());
+    }
+
+    /**
+     * The Copilot model list's rule, apart from the runtime: without a stored
+     * sign-in the runtime is not asked; a runtime that is missing or refuses
+     * gives an empty list.
+     *
+     * @param signedIn whether a sign-in is stored
+     * @param runtime  asks the runtime for its model ids
+     * @return the model ids, or an empty list
+     */
+    static List<String> copilotModels(boolean signedIn, java.util.function.Supplier<List<String>> runtime) {
+        if (!signedIn) {
             return List.of();
         }
         try {
-            String cliPath = dev.spectroscope.core.copilot.CopilotRuntime.find(null).requirePath();
-            return account.shared(SpectroConfig.defaultModelFor(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER),
-                            cliPath)
-                    .models().stream()
-                    .map(dev.spectroscope.core.provider.CopilotProvider.CopilotModel::id)
-                    .toList();
+            return runtime.get();
         } catch (RuntimeException unavailable) {
             org.slf4j.LoggerFactory.getLogger(SessionsController.class).debug("copilot: no model list", unavailable);
             return List.of();
