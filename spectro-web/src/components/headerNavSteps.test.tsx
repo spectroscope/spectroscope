@@ -187,6 +187,31 @@ describe("the pair has one home (card 514)", () => {
     expect(rule?.[1]).toMatch(/gap: var\(--sp-2\);/);
   });
 
+  it("squeezes the header's padding, gaps and the two widest controls below 480 px, so the panel toggle and the menu stay in a 390 px window with a folder chip", () => {
+    // Measured live on 2026-10-10 (Playwright, Chrome, 390 px, a session with a
+    // folder chip at its floor, learn light developer in the switch): the menu's
+    // right edge stood at 457 px and the panel toggle at 389 px, outside the
+    // window. The title is at zero and the chip is at the floor card 465 set,
+    // so the width comes from the padding, the gaps, the pair and the switch.
+    const headerCss = blankBlockComments(read("../styles/header.css", import.meta.url));
+    const narrow = /@media \(max-width: 480px\) \{([\s\S]*?)\n\}/.exec(headerCss);
+    expect(narrow).not.toBeNull();
+    const block = narrow?.[1] ?? "";
+    const body = (selector: string): string =>
+      new RegExp(`${selector.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`).exec(block)?.[1] ?? "";
+    expect(body(".header")).toMatch(/padding: 0 var\(--sp-2\);/);
+    expect(body(".header")).toMatch(/gap: var\(--sp-1\);/);
+    expect(body(".nav-steps__step")).toMatch(/width: 20px;/);
+    expect(body(".mode-switch__option")).toMatch(/padding: 3px 3px;/);
+    expect(body(".mode-switch__option")).toMatch(/font-size: 10px;/);
+    // The chip keeps its name at every width (card 465): nothing here hides it.
+    expect(block).not.toMatch(/ws-chip/);
+    // Same specificity as the base rules, so the block has to come after them.
+    const at = headerCss.indexOf("@media (max-width: 480px)");
+    expect(at).toBeGreaterThan(headerCss.indexOf(".nav-steps__step {"));
+    expect(at).toBeGreaterThan(headerCss.indexOf(".mode-switch__option {"));
+  });
+
   it("lists back and forward once in the keymap, with the shortcuts unchanged", () => {
     const keymap = read("./Keymap.tsx", import.meta.url);
     expect(count(keymap, 'keys: ["⌘", "←"]')).toBe(1);

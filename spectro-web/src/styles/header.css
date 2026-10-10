@@ -289,6 +289,27 @@
   outline-offset: -2px;
 }
 
+/* Card 514, below 480 px: the gaps alone are not enough. This block stands after
+   the pair and the switch rules, which it overrides. At 390 px, with a session's
+   folder chip at its floor (card 465) and learn, light and developer in the
+   switch, the menu's right edge stood at 457 px and the panel toggle at 389 px,
+   outside the window. The chip keeps its name, so the width comes from the
+   padding, the gaps, the pair and the switch. Measured live on 2026-10-10 after
+   this block: the menu's right edge at 382 px of 390. */
+@media (max-width: 480px) {
+  .header {
+    padding: 0 var(--sp-2);
+    gap: var(--sp-1);
+  }
+  .nav-steps__step {
+    width: 20px;
+  }
+  .mode-switch__option {
+    padding: 3px 3px;
+    font-size: 10px;
+  }
+}
+
 /* Card 472: the install note under the ⋮ menu's code graph row. */
 .hdr-menu-note {
   display: block;
