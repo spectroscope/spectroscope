@@ -217,7 +217,20 @@
   .pb-sheet-canvas .pb-graph {
     height: 200px;
   }
+}
+
+/* Under the state graph's narrow breakpoint (stategraph.css, 900px) its side
+   panel stacks under the canvas, and a fixed box gave the whole height to the
+   header, the transport and the panel: the canvas measured 0 px at 390 px.
+   Here the box grows and the canvas keeps a reserved height. */
+@media (max-width: 900px) {
   .pb-run-graph {
-    height: 440px;
+    height: auto;
+  }
+  .pb-run-graph .sg {
+    height: auto;
+  }
+  .pb-run-graph .sg-canvas {
+    min-height: var(--pb-run-canvas-min);
   }
 }
