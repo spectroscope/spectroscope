@@ -4,23 +4,36 @@
 // Studio, llama.cpp) and how to add a cloud key to .env, so the very first screen is not
 // "Opus is selected and nothing works". Modelled on the keymap overlay: same
 // km-backdrop / km-panel, Esc / × / backdrop to close. Bilingual, tokens only.
+// Card 496 adds the provider that signs in instead of taking a key: its row
+// carries the sign-in status line and the button that opens the sign-in sheet.
 
 import type { ReactNode } from "react";
 import { useLang } from "../state/lang";
+import { CopilotAccountNote } from "./CopilotSignIn";
 
-/** One backend option row. */
-function Option(props: { badge: string; free: boolean; title: string; body: ReactNode }) {
+/** What an option needs: nothing, a key, or a sign-in. */
+type OptionTag = "free" | "key" | "signin";
+
+const TAG_WORDS: Record<OptionTag, { de: string; en: string }> = {
+  free: { de: "kostenlos, lokal", en: "free, local" },
+  key: { de: "braucht einen key", en: "needs a key" },
+  signin: { de: "Anmeldung bei GitHub", en: "signs in with GitHub" },
+};
+
+/** One backend option row. `after` sits below the text, outside its paragraph. */
+function Option(props: { badge: string; tag: OptionTag; title: string; body: ReactNode; after?: ReactNode }) {
   const de = useLang() === "de";
   return (
     <li className="ob-opt">
       <div className="ob-opt-head">
         <span className="ob-opt-badge mono">{props.badge}</span>
         <span className="ob-opt-title">{props.title}</span>
-        <span className={`ob-opt-tag${props.free ? " ob-opt-tag--free" : ""}`}>
-          {props.free ? (de ? "kostenlos, lokal" : "free, local") : de ? "braucht einen key" : "needs a key"}
+        <span className={`ob-opt-tag${props.tag === "free" ? " ob-opt-tag--free" : ""}`}>
+          {de ? TAG_WORDS[props.tag].de : TAG_WORDS[props.tag].en}
         </span>
       </div>
       <p className="ob-opt-body">{props.body}</p>
+      {props.after}
     </li>
   );
 }
@@ -63,14 +76,14 @@ export function Onboarding(props: {
 
         <p className="ob-intro">
           {de
-            ? "spectroscope spricht mit einem LLM — such dir eins aus. Die lokalen sind kostenlos, die Cloud-Anbieter brauchen einen API-Key."
-            : "spectroscope talks to an LLM — choose one. The local backends are free; the cloud ones need an API key."}
+            ? "spectroscope spricht mit einem LLM — such dir eins aus. Die lokalen sind kostenlos, die Cloud-Anbieter brauchen einen API-Key, Copilot eine Anmeldung bei GitHub."
+            : "spectroscope talks to an LLM — choose one. The local backends are free; the cloud ones need an API key, and Copilot a GitHub sign-in."}
         </p>
 
         <ul className="ob-opts">
           <Option
             badge="built-in"
-            free
+            tag="free"
             title={de ? "nichts installieren" : "install nothing"}
             body={
               de ? (
@@ -100,7 +113,7 @@ export function Onboarding(props: {
           />
           <Option
             badge="ollama"
-            free
+            tag="free"
             title={de ? "lokal, kostenlos" : "local, free"}
             body={
               de ? (
@@ -126,7 +139,7 @@ export function Onboarding(props: {
           />
           <Option
             badge="lmstudio"
-            free
+            tag="free"
             title="LM Studio"
             body={
               de ? (
@@ -152,7 +165,7 @@ export function Onboarding(props: {
           />
           <Option
             badge="llamacpp"
-            free
+            tag="free"
             title="llama.cpp"
             body={
               de ? (
@@ -181,7 +194,7 @@ export function Onboarding(props: {
           />
           <Option
             badge="cloud"
-            free={false}
+            tag="key"
             title="anthropic · openai · openrouter · gemini"
             body={
               de ? (
@@ -198,6 +211,27 @@ export function Onboarding(props: {
                 </>
               )
             }
+          />
+          <Option
+            badge="copilot"
+            tag="signin"
+            title={de ? "mit deinem GitHub-Copilot-Abo" : "with your GitHub Copilot subscription"}
+            body={
+              de ? (
+                <>
+                  kein Key: spectroscope meldet sich mit deinem GitHub-Konto an und braucht die Copilot CLI
+                  auf diesem Mac (<code>brew install --cask copilot-cli</code>). Die Kosten laufen über dein
+                  Abo, in GitHub AI-Credits.
+                </>
+              ) : (
+                <>
+                  no key: spectroscope signs in with your GitHub account and needs the Copilot CLI on this Mac
+                  (<code>brew install --cask copilot-cli</code>). The cost goes to your subscription, in
+                  GitHub AI credits.
+                </>
+              )
+            }
+            after={<CopilotAccountNote />}
           />
         </ul>
 

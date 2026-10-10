@@ -17,8 +17,9 @@ export function shouldOnboard(stored: string | null): boolean {
  * (the localStorage flag alone is fragile — per-origin, blocked in the desktop
  * shell — so a keyed openai would otherwise re-trigger the sheet every load). It
  * shows only when it hasn't been dismissed AND the boot provider is explicitly
- * `needs-key`. Returns false while the config is still loading (null), so the
- * sheet never flashes before readiness is known.
+ * `needs-key`, or `needs-signin` for a provider that signs in instead of taking
+ * a key (card 496). Returns false while the config is still loading (null), so
+ * the sheet never flashes before readiness is known.
  */
 export function shouldShowOnboarding(
   dismissed: boolean,
@@ -27,5 +28,6 @@ export function shouldShowOnboarding(
 ): boolean {
   if (dismissed) return false;
   if (bootProvider === null || providerStatus === null) return false;
-  return providerStatus[bootProvider] === "needs-key";
+  const status = providerStatus[bootProvider];
+  return status === "needs-key" || status === "needs-signin";
 }

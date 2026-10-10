@@ -1327,7 +1327,7 @@ describe("the resolver itself", () => {
   });
 
   it("follows a section component to where the page mounts it, through the tab panel wrapper", () => {
-    for (const site of ["components/DockWidthSettings.tsx:47", "components/SettingsPanel.tsx:724"]) {
+    for (const site of ["components/DockWidthSettings.tsx:47", "components/SettingsPanel.tsx:725"]) {
       const chains = chainsOf(site);
       expect(chains.length, site).toBeGreaterThan(0);
       for (const c of chains) {

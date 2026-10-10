@@ -85,6 +85,7 @@ describe("modelFieldMode", () => {
       "openrouter",
       "gemini",
       "spectro-local",
+      "copilot",
     ]);
   });
 });

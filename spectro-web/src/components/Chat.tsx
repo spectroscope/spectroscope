@@ -1542,6 +1542,7 @@ export function Chat(props: {
                     {...props.composerMeta}
                     liveView={props.liveView}
                     lastInputTokens={state.lastInputTokens}
+                    aiCredits={state.aiCredits}
                     context={state.context}
                     onWindowOverride={props.onWindowOverride}
                   />
@@ -1616,6 +1617,7 @@ export function Chat(props: {
                   {...props.composerMeta}
                   liveView={false}
                   lastInputTokens={state.lastInputTokens}
+                  aiCredits={state.aiCredits}
                   context={state.context}
                 />
               )}

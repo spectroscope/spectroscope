@@ -123,6 +123,9 @@ export type RunEvent =
        *  inputTokens stays the RAW uncached remainder — the true context size is the sum. */
       cacheReadTokens?: number;
       cacheCreationTokens?: number;
+      /** Additive (card 496): what the call cost in GitHub AI credits, when the
+       *  provider reports it (Copilot). Absent otherwise. */
+      aiCredits?: number;
       ts: number;
     }
   | { type: "run_end"; runId: string; stopReason: string; ts: number }

@@ -300,6 +300,10 @@ export interface UiState {
   usage: TokenUsage;
   /** The current (or most recently finished) run only. */
   runUsage: TokenUsage;
+  /** Session total in GitHub AI credits over every usage event that reported
+   *  one, children included (card 496). Null while none did: no provider but
+   *  Copilot reports credits, and a zero would claim the session was free. */
+  aiCredits: number | null;
   /** Which children billed inside that same run, and for how much. The run
    *  figure counts a subagent exactly the way the session figure does (card
    *  167), and a total that changes meaning has to say so on BOTH lines — the
@@ -415,6 +419,7 @@ export const initialState: UiState = {
   pendingAsks: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   runUsage: { inputTokens: 0, outputTokens: 0 },
+  aiCredits: null,
   runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
   running: false,
   compacting: false,
@@ -1549,6 +1554,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           inputTokens: state.usage.inputTokens + event.inputTokens,
           outputTokens: state.usage.outputTokens + event.outputTokens,
         },
+        aiCredits: event.aiCredits !== undefined ? (state.aiCredits ?? 0) + event.aiCredits : state.aiCredits,
         runUsage: {
           inputTokens: state.runUsage.inputTokens + event.inputTokens,
           outputTokens: state.runUsage.outputTokens + event.outputTokens,
