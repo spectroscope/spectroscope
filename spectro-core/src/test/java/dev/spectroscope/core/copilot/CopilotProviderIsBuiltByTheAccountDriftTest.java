@@ -36,9 +36,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class CopilotProviderIsBuiltByTheAccountDriftTest {
 
-    /** A constructor call of the provider, or of its options record by either spelling. */
+    /**
+     * A constructor call of the provider or of its options record, with or
+     * without a qualifier: {@code new CopilotProvider(}, {@code new Options(},
+     * {@code new CopilotProvider.Options(} and the fully qualified forms. The
+     * first version of this pattern missed the fully qualified one; a bite
+     * that added {@code new dev.spectroscope...CopilotProvider.Options(} to a
+     * server source stayed green (2026-10-10).
+     */
     private static final Pattern CONSTRUCTION = Pattern.compile(
-            "new\\s+CopilotProvider\\s*\\(|new\\s+(?:CopilotProvider\\s*\\.\\s*)?Options\\s*\\(");
+            "new\\s+(?:[\\w$]+\\s*\\.\\s*)*(?:CopilotProvider|Options)\\s*\\(");
 
     /** The one file allowed to build them. */
     private static final String ACCOUNT = "spectro-core/src/main/java/dev/spectroscope/core/copilot/CopilotAccount.java";

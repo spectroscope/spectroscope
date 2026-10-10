@@ -627,7 +627,6 @@ public final class CopilotAccount {
             return refuse("The stored sign-in could not be deleted: " + failure.getMessage());
         }
         cliAuth = null;
-        runRefusal = null;
         note = wasCli ? CLI_LEFT : null;
         refused = false;
         return status();
