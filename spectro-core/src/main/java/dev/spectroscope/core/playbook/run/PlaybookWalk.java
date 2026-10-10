@@ -77,6 +77,39 @@ public final class PlaybookWalk {
     }
 
     /**
+     * Whether a decision's outcome is a round of the decision's own loop. The
+     * loop's head is whichever of the decision and the target comes first in
+     * {@link #forwardPath}; the outcome is a round when the target reaches the
+     * decision again without passing a node before that head. An outcome that
+     * only comes back through an outer loop, such as a passed task review that
+     * returns through the question whether tasks are left, is a forward exit.
+     *
+     * @param p        the playbook
+     * @param decision the decision taking the outcome
+     * @param to       the target of the outcome's arrow
+     * @return true for a round of the decision's own loop
+     */
+    public static boolean isRound(Playbook p, String decision, String to) {
+        List<String> order = forwardPath(p);
+        if (!order.contains(to)) {
+            return false; // an end
+        }
+        int head = Math.min(order.indexOf(decision), order.indexOf(to));
+        Set<String> seen = new HashSet<>();
+        Deque<String> queue = new ArrayDeque<>(List.of(to));
+        while (!queue.isEmpty()) {
+            String id = queue.poll();
+            if (id.equals(decision)) {
+                return true;
+            }
+            if (order.indexOf(id) >= head && seen.add(id)) {
+                arrowsFrom(p, id).forEach(a -> queue.add(a.to()));
+            }
+        }
+        return false;
+    }
+
+    /**
      * @param p  the playbook
      * @param id the source node
      * @param on the outcome label, or null for a step's one arrow

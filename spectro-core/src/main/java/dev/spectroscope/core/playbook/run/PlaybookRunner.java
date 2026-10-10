@@ -294,19 +294,23 @@ public final class PlaybookRunner {
                 recordCheck(d, check, null, loops(state).getOrDefault(d.id(), 0), r.detail(), t0);
                 throw new RunStopped(reason, d.id() + ": " + r.detail());
             }
+            // A round of the decision's own loop counts; a forward exit leaves the
+            // count at zero for the next time the run reaches the decision.
             int count = loops(state).getOrDefault(d.id(), 0);
+            int next = 0;
             Playbook.Arrow arrow = PlaybookWalk.arrowFrom(p, d.id(), label);
-            if (d.maxRounds() != null && arrow != null && PlaybookWalk.canReach(p, arrow.to(), d.id())) {
+            if (d.maxRounds() != null && arrow != null && PlaybookWalk.isRound(p, d.id(), arrow.to())) {
                 if (count >= d.maxRounds()) {
                     label = "exhausted";
                     arrow = PlaybookWalk.arrowFrom(p, d.id(), label);
                 } else {
                     count++;
                 }
+                next = count;
             }
             recordCheck(d, check, label, count, r.detail(), t0);
             mark(d.id(), "completed");
-            StateUpdate up = StateUpdate.of("outcome", label).and("loops", Map.of(d.id(), count));
+            StateUpdate up = StateUpdate.of("outcome", label).and("loops", Map.of(d.id(), next));
             return arrow != null && ends.contains(arrow.to()) ? up.and("result", resultOf(arrow.to())) : up;
         } finally {
             unhook.run();
