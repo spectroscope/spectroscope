@@ -414,8 +414,17 @@ public final class SkillLibrary {
             public String name() { return "read_skill_file"; }
             /** The model-facing one-liner — says what it reads and what read_file cannot. */
             public String description() {
+                return describeAt(ReadBudget.WINDOW_SHARE_PERCENT);
+            }
+            /** Card 493: the same line with the share the run read when it started. */
+            @Override
+            public String descriptionForRun(RunFacts run) {
+                return describeAt(ReadBudget.shareOrShipped(run.readSharePercent()));
+            }
+            /** @param share the read share in per cent @return the description at that share */
+            private String describeAt(int share) {
                 return "Reads one file that ships beside a skill, whole when it fits "
-                        + ReadBudget.WINDOW_SHARE_PERCENT + " % of your context window: the skill's name "
+                        + share + " % of your context window: the skill's name "
                         + "plus a path relative to the skill's own directory, which use_skill "
                         + "names. Use it for the files a skill body refers to — it reads them "
                         + "wherever the skill was installed, which read_file cannot do when that "
@@ -462,7 +471,8 @@ public final class SkillLibrary {
                     String refused = size > MAX_SKILL_FILE_BYTES
                             ? "file too large (" + size + " bytes, over the fixed fuse of "
                                     + MAX_SKILL_FILE_BYTES + " bytes for one read)"
-                            : ReadBudget.refusal("file", size, context.contextWindow());
+                            : ReadBudget.refusal("file", size, context.contextWindow(),
+                                    ReadBudget.shareOrShipped(context.readSharePercent()));
                     if (refused != null) {
                         return "ERROR: " + refused + " in skill '" + requested + "': " + relative;
                     }

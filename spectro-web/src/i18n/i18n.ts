@@ -1666,6 +1666,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
     en: "Applies from the next session. A session already open keeps what it started with.",
   },
+  // Card 491: the fifth answer. The agent reads these keys when a run starts,
+  // so the next prompt of a session already open picks a change up and a run
+  // in progress keeps what it started with.
+  "set.reachNextRun": {
+    de: "Gilt ab dem nächsten Lauf, auch in einer schon offenen Sitzung. Ein laufender Lauf behält, womit er gestartet ist.",
+    en: "Applies from the next run, including in a session already open. A run in progress keeps what it started with.",
+  },
   // The third answer, and the only field that needs it (card 222, F5). The
   // image backend has a SECOND live control — the dropdown in the composer —
   // and a pick there outranks a file saved under it for the rest of that
@@ -4235,8 +4242,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // unchecked one is left out of the request from the next run on.
   "wsg.tools.title": { de: "Werkzeuggruppen", en: "Tool groups" },
   "wsg.tools.note": {
-    de: "Abgewählte Gruppen schickt der nächste Lauf nicht an das Modell, auch nicht an Unteragenten. An den Berechtigungen ändert das nichts.",
-    en: "The next run leaves unchecked groups out of the model request, for subagents too. Permissions do not change.",
+    de: "Abgewählte Gruppen gehen nicht an das Modell, auch nicht an Unteragenten. An den Berechtigungen ändert das nichts.",
+    en: "Unchecked groups are left out of the model request, for subagents too. Permissions do not change.",
   },
   "wsg.tools.none": { de: "kein Werkzeug in dieser Sitzung", en: "no tool in this session" },
   "wsg.tools.saveFailed": { de: "Nicht gespeichert: {reason}", en: "Not saved: {reason}" },
@@ -4244,6 +4251,38 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ohne angehefteten Ordner gilt die Wahl nur für diese Sitzung und wird nicht gespeichert.",
     en: "Without a pinned folder the choice holds for this session only and is not saved.",
   },
+  // Card 493: the Local mode switch at the top of the gear.
+  "wsg.lm.title": { de: "Lokaler Modus", en: "Local mode" },
+  "wsg.lm.hint": {
+    de: "Vorsichtige Werte für einen Chat mit einem lokalen Modell: weniger Helfer gleichzeitig, weniger Werkzeuge, kleinere Lesezugriffe.",
+    en: "Careful values for a chat on a local model: fewer helpers at once, fewer tools, smaller reads.",
+  },
+  "wsg.lm.sessions": { de: "Modellsitzungen gleichzeitig", en: "Model sessions at once" },
+  "wsg.lm.sessionsNote": { de: "Der Hauptagent und seine Helfer.", en: "The main agent and its helpers." },
+  "wsg.lm.toolGroups": { de: "Abgeschaltete Werkzeuggruppen", en: "Tool groups off" },
+  "wsg.lm.toolGroupsNote": {
+    de: "Ändern unter Werkzeuggruppen weiter unten.",
+    en: "Change them under Tool groups below.",
+  },
+  "wsg.lm.readShare": { de: "Leseanteil", en: "Read share" },
+  "wsg.lm.readShareProposal": {
+    de: "Prozent des Kontextfensters, die ein ganzer Dateilesezugriff belegen darf. Die Vorgabe 10 ist ein Vorschlag, nicht gemessen.",
+    en: "Per cent of the context window one whole-file read may take. The preset 10 is a proposal, not measured.",
+  },
+  "wsg.lm.care": { de: "Sorgfaltsabsatz", en: "Care paragraph" },
+  "wsg.lm.careNote": {
+    de: "Bittet das Modell, in kleinen Schritten zu arbeiten und große Dateien in Teilen zu lesen.",
+    en: "Asks the model to work in small steps and read large files in parts.",
+  },
+  "wsg.lm.changed": { de: "geändert", en: "changed" },
+  "wsg.lm.changedFromLocal": { de: "geändert gegenüber dem lokalen Modus", en: "changed from Local mode" },
+  "wsg.lm.reset": { de: "Zurück auf {value}", en: "Reset to {value}" },
+  "wsg.lm.noTools": {
+    de: "{model} ist nicht auf Werkzeugaufrufe trainiert. Der Agent kann in diesem Chat womöglich keine Werkzeuge nutzen.",
+    en: "{model} is not trained to call tools. The agent may not be able to use any tool in this chat.",
+  },
+  "wsg.lm.belowFloor": { de: "Mindestens {floor}.", en: "At least {floor}." },
+  "wsg.lm.wholeNumber": { de: "Eine ganze Zahl.", en: "A whole number." },
   "wsg.rules.title": { de: "Immer erlauben", en: "Always allow" },
   "wsg.rules.scope": { de: "[projekt]", en: "[project]" },
   "wsg.rules.empty": {

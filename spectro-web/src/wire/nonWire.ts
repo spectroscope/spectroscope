@@ -58,6 +58,8 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   "permission_mode_info",
   // Card 466: the composer gear's tool groups, announced like the mode above.
   "tool_groups_info",
+  // Card 493: the composer gear's Local mode switch, announced the same way.
+  "local_mode_info",
   "session_resume",
   "otlp_export",
   "fleet_roster",

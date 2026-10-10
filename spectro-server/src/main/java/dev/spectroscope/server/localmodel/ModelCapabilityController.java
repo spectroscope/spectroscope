@@ -48,6 +48,7 @@ public class ModelCapabilityController {
     private final String openrouterBase;
     private final String ollamaBaseOverride;
     private final String anthropicKeyOverride;
+    private final String lmstudioBaseOverride;
 
     /** The probe client — finite timeouts like the model-list probes: a
      *  black-holed backend must never pin a Tomcat worker. The read timeout is
@@ -72,10 +73,101 @@ public class ModelCapabilityController {
      */
     ModelCapabilityController(String anthropicBase, String openrouterBase,
                               String ollamaBaseOverride, String anthropicKeyOverride) {
+        this(anthropicBase, openrouterBase, ollamaBaseOverride, anthropicKeyOverride, null);
+    }
+
+    /**
+     * Visible for tests: scripted endpoints, LM Studio's included (card 493).
+     *
+     * @param anthropicBase        the Anthropic API root
+     * @param openrouterBase       the OpenRouter root
+     * @param ollamaBaseOverride   the Ollama root, or null to read the config
+     * @param anthropicKeyOverride the key, or null to resolve ANTHROPIC_API_KEY
+     * @param lmstudioBaseOverride LM Studio's address, or null to read the config
+     */
+    ModelCapabilityController(String anthropicBase, String openrouterBase,
+                              String ollamaBaseOverride, String anthropicKeyOverride,
+                              String lmstudioBaseOverride) {
         this.anthropicBase = anthropicBase;
         this.openrouterBase = openrouterBase;
         this.ollamaBaseOverride = ollamaBaseOverride;
         this.anthropicKeyOverride = anthropicKeyOverride;
+        this.lmstudioBaseOverride = lmstudioBaseOverride;
+    }
+
+    /**
+     * {@code GET /api/models/tool-use} (card 493, criterion 7): whether a
+     * model can call tools, for the Local mode switch's warning. The bundled
+     * engine answers from its catalogue, LM Studio from
+     * {@code trained_for_tool_use} in its own listing, Ollama from the
+     * {@code capabilities} of {@code /api/show}. Every other backend has no
+     * such answer, and a backend that does not answer is unknown.
+     *
+     * @param provider the provider label of the chat
+     * @param model    the model id of the chat
+     * @return {@code toolUse} (yes, no, unknown) and {@code source}
+     *         (catalogue, lmstudio, ollama, none)
+     */
+    @GetMapping("/api/models/tool-use")
+    public Map<String, String> toolUse(@RequestParam(name = "provider") String provider,
+                                       @RequestParam(name = "model") String model) {
+        String source;
+        dev.spectroscope.core.local.ToolUse answer;
+        switch (provider) {
+            case "spectro-local" -> {
+                source = "catalogue";
+                answer = dev.spectroscope.core.local.ToolUse.fromCatalogue(
+                        dev.spectroscope.core.local.LocalCatalog.bundled(), model);
+            }
+            case "lmstudio" -> {
+                source = "lmstudio";
+                answer = lmStudioToolUse(model);
+            }
+            case "ollama" -> {
+                source = "ollama";
+                answer = ollamaToolUse(model);
+            }
+            default -> {
+                source = "none";
+                answer = dev.spectroscope.core.local.ToolUse.UNKNOWN;
+            }
+        }
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        out.put("toolUse", answer.wire());
+        out.put("source", source);
+        return out;
+    }
+
+    /** LM Studio's own listing, read for one model; unknown when it does not answer.
+     *  @param model the model id
+     *  @return the answer */
+    private dev.spectroscope.core.local.ToolUse lmStudioToolUse(String model) {
+        try {
+            String base = lmstudioBaseOverride != null ? lmstudioBaseOverride
+                    : SpectroConfig.load(SpectroConfig.Overrides.none()).endpointFor("lmstudio");
+            JsonNode listing = probe.get()
+                    .uri(dev.spectroscope.core.provider.OpenAiCompatProvider.capabilityUrl(base))
+                    .retrieve().body(JsonNode.class);
+            return dev.spectroscope.core.local.ToolUse.fromLmStudioListing(listing, model);
+        } catch (Exception dark) {
+            return dev.spectroscope.core.local.ToolUse.UNKNOWN;
+        }
+    }
+
+    /** Ollama's {@code /api/show}, read for one model; unknown when it does not answer.
+     *  @param model the model id
+     *  @return the answer */
+    private dev.spectroscope.core.local.ToolUse ollamaToolUse(String model) {
+        try {
+            String base = ollamaBaseOverride != null ? ollamaBaseOverride : configuredOllamaBase();
+            JsonNode show = probe.post()
+                    .uri(base + "/api/show")
+                    .body(Map.of("model", model == null ? "" : model))
+                    .retrieve().body(JsonNode.class);
+            return dev.spectroscope.core.local.ToolUse.fromOllamaShow(show);
+        } catch (Exception dark) {
+            return dev.spectroscope.core.local.ToolUse.UNKNOWN;
+        }
     }
 
     private static SimpleClientHttpRequestFactory probeFactory() {

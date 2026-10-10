@@ -198,6 +198,28 @@ public final class Agent {
      *  so the spawn tools describe one number for the whole run. */
     private volatile Integer sessionsPerChatThisRun;
 
+    /** Card 492: the {@code careParagraph} setting the NEXT run reads. Seeded
+     *  from the options; a face with a live control sets it between runs. */
+    private volatile String careSetting;
+
+    /** Card 492: the helper count the next run's paragraph names. */
+    private volatile int careHelpers = dev.spectroscope.core.session.CareParagraph.DEFAULT_HELPERS;
+
+    /** Card 492: the setting this run read when it started. */
+    private volatile String careSettingThisRun;
+
+    /** Card 492: what this run appends to its system prompt, built once when
+     *  it starts so the text cannot change within the run. Empty when off. */
+    private volatile String careThisRun = "";
+
+    /** Card 493: the read share the NEXT run reads, in per cent. Seeded from
+     *  {@link AgentOptions#readSharePercent()}; null is the shipped share. */
+    private volatile Integer readSharePercent;
+
+    /** Card 493: the read share this run read when it started. 0 before the
+     *  first run, which {@code ReadBudget} reads as the shipped share. */
+    private volatile int readShareThisRun;
+
     /**
      * Card 467: what leaves the outgoing request of an old, large tool result.
      * It lives with the agent for the reason {@link #messages} does: its
@@ -263,6 +285,8 @@ public final class Agent {
         // Card 490: the live seed, refused by name below its floor.
         this.sessionsPerChat = dev.spectroscope.core.subagents.SessionCount
                 .of(options.sessionsPerChat()).sessions();
+        this.careSetting = options.careParagraph();
+        this.readSharePercent = options.readSharePercent();
         // A tool this agent does not carry cannot be called again, so a stub
         // that says "call it again" would be false: its results stay whole.
         this.elision = new dev.spectroscope.core.session.ToolResultElision(
@@ -517,6 +541,16 @@ public final class Agent {
         // request, and a description that changed inside a run would throw
         // away the provider's cached prefix.
         sessionsPerChatThisRun = sessionsPerChat;
+        // Card 492: after the groups, because the subagent sentence follows
+        // whether this run offers a spawn tool. Read once: the text stays the
+        // same for every request of the run.
+        careSettingThisRun = careSetting;
+        careThisRun = careSuffixFor(careSettingThisRun, groupsOffThisRun);
+        // Card 493: read ONCE per run for the reason the session count is: the
+        // share is part of read_file's description, and the description and
+        // the check of one run must name the same number.
+        readShareThisRun = dev.spectroscope.core.tools.ReadBudget.shareOrShipped(
+                readSharePercent == null ? 0 : readSharePercent);
         ContinuationLeash leash = options.continuationLeash();
         if (leash != null) {
             // The count and the fingerprint are sentences about THIS run, for
@@ -756,9 +790,12 @@ public final class Agent {
                 // build time could not be stated, changed or cleared without a
                 // reconnect, which is a rebuild by another name.
                 RunGoal statedGoal = goal == null ? null : goal.stated();
+                // Card 492: the care paragraph sits between the base prompt and
+                // the goal, so the part that is fixed for the run comes first.
+                String baseForRun = options.systemPrompt() + careThisRun;
                 String systemForTurn = statedGoal == null
-                        ? options.systemPrompt()
-                        : options.systemPrompt() + statedGoal.promptSection();
+                        ? baseForRun
+                        : baseForRun + statedGoal.promptSection();
                 // Card 488: the completion fits the window this turn compacts
                 // by, and what that window has left after this request's
                 // input, for every provider and every agent, children included.
@@ -1524,7 +1561,7 @@ public final class Agent {
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
                         planLedger(emit), attach, reported::set, humanWaitMs::addAndGet,
-                        reachOutside, window));
+                        reachOutside, window, readShareThisRun));
         long durationMs = Math.max(0, now() - startedAt - humanWaitMs.get());
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is
@@ -1600,9 +1637,11 @@ public final class Agent {
         // with a goal by exactly the section the goal adds — and this estimate
         // is what the browser's context ring and the CLI's meter show.
         RunGoal statedForGauge = options.goal() == null ? null : options.goal().stated();
+        // Card 492: the ring reads the care paragraph the request carries.
+        String baseForGauge = options.systemPrompt() + careThisRun;
         String systemForGauge = statedForGauge == null
-                ? options.systemPrompt()
-                : options.systemPrompt() + statedForGauge.promptSection();
+                ? baseForGauge
+                : baseForGauge + statedForGauge.promptSection();
         int systemChars = systemForGauge.length();
         // Card 466: the ring measures what the request carries, so a
         // switched-off group leaves this part exactly as it leaves the request.
@@ -1943,6 +1982,74 @@ public final class Agent {
     }
 
     /**
+     * Card 492: sets the {@code careParagraph} value the NEXT run reads. A run
+     * in flight keeps the text it started with.
+     *
+     * @param setting {@code "on"}, {@code "off"}, or null for the shipped off
+     */
+    public void setCareParagraph(String setting) {
+        this.careSetting = setting;
+    }
+
+    /**
+     * Card 492: sets how many helpers the NEXT run's paragraph names. A run in
+     * flight keeps the text it started with. Until a session count per chat
+     * reaches the agent, the default is {@link
+     * dev.spectroscope.core.session.CareParagraph#DEFAULT_HELPERS}.
+     *
+     * @param helpers the subagents that may run at once, at least 1
+     * @throws IllegalArgumentException for a count below 1
+     */
+    public void setCareHelpers(int helpers) {
+        if (helpers < 1) {
+            throw new IllegalArgumentException("careHelpers must be at least 1, was " + helpers);
+        }
+        this.careHelpers = helpers;
+    }
+
+    /**
+     * Card 492: the {@code careParagraph} value the current run read when it
+     * started. A child spawned during the run takes this value. Before the
+     * first run it is the value the next run will read.
+     *
+     * @return the setting, or null for the shipped off
+     */
+    public String careSettingThisRun() {
+        String read = careSettingThisRun;
+        return read != null ? read : careSetting;
+    }
+
+    /**
+     * Card 492: what the current (or last) run appends to its system prompt.
+     *
+     * @return the separator and the paragraph, or empty when the run had it off
+     */
+    public String careParagraphThisRun() {
+        return careThisRun;
+    }
+
+    /**
+     * Card 492: what the NEXT run would append to its system prompt, read the
+     * way the loop reads it when a run starts.
+     *
+     * @return the separator and the paragraph, or empty when it is off
+     */
+    public String careParagraphForNextRun() {
+        return careSuffixFor(careSetting, toolGroupsOffNow());
+    }
+
+    /** The paragraph for a setting, naming subagents only when the run offers
+     *  a spawn tool after the switched-off groups are taken out. */
+    private String careSuffixFor(String setting, Set<ToolGroup> off) {
+        if (!dev.spectroscope.core.session.CareParagraph.enabled(setting) || options.registry() == null) {
+            return "";
+        }
+        boolean spawns = ToolGroup.visible(options.registry().specs(), off).stream()
+                .anyMatch(spec -> spec.name().equals("spawn_agent") || spec.name().equals("spawn_agents"));
+        return dev.spectroscope.core.session.CareParagraph.suffix(setting, careHelpers, spawns);
+    }
+
+    /**
      * Card 466: the tool groups the NEXT run of this agent will leave out,
      * read through the same reader the loop reads at the start of a run.
      *
@@ -1962,7 +2069,8 @@ public final class Agent {
      * @return the advertised specs, in registration order
      */
     public List<ToolSpec> toolSpecsForNextRun() {
-        return ToolGroup.visible(options.registry().specs(), toolGroupsOffNow());
+        return ToolGroup.visible(options.registry().specs(new Tool.RunFacts(readSharePercent())),
+                toolGroupsOffNow());
     }
 
     /**
@@ -2011,9 +2119,44 @@ public final class Agent {
         return sessionsPerChatThisRun;
     }
 
-    /** The registry's specs minus the groups this run switched off. */
+    /**
+     * Card 493: sets the read share the NEXT run reads. A run in flight keeps
+     * the share it started with, in its {@code read_file} description and in
+     * the check.
+     *
+     * @param value the share in per cent, or null for the shipped one
+     */
+    public void setReadSharePercent(Integer value) {
+        this.readSharePercent = value;
+    }
+
+    /**
+     * Card 493: the read share the next run will read.
+     *
+     * @return the share in per cent, the shipped one when none is set
+     */
+    public int readSharePercent() {
+        Integer share = readSharePercent;
+        return dev.spectroscope.core.tools.ReadBudget.shareOrShipped(share == null ? 0 : share);
+    }
+
+    /**
+     * Card 493: the read share the current (or last) run read when it
+     * started. A child spawned during the run takes this share. Before the
+     * first run it is the share the next run will read.
+     *
+     * @return the share in per cent
+     */
+    public int readSharePercentThisRun() {
+        int read = readShareThisRun;
+        return read > 0 ? read : readSharePercent();
+    }
+
+    /** The registry's specs minus the groups this run switched off, each
+     *  described with what the run read when it started (card 493). */
     private List<ToolSpec> visibleSpecs() {
-        return ToolGroup.visible(options.registry().specs(), groupsOffThisRun);
+        return ToolGroup.visible(options.registry().specs(
+                new Tool.RunFacts(readSharePercentThisRun())), groupsOffThisRun);
     }
 
     /**

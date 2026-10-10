@@ -245,6 +245,38 @@ public final class SubagentManager {
     }
 
     /**
+     * Card 492: the {@code careParagraph} setting a child spawned now starts
+     * from. While a parent run is in flight it is the setting that run read at
+     * its start, so a change between runs reaches parent and children
+     * together; otherwise the session's value.
+     *
+     * @return the setting, or null for the shipped off
+     */
+    public String childCareParagraph() {
+        Agent parent = currentParent;
+        if (parent != null) {
+            return parent.careSettingThisRun();
+        }
+        return config.careParagraph();
+    }
+
+    /**
+     * Card 493: the read share a child spawned now starts from. While a
+     * parent run is in flight it is the share that run read at its start, so
+     * a child reads and describes {@code read_file} as its parent's run does;
+     * otherwise the session's value.
+     *
+     * @return the share in per cent, or null for the shipped one
+     */
+    public Integer childReadSharePercent() {
+        Agent parent = currentParent;
+        if (parent != null) {
+            return parent.readSharePercentThisRun();
+        }
+        return config.readSharePercent();
+    }
+
+    /**
      * Replaces agent.run() at the call site: pumps the parent's events into
      * the same queue as the children's and returns the merged stream. If the
      * parent's agent loop is blocked inside a spawn tool's execute(), the
@@ -549,6 +581,13 @@ public final class SubagentManager {
                 // under. It holds no spawn tools, so the number limits nothing
                 // in the child; it is carried so the tree reads one count.
                 .sessionsPerChat(liveCount().sessions())
+                // Card 492: the care paragraph of the parent run that spawns
+                // this child. A child carries no spawn tool, so its paragraph
+                // leaves the sentence about subagents out.
+                .careParagraph(childCareParagraph())
+                // Card 493: the read share of the parent run that spawns this
+                // child, so the child's read_file says and checks the same.
+                .readSharePercent(childReadSharePercent())
                 .build());
 
         StringBuilder lastTurnText = new StringBuilder();

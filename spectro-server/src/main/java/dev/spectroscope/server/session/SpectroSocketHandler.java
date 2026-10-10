@@ -157,6 +157,10 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             case "set_tool_groups_off" ->                      // composer gear, additive
                     connection.onSetToolGroupsOff(frame.path("groups"),
                             frame.path("save").asBoolean(false));
+            // Card 493: the composer gear's Local mode switch. The frame goes
+            // through untouched: the connection checks every part of it.
+            case "set_local_mode" ->                           // composer gear, additive
+                    connection.onSetLocalMode(frame);
             // Card 267: the operator states what this run is FOR and the command
             // that decides it. From a person at a browser, never from the model —
             // there is no goal tool in any registry, on purpose.

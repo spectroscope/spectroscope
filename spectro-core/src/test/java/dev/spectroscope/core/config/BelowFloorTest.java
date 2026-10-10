@@ -63,6 +63,8 @@ class BelowFloorTest {
         table.put("chatReserveWidth", 0);
         // Card 490: the main agent and one helper; no helpers is the agents group.
         table.put("sessionsPerChat", 2);
+        // Card 493: the read share, one per cent of the window at the least.
+        table.put("readSharePercent", 1);
         return table;
     }
 

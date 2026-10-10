@@ -12,6 +12,7 @@ import { rtkRewriteOf } from "../wire/rtkRewrite";
 import { t } from "../i18n/i18n";
 import { SEARXNG_HTML_NOTE_KEY, searxngHtmlAddress } from "./searxngHtmlNote";
 import { parseToolGroupsInfo, type ToolGroupsInfo } from "./toolGroups";
+import { parseLocalModeInfo, type LocalModeInfo } from "./localMode";
 
 export interface ToolCard {
   callId: string;
@@ -401,6 +402,9 @@ export interface UiState {
    *  tool_groups_info frame (what each group holds, which are off). Null until
    *  the first frame, so the gear draws no section from a guess. */
   toolGroups: ToolGroupsInfo | null;
+  /** Card 493: the Local mode switch the server announced in its socket-only
+   *  local_mode_info frame. Null until the first frame. */
+  localMode: LocalModeInfo | null;
   /** ts of the current assistant turn's first event, per agent — so the `usage`
    *  event can stamp each answer's duration. Transient bookkeeping, not shown. */
   assistantTurnStart: Record<string, number>;
@@ -446,6 +450,7 @@ export const initialState: UiState = {
   runModel: null,
   permissionMode: "ask",
   toolGroups: null,
+  localMode: null,
   assistantTurnStart: {},
   answerAwaitingUsage: [],
 };
@@ -1037,6 +1042,10 @@ function applyFrame(traced: UiState, event: RunEvent): UiState {
   // truth rather than emptying the gear.
   if (raw.type === "tool_groups_info") {
     return { ...traced, toolGroups: parseToolGroupsInfo(event) ?? traced.toolGroups };
+  }
+  // Card 493: same boundary rule for the Local mode switch.
+  if (raw.type === "local_mode_info") {
+    return { ...traced, localMode: parseLocalModeInfo(event) ?? traced.localMode };
   }
   // The session-wide agent roster folds separately from the UI state and uses
   // the PRE-apply rootRunId (applyEvent's run_end clears it).

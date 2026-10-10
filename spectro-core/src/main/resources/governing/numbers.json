@@ -150,6 +150,26 @@
     "explanation" : "The cap ClaudeTranscriptsController refuses transcripts above, mirrored here because line() reports it at boot and core cannot see into the server module to read it. It is reported, not computed with: floorBytes() ignores it, and this mirror once justified itself by saying the floor was a function of it, which was true of the read that held the file in heap and false from the moment that read was streamed. The mirror is not on trust: HeapFlagDriftTest reads the controller's source and fails when the two drift apart."
   },
   {
+    "owner" : "dev.spectroscope.core.config.LocalMode",
+    "field" : "PRESET_READ_SHARE_PERCENT",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "UNEXAMINED",
+    "unit" : "PERCENT",
+    "key" : "",
+    "explanation" : "The read share Local mode writes, in per cent. A proposal: nobody has measured it. The measurement the concept names is whole reads refused, paged reads, extra turns and wall clock on card 486's task set at 10 and at 25 per cent."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.LocalMode",
+    "field" : "PRESET_SESSIONS_PER_CHAT",
+    "value" : "3",
+    "expression" : "SpectroConfig.DEFAULT_SESSIONS_PER_CHAT",
+    "kind" : "ALIAS",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The session count Local mode writes: the main agent and two helpers, the owner's figure, which is the proposed count card 490 named."
+  },
+  {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_CHAT_RESERVE_WIDTH",
     "value" : "360",
@@ -271,13 +291,23 @@
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
+    "field" : "DEFAULT_READ_SHARE_PERCENT",
+    "value" : "25",
+    "expression" : "dev.spectroscope.core.tools.ReadBudget.WINDOW_SHARE_PERCENT",
+    "kind" : "ALIAS",
+    "unit" : "PERCENT",
+    "key" : "",
+    "explanation" : "The shipped readSharePercent (card 493): the value of ReadBudget.WINDOW_SHARE_PERCENT, read from it so the two cannot disagree."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SpectroConfig",
     "field" : "DEFAULT_SESSIONS_PER_CHAT",
     "value" : "3",
     "expression" : "3",
     "kind" : "SETTABLE",
     "unit" : "COUNT",
     "key" : "sessionsPerChat",
-    "explanation" : "The proposed session count for a chat (card 490): three, the main agent and two helpers. It is the owner's figure of 2026-10-09 for a chat on a local model (konzept/RUN-PROFILES.md, Knobs), not a measurement; the concurrency of one chat on the house node is measured by card 487.\n\nThe key itself ships unset: a chat that names no count runs as v0.14.4 did, with no limit per chat and one spawn_agents call starting up to SubagentManager.MAX_PARALLEL_CHILDREN helpers. No code reads this number yet. The settings page has no field for the key, and Local mode (card 493), which is to write this number, is not built; until then a chat has a count only when a settings file sets the key. The floor is 2, in SettingFloors: a count of 1 would be a second way to say \"no helpers\", which the agents tool group already says."
+    "explanation" : "The proposed session count for a chat (card 490): three, the main agent and two helpers. It is the owner's figure of 2026-10-09 for a chat on a local model (konzept/RUN-PROFILES.md, Knobs), not a measurement; the concurrency of one chat on the house node is measured by card 487.\n\nThe key itself ships unset: a chat that names no count runs as v0.14.4 did, with no limit per chat and one spawn_agents call starting up to SubagentManager.MAX_PARALLEL_CHILDREN helpers. The Local mode switch of the composer gear writes this number for one chat (LocalMode.PRESET_SESSIONS_PER_CHAT, card 493), and the care paragraph names this number minus one while the key is unset (CareParagraph.helpersFor). Otherwise a chat has a count only when a settings file sets the key. The floor is 2, in SettingFloors: a count of 1 would be a second way to say \"no helpers\", which the agents tool group already says."
   },
   {
     "owner" : "dev.spectroscope.core.config.SpectroConfig",
@@ -1020,6 +1050,16 @@
     "explanation" : "The largest completion cap this provider ever sends. The harness default (32k) suits Anthropic and local servers, but api.openai.com enforces PER-MODEL caps and rejects a too-large value with HTTP 400 — the smallest cap among current chat models is gpt-4o-mini's 16384, so 16000 is the safe ceiling for everything the picker offers."
   },
   {
+    "owner" : "dev.spectroscope.core.session.CareParagraph",
+    "field" : "DEFAULT_HELPERS",
+    "value" : "2",
+    "expression" : "2",
+    "kind" : "UNEXAMINED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The helpers an agent's paragraph names until a face hands it a count through helpersFor: the concept's default of three model sessions per chat, the main agent and two helpers (konzept/RUN-PROFILES.md, Knobs). The owner named three sessions; nobody has measured how many requests the house test backend serves at once usefully."
+  },
+  {
     "owner" : "dev.spectroscope.core.session.Compaction",
     "field" : "DEFAULT_KEEP_MESSAGES",
     "value" : "4",
@@ -1334,10 +1374,10 @@
     "field" : "WINDOW_SHARE_PERCENT",
     "value" : "25",
     "expression" : "25",
-    "kind" : "FIXED",
+    "kind" : "SETTABLE",
     "unit" : "PERCENT",
-    "key" : "",
-    "explanation" : "The share of the context window one whole-file read may take, in per cent.\n\nCompaction trips at 70 % of the window (CompactionThreshold). A read of a quarter leaves 45 of those 70 points for the system prompt, the tool definitions and the rest of the conversation. A share near 70 % would let one read trip compaction on the next turn, and the summary would fold away the file the model had just asked for. On the owner's loaded window of 250,368 tokens a quarter is 62,592 tokens, about 187 kB."
+    "key" : "readSharePercent",
+    "explanation" : "The share of the context window one whole-file read may take, in per cent.\n\nCompaction trips at 70 % of the window (CompactionThreshold). A read of a quarter leaves 45 of those 70 points for the system prompt, the tool definitions and the rest of the conversation. A share near 70 % would let one read trip compaction on the next turn, and the summary would fold away the file the model had just asked for. On the owner's loaded window of 250,368 tokens a quarter is 62,592 tokens, about 187 kB.\n\nCard 493 made it the shipped value of the key readSharePercent: a run reads its share once when it starts, and the overloads below that take a share judge with it. A share of 0 or less means the run names none, and this value applies."
   },
   {
     "owner" : "dev.spectroscope.core.tools.RtkFilter",

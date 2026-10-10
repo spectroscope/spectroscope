@@ -727,6 +727,11 @@ public final class SpectroCli implements Runnable {
         // What `webTools` still does is narrower and unchanged: it is the grant
         // that reaches a RESEARCH child PAST its keep-list, which would otherwise
         // filter the trio out. Same instances either way.
+        // settings-reach: toolGroupsOff | REPL | the tool groups are switched
+        //     in the composer gear of the app window, and the terminal has no
+        //     gear. Card 466 kept the key to a session in the app window, so a
+        //     list in a settings file leaves the REPL and its children with
+        //     every tool.
         subagents = new SubagentManager(SubagentConfig.builder()
                 .provider(provider)
                 .cwd(workspace)
@@ -756,6 +761,10 @@ public final class SpectroCli implements Runnable {
                 // card 490: the chat's session count, between runs; during a
                 // run the parent agent's own count governs the slot pool
                 .sessionsPerChat(config.sessionsPerChat())
+                // card 492: and its care paragraph switch
+                .careParagraph(config.careParagraph())
+                // Card 493: the read share, read when the REPL starts.
+                .readSharePercent(config.readSharePercent())
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -879,7 +888,11 @@ public final class SpectroCli implements Runnable {
      * @return the ready agent; the registry and broker are shared, not rebuilt
      */
     private Agent buildAgent(List<ProviderMessage> initialMessages) {
-        return new Agent(AgentOptions.builder()
+        // settings-reach: toolGroupsOff | REPL | the tool groups are switched
+        //     in the composer gear of the app window, and the terminal has no
+        //     gear. Card 466 kept the key to a session in the app window, so a
+        //     list in a settings file leaves the REPL with every tool.
+        Agent built = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(systemPrompt)
                 .registry(registry)
@@ -930,8 +943,15 @@ public final class SpectroCli implements Runnable {
                 .toolResultElision(config.toolResultElision())
                 // Card 490: the REPL is one chat; its helpers share its count.
                 .sessionsPerChat(config.sessionsPerChat())
+                // Card 492: the care paragraph, read when the REPL starts.
+                .careParagraph(config.careParagraph())
+                // Card 493: the read share, read when the REPL starts.
+                .readSharePercent(config.readSharePercent())
                 .onPermission(askOnTerminal)
                 .build());
+        // Card 492: the helpers the paragraph names, from the one derivation.
+        built.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(config));
+        return built;
     }
 
     // ---------------------------------------------------------- slash commands

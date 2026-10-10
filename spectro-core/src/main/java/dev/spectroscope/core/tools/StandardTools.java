@@ -541,6 +541,20 @@ public final class StandardTools {
     // ---- read_file ---------------------------------------------------------------------
 
     /**
+     * The model-facing line of {@code read_file} at one read share (card 493).
+     * At the shipped 25 it is the v0.14.4 line, byte for byte.
+     *
+     * @param share the share in per cent
+     * @return the description
+     */
+    static String readFileDescription(int share) {
+        return "Reads a text file relative to the working directory, whole when it "
+                + "fits " + share + " % of your context "
+                + "window. Larger files: page with offset (1-based line) and "
+                + "limit (line count).";
+    }
+
+    /**
      * Builds {@code read_file}: returns a sandboxed text file whole when it
      * fits {@link ReadBudget} under the run's context window (card 456), or a
      * PAGED window of a file of any size via the optional {@code offset}
@@ -554,10 +568,12 @@ public final class StandardTools {
             public String name() { return "read_file"; }
             /** The model-facing one-liner: the rule and the paging escape. */
             public String description() {
-                return "Reads a text file relative to the working directory, whole when it "
-                        + "fits " + ReadBudget.WINDOW_SHARE_PERCENT + " % of your context "
-                        + "window. Larger files: page with offset (1-based line) and "
-                        + "limit (line count).";
+                return readFileDescription(ReadBudget.WINDOW_SHARE_PERCENT);
+            }
+            /** Card 493: the same line with the share the run read when it started. */
+            @Override
+            public String descriptionForRun(RunFacts run) {
+                return readFileDescription(ReadBudget.shareOrShipped(run.readSharePercent()));
             }
             /** Required {@code path}; optional integers {@code offset} and {@code limit}. */
             public JsonNode inputSchema() {
@@ -583,10 +599,11 @@ public final class StandardTools {
                     int offset = input.path("offset").asInt(0);
                     int limit = input.path("limit").asInt(0);
                     int contextWindow = context.contextWindow();
+                    int share = ReadBudget.shareOrShipped(context.readSharePercent());
                     if (offset <= 0 && limit <= 0) {
                         // Whole-file read: one size call decides before a byte is read.
                         long size = Files.size(file);
-                        String refused = ReadBudget.refusal("file", size, contextWindow);
+                        String refused = ReadBudget.refusal("file", size, contextWindow, share);
                         if (refused != null) {
                             return "ERROR: " + refused + ". Page with offset (1-based line)"
                                     + " and limit (line count).";
@@ -598,7 +615,7 @@ public final class StandardTools {
                     // of being loaded first and measured after.
                     long fromLine = Math.max(1, offset);
                     long count = limit > 0 ? limit : Long.MAX_VALUE;
-                    long bound = ReadBudget.wholeReadBytes(contextWindow);
+                    long bound = ReadBudget.wholeReadBytes(contextWindow, share);
                     StringBuilder window = new StringBuilder();
                     long bytes = 0;
                     boolean first = true;
@@ -611,7 +628,7 @@ public final class StandardTools {
                             if (bytes > bound) {
                                 return "ERROR: page too large (more than " + bound + " bytes, the"
                                         + " most one read may take: "
-                                        + ReadBudget.WINDOW_SHARE_PERCENT + " % of the "
+                                        + share + " % of the "
                                         + ReadBudget.windowOrFallback(contextWindow)
                                         + " tokens context window at "
                                         + ReadBudget.BYTES_PER_TOKEN + " bytes per token,"
