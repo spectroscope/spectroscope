@@ -310,7 +310,7 @@ suite that never needs an API key.</p>
 <table class="tbl dense">
   <tr><th>library</th><th>version</th><th></th></tr>
   <tr><td><code>com.anthropic:anthropic-java</code></td><td>2.34.0</td><td>owns SSE; client built with maxRetries(0)</td></tr>
-  <tr><td><code>com.github:copilot-sdk-java</code></td><td>1.0.20-preview.0</td><td>a preview release, MIT licence; the Copilot provider (macOS only) starts the Copilot runtime through it; its Jackson 2.22.2 family is excluded, so it runs on the BOM's 2.18.2</td></tr>
+  <tr><td><code>com.github:copilot-sdk-java</code></td><td>1.0.20-preview.0</td><td>a preview release, MIT licence; the Copilot provider (macOS only) starts the Copilot runtime through it; its Jackson 2.22.2 family is excluded, so it runs on the BOM's 2.18.2. The published <code>spectro-core</code> therefore depends on a preview artifact: this is the version the provider was measured against with a live Copilot runtime, and the stable 1.0.19 was not tested</td></tr>
   <tr><td><code>com.fasterxml.jackson:jackson-bom</code></td><td>2.18.2</td><td>a platform, not a number: <code>jackson-databind</code> is declared under it with no version of its own and is the one <code>api</code> dependency</td></tr>
   <tr><td><code>info.picocli:picocli</code></td><td>4.7.6</td><td>CLI framework</td></tr>
   <tr><td><code>org.springframework:spring-web</code></td><td>6.2.8</td><td>Framework as library — no Boot in the core</td></tr>

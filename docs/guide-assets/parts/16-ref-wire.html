@@ -93,14 +93,18 @@ fields ride separately and are added back only by the compaction trigger and the
 <ul>
   <li>The SDK starts the Copilot CLI as a child process; what a call sends goes from there
       to GitHub's Copilot service, so the host the app names is
-      <code>githubcopilot.com</code>. The runtime keeps one session per conversation and is
+      <code>api.githubcopilot.com</code>, or the host the runtime reports for a
+      data-residency account. The runtime keeps one session per conversation and is
       sent only the new message.</li>
   <li>The runtime's own tools are off and every harness tool replaces the runtime tool of
       the same name, so the harness runs every tool.</li>
   <li><code>assistant.usage</code> carries the tokens and <code>copilotUsage.totalNanoAiu</code>.
       Divided by 1e9 that is <code>PUsage.aiCredits</code>, the cost of that one call in
       GitHub AI credits, set only when the runtime calls the cost <code>complete</code>.
-      The premium request multiplier (<code>cost</code>) is never read.</li>
+      The premium request multiplier (<code>cost</code>) is never read. The session's
+      credit total adds these per-call amounts, the title call included; the runtime's
+      <code>session.usage_checkpoint</code> carries the running total, which the app
+      does not read.</li>
 </ul>
 
 <!-- ============================== CH 25 ============================== -->
