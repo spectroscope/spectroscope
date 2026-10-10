@@ -12,7 +12,7 @@
 // The stylesheet is styles/playbook.css, imported by app.css: a surface chunk
 // carries no stylesheet of its own.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { closeEditor, loadView, openEditor, useEditorState } from "../state/playbookEditor";
@@ -37,7 +37,11 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function PlaybookPane({ workspace }: { workspace: string | null }) {
+/**
+ * @param props.workspace the workspace the folder chip in the header shows
+ * @param props.wizard    the Spectrolyzr wizard App built under a ChunkBoundary; the New project tab draws it (card 484, Task 11)
+ */
+export function PlaybookPane({ workspace }: { workspace: string | null; wizard?: ReactNode }) {
   const lang = useLang();
   const { folders, active } = usePlaybookFolders();
   const loaded = useLoadedPlaybook();

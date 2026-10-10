@@ -146,6 +146,7 @@ import {
   LabView,
   PlaybookPane,
   prefetchSurfaces,
+  SpectrolyzrWizard,
   SpectrumView,
   StateGraphPane,
   TextView,
@@ -2741,8 +2742,18 @@ export function App() {
           {skillsOpen ? (
             <SkillsPane />
           ) : nav === "playbook" ? (
-            /* Card 481: the workspace the folder chip in the header shows. */
-            <PlaybookPane workspace={(viewingLive ? view.workspace : null)?.path ?? null} />
+            /* Card 481: the workspace the folder chip in the header shows.
+               Card 484: the pane draws the wizard in its second tab; the
+               element is made here so the lazy view sits under a boundary
+               and App stays the one place that draws a lazy view. */
+            <PlaybookPane
+              workspace={(viewingLive ? view.workspace : null)?.path ?? null}
+              wizard={
+                <ChunkBoundary>
+                  <SpectrolyzrWizard />
+                </ChunkBoundary>
+              }
+            />
           ) : nav === "stategraph" ? (
             <StateGraphPane
               run={stateGraphRun}

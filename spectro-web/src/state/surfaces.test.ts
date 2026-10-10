@@ -63,7 +63,11 @@ describe("the surface table (criterion 2)", () => {
     expect(isOpen("playbook", "learn")).toBe(false);
     expect(isOpen("playbook", "light")).toBe(false);
     expect(isOpen("playbook", "learn", true)).toBe(false);
-    expect(SURFACES.playbook.chunks).toEqual(["playbook/PlaybookPane.tsx"]);
+    // Card 484: the Spectrolyzr wizard is the pane's second chunk.
+    expect(SURFACES.playbook.chunks).toEqual([
+      "playbook/PlaybookPane.tsx",
+      "playbook/spectrolyzr/SpectrolyzrWizard.tsx",
+    ]);
   });
 
   it("opens in developer every surface learn opens, except the level pill, which follows the tutorial", () => {

@@ -77,8 +77,31 @@ describe("fetching the chunks on idle", () => {
     idle();
     expect(calls).toContain("playbook/PlaybookPane.tsx");
     // developer fetches what learn fetches, and the playbook besides
-    const learnCalls = calls.filter((module) => module !== "playbook/PlaybookPane.tsx");
+    const learnCalls = calls.filter((module) => !module.startsWith("playbook/"));
     expect(learnCalls.length).toBeGreaterThanOrEqual(13);
+  });
+
+  it("fetches the Spectrolyzr wizard's chunk in developer and never in learn or light (card 484)", () => {
+    const wizard = "playbook/spectrolyzr/SpectrolyzrWizard.tsx";
+    for (const mode of ["learn", "light"] as const) {
+      const { host, idle } = idleHost();
+      const { loaders, calls } = countingLoaders();
+      prefetchSurfaces(mode, host, loaders);
+      idle();
+      expect(calls, mode).not.toContain(wizard);
+    }
+    const { host, idle } = idleHost();
+    const { loaders, calls } = countingLoaders();
+    prefetchSurfaces("developer", host, loaders);
+    idle();
+    expect(calls).toContain(wizard);
+  });
+
+  it("has one real loader for every chunked module of the table, in the table's order", () => {
+    for (const id of Object.keys(SURFACES) as SurfaceId[]) {
+      const modules = SURFACES[id].chunks ?? [];
+      expect(SURFACE_LOADERS[id]?.length ?? 0, id).toBe(modules.length);
+    }
   });
 
   it("fetches nothing once cancelled, as a switch to light cancels it", () => {

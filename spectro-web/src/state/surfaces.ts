@@ -79,10 +79,10 @@ export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
   },
   stategraph: { modes: LEARN_ONLY, chunks: ["stategraph/StateGraphPane.tsx"] },
   // Card 481: the playbook module, the fourth segment, developer only, in a
-  // chunk of its own.
+  // chunk of its own. Card 484: the Spectrolyzr wizard is a second chunk.
   playbook: {
     modes: { learn: "gone", light: "gone", developer: "open" },
-    chunks: ["playbook/PlaybookPane.tsx"],
+    chunks: ["playbook/PlaybookPane.tsx", "playbook/spectrolyzr/SpectrolyzrWizard.tsx"],
   },
   // Files, terminal and browser beside the chat.
   dock: { modes: EVERYWHERE },
