@@ -6,6 +6,7 @@ import dev.spectroscope.core.playbook.Playbook;
 import dev.spectroscope.core.playbook.PlaybookReader;
 import dev.spectroscope.core.playbook.PlaybookValidator;
 import dev.spectroscope.core.playbook.PlaybookWriter;
+import dev.spectroscope.core.playbook.run.PlaybookWalk;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.ClassPathResource;
@@ -77,6 +78,25 @@ class SpectroPlaybookTest {
         assertEquals("spectro", p.id());
         assertTrue(p.models().keySet().containsAll(List.of("fast", "standard", "strong", "judge")));
         assertTrue(p.documents().keySet().containsAll(List.of("ticket", "spec", "plan", "task_report", "review_report")));
+    }
+
+    @Test
+    void theShippedLoopsCountTheirRoundsPerTask() throws IOException {
+        Playbook p = PlaybookReader.read(resource("playbook.json")).playbook();
+        List<String> rounds = new ArrayList<>();
+        List<String> exits = new ArrayList<>();
+        for (Playbook.Node n : p.nodes()) {
+            if (n instanceof Playbook.Decision d && d.maxRounds() != null) {
+                for (Playbook.Arrow a : PlaybookWalk.arrowsFrom(p, d.id())) {
+                    (PlaybookWalk.isRound(p, d.id(), a.to()) ? rounds : exits).add(d.id() + " " + a.on());
+                }
+            }
+        }
+        assertEquals(List.of("spec_ok fail", "plan_ok fail", "review_task fail", "final_review fail"), rounds,
+                "only a fail that goes back to fix counts a round");
+        assertEquals(List.of("spec_ok pass", "spec_ok exhausted", "plan_ok pass", "plan_ok exhausted",
+                "review_task pass", "review_task exhausted", "final_review pass", "final_review exhausted"), exits,
+                "a passed task review leaves its loop, so the next task's reviews start at zero");
     }
 
     @Test
