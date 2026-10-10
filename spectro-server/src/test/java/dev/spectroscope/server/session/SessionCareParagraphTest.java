@@ -36,6 +36,10 @@ class SessionCareParagraphTest {
     private static final String HELPERS_SENTENCE =
             "Start at most 2 subagents at once; more wait for a free slot.";
 
+    /** The same sentence for a chat at the floor of two sessions: one helper. */
+    private static final String ONE_HELPER_SENTENCE =
+            "Start at most 1 subagent at once; more wait for a free slot.";
+
     private String previousUserSettings;
 
     @BeforeEach
@@ -161,5 +165,50 @@ class SessionCareParagraphTest {
                 .systemPrompt())
                 .as("off: the panel shows no paragraph")
                 .doesNotContain("Work in small steps.");
+    }
+
+    @Test
+    void theParagraphNamesTheHelpersOfTheChatsSessionCount(@TempDir Path workspace)
+            throws IOException, InterruptedException {
+        // The card's scenario with card 490 merged: key on, a session count of
+        // 2, a run starts. The main agent holds one session, so the paragraph
+        // names one helper; a save to 3 reaches the next run with two.
+        Files.writeString(SettingsWriter.userSettingsFile(),
+                "{ \"provider\": \"ollama\", \"model\": \"qwen2.5:7b\","
+                        + " \"baseUrl\": \"http://127.0.0.1:1\" }");
+        SessionConnection connection = builtIn("ws-492-count", workspace);
+        writeLocal(workspace, "{ \"careParagraph\": \"on\", \"sessionsPerChat\": 2 }");
+
+        connection.onUserMessage("say something", null);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline && connection.agent().careParagraphThisRun().isEmpty()) {
+            Thread.sleep(20);
+        }
+
+        assertThat(connection.agent().careParagraphThisRun())
+                .as("the run that started names the chat's one helper, in the singular")
+                .startsWith("\n\nThis chat runs with limited capacity")
+                .contains(ONE_HELPER_SENTENCE)
+                .doesNotContain(HELPERS_SENTENCE)
+                .endsWith("Keep answers short.");
+
+        writeLocal(workspace, "{ \"careParagraph\": \"on\", \"sessionsPerChat\": 3 }");
+        connection.refreshCareParagraph();
+        assertThat(connection.agent().careParagraphForNextRun())
+                .as("a saved count reaches the next run")
+                .contains(HELPERS_SENTENCE);
+    }
+
+    @Test
+    void theSystemContextPanelNamesTheHelpersOfTheChatsSessionCount(@TempDir Path cwd) throws IOException {
+        Path settings = cwd.resolve(SpectroConfig.PROJECT_SETTINGS);
+        Files.createDirectories(settings.getParent());
+        Files.writeString(settings, "{ \"careParagraph\": \"on\", \"sessionsPerChat\": 2 }");
+        SpectroConfig two = SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), cwd, cwd);
+        assertThat(two.sessionsPerChat()).as("premise").isEqualTo(2);
+
+        assertThat(ContextDescriber.describe(two, cwd).systemPrompt())
+                .contains(ONE_HELPER_SENTENCE)
+                .endsWith("Keep answers short.");
     }
 }

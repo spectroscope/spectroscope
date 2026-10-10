@@ -84,7 +84,8 @@ public final class CareParagraph {
      */
     public static String text(int helpers, boolean subagents) {
         String subagentSentence = subagents
-                ? " Start at most " + helpers + " subagents at once; more wait for a free slot."
+                ? " Start at most " + helpers + (helpers == 1 ? " subagent" : " subagents")
+                        + " at once; more wait for a free slot."
                 : "";
         return "This chat runs with limited capacity, so every request takes time."
                 + " Work in small steps."
