@@ -1,6 +1,6 @@
 # P1 Provider Registry Design
 
-Sub-project 1 of the playbook concept (home repository, private, section 6). Written 2026-10-09 against `spectroscope-harness/spectro` main `1cba586c`. Target location after the 0.14.4 release run: `docs/superpowers/specs/2026-10-09-provider-registry-design.md` in the product repo. Nothing in this file names employer material.
+Sub-project 1 of the playbook concept (home repository, private, section 6). Written 2026-10-09 against `spectroscope-harness/spectro` main `1cba586c`. Target location after the previous release run: `docs/superpowers/specs/2026-10-09-provider-registry-design.md` in the product repo. Nothing in this file names employer material.
 
 ## Goal
 

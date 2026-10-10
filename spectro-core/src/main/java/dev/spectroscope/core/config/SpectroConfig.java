@@ -1302,9 +1302,9 @@ public record SpectroConfig(
      *  (this number minus one, {@code CareParagraph.helpersFor}).
      *
      *  <p>The key itself ships unset, because a chat with the Local mode
-     *  switch off sends the v0.14.4 request byte for byte (card 493,
-     *  criterion 6): no limit per chat, no sentence about the count in the
-     *  spawn tools, and one {@code spawn_agents} call starting up to
+     *  switch off sends, byte for byte, the request of the release cut on
+     *  2026-10-09 (card 493, criterion 6): no limit per chat, no sentence
+     *  about the count in the spawn tools, and one {@code spawn_agents} call starting up to
      *  {@link dev.spectroscope.core.subagents.SubagentManager#MAX_PARALLEL_CHILDREN}
      *  helpers. A chat has a count when the switch writes this default or a
      *  settings file sets the key. The floor is 2, in {@link SettingFloors}: a
