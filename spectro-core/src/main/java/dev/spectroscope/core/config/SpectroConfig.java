@@ -1291,23 +1291,25 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "subagentBudgetTokens")
     public static final int DEFAULT_SUBAGENT_BUDGET_TOKENS = 10_000_000;
 
-    /** The proposed session count for a chat (card 490): three, the main
-     *  agent and two helpers. It is the owner's figure of 2026-10-09 for a
-     *  chat on a local model ({@code konzept/RUN-PROFILES.md}, Knobs), not a
+    /** The default session count for a chat (card 490): three, the main
+     *  agent and two helpers. It is the owner's figure of 2026-10-09
+     *  ({@code konzept/RUN-PROFILES.md}, Sessions of one chat), not a
      *  measurement; the concurrency of one chat on the house node is measured
-     *  by card 487.
+     *  by card 487. Every other number that stands for it is an alias of this
+     *  one: the count the Local mode switch of the composer gear writes for
+     *  one chat ({@link LocalMode#PRESET_SESSIONS_PER_CHAT}, card 493) and the
+     *  helpers the care paragraph names while the key is unset
+     *  (this number minus one, {@code CareParagraph.helpersFor}).
      *
-     *  <p>The key itself ships unset: a chat that names no count runs as
-     *  v0.14.4 did, with no limit per chat and one {@code spawn_agents} call
-     *  starting up to
+     *  <p>The key itself ships unset, because a chat with the Local mode
+     *  switch off sends the v0.14.4 request byte for byte (card 493,
+     *  criterion 6): no limit per chat, no sentence about the count in the
+     *  spawn tools, and one {@code spawn_agents} call starting up to
      *  {@link dev.spectroscope.core.subagents.SubagentManager#MAX_PARALLEL_CHILDREN}
-     *  helpers. The Local mode switch of the composer gear writes this
-     *  number for one chat ({@link LocalMode#PRESET_SESSIONS_PER_CHAT}, card
-     *  493), and the care paragraph names this number minus one while the key
-     *  is unset ({@code CareParagraph.helpersFor}). Otherwise a chat has a
-     *  count only when a settings file sets the key. The floor is 2, in {@link SettingFloors}: a count of 1
-     *  would be a second way to say "no helpers", which the {@code agents}
-     *  tool group already says.</p> */
+     *  helpers. A chat has a count when the switch writes this default or a
+     *  settings file sets the key. The floor is 2, in {@link SettingFloors}: a
+     *  count of 1 would be a second way to say "no helpers", which the
+     *  {@code agents} tool group already says.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "sessionsPerChat")
     public static final int DEFAULT_SESSIONS_PER_CHAT = 3;
 

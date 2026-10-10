@@ -29,8 +29,8 @@ public final class LocalMode {
     /** The key that records, in a folder's local file, what the switch wrote. */
     public static final String RECORD_KEY = "localModeKeys";
 
-    /** The session count Local mode writes: the main agent and two helpers,
-     *  the owner's figure, which is the proposed count card 490 named. */
+    /** The session count Local mode writes: the default count of card 490,
+     *  the main agent and two helpers, the owner's figure. */
     @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.COUNT)
     public static final int PRESET_SESSIONS_PER_CHAT = SpectroConfig.DEFAULT_SESSIONS_PER_CHAT;
 

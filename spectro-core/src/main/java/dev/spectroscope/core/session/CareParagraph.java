@@ -1,5 +1,6 @@
 package dev.spectroscope.core.session;
 
+import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.governing.Governs;
 
 /**
@@ -21,13 +22,11 @@ public final class CareParagraph {
     public static final String SEPARATOR = "\n\n";
 
     /** The helpers an agent's paragraph names until a face hands it a count
-     *  through {@link #helpersFor}: the concept's default of three model
-     *  sessions per chat, the main agent and two helpers
-     *  ({@code konzept/RUN-PROFILES.md}, Knobs). The owner named three
-     *  sessions; nobody has measured how many requests the house test backend
-     *  serves at once usefully. */
-    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.COUNT)
-    public static final int DEFAULT_HELPERS = 2;
+     *  through {@link #helpersFor}: the default session count of a chat
+     *  ({@link dev.spectroscope.core.config.SpectroConfig#DEFAULT_SESSIONS_PER_CHAT})
+     *  minus the main agent's own session, read from that one constant. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.COUNT)
+    public static final int DEFAULT_HELPERS = SpectroConfig.DEFAULT_SESSIONS_PER_CHAT - 1;
 
     private CareParagraph() {
     }
@@ -39,7 +38,7 @@ public final class CareParagraph {
      *
      * <p>The count is the chat's {@code sessionsPerChat} (card 490) minus the
      * main agent's own session. While the key is unset the paragraph names
-     * {@code DEFAULT_SESSIONS_PER_CHAT - 1}, the proposed count's helpers.
+     * {@code DEFAULT_SESSIONS_PER_CHAT - 1}, the default count's helpers.
      * {@code CareHelperWiringDriftTest} fails in a tree where the config
      * declares the key and this method does not read it.</p>
      *
