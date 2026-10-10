@@ -543,7 +543,10 @@ export type ClientMessage =
   // draft on the client (state/chatCommands.ts), so a command never reaches the
   // model as a prompt. Both carry nothing; the server refuses them during a run.
   | { type: "compact_context" }
-  | { type: "clear_context" };
+  | { type: "clear_context" }
+  // Card 482: start a playbook run. The hash is the one the confirmation sheet
+  // showed; the server loads the folder again and refuses a mismatch.
+  | { type: "start_playbook"; dir: string; hash: string };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {

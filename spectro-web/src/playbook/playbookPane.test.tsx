@@ -1,7 +1,8 @@
 // Card 481: the playbook module's pane. With no folder it offers the picker,
-// the path field and the copy button and says that runs do not follow the
-// playbook yet; with a loaded playbook it draws the graph, the step table and,
-// when there are any, the findings.
+// the path field and the copy button; with a loaded playbook it draws the
+// graph, the step table and, when there are any, the findings. Card 482: it
+// says what a run does and offers Build by this once a playbook is loaded and
+// a session is open.
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -89,7 +90,8 @@ afterEach(() => {
 });
 
 describe("PlaybookPane with no folder", () => {
-  const html = () => renderToStaticMarkup(<PlaybookPane workspace="/ws" />);
+  const html = () =>
+    renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />);
 
   it("offers the picker, the path field and the copy button", () => {
     const out = html();
@@ -99,8 +101,12 @@ describe("PlaybookPane with no folder", () => {
     expect(out).toContain(dict["pb.copyBundled"].en);
   });
 
-  it("says that runs do not follow the playbook yet", () => {
-    expect(html()).toContain(dict["pb.noRuns"].en);
+  it("says that a run follows the playbook step by step", () => {
+    expect(html()).toContain(dict["pb.run.hint"].en);
+  });
+
+  it("offers Build by this only once a playbook is loaded", () => {
+    expect(html()).not.toContain("pb-run-build");
   });
 
   it("draws no graph, no step table and no findings", () => {
@@ -115,7 +121,9 @@ describe("PlaybookPane with a loaded playbook", () => {
   it("lists the known folders and marks the one pinned to the workspace", async () => {
     respond({ folders: ["/p", "/q"], active: "/p" });
     await refreshFolders("/ws");
-    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" />);
+    const out = renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
+    );
     expect(out).toContain("/p");
     expect(out).toContain("/q");
     expect(out).toMatch(/class="pb-folder is-active"[^>]*>[\s\S]*?\/p</);
@@ -124,18 +132,36 @@ describe("PlaybookPane with a loaded playbook", () => {
   it("draws the graph and the step table, and no findings list when there are none", async () => {
     respond(LOADED);
     await loadPlaybook("/p", "/ws");
-    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" />);
+    const out = renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
+    );
     expect(out).toContain('class="pb-graph"');
     expect(out).toContain('class="pb-steps"');
     expect(out).toContain('data-node="write"');
     expect(out).not.toContain("pb-findings");
-    expect(out).toContain(dict["pb.noRuns"].en);
+    expect(out).toContain(dict["pb.run.hint"].en);
+  });
+
+  it("enables Build by this when a playbook is loaded and a session is open", async () => {
+    respond(LOADED);
+    await loadPlaybook("/p", "/ws");
+    const button = (sessionId: string | null): string =>
+      /<button[^>]*class="pb-run-build"[^>]*>/.exec(
+        renderToStaticMarkup(
+          <PlaybookPane workspace="/ws" sessionId={sessionId} onStartPlaybook={() => false} />,
+        ),
+      )?.[0] ?? "";
+    expect(button("s1")).not.toBe("");
+    expect(button("s1")).not.toContain("disabled");
+    expect(button(null)).toContain("disabled");
   });
 
   it("lists each step's skills as installed or not, its model and provider state, privacy, documents and nod", async () => {
     respond(LOADED);
     await loadPlaybook("/p", "/ws");
-    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" />);
+    const out = renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
+    );
     const table = out.slice(out.indexOf('class="pb-steps"'));
     const row = /<tr data-step="write">([\s\S]*?)<\/tr>/.exec(table)?.[1] ?? "";
     expect(row).toContain("Write");
@@ -157,7 +183,9 @@ describe("PlaybookPane with a loaded playbook", () => {
   it("lists the findings, one line each with the path", async () => {
     respond({ ...LOADED, findings: [{ path: "nodes[1].baseUrl", message: "refused" }] });
     await loadPlaybook("/p", "/ws");
-    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" />);
+    const out = renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
+    );
     expect(out).toContain('class="pb-findings"');
     const items = out.match(/<li class="pb-finding">[\s\S]*?<\/li>/g) ?? [];
     expect(items).toHaveLength(1);
@@ -174,7 +202,9 @@ describe("PlaybookPane with a loaded playbook", () => {
       dir: "/p",
     });
     await loadPlaybook("/p", "/ws");
-    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" />);
+    const out = renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
+    );
     expect(out).toContain('class="pb-findings"');
     expect(out).toContain("nodes[1].baseUrl");
     expect(out).not.toContain("pb-graph");

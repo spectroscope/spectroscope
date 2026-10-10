@@ -30,7 +30,7 @@ import { buildTextFeed, eventsToJsonl } from "../state/textFeed";
 import type { ToolCard, Turn, UiState } from "../state/reducer";
 import { initialState, reduceAll } from "../state/reducer";
 import type { PlanStep } from "../state/reducer";
-import { openSteps, planVerdict } from "../state/planVerdict";
+import { gradedPlan, openSteps, planVerdict } from "../state/planVerdict";
 import { groupTurns } from "../state/threads";
 import { describeTool } from "../components/toolViews";
 import { toolTeaser } from "../components/toolTeaser";
@@ -682,8 +682,13 @@ export function chatBody(
  * @param state the folded reducer state of the exported session
  * @returns the "ended: …" text, or an empty string while nothing has ended
  */
-function endedLabel(lang: Lang, state: { lastStopReason: string | null; plan: PlanStep[] | null }): string {
+function endedLabel(
+  lang: Lang,
+  state: { lastStopReason: string | null; plan: PlanStep[] | null; planAgent?: string | null },
+): string {
   const wire = state.lastStopReason;
+  // Card 482: a playbook's plan is graded by the playbook pane, as in the footer.
+  const plan = gradedPlan(state.plan, state.planAgent ?? null);
   if (wire === null) return "";
   // Card 282: the reason is read through the app's own sentences before it is
   // put in the document. The exported twin of the footer defect the owner
@@ -696,12 +701,12 @@ function endedLabel(lang: Lang, state: { lastStopReason: string | null; plan: Pl
   // translated one made every verdict fall to the default branch and cost this
   // pass two red tests — the same shape as pinning on prose instead of on an
   // enum, one indirection out.
-  switch (planVerdict(wire, state.plan)) {
+  switch (planVerdict(wire, plan)) {
     case "unfinished":
       return label(lang, "endedOpen", {
         reason,
-        open: openSteps(state.plan),
-        total: state.plan === null ? 0 : state.plan.length,
+        open: openSteps(plan),
+        total: plan === null ? 0 : plan.length,
       });
     case "unknown":
       return label(lang, "endedNoPlan", { reason });

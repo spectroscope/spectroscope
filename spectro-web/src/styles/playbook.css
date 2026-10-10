@@ -29,15 +29,6 @@
   font-size: var(--fs-13);
   color: var(--text-dim);
 }
-.pb-no-runs {
-  margin: 0;
-  max-width: 64ch;
-  font-size: var(--fs-12);
-  line-height: 1.55;
-  color: var(--text-dim);
-  border-left: 2px solid var(--sand);
-  padding-left: var(--sp-2);
-}
 
 .pb-h {
   margin: 0 0 var(--sp-2);

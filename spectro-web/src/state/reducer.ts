@@ -373,6 +373,9 @@ export interface UiState {
   /** Latest `plan` snapshot (additive) — latest-wins, null until the
    *  first update_plan, cleared only by a fresh UiState (New chat). */
   plan: PlanStep[] | null;
+  /** Card 482: the agent id of the latest plan, null until the first one. A
+   *  playbook run writes its plan as "playbook" (planVerdict.ts). */
+  planAgent: string | null;
   /** The session's workspace announcement — the Files tab reads it. */
   workspace: WorkspaceInfo | null;
   /** The active backend announcement — latest wins (connect + every switch). */
@@ -434,6 +437,7 @@ export const initialState: UiState = {
   importedAttachments: undefined,
   agents: [],
   plan: null,
+  planAgent: null,
   workspace: null,
   providerInfo: null,
   lastOtlpExport: null,
@@ -1720,7 +1724,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     case "plan":
       // No chat turn — the Plan tab renders this snapshot. Latest wins, exactly
       // like context_info.
-      return { ...state, plan: event.steps };
+      return { ...state, plan: event.steps, planAgent: event.agentId };
 
     default: {
       // An import-only frame the wire union does not know (card 167): what the

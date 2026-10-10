@@ -2,10 +2,14 @@
 // and loaded from a chunk of its own. It holds the folder picker (the known
 // folders, the one pinned to this workspace, a path field, and the button that
 // copies the shipped spectro playbook into a folder), and for the folder shown
-// the graph, the step table and the findings. It runs nothing: it says so.
+// the graph, the step table and the findings.
 //
-// The stylesheet is styles/playbook.css, imported by app.css: a surface chunk
-// carries no stylesheet of its own.
+// Card 482: Build by this asks the server for the start preview and opens the
+// confirmation sheet; Start sends the start frame with the hash the sheet
+// showed. Under the graph the run view draws this session's latest run.
+//
+// The stylesheets are styles/playbook.css and styles/playbook-run.css,
+// imported by app.css: a surface chunk carries no stylesheet of its own.
 
 import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
@@ -19,7 +23,10 @@ import {
   useLoadedPlaybook,
   usePlaybookFolders,
 } from "../state/playbooks";
+import { fetchStartPreview, type StartPreview } from "../state/playbookRuns";
 import { PlaybookGraph } from "./PlaybookGraph";
+import { PlaybookRunView } from "./PlaybookRunView";
+import { PlaybookStartSheet } from "./PlaybookStartSheet";
 import { StepTable } from "./StepTable";
 
 /** The id of the playbook the product ships. */
@@ -29,13 +36,25 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function PlaybookPane({ workspace }: { workspace: string | null }) {
+export function PlaybookPane({
+  workspace,
+  sessionId,
+  onStartPlaybook,
+}: {
+  workspace: string | null;
+  sessionId: string | null;
+  /** Sends the start frame; true when it reached the socket. */
+  onStartPlaybook: (dir: string, hash: string) => boolean;
+}) {
   const lang = useLang();
   const { folders, active } = usePlaybookFolders();
   const loaded = useLoadedPlaybook();
   const [path, setPath] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [preview, setPreview] = useState<StartPreview | null>(null);
+  /** Counts the starts sent, so the run view mounts again and looks for the new run. */
+  const [starts, setStarts] = useState(0);
   const ws = workspace ?? "";
   const shown = picked ?? active;
 
@@ -80,13 +99,34 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
   };
 
   const p = loaded?.playbook ?? null;
+  const canBuild = loaded !== null && p !== null && workspace !== null && sessionId !== null;
+
+  const build = (): void => {
+    if (loaded === null || workspace === null) return;
+    run(async () => {
+      setPreview(await fetchStartPreview(loaded.dir, workspace));
+    });
+  };
+
+  const start = (): void => {
+    if (loaded === null || preview === null || preview.hash === null) return;
+    if (onStartPlaybook(loaded.dir, preview.hash)) {
+      setPreview(null);
+      setStarts((n) => n + 1);
+    }
+  };
 
   return (
     <div className="pb-pane">
       <header className="pb-head">
         <h2 className="pb-title">{p !== null ? p.name : t(lang, "pb.title")}</h2>
         {p !== null && p.description !== "" && <p className="pb-description">{p.description}</p>}
-        <p className="pb-no-runs">{t(lang, "pb.noRuns")}</p>
+        <p className="pb-run-hint">{t(lang, "pb.run.hint")}</p>
+        {p !== null && (
+          <button type="button" className="pb-run-build" disabled={!canBuild} onClick={build}>
+            {t(lang, "pb.run.build")}
+          </button>
+        )}
       </header>
 
       <section className="pb-picker" aria-label={t(lang, "pb.folders")}>
@@ -163,11 +203,21 @@ export function PlaybookPane({ workspace }: { workspace: string | null }) {
           <section className="pb-section pb-canvas">
             <PlaybookGraph loaded={loaded} />
           </section>
+          {sessionId !== null && <PlaybookRunView key={`${sessionId}#${starts}`} sessionId={sessionId} />}
           <section className="pb-section">
             <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
             <StepTable loaded={loaded} />
           </section>
         </>
+      )}
+
+      {preview !== null && loaded !== null && (
+        <PlaybookStartSheet
+          loaded={loaded}
+          preview={preview}
+          onStart={start}
+          onClose={() => setPreview(null)}
+        />
       )}
     </div>
   );

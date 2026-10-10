@@ -2741,8 +2741,13 @@ export function App() {
           {skillsOpen ? (
             <SkillsPane />
           ) : nav === "playbook" ? (
-            /* Card 481: the workspace the folder chip in the header shows. */
-            <PlaybookPane workspace={(viewingLive ? view.workspace : null)?.path ?? null} />
+            /* Card 481: the workspace the folder chip in the header shows.
+               Card 482: the live session a run starts in, and the start frame. */
+            <PlaybookPane
+              workspace={(viewingLive ? view.workspace : null)?.path ?? null}
+              sessionId={(viewingLive ? view.workspace : null)?.sessionId ?? null}
+              onStartPlaybook={(dir, hash) => sendClient({ type: "start_playbook", dir, hash })}
+            />
           ) : nav === "stategraph" ? (
             <StateGraphPane
               run={stateGraphRun}

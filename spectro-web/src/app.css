@@ -30,6 +30,7 @@
 @import "./styles/audio-clip.css"; /* Trace: the audio face of an stt exchange (card 184/187) */
 @import "./styles/stategraph.css";
 @import "./styles/playbook.css"; /* The playbook module (card 481) */
+@import "./styles/playbook-run.css"; /* A playbook run: the confirmation sheet and the run view (card 482) */
 /* The settings page's own list and switch rules. This line was missing: the
    sheet existed, both blocks in it were written and reviewed, and neither had
    ever reached a browser — card 199's whole allowlist list shipped unstyled and

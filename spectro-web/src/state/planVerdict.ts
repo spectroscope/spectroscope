@@ -39,3 +39,18 @@ export function planVerdict(lastStopReason: string | null, plan: PlanStep[] | nu
   if (lastStopReason !== "end_turn") return "other";
   return plan === null ? "unknown" : "finished";
 }
+
+/** The agent id the playbook runner writes its plan under (PlaybookRunner.AGENT_ID). */
+export const PLAYBOOK_AGENT = "playbook";
+
+/**
+ * The plan the footer and the export grade. A playbook's plan is graded by the
+ * playbook pane, not as a chat run: a chat step that ends with later steps
+ * open is not an unfinished run.
+ *
+ * @param plan the latest plan snapshot
+ * @param planAgent the agent id of that snapshot, null when there is none
+ */
+export function gradedPlan(plan: PlanStep[] | null, planAgent: string | null): PlanStep[] | null {
+  return planAgent === PLAYBOOK_AGENT ? null : plan;
+}
