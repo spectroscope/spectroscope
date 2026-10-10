@@ -806,23 +806,24 @@ public class SessionsController {
     }
 
     /**
-     * The Copilot runtime's own model list (card 496), in its order, asked
-     * through the provider the chats share, so the runtime it starts is the
-     * one a chat then uses. Empty without a stored sign-in, so a picker that
-     * only looks starts no runtime, and empty when the runtime is missing or
-     * refuses.
+     * The Copilot runtime's own model list (card 496), in its order. A runtime
+     * a chat already started answers it; with none, the account starts one for
+     * the question and stops it again ({@code CopilotAccount.askRuntime}), so
+     * opening the picker or the settings leaves no runtime behind. Empty
+     * without a stored sign-in, so a picker that only looks starts no runtime,
+     * and empty when the runtime is missing or refuses.
      *
      * @return the model ids, or an empty list
      */
     private List<String> copilotModels() {
         dev.spectroscope.core.copilot.CopilotAccount account =
                 dev.spectroscope.core.copilot.CopilotAccount.forThisMachine();
-        return copilotModels(account.hasStoredSignIn(), () -> account
-                .shared(SpectroConfig.defaultModelFor(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER),
-                        dev.spectroscope.core.copilot.CopilotRuntime.find(null).requirePath())
-                .models().stream()
-                .map(dev.spectroscope.core.provider.CopilotProvider.CopilotModel::id)
-                .toList());
+        return copilotModels(account.hasStoredSignIn(), () -> account.askRuntime(
+                SpectroConfig.defaultModelFor(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER),
+                dev.spectroscope.core.copilot.CopilotRuntime.find(null).requirePath(),
+                provider -> provider.models().stream()
+                        .map(dev.spectroscope.core.provider.CopilotProvider.CopilotModel::id)
+                        .toList()));
     }
 
     /**

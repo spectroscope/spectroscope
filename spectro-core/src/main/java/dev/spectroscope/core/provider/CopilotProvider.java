@@ -351,7 +351,11 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      * SDK's usage-and-billing page calls {@code totalNanoAiu} the AI credit
      * cost in nano-AI units and divides by 1e9 for credits (read 2026-10-10);
      * card 478's live event checks out at that factor against GitHub's price
-     * list. Only a cost the runtime calls {@code complete} is a number to show:
+     * list. The page calls the field session-wide, but on {@code assistant.usage}
+     * it is per call: in card 478's three-call session each event carried its
+     * own call's cost and the runtime's {@code session.usage_checkpoint} held
+     * their sum (review of 2026-10-10), so the faces add the calls up.
+     * Only a cost the runtime calls {@code complete} is a number to show:
      * {@code partial} and {@code unavailable} are not. {@code cost}, the
      * premium request multiplier, is never read.
      */

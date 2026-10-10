@@ -176,6 +176,37 @@ class CopilotProviderTest {
         assertEquals(10, none.inputTokens(), "the tokens still arrive");
     }
 
+    @Test
+    void eachCallOfOneRuntimeSessionCarriesItsOwnCreditsSoTheirSumIsTheSessionTotal() throws Exception {
+        // Card 478's run with claude-sonnet-5 (tools.log, review of 2026-10-10):
+        // three assistant.usage events in ONE runtime session carried
+        // totalNanoAiu 1.576E8, 1.312E8 and 1.53E8, each equal to its own call's
+        // tokens at the model's price, and the runtime's session.usage_checkpoint
+        // after the third read 4.418E8, their sum. So the field is per call, and
+        // adding the calls up is the session total.
+        double[] perCall = {1.576E8, 1.312E8, 1.53E8};
+        start("claude-sonnet-5");
+        for (double nano : perCall) {
+            runtime.onSend(turn -> {
+                turn.delta("ok");
+                turn.usageWithCredits(10, 1, "complete", nano);
+                turn.message("ok", List.of());
+                turn.idle();
+            });
+        }
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("One.")));
+        double sum = 0;
+        for (int call = 0; call < perCall.length; call++) {
+            PUsage usage = usageOf(drain(provider.stream(ask(history, List.of(), new CancelSignal()))));
+            assertEquals(perCall[call] / 1e9, usage.aiCredits().doubleValue(), 1e-12, "call " + (call + 1));
+            sum += usage.aiCredits();
+            history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.of(new TextContent("ok"))));
+            history.add(user("Again."));
+        }
+        assertEquals(1, runtime.requests("session.create").size(), "one runtime session for all three calls");
+        assertEquals(4.418E8 / 1e9, sum, 1e-12, "the checkpoint's session total");
+    }
+
     private static PUsage usageOf(List<ProviderEvent> events) {
         return events.stream().filter(e -> e instanceof PUsage).map(e -> (PUsage) e).findFirst().orElseThrow();
     }

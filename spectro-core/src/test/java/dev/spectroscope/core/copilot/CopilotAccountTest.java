@@ -16,6 +16,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -477,6 +478,68 @@ class CopilotAccountTest {
         assertNotSame(first, account.shared("claude-sonnet-5", "/x/copilot"));
         assertNotSame(first, account.shared("auto", "/y/copilot"));
         assertNotNull(first.options().tokenSource(), "built with the account's credential choice");
+    }
+
+    // ---- review of 2026-10-10: the model list starts no runtime that stays ------------
+
+    @Test
+    void aQuestionIsAskedOfARuntimeAChatAlreadyStartedAndNothingIsClosed() {
+        CopilotProvider chat = account.shared("claude-sonnet-5", "/x/copilot");
+        List<CopilotProvider> closed = new ArrayList<>();
+
+        CopilotProvider asked = account.askRuntime("auto", "/x/copilot", p -> p, closed::add);
+
+        assertSame(chat, asked, "the chat's runtime answers; no second one starts");
+        assertEquals(List.of(), closed);
+    }
+
+    @Test
+    void withNoChatRunningTheQuestionGetsItsOwnProviderWhichIsClosedAfterwards() {
+        List<CopilotProvider> closed = new ArrayList<>();
+
+        CopilotProvider asked = account.askRuntime("auto", "/x/copilot", p -> p, closed::add);
+
+        assertEquals("auto", asked.options().model());
+        assertEquals(List.of(asked), closed, "the runtime it started goes with the answer");
+        assertNotSame(asked, account.shared("auto", "/x/copilot"), "and it is not kept for the chats");
+    }
+
+    @Test
+    void aRuntimeOfAnotherPathIsNotAsked() {
+        CopilotProvider other = account.shared("auto", "/y/copilot");
+        List<CopilotProvider> closed = new ArrayList<>();
+
+        CopilotProvider asked = account.askRuntime("auto", "/x/copilot", p -> p, closed::add);
+
+        assertNotSame(other, asked);
+        assertEquals(List.of(asked), closed);
+    }
+
+    @Test
+    void aProviderOfAnEarlierCredentialChoiceIsNotAsked() throws Exception {
+        FakeCli cli = new FakeCli();
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        account = account(cli);
+        CopilotProvider beforeSignIn = account.shared("auto", "/x/copilot");
+        account.signInWithCli();
+        List<CopilotProvider> closed = new ArrayList<>();
+
+        CopilotProvider asked = account.askRuntime("auto", "/x/copilot", p -> p, closed::add);
+
+        assertNotSame(beforeSignIn, asked);
+        assertTrue(asked.options().useStoredLogin(), "asked under the choice the user holds now");
+        assertEquals(List.of(asked), closed);
+    }
+
+    @Test
+    void aQuestionThatFailsStillClosesTheProviderItStarted() {
+        List<CopilotProvider> closed = new ArrayList<>();
+
+        assertThrows(IllegalStateException.class, () -> account.askRuntime("auto", "/x/copilot", p -> {
+            throw new IllegalStateException("runtime refused");
+        }, closed::add));
+
+        assertEquals(1, closed.size());
     }
 
     @Test

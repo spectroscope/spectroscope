@@ -740,6 +740,50 @@ public final class CopilotAccount {
     }
 
     /**
+     * Asks a question of a Copilot runtime without leaving one running (review
+     * of 2026-10-10). A runtime a chat already started for this path, under
+     * the credential choice the user holds now, answers it. With none, a
+     * provider for {@code model} is built, asked and closed again, so a model
+     * list read by a picker that only looks does not start a runtime that
+     * nothing stops.
+     *
+     * @param model    the model a new provider is built for when no chat runs
+     * @param cliPath  the runtime
+     * @param question what to ask
+     * @param <T>      the answer's type
+     * @return the answer
+     */
+    public <T> T askRuntime(String model, String cliPath, java.util.function.Function<CopilotProvider, T> question) {
+        return askRuntime(model, cliPath, question, CopilotProvider::close);
+    }
+
+    /** {@link #askRuntime(String, String, java.util.function.Function)} with the closing step a test observes. */
+    <T> T askRuntime(String model, String cliPath, java.util.function.Function<CopilotProvider, T> question,
+                     java.util.function.Consumer<CopilotProvider> close) {
+        CopilotProvider running = null;
+        synchronized (sharedProviders) {
+            if (sharedChoseCli != null && sharedChoseCli == choseCli()) {
+                String suffix = "\n" + cliPath;
+                for (Map.Entry<String, CopilotProvider> entry : sharedProviders.entrySet()) {
+                    if (entry.getKey().endsWith(suffix)) {
+                        running = entry.getValue();
+                        break;
+                    }
+                }
+            }
+        }
+        if (running != null) {
+            return question.apply(running);
+        }
+        CopilotProvider own = provider(model, cliPath);
+        try {
+            return question.apply(own);
+        } finally {
+            close.accept(own);
+        }
+    }
+
+    /**
      * Whether a sign-in is stored, read from the file alone (card 496). The
      * runtime is not asked, so the answer is cheap enough for a status the app
      * reads on every page load. It is the counterpart of "a key is set": the
