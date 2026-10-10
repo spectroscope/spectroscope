@@ -176,6 +176,11 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // whole draft that it is one.
             case "compact_context" -> connection.onCompactContext(); // additive (card 471)
             case "clear_context" -> connection.onClearContext();     // additive (card 471)
+            // Card 498: a click into the message box of a stored session. Binds
+            // the session to this socket and announces its folder; starts no
+            // run and calls no model.
+            case "wake_session" ->                             // additive (card 498)
+                    connection.onWakeSession(frame.path("sessionId").asText(""));
             default -> connection.sendError("Unknown message type.");
         }
     }

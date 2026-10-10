@@ -502,8 +502,10 @@ public final class SessionConnection {
         if (pinned != null && !pinned.isBlank()) {
             return new WorkspacePick(pinned, "set", null);
         }
-        String recorded = resumeId == null
-                ? null : dev.spectroscope.core.session.SessionStore.recordedWorkspace(resumeId);
+        // Card 498: a socket woken on a stored session reads its record too.
+        String recordId = resumeId != null ? resumeId : wokenId;
+        String recorded = recordId == null
+                ? null : dev.spectroscope.core.session.SessionStore.recordedWorkspace(recordId);
         String gone = null;
         if (recorded != null && !recorded.isBlank()) {
             // Only if it is still THERE. resolve() calls createDirectories, so
@@ -674,6 +676,141 @@ public final class SessionConnection {
             sendError("Session " + resumeId + " not found.");
             close();
         }
+    }
+
+    /** Card 498: the shape a session id must have before it touches the store. */
+    private static final java.util.regex.Pattern WAKE_ID =
+            java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
+
+    /** Card 498: the stored session a wake bound this socket to, or null. */
+    private volatile String wokenId;
+
+    /**
+     * Wakes a stored session on this socket (card 498): the owner clicked into
+     * the message box and has sent nothing yet.
+     *
+     * <p>This is the resume that {@link #start} performs for {@code ?resume=<id>},
+     * minus the run: the id is claimed in the live set, the history is loaded
+     * into the agent's first prompt, the store reopens the same file, the
+     * backend the record names is restored, and the session's own folder is
+     * announced with its {@code sessionId}, so Finder, Terminal and the code
+     * graph can act on it. No agent is built, no run starts and no request
+     * reaches a model; the first message afterwards runs exactly as it runs on
+     * a resumed socket.</p>
+     *
+     * <p>Nothing is created on disk. A folder that exists is recorded as this
+     * session's; a recorded folder that is gone is named in the frame, and the
+     * first run falls back as a resume does. A folder only the first message
+     * would create is not announced at all.</p>
+     *
+     * <p>A socket that already holds a session (this one, woken twice, or
+     * another) ignores the frame. A session another socket holds is refused
+     * with {@code session_busy} and this socket stays as it was. An id that is
+     * not the shape of a session id, or names no session of this store, is
+     * answered "Session not found." and the caller's text is not echoed.</p>
+     *
+     * @param sessionId the stored session to wake, untrusted input
+     */
+    void onWakeSession(String sessionId) {
+        if (store != null || running) {
+            return;
+        }
+        if (sessionId == null || !WAKE_ID.matcher(sessionId).matches() || !storedSessionExists(sessionId)) {
+            sendError("Session not found.");
+            return;
+        }
+        if (liveSessions != null && !liveSessions.claim(socket.getId(), sessionId)) {
+            sendSessionBusy(sessionId);
+            return;
+        }
+        try {
+            List<ProviderMessage> history = SessionStore.loadSession(sessionId);
+            int lines = SessionStore.eventCount(sessionId);
+            restoreSessionWindow(sessionId);
+            initial = history;
+            wokenId = sessionId;
+            store = new SessionStore(sessionId);
+            openSessionStack(lines);
+        } catch (Exception unreadable) {
+            if (liveSessions != null) {
+                liveSessions.release(socket.getId());
+            }
+            sendError("Session not found.");
+            return;
+        }
+        SpectroConfig before = activeConfig.get();
+        restoreSessionBackend(sessionId);
+        if (activeConfig.get() != before) {
+            sendProviderInfo();
+        }
+        announceWokenWorkspace();
+        seedToolGroupsFrom(savedToolGroupsFolder()); // card 466, as a resume does
+        sendToolGroupsInfo();
+    }
+
+    /**
+     * Whether the store holds a session file of this id.
+     *
+     * @param sessionId an id that already passed the shape check
+     * @return true when the file is there; false for anything else
+     */
+    private static boolean storedSessionExists(String sessionId) {
+        try {
+            return Files.isRegularFile(SessionStore.sessionFile(sessionId));
+        } catch (IOException | RuntimeException outside) {
+            return false;
+        }
+    }
+
+    /**
+     * Names the woken session's folder without creating anything (card 498).
+     * {@link WorkspaceResolver#locate} only, never {@code resolve}: a wake is
+     * not a run, and a folder minted here would be a choice nobody made.
+     *
+     * <p>Three answers. A recorded folder that is gone is named as
+     * {@code unavailable}. A folder that is on disk is recorded and announced.
+     * A folder that is not on disk and was never recorded (the temp folder, or
+     * a configured one not made yet) is one the first message would create, so
+     * nothing is said about it and the page's chip stays as it was.</p>
+     */
+    private void announceWokenWorkspace() {
+        WorkspacePick pick = workspacePick();
+        if (pick.unavailable() != null) {
+            sendWokenWorkspace(pick.unavailable(), pick.unavailable());
+            return;
+        }
+        Path target = WorkspaceResolver.locate(pick.path(), store.id());
+        if (Files.isDirectory(target)) {
+            workspace = target;
+            SessionWorkspaces.resolved(store.id(), target.toString());
+            sendWorkspaceInfo();
+        }
+    }
+
+    /**
+     * The workspace frame of a woken session whose recorded folder is gone: a
+     * socket-only UI frame, never appended to the JSONL. It carries the
+     * {@code sessionId} like the resolved frame, says {@code exists} false and
+     * names the gone folder as {@code unavailable}.
+     *
+     * @param path        the folder the record names
+     * @param unavailable the same folder, the one that is gone
+     */
+    private synchronized void sendWokenWorkspace(String path, String unavailable) {
+        if (!socket.isOpen() || store == null) {
+            return;
+        }
+        String configured = config.workspace();
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "workspace_info");
+        frame.put("resolved", false);
+        frame.put("mode", "recorded");
+        frame.put("exists", false);
+        frame.put("sessionId", store.id());
+        frame.put("path", path);
+        frame.put("configured", configured != null && !configured.isBlank());
+        frame.put("unavailable", unavailable);
+        sendFrame(frame);
     }
 
     /**

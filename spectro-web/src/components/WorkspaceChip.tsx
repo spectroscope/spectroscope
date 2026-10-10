@@ -43,9 +43,11 @@ export function chipActions(
   const opener = (): { enabled: boolean; reason?: string } =>
     !opts.mac
       ? { enabled: false, reason: "wchip.macOnly" }
-      : session
-        ? { enabled: true }
-        : { enabled: false, reason: "wchip.needsSession" };
+      : folderGone(ws)
+        ? { enabled: false, reason: "wchip.notFound" }
+        : session
+          ? { enabled: true }
+          : { enabled: false, reason: "wchip.needsSession" };
   const rows: Record<WorkspaceChipAction, { enabled: boolean; reason?: string }> = {
     reveal: opener(),
     copy: path ? { enabled: true } : { enabled: false, reason: "wchip.none" },
@@ -56,12 +58,30 @@ export function chipActions(
 }
 
 /**
+ * Card 498: the server names the session and reports the folder its record
+ * carries as unavailable, which is what the wake of a stored session whose
+ * folder was deleted answers. A folder that is merely not on disk yet is one
+ * the first run will create, so that case does not count.
+ */
+export function folderGone(ws: WorkspaceInfo): boolean {
+  return (
+    typeof ws.sessionId === "string" &&
+    ws.sessionId !== "" &&
+    typeof ws.unavailable === "string" &&
+    ws.unavailable !== ""
+  );
+}
+
+/**
  * Card 472: "Build code graph" below the four actions. The server builds the
  * folder it resolved for the session, so the row waits for a session like
- * Finder and Terminal do, on every platform.
+ * Finder and Terminal do, on every platform, and stays shut for a folder that
+ * is gone (card 498).
  */
 export function codeGraphRowEnabled(ws: WorkspaceInfo): boolean {
-  return chooserTitle(ws) !== null && typeof ws.sessionId === "string" && ws.sessionId !== "";
+  return (
+    chooserTitle(ws) !== null && typeof ws.sessionId === "string" && ws.sessionId !== "" && !folderGone(ws)
+  );
 }
 
 /** Why Finder or Terminal did not open, in words rather than a status code. */
@@ -271,7 +291,13 @@ export function WorkspaceChip(props: {
         className="ws-chip"
         aria-haspopup="menu"
         aria-expanded={open}
-        title={path === null ? t(lang, "wchip.none") : t(lang, "wchip.title", { path })}
+        title={
+          path === null
+            ? t(lang, "wchip.none")
+            : folderGone(props.workspace)
+              ? `${t(lang, "wchip.title", { path })}. ${t(lang, "wchip.notFound")}`
+              : t(lang, "wchip.title", { path })
+        }
         onClick={() => {
           setNote(null);
           setOpen((was) => !was);
@@ -320,7 +346,11 @@ export function WorkspaceChip(props: {
               data-ws-extra="codegraph"
               className="hdr-menu-row"
               disabled={!codeGraphRowEnabled(props.workspace)}
-              title={codeGraphRowEnabled(props.workspace) ? undefined : t(lang, "wchip.needsSession")}
+              title={
+                codeGraphRowEnabled(props.workspace)
+                  ? undefined
+                  : t(lang, folderGone(props.workspace) ? "wchip.notFound" : "wchip.needsSession")
+              }
               onClick={() => {
                 setOpen(false);
                 openCodeGraphSheet("build");
@@ -333,6 +363,7 @@ export function WorkspaceChip(props: {
           {actions.some((a) => a.reason === "wchip.needsSession") && (
             <span className="ws-chip-note">{t(lang, "wchip.needsSession")}</span>
           )}
+          {folderGone(props.workspace) && <span className="ws-chip-note">{t(lang, "wchip.notFound")}</span>}
           <span className="ws-chip-note" role="status">
             {note ?? ""}
           </span>

@@ -543,7 +543,11 @@ export type ClientMessage =
   // draft on the client (state/chatCommands.ts), so a command never reaches the
   // model as a prompt. Both carry nothing; the server refuses them during a run.
   | { type: "compact_context" }
-  | { type: "clear_context" };
+  | { type: "clear_context" }
+  // Card 498: a click into the message box of a stored session. The server
+  // binds the session to this socket and answers with its workspace_info;
+  // no run starts and no model is called.
+  | { type: "wake_session"; sessionId: string };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {
