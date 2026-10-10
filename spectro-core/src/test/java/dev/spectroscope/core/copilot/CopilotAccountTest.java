@@ -248,7 +248,11 @@ class CopilotAccountTest {
 
     @Test
     void aCodeGitHubStillCallsPendingAfterItsLifetimeEndsTheWaitInTheAppsOwnWords() throws Exception {
-        github.deviceCode("ABCD-1234").pending();
+        // A thirty second lifetime: six polls against the fake instead of the 180 a
+        // real code's 900 seconds would take, which a slow runner did not finish in
+        // the five seconds settled() waits (PR 103, java-gate, 2026-10-10).
+        github.deviceCode(200, Map.of("device_code", "dc_fixtureDeviceCode", "user_code", "ABCD-1234",
+                "verification_uri", "https://github.com/login/device", "expires_in", 30, "interval", 5)).pending();
         account = new CopilotAccount(store, new GitHubDeviceFlow("Iv1.fixtureclient", github.base(), github.base(),
                 HttpClient.newHttpClient()), null, clock, seconds -> clock.epochSecond.addAndGet(seconds));
 
@@ -257,7 +261,7 @@ class CopilotAccountTest {
 
         assertEquals(CopilotAccount.State.REFUSED, status.state());
         assertEquals("The code expired before it was confirmed.", status.message());
-        assertTrue(clock.epochSecond.get() > T0 + 900, "the clock passed the code's lifetime");
+        assertTrue(clock.epochSecond.get() > T0 + 30, "the clock passed the code's lifetime");
         assertFalse(Files.exists(store.path()));
     }
 
