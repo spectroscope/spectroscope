@@ -22,6 +22,10 @@ import dev.spectroscope.core.image.ImageStore;
 import dev.spectroscope.core.leveling.LevelingPort;
 import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.permission.Allowlist;
+import dev.spectroscope.core.playbook.run.Permissions;
+import dev.spectroscope.core.playbook.run.PinnedPlaybook;
+import dev.spectroscope.core.playbook.run.PlaybookRecorder;
+import dev.spectroscope.core.playbook.run.PlaybookRunner;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.SwitchableProvider;
@@ -32,6 +36,7 @@ import dev.spectroscope.core.subagents.RoleCatalog;
 import dev.spectroscope.core.subagents.SubagentConfig;
 import dev.spectroscope.core.subagents.SubagentManager;
 import dev.spectroscope.core.tools.DefaultHttpFetcher;
+import dev.spectroscope.core.tools.HostGuard;
 import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
@@ -48,6 +53,11 @@ import dev.spectroscope.core.wire.WireReference;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import dev.spectroscope.server.leveling.ServerLeveling;
+import dev.spectroscope.server.playbooks.PlaybookFolders;
+import dev.spectroscope.server.playbooks.PlaybookLoader;
+import dev.spectroscope.server.playbooks.PlaybookRunsLive;
+import dev.spectroscope.server.providers.ProviderRegistry;
+import dev.spectroscope.server.providers.ProviderRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.TextMessage;
@@ -68,6 +78,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * The per-connection state and run wiring: one agent, one session, one run at a
@@ -152,6 +163,17 @@ public final class SessionConnection {
      * boot config; {@link #onSetPermissionMode} updates it in place mid-session.
      */
     private volatile String permissionMode;
+
+    /**
+     * Card 482: the permission of the playbook step that runs now, or null.
+     * The gate reads {@link #effectiveMode()}, the stricter of this and
+     * {@link #permissionMode}, so a playbook can narrow the session and never
+     * widen it. Set and cleared by the runner through the host.
+     */
+    private volatile String permissionFloor;
+
+    /** Card 482: the session's gate, kept so a playbook run hands the same one to its checks. */
+    private volatile PermissionBroker broker;
 
     /**
      * True once {@link #onSetPermissionMode} has been called at least once — a
@@ -308,6 +330,10 @@ public final class SessionConnection {
     private SwitchableProvider switchable;   // the agent's provider indirection
     /** Card 247: the catalog runPrompt expands /skill tokens against — set with the agent. */
     private SkillLibrary skillLibrary;
+    /** Card 482: builds a provider from a config; a test hands in its own. */
+    private Function<SpectroConfig, LlmProvider> providerBuilder = ServerProviders::build;
+    /** Card 482: the registry's bounded check of one provider; a test hands in its own. */
+    private Function<String, ProviderRow> providerCheck = this::registryCheck;
 
     /** The process-wide live-session registry, or null — then this connection
      *  claims nothing and announces nothing, frame for frame the pre-212 one. */
@@ -686,6 +712,9 @@ public final class SessionConnection {
     /** The id of the session's own agent: the one {@link #buildAgentOnce}
      *  builds, and the one a {@code /clear} before that build names. */
     static final String MAIN_AGENT_ID = "main";
+
+    /** Card 482: the answer to a start whose folder changed since the confirmation showed its hash. */
+    static final String PLAYBOOK_CHANGED = "The playbook changed since the confirmation. Open it again.";
 
     /**
      * The web chat's {@code /compact} (card 471): summarizes the history now,
@@ -1367,10 +1396,24 @@ public final class SessionConnection {
      *        default (gemini, openrouter) needs an explicit model.
      */
     public void onSetProvider(String providerName, String model) {
+        String refused = switchProvider(providerName, model);
+        if (refused != null) {
+            sendError(refused);
+        }
+    }
+
+    /**
+     * Card 482: the body of {@link #onSetProvider}, which a playbook's chat
+     * step calls too. Answers the refusal instead of sending it.
+     *
+     * @param providerName the provider to switch to
+     * @param model        the model; blank picks the provider's default
+     * @return null when switched, else the refusal text
+     */
+    String switchProvider(String providerName, String model) {
         if (!SpectroConfig.isKnownProvider(providerName)) {
-            sendError("Unknown provider: \"" + providerName + "\" (allowed: "
-                    + SpectroConfig.KNOWN_PROVIDERS_DISPLAY + ").");
-            return;
+            return "Unknown provider: \"" + providerName + "\" (allowed: "
+                    + SpectroConfig.KNOWN_PROVIDERS_DISPLAY + ").";
         }
         // Refuse a key-requiring cloud provider with no key AT SWITCH TIME, so the
         // header chip never flips to a backend whose only failure mode is a deferred
@@ -1378,9 +1421,8 @@ public final class SessionConnection {
         // SpectroConfig#switchRequiresKey).
         if (SpectroConfig.switchRequiresKey(providerName)
                 && !SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(providerName))) {
-            sendError("\"" + providerName + "\" needs " + SpectroConfig.keyEnvFor(providerName)
-                    + " — set a key in Settings, then switch.");
-            return;
+            return "\"" + providerName + "\" needs " + SpectroConfig.keyEnvFor(providerName)
+                    + " — set a key in Settings, then switch.";
         }
         SpectroConfig current = activeConfig.get();
         String useModel;
@@ -1392,17 +1434,15 @@ public final class SessionConnection {
             // own default; a provider with no honest default needs an explicit model.
             useModel = SpectroConfig.defaultModelFor(providerName);
             if (useModel == null) {
-                sendError("\"" + providerName + "\" needs a model — pick one in the picker.");
-                return;
+                return "\"" + providerName + "\" needs a model — pick one in the picker.";
             }
         }
         SpectroConfig derived = current.withProvider(providerName, useModel);
         LlmProvider next;
         try {
-            next = ServerProviders.build(derived); // spectro-local -> local runtime; else factory + key check
+            next = providerBuilder.apply(derived); // spectro-local -> local runtime; else factory + key check
         } catch (RuntimeException rejected) {
-            sendError(rejected.getMessage());
-            return;
+            return rejected.getMessage();
         }
         activeConfig.set(derived);
         providerTouched = true;
@@ -1414,6 +1454,7 @@ public final class SessionConnection {
         // (trace row, header chip, map locality) instead of trusting its own
         // optimistic state.
         sendProviderInfo();
+        return null;
     }
 
     /**
@@ -1691,14 +1732,8 @@ public final class SessionConnection {
             try (EventStream events = subagents.run(agent, text,
                     new RunOptions(runSignal, attachments, expanded.equals(text) ? null : expanded))) {
                 for (RunEvent rawEvent : events) {
-                    // Card 473: the main run_start carries the file reference.
-                    RunEvent event = wireReference.stamp(rawEvent);
-                    // File first, socket second; the file and socket get the SAME object.
-                    if (!runDrain.record(event)) {
+                    if (!drainOne(rawEvent, runDrain)) {
                         break; // sealed by a quit: this drain writes nothing more
-                    }
-                    if (runDrain.sending()) {
-                        send(event);
                     }
                 }
             }
@@ -1713,6 +1748,164 @@ public final class SessionConnection {
             this.drain = null;
             releasePending();          // orphaned questions: deny them
         }
+    }
+
+    /**
+     * Card 482: one event of a run's merged stream onto the session's road,
+     * file first and socket second, with the main run_start stamped (card 473).
+     *
+     * @param rawEvent the next event as the stream gave it
+     * @param runDrain the run's drain
+     * @return false once the drain is sealed by a quit; the event was not written
+     */
+    private boolean drainOne(RunEvent rawEvent, RunDrain runDrain) {
+        RunEvent event = wireReference.stamp(rawEvent);
+        if (!runDrain.record(event)) {
+            return false;
+        }
+        if (runDrain.sending()) {
+            send(event);
+        }
+        return true;
+    }
+
+    /**
+     * Card 482: the Start of the confirmation sheet. Starts only when the
+     * folder is registered and its bytes still hash to what the sheet showed.
+     *
+     * @param dir  the playbook folder
+     * @param hash the hash the confirmation showed
+     */
+    public void onStartPlaybook(String dir, String hash) {
+        if (running) {
+            sendError(RUN_ACTIVE);
+            return;
+        }
+        PinnedPlaybook pinned;
+        try {
+            Path folder = dir == null || dir.isBlank() ? null : Path.of(dir).toRealPath();
+            if (folder == null || !PlaybookFolders.inHome().read().folders().contains(folder.toString())) {
+                sendError("This folder is not a registered playbook folder.");
+                return;
+            }
+            PlaybookLoader.Loaded loaded = PlaybookLoader.load(folder, workspace != null ? workspace : projectDir,
+                    activeConfig.get());
+            if (loaded.playbook() == null || !loaded.findings().isEmpty()) {
+                // The sheet disables Start on a finding; the frame is a second
+                // gate, so a client that skips the sheet cannot start a
+                // playbook the validator refused.
+                sendError("The playbook does not load: " + loaded.findings());
+                return;
+            }
+            pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody);
+        } catch (IOException | RuntimeException unreadable) {
+            sendError("The playbook could not be read: " + unreadable.getMessage());
+            return;
+        }
+        if (!pinned.hash().equals(hash)) {
+            sendError(PLAYBOOK_CHANGED);
+            return;
+        }
+        running = true;
+        Thread.ofVirtual().name("spectroscope-run").start(() -> runPlaybook(pinned));
+    }
+
+    /**
+     * @param name a skill name
+     * @return its installed body, or null
+     */
+    private String installedSkillBody(String name) {
+        SkillLibrary skills = skillLibrary != null
+                ? skillLibrary : SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
+        return skills.find(name).map(dev.spectroscope.core.skills.Skill::body).orElse(null);
+    }
+
+    /**
+     * Card 482: one playbook run on the virtual thread. Holds the run slot,
+     * the run signal and the drain exactly as {@link #runPrompt} does, and
+     * always releases them, the step floor included.
+     *
+     * @param pinned the bytes the confirmation showed
+     */
+    private void runPlaybook(PinnedPlaybook pinned) {
+        CancelSignal runSignal = new CancelSignal();
+        this.signal = runSignal;
+        runSignal.onCancel(asker::releaseAllPending);
+        ensureStore();
+        reportRunning(true);
+        RunDrain runDrain = new RunDrain(runSignal);
+        this.drain = runDrain;
+        QuitFlush.register(runDrain);
+        String runId = PlaybookRunner.newRunId();
+        String sessionId = store.id();
+        PlaybookRunsLive.started(sessionId, runId);
+        try (PlaybookRecorder recorder = new PlaybookRecorder(PlaybookRecorder.fileFor(sessionId),
+                PlaybookRecorder.DEFAULT_CEILING_BYTES)) {
+            buildAgentOnce();
+            SessionPlaybookHost host = new SessionPlaybookHost(workspace, event -> drainOne(event, runDrain),
+                    subagents, agent, activeConfig::get, this::switchProvider, providerBuilder, providerCheck,
+                    this::providerKind, this::permissionFloor, broker, asker);
+            new PlaybookRunner(new PlaybookRunner.Setup(pinned, runId,
+                    PlaybookRecorder.graphFileFor(sessionId, runId), recorder, runSignal, permissionMode),
+                    host, subagents, HostGuard.live()::refusal).run();
+        } catch (RuntimeException failure) {
+            sendError("Playbook run ended with an error: " + failure.getMessage());
+        } finally {
+            PlaybookRunsLive.ended(sessionId, runId);
+            permissionFloor = null;
+            runDrain.finished();
+            QuitFlush.unregister(runDrain);
+            running = false;
+            reportRunning(false);
+            this.signal = null;
+            this.drain = null;
+            releasePending();
+        }
+    }
+
+    /**
+     * An unknown provider reads as cloud, the stricter assumption for the privacy rules.
+     *
+     * @param provider a provider name
+     * @return local, cloud or builtin from the registry rows, without a request
+     */
+    private String providerKind(String provider) {
+        return ProviderRegistry.shared().rows(activeConfig.get()).stream()
+                .filter(r -> r.id().equals(provider)).map(ProviderRow::kind).findFirst().orElse("cloud");
+    }
+
+    /**
+     * @param provider a provider name
+     * @return the P1 registry's row after its bounded check, under the live config
+     */
+    private ProviderRow registryCheck(String provider) {
+        return ProviderRegistry.shared().check(provider, activeConfig.get());
+    }
+
+    /** @return the stricter of the live mode and the playbook step's floor */
+    String effectiveMode() {
+        String floor = permissionFloor;
+        return floor == null ? permissionMode : Permissions.effective(permissionMode, floor);
+    }
+
+    /** @param mode the running step's permission, or null to clear it */
+    void permissionFloor(String mode) {
+        this.permissionFloor = mode;
+    }
+
+    /** @return the session's gate, or null before the agent is built */
+    PermissionBroker broker() {
+        return broker;
+    }
+
+    /** @param builder what builds a provider from a config in this connection, for tests */
+    void providerBuilderForTest(Function<SpectroConfig, LlmProvider> builder) {
+        this.providerBuilder = builder;
+    }
+
+    /** @param check what answers the registry check of one provider in this connection, for tests */
+    void providerCheckForTest(Function<String, ProviderRow> check) {
+        this.providerCheck = check;
     }
 
     /**
@@ -1857,12 +2050,12 @@ public final class SessionConnection {
 
         SpectroConfig sessionConfig = adoptSessionConfig();
 
-        PermissionBroker broker = parkingBroker();
+        broker = parkingBroker();
 
         // The provider is wrapped in a SwitchableProvider so the header picker can
         // swap the backend mid-session (activeConfig carries any pre-run switch).
         SpectroConfig active = activeConfig.get();
-        switchable = new SwitchableProvider(ServerProviders.build(active), active.provider());
+        switchable = new SwitchableProvider(providerBuilder.apply(active), active.provider());
         LlmProvider provider = switchable;
         // the skill catalog rides in the system prompt, bodies come via use_skill.
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
@@ -2646,7 +2839,7 @@ public final class SessionConnection {
             @Override
             public boolean reachesOutsideTheWorkingDirectory() {
                 // Card 453: the live mode, read once per tool call.
-                return SpectroConfig.PERMISSION_MODE_EXTENDED.equals(permissionMode);
+                return SpectroConfig.PERMISSION_MODE_EXTENDED.equals(effectiveMode());
             }
         };
     }
@@ -2661,7 +2854,7 @@ public final class SessionConnection {
      * @return {@code "mode:<mode>"}, {@code "allowlist"}, or null
      */
     private String answeredWithoutAsking(PermissionRequest request, Allowlist.Verdict verdict) {
-        String mode = permissionMode;
+        String mode = effectiveMode();
         if (PermissionModes.decide(mode, request) != null) {
             return "mode:" + mode;
         }
