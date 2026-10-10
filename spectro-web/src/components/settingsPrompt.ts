@@ -59,12 +59,14 @@ const CONSTANT_NAME = String.raw`[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*`;
 /** A Java numeric literal as a unit conversion writes it: `1000L`, `1_000`. */
 const NUMERIC_LITERAL = String.raw`\d[\d_]*(?:\.\d[\d_]*)?[LlFfDd]?`;
 
-/** A named constant, bare or multiplied or divided by literals (card 412). */
-const CONSTANT_EXPRESSION = new RegExp(String.raw`^${CONSTANT_NAME}(?:\s*[*/]\s*${NUMERIC_LITERAL})*$`);
+/** A named constant, bare or combined with literals: multiplied or divided
+ *  (card 412), or offset by one, as `Owner.CONSTANT - 1` (card 490). */
+const CONSTANT_EXPRESSION = new RegExp(String.raw`^${CONSTANT_NAME}(?:\s*[*/+-]\s*${NUMERIC_LITERAL})*$`);
 
 /** Whether an alias restates a NAMED constant or a bare literal. A named
  *  constant counts when the alias converts its unit, as `Owner.CONSTANT *
- *  1000L` (card 412). The two need different sentences: only the first has
+ *  1000L` (card 412), or derives a count from it, as `Owner.CONSTANT - 1`
+ *  (card 490). The two need different sentences: only the first has
  *  somewhere else to send the reader. */
 function restatesAConstant(expression: string): boolean {
   return CONSTANT_EXPRESSION.test(expression.trim());
