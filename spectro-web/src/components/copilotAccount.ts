@@ -176,3 +176,21 @@ export function onCopilotSignInChange(listener: () => void): () => void {
 export function notifyCopilotSignInChange(): void {
   for (const listener of [...signInListeners]) listener();
 }
+
+/**
+ * Whether the sheet offers spectroscope's own GitHub sign-in. Not in 0.15.0:
+ * it needs a registered GitHub OAuth app (card 500), so the Copilot CLI's
+ * device flow is the sign-in the release ships. The code stays.
+ */
+export const APP_SIGN_IN_OFFERED = false;
+
+/**
+ * What closing the sheet does: a sign-in that waits for its code is
+ * cancelled, so no `copilot login` keeps running behind a closed sheet.
+ */
+export function closeSheet(
+  status: CopilotAccountStatus | null | undefined,
+  act: (action: CopilotAccountAction) => void,
+): void {
+  if (status?.state === "WAITING") act("cancel");
+}

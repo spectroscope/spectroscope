@@ -81,13 +81,14 @@ describe("the sign-in sheet", () => {
     expect(html).not.toContain(dict["cp.signInCli"].en);
   });
 
-  it("offers another account while signed in, so a second sign-in can replace the first", () => {
+  it("offers the CLI sign-in while signed in the app's own way, which 0.15.0 no longer offers", () => {
+    // Final round, decision 2: the app's own GitHub sign-in waits for card 500 and is hidden.
     const github = sheet({ ...base, state: "SIGNED_IN", method: "github", login: "octo-fixture" });
-    expect(github).toContain(dict["cp.signInOther"].en);
     expect(github).toContain(dict["cp.signInCli"].en);
     expect(github).toContain(dict["cp.checkedOnRun"].en);
+    expect(github).not.toContain(dict["cp.signInOther"].en);
     const cli = sheet({ ...base, state: "SIGNED_IN", method: "cli", login: "octo-fixture" });
-    expect(cli).toContain(dict["cp.signInGithub"].en);
+    expect(cli).not.toContain(dict["cp.signInGithub"].en);
   });
 
   it("names the code for a screen reader by its content, not by a label over it", () => {
@@ -143,14 +144,17 @@ describe("the sign-in sheet", () => {
     const html = sheet({ ...base, state: "REFUSED", message: "The authorization request was denied." });
     expect(html).toContain('role="alert"');
     expect(html).toContain("The authorization request was denied.");
-    expect(html).toContain(dict["cp.signInGithub"].en);
+    expect(html).toContain(dict["cp.signInCli"].en);
   });
 
-  it("offers each way in only when it exists, and says why not", () => {
+  it("offers the CLI sign-in only when a CLI exists, and says why not", () => {
     const html = sheet({ ...base, github: false, cli: true });
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Sign in with GitHub<\/button>/);
-    expect(html).toContain(dict["cp.noGithub"].en);
+    expect(html).not.toContain("Sign in with GitHub");
+    expect(html).not.toContain(dict["cp.noGithub"].en);
     expect(html).toMatch(/<button(?![^>]*disabled)[^>]*>Use the Copilot CLI sign-in<\/button>/);
+    const none = sheet({ ...base, github: true, cli: false });
+    expect(none).toMatch(/<button[^>]*disabled=""[^>]*>Use the Copilot CLI sign-in<\/button>/);
+    expect(none).toContain(dict["cp.noCli"].en);
   });
 
   it("says so when the status could not be read", () => {

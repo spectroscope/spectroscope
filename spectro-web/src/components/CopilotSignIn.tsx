@@ -11,6 +11,8 @@ import { useLang } from "../state/lang";
 import {
   accountLine,
   afterRead,
+  APP_SIGN_IN_OFFERED,
+  closeSheet,
   fetchCopilotAccount,
   linkable,
   notifyCopilotSignInChange,
@@ -50,7 +52,9 @@ export function CopilotSignInSheet({
   const waiting = status?.state === "WAITING";
   const signedIn = status?.state === "SIGNED_IN";
   const href = linkable(status?.verificationUri ?? null);
-  const offerGithub = !!status && !waiting;
+  const offerGithub = APP_SIGN_IN_OFFERED && !!status && !waiting;
+  // A stored choice can be removed whenever nothing waits, a refused run included.
+  const offerSignOut = !waiting && !!status?.method;
   const offerCli = !!status && !waiting && !(signedIn && status.method === "cli");
   const githubLabel = signedIn && status.method === "github" ? "cp.signInOther" : "cp.signInGithub";
   const dialog = useRef<HTMLDivElement>(null);
@@ -141,7 +145,7 @@ export function CopilotSignInSheet({
               {t(lang, "cp.cancel")}
             </button>
           )}
-          {signedIn && (
+          {offerSignOut && (
             <button type="button" className="ob-opt-cta" onClick={onSignOut} disabled={!!busy}>
               {t(lang, "cp.signOut")}
             </button>
@@ -241,7 +245,7 @@ export function CopilotAccountNote() {
             onCancel={() => act("cancel")}
             onSignOut={() => act("sign-out")}
             onClose={() => {
-              if (note.status?.state === "WAITING") act("cancel");
+              closeSheet(note.status, act);
               setOpen(false);
             }}
           />,

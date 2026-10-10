@@ -294,4 +294,35 @@ class CopilotSignInProviderTest {
 
         assertTrue(refused.getMessage().contains("not signed in"), refused.getMessage());
     }
+
+    @Test
+    void anAuthorizationErrorUnderTheCliChoiceReachesTheRefusalListener() throws Exception {
+        // Card 495, final round: the CLI choice has no token source, and its refusals still reach the sheet.
+        runtime = new FakeCopilotRuntime().authStatus(Map.of("isAuthenticated", true, "authType", "user",
+                "login", "octo-fixture"));
+        List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+        provider = new CopilotProvider(new CopilotProvider.Options("claude-sonnet-5", null, null, true, heard::add),
+                MAC, runtime.cliUrl());
+        runtime.onSend(turn -> turn.event("session.error", FakeCopilotRuntime.object(Map.of(
+                "errorType", "authorization", "message", "Your organisation has not authorised this app."))));
+
+        assertThrows(RuntimeException.class, () -> drain(provider.stream(ask("hi"))));
+
+        assertEquals(List.of("Your organisation has not authorised this app."), heard);
+    }
+
+    @Test
+    void anErrorOfAnotherKindUnderTheCliChoiceIsNoRefusal() throws Exception {
+        runtime = new FakeCopilotRuntime().authStatus(Map.of("isAuthenticated", true, "authType", "user",
+                "login", "octo-fixture"));
+        List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+        provider = new CopilotProvider(new CopilotProvider.Options("claude-sonnet-5", null, null, true, heard::add),
+                MAC, runtime.cliUrl());
+        runtime.onSend(turn -> turn.event("session.error", FakeCopilotRuntime.object(Map.of(
+                "errorType", "quota", "message", "You have no AI credits left."))));
+
+        assertThrows(RuntimeException.class, () -> drain(provider.stream(ask("hi"))));
+
+        assertEquals(List.of(), heard);
+    }
 }

@@ -222,8 +222,25 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      * @param tokenSource    where a GitHub token comes from (card 495), or null
      * @param useStoredLogin true when the user chose the login the CLI already stores;
      *                       ignored when a token source is given
+     * @param refusals       told the runtime's words when it refuses a run for
+     *                       authentication or authorization, with or without a
+     *                       token source (card 495), or null
      */
-    public record Options(String model, String cliPath, TokenSource tokenSource, boolean useStoredLogin) {}
+    public record Options(String model, String cliPath, TokenSource tokenSource, boolean useStoredLogin,
+                          java.util.function.Consumer<String> refusals) {
+
+        /**
+         * Options without a refusal listener.
+         *
+         * @param model          the Copilot model id
+         * @param cliPath        the {@code copilot} executable the SDK starts
+         * @param tokenSource    where a GitHub token comes from, or null
+         * @param useStoredLogin true when the user chose the login the CLI already stores
+         */
+        public Options(String model, String cliPath, TokenSource tokenSource, boolean useStoredLogin) {
+            this(model, cliPath, tokenSource, useStoredLogin, null);
+        }
+    }
 
     /** Supplies a GitHub token when the runtime asks for one (initially and on refresh). */
     @FunctionalInterface
@@ -1247,8 +1264,13 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 case SessionErrorEvent error -> {
                     var data = error.getData();
                     TokenSource source = options.tokenSource();
-                    if (source != null && data != null && AUTH_ERRORS.contains(data.errorType())) {
-                        source.refused(data.message());
+                    if (data != null && AUTH_ERRORS.contains(data.errorType())) {
+                        if (source != null) {
+                            source.refused(data.message());
+                        }
+                        if (options.refusals() != null) {
+                            options.refusals().accept(data.message());
+                        }
                     }
                     fail("copilot runtime reported an error: " + (data == null ? "no detail"
                             : data.message() + (data.errorType() == null ? "" : " (" + data.errorType() + ")")));

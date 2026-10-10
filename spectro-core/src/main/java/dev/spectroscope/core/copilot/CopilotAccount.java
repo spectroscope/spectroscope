@@ -68,6 +68,15 @@ public final class CopilotAccount {
     @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.SECONDS)
     static final long DEFAULT_CODE_LIFETIME_S = 900;
 
+    /**
+     * How often the CLI's device flow asks the runtime whether the browser
+     * confirmed the code (card 495, final round). Each ask starts a runtime
+     * for a moment, so the pace is a little slower than GitHub's own five
+     * second device-flow interval would allow.
+     */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.SECONDS)
+    static final long CLI_POLL_S = 3;
+
     /** Where a sign-in stands. */
     public enum State {
         /** Nothing usable is stored. */
@@ -333,6 +342,10 @@ public final class CopilotAccount {
             return new Status(State.NOT_SIGNED_IN, "cli", null, null, null, 0, runtimeSilent(failure));
         }
         if (cliUsable(auth)) {
+            String refusal = runRefusal;
+            if (refusal != null) {
+                return new Status(State.REFUSED, "cli", null, null, null, 0, refusal);
+            }
             return new Status(State.SIGNED_IN, "cli", auth.login(), null, null, 0, note);
         }
         return new Status(State.NOT_SIGNED_IN, "cli", null, null, null, 0, cliRefusal(auth));
@@ -538,40 +551,72 @@ public final class CopilotAccount {
         return status();
     }
 
+    /**
+     * Waits for the CLI's device flow by asking the runtime: every
+     * {@link #CLI_POLL_S} seconds the runtime's sign-in status is read, and the
+     * flow is done when it reports the CLI's own sign-in ({@code user}). The
+     * GitHub CLI's account ({@code gh-cli}) never counts. The flow also ends
+     * when {@code copilot login} fails, when the code expires, and when the
+     * sheet cancels it.
+     */
     private void awaitCli(Pending p, CopilotCliLogin.Run run) {
-        CopilotCliLogin.Outcome outcome;
+        while (!p.cancelled) {
+            CopilotCliLogin.Outcome ended = run.outcome().getNow(null);
+            if (ended != null && !ended.signedIn()) {
+                finish(p, ended.message(), true);
+                return;
+            }
+            CliAuth auth;
+            try {
+                auth = cliAuth(true);
+            } catch (Exception failure) {
+                if (ended != null) {
+                    finish(p, runtimeSilent(failure), true);
+                    return;
+                }
+                auth = null;
+            }
+            if (p.cancelled) {
+                return;
+            }
+            if (cliUsable(auth)) {
+                try {
+                    store.save(new CopilotCredentials.Stored(CopilotCredentials.Method.CLI, auth.login(),
+                            null, 0, null, 0));
+                    finish(p, null, false);
+                } catch (IOException failure) {
+                    finish(p, "The choice could not be saved: " + failure.getMessage(), true);
+                }
+                letTheLoginEnd(run);
+                return;
+            }
+            if (ended != null) {
+                finish(p, cliRefusal(auth), true);
+                return;
+            }
+            if (clock.instant().getEpochSecond() >= p.expiresAt) {
+                run.cancel();
+                finish(p, "The code expired before it was confirmed. Start the sign-in again.", true);
+                return;
+            }
+            try {
+                sleeper.sleep(CLI_POLL_S);
+            } catch (InterruptedException stopped) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    /** The runtime already reports the sign-in: {@code copilot login} gets a moment to end by itself, then it is stopped. */
+    private static void letTheLoginEnd(CopilotCliLogin.Run run) {
         try {
-            outcome = run.outcome().get();
+            run.outcome().get(5, TimeUnit.SECONDS);
         } catch (InterruptedException stopped) {
             Thread.currentThread().interrupt();
-            return;
-        } catch (Exception broken) {
-            finish(p, "copilot login ended without an answer.", true);
-            return;
-        }
-        if (p.cancelled) {
-            return;
-        }
-        if (!outcome.signedIn()) {
-            finish(p, outcome.message(), true);
-            return;
-        }
-        CliAuth auth;
-        try {
-            auth = cliAuth(true);
-        } catch (Exception failure) {
-            finish(p, runtimeSilent(failure), true);
-            return;
-        }
-        if (!cliUsable(auth)) {
-            finish(p, cliRefusal(auth), true);
-            return;
-        }
-        try {
-            store.save(new CopilotCredentials.Stored(CopilotCredentials.Method.CLI, auth.login(), null, 0, null, 0));
-            finish(p, null, false);
-        } catch (IOException failure) {
-            finish(p, "The choice could not be saved: " + failure.getMessage(), true);
+            run.cancel();
+        } catch (Exception stillRunning) {
+            run.cancel();
         }
     }
 
@@ -658,9 +703,14 @@ public final class CopilotAccount {
 
             @Override
             public void refused(String words) {
-                runRefusal = words == null || words.isBlank() ? "Copilot refused the run." : words;
+                refusedRun(words);
             }
         };
+    }
+
+    /** A run the runtime refused: the status shows its words until the next sign-in. */
+    private void refusedRun(String words) {
+        runRefusal = words == null || words.isBlank() ? "Copilot refused the run." : words;
     }
 
     private CopilotProvider.Token token() throws IOException {
@@ -821,7 +871,7 @@ public final class CopilotAccount {
      */
     public CopilotProvider.Options providerOptions(String model, String cliPath) {
         return choseCli()
-                ? new CopilotProvider.Options(model, cliPath, null, true)
+                ? new CopilotProvider.Options(model, cliPath, null, true, this::refusedRun)
                 : new CopilotProvider.Options(model, cliPath, tokenSource(), false);
     }
 

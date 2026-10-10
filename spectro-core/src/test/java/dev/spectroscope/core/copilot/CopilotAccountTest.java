@@ -78,12 +78,14 @@ class CopilotAccountTest {
         final AtomicReference<CopilotAccount.CliAuth> auth = new AtomicReference<>(
                 new CopilotAccount.CliAuth(false, null, null, "Not authenticated"));
         final AtomicInteger logins = new AtomicInteger();
+        final AtomicInteger authCalls = new AtomicInteger();
         final CompletableFuture<CopilotCliLogin.Prompt> prompt = new CompletableFuture<>();
         final CompletableFuture<CopilotCliLogin.Outcome> outcome = new CompletableFuture<>();
         volatile boolean cancelled;
 
         @Override
         public CopilotAccount.CliAuth auth() {
+            authCalls.incrementAndGet();
             return auth.get();
         }
 
@@ -684,5 +686,102 @@ class CopilotAccountTest {
 
         assertEquals(CopilotAccount.State.REFUSED, status.state());
         assertTrue(status.message().contains("Copilot CLI"), status.message());
+    }
+
+    // ---- card 495, final round: the CLI device flow is the shipped sign-in ----
+
+    @Test
+    void theCliDeviceFlowShowsTheCodeThenPollsTheRuntimeUntilItReportsTheLogin() throws Exception {
+        // The CLI process does not need to end: the runtime's sign-in status decides.
+        FakeCli cli = new FakeCli();
+        account = account(cli);
+        cli.prompt.complete(new CopilotCliLogin.Prompt("https://github.com/login/device", "2B8A-BAC6"));
+
+        CopilotAccount.Status waiting = account.signInWithCli();
+        assertEquals(CopilotAccount.State.WAITING, waiting.state());
+        assertEquals("2B8A-BAC6", waiting.userCode());
+        assertEquals("https://github.com/login/device", waiting.verificationUri());
+        assertEquals("cli", waiting.method());
+        Thread.sleep(50);
+        assertEquals(CopilotAccount.State.WAITING, account.status().state(), "not signed in until the runtime says so");
+
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        CopilotAccount.Status status = settled();
+
+        assertEquals(CopilotAccount.State.SIGNED_IN, status.state());
+        assertEquals("octo-fixture", status.login());
+        assertEquals("cli", status.method());
+        assertTrue(cli.authCalls.get() >= 2, "the runtime was asked more than once: " + cli.authCalls.get());
+        assertTrue(sleeps.contains(CopilotAccount.CLI_POLL_S), sleeps.toString());
+        assertEquals(CopilotCredentials.Method.CLI, store.load().orElseThrow().method());
+    }
+
+    @Test
+    void theCliDeviceFlowNeverTakesTheGitHubCliAccountWhileItPolls() throws Exception {
+        FakeCli cli = new FakeCli();
+        account = account(cli);
+        cli.prompt.complete(new CopilotCliLogin.Prompt("https://github.com/login/device", "2B8A-BAC6"));
+        account.signInWithCli();
+
+        cli.auth.set(new CopilotAccount.CliAuth(true, "gh-cli", "octo-fixture", null));
+        Thread.sleep(100);
+        assertEquals(CopilotAccount.State.WAITING, account.status().state(), "gh-cli is not the CLI's sign-in");
+        assertFalse(Files.exists(store.path()));
+
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        assertEquals(CopilotAccount.State.SIGNED_IN, settled().state());
+    }
+
+    @Test
+    void closingTheSheetWhileTheCliWaitsStopsTheLoginAndThePolling() throws Exception {
+        FakeCli cli = new FakeCli();
+        account = account(cli);
+        cli.prompt.complete(new CopilotCliLogin.Prompt("https://github.com/login/device", "2B8A-BAC6"));
+        account.signInWithCli();
+
+        CopilotAccount.Status after = account.cancel();
+        assertTrue(cli.cancelled, "the copilot login process is stopped");
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, after.state());
+        int asked = cli.authCalls.get();
+
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        Thread.sleep(100);
+        assertEquals(asked, cli.authCalls.get(), "no poll after the cancel");
+        assertFalse(Files.exists(store.path()), "nothing is stored after a cancel");
+    }
+
+    @Test
+    void aCodeThatExpiresWhileTheCliWaitsEndsTheFlowInWords() throws Exception {
+        FakeCli cli = new FakeCli();
+        account = account(cli);
+        cli.prompt.complete(new CopilotCliLogin.Prompt("https://github.com/login/device", "2B8A-BAC6"));
+        account.signInWithCli();
+
+        clock.epochSecond.addAndGet(CopilotAccount.DEFAULT_CODE_LIFETIME_S + 1);
+        CopilotAccount.Status status = settled();
+
+        assertEquals(CopilotAccount.State.REFUSED, status.state());
+        assertTrue(status.message().contains("expired"), status.message());
+        assertTrue(cli.cancelled);
+    }
+
+    @Test
+    void aRunTheRuntimeRefusesUnderTheCliChoiceIsShownAsRefusedAndTheChoiceStays() throws Exception {
+        FakeCli cli = new FakeCli();
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        account = account(cli);
+        assertEquals(CopilotAccount.State.SIGNED_IN, account.signInWithCli().state());
+
+        CopilotProvider.Options options = account.providerOptions("claude-sonnet-5", "/opt/homebrew/bin/copilot");
+        assertTrue(options.useStoredLogin());
+        assertNull(options.tokenSource(), "the CLI choice hands the runtime no token");
+        options.refusals().accept("You have no Copilot seat.");
+
+        CopilotAccount.Status refused = account.status();
+        assertEquals(CopilotAccount.State.REFUSED, refused.state());
+        assertEquals("cli", refused.method(), "the choice is still stored, so the sheet can offer sign out");
+        assertEquals("You have no Copilot seat.", refused.message());
+
+        assertEquals(CopilotAccount.State.NOT_SIGNED_IN, account.signOut().state());
     }
 }

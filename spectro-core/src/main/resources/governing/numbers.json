@@ -301,6 +301,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
+    "field" : "CLI_POLL_S",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "UNEXAMINED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How often the CLI's device flow asks the runtime whether the browser confirmed the code (card 495, final round). Each ask starts a runtime for a moment, so the pace is a little slower than GitHub's own five second device-flow interval would allow."
+  },
+  {
+    "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
     "field" : "CLI_PROMPT_TIMEOUT_S",
     "value" : "30",
     "expression" : "30",
