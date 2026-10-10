@@ -138,7 +138,11 @@ export function FileTree({
     if (!MOVES.has(e.key)) return;
     e.preventDefault();
     const next = moveSelection(rows, selected, e.key);
-    if (next !== null && next !== selected) onSelect(next);
+    if (next === null || next === selected) return;
+    onSelect(next);
+    // Keep the row the keys moved to in sight once React has drawn it.
+    const tree = e.currentTarget;
+    requestAnimationFrame(() => tree.querySelector(".is-selected")?.scrollIntoView({ block: "nearest" }));
   };
 
   const indent = (depth: number) => ({ paddingInlineStart: `${depth * 14 + 6}px` });
