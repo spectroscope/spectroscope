@@ -661,6 +661,138 @@
           }
         }
       ]
+    },
+    {
+      "id": "typescript-quality-gate",
+      "when": {
+        "language": "typescript",
+        "addon": "quality-gate"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "scripts/gate.mjs",
+          "template": "typescript/quality-gate/gate.mjs.tmpl",
+          "why": {
+            "en": "Runs the type check and the tests in one command and fails when zero tests ran.",
+            "de": "Führt die Typprüfung und die Tests in einem Befehl aus und scheitert, wenn kein Test lief."
+          }
+        }
+      ],
+      "append": [
+        {
+          "path": "README.md",
+          "template": "typescript/quality-gate/README.append.tmpl"
+        },
+        {
+          "path": "CLAUDE.md",
+          "template": "typescript/quality-gate/CLAUDE.append.tmpl"
+        }
+      ]
+    },
+    {
+      "id": "python-quality-gate",
+      "when": {
+        "language": "python",
+        "addon": "quality-gate"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": "scripts/gate.py",
+          "template": "python/quality-gate/gate.py.tmpl",
+          "why": {
+            "en": "Compiles every module and runs the tests in one command, and fails when zero tests ran.",
+            "de": "Übersetzt jedes Modul und führt die Tests in einem Befehl aus, und scheitert, wenn kein Test lief."
+          }
+        }
+      ],
+      "append": [
+        {
+          "path": "README.md",
+          "template": "python/quality-gate/README.append.tmpl"
+        },
+        {
+          "path": "CLAUDE.md",
+          "template": "python/quality-gate/CLAUDE.append.tmpl"
+        }
+      ]
+    },
+    {
+      "id": "java-quality-gate",
+      "when": {
+        "language": "java",
+        "addon": "quality-gate"
+      },
+      "root": "project",
+      "append": [
+        {
+          "path": "build.gradle.kts",
+          "template": "java/quality-gate/build.gradle.append.tmpl"
+        },
+        {
+          "path": "README.md",
+          "template": "java/quality-gate/README.append.tmpl"
+        },
+        {
+          "path": "CLAUDE.md",
+          "template": "java/quality-gate/CLAUDE.append.tmpl"
+        }
+      ]
+    },
+    {
+      "id": "typescript-ci",
+      "when": {
+        "language": "typescript",
+        "addon": "ci"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "template": "typescript/ci/ci.yml.tmpl",
+          "why": {
+            "en": "Runs the same check on every push and pull request, so a failing change shows up before it is merged.",
+            "de": "Führt dieselbe Prüfung bei jedem Push und Pull Request aus, sodass eine fehlschlagende Änderung vor dem Merge auffällt."
+          }
+        }
+      ]
+    },
+    {
+      "id": "python-ci",
+      "when": {
+        "language": "python",
+        "addon": "ci"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "template": "python/ci/ci.yml.tmpl",
+          "why": {
+            "en": "Runs the same check on every push and pull request, so a failing change shows up before it is merged.",
+            "de": "Führt dieselbe Prüfung bei jedem Push und Pull Request aus, sodass eine fehlschlagende Änderung vor dem Merge auffällt."
+          }
+        }
+      ]
+    },
+    {
+      "id": "java-ci",
+      "when": {
+        "language": "java",
+        "addon": "ci"
+      },
+      "root": "project",
+      "put": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "template": "java/ci/ci.yml.tmpl",
+          "why": {
+            "en": "Runs the same check on every push and pull request, so a failing change shows up before it is merged.",
+            "de": "Führt dieselbe Prüfung bei jedem Push und Pull Request aus, sodass eine fehlschlagende Änderung vor dem Merge auffällt."
+          }
+        }
+      ]
     }
   ]
 }

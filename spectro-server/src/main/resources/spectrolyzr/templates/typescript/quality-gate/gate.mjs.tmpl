@@ -1,0 +1,40 @@
+// Quality gate: type check, then the tests, and a failure when no test ran.
+import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
+
+const windows = process.platform === "win32";
+const npx = windows ? "npx.cmd" : "npx";
+const npm = windows ? "npm.cmd" : "npm";
+
+function run(command, args) {
+  const result = spawnSync(command, args, { encoding: "utf8", shell: false });
+  process.stdout.write(result.stdout ?? "");
+  process.stderr.write(result.stderr ?? "");
+  return result;
+}
+
+// Compiled output of a deleted test must not count, so start from an empty dist.
+rmSync("dist", { recursive: true, force: true });
+
+const typeCheck = run(npx, ["tsc", "--noEmit", "-p", "."]);
+if (typeCheck.status !== 0) {
+  console.error("gate: the type check failed");
+  process.exit(1);
+}
+
+const tests = run(npm, ["test"]);
+if (tests.status !== 0) {
+  console.error("gate: the tests failed");
+  process.exit(1);
+}
+
+const summary = /^# tests (\d+)$/m.exec(tests.stdout ?? "");
+if (summary === null) {
+  console.error("gate: no TAP summary line found, so the number of tests is unknown");
+  process.exit(1);
+}
+if (Number(summary[1]) === 0) {
+  console.error("gate: zero tests ran");
+  process.exit(1);
+}
+console.log(`gate: passed with ${summary[1]} tests`);

@@ -1,0 +1,21 @@
+
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+}
+
+tasks.register("gate") {
+    group = "verification"
+    description = "Runs check and fails when no test ran."
+    dependsOn("check")
+    doLast {
+        val results = layout.buildDirectory.dir("test-results/test").get().asFile
+        val reports = results.listFiles { file -> file.name.endsWith(".xml") }?.toList() ?: emptyList()
+        val executed = reports.sumOf { report ->
+            Regex("<testsuite [^>]*\\btests=\"(\\d+)\"").find(report.readText())?.groupValues?.get(1)?.toInt() ?: 0
+        }
+        if (executed == 0) {
+            throw GradleException("gate: zero tests ran")
+        }
+        println("gate: passed with " + executed + " tests")
+    }
+}
