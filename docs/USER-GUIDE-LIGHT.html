@@ -501,7 +501,7 @@ pre.tree .hl { color: var(--sand); }
   </div>
   <div class="cover-foot">
     <span>spectroscope — the agent orchestrator you can watch</span>
-    <span>2026-10-10 · v0.15.0</span>
+    <span>2026-10-11 · v0.15.1</span>
   </div>
 </div>
 
@@ -6334,8 +6334,8 @@ Maven Central instead. On a machine without a full JDK/Node for the Electron ste
 <p>The two headless modules are published under the <strong>verified namespace</strong>
 <code>dev.spectroscope</code>. Depend on the orchestrator and you get the core transitively:</p>
 <pre>dependencies {
-  implementation("dev.spectroscope:spectro-core:0.15.0")
-  implementation("dev.spectroscope:spectro-orchestrator:0.15.0")  // POM pins spectro-core at 0.15.0
+  implementation("dev.spectroscope:spectro-core:0.15.1")
+  implementation("dev.spectroscope:spectro-orchestrator:0.15.1")  // POM pins spectro-core at 0.15.1
 }</pre>
 <p><code>v0.1.0</code> is the first published version. <strong>Maven Central is
 append-only</strong>: a published version cannot be pulled or overwritten, only superseded,
@@ -6519,15 +6519,14 @@ is reproducible from the repository.</p>
   <dt>Source of truth</dt><dd>the prose and the figures were verified against the
     <strong>v0.1.0</strong> source tree; gate at that time: 678 JUnit + 383 vitest, 0 failures.
     The cover carries the edition date, not a re-verification: this edition ships with
-    <strong>v0.15.0</strong>. Chapter 15d on the developer mode and playbooks (the folder, the
-    spectro playbook, running, editing, Spectrolyzr and installing what a playbook brings), the
-    three modes at the first start, the provider table with Copilot, the provider overview, and
-    the config reference rows for maxTokens and for the Local mode keys sessionsPerChat,
-    careParagraph, readSharePercent and localModeKeys were checked against that tree on
-    2026-10-09 and 2026-10-10; the tool groups in the gear, the two commands, the code graph,
-    the import bundle, the config reference rows for toolGroupsOff, toolResultElision and
-    desktopNotifications, and the folder chip against the previous release's tree on
-    2026-10-09; the rest has not been re-checked.
+    <strong>v0.15.1</strong>. The folder chooser in the Playbook segment, the row of tabs in
+    developer, back and forward in the header, and Spectrolyzr as one page with a new playbook
+    option were checked against that tree on 2026-10-10; chapter 15d on the developer mode and
+    playbooks (the folder, the spectro playbook, running, editing, Spectrolyzr and installing
+    what a playbook brings), the three modes at the first start, the provider table with
+    Copilot, the provider overview, and the config reference rows for maxTokens and for the
+    Local mode keys sessionsPerChat, careParagraph, readSharePercent and localModeKeys against
+    the previous release's tree on 2026-10-09 and 2026-10-10; the rest has not been re-checked.
     Where the guide and the product disagree, the product is right.</dd>
 </div>
 

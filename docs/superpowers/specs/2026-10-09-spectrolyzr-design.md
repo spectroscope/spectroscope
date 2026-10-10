@@ -188,7 +188,7 @@ Generate checks both folders in pass one before it writes anything. `playbookDir
 
 ### The wizard
 
-A view of the playbook segment, in its own chunk `playbook/spectrolyzr/SpectrolyzrWizard.tsx`, listed in the `playbook` surface's `chunks` and loaded through `surfaceChunks.ts`. learn and light never open the playbook surface (P2), so they never request the chunk; developer prefetches it on idle like any other surface it opens. The pane header of P2's `PlaybookPane` gets two tabs, Playbook and New project.
+A view of the playbook segment, in its own chunk `playbook/spectrolyzr/SpectrolyzrPage.tsx`, listed in the `playbook` surface's `chunks` and loaded through `surfaceChunks.ts`. learn and light never open the playbook surface (P2), so they never request the chunk; developer prefetches it on idle like any other surface it opens. The pane header of P2's `PlaybookPane` gets two tabs, Playbook and New project.
 
 Three steps on one rail, Back and Next on every step:
 
@@ -272,7 +272,7 @@ scenario: the same choices give the same bytes
 scenario: the wizard does not exist outside developer
   Given the window in learn mode
   When the app has loaded and the browser is idle
-  Then no request for the chunk playbook/spectrolyzr/SpectrolyzrWizard was made
+  Then no request for the chunk playbook/spectrolyzr/SpectrolyzrPage was made
 ```
 
 ## Found in passing
