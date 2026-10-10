@@ -1057,8 +1057,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Copilot signs in with your GitHub account instead of an API key. Each answer is billed to that account in GitHub AI credits, and the context ring shows what this session has cost so far.",
   },
   "set.copilotInstall": {
-    de: "Dafür braucht es die Copilot CLI auf diesem Mac. Installieren mit: brew install --cask copilot-cli",
-    en: "It needs the Copilot CLI on this Mac. Install it with: brew install --cask copilot-cli",
+    de: "Dafür braucht es die Copilot CLI auf diesem Mac. Installieren mit: {install}",
+    en: "It needs the Copilot CLI on this Mac. Install it with: {install}",
   },
   "ctx.credits": { de: "AI-Credits in dieser Sitzung · {credits}", en: "AI credits this session · {credits}" },
   "pp.chipTitle": { de: "LLM-Backend wechseln", en: "Switch LLM backend" },

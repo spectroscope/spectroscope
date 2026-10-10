@@ -11,10 +11,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Onboarding } from "./Onboarding";
 import { CopilotSettingsNote } from "./CopilotSettingsNote";
-import { ContextPopover } from "./ContextRing";
+import { ComposerMeta } from "./ComposerMeta";
+import { ContextPopover, ContextRing } from "./ContextRing";
+import {
+  COPILOT_INSTALL_LINE,
+  notifyCopilotSignInChange,
+  onCopilotSignInChange,
+  signInChanged,
+  type CopilotAccountStatus,
+} from "./copilotAccount";
+import { listIsAuthoritative, PROVIDERS } from "./providerPickerMode";
+import { providerUnusable, shouldShowOnboarding } from "./onboardingFlag";
+import { drive, type El } from "../testkit/driveComponent";
+import { read, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 import { contextGauge } from "./contextRingMath";
-import { listIsAuthoritative } from "./providerPickerMode";
-import { shouldShowOnboarding } from "./onboardingFlag";
 import { formatCredits } from "../format";
 import { setLang } from "../state/lang";
 import { dict, type Lang } from "../i18n/i18n";
@@ -66,11 +77,11 @@ describe("the first-run sheet for a provider that signs in", () => {
 describe("the settings note under the provider", () => {
   for (const lang of ["en", "de"] as Lang[]) {
     it(`says what Copilot needs and how it is billed, in plain words, in ${lang}`, () => {
-      const html = renderToStaticMarkup(<CopilotSettingsNote lang={lang} />);
+      const html = renderToStaticMarkup(<CopilotSettingsNote provider="copilot" lang={lang} />);
       const text = html.replace(/<[^>]+>/g, " ");
       expect(text).toMatch(lang === "en" ? /GitHub/ : /GitHub/);
       expect(text).toMatch(lang === "en" ? /AI credits/ : /AI-Credits/);
-      expect(text).toContain("brew install --cask copilot-cli");
+      expect(text).toContain(COPILOT_INSTALL_LINE);
       expect(text).not.toMatch(HOUSE_WORDS);
       expect(text, "a request count is never the unit").not.toMatch(/request|Anfrage/i);
     });
@@ -135,5 +146,167 @@ describe("the context ring's AI credit line", () => {
     expect(formatCredits(1.03609, "de")).toBe("1,04");
     expect(formatCredits(0.001, "en")).toBe("< 0.01");
     expect(formatCredits(0, "en")).toBe("0.00");
+  });
+});
+
+// ---- review of 2026-10-10 ---------------------------------------------------
+
+describe("the settings note is mounted for copilot and only for copilot", () => {
+  it("draws for copilot and for no other provider the picker lists", () => {
+    expect(PROVIDERS).toContain("copilot");
+    for (const provider of PROVIDERS) {
+      const html = renderToStaticMarkup(<CopilotSettingsNote provider={provider} lang="en" />);
+      expect(html.includes("copilot-settings-note"), provider).toBe(provider === "copilot");
+    }
+  });
+  it("the settings page hands it the effective provider and puts no condition of its own around it", () => {
+    // The note decides for itself; the page mounts it unconditionally. A
+    // condition here once stood unpinned: replaced by false, the suite stayed green.
+    const panel = stripComments(read("./SettingsPanel.tsx", import.meta.url));
+    const mounts = panel.match(/<CopilotSettingsNote\b[^>]*\/>/g) ?? [];
+    expect(mounts).toEqual([
+      '<CopilotSettingsNote provider={String(view.effective.provider ?? "")} lang={lang} />',
+    ]);
+    const before = panel.slice(0, panel.indexOf("<CopilotSettingsNote")).trimEnd();
+    expect(before.endsWith("&&") || before.endsWith("&& (") || before.endsWith("?")).toBe(false);
+  });
+});
+
+describe("the credit line reaches the ring from the block under the composer", () => {
+  const openRing = (tree: El[]): void => {
+    const ring = tree.filter((el) => el.type === "button" && el.props.className === "context-ring");
+    if (ring.length !== 1) throw new Error(`expected one ring button, found ${ring.length}`);
+    (ring[0].props.onClick as () => void)();
+  };
+  const meta = (aiCredits: number | null) => (
+    <ComposerMeta
+      provider="copilot"
+      model="claude-sonnet-5"
+      status="open"
+      onApplyProvider={() => {}}
+      liveView
+      lastInputTokens={8890}
+      aiCredits={aiCredits}
+      context={null}
+      onWindowOverride={() => {}}
+    />
+  );
+  const opened = (aiCredits: number | null): El => {
+    const found = drive(meta(aiCredits), [ComposerMeta, ContextRing], [openRing]).filter(
+      (el) => el.type === ContextPopover,
+    );
+    expect(found).toHaveLength(1);
+    return found[0];
+  };
+
+  it("the popover the composer's ring opens names the session's credits", () => {
+    const popover = opened(2.2344);
+    expect(popover.props.aiCredits).toBe(2.2344);
+    expect(renderToStaticMarkup(popover)).toContain("AI credits this session · 2.23");
+  });
+  it("and draws no credit line when the session reported none", () => {
+    expect(renderToStaticMarkup(opened(null))).not.toContain("AI credits");
+  });
+});
+
+describe("a sign-in made in a sheet reaches the app without a reload", () => {
+  const status = (state: CopilotAccountStatus["state"]): CopilotAccountStatus => ({
+    state,
+    method: state === "SIGNED_IN" ? "cli" : null,
+    login: state === "SIGNED_IN" ? "octo-fixture" : null,
+    userCode: null,
+    verificationUri: null,
+    expiresAt: 0,
+    message: null,
+    github: false,
+    cli: true,
+  });
+
+  it("a change is a flip of signed-in between two statuses that were read", () => {
+    expect(signInChanged(status("NOT_SIGNED_IN"), status("SIGNED_IN"))).toBe(true);
+    expect(signInChanged(status("WAITING"), status("SIGNED_IN"))).toBe(true);
+    expect(signInChanged(status("SIGNED_IN"), status("NOT_SIGNED_IN"))).toBe(true);
+    expect(signInChanged(status("NOT_SIGNED_IN"), status("WAITING"))).toBe(false);
+    expect(signInChanged(status("SIGNED_IN"), status("SIGNED_IN"))).toBe(false);
+    expect(signInChanged(undefined, status("SIGNED_IN")), "the first read is not a change").toBe(false);
+    expect(signInChanged(status("NOT_SIGNED_IN"), null), "a failed read is not a change").toBe(false);
+  });
+  it("a listener hears a change until it unsubscribes", () => {
+    let heard = 0;
+    const stop = onCopilotSignInChange(() => heard++);
+    notifyCopilotSignInChange();
+    expect(heard).toBe(1);
+    stop();
+    notifyCopilotSignInChange();
+    expect(heard).toBe(1);
+  });
+  it("the status line tells the app when its status flips", () => {
+    const note = stripComments(read("./CopilotSignIn.tsx", import.meta.url));
+    expect(note).toMatch(
+      /if \(signInChanged\(seen\.current, note\.status\)\) notifyCopilotSignInChange\(\);/,
+    );
+  });
+  it("the app re-reads the config when a Copilot sign-in changes", () => {
+    const app = stripComments(read("../App.tsx", import.meta.url));
+    expect(app).toMatch(
+      /useEffect\(\(\) => onCopilotSignInChange\(\(\) => setConfigNonce\(\(n\) => n \+ 1\)\), \[\]\);/,
+    );
+  });
+});
+
+describe("a provider without its sign-in is as unusable as one without its key", () => {
+  it("for the explain button as for the first-run sheet", () => {
+    expect(providerUnusable("needs-key")).toBe(true);
+    expect(providerUnusable("needs-signin")).toBe(true);
+    for (const ready of ["ready", "signed-in", "local", undefined])
+      expect(providerUnusable(ready)).toBe(false);
+    const app = stripComments(read("../App.tsx", import.meta.url));
+    expect(app).toMatch(/!providerUnusable\(providerStatus\[serverCfg\.provider\]\)/);
+  });
+});
+
+describe("the Copilot install line has one spelling", () => {
+  it("the web's is the one the Java runtime lookup names", () => {
+    const java = read(
+      "../../../spectro-core/src/main/java/dev/spectroscope/core/copilot/CopilotRuntime.java",
+      import.meta.url,
+    );
+    const declared = /String INSTALL_LINE = "([^"]+)";/.exec(java);
+    expect(declared, "CopilotRuntime.java no longer declares INSTALL_LINE").not.toBeNull();
+    expect(COPILOT_INSTALL_LINE).toBe(declared![1]);
+  });
+  it("no other source file under src/ spells it", () => {
+    const spelled = srcFiles()
+      .filter((f) => !/\.test\.tsx?$/.test(f) && !f.endsWith("copilotAccount.ts"))
+      .filter((f) => srcText(f).includes("copilot-cli"));
+    expect(spelled).toEqual([]);
+  });
+  it("the first-run option and the settings note show it", () => {
+    for (const lang of ["en", "de"] as const) {
+      setLang(lang);
+      const html = renderToStaticMarkup(<Onboarding open onClose={() => {}} />);
+      const at = html.indexOf(">copilot<");
+      expect(html.slice(at, html.indexOf("</li>", at))).toContain(COPILOT_INSTALL_LINE);
+      expect(renderToStaticMarkup(<CopilotSettingsNote provider="copilot" lang={lang} />)).toContain(
+        COPILOT_INSTALL_LINE,
+      );
+    }
+  });
+});
+
+describe("the first-run sheet's words", () => {
+  it("the intro and the copilot option carry no dash", () => {
+    for (const lang of ["en", "de"] as const) {
+      setLang(lang);
+      const html = renderToStaticMarkup(<Onboarding open onClose={() => {}} />);
+      const intro = html.slice(
+        html.indexOf('class="ob-intro"'),
+        html.indexOf("</p>", html.indexOf('class="ob-intro"')),
+      );
+      expect(intro.length).toBeGreaterThan(40);
+      expect(intro).not.toMatch(/[\u2013\u2014]/);
+      const at = html.indexOf(">copilot<");
+      expect(html.slice(at, html.indexOf("</li>", at))).not.toMatch(/[\u2013\u2014]/);
+    }
   });
 });

@@ -50,6 +50,7 @@ const popover = (
       gauge={gauge}
       shownPct={Math.round((lastInputTokens / gauge.denominator.value) * 100)}
       onWindowOverride={onWindowOverride}
+      aiCredits={null}
     />,
   );
 };
@@ -115,7 +116,7 @@ describe("the ring divides by the window the operator set (card 390)", () => {
   it("keeps the compaction point as a number and as a mark", () => {
     expect(popover(SET, 42_063, undefined)).toContain("compacts at 358k");
     const ring = renderToStaticMarkup(
-      <ContextRing lastInputTokens={42_063} context={SET} onWindowOverride={undefined} />,
+      <ContextRing lastInputTokens={42_063} context={SET} onWindowOverride={undefined} aiCredits={null} />,
     );
     expect(ring).toContain(">8%</span>");
     expect(ring).toContain('class="context-ring-mark"');

@@ -19,6 +19,7 @@ function meta(over: Partial<Parameters<typeof ComposerMeta>[0]> = {}): string {
       onApplyProvider={() => {}}
       liveView
       lastInputTokens={1200}
+      aiCredits={null}
       context={null}
       onWindowOverride={() => {}}
       {...over}

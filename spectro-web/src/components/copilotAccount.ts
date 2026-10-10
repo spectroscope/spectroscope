@@ -135,3 +135,44 @@ export async function postCopilotAccount(
     return null;
   }
 }
+
+/**
+ * How the Copilot CLI is installed, as the runtime lookup names it
+ * (CopilotRuntime.INSTALL_LINE, card 497). The one spelling under src/; a
+ * drift test holds it to the Java constant.
+ */
+export const COPILOT_INSTALL_LINE = "brew install --cask copilot-cli";
+
+/**
+ * Whether the signed-in state flipped between two statuses that were both
+ * read: a sign-in or a sign-out happened. The first read and a failed read are
+ * not changes, and neither is a wait starting.
+ */
+export function signInChanged(
+  prev: CopilotAccountStatus | null | undefined,
+  next: CopilotAccountStatus | null | undefined,
+): boolean {
+  if (!prev || !next) return false;
+  return (prev.state === "SIGNED_IN") !== (next.state === "SIGNED_IN");
+}
+
+const signInListeners = new Set<() => void>();
+
+/**
+ * Hears every sign-in or sign-out made in a Copilot sheet, wherever the sheet
+ * was opened (the model menu or the first-run sheet), so the app can read the
+ * provider status again without a reload.
+ *
+ * @returns the unsubscribe
+ */
+export function onCopilotSignInChange(listener: () => void): () => void {
+  signInListeners.add(listener);
+  return () => {
+    signInListeners.delete(listener);
+  };
+}
+
+/** Tells every listener that a Copilot sign-in changed. */
+export function notifyCopilotSignInChange(): void {
+  for (const listener of [...signInListeners]) listener();
+}

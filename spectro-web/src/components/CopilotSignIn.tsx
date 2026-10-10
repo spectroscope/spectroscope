@@ -13,8 +13,10 @@ import {
   afterRead,
   fetchCopilotAccount,
   linkable,
+  notifyCopilotSignInChange,
   pollDelayMs,
   postCopilotAccount,
+  signInChanged,
   type AccountNoteState,
   type CopilotAccountAction,
   type CopilotAccountStatus,
@@ -204,6 +206,15 @@ export function CopilotAccountNote() {
     }, delay);
     return () => window.clearTimeout(timer);
   }, [note]);
+
+  // Review of 2026-10-10: a sign-in or sign-out made here tells the app, which
+  // reads the provider status again, so the first-run sheet closes and the
+  // model menu lists the account's models without a reload.
+  const seen = useRef<CopilotAccountStatus | null | undefined>(undefined);
+  useEffect(() => {
+    if (signInChanged(seen.current, note.status)) notifyCopilotSignInChange();
+    if (note.status) seen.current = note.status;
+  }, [note.status]);
 
   const act = useCallback((action: CopilotAccountAction, body: Record<string, string> = {}) => {
     setBusy(action === "sign-in" && body.method === "cli" ? "cli" : "other");

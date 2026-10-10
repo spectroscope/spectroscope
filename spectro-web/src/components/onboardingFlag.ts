@@ -28,6 +28,14 @@ export function shouldShowOnboarding(
 ): boolean {
   if (dismissed) return false;
   if (bootProvider === null || providerStatus === null) return false;
-  const status = providerStatus[bootProvider];
+  return providerUnusable(providerStatus[bootProvider]);
+}
+
+/**
+ * Whether a provider's onboarding status says it cannot answer yet: a keyed
+ * provider without its key, or a provider that signs in without its sign-in
+ * (card 496). Any other word, or none, is left to try.
+ */
+export function providerUnusable(status: string | undefined): boolean {
   return status === "needs-key" || status === "needs-signin";
 }

@@ -933,9 +933,7 @@ export function SettingsPanel({
                         />
                       )}
                     </label>
-                    {String(view.effective.provider ?? "") === "copilot" && (
-                      <CopilotSettingsNote lang={lang} />
-                    )}
+                    <CopilotSettingsNote provider={String(view.effective.provider ?? "")} lang={lang} />
                     {/* Card 193: the address beside the provider that needs it.
                     Which providers those are is addressSpecFor's answer, not a
                     list repeated here — each owns a field and a preset of its

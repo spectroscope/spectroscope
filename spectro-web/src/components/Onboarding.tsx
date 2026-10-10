@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 import { useLang } from "../state/lang";
 import { CopilotAccountNote } from "./CopilotSignIn";
+import { COPILOT_INSTALL_LINE } from "./copilotAccount";
 
 /** What an option needs: nothing, a key, or a sign-in. */
 type OptionTag = "free" | "key" | "signin";
@@ -76,8 +77,8 @@ export function Onboarding(props: {
 
         <p className="ob-intro">
           {de
-            ? "spectroscope spricht mit einem LLM — such dir eins aus. Die lokalen sind kostenlos, die Cloud-Anbieter brauchen einen API-Key, Copilot eine Anmeldung bei GitHub."
-            : "spectroscope talks to an LLM — choose one. The local backends are free; the cloud ones need an API key, and Copilot a GitHub sign-in."}
+            ? "spectroscope spricht mit einem LLM, such dir eins aus. Die lokalen sind kostenlos, die Cloud-Anbieter brauchen einen API-Key, Copilot eine Anmeldung bei GitHub."
+            : "spectroscope talks to an LLM: choose one. The local backends are free; the cloud ones need an API key, and Copilot a GitHub sign-in."}
         </p>
 
         <ul className="ob-opts">
@@ -220,14 +221,14 @@ export function Onboarding(props: {
               de ? (
                 <>
                   kein Key: spectroscope meldet sich mit deinem GitHub-Konto an und braucht die Copilot CLI
-                  auf diesem Mac (<code>brew install --cask copilot-cli</code>). Die Kosten laufen über dein
-                  Abo, in GitHub AI-Credits.
+                  auf diesem Mac (<code>{COPILOT_INSTALL_LINE}</code>). Die Kosten laufen über dein Abo, in
+                  GitHub AI-Credits.
                 </>
               ) : (
                 <>
                   no key: spectroscope signs in with your GitHub account and needs the Copilot CLI on this Mac
-                  (<code>brew install --cask copilot-cli</code>). The cost goes to your subscription, in
-                  GitHub AI credits.
+                  (<code>{COPILOT_INSTALL_LINE}</code>). The cost goes to your subscription, in GitHub AI
+                  credits.
                 </>
               )
             }

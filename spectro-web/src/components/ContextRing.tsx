@@ -64,8 +64,8 @@ export function ContextRing(props: {
    *  draws no row. Required as a key so a caller cannot drop it by omission. */
   onWindowOverride: ((tokens: number | null) => void) | undefined;
   /** The session's cost in GitHub AI credits, or null when no call reported
-   *  one (card 496). Undefined draws no line, like null. */
-  aiCredits?: number | null;
+   *  one (card 496). */
+  aiCredits: number | null;
 }) {
   const { lastInputTokens, context } = props;
   const [open, setOpen] = useState(false);
@@ -181,8 +181,8 @@ export function ContextPopover(props: {
   shownPct: number;
   /** See ContextRing: undefined draws no row. */
   onWindowOverride: ((tokens: number | null) => void) | undefined;
-  /** See ContextRing: null or undefined draws no credit line. */
-  aiCredits?: number | null;
+  /** See ContextRing: null draws no credit line. */
+  aiCredits: number | null;
 }) {
   const { lastInputTokens, context, gauge, shownPct, onWindowOverride, aiCredits } = props;
   const lang = useLang();
@@ -211,7 +211,7 @@ export function ContextPopover(props: {
       {gauge.compactsAt !== null && (
         <p className="context-compacts tabular">compacts at {formatTokens(gauge.compactsAt)}</p>
       )}
-      {aiCredits !== undefined && aiCredits !== null && (
+      {aiCredits !== null && (
         <p className="context-credits tabular">
           {t(lang, "ctx.credits", { credits: formatCredits(aiCredits, lang) })}
         </p>

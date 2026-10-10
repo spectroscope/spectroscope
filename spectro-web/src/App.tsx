@@ -89,7 +89,13 @@ import { deletionLeavesView } from "./state/sessionMeta";
 import { Keymap } from "./components/Keymap";
 import { SearchBox } from "./components/SearchBox";
 import { Onboarding } from "./components/Onboarding";
-import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
+import {
+  ONBOARDED_KEY,
+  providerUnusable,
+  shouldOnboard,
+  shouldShowOnboarding,
+} from "./components/onboardingFlag";
+import { onCopilotSignInChange } from "./components/copilotAccount";
 import { LocalModelNotice } from "./components/LocalModelNotice";
 import { LocalModelDialog } from "./components/LocalModelDialog";
 import {
@@ -587,6 +593,9 @@ export function App() {
   // /api/config) — the settings page and the unreachable note name it.
   const [providerAddress, setProviderAddress] = useState<Record<string, string> | null>(null);
   const [configNonce, setConfigNonce] = useState(0); // bump to re-read /api/config after a key is saved
+  // Card 496: a Copilot sign-in or sign-out made in a sheet is the same kind of
+  // change as a saved key, so the provider status is read again.
+  useEffect(() => onCopilotSignInChange(() => setConfigNonce((n) => n + 1)), []);
   // Key PRESENCE per image backend (from /api/config, never values). Drives
   // the gallery dropdown's "no key in .env" hints and the smart default below.
   const [imageKeys, setImageKeys] = useState<{ gemini: boolean; openai: boolean } | null>(null);
@@ -3017,10 +3026,11 @@ export function App() {
               viewKey={textExportViewKey({ viewKey, showingTranslation })}
               // Explain spends the server's BASE-config provider (that is what the
               // endpoint builds, not a live-switched session provider) — offer it
-              // unless that provider explicitly reports needs-key; unknown maps
+              // unless that provider explicitly reports needs-key, or needs-signin
+              // for one that signs in (card 496); unknown maps
               // stay open and the endpoint's readable 503 covers the rest.
               explainReady={
-                !serverCfg || !providerStatus || providerStatus[serverCfg.provider] !== "needs-key"
+                !serverCfg || !providerStatus || !providerUnusable(providerStatus[serverCfg.provider])
               }
             />
           ) : tab === "lab" ? (
