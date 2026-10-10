@@ -724,6 +724,46 @@ class LaunchToolsTest {
     }
 
     /**
+     * Card 489, criterion 5: launch_list names the entries it skipped for want of
+     * a name in a line after the listing. When the listing is clamped to the
+     * window, that line stays whole and the listing gives way: on 8,192 tokens
+     * the answer is 6,144 characters and still ends with the line, on 200,000
+     * tokens 10,000.
+     */
+    @Test
+    void aSkippedEntryIsStillNamedWhenTheListingIsClampedToTheWindow(@TempDir Path project)
+            throws Exception {
+        StringBuilder entries = new StringBuilder();
+        for (int i = 0; i < 200; i++) {
+            entries.append(",\n").append("{ \"name\": \"web-").append(i)
+                    .append("-").append("y".repeat(60))
+                    .append("\", \"runtimeExecutable\": \"npm\", \"runtimeArgs\": [\"run\", \"dev\"],")
+                    .append(" \"port\": ").append(5_000 + i).append(" }");
+        }
+        writeLaunchFile(project, "{ \"version\": \"0.0.1\", \"configurations\": [\n"
+                + "{ \"runtimeExecutable\": \"npm\", \"port\": 4999 }" + entries + " ] }");
+        String skipped = "1 entry without a \"name\" was skipped: there is no way to address it.\n";
+        LaunchSupervisor supervisor = new LaunchSupervisor((host, port) -> true);
+        try {
+            Tool list = tool(new LaunchTools(supervisor, () -> new RecordingBrowser(true),
+                    () -> fence(true)).all(), "launch_list");
+            for (int[] windowAndBound : new int[][] {{8_192, 6_144}, {200_000, 10_000}}) {
+                String said = list.execute(JSON.createObjectNode(),
+                        context(project, windowAndBound[0]));
+                System.out.println("clamp-notice launch_list window=" + windowAndBound[0]
+                        + " chars=" + said.length());
+                assertTrue(said.endsWith(skipped), "the skipped line stays whole on a window of "
+                        + windowAndBound[0] + ": " + said.substring(said.length() - 120));
+                assertEquals(windowAndBound[1], said.length(),
+                        "launch_list on a window of " + windowAndBound[0]);
+                assertTrue(said.contains("- web-0-"), "the listing is there in front of it");
+            }
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    /**
      * Card 489: what a configuration printed is clamped to the window, both while
      * it runs and after it exited. The process prints 200 lines of 101
      * characters, then waits for a file to exit with code 3.
