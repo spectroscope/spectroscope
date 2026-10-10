@@ -275,6 +275,12 @@ class CopilotRuntimeTest {
     }
 
     @Test
+    void theLookupOfThisProcessCarriesTheInstallRoots() {
+        assertTrue(CopilotRuntime.Environment.current().installRoots().containsAll(CopilotRuntime.HOMEBREW_PREFIXES),
+                CopilotRuntime.Environment.current().installRoots().toString());
+    }
+
+    @Test
     void anInstallRootCommandThatFailsOrPrintsNoAbsolutePathAddsNothing() {
         List<String> roots = CopilotRuntime.installRoots(command ->
                 command.get(0).endsWith("brew") ? Optional.empty() : Optional.of("prefix not set"));

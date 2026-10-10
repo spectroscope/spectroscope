@@ -1227,6 +1227,10 @@ class CopilotProviderTest {
                 "host", "https://octocorp.ghe.com"));
         provider.authStatus();
         assertEquals("https://octocorp.ghe.com", CopilotProvider.lastAuthHost());
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("copilot-host");
+        assertEquals("octocorp.ghe.com", dev.spectroscope.core.config.SpectroConfig.load(
+                new dev.spectroscope.core.config.SpectroConfig.Overrides("copilot", "auto", null, null, null, null),
+                dir).providerHost(), "the config names the host the runtime reported");
         runtime.authStatus(Map.of("isAuthenticated", true, "authType", "user", "login", "octo-fixture",
                 "host", "https://github.com"));
         provider.authStatus();
