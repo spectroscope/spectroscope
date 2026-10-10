@@ -35,6 +35,10 @@ public final class LocalModeState {
 
     private static final JsonNode MISSING = MissingNode.getInstance();
 
+    /** A switch that is off and has written nothing. */
+    public LocalModeState() {
+    }
+
     /**
      * What to apply.
      *
@@ -68,12 +72,20 @@ public final class LocalModeState {
     /** Values the operator set in the switch's rows, kept across off and on. */
     private final Map<String, JsonNode> edits = new LinkedHashMap<>();
 
-    /** @return whether the switch is on */
+    /**
+     * Whether the switch is on.
+     *
+     * @return true while the switch is on
+     */
     public synchronized boolean on() {
         return on;
     }
 
-    /** @return the keys the switch wrote, in the gear's order */
+    /**
+     * The keys the switch wrote.
+     *
+     * @return those keys, in the gear's order
+     */
     public synchronized Set<String> owned() {
         return Collections.unmodifiableSet(new LinkedHashSet<>(owned));
     }

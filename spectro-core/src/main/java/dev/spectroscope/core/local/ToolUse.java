@@ -20,7 +20,11 @@ public enum ToolUse {
     /** No source said. */
     UNKNOWN;
 
-    /** @return the word the server sends: yes, no or unknown */
+    /**
+     * The word the server sends for this answer.
+     *
+     * @return yes, no or unknown
+     */
     public String wire() {
         return name().toLowerCase(java.util.Locale.ROOT);
     }
