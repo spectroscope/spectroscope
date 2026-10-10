@@ -155,6 +155,8 @@ describe("the switch sits in the header", () => {
           doctorOpen={false}
           onToggleDoctor={() => {}}
           onOpenKeymap={() => {}}
+          canGoBack={false}
+          canGoForward={false}
         />,
       );
       expect(html, String(viewingLive)).toMatch(/role="radiogroup"/);

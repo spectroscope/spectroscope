@@ -138,6 +138,38 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
     }
   });
 
+  it("draws one back and forward pair, in the header left of the mode switch, in every mode with the bar shown and hidden (card 514)", async () => {
+    const BACK = 'aria-label="back (⌘←)"';
+    const FORWARD = 'aria-label="forward (⌘→)"';
+    for (const mode of VIEW_MODES) {
+      for (const tutorial of [false, true]) {
+        const at = `${mode} ${tutorial}`;
+        const html = await renderApp(mode, tutorial);
+        // Exactly one pair in the whole window.
+        expect(html.split(BACK).length - 1, at).toBe(1);
+        expect(html.split(FORWARD).length - 1, at).toBe(1);
+        expect(html.split('class="nav-steps__step"').length - 1, at).toBe(2);
+        // In the header, back then forward, then the mode switch.
+        const head = html.slice(html.indexOf('<header class="header"'), html.indexOf("</header>"));
+        const forward = head.indexOf(FORWARD);
+        expect(head.indexOf(BACK), at).toBeGreaterThan(-1);
+        expect(head.indexOf(BACK), at).toBeLessThan(forward);
+        expect(forward, at).toBeLessThan(head.indexOf('class="mode-switch" role="radiogroup"'));
+        // The bar, where it is drawn, holds no pair of its own.
+        const bar = isOpen("tabRow", mode, tutorial);
+        expect(html.includes('class="tab-nav"'), at).toBe(bar);
+        if (bar) {
+          const row = html.slice(
+            html.indexOf('class="tab-nav"'),
+            html.indexOf("</nav>", html.indexOf('class="tab-nav"')),
+          );
+          expect(row, at).not.toContain("nav-steps");
+          expect(row, at).not.toContain(BACK);
+        }
+      }
+    }
+  });
+
   it("draws the playbook segment in developer and in no other mode (card 481)", async () => {
     // The rail's rows only: the first start picture carries a data-surface for
     // every table entry in every mode.
