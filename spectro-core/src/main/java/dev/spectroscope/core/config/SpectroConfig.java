@@ -1222,6 +1222,9 @@ public record SpectroConfig(
      *  (card 496). A member has no {@link #keyEnvFor} variable and no
      *  {@link #endpointFor} address; its onboarding status is a sign-in word. */
     static final Set<String> SIGN_IN_PROVIDERS = Set.of(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER);
+    /** Where a Copilot call's content goes: the domain of GitHub's Copilot API
+     *  service, per GitHub's allowlist reference (read 2026-10-10). */
+    static final String COPILOT_SERVICE_DOMAIN = "githubcopilot.com";
     /** {@code imageProvider}'s known values — the factory's own list rather than
      *  a second spelling of it, so a backend added there is accepted here. */
     static final Set<String> KNOWN_IMAGE_PROVIDERS =
@@ -2968,7 +2971,7 @@ public record SpectroConfig(
      *  {@code "needs-key"} otherwise; a provider that signs in
      *  ({@link #signsIn}) is {@code "signed-in"} once a sign-in is stored and
      *  {@code "needs-signin"} otherwise; any other provider has no key variable
-     *  and is {@code "local"} — its readiness is a reachability question the
+     *  and is {@code "local"}: its readiness is a reachability question the
      *  live model list answers, not a key check.
      *  @param provider   the provider name
      *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank, or for
@@ -3205,11 +3208,26 @@ public record SpectroConfig(
      * base URL for the local backends (per-provider address included, card
      * 193). An unparseable base URL degrades to the raw value.
      *
-     * @return e.g. "api.anthropic.com", "localhost:11434", "localhost:1234"
+     * <p>Copilot's runtime is a local process, but what a call sends goes to
+     * GitHub's Copilot service. GitHub's allowlist reference names
+     * {@code *.githubcopilot.com} as the Copilot API service for every plan
+     * (read 2026-10-10); the runtime picks the plan's subdomain itself, so the
+     * domain is what the faces name.</p>
+     *
+     * @return e.g. "api.anthropic.com", "githubcopilot.com", "localhost:11434",
+     *         "localhost" for the bundled runtime
      */
     public String providerHost() {
         if ("anthropic".equals(provider)) {
             return "api.anthropic.com";
+        }
+        if (dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER.equals(provider)) {
+            return COPILOT_SERVICE_DOMAIN;
+        }
+        if ("spectro-local".equals(provider)) {
+            // The bundled runtime is a llama-server child on a loopback port
+            // chosen when it starts; it was labelled with ollama's port before.
+            return "localhost";
         }
         String effective = isOpenAiCompat(provider) || "ollama".equals(provider)
                 ? endpointFor(provider) : baseUrl;

@@ -111,6 +111,34 @@ class CopilotProviderConfigTest {
         }
     }
 
+    // review of 2026-10-10: the address the faces name for a Copilot call
+
+    @Test
+    void theHostOfACopilotCallIsGitHubsCopilotServiceNeverALocalAddress() {
+        SpectroConfig config = SpectroConfig.load(
+                new SpectroConfig.Overrides("copilot", "auto", null, null, null, null), dir);
+
+        assertEquals("githubcopilot.com", config.providerHost(),
+                "a cloud call labelled as ollama's local port misstates where the data goes");
+    }
+
+    @Test
+    void noProviderButOllamaReportsOllamasDefaultAddressAsItsHost() {
+        // Derived from the accepted names: a provider added later that falls
+        // through to the legacy shared baseUrl turns this red.
+        String ollamaDefault = SpectroConfig.load(
+                new SpectroConfig.Overrides("ollama", "m", null, null, null, null), dir).providerHost();
+        assertEquals("localhost:11434", ollamaDefault, "the positive half: ollama names its own port");
+        for (String provider : SpectroConfig.knownProviders()) {
+            if ("ollama".equals(provider)) {
+                continue;
+            }
+            String host = SpectroConfig.load(
+                    new SpectroConfig.Overrides(provider, "m", null, null, null, null), dir).providerHost();
+            assertFalse(ollamaDefault.equals(host), provider + " reports ollama's address: " + host);
+        }
+    }
+
     private static Path executable(Path file) throws IOException {
         Files.createDirectories(file.getParent());
         Files.writeString(file, "#!/bin/sh\nexit 0\n");
