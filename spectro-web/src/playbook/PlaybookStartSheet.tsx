@@ -77,10 +77,12 @@ export function PlaybookStartSheet(props: {
                     <tr data-step={s.id} key={s.id}>
                       <td className="pb-cell-name">{s.name}</td>
                       <td>
-                        {t(lang, s.performer === "child" ? "pb.child" : "pb.chat")}
-                        {s.role !== null && s.role !== "" && (
-                          <span className="pb-meta-line pb-mono">{s.role}</span>
-                        )}
+                        <span className="pb-model">
+                          <span>{t(lang, s.performer === "child" ? "pb.child" : "pb.chat")}</span>
+                          {s.role !== null && s.role !== "" && (
+                            <span className="pb-meta-line pb-mono">{s.role}</span>
+                          )}
+                        </span>
                       </td>
                       <td>
                         <span className="pb-model">
