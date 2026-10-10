@@ -94,12 +94,18 @@ describe("srcText", () => {
   });
 
   it("reads each file at most once per process", () => {
-    // First in this block: nothing else here has touched App.tsx yet.
+    // The first srcText call in this process already built the whole text map
+    // (the test above did it), and under a cold snapshot that build read this
+    // file from disk once. So the count here is 0 or 1 before we start, not a
+    // virgin 0: measure what these three calls add, not the absolute count.
     const file = join(SRC, "App.tsx");
-    expect(calls.reads.get(file) ?? 0).toBe(0);
+    const before = calls.reads.get(file) ?? 0;
     const text = srcText(file);
     srcText(file);
     srcText(file);
+    // The three calls read nothing new: srcText serves the in-memory map.
+    expect(calls.reads.get(file) ?? 0).toBe(before);
+    // And across the whole process the file is read from disk at most once.
     expect(calls.reads.get(file) ?? 0).toBeLessThanOrEqual(1);
     expect(text).toContain("export");
   });
