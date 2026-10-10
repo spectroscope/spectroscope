@@ -97,7 +97,9 @@ resumed voice turn is byte-identical to a typed one.</p></div></div>
 <code>inputTokens</code> is the part of the prompt no cache served. When the provider reported
 a prompt cache, <code>cacheReadTokens</code> and <code>cacheCreationTokens</code> ride beside it
 and are omitted otherwise. The event never adds them up: the compaction trigger and the
-context ring do that.</p></div></div>
+context ring do that. A provider that reports what a call cost in GitHub AI credits
+(<code>copilot</code>) adds <code>aiCredits</code>, the cost of that one call; it is omitted
+for every other provider, and the context ring shows the session's sum.</p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">run_end</code><span class="meta">since stage 3</span></div><div class="ref-body">
 <p><code>runId</code>, <code>stopReason</code> — no <code>agentId</code>. Stop reasons:

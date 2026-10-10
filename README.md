@@ -305,7 +305,7 @@ diagrams live in [docs/diagrams/](docs/diagrams/), each in both themes;
 
 ## providers
 
-Eight chat providers, switchable mid-session from the header picker with
+Nine chat providers, switchable mid-session from the header picker with
 history intact:
 
 | provider | runs | needs |
@@ -318,6 +318,7 @@ history intact:
 | `llamacpp` | local | your own `llama-server` on :8080 |
 | `openrouter` | cloud | `OPENROUTER_API_KEY` |
 | `gemini` | cloud | `GEMINI_API_KEY` |
+| `copilot` | GitHub Copilot, through the Copilot CLI (macOS only) | a GitHub sign-in with a Copilot subscription, from the model menu; `brew install --cask copilot-cli` |
 
 `lmstudio` and `llamacpp` speak the same wire and are still two ids on purpose: a
 llama-server serves the one model it was started with and answers `GET /props`
