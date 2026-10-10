@@ -269,9 +269,8 @@
 
 .wsg-lm-value {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-align: right;
   font-size: var(--fs-12);
   color: var(--text-dim);
 }
