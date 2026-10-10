@@ -255,9 +255,8 @@ public final class DoctorCommand implements Callable<Integer> {
                         LocalCatalog.bundled().resolve(config.model()),
                         localModelFile(config.model())));
                 case COPILOT -> {
-                    // The runtime row below carries the runtime's verdict; the
-                    // sign-in is the other half (card 496).
-                    emit(List.of(copilotSignInLine(CopilotAccount.forThisMachine().status(), true)));
+                    // The Copilot rows below are printed for every provider,
+                    // with a verdict only when copilot is the one configured.
                 }
             }
         }
@@ -270,8 +269,11 @@ public final class DoctorCommand implements Callable<Integer> {
                 ? CopilotRuntime.version(CopilotRuntime.launch(copilot.path(), System.getenv(), userHome()),
                         Duration.ofSeconds(10))
                 : Optional.empty();
-        emit(List.of(copilotRuntimeLine(copilot, copilotVersion,
-                CopilotRuntime.PROVIDER.equals(config.provider())),
+        // Card 496: the sign-in row too, so a user signed in to Copilot but
+        // configured for another provider still sees which account it is.
+        boolean copilotSelected = CopilotRuntime.PROVIDER.equals(config.provider());
+        emit(List.of(copilotSignInLine(CopilotAccount.forThisMachine().status(), copilotSelected),
+                copilotRuntimeLine(copilot, copilotVersion, copilotSelected),
                 copilotSdkLine(CopilotProvider.sdkVersion())));
 
         // Fleet hub — optional infrastructure: nodes are opt-in, so the lines
@@ -495,9 +497,9 @@ public final class DoctorCommand implements Callable<Integer> {
 
     /**
      * The row for the Copilot sign-in (card 496): signed in as the login, and
-     * through which sign-in, or not. It says nothing about tokens, and a
-     * missing sign-in is a verdict only when Copilot is the configured
-     * provider.
+     * through which sign-in, or not. It is printed whatever provider is
+     * configured and says nothing about tokens; a missing sign-in is a verdict
+     * only when Copilot is the configured provider.
      *
      * @param status           what the machine's Copilot account reports
      * @param providerSelected whether Copilot is the configured provider

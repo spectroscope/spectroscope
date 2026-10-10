@@ -228,13 +228,14 @@ public final class SpectroCli implements Runnable {
         }
 
         // First-run onboarding (the CLI twin of the web's first-run sheet): if the
-        // configured API provider has no key, don't fail with a terse line — tell a
+        // configured API provider has no key, or a provider that signs in has no
+        // sign-in (card 496), don't fail with a terse line; tell a
         // newcomer how to get a backend running. A keyless local backend (every
         // member of SpectroConfig.keylessLocalServers) is left to try; an
         // unreachable one fails clearly on the first call.
-        if ("needs-key".equals(
-                SpectroConfig.onboardingStatus(config.provider(), providerKeyPresent(config.provider())))) {
-            System.err.print(firstRunHint(config.provider()));
+        String firstRun = firstRunMessage(config.provider(), credentialPresent(config.provider()));
+        if (firstRun != null) {
+            System.err.print(firstRun);
             return;
         }
 
@@ -419,6 +420,53 @@ public final class SpectroCli implements Runnable {
      */
     List<Tool> childBelt() {
         return childBelt;
+    }
+
+    /**
+     * What the terminal says before the first prompt when the configured
+     * provider cannot answer yet (the CLI twin of the web's first-run sheet):
+     * the key hint for a provider without its key, the sign-in hint for a
+     * provider that signs in and has no stored sign-in (card 496), nothing
+     * otherwise.
+     *
+     * @param provider          the configured provider
+     * @param credentialPresent {@link #credentialPresent} for it
+     * @return the hint, or null when the provider is left to try
+     */
+    static String firstRunMessage(String provider, boolean credentialPresent) {
+        return switch (SpectroConfig.onboardingStatus(provider, credentialPresent)) {
+            case "needs-key" -> firstRunHint(provider);
+            case "needs-signin" -> signInHint(provider);
+            default -> null;
+        };
+    }
+
+    /**
+     * Whether the provider has what it needs to be asked: its key for a keyed
+     * provider, a stored sign-in for one that signs in (read from the file
+     * alone, no runtime starts), nothing for a local backend.
+     *
+     * @param provider the provider name
+     * @return whether the credential is there
+     */
+    static boolean credentialPresent(String provider) {
+        if (SpectroConfig.signsIn(provider)) {
+            return dev.spectroscope.core.copilot.CopilotAccount.forThisMachine().hasStoredSignIn();
+        }
+        return providerKeyPresent(provider);
+    }
+
+    /** The first-run hint for a provider that signs in instead of taking a key. */
+    static String signInHint(String provider) {
+        return """
+
+                spectroscope is set to %s, which signs in with GitHub instead of taking a key,
+                and it is not signed in. Sign in from the %s provider in the model menu of the
+                app, then rerun. It needs the Copilot CLI on this Mac: %s
+
+                run `spectro doctor` to check.
+                """
+                .formatted(provider, provider, dev.spectroscope.core.copilot.CopilotRuntime.INSTALL_LINE);
     }
 
     /** Whether this provider's API key is present in the environment. A

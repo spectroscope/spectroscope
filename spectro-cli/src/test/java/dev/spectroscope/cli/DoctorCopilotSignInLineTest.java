@@ -122,6 +122,22 @@ class DoctorCopilotSignInLineTest {
         }
     }
 
+    @Test
+    void theSignInRowIsPrintedWhateverProviderIsConfigured() throws IOException {
+        // Review of 2026-10-10: the row stood inside the copilot arm only, so a
+        // user signed in to Copilot but configured for another provider never
+        // saw it. The test home stores no sign-in, so the row reads "not signed
+        // in": a failure only where copilot is the provider, a note elsewhere.
+        for (String provider : SpectroConfig.knownProviders()) {
+            String out = doctorOutputFor(provider);
+            String row = out.lines().filter(l -> l.contains("copilot sign-in: ")).findFirst().orElse(null);
+            assertTrue(row != null, "the doctor for provider " + provider + " has no copilot sign-in row:\n" + out);
+            assertTrue(row.contains("not signed in"), row);
+            assertEquals("copilot".equals(provider), row.contains("\u2717"),
+                    "a missing sign-in is a failure only for the copilot provider: " + row);
+        }
+    }
+
     private static CopilotAccount.Status status(State state, String method, String login, String message) {
         return new CopilotAccount.Status(state, method, state == State.SIGNED_IN ? login : null,
                 state == State.WAITING ? "ABCD-1234" : null,
