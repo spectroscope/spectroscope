@@ -1,9 +1,11 @@
 # gate.yml — the test gate for every push to main and every pull request.
 #
-# Two independent jobs: java-gate (Gradle + javadoc) and web-gate (the
-# spectro-web gate script). Each one extracts its REAL test count and fails on
-# zero, because on this tree a green tick alone is worthless — see the comments
-# on the run steps.
+# Four independent jobs: java-gate (Gradle + javadoc), web-gate (the
+# spectro-web gate script), desktop-gate (the node:test runner of the desktop
+# shell) and spectrolyzr-gate (renders and builds every archetype of the
+# project generator). Each one extracts its REAL test count and fails on zero,
+# because on this tree a green tick alone is worthless — see the comments on
+# the run steps.
 
 name: gate
 
@@ -219,3 +221,52 @@ jobs:
             echo "::error::The desktop gate reported zero tests — the summary line was missing or counted 0."
             exit 1
           fi
+
+  # ---------------------------------------------------------------------------
+  # Card 484: the Spectrolyzr generates a project and the claim is that the
+  # project builds green with its own test command. This job is where that
+  # claim is checked: for each language it renders every archetype (bare, and
+  # with all add-ons), installs, runs the project's own check command and
+  # requires a non-zero test count per project. One matrix leg per language so
+  # a broken template names its language. fail-fast is off so one red leg does
+  # not hide the state of the other two.
+  spectrolyzr-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [typescript, python, java]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.1"
+
+      - uses: actions/setup-node@v4
+        if: matrix.language == 'typescript'
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v7
+        if: matrix.language == 'python'
+        with:
+          python-version: "3.12"
+
+      - name: Render the archetypes
+        run: ./gradlew :spectro-server:renderArchetypes --rerun-tasks --no-build-cache -PspectrolyzrOut="$RUNNER_TEMP/lyzr" -PspectrolyzrLanguage=${{ matrix.language }}
+
+      # Writes each project's output to check.log and never through a pipe, so
+      # the exit status is the project's own.
+      - name: Build and test every rendered project
+        run: python3 scripts/build_archetypes.py ${{ matrix.language }} "$RUNNER_TEMP/lyzr"
+
+      - name: Enforce a non-zero test count per project
+        if: always()
+        run: python3 scripts/count_archetype_tests.py ${{ matrix.language }} "$RUNNER_TEMP/lyzr"

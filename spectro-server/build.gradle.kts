@@ -157,3 +157,24 @@ tasks.processResources {
         expand("version" to moduleVersion, "labelLine" to labelLine)
     }
 }
+
+// Card 484: the CI job spectrolyzr-gate renders every archetype of one language
+// with this task and builds the results. RenderAll needs no Spring context; the
+// task only supplies the main classpath (classes plus the manifest and templates
+// in the resources) and the two properties. Run it as
+//   ./gradlew :spectro-server:renderArchetypes -PspectrolyzrOut=<dir> -PspectrolyzrLanguage=<id>
+tasks.register<JavaExec>("renderArchetypes") {
+    group = "verification"
+    description = "Renders every Spectrolyzr archetype of one language into -PspectrolyzrOut."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.spectroscope.server.spectrolyzr.RenderAll")
+    javaLauncher.set(javaToolchains.launcherFor(java.toolchain))
+    val outDir = providers.gradleProperty("spectrolyzrOut")
+    val language = providers.gradleProperty("spectrolyzrLanguage")
+    doFirst {
+        if (!outDir.isPresent || !language.isPresent) {
+            throw GradleException("renderArchetypes needs -PspectrolyzrOut=<dir> and -PspectrolyzrLanguage=<id>")
+        }
+        args("--out", outDir.get(), "--language", language.get())
+    }
+}
