@@ -10,6 +10,7 @@ import dev.spectroscope.core.EventStream;
 import dev.spectroscope.core.RunOptions;
 import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.events.RunEvent;
+import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
 
@@ -27,6 +28,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -346,10 +348,10 @@ public final class SubagentManager {
      *
      * @param type        the child profile whose policy decides the filter
      * @param childId     stamped into the child's report_status messages
-     * @param parentQueue where report_status publishes its status events
+     * @param out         where report_status publishes its status events
      * @return the child's registry: policy-filtered belt plus report_status, never the spawn tools
      */
-    private ToolRegistry registryFor(AgentType type, String childId, MergedEventStream parentQueue) {
+    private ToolRegistry registryFor(AgentType type, String childId, Consumer<RunEvent> out) {
         RoleCatalog.BeltPolicy policy = RoleCatalog.beltPolicy(type);
         ToolRegistry registry = new ToolRegistry();
         config.baseTools().stream()
@@ -363,7 +365,7 @@ public final class SubagentManager {
                 .filter(tool -> granted.contains(tool.name()))
                 .forEach(registry::register);
         // Every child (all types) may report progress — the A2A status channel.
-        registry.register(new ReportStatusTool(childId, parentQueue));
+        registry.register(new ReportStatusTool(childId, out));
         return registry;
     }
 
@@ -400,7 +402,7 @@ public final class SubagentManager {
         parentQueue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
                 "task", "submitted", ownerTask, label, now()));
 
-        String outcome = executeChild(type, task, childId, parentQueue, parentSignal, ticket);
+        String outcome = executeChild(type, task, childId, parentQueue::put, parentSignal, ticket, null);
         boolean failed = outcome.startsWith("ERROR:");
         parentQueue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(),
                 "result", failed ? "failed" : "completed", outcome, label, now()));
@@ -419,17 +421,18 @@ public final class SubagentManager {
      * @param type         profile deciding system prompt and tool registry
      * @param task         the prompt the child runs on
      * @param childId      the child's agentId, already drawn from the counter
-     * @param parentQueue  the shared queue its events are forwarded into
+     * @param out          where its events are forwarded: the shared queue, or a step's sink
      * @param parentSignal the parent's cancel; it also ends a wait for a slot
      * @param ticket       the child's place in the slot queue
+     * @param stepProvider a playbook step's own provider (card 482), or null for this manager's
      * @return the child's memo or an "ERROR: " string; never throws
      */
     private String executeChild(AgentType type, String task, String childId,
-                                MergedEventStream parentQueue, CancelSignal parentSignal,
-                                SessionSlots.Ticket ticket) {
+                                Consumer<RunEvent> out, CancelSignal parentSignal,
+                                SessionSlots.Ticket ticket, LlmProvider stepProvider) {
         SessionCount count = liveCount();
         if (slots.mustWait(ticket, count)) {
-            parentQueue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(),
+            out.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(),
                     "status", "submitted", count.waitingText(), null, now()));
         }
         parentSignal.onCancel(slots::wake);
@@ -438,7 +441,7 @@ public final class SubagentManager {
                     + " waited for a free slot.";
         }
         try {
-            return runAdmittedChild(type, task, childId, parentQueue, parentSignal);
+            return runAdmittedChild(type, task, childId, out, parentSignal, stepProvider);
         } finally {
             slots.release();
         }
@@ -451,11 +454,13 @@ public final class SubagentManager {
      * @param type         profile deciding system prompt and tool registry
      * @param task         the prompt the child runs on
      * @param childId      the child's agentId, already drawn from the counter
-     * @param parentQueue  the shared queue its events are forwarded into
+     * @param out          where its events are forwarded: the shared queue, or a step's sink
      * @param parentSignal the parent's cancel; cancelling it cascades into the child's own signal
+     * @param stepProvider a playbook step's own provider (card 482), or null for this manager's
      */
     private String runAdmittedChild(AgentType type, String task, String childId,
-                                    MergedEventStream parentQueue, CancelSignal parentSignal) {
+                                    Consumer<RunEvent> out, CancelSignal parentSignal,
+                                    LlmProvider stepProvider) {
         // Cascading cancel + TWO per-child clocks: the child gets its OWN signal.
         // The parent's signal cancels it (Ctrl+C ends the whole tree; onCancel
         // fires immediately if the parent is already cancelled — no race at
@@ -498,11 +503,15 @@ public final class SubagentManager {
         AtomicBoolean spoke = new AtomicBoolean(false);
 
         java.util.Set<dev.spectroscope.core.ToolGroup> childOff = childToolGroupsOff();
+        LlmProvider provider = stepProvider != null ? stepProvider : config.provider();
+        // Card 482: a threshold and a window the operator typed describe the chat
+        // model; a step child on another provider derives both from its own.
+        boolean chatModel = provider == config.provider();
         // A subagent is simply another Agent instance from our own core.
         Agent child = new Agent(AgentOptions.builder()
-                .provider(config.provider())          // the model lives in the provider
+                .provider(provider)                   // the model lives in the provider
                 .systemPrompt(RoleCatalog.SYSTEM_PROMPTS.get(type))
-                .registry(registryFor(type, childId, parentQueue)) // + report_status; NEVER the spawn tools
+                .registry(registryFor(type, childId, out)) // + report_status; NEVER the spawn tools
                 .onPermission(config.onPermission())  // same broker; request.agentId() names the asker
                 .hooks(config.hooks())                // same guard — delegation must not bypass a blocking hook
                 .llmWire(config.llmWire())            // same wire record; the child binds its own agentId
@@ -513,11 +522,11 @@ public final class SubagentManager {
                 // AC 3 of card 263 governs the TREE, not just its root: an
                 // operator who typed a threshold means it for the children too,
                 // and null still lets them derive it from the shared provider.
-                .compactionThreshold(config.compactionThreshold())
+                .compactionThreshold(chatModel ? config.compactionThreshold() : null)
                 // Card 390: the window the operator set for the session, the
                 // SAME holder the parent reads, so a change reaches a working
                 // child from its next turn as it reaches the parent.
-                .sessionWindow(config.sessionWindow())
+                .sessionWindow(chatModel ? config.sessionWindow() : null)
                 // Card 466: the groups of the parent run that spawns this
                 // child, fixed now. Applied by the child's own loop to the
                 // registry registryFor built, so it narrows after the role
@@ -559,7 +568,7 @@ public final class SubagentManager {
             // every event into the PARENT queue. The for-each blocks between
             // events, which is fine on a virtual thread.
             for (RunEvent event : childEvents) {
-                parentQueue.put(event); // the merge, one line
+                out.accept(event); // the merge, one line
                 if (isFirstTokenKind(event) && spoke.compareAndSet(false, true)
                         && stoppedBy.get() == null) {
                     // The child is producing: the queue is behind it, the budget
@@ -788,6 +797,71 @@ public final class SubagentManager {
     }
 
     /**
+     * Card 482: one playbook step run as a child with no parent run in flight.
+     *
+     * @param type      the child profile
+     * @param task      the full prompt the child runs on
+     * @param ownerTask the assignment the A2A task message shows
+     * @param label     the step marker, "playbook:" and the step id
+     * @param provider  the step's own provider, or null for this manager's
+     */
+    public record StepChild(AgentType type, String task, String ownerTask, String label, LlmProvider provider) {
+    }
+
+    /**
+     * What a step child came back with.
+     *
+     * @param childId the child's agent id, or null when the request was refused before a child existed
+     * @param outcome the text executeChild returns: the result line and the answer, or an ERROR: string
+     */
+    public record StepResult(String childId, String outcome) {
+        /** @return true when the outcome is an ERROR: string */
+        public boolean failed() {
+            return outcome.startsWith("ERROR:");
+        }
+
+        /** @return the child's final text, without the result line; empty on failure */
+        public String answer() {
+            if (failed()) {
+                return "";
+            }
+            int newline = outcome.indexOf('\n');
+            return newline < 0 ? "" : outcome.substring(newline + 1);
+        }
+    }
+
+    /**
+     * Card 482: runs one child for a playbook step. Unlike the spawn tools it
+     * needs no parent run: the events go to {@code out} and the cancel comes
+     * from the step's own signal. The child takes a slot of this chat's pool
+     * like any helper (card 490).
+     *
+     * @param request what to run and on which provider
+     * @param out     where every event of the envelope and the child goes
+     * @param signal  the step's signal; cancelling it ends the child
+     * @return the child id and its outcome; never throws
+     */
+    public StepResult runStep(StepChild request, Consumer<RunEvent> out, CancelSignal signal) {
+        if (request.task() == null || request.task().isBlank()) {
+            return new StepResult(null, "ERROR: task must be a non-empty string.");
+        }
+        String childId = nextChildId(request.type());
+        SessionSlots.Ticket ticket = slots.enqueue();
+        try {
+            out.accept(new RunEvent.AgentSpawn(childId, config.parentAgentId(), request.task(), now()));
+            out.accept(new RunEvent.AgentMessage(config.parentAgentId(), childId,
+                    "task", "submitted", request.ownerTask(), request.label(), now()));
+            String outcome = executeChild(request.type(), request.task(), childId, out, signal,
+                    ticket, request.provider());
+            out.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(), "result",
+                    outcome.startsWith("ERROR:") ? "failed" : "completed", outcome, request.label(), now()));
+            return new StepResult(childId, outcome);
+        } finally {
+            slots.forget(ticket); // a child refused before its slot holds no place
+        }
+    }
+
+    /**
      * The child's side of the A2A status channel: a permission-free tool every
      * child gets. One call = one visible {@code agent_message} (role status,
      * state working) in the merged stream — progress without waiting for the
@@ -802,7 +876,7 @@ public final class SubagentManager {
                 """);
 
         private final String childId;
-        private final MergedEventStream parentQueue;
+        private final Consumer<RunEvent> parentQueue;
 
         /**
          * Binds the tool to one child run.
@@ -810,7 +884,7 @@ public final class SubagentManager {
          * @param childId     the reporting child — the message's sender side
          * @param parentQueue the merged stream the status messages surface on
          */
-        private ReportStatusTool(String childId, MergedEventStream parentQueue) {
+        private ReportStatusTool(String childId, Consumer<RunEvent> parentQueue) {
             this.childId = childId;
             this.parentQueue = parentQueue;
         }
@@ -847,7 +921,7 @@ public final class SubagentManager {
             if (message.isBlank()) {
                 return "ERROR: message must be a non-empty string.";
             }
-            parentQueue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(),
+            parentQueue.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(),
                     "status", "working", message.strip(), null, now()));
             return "ok";
         }
