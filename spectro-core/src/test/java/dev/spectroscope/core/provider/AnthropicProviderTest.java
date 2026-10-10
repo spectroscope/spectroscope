@@ -879,30 +879,44 @@ class AnthropicProviderTest {
 
     /**
      * How far "set it too low and extended thinking turns off" actually
-     * reaches — card 364's review found the sentence shipped unconditionally in
-     * the settings note (EN and DE) and in the printed guide, and nothing
-     * pinned it.
+     * reaches. Card 364's review pinned it to the one value 1; card 488's
+     * review found that the budget the harness sent for 2 to 1,024 was below
+     * the API's minimum {@code budget_tokens} of 1,024, which the Messages API
+     * rejects. Card 488 also clamps the completion budget to the window, so a
+     * value in that range is now reachable without the operator typing it.
      *
-     * <p>It is true of exactly one value on one closing family of models. The
-     * budget shape is only ever built for a model in
-     * {@code BUDGET_THINKING_MODEL_PREFIXES}, and the budget is only ever 0 —
-     * the one value that omits thinking — at {@code maxTokens <= 1}, which the
-     * settings control's own {@code min={1}} makes a single reachable value.
-     * Every model on adaptive thinking, including the shipped default, and
-     * every non-Anthropic backend are unaffected at any value at all.</p>
+     * <p>The budget shape is only ever built for a model in
+     * {@code BUDGET_THINKING_MODEL_PREFIXES}. Below 1,025 there is no budget
+     * that is both at least 1,024 and below {@code maxTokens}, so the request
+     * goes out without thinking instead of being refused. Every model on
+     * adaptive thinking, including the shipped default, and every
+     * non-Anthropic backend are unaffected at any value.</p>
      */
     @Nested
-    class TheOneValueThatTurnsThinkingOff {
+    class TheRangeThatTurnsThinkingOff {
 
         @Test
-        void onlyOneReachableCompletionBudgetLeavesNoRoomForAReasoningBudget() {
-            assertEquals(0, AnthropicProvider.thinkingBudget(1),
-                    "1 is the smallest the settings control allows and the only value that"
-                            + " omits thinking; if that stopped being true the note in the"
-                            + " settings page and the guide describes nothing at all");
-            assertTrue(AnthropicProvider.thinkingBudget(2) > 0,
-                    "2 already leaves room, so the warning covers ONE value — not a range,"
-                            + " which is how it was written");
+        void aCompletionBudgetBelow1025LeavesNoRoomForTheApisSmallestReasoningBudget() {
+            assertEquals(1_024, AnthropicProvider.MIN_THINKING_BUDGET, "the API's documented minimum");
+            assertEquals(0, AnthropicProvider.thinkingBudget(1));
+            assertEquals(0, AnthropicProvider.thinkingBudget(512),
+                    "the window clamp's floor: a budget of 511 would be refused by the API");
+            assertEquals(0, AnthropicProvider.thinkingBudget(1_024),
+                    "1,023 is still below the minimum");
+            assertEquals(1_024, AnthropicProvider.thinkingBudget(1_025), "the smallest that fits");
+            assertEquals(1_752, AnthropicProvider.thinkingBudget(1_753));
+            assertEquals(AnthropicProvider.THINKING_BUDGET, AnthropicProvider.thinkingBudget(32_000));
+        }
+
+        @Test
+        void aLegacyRequestBelowTheRangeGoesOutWithoutThinking() {
+            MessageCreateParams params = AnthropicProvider.buildParams("claude-haiku-4-5", false,
+                    new ProviderRequest("You are spectroscope.",
+                            List.of(new ProviderMessage(ProviderMessage.Role.USER,
+                                    List.of(new TextContent("Hi")))),
+                            List.of(), 512, true, new CancelSignal()));
+            assertTrue(params.thinking().isEmpty(), "no budget_tokens below 1,024 reaches the API");
+            assertEquals(512L, params.maxTokens());
         }
 
         @Test

@@ -61,6 +61,8 @@ class BelowFloorTest {
         table.put("continuationBudget", 0);
         table.put("questionsPerRun", 0);
         table.put("chatReserveWidth", 0);
+        // Card 490: the main agent and one helper; no helpers is the agents group.
+        table.put("sessionsPerChat", 2);
         return table;
     }
 

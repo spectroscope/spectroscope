@@ -48,8 +48,11 @@ class ReasoningWireTest {
                 List.of(new TextContent(text))));
     }
 
+    /** Room for the smallest reasoning budget the Anthropic API accepts
+     *  (1,024, below {@code maxTokens}). At 512 the legacy budget shape sent
+     *  511, a request the API refuses; card 488's review found it. */
     private static ProviderRequest request(Reasoning mode, String effort) {
-        return new ProviderRequest("sys", oneUser("hi"), List.of(), 512, mode, effort,
+        return new ProviderRequest("sys", oneUser("hi"), List.of(), 4_096, mode, effort,
                 new CancelSignal());
     }
 

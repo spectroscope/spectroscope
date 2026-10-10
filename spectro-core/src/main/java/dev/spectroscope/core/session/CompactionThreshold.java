@@ -109,11 +109,13 @@ public final class CompactionThreshold {
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.RATIO)
     private static final int WINDOW_SHARE = 10;
 
-    /** The smallest completion a summary can plausibly be written in. A window
-     *  so small that its reserve is under this has bigger problems than the
-     *  summarizer; asking for zero tokens would just fail the call. */
+    /** The smallest completion budget a request is sent with when its window
+     *  leaves less than this, for a turn and for the summarizer alike
+     *  (card 488): a window of 1,703 tokens or less, or a turn whose input
+     *  leaves less than this of the window. Asking for zero tokens would just
+     *  fail the call. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
-    private static final int MIN_SUMMARY_TOKENS = 512;
+    static final int MIN_COMPLETION_TOKENS = 512;
 
     /** Which fact produced the threshold — carried on {@code context_info} so
      *  the gauge's divisor, caption and the harness's behaviour cannot
@@ -382,37 +384,105 @@ public final class CompactionThreshold {
     }
 
     /**
-     * What the compaction summarizer may spend on its own completion.
+     * What the compaction summarizer may spend on its own completion: the same
+     * rule as a turn (see {@link #completionBudget}) applied to
+     * {@link Agent#DEFAULT_MAX_TOKENS}.
      *
      * <p>The summarizer asked for a flat {@link Agent#DEFAULT_MAX_TOKENS}
-     * whatever the window. That was harmless while the threshold was a literal
-     * 100,000 — on a small model compaction simply never fired — and card 263 is
-     * what makes the path reachable: a model loaded at 8,192 now compacts at
-     * 5,734, and the one call the reserve exists to hold would ask for four
-     * times the entire window. Compaction never throws, so the visible outcome
-     * would have been an {@code ErrorEvent} roughly every other turn.</p>
-     *
-     * <p><b>The budget IS the reserve, and since card 366 it is the MEASURED
-     * reserve</b> — the window minus the threshold, not the share expressed a
-     * second time. Three quarters made the two identical (a third of the
-     * threshold is the last quarter); 30 over 70 does not, and a budget derived
-     * from the fraction again would have drifted from the room actually left. It
-     * is only ever clamped DOWN, and only where a window is known: a run whose
-     * window is unknown, or whose threshold the operator typed, keeps the full
-     * budget, because neither says anything about how much room is left.</p>
+     * whatever the window until card 263 made compaction reachable on a model
+     * loaded at 8,192 (it compacts at 5,734), where that budget is four times
+     * the entire window.</p>
      *
      * @param derived what {@link #derive(Integer, int, String)} decided for this run
      * @return the {@code maxTokens} for the summarizer's request
      */
     public static int summaryBudget(Derived derived) {
-        boolean fromWindow = derived.source() == Source.WINDOW || derived.source() == Source.MODEL
-                || derived.source() == Source.WINDOW_OVERRIDE;
-        if (!fromWindow || derived.window() <= 0) {
-            return Agent.DEFAULT_MAX_TOKENS;
+        return completionBudget(derived, Agent.DEFAULT_MAX_TOKENS);
+    }
+
+    /**
+     * The completion budget one request of a run is sent with when its input
+     * is not estimated: {@link #completionBudget(Derived, int, int)} with no
+     * input. The compaction summarizer uses this form.
+     *
+     * @param derived   what {@link #derive} decided for this turn
+     * @param maxTokens the configured completion budget
+     * @return the completion budget to put on the request
+     */
+    public static int completionBudget(Derived derived, int maxTokens) {
+        return completionBudget(derived, maxTokens, 0);
+    }
+
+    /**
+     * The completion budget one request of a run is sent with (card 488),
+     * from the derivation the run already compacts by.
+     *
+     * <p>Where the window is known, two bounds apply and the lower wins:
+     * {@code window - threshold}, the reserve compaction keeps back, and
+     * {@code window - inputEstimate}, what the window has left after this
+     * request's input. The second decides only on a turn whose input has
+     * already passed the threshold, before compaction runs at the start of the
+     * next turn. Neither ever raises {@code maxTokens}.</p>
+     *
+     * <p>The turn loop and the compaction summarizer both read this method,
+     * so every provider adapter receives a clamped {@code maxTokens} and none
+     * computes the window on its own. An adapter's own ceiling (the
+     * OpenAI-compatible path caps at 16,000) still applies on top.</p>
+     *
+     * <p>A run whose window is unknown keeps {@code maxTokens}: there is
+     * nothing to hold it against. Under an explicit {@code compactionThreshold}
+     * the window is the published one, and the reserve bound applies like any
+     * other, except when the operator set the threshold at or above the
+     * window. That turns compaction off for the window and leaves no reserve
+     * to hand out, so only the input bound applies there.</p>
+     *
+     * <p>A bound below {@link #MIN_COMPLETION_TOKENS}, zero and negative
+     * included, is sent as that floor, unless {@code maxTokens} is lower
+     * still. On a window of 1,703 tokens or less, and on a turn whose input
+     * leaves less than the floor, input plus completion is above the window
+     * by construction: there is no split that fits, and a request for zero
+     * tokens fails.</p>
+     *
+     * @param derived       what {@link #derive} decided for this turn
+     * @param maxTokens     the configured completion budget
+     * @param inputEstimate this request's input in tokens, from
+     *                      {@link #inputEstimate}, or 0 when not estimated
+     * @return the completion budget to put on the request
+     */
+    public static int completionBudget(Derived derived, int maxTokens, int inputEstimate) {
+        if (derived.window() <= 0) {
+            return maxTokens;
         }
-        long reserve = (long) derived.window() - derived.tokens();
-        return (int) Math.min(Agent.DEFAULT_MAX_TOKENS,
-                Math.max(MIN_SUMMARY_TOKENS, reserve));
+        long budget = maxTokens;
+        boolean compactionOff = derived.source() == Source.OVERRIDE && derived.tokens() >= derived.window();
+        if (!compactionOff) {
+            budget = Math.min(budget, Math.max(MIN_COMPLETION_TOKENS, (long) derived.window() - derived.tokens()));
+        }
+        if (inputEstimate > 0) {
+            budget = Math.min(budget, Math.max(MIN_COMPLETION_TOKENS, (long) derived.window() - inputEstimate));
+        }
+        return (int) budget;
+    }
+
+    /**
+     * The input of a request in tokens, as the harness estimates it before
+     * sending: its characters divided by four, rounded up, or the density the
+     * backend reported for the previous request of the run when that is
+     * higher. A backend whose tokenizer counts more than one token per four
+     * characters raises the estimate; one that counts fewer never lowers it.
+     *
+     * @param requestChars      the characters this request carries
+     * @param previousChars     the characters of the previous request, or 0
+     * @param previousReported  the input tokens the backend reported for it, or 0
+     * @return the estimate in tokens
+     */
+    public static int inputEstimate(long requestChars, long previousChars, int previousReported) {
+        long estimate = (requestChars + 3) / 4;
+        if (previousChars > 0 && previousReported > 0) {
+            long scaled = (requestChars * previousReported + previousChars - 1) / previousChars;
+            estimate = Math.max(estimate, scaled);
+        }
+        return (int) Math.min(Integer.MAX_VALUE, estimate);
     }
 
     /**

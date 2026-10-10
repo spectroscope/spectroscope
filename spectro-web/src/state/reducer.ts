@@ -563,8 +563,13 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
           label: event.label ?? null,
           state: "submitted",
         });
+      // Card 490: a helper waiting for a free slot of its chat reports with
+      // the A2A state "submitted"; every other status message means working.
       if (event.role === "status")
-        return upsertAgent(agents, event.from, { state: "working", lastStatus: event.text });
+        return upsertAgent(agents, event.from, {
+          state: event.state === "submitted" ? "submitted" : "working",
+          lastStatus: event.text,
+        });
       if (event.role === "result")
         return upsertAgent(agents, event.from, {
           state: event.state === "completed" ? "completed" : "failed",

@@ -47,11 +47,6 @@ public final class BrowsePageTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** The shared tool-output clamp, read from {@link ToolOutput} rather than
-     *  kept as a second copy of the same number. */
-    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.CHARACTERS)
-    private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
-
     /** Wall-clock kill budget for the Chrome process. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.SECONDS)
     static final long CHROME_TIMEOUT_SECONDS = 25;
@@ -261,7 +256,7 @@ public final class BrowsePageTool implements Tool {
                         + (tail.isBlank() ? "." : ": " + tail);
             }
             String text = HtmlText.strip(result.stdout() == null ? "" : result.stdout());
-            text = ToolOutput.clip(text, MAX_OUTPUT_CHARS);
+            text = ToolOutput.clip(text, ToolOutput.maxOutputChars(context.contextWindow()));
             return text.isBlank() ? "(no readable text)" : text;
         } catch (RuntimeException failure) {
             return "ERROR: browse_page failed: " + failure.getMessage();

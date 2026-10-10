@@ -197,7 +197,8 @@ public final class LaunchTools {
                             .append(" entry without a \"name\" was skipped: there is no way to "
                                     + "address it.\n");
                 }
-                return ToolOutput.clip(said.toString(), ToolOutput.MAX_OUTPUT_CHARS);
+                return ToolOutput.clip(said.toString(),
+                        ToolOutput.maxOutputChars(context.contextWindow()));
             }
         };
     }
@@ -481,11 +482,13 @@ public final class LaunchTools {
                                     ? "It printed nothing before it did."
                                     : "This is what it printed before it did:\n"
                                             + ToolOutput.clip(view.text(),
-                                                    ToolOutput.MAX_OUTPUT_CHARS));
+                                                    ToolOutput.maxOutputChars(
+                                                            context.contextWindow())));
                 }
                 return view.text().isBlank()
                         ? "\"" + clean(name) + "\" has printed nothing yet."
-                        : ToolOutput.clip(view.text(), ToolOutput.MAX_OUTPUT_CHARS);
+                        : ToolOutput.clip(view.text(),
+                                ToolOutput.maxOutputChars(context.contextWindow()));
             }
         };
     }
