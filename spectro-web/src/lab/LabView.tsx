@@ -100,6 +100,8 @@ export function LabView(props: {
   onReturnToLive: () => void;
   /** Card 458: a stored session the first message continues — passed through to the Lab's chat. */
   continuable?: boolean;
+  /** Card 498: a click into the Lab's message box wakes the stored session, as in the chat. */
+  onComposerFocus?: () => void;
   /** Card 458: why an archive is read-only — passed through to the Lab's chat. */
   readOnlyNote?: string;
   /** Present only for deletable archives — passed through to the Lab's chat. */
@@ -275,6 +277,7 @@ export function LabView(props: {
         onSend={props.onSend}
         onReturnToLive={props.onReturnToLive}
         continuable={props.continuable}
+        onComposerFocus={props.onComposerFocus}
         readOnlyNote={props.readOnlyNote}
         onDelete={props.onDelete}
         sendClient={props.sendClient}

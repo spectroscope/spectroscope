@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -164,6 +163,11 @@ class ToolOutputClampLiveTest {
         }
 
         assertFalse(results.isEmpty(), "the model called no tool, so nothing was measured");
+        // Both requested tools ran, so a run where the model skips one cannot
+        // pass on the other alone.
+        List<String> called = results.stream().map(result -> names.get(result.callId())).toList();
+        assertTrue(called.contains("grep"), "the model never called grep: " + called);
+        assertTrue(called.contains("run_command"), "the model never called run_command: " + called);
         for (RunEvent.ToolResult result : results) {
             assertTrue(result.output().length() <= bound, names.get(result.callId()) + " kept "
                     + result.output().length() + " characters on a window of " + window
@@ -171,9 +175,7 @@ class ToolOutputClampLiveTest {
         }
         // The positive side: at least one result reached the bound exactly, so
         // the run cannot pass on results that were short to begin with.
-        assertEquals(1, results.stream()
-                        .filter(result -> result.output().length() == bound)
-                        .limit(1).count(),
+        assertTrue(results.stream().anyMatch(result -> result.output().length() == bound),
                 "no result reached the bound of " + bound + " characters");
     }
 }

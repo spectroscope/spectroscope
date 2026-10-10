@@ -279,6 +279,20 @@ import java.util.function.Function;
  *                              free slot of its chat. Ships unset, which keeps
  *                              the v0.14.4 behaviour: no limit per chat. Floor
  *                              2, see {@link SettingFloors}
+ * @param careParagraph         card 492: {@code "on"} appends a short paragraph
+ *                              to the system prompt of every run, asking the
+ *                              model to work in small steps and read in parts;
+ *                              {@code "off"} sends no paragraph. Ships off
+ * @param readSharePercent      card 493: the share of the context window, in
+ *                              per cent, that one whole-file read may take.
+ *                              Ships at 25, the value of the constant
+ *                              {@link dev.spectroscope.core.tools.ReadBudget#WINDOW_SHARE_PERCENT}
+ *                              it replaces. Floor 1, see {@link SettingFloors}
+ * @param localModeKeys         card 493: the keys the Local mode switch wrote
+ *                              into a folder's local file, so the next session
+ *                              in that folder starts with the switch on and
+ *                              knows what switching off removes. Ships empty:
+ *                              the switch is off
  */
 public record SpectroConfig(
         String provider,
@@ -343,14 +357,22 @@ public record SpectroConfig(
         // Card 467: "on" or "off". Appended last, same rule.
         String toolResultElision,
         // Card 466: the switched-off tool groups. Appended last, same rule.
-        List<String> toolGroupsOff,
+        @LocalModeKnob List<String> toolGroupsOff,
         // Card 490: the session count of one chat. Appended last, same rule.
-        Integer sessionsPerChat) {
+        @LocalModeKnob Integer sessionsPerChat,
+        // Card 492: "on" or "off". Appended last, same rule.
+        @LocalModeKnob String careParagraph,
+        // Card 493: the read share. Appended last, same rule.
+        @LocalModeKnob int readSharePercent,
+        // Card 493: what the Local mode switch wrote. Appended last, same rule.
+        List<String> localModeKeys) {
 
     /** Compat: the v0.14.4 arity, which knew no session count per chat
      *  (card 490). Every caller that built a config positionally against
      *  v0.14.4 keeps compiling and gets no count, which is the v0.14.4
-     *  behaviour: no limit per chat.
+     *  behaviour: no limit per chat. Cards 492 and 493 appended the care
+     *  paragraph, the read share and the Local mode record after the count;
+     *  this compat ships them as v0.14.4 behaved: off, 25 and empty.
      *
      * @param provider              the LLM backend
      * @param model                 the model id
@@ -423,14 +445,17 @@ public record SpectroConfig(
                 questionsPerRun, maxQuestionOptions, maxQuestionChars, commandTimeoutSeconds,
                 chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
                 subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
-                null);
+                null, DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT,
+                List.of());
     }
 
     /** Compat: the arity main had before cards 476, 467 and 466, which knew
      *  no notification switch, no elision switch and no tool groups. Every
      *  caller that built a config positionally keeps compiling, gets the
-     *  shipped {@code on} for both switches, switches no tool group off and
-     *  sets no session count (card 490).
+     *  shipped {@code on} for both switches, switches no tool group off,
+     *  sets no session count (card 490), ships the care paragraph off (card
+     *  492), the read share at 25 and no Local mode record (card 493), so it
+     *  still builds the config main built.
      *
      * @param provider              the LLM backend
      * @param model                 the model id
@@ -498,7 +523,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens,
-                DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(), null);
+                DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(), null,
+                DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT, List.of());
     }
 
     /** Compat: the pre-card-394 arity, which knew no token budget for a child.
@@ -1265,22 +1291,25 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.TOKENS, key = "subagentBudgetTokens")
     public static final int DEFAULT_SUBAGENT_BUDGET_TOKENS = 10_000_000;
 
-    /** The proposed session count for a chat (card 490): three, the main
-     *  agent and two helpers. It is the owner's figure of 2026-10-09 for a
-     *  chat on a local model ({@code konzept/RUN-PROFILES.md}, Knobs), not a
+    /** The default session count for a chat (card 490): three, the main
+     *  agent and two helpers. It is the owner's figure of 2026-10-09
+     *  ({@code konzept/RUN-PROFILES.md}, Sessions of one chat), not a
      *  measurement; the concurrency of one chat on the house node is measured
-     *  by card 487.
+     *  by card 487. Every other number that stands for it is an alias of this
+     *  one: the count the Local mode switch of the composer gear writes for
+     *  one chat ({@link LocalMode#PRESET_SESSIONS_PER_CHAT}, card 493) and the
+     *  helpers the care paragraph names while the key is unset
+     *  (this number minus one, {@code CareParagraph.helpersFor}).
      *
-     *  <p>The key itself ships unset: a chat that names no count runs as
-     *  v0.14.4 did, with no limit per chat and one {@code spawn_agents} call
-     *  starting up to
+     *  <p>The key itself ships unset, because a chat with the Local mode
+     *  switch off sends the v0.14.4 request byte for byte (card 493,
+     *  criterion 6): no limit per chat, no sentence about the count in the
+     *  spawn tools, and one {@code spawn_agents} call starting up to
      *  {@link dev.spectroscope.core.subagents.SubagentManager#MAX_PARALLEL_CHILDREN}
-     *  helpers. No code reads this number yet. The settings page has no field
-     *  for the key, and Local mode (card 493), which is to write this number,
-     *  is not built; until then a chat has a count only when a settings file
-     *  sets the key. The floor is 2, in {@link SettingFloors}: a count of 1
-     *  would be a second way to say "no helpers", which the {@code agents}
-     *  tool group already says.</p> */
+     *  helpers. A chat has a count when the switch writes this default or a
+     *  settings file sets the key. The floor is 2, in {@link SettingFloors}: a
+     *  count of 1 would be a second way to say "no helpers", which the
+     *  {@code agents} tool group already says.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.COUNT, key = "sessionsPerChat")
     public static final int DEFAULT_SESSIONS_PER_CHAT = 3;
 
@@ -1289,6 +1318,7 @@ public record SpectroConfig(
         mcpServers = mcpServers == null ? List.of() : List.copyOf(mcpServers);
         hooks = hooks == null ? List.of() : List.copyOf(hooks);
         toolGroupsOff = toolGroupsOff == null ? List.of() : List.copyOf(toolGroupsOff);
+        localModeKeys = localModeKeys == null ? List.of() : List.copyOf(localModeKeys);
     }
 
     public static final Path CONFIG_PATH =
@@ -1318,13 +1348,23 @@ public record SpectroConfig(
     // these as the single source instead of re-declaring the same literals.
     static final Set<String> KNOWN_PROVIDERS =
             Set.of("anthropic", "ollama", "openai", "lmstudio", "llamacpp",
-                    "openrouter", "gemini", "spectro-local");
+                    "openrouter", "gemini", "spectro-local", "copilot");
     /** A stable, human-readable listing of {@link #KNOWN_PROVIDERS} for error
      *  messages — {@link Set#of} has no guaranteed iteration order, so it is
      *  spelled out once and shared by config validation and the live picker
      *  switch instead of being rebuilt (in a different order) in each place. */
     public static final String KNOWN_PROVIDERS_DISPLAY =
-            "anthropic, ollama, openai, lmstudio, llamacpp, openrouter, gemini, spectro-local";
+            "anthropic, ollama, openai, lmstudio, llamacpp, openrouter, gemini, spectro-local, copilot";
+    /** The providers that sign in with an account instead of taking a key
+     *  (card 496). A member has no {@link #keyEnvFor} variable and no
+     *  {@link #endpointFor} address; its onboarding status is a sign-in word. */
+    static final Set<String> SIGN_IN_PROVIDERS = Set.of(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER);
+    /** Where a Copilot call's content goes for a github.com account: the host
+     *  of GitHub's Copilot API service, under the domain GitHub's allowlist
+     *  reference names (read 2026-10-10). */
+    static final String COPILOT_API_HOST = "api.githubcopilot.com";
+    /** The name a Copilot call gets when the runtime reported a host that cannot be read. */
+    static final String COPILOT_NO_HOST = "GitHub Copilot";
     /** {@code imageProvider}'s known values — the factory's own list rather than
      *  a second spelling of it, so a backend added there is accepted here. */
     static final Set<String> KNOWN_IMAGE_PROVIDERS =
@@ -1429,6 +1469,32 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "toolResultElision")
     public static final String DEFAULT_TOOL_RESULT_ELISION = TOOL_RESULT_ELISION_ON;
 
+    /** {@code careParagraph} on: every run appends the care paragraph to its
+     *  system prompt (card 492). */
+    public static final String CARE_PARAGRAPH_ON = "on";
+
+    /** {@code careParagraph} off: no paragraph, the system prompt of v0.14.4. */
+    public static final String CARE_PARAGRAPH_OFF = "off";
+
+    /** {@code careParagraph}'s known values: the single source for the
+     *  load-time check and {@link SettingsWriter}'s write-time check. */
+    public static final Set<String> KNOWN_CARE_PARAGRAPH_VALUES =
+            Set.of(CARE_PARAGRAPH_ON, CARE_PARAGRAPH_OFF);
+
+    /** The shipped {@code careParagraph}: off, so a chat sends the system
+     *  prompt it sent before the key existed. The Local mode switch (card 493)
+     *  turns it on for one chat. The text is
+     *  {@link dev.spectroscope.core.session.CareParagraph}. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "careParagraph")
+    public static final String DEFAULT_CARE_PARAGRAPH = CARE_PARAGRAPH_OFF;
+
+    /** The shipped {@code readSharePercent} (card 493): the value of
+     *  {@link dev.spectroscope.core.tools.ReadBudget#WINDOW_SHARE_PERCENT},
+     *  read from it so the two cannot disagree. */
+    @Governs(kind = Governs.Kind.ALIAS, unit = Governs.Unit.PERCENT)
+    public static final int DEFAULT_READ_SHARE_PERCENT =
+            dev.spectroscope.core.tools.ReadBudget.WINDOW_SHARE_PERCENT;
+
     private static final SpectroConfig DEFAULTS = new SpectroConfig(
             // compactionThreshold null: unset, so the harness derives it (card 263)
             "anthropic", "claude-opus-4-8", "http://localhost:11434", null, "ask", List.of(),
@@ -1519,7 +1585,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, value, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff, sessionsPerChat);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     /**
@@ -1547,7 +1614,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, value,
-                toolResultElision, toolGroupsOff, sessionsPerChat);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     /**
@@ -1578,7 +1646,8 @@ public record SpectroConfig(
                 llamacppBaseUrl, questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, value, sessionsPerChat);
+                toolResultElision, value, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -2060,6 +2129,11 @@ public record SpectroConfig(
         // Card 466: a typo in a group name must not leave the operator believing
         // a family is off while every request still carries it.
         requireKnownToolGroups(base.toolGroupsOff());
+        // Card 493: the record names only keys the switch can write.
+        requireKnownLocalModeKeys(base.localModeKeys());
+        validateKnown("careParagraph", base.careParagraph(),
+                KNOWN_CARE_PARAGRAPH_VALUES,
+                CARE_PARAGRAPH_ON + ", " + CARE_PARAGRAPH_OFF);
 
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
@@ -2086,7 +2160,8 @@ public record SpectroConfig(
                         base.subagentBudgetSeconds(), base.rtkFilter(),
                         base.subagentBudgetTokens(), base.desktopNotifications(),
                         base.toolResultElision(), base.toolGroupsOff(),
-                        base.sessionsPerChat());
+                        base.sessionsPerChat(), base.careParagraph(),
+                        base.readSharePercent(), base.localModeKeys());
             }
         }
         return base;
@@ -2174,7 +2249,12 @@ public record SpectroConfig(
             // Card 466, appended last, same rule.
             new FieldProbe("toolGroupsOff", p -> p.toolGroupsOff),
             // Card 490, appended last, same rule.
-            new FieldProbe("sessionsPerChat", p -> p.sessionsPerChat));
+            new FieldProbe("sessionsPerChat", p -> p.sessionsPerChat),
+            // Card 492, appended last, same rule.
+            new FieldProbe("careParagraph", p -> p.careParagraph),
+            // Card 493, appended last, same rule.
+            new FieldProbe("readSharePercent", p -> p.readSharePercent),
+            new FieldProbe("localModeKeys", p -> p.localModeKeys));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -2608,7 +2688,8 @@ public record SpectroConfig(
                 questionsPerRun, maxQuestionOptions, maxQuestionChars,
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
-                toolResultElision, toolGroupsOff, sessionsPerChat);
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -2616,6 +2697,42 @@ public record SpectroConfig(
      *  cannot drift apart. */
     public static boolean isKnownProvider(String provider) {
         return KNOWN_PROVIDERS.contains(provider);
+    }
+
+    /** Whether {@code provider} signs in with an account instead of taking a
+     *  key (card 496): Copilot today.
+     *  @param provider the provider name
+     *  @return true for a member of {@link #signInProviders()} */
+    public static boolean signsIn(String provider) {
+        return SIGN_IN_PROVIDERS.contains(provider);
+    }
+
+    /** The providers that sign in. Exposed so the faces that show a provider's
+     *  status (onboarding, doctor, picker) can be held to this set by a test.
+     *  @return the sign-in providers; iteration order is not defined */
+    public static Set<String> signInProviders() {
+        return SIGN_IN_PROVIDERS;
+    }
+
+    /**
+     * The Copilot provider for a model: built by the machine's Copilot account,
+     * which holds the credential choice of the sign-in sheet, over the runtime
+     * the lookup of card 497 finds. One provider per model and runtime is
+     * shared by every chat of this process, so a second chat does not start a
+     * second runtime.
+     *
+     * @param model       the Copilot model id
+     * @param workspace   the workspace no runtime may come from, or null
+     * @param environment the lookup's inputs
+     * @return the shared provider. Typed as {@link LlmProvider} so this file
+     *         names no Copilot construction ({@code CopilotProviderIsBuiltByTheAccountDriftTest})
+     * @throws IllegalStateException when no usable runtime is found, with the
+     *         lookup's reason ({@code "copilot runtime: ..."})
+     */
+    static LlmProvider copilotProvider(String model, java.nio.file.Path workspace,
+            dev.spectroscope.core.copilot.CopilotRuntime.Environment environment) {
+        String cliPath = dev.spectroscope.core.copilot.CopilotRuntime.find(environment, workspace).requirePath();
+        return dev.spectroscope.core.copilot.CopilotAccount.forThisMachine().shared(model, cliPath);
     }
 
     /** Every selectable LLM backend. Exposed so a face that switches over the
@@ -2713,6 +2830,8 @@ public record SpectroConfig(
             // kept starting the tool-free one with the research-only licence.
             case "spectro-local" -> dev.spectroscope.core.local.LocalCatalog.bundled().defaultId();
             case "anthropic" -> DEFAULTS.model(); // claude-opus-4-8, a real anthropic model
+            // The runtime's own choice; every account's model list carries it.
+            case "copilot" -> "auto";
             default -> null; // gemini, openrouter: no baked default — the caller decides
         };
     }
@@ -2726,6 +2845,26 @@ public record SpectroConfig(
      *  this method's scope). */
     public static boolean switchRequiresKey(String provider) {
         return keyEnvFor(provider) != null && !"openai".equals(provider);
+    }
+
+    /**
+     * Refuses a {@code localModeKeys} record that names a key the Local mode
+     * switch does not write (card 493). The single check behind the load and
+     * {@link SettingsWriter}'s write.
+     *
+     * @param names the key names a scope holds; null and empty pass
+     * @throws IllegalArgumentException on the first unknown or null name
+     */
+    static void requireKnownLocalModeKeys(List<String> names) {
+        if (names == null) {
+            return;
+        }
+        for (String name : names) {
+            if (name == null || !LocalMode.knobs().contains(name)) {
+                throw new IllegalArgumentException("Unknown " + LocalMode.RECORD_KEY + " entry: \""
+                        + name + "\" (allowed: " + String.join(", ", LocalMode.knobs()) + ")");
+            }
+        }
     }
 
     /**
@@ -2831,6 +2970,9 @@ public record SpectroConfig(
                     new OpenAiCompatProvider.Options(endpointFor(provider), model, openAiCompatKey(),
                             provider, promptCaching));
             case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
+            case "copilot" -> copilotProvider(model,
+                    workspace == null || workspace.isBlank() ? null : java.nio.file.Path.of(workspace),
+                    dev.spectroscope.core.copilot.CopilotRuntime.Environment.current());
             case "spectro-local" -> throw new IllegalStateException(
                     "spectro-local runs through the bundled local runtime "
                     + "(dev.spectroscope.core.local.LocalProviderFactory), wired by the "
@@ -3030,13 +3172,19 @@ public record SpectroConfig(
 
     /** A provider's onboarding status for the first-run dialog and the picker:
      *  an API provider is {@code "ready"} once its key is present and
-     *  {@code "needs-key"} otherwise; a provider with no key variable is
-     *  {@code "local"} — its readiness is a reachability question the live model
-     *  list answers, not a key check.
+     *  {@code "needs-key"} otherwise; a provider that signs in
+     *  ({@link #signsIn}) is {@code "signed-in"} once a sign-in is stored and
+     *  {@code "needs-signin"} otherwise; any other provider has no key variable
+     *  and is {@code "local"}: its readiness is a reachability question the
+     *  live model list answers, not a key check.
      *  @param provider   the provider name
-     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank
-     *  @return "ready" | "needs-key" | "local" */
+     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank, or for
+     *                    a sign-in provider whether a sign-in is stored
+     *  @return "ready" | "needs-key" | "signed-in" | "needs-signin" | "local" */
     public static String onboardingStatus(String provider, boolean keyPresent) {
+        if (signsIn(provider)) {
+            return keyPresent ? "signed-in" : "needs-signin";
+        }
         return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
     }
 
@@ -3264,11 +3412,54 @@ public record SpectroConfig(
      * base URL for the local backends (per-provider address included, card
      * 193). An unparseable base URL degrades to the raw value.
      *
-     * @return e.g. "api.anthropic.com", "localhost:11434", "localhost:1234"
+     * <p>Copilot's runtime is a local process, but what a call sends goes to
+     * GitHub's Copilot service: {@code api.githubcopilot.com} for a github.com
+     * account, the host the runtime reports for a data-residency account
+     * ({@link #copilotHost(String)}).</p>
+     *
+     * @return e.g. "api.anthropic.com", "api.githubcopilot.com", "localhost:11434",
+     *         "localhost" for the bundled runtime
      */
+    /**
+     * The host a Copilot call talks to, from the GitHub host the runtime
+     * reports for the account ({@code auth.getStatus}, or the host the runtime
+     * names when it asks for a token). A github.com account, and an account the
+     * runtime was not asked about yet, talks to {@link #COPILOT_API_HOST}. A
+     * data-residency account names the host the runtime reports. A host that
+     * cannot be read is named as the service, without an address.
+     *
+     * @param statusHost the host the runtime reported, or null
+     * @return the host to show
+     */
+    static String copilotHost(String statusHost) {
+        if (statusHost == null || statusHost.isBlank()) {
+            return COPILOT_API_HOST;
+        }
+        String text = statusHost.strip();
+        String host;
+        try {
+            host = java.net.URI.create(text.contains("://") ? text : "https://" + text).getHost();
+        } catch (RuntimeException unreadable) {
+            return COPILOT_NO_HOST;
+        }
+        if (host == null || host.isBlank()) {
+            return COPILOT_NO_HOST;
+        }
+        host = host.toLowerCase(java.util.Locale.ROOT);
+        return "github.com".equals(host) ? COPILOT_API_HOST : host;
+    }
+
     public String providerHost() {
         if ("anthropic".equals(provider)) {
             return "api.anthropic.com";
+        }
+        if (dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER.equals(provider)) {
+            return copilotHost(dev.spectroscope.core.copilot.CopilotAccount.reportedHost());
+        }
+        if ("spectro-local".equals(provider)) {
+            // The bundled runtime is a llama-server child on a loopback port
+            // chosen when it starts; it was labelled with ollama's port before.
+            return "localhost";
         }
         String effective = isOpenAiCompat(provider) || "ollama".equals(provider)
                 ? endpointFor(provider) : baseUrl;
@@ -3530,6 +3721,12 @@ public record SpectroConfig(
         public List<String> toolGroupsOff;
         // Card 490: the session count of one chat.
         public Integer sessionsPerChat;
+        // Card 492: "on" or "off".
+        public String careParagraph;
+        // Card 493: the read share in per cent.
+        public Integer readSharePercent;
+        // Card 493: the keys the Local mode switch wrote, by name.
+        public List<String> localModeKeys;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -3604,6 +3801,10 @@ public record SpectroConfig(
             // names the key replaces the list below it; [] switches all back on.
             out.toolGroupsOff = Optional.ofNullable(higher.toolGroupsOff).orElse(toolGroupsOff);
             out.sessionsPerChat = Optional.ofNullable(higher.sessionsPerChat).orElse(sessionsPerChat);
+            out.careParagraph = Optional.ofNullable(higher.careParagraph).orElse(careParagraph);
+            out.readSharePercent = Optional.ofNullable(higher.readSharePercent).orElse(readSharePercent);
+            // Card 493: a whole list, like toolGroupsOff.
+            out.localModeKeys = Optional.ofNullable(higher.localModeKeys).orElse(localModeKeys);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -3672,7 +3873,10 @@ public record SpectroConfig(
                             .orElse(DEFAULTS.toolResultElision()),
                     Optional.ofNullable(toolGroupsOff).orElse(DEFAULTS.toolGroupsOff()),
                     // Card 490: unset stays unset, so no limit applies per chat.
-                    Optional.ofNullable(sessionsPerChat).orElse(DEFAULTS.sessionsPerChat()));
+                    Optional.ofNullable(sessionsPerChat).orElse(DEFAULTS.sessionsPerChat()),
+                    Optional.ofNullable(careParagraph).orElse(DEFAULTS.careParagraph()),
+                    Optional.ofNullable(readSharePercent).orElse(DEFAULTS.readSharePercent()),
+                    Optional.ofNullable(localModeKeys).orElse(DEFAULTS.localModeKeys()));
         }
 
         /**

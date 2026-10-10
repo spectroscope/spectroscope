@@ -43,6 +43,25 @@ class CommandCheckTest {
         assertTrue(r.detail().startsWith("exit 3: exit 3"), r.detail());
     }
 
+    /**
+     * The failure text puts its exit line in front of the output it keeps, so
+     * the line stays whole however much the command printed. The output part
+     * is the command's last {@link CommandCheck#MAX_OUTPUT_CHARS} characters, a
+     * fixed bound below the 6,144 characters a window of 8,192 tokens clamps a
+     * tool result to. Bound in {@code ToolOutputClampDriftTest.NOTICE_PINS}.
+     */
+    @Test
+    void aLongFailingCheckKeepsItsExitLineAndTheTail() {
+        String command = "yes 0123456789abcdefghijklmnopqrstuvwxyz | head -c 20000; printf END-MARK; exit 3";
+        CheckResult r = CommandCheck.run(command, ws, request -> true, line -> Optional.empty(), e -> { },
+                new CancelSignal(), "pb-run-5");
+        assertEquals("fail", r.label());
+        String[] parts = r.detail().split("\n", 2);
+        assertEquals("exit 3: " + command, parts[0]);
+        assertEquals(CommandCheck.MAX_OUTPUT_CHARS, parts[1].length(), "the kept output");
+        assertTrue(parts[1].endsWith("END-MARK"), "the tail is kept, not the head");
+    }
+
     @Test
     void aDeniedLineNeverRuns() {
         Path marker = ws.resolve("ran");

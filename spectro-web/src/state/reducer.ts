@@ -3,7 +3,7 @@
 // function; replay is not a separate code path. Pure and framework-free, the
 // same mental figure as buildGraph.
 
-import type { AskedQuestionWire, ClientMessage, RunEvent } from "../events";
+import { TITLE_AGENT_ID, type AskedQuestionWire, type ClientMessage, type RunEvent } from "../events";
 import { isWorkspaceMode, type WorkspaceMode } from "../workspace/paneState";
 
 import type { ToolResultDetail } from "../import/toolResultDetail";
@@ -12,6 +12,7 @@ import { rtkRewriteOf } from "../wire/rtkRewrite";
 import { t } from "../i18n/i18n";
 import { SEARXNG_HTML_NOTE_KEY, searxngHtmlAddress } from "./searxngHtmlNote";
 import { parseToolGroupsInfo, type ToolGroupsInfo } from "./toolGroups";
+import { parseLocalModeInfo, type LocalModeInfo } from "./localMode";
 
 export interface ToolCard {
   callId: string;
@@ -300,6 +301,10 @@ export interface UiState {
   usage: TokenUsage;
   /** The current (or most recently finished) run only. */
   runUsage: TokenUsage;
+  /** Session total in GitHub AI credits over every usage event that reported
+   *  one, children included (card 496). Null while none did: no provider but
+   *  Copilot reports credits, and a zero would claim the session was free. */
+  aiCredits: number | null;
   /** Which children billed inside that same run, and for how much. The run
    *  figure counts a subagent exactly the way the session figure does (card
    *  167), and a total that changes meaning has to say so on BOTH lines — the
@@ -400,6 +405,9 @@ export interface UiState {
    *  tool_groups_info frame (what each group holds, which are off). Null until
    *  the first frame, so the gear draws no section from a guess. */
   toolGroups: ToolGroupsInfo | null;
+  /** Card 493: the Local mode switch the server announced in its socket-only
+   *  local_mode_info frame. Null until the first frame. */
+  localMode: LocalModeInfo | null;
   /** ts of the current assistant turn's first event, per agent — so the `usage`
    *  event can stamp each answer's duration. Transient bookkeeping, not shown. */
   assistantTurnStart: Record<string, number>;
@@ -418,6 +426,7 @@ export const initialState: UiState = {
   pendingAsks: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   runUsage: { inputTokens: 0, outputTokens: 0 },
+  aiCredits: null,
   runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
   running: false,
   compacting: false,
@@ -445,6 +454,7 @@ export const initialState: UiState = {
   runModel: null,
   permissionMode: "ask",
   toolGroups: null,
+  localMode: null,
   assistantTurnStart: {},
   answerAwaitingUsage: [],
 };
@@ -1037,6 +1047,10 @@ function applyFrame(traced: UiState, event: RunEvent): UiState {
   if (raw.type === "tool_groups_info") {
     return { ...traced, toolGroups: parseToolGroupsInfo(event) ?? traced.toolGroups };
   }
+  // Card 493: same boundary rule for the Local mode switch.
+  if (raw.type === "local_mode_info") {
+    return { ...traced, localMode: parseLocalModeInfo(event) ?? traced.localMode };
+  }
   // The session-wide agent roster folds separately from the UI state and uses
   // the PRE-apply rootRunId (applyEvent's run_end clears it).
   const applied = applyEvent(traced, event);
@@ -1527,6 +1541,21 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       });
 
     case "usage": {
+      // Card 496: a session-title call is paid for like any other call, so its
+      // tokens and AI credits count for the session. It belongs to no run and
+      // has no window of its own: the ring, the run's figures and the list of
+      // children stay as they are.
+      if (event.agentId === TITLE_AGENT_ID) {
+        return {
+          ...state,
+          usage: {
+            inputTokens: state.usage.inputTokens + event.inputTokens,
+            outputTokens: state.usage.outputTokens + event.outputTokens,
+          },
+          aiCredits:
+            event.aiCredits !== undefined ? (state.aiCredits ?? 0) + event.aiCredits : state.aiCredits,
+        };
+      }
       const start = state.assistantTurnStart[event.agentId];
       // Card 414: only a model turn that wrote into an assistant turn has an
       // answer to stamp. A turn that only called a tool is not on the list,
@@ -1558,6 +1587,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           inputTokens: state.usage.inputTokens + event.inputTokens,
           outputTokens: state.usage.outputTokens + event.outputTokens,
         },
+        aiCredits: event.aiCredits !== undefined ? (state.aiCredits ?? 0) + event.aiCredits : state.aiCredits,
         runUsage: {
           inputTokens: state.runUsage.inputTokens + event.inputTokens,
           outputTokens: state.runUsage.outputTokens + event.outputTokens,

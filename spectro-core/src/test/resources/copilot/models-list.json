@@ -1,0 +1,21 @@
+{
+  "models": [
+    {"id": "auto", "name": "Auto", "capabilities": {"supports": null, "limits": null}, "policy": null,
+     "billing": {"tokenPrices": null}, "supportedReasoningEfforts": null, "defaultReasoningEffort": null},
+    {"id": "claude-sonnet-5", "name": "Claude Sonnet 5",
+     "capabilities": {"supports": {"vision": true, "reasoningEffort": true},
+                      "limits": {"max_prompt_tokens": 936000, "max_context_window_tokens": 1000000}},
+     "policy": {"state": "enabled"},
+     "supportedReasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": null},
+    {"id": "fixture-blind-model", "name": "Fixture Blind Model",
+     "capabilities": {"supports": {"vision": false, "reasoningEffort": false},
+                      "limits": {"max_context_window_tokens": 128000}},
+     "policy": {"state": "enabled"},
+     "supportedReasoningEfforts": null, "defaultReasoningEffort": null},
+    {"id": "fixture-switch-model", "name": "Fixture Switch Model",
+     "capabilities": {"supports": {"vision": true, "reasoningEffort": true},
+                      "limits": {"max_prompt_tokens": 272000, "max_context_window_tokens": 400000}},
+     "policy": {"state": "enabled"},
+     "supportedReasoningEfforts": ["none", "low", "high"], "defaultReasoningEffort": "low"}
+  ]
+}

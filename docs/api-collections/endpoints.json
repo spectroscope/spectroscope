@@ -590,7 +590,7 @@
           "name": "provider",
           "required": false,
           "example": "ollama",
-          "note": "any provider id SpectroConfig accepts: anthropic | ollama | openai | lmstudio | llamacpp | openrouter | gemini | spectro-local"
+          "note": "any provider id SpectroConfig accepts: anthropic | ollama | openai | lmstudio | llamacpp | openrouter | gemini | spectro-local | copilot"
         }
       ],
       "body": null

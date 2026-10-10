@@ -10,8 +10,9 @@ import type { ProviderRow } from "../state/providerRegistry";
  *
  *  The OpenAI-compatible ids sit next to the cloud ones and the picker treats
  *  them all uniformly; llamacpp is an operator's own llama-server, kept apart
- *  from lmstudio because it answers with what it has loaded (card 312), and
- *  spectro-local is the bundled model, its own first-class entry. */
+ *  from lmstudio because it answers with what it has loaded (card 312),
+ *  spectro-local is the bundled model, its own first-class entry, and copilot
+ *  signs in with GitHub instead of taking a key. */
 export const PROVIDERS = [
   "anthropic",
   "ollama",
@@ -21,6 +22,7 @@ export const PROVIDERS = [
   "openrouter",
   "gemini",
   "spectro-local",
+  "copilot",
 ] as const;
 
 /** The picker label for a provider. spectro-local reads "built-in" — which model
@@ -102,4 +104,14 @@ export function pickerOption(row: ProviderRow | undefined, current: string): Pic
     return { disabled: false, reasonKey: "pp.optNoModels" };
   }
   return { disabled: false, reasonKey: null };
+}
+
+/** Whether a provider's model list is its REAL list for this onboarding
+ *  status, so a selection that is not in it can be replaced (see pickModel):
+ *  a local backend answers with what it serves, a keyed provider with its key
+ *  present answers with what the key can use, and a signed-in provider
+ *  answers with what the account can use. A missing key or sign-in leaves the
+ *  list a fallback, or empty. */
+export function listIsAuthoritative(status: string | undefined): boolean {
+  return status === "local" || status === "ready" || status === "signed-in";
 }

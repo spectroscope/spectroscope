@@ -12,8 +12,9 @@ public final class ToolOutput {
      * The upper bound of the clamp on one tool or hook result, in characters.
      *
      * <p>A tool result takes its clamp from {@link #maxOutputChars(int)}, which
-     * lowers this value on a small window (card 489). A hook result keeps it
-     * as it is: a hook runs around a tool call and is handed no window.</p>
+     * lowers this value on a small window (card 489). So does the reason of a
+     * blocking hook, which enters the same request. A hook's output is captured
+     * at this value before that.</p>
      */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.CHARACTERS)
     public static final int MAX_OUTPUT_CHARS = 10_000;
@@ -57,6 +58,32 @@ public final class ToolOutput {
         }
         int end = Character.isHighSurrogate(s.charAt(max - 1)) ? max - 1 : max;
         return s.substring(0, end);
+    }
+
+    /**
+     * Clamps {@code output} so that it and the {@code notice} after it fit
+     * {@code max} together, keeping the notice whole (card 489, criterion 5).
+     *
+     * <p>A notice is text a tool writes after its output: grep's line naming
+     * the files it did not search, launch_list's line naming the entries it
+     * skipped. A plain {@link #clip} over output and notice cuts the notice
+     * first, so a smaller window would drop it. Here the output gives way from
+     * its end instead. A notice that alone reaches {@code max} is cut like any
+     * text.</p>
+     *
+     * @param output the tool's output
+     * @param notice the text the tool writes after it
+     * @param max    the upper bound in chars, notice included
+     * @return output and notice when they fit, else the clipped output and the whole notice
+     */
+    public static String clipBefore(String output, String notice, int max) {
+        if (output.length() + notice.length() <= max) {
+            return output + notice;
+        }
+        if (notice.length() >= max) {
+            return clip(output + notice, max);
+        }
+        return clip(output, max - notice.length()) + notice;
     }
 
     /**

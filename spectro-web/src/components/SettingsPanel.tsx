@@ -52,6 +52,7 @@ import { FleetSettings } from "./FleetSettings";
 import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
 import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
+import { CopilotSettingsNote } from "./CopilotSettingsNote";
 import { addressOverrideNote, addressSpecFor } from "./providerAddress";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { settingsMayAutoPick } from "./settingsModelPolicy";
@@ -938,6 +939,7 @@ export function SettingsPanel({
                         />
                       )}
                     </label>
+                    <CopilotSettingsNote provider={String(view.effective.provider ?? "")} lang={lang} />
                     {/* Card 193: the address beside the provider that needs it.
                     Which providers those are is addressSpecFor's answer, not a
                     list repeated here — each owns a field and a preset of its

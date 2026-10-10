@@ -89,7 +89,13 @@ import { deletionLeavesView } from "./state/sessionMeta";
 import { Keymap } from "./components/Keymap";
 import { SearchBox } from "./components/SearchBox";
 import { Onboarding } from "./components/Onboarding";
-import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
+import {
+  ONBOARDED_KEY,
+  providerUnusable,
+  shouldOnboard,
+  shouldShowOnboarding,
+} from "./components/onboardingFlag";
+import { onCopilotSignInChange } from "./components/copilotAccount";
 import { LocalModelNotice } from "./components/LocalModelNotice";
 import { LocalModelDialog } from "./components/LocalModelDialog";
 import {
@@ -228,6 +234,7 @@ import {
   type ModeSwitchDeps,
 } from "./state/modeWork";
 import { storedCwdOf } from "./workspace/storedFolder";
+import { headerWorkspace, ownSessionIds, wakeWanted } from "./workspace/wakeChip";
 
 interface ConnState {
   status: ConnectionStatus;
@@ -286,6 +293,8 @@ export function App() {
   });
   const slot = useSyncExternalStore(sessions.subscribe, sessions.view, sessions.view);
   const heldRows = useSyncExternalStore(sessions.subscribe, sessions.heldRows, sessions.heldRows);
+  // Card 498: every record, for the one a wake opened out of view.
+  const allSlots = useSyncExternalStore(sessions.subscribe, sessions.slots, sessions.slots);
   const live: UiState = slot.state;
   const [replay, setReplay] = useState<Replay | null>(null);
   // The third event source (parallel to replay): a contextId when a fleet is
@@ -592,6 +601,9 @@ export function App() {
   // /api/config) — the settings page and the unreachable note name it.
   const [providerAddress, setProviderAddress] = useState<Record<string, string> | null>(null);
   const [configNonce, setConfigNonce] = useState(0); // bump to re-read /api/config after a key is saved
+  // Card 496: a Copilot sign-in or sign-out made in a sheet is the same kind of
+  // change as a saved key, so the provider status is read again.
+  useEffect(() => onCopilotSignInChange(() => setConfigNonce((n) => n + 1)), []);
   // Key PRESENCE per image backend (from /api/config, never values). Drives
   // the gallery dropdown's "no key in .env" hints and the smart default below.
   const [imageKeys, setImageKeys] = useState<{ gemini: boolean; openai: boolean } | null>(null);
@@ -1682,13 +1694,21 @@ export function App() {
       // The fold above is finite and keeps every row; what it becomes is not.
       setOpening(null); // in the same update as the live view below
       // A record on its own socket with ?resume=<id>, the message in its queue.
-      sessions.open({
-        resumeId: id,
-        state: seedResumedLive(seeded),
-        events,
-        // card 459: beside the running sessions, never in their place
-        ...("command" in first ? { firstCommand: first.command } : { firstMessage: first }),
-      });
+      // Card 498: a session whose wake already holds a socket continues on
+      // that one, with the same history and the same first message.
+      const firstOf = "command" in first ? { firstCommand: first.command } : { firstMessage: first };
+      const woken = sessions.slots().find((held) => held.woken && held.sessionId === id);
+      if (woken !== undefined) {
+        sessions.continueWoken(woken.key, { state: seedResumedLive(seeded), events, ...firstOf });
+      } else {
+        sessions.open({
+          resumeId: id,
+          state: seedResumedLive(seeded),
+          events,
+          // card 459: beside the running sessions, never in their place
+          ...firstOf,
+        });
+      }
       setReplay(null);
       // The Lab dam holds the history and new events queue behind it; in light
       // it is not fed (card 430, gate 3), and the return to learn seeds it.
@@ -1710,7 +1730,8 @@ export function App() {
   // Card 458: what stands where the composer would be. A stored session gets
   // the composer and continues on the first message; an import, a scenario
   // and a session another window holds (card 212) say why they are read-only.
-  const ownIds = heldRows.map((row) => row.id);
+  // Card 498: a wake is this page's too, or its own claim would lock its box.
+  const ownIds = ownSessionIds(heldRows, allSlots);
   const shownComposer =
     replay === null
       ? null
@@ -1718,6 +1739,27 @@ export function App() {
           liveElsewhere: liveSet.map((row) => row.id).filter((id) => !ownIds.includes(id)),
         });
   const continuable = shownComposer !== null && shownComposer.kind === "continue";
+  // Card 498: the record a wake opened for the stored session on screen.
+  const wokenSlot =
+    replay === null ? undefined : allSlots.find((held) => held.woken && held.sessionId === replay.id);
+  // A click into the message box of a stored session wakes its folder on the
+  // server: the chip's Finder, Terminal and code graph rows light up on the
+  // answer, before anything is sent and without a model call.
+  const wakeStored = (): void => {
+    if (replay === null) return;
+    const held = sessions.findBySession(replay.id) !== undefined;
+    if (!wakeWanted({ replayId: replay.id, continuable, held })) return;
+    sessions.open({ wake: replay.id });
+  };
+  // A wake belongs to the stored session on screen. Leaving it for another
+  // session, a new chat or the live view lets its socket go, and the server
+  // releases the session for every other window.
+  const replayOnScreen = replay?.id ?? null;
+  useEffect(() => {
+    for (const held of sessions.slots()) {
+      if (held.woken && held.sessionId !== replayOnScreen) sessions.close(held.key);
+    }
+  }, [replayOnScreen, sessions]);
   const readOnlyNote =
     shownComposer !== null && shownComposer.kind === "readOnly"
       ? t(lang, readOnlyKey(shownComposer.reason))
@@ -2524,9 +2566,16 @@ export function App() {
           doctorOpen={doctorOpen}
           onToggleDoctor={() => setDoctorOpen((o) => !o)}
           onOpenKeymap={() => setKeymapOpen(true)}
-          workspace={viewingLive ? view.workspace : null}
+          workspace={headerWorkspace({
+            viewingLive,
+            liveWorkspace: view.workspace,
+            continuable,
+            replayId: replay?.id ?? null,
+            storedCwd: shownStoredCwd,
+            woken: wokenSlot?.state.workspace ?? null,
+          })}
           onPickFolder={pickWorkspace}
-          canPickFolder={canPickWorkspace}
+          canPickFolder={viewingLive && canPickWorkspace}
         />
 
         {conn.status !== "open" && (
@@ -2887,6 +2936,7 @@ export function App() {
                     onCommand: command,
                     onReturnToLive: returnToLive,
                     continuable,
+                    onComposerFocus: wakeStored,
                     readOnlyNote,
                     exportId: canResume ? replay!.id : undefined,
                     // The sidecar link, only when the index answered non-empty
@@ -3042,10 +3092,11 @@ export function App() {
               viewKey={textExportViewKey({ viewKey, showingTranslation })}
               // Explain spends the server's BASE-config provider (that is what the
               // endpoint builds, not a live-switched session provider) — offer it
-              // unless that provider explicitly reports needs-key; unknown maps
+              // unless that provider explicitly reports needs-key, or needs-signin
+              // for one that signs in (card 496); unknown maps
               // stay open and the endpoint's readable 503 covers the rest.
               explainReady={
-                !serverCfg || !providerStatus || providerStatus[serverCfg.provider] !== "needs-key"
+                !serverCfg || !providerStatus || !providerUnusable(providerStatus[serverCfg.provider])
               }
             />
           ) : tab === "lab" ? (
@@ -3067,6 +3118,7 @@ export function App() {
                 onSend={send}
                 onReturnToLive={returnToLive}
                 continuable={continuable}
+                onComposerFocus={wakeStored}
                 readOnlyNote={readOnlyNote}
                 sendClient={sendClient}
                 /* Card 301: the dock's handover and file rows are clickable, and

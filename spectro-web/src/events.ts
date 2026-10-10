@@ -15,6 +15,11 @@ export interface AttachmentRef {
   sha256: string;
 }
 
+/** The agent a session-title call's usage is billed to (card 496), as the
+ *  server names it (SessionConnection.TITLE_AGENT_ID). Its credits count for
+ *  the session; it is not a child of the run. */
+export const TITLE_AGENT_ID = "session-title";
+
 export type RunEvent =
   | {
       type: "run_start";
@@ -123,6 +128,9 @@ export type RunEvent =
        *  inputTokens stays the RAW uncached remainder — the true context size is the sum. */
       cacheReadTokens?: number;
       cacheCreationTokens?: number;
+      /** Additive (card 496): what the call cost in GitHub AI credits, when the
+       *  provider reports it (Copilot). Absent otherwise. */
+      aiCredits?: number;
       ts: number;
     }
   | { type: "run_end"; runId: string; stopReason: string; ts: number }
@@ -524,6 +532,10 @@ export type ClientMessage =
   // Card 466: the tool groups the next run leaves out of the provider request.
   // The server answers with a socket-only tool_groups_info frame.
   | { type: "set_tool_groups_off"; groups: string[]; save?: boolean }
+  // Card 493: the composer gear's Local mode switch. One frame switches it,
+  // changes values of its rows, or resets rows to the preset. The server
+  // answers with a socket-only local_mode_info frame.
+  | { type: "set_local_mode"; on?: boolean; values?: Record<string, unknown>; reset?: string[] }
   // Card 390: the window for this session, from the context ring. null clears;
   // the server decides the range and answers with a `window_override` event.
   | { type: "set_window_override"; tokens: number | null }
@@ -546,7 +558,11 @@ export type ClientMessage =
   | { type: "clear_context" }
   // Card 482: start a playbook run. The hash is the one the confirmation sheet
   // showed; the server loads the folder again and refuses a mismatch.
-  | { type: "start_playbook"; dir: string; hash: string };
+  | { type: "start_playbook"; dir: string; hash: string }
+  // Card 498: a click into the message box of a stored session. The server
+  // binds the session to this socket and answers with its workspace_info;
+  // no run starts and no model is called.
+  | { type: "wake_session"; sessionId: string };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {

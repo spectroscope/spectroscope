@@ -1522,6 +1522,29 @@ describe("tool_groups_info (socket-only frame, card 466)", () => {
   });
 });
 
+describe("local_mode_info (socket-only frame, card 493)", () => {
+  const frame = {
+    type: "local_mode_info",
+    on: true,
+    rows: [{ key: "sessionsPerChat", value: 3, preset: 3, changed: false, floor: 2 }],
+  } as unknown as RunEvent;
+
+  it("folds the switch and its rows", () => {
+    expect(initialState.localMode).toBeNull();
+    const next = reduce(initialState, frame);
+    expect(next.localMode).toEqual({
+      on: true,
+      rows: [{ key: "sessionsPerChat", value: 3, preset: 3, changed: false, floor: 2 }],
+    });
+  });
+
+  it("keeps the last truth when a frame cannot be read", () => {
+    const good = reduce(initialState, frame);
+    const after = reduce(good, { type: "local_mode_info", on: "yes" } as unknown as RunEvent);
+    expect(after.localMode).toEqual(good.localMode);
+  });
+});
+
 describe("traceFromEvents — a flat inbound stream for the fleet trace tab", () => {
   it("maps each event to an inbound trace entry with type, agentId, ts and payload", () => {
     const events: RunEvent[] = [

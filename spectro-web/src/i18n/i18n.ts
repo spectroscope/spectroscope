@@ -1006,6 +1006,66 @@ export const dict: Record<string, { de: string; en: string }> = {
   "perm.task": { de: "Auftrag: {task}", en: "Task: {task}" },
 
   // provider picker (header)
+  "cp.title": { de: "Anmeldung bei GitHub Copilot", en: "GitHub Copilot sign-in" },
+  "cp.signedInAs": { de: "Angemeldet als {login}", en: "Signed in as {login}" },
+  "cp.notSignedIn": { de: "Nicht angemeldet", en: "Not signed in" },
+  "cp.waiting": { de: "Wartet auf deine Bestätigung im Browser", en: "Waiting for your confirmation in the browser" },
+  "cp.viaGithub": {
+    de: "Über die eigene GitHub-Anmeldung von spectroscope.",
+    en: "Through spectroscope's own GitHub sign-in.",
+  },
+  "cp.viaCli": {
+    de: "Über die Anmeldung der Copilot CLI auf diesem Mac.",
+    en: "Through the sign-in of the Copilot CLI on this Mac.",
+  },
+  "cp.openAndEnter": {
+    de: "Öffne diese Adresse im Browser und gib dort den Code ein:",
+    en: "Open this address in your browser and enter the code there:",
+  },
+  "cp.afterConfirm": {
+    de: "Dieses Fenster aktualisiert sich, sobald du den Code bestätigt hast.",
+    en: "This sheet updates once you have confirmed the code.",
+  },
+  "cp.signInGithub": { de: "Mit GitHub anmelden", en: "Sign in with GitHub" },
+  "cp.signInCli": { de: "Anmeldung der Copilot CLI verwenden", en: "Use the Copilot CLI sign-in" },
+  "cp.noGithub": {
+    de: "Die eigene GitHub-Anmeldung braucht eine registrierte GitHub-OAuth-App, und es ist keine eingerichtet.",
+    en: "The own GitHub sign-in needs a registered GitHub OAuth app, and none is configured.",
+  },
+  "cp.noCli": { de: "Auf diesem Mac wurde keine Copilot CLI gefunden.", en: "No Copilot CLI was found on this Mac." },
+  "cp.cancel": { de: "Abbrechen", en: "Cancel" },
+  "cp.signOut": { de: "Abmelden", en: "Sign out" },
+  "cp.close": { de: "Schließen", en: "Close" },
+  "cp.manage": { de: "Anmeldung …", en: "Sign-in …" },
+  "cp.unreachable": {
+    de: "Der Anmeldestatus konnte nicht gelesen werden.",
+    en: "The sign-in status could not be read.",
+  },
+  "cp.loading": { de: "Anmeldestatus wird gelesen", en: "Reading the sign-in status" },
+  "cp.readFailed": {
+    de: "Der letzte Abruf des Status ist fehlgeschlagen. Es wird weiter versucht.",
+    en: "The last status read failed. The sheet keeps trying.",
+  },
+  "cp.working": { de: "Einen Moment.", en: "One moment." },
+  "cp.workingCli": {
+    de: "Die Copilot CLI wird gefragt. Das kann bis zu 30 Sekunden dauern.",
+    en: "Asking the Copilot CLI. This can take up to 30 seconds.",
+  },
+  "cp.signInOther": { de: "Mit einem anderen GitHub-Konto anmelden", en: "Sign in with another GitHub account" },
+  "cp.checkedOnRun": {
+    de: "GitHub prüft das Copilot-Abonnement beim ersten Lauf. Lehnt es ab, steht der Grund hier.",
+    en: "GitHub checks the Copilot subscription when a run starts. If it refuses, the reason shows here.",
+  },
+  "cp.codeLabel": { de: "Code", en: "Code" },
+  "set.copilotNote": {
+    de: "Copilot meldet sich mit deinem GitHub-Konto an, nicht mit einem API-Key. Jede Antwort wird diesem Konto in GitHub AI-Credits berechnet, und der Kontextring zeigt, was diese Sitzung bisher gekostet hat.",
+    en: "Copilot signs in with your GitHub account instead of an API key. Each answer is billed to that account in GitHub AI credits, and the context ring shows what this session has cost so far.",
+  },
+  "set.copilotInstall": {
+    de: "Dafür braucht es die Copilot CLI auf diesem Mac. Installieren mit: {install}",
+    en: "It needs the Copilot CLI on this Mac. Install it with: {install}",
+  },
+  "ctx.credits": { de: "AI-Credits in dieser Sitzung · {credits}", en: "AI credits this session · {credits}" },
   "pp.chipTitle": { de: "LLM-Backend wechseln", en: "Switch LLM backend" },
   "pp.provider": { de: "Provider", en: "Provider" },
   "pp.model": { de: "Modell", en: "Model" },
@@ -1618,6 +1678,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.reachNextSession": {
     de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
     en: "Applies from the next session. A session already open keeps what it started with.",
+  },
+  // Card 491: the fifth answer. The agent reads these keys when a run starts,
+  // so the next prompt of a session already open picks a change up and a run
+  // in progress keeps what it started with.
+  "set.reachNextRun": {
+    de: "Gilt ab dem nächsten Lauf, auch in einer schon offenen Sitzung. Ein laufender Lauf behält, womit er gestartet ist.",
+    en: "Applies from the next run, including in a session already open. A run in progress keeps what it started with.",
   },
   // The third answer, and the only field that needs it (card 222, F5). The
   // image backend has a SECOND live control — the dropdown in the composer —
@@ -3610,8 +3677,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "set.maxTokens": { de: "Antwort-Budget pro Aufruf", en: "Reply budget per call" },
   "set.maxTokensNote": {
-    de: "Wie viele Ausgabe-Token EIN Modellaufruf ausgeben darf. Das ist die Obergrenze, die der Harness anfragt. Ist das Kontextfenster des Modells bekannt, fragt ein Aufruf weniger an: höchstens den Teil des Fensters, den die Kompaktierung für die Antwort freihält, und nie mehr, als das Fenster nach der Eingabe noch übrig lässt. Ein Backend darf eine eigene, niedrigere Obergrenze haben (die OpenAI-kompatible Schnittstelle deckelt hart bei 16.000). Die älteren Anthropic-Modelle halten ihr Denk-Budget unter dieser Zahl und brauchen dafür mindestens 1.024: dort, und nur dort, geht ein Aufruf, der 1.024 oder weniger anfragt, ohne Denken raus.",
-    en: "How many output tokens ONE model call may spend. This is the ceiling the harness asks for. When the model's context window is known, a call asks for less: at most the part of the window that compaction keeps back for the answer, and never more than the window has left after the input. A backend may hold a lower ceiling of its own (the OpenAI-compatible wire clamps hard at 16,000). The older Anthropic models keep their reasoning budget under this number and need at least 1,024 for it, so on those, and only those, a call that asks for 1,024 or less goes out without thinking.",
+    de: "Wie viele Ausgabe-Token EIN Modellaufruf ausgeben darf. Das ist die Obergrenze, die der Harness anfragt. Ist das Kontextfenster des Modells bekannt, fragt ein Aufruf weniger an: höchstens den Teil des Fensters, den die Kompaktierung für die Antwort freihält, und höchstens das, was das Fenster nach der geschätzten Eingabe noch übrig lässt, mindestens aber 512 Token. Ein Backend darf eine eigene, niedrigere Obergrenze haben (die OpenAI-kompatible Schnittstelle deckelt hart bei 16.000). Die älteren Anthropic-Modelle halten ihr Denk-Budget unter dieser Zahl und brauchen dafür mindestens 1.024: dort, und nur dort, geht ein Aufruf, der 1.024 oder weniger anfragt, ohne Denken raus.",
+    en: "How many output tokens ONE model call may spend. This is the ceiling the harness asks for. When the model's context window is known, a call asks for less: at most the part of the window that compaction keeps back for the answer, and at most what the window has left after the estimated input, with a floor of 512 tokens. A backend may hold a lower ceiling of its own (the OpenAI-compatible wire clamps hard at 16,000). The older Anthropic models keep their reasoning budget under this number and need at least 1,024 for it, so on those, and only those, a call that asks for 1,024 or less goes out without thinking.",
   },
   "set.commandTimeoutSeconds": { de: "Zeit pro Shell-Befehl", en: "Time per shell command" },
   "set.commandTimeoutSecondsNote": {
@@ -4188,8 +4255,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // unchecked one is left out of the request from the next run on.
   "wsg.tools.title": { de: "Werkzeuggruppen", en: "Tool groups" },
   "wsg.tools.note": {
-    de: "Abgewählte Gruppen schickt der nächste Lauf nicht an das Modell, auch nicht an Unteragenten. An den Berechtigungen ändert das nichts.",
-    en: "The next run leaves unchecked groups out of the model request, for subagents too. Permissions do not change.",
+    de: "Abgewählte Gruppen gehen nicht an das Modell, auch nicht an Unteragenten. An den Berechtigungen ändert das nichts.",
+    en: "Unchecked groups are left out of the model request, for subagents too. Permissions do not change.",
   },
   "wsg.tools.none": { de: "kein Werkzeug in dieser Sitzung", en: "no tool in this session" },
   "wsg.tools.saveFailed": { de: "Nicht gespeichert: {reason}", en: "Not saved: {reason}" },
@@ -4197,6 +4264,38 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ohne angehefteten Ordner gilt die Wahl nur für diese Sitzung und wird nicht gespeichert.",
     en: "Without a pinned folder the choice holds for this session only and is not saved.",
   },
+  // Card 493: the Local mode switch at the top of the gear.
+  "wsg.lm.title": { de: "Lokaler Modus", en: "Local mode" },
+  "wsg.lm.hint": {
+    de: "Vorsichtige Werte für einen Chat mit einem lokalen Modell: weniger Helfer gleichzeitig, weniger Werkzeuge, kleinere Lesezugriffe.",
+    en: "Careful values for a chat on a local model: fewer helpers at once, fewer tools, smaller reads.",
+  },
+  "wsg.lm.sessions": { de: "Modellsitzungen gleichzeitig", en: "Model sessions at once" },
+  "wsg.lm.sessionsNote": { de: "Der Hauptagent und seine Helfer.", en: "The main agent and its helpers." },
+  "wsg.lm.toolGroups": { de: "Abgeschaltete Werkzeuggruppen", en: "Tool groups off" },
+  "wsg.lm.toolGroupsNote": {
+    de: "Ändern unter Werkzeuggruppen weiter unten.",
+    en: "Change them under Tool groups below.",
+  },
+  "wsg.lm.readShare": { de: "Leseanteil", en: "Read share" },
+  "wsg.lm.readShareProposal": {
+    de: "Prozent des Kontextfensters, die ein ganzer Dateilesezugriff belegen darf. Die Vorgabe 10 ist ein Vorschlag, nicht gemessen.",
+    en: "Per cent of the context window one whole-file read may take. The preset 10 is a proposal, not measured.",
+  },
+  "wsg.lm.care": { de: "Sorgfaltsabsatz", en: "Care paragraph" },
+  "wsg.lm.careNote": {
+    de: "Bittet das Modell, in kleinen Schritten zu arbeiten und große Dateien in Teilen zu lesen.",
+    en: "Asks the model to work in small steps and read large files in parts.",
+  },
+  "wsg.lm.changed": { de: "geändert", en: "changed" },
+  "wsg.lm.changedFromLocal": { de: "geändert gegenüber dem lokalen Modus", en: "changed from Local mode" },
+  "wsg.lm.reset": { de: "Zurück auf {value}", en: "Reset to {value}" },
+  "wsg.lm.noTools": {
+    de: "{model} ist nicht auf Werkzeugaufrufe trainiert. Der Agent kann in diesem Chat womöglich keine Werkzeuge nutzen.",
+    en: "{model} is not trained to call tools. The agent may not be able to use any tool in this chat.",
+  },
+  "wsg.lm.belowFloor": { de: "Mindestens {floor}.", en: "At least {floor}." },
+  "wsg.lm.wholeNumber": { de: "Eine ganze Zahl.", en: "A whole number." },
   "wsg.rules.title": { de: "Immer erlauben", en: "Always allow" },
   "wsg.rules.scope": { de: "[projekt]", en: "[project]" },
   "wsg.rules.empty": {

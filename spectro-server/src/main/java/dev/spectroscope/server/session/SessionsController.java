@@ -497,6 +497,13 @@ public class SessionsController {
                         SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.anyPresent()));
                 continue;
             }
+            if (SpectroConfig.signsIn(p)) {
+                // Card 496: a provider that signs in reports the stored sign-in,
+                // read from the file alone: no runtime starts for a page load.
+                providerStatus.put(p, SpectroConfig.onboardingStatus(p,
+                        dev.spectroscope.core.copilot.CopilotAccount.forThisMachine().hasStoredSignIn()));
+                continue;
+            }
             String keyEnv = SpectroConfig.keyEnvFor(p);
             providerStatus.put(p, statusOf(p, c, keyEnv != null && envKeySet(keyEnv)));
         }
@@ -780,7 +787,8 @@ public class SessionsController {
      *         provider without a model list
      */
     static String modelWire(String provider, java.util.function.Predicate<String> openAiCompat) {
-        if ("anthropic".equals(provider) || "ollama".equals(provider)) {
+        if ("anthropic".equals(provider) || "ollama".equals(provider)
+                || dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER.equals(provider)) {
             return provider;
         }
         return provider != null && openAiCompat.test(provider) ? "openai" : null;
@@ -826,8 +834,51 @@ public class SessionsController {
         return switch (wire) {
             case "anthropic" -> anthropicModels();
             case "ollama" -> ollamaModels();
+            case dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER -> copilotModels();
             default -> openaiModels(provider);
         };
+    }
+
+    /**
+     * The Copilot runtime's own model list (card 496), in its order. A runtime
+     * a chat already started answers it; with none, the account starts one for
+     * the question and stops it again ({@code CopilotAccount.askRuntime}), so
+     * opening the picker or the settings leaves no runtime behind. Empty
+     * without a stored sign-in, so a picker that only looks starts no runtime,
+     * and empty when the runtime is missing or refuses.
+     *
+     * @return the model ids, or an empty list
+     */
+    private List<String> copilotModels() {
+        dev.spectroscope.core.copilot.CopilotAccount account =
+                dev.spectroscope.core.copilot.CopilotAccount.forThisMachine();
+        return copilotModels(account.hasStoredSignIn(), () -> account.askRuntime(
+                SpectroConfig.defaultModelFor(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER),
+                dev.spectroscope.core.copilot.CopilotRuntime.find(null).requirePath(),
+                provider -> provider.models().stream()
+                        .map(dev.spectroscope.core.provider.CopilotProvider.CopilotModel::id)
+                        .toList()));
+    }
+
+    /**
+     * The Copilot model list's rule, apart from the runtime: without a stored
+     * sign-in the runtime is not asked; a runtime that is missing or refuses
+     * gives an empty list.
+     *
+     * @param signedIn whether a sign-in is stored
+     * @param runtime  asks the runtime for its model ids
+     * @return the model ids, or an empty list
+     */
+    static List<String> copilotModels(boolean signedIn, java.util.function.Supplier<List<String>> runtime) {
+        if (!signedIn) {
+            return List.of();
+        }
+        try {
+            return runtime.get();
+        } catch (RuntimeException unavailable) {
+            org.slf4j.LoggerFactory.getLogger(SessionsController.class).debug("copilot: no model list", unavailable);
+            return List.of();
+        }
     }
 
     /**

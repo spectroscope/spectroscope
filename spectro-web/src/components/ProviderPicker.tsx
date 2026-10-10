@@ -17,6 +17,7 @@ import { checkProviders, refreshProviders, rowFor, useProviderRows } from "../st
 import { PROVIDERS, pickerOption, providerDisplayName } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { LocalModelDialog } from "./LocalModelDialog";
+import { CopilotAccountNote } from "./CopilotSignIn";
 
 export function ProviderPicker({
   provider,
@@ -186,6 +187,7 @@ export function ProviderPicker({
               />
             </label>
           )}
+          {sel === "copilot" && <CopilotAccountNote />}
           <div className="provider-pop-foot">
             <button type="button" className="soft-primary" disabled={selectedOption.disabled} onClick={apply}>
               {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}

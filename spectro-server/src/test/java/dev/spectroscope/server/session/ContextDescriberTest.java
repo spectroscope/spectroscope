@@ -187,4 +187,25 @@ class ContextDescriberTest {
                 assertThat(profile.tools()).as(profile.type())
                         .noneMatch(name -> name.startsWith("browser_") || name.startsWith("launch_")));
     }
+
+    /**
+     * Review of card 493: the System context tab shows {@code read_file} with
+     * the read share the config sets, as the session's request carries it.
+     */
+    @Test
+    void theDescribedReadFileNamesTheConfiguredReadShare(@TempDir Path cwd) throws IOException {
+        Path file = cwd.resolve(SpectroConfig.PROJECT_SETTINGS);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "{ \"readSharePercent\": 10 }");
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
+        assertThat(config.readSharePercent()).as("premise").isEqualTo(10);
+
+        String described = ContextDescriber.describe(config, cwd).tools().stream()
+                .filter(tool -> "read_file".equals(tool.name())).findFirst().orElseThrow().description();
+        assertThat(described).contains("fits 10 % of your context").doesNotContain("25 %");
+        String shipped = ContextDescriber.describe(SpectroConfig.load(SpectroConfig.Overrides.none()), cwd)
+                .tools().stream().filter(tool -> "read_file".equals(tool.name())).findFirst().orElseThrow()
+                .description();
+        assertThat(shipped).contains("fits 25 % of your context");
+    }
 }

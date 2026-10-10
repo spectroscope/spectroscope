@@ -98,7 +98,10 @@ public final class SettingFloors {
             // Card 490: the main agent and one helper. "No helpers" already has
             // its key, the agents tool group of card 466, and a count of 1
             // would be a second key for the same state.
-            new Floor("sessionsPerChat", 2, null));
+            new Floor("sessionsPerChat", 2, null),
+            // Card 493: one per cent of the window still admits a page, and
+            // zero would refuse every whole read and every page.
+            new Floor("readSharePercent", 1, null));
 
     private static final Map<String, Integer> FLOORS = floorsOf(TABLE);
 

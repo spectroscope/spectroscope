@@ -8,7 +8,7 @@
 // hidden (`hidden={tab !== active}`, SettingsPanel.tsx), so an input inside a
 // room is in the document whichever room is on screen.
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
@@ -18,6 +18,7 @@ import { SettingsPanel, sectionAnchorId } from "./SettingsPanel";
 import { SETTINGS_TABS, SETTINGS_TAB_SECTIONS, sectionsOfTab, type SettingsTab } from "./settingsTabs";
 import { SETTING_REACH } from "./settingsReach";
 import {
+  OFF_PAGE_NO_REACH_KEYS,
   OFF_PAGE_SETTING_KEYS,
   SECTION_SETTING_KEYS,
   SETTINGS_HIT_ORIGINS,
@@ -125,7 +126,10 @@ describe("the manifest is derived, never typed", () => {
     // A field hit opens a room and scrolls to a section. A key whose control
     // stands outside the page has neither, so a hit for it would send the
     // reader to a section without the control.
-    const elsewhere = new Set<string>(Object.keys(OFF_PAGE_SETTING_KEYS));
+    const elsewhere = new Set<string>([
+      ...Object.keys(OFF_PAGE_SETTING_KEYS),
+      ...Object.keys(OFF_PAGE_NO_REACH_KEYS),
+    ]);
     for (const key of Object.keys(SETTING_REACH)) {
       const found = manifest.some((h) => h.origin === "field" && h.key === key);
       if (elsewhere.has(key)) {
@@ -152,9 +156,11 @@ describe("the manifest is derived, never typed", () => {
     // that nobody placed turns this red before the search can quietly drop it.
     // Since card 379 a key may instead stand in the off-page table. The two
     // together still have to equal the reach table, and a key in both is
-    // counted twice, which fails.
+    // counted twice, which fails. Since card 493 a key may stand in a third
+    // table, for a control outside the page that draws no reach block, or
+    // for a key no control sets.
     const placed = Object.values(SECTION_SETTING_KEYS).flat();
-    const elsewhere = Object.keys(OFF_PAGE_SETTING_KEYS);
+    const elsewhere = [...Object.keys(OFF_PAGE_SETTING_KEYS), ...Object.keys(OFF_PAGE_NO_REACH_KEYS)];
     expect([...placed, ...elsewhere].sort()).toEqual(Object.keys(SETTING_REACH).sort());
     const sections = new Set(Object.values(SETTINGS_TAB_SECTIONS).flat() as readonly string[]);
     for (const section of Object.keys(SECTION_SETTING_KEYS)) {
@@ -303,6 +309,80 @@ describe("a saveable key the settings page does not draw", () => {
       expect(blocks, `${file} draws no reach block for ${key}`).toContain(key);
       expect(page.has(url), `${file} is on the settings page; file ${key} under a section`).toBe(false);
       expect(drawn.has(key), `the settings page draws ${key} too; file it under a section`).toBe(false);
+    }
+  });
+});
+
+// ---- card 493: a key whose control draws no reach block, or has no control ---
+
+/** Every non-test source module under src, as file URLs. */
+function sourceModules(): string[] {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const out: string[] = [];
+  for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
+    out.push(new URL(`file://${entry.parentPath}/${entry.name}`).href);
+  }
+  return out;
+}
+
+/** Whether a source names a key as a quoted string or as an object key,
+ *  comments blanked first. */
+function namesKey(src: string, key: string): boolean {
+  const code = stripComments(src);
+  return code.includes(`"${key}"`) || new RegExp(`(^|[\\s{,])${key}\\s*:`, "m").test(code);
+}
+
+describe("a saveable key with no reach block, or with no control at all", () => {
+  it("reads a key named in code, and not a key quoted in a comment", () => {
+    expect(namesKey('spec("baseUrl", "text")', "baseUrl")).toBe(true);
+    expect(namesKey("const ROWS = {\n  careParagraph: { label: 1 },\n};", "careParagraph")).toBe(true);
+    expect(namesKey('// spec("baseUrl", "text")', "baseUrl")).toBe(false);
+    expect(namesKey("const x = notbaseUrl;", "baseUrl")).toBe(false);
+  });
+
+  it("finds the source modules, test files left out", () => {
+    const all = sourceModules();
+    expect(all).toContain(here("./LocalModeSection.tsx"));
+    expect(all).toContain(here("./workspaceGear.ts"));
+    expect(all).not.toContain(here("./settingsSearch.test.tsx"));
+  });
+
+  it("names, for a key with a control outside the page, a module that names the key and draws no reach block for it", () => {
+    // The Local mode rows of card 493 stand in the composer gear and carry a
+    // note of their own; the search cannot open the gear, so it finds none
+    // of them, and this says where they are instead.
+    expect(OFF_PAGE_NO_REACH_KEYS.sessionsPerChat).toBe("LocalModeSection.tsx");
+    const page = pageModules();
+    const drawn = keysDrawnOnPage();
+    for (const [key, file] of Object.entries(OFF_PAGE_NO_REACH_KEYS)) {
+      expect(drawn.has(key), `the settings page draws ${key}; file it under a section`).toBe(false);
+      if (file === null) continue;
+      const url = here(`./${file}`);
+      expect(existsSync(fileURLToPath(url)), `${file} does not exist`).toBe(true);
+      const src = read(url, import.meta.url);
+      expect(namesKey(src, key), `${file} does not name ${key}`).toBe(true);
+      expect(
+        reachKeysIn(src),
+        `${file} draws a reach block for ${key}; file it in OFF_PAGE_SETTING_KEYS`,
+      ).not.toContain(key);
+      expect(page.has(url), `${file} is on the settings page; file ${key} under a section`).toBe(false);
+    }
+  });
+
+  it("holds a key with no control to that word: no module but the two tables names it", () => {
+    // null is a claim that nothing in the app sets the key. The day a control
+    // for it appears, its module names the key and this turns red, so the
+    // control gets placed instead of staying invisible to the search.
+    const nulls = Object.entries(OFF_PAGE_NO_REACH_KEYS).filter(([, file]) => file === null);
+    expect(nulls.length).toBeGreaterThan(0);
+    const tables = new Set([here("./settingsReach.tsx"), here("./settingsSearch.ts")]);
+    for (const url of sourceModules()) {
+      if (tables.has(url)) continue;
+      const src = read(url, import.meta.url);
+      for (const [key] of nulls) {
+        expect(namesKey(src, key), `${url} names ${key}, which the table says no control sets`).toBe(false);
+      }
     }
   });
 });

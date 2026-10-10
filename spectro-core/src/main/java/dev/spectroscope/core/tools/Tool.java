@@ -50,6 +50,30 @@ public interface Tool {
     }
 
     /**
+     * Card 493: what a run read when it started that a tool may put into its
+     * own description. The loop builds it once per run, so a description that
+     * depends on it stays the same for every request of the run and the
+     * provider's cached prefix stays valid.
+     *
+     * @param readSharePercent the run's read share in per cent, 0 or less for
+     *                         the shipped one
+     */
+    record RunFacts(int readSharePercent) {
+    }
+
+    /**
+     * Card 493: the description this tool carries in the requests of one run.
+     * Every tool but {@code read_file} and {@code read_skill_file} carries
+     * {@link #description()}.
+     *
+     * @param run what the run read when it started
+     * @return the description
+     */
+    default String descriptionForRun(RunFacts run) {
+        return description();
+    }
+
+    /**
      * What the loop hands a tool for one call. Grown additively in tools that
      * produce artifacts publish domain events through {@code emit} (the loop injects its
      * own event sink plus the ids of the call) — the two-arg constructor keeps every
@@ -83,6 +107,10 @@ public interface Tool {
      *                   the threshold itself when no window is known. 0 or less
      *                   means nothing is known, and {@link ReadBudget} then
      *                   judges against the compaction fallback.
+     * @param readSharePercent card 493: the share of that window, in per cent,
+     *                   one whole-file read may take, as the run read it when it
+     *                   started. 0 or less means the run names none, and the
+     *                   shipped {@link ReadBudget#WINDOW_SHARE_PERCENT} applies.
      */
     record ToolContext(Path cwd, CancelSignal signal,
                        String agentId, String callId,          // from additive
@@ -91,7 +119,32 @@ public interface Tool {
                        Consumer<FileChange> report,            // card 269, additive
                        LongConsumer waitReport,                // human wait, additive (card 265)
                        boolean reachOutside,                   // extended mode, additive (card 453)
-                       int contextWindow) {                    // read bound, additive (card 456)
+                       int contextWindow,                      // read bound, additive (card 456)
+                       int readSharePercent) {                 // read share, additive (card 493)
+
+        /**
+         * The shape before card 493: the run names no read share, so a
+         * whole-file read is judged at the shipped share,
+         * {@link ReadBudget#WINDOW_SHARE_PERCENT}.
+         *
+         * @param cwd           the sandbox root every path tool resolves against
+         * @param signal        the run's cancel signal
+         * @param agentId       the calling agent
+         * @param callId        the tool_call id
+         * @param emit          sink into the run's event stream
+         * @param attach        sink for images/documents the model should SEE
+         * @param report        sink for what a mutating file tool did to its file
+         * @param waitReport    sink for milliseconds spent parked on a person
+         * @param reachOutside  true when the file tools may leave {@code cwd}
+         * @param contextWindow the window in tokens that bounds a whole-file read
+         */
+        public ToolContext(Path cwd, CancelSignal signal, String agentId, String callId,
+                           Consumer<RunEvent> emit, Consumer<Attachment> attach,
+                           Consumer<FileChange> report, LongConsumer waitReport,
+                           boolean reachOutside, int contextWindow) {
+            this(cwd, signal, agentId, callId, emit, attach, report, waitReport, reachOutside,
+                    contextWindow, 0);
+        }
 
         /**
          * The shape before card 456: no window known, so a whole-file read is

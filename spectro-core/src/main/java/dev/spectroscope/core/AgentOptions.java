@@ -28,7 +28,8 @@ import java.util.List;
  * @param maxTokens           output-token budget per provider call; null falls back to 32k.
  *                            A known window lowers it to the room the compaction
  *                            threshold leaves, and to what the window has left
- *                            after a request's input (card 488)
+ *                            after a request's estimated input, with a floor of
+ *                            512 tokens (card 488)
  * @param compactionThreshold input-token level that triggers compaction; null falls back to 100k
  * @param introspection       TRUE emits a {@code context_info} estimate each turn (additive)
  * @param thinking            TRUE requests the model's reasoning stream
@@ -102,6 +103,15 @@ import java.util.List;
  *                            carry, and the chat's slot pool reads it live.
  *                            Null sets no count, which is the shipped state and
  *                            the v0.14.4 behaviour
+ * @param careParagraph       card 492: {@code "on"} or {@code "off"}, the
+ *                            settings key of the same name. On, every run
+ *                            appends the care paragraph to its system prompt,
+ *                            read once when the run starts. Null is the shipped
+ *                            value, off
+ * @param readSharePercent    card 493: the share of the context window, in per
+ *                            cent, that one whole-file read may take, the
+ *                            settings key of the same name. Read once when a run
+ *                            starts. Null is the shipped value, 25
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
@@ -118,10 +128,14 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                            dev.spectroscope.core.session.SessionWindow sessionWindow,
                            String toolResultElision,
                            java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff,
-                           Integer sessionsPerChat) {
+                           Integer sessionsPerChat,
+                           String careParagraph,
+                           Integer readSharePercent) {
 
     /** Compat: the arity of v0.14.4, which knew no session count (card 490).
-     *  A caller without one sets no count, as before.
+     *  A caller without one sets no count, as before, and gets the
+     *  shipped care paragraph setting, off (card 492), and the shipped read
+     *  share, 25 (card 493).
      *
      * @param provider            the LLM backend the loop streams from
      * @param systemPrompt        system prompt sent with every provider request
@@ -166,7 +180,8 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
                 initialMessages, providerName, maxTokens, compactionThreshold, introspection,
                 thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
-                goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, null);
+                goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, null,
+                null, null);
     }
 
     /** Compat: the arity before cards 467 and 466, which knew no elision
@@ -212,7 +227,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
                 initialMessages, providerName, maxTokens, compactionThreshold, introspection,
                 thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash,
-                goal, steering, rtkFilter, sessionWindow, null, null, null);
+                goal, steering, rtkFilter, sessionWindow, null, null, null, null, null);
     }
 
     /** Compat: the arity before card 390, with cards 379 and 380 in it. Never
@@ -504,6 +519,8 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private String toolResultElision; // nullable, the shipped "on"
         private java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff; // nullable, nothing off
         private Integer sessionsPerChat; // nullable, no count per chat
+        private String careParagraph; // nullable, the shipped "off"
+        private Integer readSharePercent; // nullable, the shipped 25
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -646,6 +663,26 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
             return this;
         }
 
+        /**
+         * Card 492: whether every run appends the care paragraph.
+         *
+         * @param value {@code "on"}, {@code "off"}, or null for the shipped off
+         * @return this builder
+         */
+        public Builder careParagraph(String value) {
+            this.careParagraph = value;
+            return this;
+        }
+
+        /** Card 493: the share of the context window one whole-file read may
+         *  take, in per cent.
+         *  @param value the share; null for the shipped 25
+         *  @return this builder */
+        public Builder readSharePercent(Integer value) {
+            this.readSharePercent = value;
+            return this;
+        }
+
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
@@ -653,7 +690,8 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
                     introspection, thinking, hooks, llmWire, latency, progressGuard,
                     maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow,
-                    toolResultElision, toolGroupsOff, sessionsPerChat);
+                    toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                    readSharePercent);
         }
     }
 }

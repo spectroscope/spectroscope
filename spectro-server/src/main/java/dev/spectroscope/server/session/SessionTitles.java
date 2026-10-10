@@ -163,6 +163,22 @@ public final class SessionTitles {
      * @return the session's entry after the suggestion, empty when no title came
      */
     Optional<SessionMetaStore.Entry> suggestNow(String id, String firstPrompt, Supplier<LlmProvider> provider) {
+        return suggestNow(id, firstPrompt, provider, usage -> { });
+    }
+
+    /**
+     * {@link #suggestNow(String, String, Supplier)}, with every usage event of
+     * the title call handed to {@code usage} as it arrives (card 496: a
+     * Copilot title call costs AI credits, and the session's total counts it).
+     *
+     * @param id          the session id
+     * @param firstPrompt the session's first prompt
+     * @param provider    builds the session's own provider
+     * @param usage       hears the title call's usage events
+     * @return the session's entry after the suggestion, empty when no title came
+     */
+    Optional<SessionMetaStore.Entry> suggestNow(String id, String firstPrompt, Supplier<LlmProvider> provider,
+                                                java.util.function.Consumer<LlmProvider.PUsage> usage) {
         if (firstPrompt == null || firstPrompt.isBlank()) {
             return Optional.empty();
         }
@@ -170,7 +186,7 @@ public final class SessionTitles {
         if (known.isPresent() && SessionMetaStore.MANUAL.equals(known.get().titleSource())) {
             return known;
         }
-        Optional<String> title = ask(id, firstPrompt, provider);
+        Optional<String> title = ask(id, firstPrompt, provider, usage);
         if (title.isEmpty()) {
             return Optional.empty();
         }
@@ -192,19 +208,35 @@ public final class SessionTitles {
      * @return the started thread
      */
     Thread suggestInBackground(String id, String firstPrompt, Supplier<LlmProvider> provider) {
-        return Thread.ofVirtual().name("session-title-" + id).start(() -> suggestNow(id, firstPrompt, provider));
+        return suggestInBackground(id, firstPrompt, provider, usage -> { });
+    }
+
+    /**
+     * The same, with the title call's usage events handed to {@code usage}.
+     *
+     * @param id          the session id
+     * @param firstPrompt the session's first prompt
+     * @param provider    builds the session's own provider
+     * @param usage       hears the title call's usage events, on the model's worker thread
+     * @return the started thread
+     */
+    Thread suggestInBackground(String id, String firstPrompt, Supplier<LlmProvider> provider,
+                               java.util.function.Consumer<LlmProvider.PUsage> usage) {
+        return Thread.ofVirtual().name("session-title-" + id)
+                .start(() -> suggestNow(id, firstPrompt, provider, usage));
     }
 
     /**
      * One bounded request. The model runs on a worker thread, so a provider
      * that ignores the cancel still cannot hold the caller past the limit.
      */
-    private Optional<String> ask(String id, String firstPrompt, Supplier<LlmProvider> provider) {
+    private Optional<String> ask(String id, String firstPrompt, Supplier<LlmProvider> provider,
+                                 java.util.function.Consumer<LlmProvider.PUsage> usage) {
         CancelSignal signal = new CancelSignal();
         CompletableFuture<String> answer = new CompletableFuture<>();
         Thread.ofVirtual().name("session-title-model-" + id).start(() -> {
             try {
-                answer.complete(collect(provider.get(), request(firstPrompt, signal)));
+                answer.complete(collect(provider.get(), request(firstPrompt, signal), usage));
             } catch (Throwable failed) {
                 answer.completeExceptionally(failed);
             }
@@ -230,11 +262,18 @@ public final class SessionTitles {
         }
     }
 
-    private static String collect(LlmProvider provider, ProviderRequest request) {
+    private static String collect(LlmProvider provider, ProviderRequest request,
+                                  java.util.function.Consumer<LlmProvider.PUsage> usage) {
         StringBuilder text = new StringBuilder();
         for (LlmProvider.ProviderEvent event : provider.stream(request)) {
             if (event instanceof PTextDelta delta) {
                 text.append(delta.text());
+            } else if (event instanceof LlmProvider.PUsage spent) {
+                try {
+                    usage.accept(spent);
+                } catch (RuntimeException unheard) {
+                    log.debug("the title call's usage was not recorded", unheard);
+                }
             } else if (event instanceof PStop) {
                 break;
             }

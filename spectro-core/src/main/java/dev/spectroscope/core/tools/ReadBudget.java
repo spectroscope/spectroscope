@@ -44,8 +44,13 @@ public final class ReadBudget {
      * would let one read trip compaction on the next turn, and the summary
      * would fold away the file the model had just asked for. On the owner's loaded window of
      * 250,368 tokens a quarter is 62,592 tokens, about 187 kB.</p>
+     *
+     * <p>Card 493 made it the shipped value of the key {@code readSharePercent}:
+     * a run reads its share once when it starts, and the overloads below that
+     * take a share judge with it. A share of 0 or less means the run names
+     * none, and this value applies.</p>
      */
-    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.PERCENT)
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.PERCENT, key = "readSharePercent")
     public static final int WINDOW_SHARE_PERCENT = 25;
 
     /**
@@ -101,7 +106,28 @@ public final class ReadBudget {
      * @return {@link #WINDOW_SHARE_PERCENT} of the window, rounded down
      */
     public static long tokenAllowance(int window) {
-        return (long) windowOrFallback(window) * WINDOW_SHARE_PERCENT / 100;
+        return tokenAllowance(window, WINDOW_SHARE_PERCENT);
+    }
+
+    /**
+     * The share a run reads with (card 493).
+     *
+     * @param share the run's share in per cent, 0 or less when it names none
+     * @return {@code share} when positive, else {@link #WINDOW_SHARE_PERCENT}
+     */
+    public static int shareOrShipped(int share) {
+        return share > 0 ? share : WINDOW_SHARE_PERCENT;
+    }
+
+    /**
+     * How many tokens one read may take under this window and share.
+     *
+     * @param window the window from the tool context, 0 or less when unknown
+     * @param share  the run's share in per cent, 0 or less for the shipped one
+     * @return that share of the window, rounded down
+     */
+    public static long tokenAllowance(int window, int share) {
+        return (long) windowOrFallback(window) * shareOrShipped(share) / 100;
     }
 
     /**
@@ -112,7 +138,18 @@ public final class ReadBudget {
      * @return the bound in bytes, inclusive
      */
     public static long wholeReadBytes(int window) {
-        return Math.min(FUSE_BYTES, tokenAllowance(window) * BYTES_PER_TOKEN);
+        return wholeReadBytes(window, WINDOW_SHARE_PERCENT);
+    }
+
+    /**
+     * The largest file a whole read accepts under this window and share.
+     *
+     * @param window the window from the tool context, 0 or less when unknown
+     * @param share  the run's share in per cent, 0 or less for the shipped one
+     * @return the bound in bytes, inclusive
+     */
+    public static long wholeReadBytes(int window, int share) {
+        return Math.min(FUSE_BYTES, tokenAllowance(window, share) * BYTES_PER_TOKEN);
     }
 
     /**
@@ -125,16 +162,31 @@ public final class ReadBudget {
      *         null when both bounds hold
      */
     public static String refusal(String what, long bytes, int window) {
+        return refusal(what, bytes, window, WINDOW_SHARE_PERCENT);
+    }
+
+    /**
+     * Why a read of this many bytes is refused under the run's share, or null
+     * when it may proceed (card 493).
+     *
+     * @param what   the noun the sentence starts with, "file" or "page"
+     * @param bytes  the size in bytes
+     * @param window the window from the tool context, 0 or less when unknown
+     * @param share  the run's share in per cent, 0 or less for the shipped one
+     * @return the reason without the "ERROR: " prefix and without advice, or
+     *         null when both bounds hold
+     */
+    public static String refusal(String what, long bytes, int window, int share) {
         if (bytes > FUSE_BYTES) {
             return what + " too large (" + bytes + " bytes, over the fixed fuse of "
                     + FUSE_BYTES + " bytes for one read)";
         }
         long tokens = estimatedTokens(bytes);
-        long allowance = tokenAllowance(window);
+        long allowance = tokenAllowance(window, share);
         if (tokens > allowance) {
             return what + " too large to read at once (" + bytes + " bytes, about " + tokens
                     + " tokens at " + BYTES_PER_TOKEN + " bytes per token; one read may take "
-                    + WINDOW_SHARE_PERCENT + " % of the " + windowOrFallback(window)
+                    + shareOrShipped(share) + " % of the " + windowOrFallback(window)
                     + " tokens context window, " + allowance + " tokens"
                     + (window > 0 ? "" : ", and the run stated no window, so this is the"
                     + " compaction fallback") + ")";

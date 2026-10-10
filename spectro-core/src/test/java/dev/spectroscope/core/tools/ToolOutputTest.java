@@ -67,4 +67,28 @@ class ToolOutputTest {
         assertEquals("a", ToolOutput.clip("abc", ToolOutput.maxOutputChars(1)));
         assertEquals("\u2026", ToolOutput.clipTail("abc", ToolOutput.maxOutputChars(1)));
     }
+
+    /** Card 489, round three: a notice that fits beside the output is joined as it is. */
+    @Test
+    void clipBeforeJoinsANoticeThatFits() {
+        assertEquals("abc(n)", ToolOutput.clipBefore("abc", "(n)", 6));
+        assertEquals("abc(n)", ToolOutput.clipBefore("abc", "(n)", 10_000));
+    }
+
+    /** Card 489, round three: over the bound the output gives way and the notice stays whole. */
+    @Test
+    void clipBeforeKeepsTheNoticeWholeAndCutsTheOutput() {
+        String kept = ToolOutput.clipBefore("abcdefgh", "(n)", 6);
+        assertEquals("abc(n)", kept);
+        assertEquals(6, kept.length(), "the result is the bound");
+        // A cut never splits a surrogate pair in front of the notice.
+        assertEquals("a(n)", ToolOutput.clipBefore("a\uD83D\uDE00b", "(n)", 5));
+    }
+
+    /** Card 489, round three: a notice that alone fills the bound is cut like any text. */
+    @Test
+    void clipBeforeCutsANoticeThatDoesNotFitAlone() {
+        assertEquals("ab(n", ToolOutput.clipBefore("ab", "(notice)", 4));
+        assertEquals("(not", ToolOutput.clipBefore("", "(notice)", 4));
+    }
 }

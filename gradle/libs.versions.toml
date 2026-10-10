@@ -27,6 +27,11 @@ slf4j = "2.0.18"
 # Logging night 2026-07-17: ONE backend everywhere (see docs/design/LOGGING-CONCEPT.md).
 # 1.5.38 carries the 2026 CVE fixes (Boot 3.5.3 still manages 1.5.18).
 logback = "1.5.38"
+# Card 494: the GitHub Copilot Java SDK, a preview. MIT licence, read from the
+# <licenses> element of its POM on Maven Central and from the README at
+# github.com/github/copilot-sdk/tree/main/java on 2026-10-09. This is the
+# version card 478's spike ran against Copilot CLI 1.0.94 (protocol 3).
+copilot-sdk = "1.0.20-preview.0"
 
 [libraries]
 anthropic-java = { module = "com.anthropic:anthropic-java", version.ref = "anthropic" }
@@ -49,6 +54,11 @@ cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cronutils" }
 # faces run Logback — console stays WARN-quiet, diagnostics go to the file.
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+# Card 494: the SDK's Jackson family is excluded in spectro-core, so the jackson
+# BOM above governs it. jsr310 is the one Jackson module the SDK needs that the
+# core did not have; no version here for the same reason as jackson-databind.
+copilot-sdk-java = { module = "com.github:copilot-sdk-java", version.ref = "copilot-sdk" }
+jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310" }
 
 [plugins]
 # Maven Central via the Central Portal (the only path since OSSRH's 2025

@@ -7,18 +7,27 @@
 // The suite runs in plain Node, where no component effect ever runs. This file
 // parses App.tsx and selects every useEffect whose body calls a layout store
 // function and whose dependencies or body read the session's workspace as
-// live.workspace or view.workspace. It feeds workspace_info frames through the
-// real reducer, evaluates each dependency against the reduced state, and runs a
-// selected effect's body on mount and whenever a dependency changed, the rule
-// React follows. The layout store is the real one.
+// live.workspace, view.workspace or wokenSlot?.state.workspace. It feeds
+// workspace_info frames through the real reducer, evaluates each dependency
+// against the reduced state, and runs a selected effect's body on mount and
+// whenever a dependency changed, the rule React follows. The layout store is
+// the real one.
+//
+// Card 498 added the third name. A click into the message box of a stored
+// session wakes it on the server, and the answer is the same resolved
+// workspace_info with a sessionId that card 402's opener keyed on, reduced by
+// the same reducer into the woken record's state. App.tsx reads it as
+// wokenSlot?.state.workspace for the header chip. An effect keyed on it could
+// throw the dock open on a focus click, so the filter knows the name and the
+// harness feeds the wake's frames as well.
 //
 // Since card 402 that selection on App.tsx is empty, and a test below pins it.
-// The two timeline cases on App.tsx therefore run no effect today: they are a
+// The three timeline cases on App.tsx therefore run no effect today: they are a
 // structural pin that turns red once a selected effect moves the dock. The
 // positives that keep the selection honest are the old effect as a fixture,
-// the old effect put back into the real App.tsx, and a check that App.tsx reads
-// the session's workspace only through live and view, the two names the
-// filter knows.
+// the old effect put back into the real App.tsx, the same opener keyed on a
+// wake, and a check that App.tsx reads the session's workspace only through
+// live, view and wokenSlot?.state, the three names the filter knows.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -35,8 +44,8 @@ const LAYOUT_FNS: Record<string, unknown> = Object.fromEntries(
   Object.entries(layout).filter(([, value]) => typeof value === "function"),
 );
 
-/** Text that reads the session's workspace announcement. */
-const READS_WORKSPACE = /\b(live|view)\.workspace\b/;
+/** Text that reads the session's workspace announcement: the live view's, or a wake's answer (card 498). */
+const READS_WORKSPACE = /\b(live|view)\.workspace\b|\bwokenSlot\??\.state\.workspace\b/;
 
 interface ParsedEffect {
   body: string;
@@ -129,13 +138,17 @@ function workspaceOwners(source: string): string[] {
   return [...owners].sort();
 }
 
-function evaluate(expr: string, live: UiState): unknown {
+/** App.tsx's wokenSlot: the record a wake opened, or none while nothing is woken. */
+const wokenSlotOf = (woken: UiState | undefined): { state: UiState } | undefined =>
+  woken === undefined ? undefined : { state: woken };
+
+function evaluate(expr: string, live: UiState, woken: UiState | undefined): unknown {
   const js = ts.transpile(expr, { target: ts.ScriptTarget.ES2022 });
-  return new Function("live", "view", `return ${js}`)(live, live);
+  return new Function("live", "view", "wokenSlot", `return ${js}`)(live, live, wokenSlotOf(woken));
 }
 
-function run(fx: ParsedEffect, values: unknown[], live: UiState): void {
-  const scope: Record<string, unknown> = { ...LAYOUT_FNS, live, view: live };
+function run(fx: ParsedEffect, values: unknown[], live: UiState, woken: UiState | undefined): void {
+  const scope: Record<string, unknown> = { ...LAYOUT_FNS, live, view: live, wokenSlot: wokenSlotOf(woken) };
   fx.deps.forEach((dep, i) => {
     if (/^[A-Za-z_$][\w$]*$/.test(dep)) scope[dep] = values[i];
   });
@@ -144,16 +157,16 @@ function run(fx: ParsedEffect, values: unknown[], live: UiState): void {
   effect();
 }
 
-/** Mounts the effects once; each call renders with a new live state, the way App re-renders. */
-function mount(effects: ParsedEffect[]): (live: UiState) => void {
+/** Mounts the effects once; each call renders with a new live state and the woken record's state, the way App re-renders. */
+function mount(effects: ParsedEffect[]): (live: UiState, woken?: UiState) => void {
   const seen = new Map<ParsedEffect, unknown[]>();
-  return (live) => {
+  return (live, woken) => {
     for (const fx of effects) {
-      const values = fx.depExprs.map((expr) => evaluate(expr, live));
+      const values = fx.depExprs.map((expr) => evaluate(expr, live, woken));
       const before = seen.get(fx);
       if (before !== undefined && values.every((v, i) => Object.is(v, before[i]))) continue;
       seen.set(fx, values);
-      run(fx, values, live);
+      run(fx, values, live, woken);
     }
   };
 }
@@ -166,6 +179,16 @@ const connect = frame({ resolved: false, mode: "random", configured: false });
 // The resolved frame sendWorkspaceInfo sends once runPrompt has built the agent.
 const resolved = (sessionId: string, folder: string): RunEvent =>
   frame({ resolved: true, mode: "random", configured: false, exists: true, sessionId, path: folder });
+// A wake's answer for a stored session whose recorded folder is gone (card 498).
+const gone = (sessionId: string, folder: string): RunEvent =>
+  frame({
+    resolved: false,
+    mode: "recorded",
+    configured: false,
+    exists: false,
+    sessionId,
+    unavailable: folder,
+  });
 
 /** The two fields the owner's screenshot shows changing. */
 const dock = (): { rightPanelOpen: boolean; dockFiles: string } => {
@@ -194,6 +217,16 @@ describe("the harness sees App.tsx's effects and can run one that opens the dock
       }, [wsPath]);
 `;
   const OLD_OPENER = `function App() {${OLD_EFFECT}}`;
+  // The same opener keyed on a wake's answer, the reader card 498 added.
+  const WAKE_EFFECT = `
+      const wokenPath = wokenSlot?.state.workspace?.resolved === true ? (wokenSlot.state.workspace.path ?? null) : null;
+      useEffect(() => {
+        if (wokenPath !== null) {
+          openRightPanel();
+          openDockPanel("files");
+        }
+      }, [wokenPath]);
+`;
 
   it("finds the old opener and, run on the reducer's transition, it opens Agents and Files", () => {
     const effects = workspaceLayoutEffects(OLD_OPENER);
@@ -233,19 +266,50 @@ describe("the harness sees App.tsx's effects and can run one that opens the dock
     expect(dock()).toEqual({ rightPanelOpen: true, dockFiles: "open" });
   });
 
-  it("App.tsx reads the session's workspace only through live and view, the names the filter knows", () => {
-    // A third name for the session state would hide a workspace-keyed effect
+  it("finds an opener keyed on a wake and, run on the wake's answer, it opens Agents and Files", () => {
+    const effects = workspaceLayoutEffects(`function App() {${WAKE_EFFECT}}`);
+    expect(effects.map((fx) => fx.deps)).toEqual([["wokenPath"]]);
+    const render = mount(effects);
+    const live = reduceAll(initialState, [connect]);
+    render(live);
+    let woken = reduceAll(initialState, [connect]);
+    render(live, woken);
+    expect(dock()).toEqual(CLOSED);
+    woken = reduceAll(woken, [resolved("s-498", "/work/stored")]);
+    render(live, woken);
+    expect(dock()).toEqual({ rightPanelOpen: true, dockFiles: "open" });
+  });
+
+  it("run on the real App.tsx with the wake opener put in, it selects that effect and it opens the dock", () => {
+    const anchor = APP.indexOf("  // A resolved workspace opens no panel (card 402");
+    expect(anchor).toBeGreaterThan(0);
+    const effects = workspaceLayoutEffects(APP.slice(0, anchor) + WAKE_EFFECT + APP.slice(anchor));
+    expect(effects.map((fx) => fx.deps)).toEqual([["wokenPath"]]);
+    const render = mount(effects);
+    const live = reduceAll(initialState, [connect]);
+    render(live, reduceAll(initialState, [connect]));
+    expect(dock()).toEqual(CLOSED);
+    render(live, reduceAll(initialState, [connect, resolved("s-498", "/work/stored")]));
+    expect(dock()).toEqual({ rightPanelOpen: true, dockFiles: "open" });
+  });
+
+  it("App.tsx reads the session's workspace only through live, view and a wake's record, the names the filter knows", () => {
+    // A fourth name for the session state would hide a workspace-keyed effect
     // from the selection, and every case below would pass on nothing.
     const owners = workspaceOwners(APP);
-    expect(owners.filter((owner) => READS_WORKSPACE.test(`${owner}.workspace`))).toEqual(["live", "view"]);
+    expect(owners.filter((owner) => READS_WORKSPACE.test(`${owner}.workspace`))).toEqual([
+      "live",
+      "view",
+      "wokenSlot?.state",
+    ]);
     // run is openImport's ImportedRunSummary: the folder an imported run
     // recorded, not the session's announcement.
-    expect(owners).toEqual(["live", "run", "view"]);
+    expect(owners).toEqual(["live", "run", "view", "wokenSlot?.state"]);
   });
 });
 
 describe("a resolved workspace leaves the dock closed (card 402)", () => {
-  it("selects no effect in App.tsx, so the two timeline cases below run none", () => {
+  it("selects no effect in App.tsx, so the three timeline cases below run none", () => {
     // Card 402 removed the only effect that read the workspace and called the layout store.
     expect(workspaceLayoutEffects(APP)).toEqual([]);
   });
@@ -306,6 +370,34 @@ describe("a resolved workspace leaves the dock closed (card 402)", () => {
       { step: "new chat, connect", resolved: false, path: undefined, ...CLOSED },
       { step: "new chat, first message", resolved: true, path: "/tmp/spectroscope-ws/s-403", ...CLOSED },
       { step: "resume an earlier session", resolved: true, path: "/tmp/spectroscope-ws/s-401", ...CLOSED },
+    ]);
+  });
+
+  it("a wake's answer leaves it closed too: a folder on disk and a folder that is gone (card 498)", () => {
+    const render = mount(workspaceLayoutEffects(APP));
+    const live = reduceAll(initialState, [connect]);
+    render(live);
+    const timeline: Record<string, unknown>[] = [];
+    const step = (name: string, woken: UiState | undefined): void => {
+      render(live, woken);
+      timeline.push({ step: name, path: woken?.workspace?.path, ...dock() });
+    };
+    step("the wake's socket connects", reduceAll(initialState, [connect]));
+    step(
+      "the wake names the stored folder",
+      reduceAll(initialState, [connect, resolved("s-498", "/work/stored")]),
+    );
+    step(
+      "another stored session, its folder gone",
+      reduceAll(initialState, [connect, gone("s-499", "/work/deleted")]),
+    );
+    step("the session leaves the screen, the wake is released", undefined);
+
+    expect(timeline).toEqual([
+      { step: "the wake's socket connects", path: undefined, ...CLOSED },
+      { step: "the wake names the stored folder", path: "/work/stored", ...CLOSED },
+      { step: "another stored session, its folder gone", path: undefined, ...CLOSED },
+      { step: "the session leaves the screen, the wake is released", path: undefined, ...CLOSED },
     ]);
   });
 });

@@ -104,14 +104,22 @@ describe("an alias points at the number it restates", () => {
     // gets the sentence a bare constant gets, with the whole expression as
     // the number to change, and never the literal sentence that says there
     // is no other constant behind it. The rows are taken from the registry by
-    // the shape of their expression, not by name.
+    // the shape of their expression, not by name. Card 490 added the offset
+    // shape, `SpectroConfig.DEFAULT_SESSIONS_PER_CHAT - 1`; a row of that
+    // shape stays in the cases, so the offset is checked even when the
+    // registry carries none.
     const namesAConstant = /(?<![\w$])[A-Za-z_$][\w$]*/;
     const named = registry.filter((n) => n.kind === "ALIAS" && namesAConstant.test(n.expression));
     expect(
       named.some((n) => /[*/]/.test(n.expression)),
       "the registry carries no alias that converts a constant, so this case checks nothing",
     ).toBe(true);
-    for (const number of named) {
+    const cases = [
+      ...named,
+      row({ kind: "ALIAS", expression: "Config.DEFAULT_COUNT - 1", key: "", unit: "COUNT" }),
+      row({ kind: "ALIAS", expression: "Config.DEFAULT_COUNT + 1", key: "", unit: "COUNT" }),
+    ];
+    for (const number of cases) {
       for (const lang of ["de", "en"] as const) {
         const text = governingPrompt(number, lang) as string;
         const asBare = governingPrompt({ ...number, expression: "Owner.CONSTANT" }, lang) as string;
@@ -140,6 +148,7 @@ describe("an alias points at the number it restates", () => {
       ...literals,
       row({ kind: "ALIAS", expression: "50_000", key: "", unit: "BYTES" }),
       row({ kind: "ALIAS", expression: "300 * 1000L", key: "", unit: "MILLISECONDS" }),
+      row({ kind: "ALIAS", expression: "3 - 1", key: "", unit: "COUNT" }),
     ];
     for (const number of cases) {
       for (const lang of ["de", "en"] as const) {

@@ -2,9 +2,16 @@ package dev.spectroscope.core.session;
 
 import dev.spectroscope.core.Agent;
 import dev.spectroscope.core.config.governing.Governs;
+import dev.spectroscope.core.provider.LlmProvider.DocumentContent;
+import dev.spectroscope.core.provider.LlmProvider.ImageContent;
+import dev.spectroscope.core.provider.LlmProvider.ProviderContent;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.function.IntSupplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Where the compaction trigger's number comes from (card 263) — the pure half,
@@ -116,6 +123,37 @@ public final class CompactionThreshold {
      *  fail the call. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
     static final int MIN_COMPLETION_TOKENS = 512;
+
+    /** What the input bound of {@link #completionBudget(Derived, int, int)}
+     *  keeps back beyond the estimated input (card 488): the tokens a backend
+     *  counts and the character estimate does not see, such as the chat
+     *  template's role markers, the wrapping of each tool definition and the
+     *  JSON framing. Measured on 2026-10-10 as the backend's count minus the
+     *  harness's chars/4 estimate: at most 16 on the scripted wire run, and
+     *  98 with one tool and 133 with the nine standard tools on the first
+     *  request of a live Ollama run with qwen2.5:7b, before the backend's own
+     *  count of an earlier request can raise the estimate. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
+    public static final int INPUT_RESERVE_TOKENS = 256;
+
+    /** What one image adds to a request's input estimate, whatever its size
+     *  in bytes: the most one image costs on any Claude model (the
+     *  high-resolution tier, 2,576 px on the long edge), from Anthropic's
+     *  vision documentation, read on 2026-10-10. A backend counts an image by
+     *  its pixels after its own resizing; counting its base64 characters over
+     *  four made one 1 MB screenshot read as 349,526 tokens. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
+    public static final int IMAGE_TOKENS = 4_784;
+
+    /** The text one PDF page adds to a request's input estimate, on top of
+     *  {@link #IMAGE_TOKENS} for the image of the page: the upper end of the
+     *  1,500 to 3,000 a page in Anthropic's PDF support documentation, read on
+     *  2026-10-10. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
+    public static final int PDF_PAGE_TEXT_TOKENS = 3_000;
+
+    /** A page object of a PDF; {@code /Type /Pages} is the page tree and does not count. */
+    private static final Pattern PDF_PAGE = Pattern.compile("/Type\\s*/Page(?![A-Za-z])");
 
     /** Which fact produced the threshold — carried on {@code context_info} so
      *  the gauge's divisor, caption and the harness's behaviour cannot
@@ -417,24 +455,25 @@ public final class CompactionThreshold {
      * The completion budget one request of a run is sent with (card 488),
      * from the derivation the run already compacts by.
      *
-     * <p>Where the window is known, two bounds apply and the lower wins:
-     * {@code window - threshold}, the reserve compaction keeps back, and
-     * {@code window - inputEstimate}, what the window has left after this
-     * request's input. The second decides only on a turn whose input has
-     * already passed the threshold, before compaction runs at the start of the
-     * next turn. Neither ever raises {@code maxTokens}.</p>
+     * <p>Where a window is known (see {@link #impliedWindow}), two bounds apply
+     * and the lower wins: {@code window - threshold}, the reserve compaction
+     * keeps back, and {@code window - inputEstimate - INPUT_RESERVE_TOKENS},
+     * what the window has left after this request's input and after the
+     * tokens the estimate does not see ({@link #INPUT_RESERVE_TOKENS}).
+     * Neither ever raises {@code maxTokens}.</p>
      *
      * <p>The turn loop and the compaction summarizer both read this method,
      * so every provider adapter receives a clamped {@code maxTokens} and none
      * computes the window on its own. An adapter's own ceiling (the
      * OpenAI-compatible path caps at 16,000) still applies on top.</p>
      *
-     * <p>A run whose window is unknown keeps {@code maxTokens}: there is
-     * nothing to hold it against. Under an explicit {@code compactionThreshold}
-     * the window is the published one, and the reserve bound applies like any
-     * other, except when the operator set the threshold at or above the
-     * window. That turns compaction off for the window and leaves no reserve
-     * to hand out, so only the input bound applies there.</p>
+     * <p>Every source is clamped, an explicit {@code compactionThreshold}
+     * included. Under one the backend is not asked for its window: a model
+     * with a published window keeps it, and where none is known the window
+     * is the one the threshold implies ({@link #impliedWindow}). An explicit threshold at
+     * or above a known window leaves no reserve, so the budget is the floor.
+     * Only a run that learned no window and has no explicit threshold keeps
+     * {@code maxTokens}: there is nothing to hold it against.</p>
      *
      * <p>A bound below {@link #MIN_COMPLETION_TOKENS}, zero and negative
      * included, is sent as that floor, unless {@code maxTokens} is lower
@@ -450,39 +489,118 @@ public final class CompactionThreshold {
      * @return the completion budget to put on the request
      */
     public static int completionBudget(Derived derived, int maxTokens, int inputEstimate) {
-        if (derived.window() <= 0) {
+        long window = impliedWindow(derived);
+        if (window <= 0) {
             return maxTokens;
         }
-        long budget = maxTokens;
-        boolean compactionOff = derived.source() == Source.OVERRIDE && derived.tokens() >= derived.window();
-        if (!compactionOff) {
-            budget = Math.min(budget, Math.max(MIN_COMPLETION_TOKENS, (long) derived.window() - derived.tokens()));
-        }
+        long budget = Math.min(maxTokens, Math.max(MIN_COMPLETION_TOKENS, window - derived.tokens()));
         if (inputEstimate > 0) {
-            budget = Math.min(budget, Math.max(MIN_COMPLETION_TOKENS, (long) derived.window() - inputEstimate));
+            budget = Math.min(budget, Math.max(MIN_COMPLETION_TOKENS,
+                    window - inputEstimate - INPUT_RESERVE_TOKENS));
         }
         return (int) budget;
     }
 
     /**
+     * The window a completion budget is held against: the window of the
+     * derivation when one is known, else, under an explicit
+     * {@code compactionThreshold}, the window that threshold is the
+     * conversation's share of (threshold times 10 / 7, rounded up), else 0.
+     *
+     * @param derived what {@link #derive} decided for this turn
+     * @return the window in tokens, or 0 when none is known or implied
+     */
+    public static int impliedWindow(Derived derived) {
+        if (derived.window() > 0) {
+            return derived.window();
+        }
+        if (derived.source() != Source.OVERRIDE) {
+            return 0;
+        }
+        long window = ((long) derived.tokens() * WINDOW_SHARE + CONVERSATION_SHARE - 1) / CONVERSATION_SHARE;
+        return (int) Math.min(Integer.MAX_VALUE, window);
+    }
+
+    /**
      * The input of a request in tokens, as the harness estimates it before
-     * sending: its characters divided by four, rounded up, or the density the
-     * backend reported for the previous request of the run when that is
-     * higher. A backend whose tokenizer counts more than one token per four
+     * sending: its text characters divided by four, rounded up, plus what its
+     * attachments add ({@link #attachmentTokens}). Where the backend reported
+     * the previous request of the run, its text density is used when that is
+     * higher: the reported count minus that request's attachment tokens, over
+     * its text characters. A backend that counts more than one token per four
      * characters raises the estimate; one that counts fewer never lowers it.
      *
-     * @param requestChars      the characters this request carries
-     * @param previousChars     the characters of the previous request, or 0
-     * @param previousReported  the input tokens the backend reported for it, or 0
+     * @param requestChars             the text characters this request carries
+     * @param attachmentTokens         the tokens its images and documents add
+     * @param previousChars            the text characters of the previous request, or 0
+     * @param previousAttachmentTokens the attachment tokens of the previous request
+     * @param previousReported         the input tokens the backend reported for it, or 0
+     * @return the estimate in tokens
+     */
+    public static int inputEstimate(long requestChars, int attachmentTokens, long previousChars,
+                                    int previousAttachmentTokens, int previousReported) {
+        long text = (requestChars + 3) / 4;
+        if (previousChars > 0 && previousReported > 0) {
+            long reportedText = Math.max(0, (long) previousReported - previousAttachmentTokens);
+            text = Math.max(text, (requestChars * reportedText + previousChars - 1) / previousChars);
+        }
+        return (int) Math.min(Integer.MAX_VALUE, text + Math.max(0, attachmentTokens));
+    }
+
+    /**
+     * {@link #inputEstimate(long, int, long, int, int)} for a request without
+     * attachments.
+     *
+     * @param requestChars     the characters this request carries
+     * @param previousChars    the characters of the previous request, or 0
+     * @param previousReported the input tokens the backend reported for it, or 0
      * @return the estimate in tokens
      */
     public static int inputEstimate(long requestChars, long previousChars, int previousReported) {
-        long estimate = (requestChars + 3) / 4;
-        if (previousChars > 0 && previousReported > 0) {
-            long scaled = (requestChars * previousReported + previousChars - 1) / previousChars;
-            estimate = Math.max(estimate, scaled);
+        return inputEstimate(requestChars, 0, previousChars, 0, previousReported);
+    }
+
+    /**
+     * What one content block adds to a request's input estimate beyond its
+     * characters: {@link #IMAGE_TOKENS} for an image; for a PDF, its pages
+     * times {@link #PDF_PAGE_TEXT_TOKENS} plus {@link #IMAGE_TOKENS}, at least
+     * one page; for another document, its decoded bytes over four. Text, tool
+     * calls and tool results add nothing here: their characters are counted.
+     *
+     * @param content one block of a provider message
+     * @return the tokens the block adds, 0 for a text block
+     */
+    public static int attachmentTokens(ProviderContent content) {
+        return switch (content) {
+            case ImageContent image -> IMAGE_TOKENS;
+            case DocumentContent document -> documentTokens(document);
+            default -> 0;
+        };
+    }
+
+    /**
+     * The tokens a document adds, per {@link #attachmentTokens}.
+     *
+     * @param document the document block
+     * @return its estimate in tokens
+     */
+    private static int documentTokens(DocumentContent document) {
+        byte[] bytes;
+        try {
+            bytes = Base64.getMimeDecoder().decode(document.dataBase64());
+        } catch (IllegalArgumentException notBase64) {
+            return (int) Math.min(Integer.MAX_VALUE, (document.dataBase64().length() + 3L) / 4);
         }
-        return (int) Math.min(Integer.MAX_VALUE, estimate);
+        if (!"application/pdf".equalsIgnoreCase(document.mediaType())) {
+            return (int) Math.min(Integer.MAX_VALUE, (bytes.length + 3L) / 4);
+        }
+        Matcher pages = PDF_PAGE.matcher(new String(bytes, StandardCharsets.ISO_8859_1));
+        long count = 0;
+        while (pages.find()) {
+            count++;
+        }
+        long tokens = Math.max(1, count) * (PDF_PAGE_TEXT_TOKENS + IMAGE_TOKENS);
+        return (int) Math.min(Integer.MAX_VALUE, tokens);
     }
 
     /**
