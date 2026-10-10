@@ -38,11 +38,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * after another" gives it the floor 2, so the pool lets one helper at a time
  * through. Every helper gets the bare pass's prompt as its task and the same
  * completion limit. By default the helpers carry no base tools, only the
- * {@code report_status} every helper has, so each one answers in one request
- * like the bare pass; {@value #TOOLS_ENV} set to {@code standard} gives them
- * the standard tools instead. The router times each helper request on the client side:
- * when it opens, when its first text arrives, when it closes, and the token
- * counts the server reports.</p>
+ * {@code report_status} every helper has, so a helper spends fewer requests on
+ * tools; a helper still often calls {@code report_status} first, so a cell
+ * makes n or more requests. {@value #TOOLS_ENV} set to {@code standard} gives
+ * them the standard tools instead. The router times each helper request on the
+ * client side: when it opens, when its first text arrives, when it closes, the
+ * token counts the server reports, and which turn of its helper it is (1 for
+ * the first request, one more for each assistant message the request
+ * carries).</p>
  *
  * <p>Writes the cells as JSON to the file named by {@value #OUT_ENV}, in the
  * shape {@code kanban/evidence/487/concurrency.py --mark} reads. Skipped
@@ -67,7 +70,8 @@ class ChatConcurrencyLiveTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** One helper request as the client saw it. */
-    private record Exchange(long sentNanos, long firstNanos, long doneNanos, int inputTokens, int outputTokens) {}
+    private record Exchange(long sentNanos, long firstNanos, long doneNanos, int inputTokens, int outputTokens,
+                            int helperTurn) {}
 
     /** Scripted parent, real helpers; every helper request is timed. */
     private static final class Router implements LlmProvider {
@@ -87,6 +91,8 @@ class ChatConcurrencyLiveTest {
                 return parentTurns.remove(0);
             }
             maxOpen.accumulateAndGet(open.incrementAndGet(), Math::max);
+            int turn = 1 + (int) request.messages().stream()
+                    .filter(m -> m.role() == ProviderMessage.Role.ASSISTANT).count();
             long sent = System.nanoTime();
             long first = -1;
             int in = 0;
@@ -106,7 +112,7 @@ class ChatConcurrencyLiveTest {
             } finally {
                 open.decrementAndGet();
             }
-            exchanges.add(new Exchange(sent, first, System.nanoTime(), in, out));
+            exchanges.add(new Exchange(sent, first, System.nanoTime(), in, out, turn));
             return events;
         }
     }
@@ -138,6 +144,8 @@ class ChatConcurrencyLiveTest {
                     assertEquals(atOnce ? n : 1, cell.get("most_open_at_once").asInt(),
                             "helper requests open at once, n=" + n + " " + cell.get("mode").asText());
                     assertEquals(n, cell.get("helpers_reported_back").asInt(), "not every helper reported back");
+                    assertEquals(n, firstRequests(cell), "each helper opens exactly one first request, n=" + n
+                            + " " + cell.get("mode").asText());
                     System.out.printf("round %d n=%d %-17s wall %.2fs requests %d%n", round, n,
                             cell.get("mode").asText(), cell.get("wall_seconds").asDouble(),
                             cell.get("requests").size());
@@ -149,6 +157,17 @@ class ChatConcurrencyLiveTest {
             Files.writeString(Path.of(target), JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root));
         }
         assertEquals(rounds * 6, cells.size(), "not every cell ran");
+    }
+
+    /** Requests of a cell that are a helper's first turn ({@code helper_turn} 1). */
+    private static long firstRequests(ObjectNode cell) {
+        long first = 0;
+        for (var r : cell.get("requests")) {
+            if (r.path("helper_turn").asInt() == 1) {
+                first++;
+            }
+        }
+        return first;
     }
 
     private ObjectNode runCell(String url, String model, int numPredict, int n, boolean atOnce, Path cwd,
@@ -219,6 +238,7 @@ class ChatConcurrencyLiveTest {
             r.put("prompt_tokens", e.inputTokens());
             r.put("output_tokens", e.outputTokens());
             r.put("tokens_per_second", e.outputTokens() / seconds);
+            r.put("helper_turn", e.helperTurn());
         }
         return cell;
     }
