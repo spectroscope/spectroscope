@@ -373,6 +373,25 @@ final class FakeCopilotRuntime implements AutoCloseable {
                     "finishReason", finishReason)));
         }
 
+        /**
+         * A usage event that also carries the AI credit fields of card 478's
+         * live event: {@code aiCreditsStatus}, {@code cost} (the premium request
+         * multiplier) and {@code copilotUsage.totalNanoAiu}.
+         */
+        void usageWithCredits(long input, long output, String creditsStatus, Double totalNanoAiu) {
+            ObjectNode data = object(Map.of("model", "claude-sonnet-5", "inputTokens", input,
+                    "outputTokens", output, "cacheReadTokens", 0L, "cacheWriteTokens", 0L,
+                    "finishReason", "stop", "cost", 1.0));
+            if (creditsStatus != null) {
+                data.put("aiCreditsStatus", creditsStatus);
+            }
+            if (totalNanoAiu != null) {
+                data.putObject("copilotUsage").put("model", "claude-sonnet-5").put("totalNanoAiu", totalNanoAiu)
+                        .putArray("tokenDetails");
+            }
+            event("assistant.usage", data);
+        }
+
         void message(String content, List<Map<String, Object>> toolRequests) {
             ObjectNode data = object(Map.of("messageId", "msg-1", "content", content));
             ArrayNode requests = data.putArray("toolRequests");

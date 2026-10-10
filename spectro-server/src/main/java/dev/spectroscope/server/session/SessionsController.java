@@ -468,6 +468,13 @@ public class SessionsController {
                         SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.anyPresent()));
                 continue;
             }
+            if (SpectroConfig.signsIn(p)) {
+                // Card 496: a provider that signs in reports the stored sign-in,
+                // read from the file alone: no runtime starts for a page load.
+                providerStatus.put(p, SpectroConfig.onboardingStatus(p,
+                        dev.spectroscope.core.copilot.CopilotAccount.forThisMachine().hasStoredSignIn()));
+                continue;
+            }
             String keyEnv = SpectroConfig.keyEnvFor(p);
             providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
         }
@@ -746,7 +753,8 @@ public class SessionsController {
      *         provider without a model list
      */
     static String modelWire(String provider, java.util.function.Predicate<String> openAiCompat) {
-        if ("anthropic".equals(provider) || "ollama".equals(provider)) {
+        if ("anthropic".equals(provider) || "ollama".equals(provider)
+                || dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER.equals(provider)) {
             return provider;
         }
         return provider != null && openAiCompat.test(provider) ? "openai" : null;
@@ -792,8 +800,37 @@ public class SessionsController {
         return switch (wire) {
             case "anthropic" -> anthropicModels();
             case "ollama" -> ollamaModels();
+            case dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER -> copilotModels();
             default -> openaiModels(provider);
         };
+    }
+
+    /**
+     * The Copilot runtime's own model list (card 496), in its order, asked
+     * through the provider the chats share, so the runtime it starts is the
+     * one a chat then uses. Empty without a stored sign-in, so a picker that
+     * only looks starts no runtime, and empty when the runtime is missing or
+     * refuses.
+     *
+     * @return the model ids, or an empty list
+     */
+    private List<String> copilotModels() {
+        dev.spectroscope.core.copilot.CopilotAccount account =
+                dev.spectroscope.core.copilot.CopilotAccount.forThisMachine();
+        if (!account.hasStoredSignIn()) {
+            return List.of();
+        }
+        try {
+            String cliPath = dev.spectroscope.core.copilot.CopilotRuntime.find(null).requirePath();
+            return account.shared(SpectroConfig.defaultModelFor(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER),
+                            cliPath)
+                    .models().stream()
+                    .map(dev.spectroscope.core.provider.CopilotProvider.CopilotModel::id)
+                    .toList();
+        } catch (RuntimeException unavailable) {
+            org.slf4j.LoggerFactory.getLogger(SessionsController.class).debug("copilot: no model list", unavailable);
+            return List.of();
+        }
     }
 
     /**

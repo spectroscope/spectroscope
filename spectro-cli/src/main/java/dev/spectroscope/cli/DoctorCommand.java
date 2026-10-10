@@ -3,7 +3,9 @@ package dev.spectroscope.cli;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import dev.spectroscope.core.copilot.CopilotAccount;
 import dev.spectroscope.core.copilot.CopilotRuntime;
+import dev.spectroscope.core.provider.CopilotProvider;
 import dev.spectroscope.core.local.LlamaServerBinary;
 import dev.spectroscope.core.local.LocalCatalog;
 import dev.spectroscope.core.local.LocalModel;
@@ -253,7 +255,9 @@ public final class DoctorCommand implements Callable<Integer> {
                         LocalCatalog.bundled().resolve(config.model()),
                         localModelFile(config.model())));
                 case COPILOT -> {
-                    // The runtime row below carries the verdict for this provider.
+                    // The runtime row below carries the runtime's verdict; the
+                    // sign-in is the other half (card 496).
+                    emit(List.of(copilotSignInLine(CopilotAccount.forThisMachine().status(), true)));
                 }
             }
         }
@@ -267,7 +271,8 @@ public final class DoctorCommand implements Callable<Integer> {
                         Duration.ofSeconds(10))
                 : Optional.empty();
         emit(List.of(copilotRuntimeLine(copilot, copilotVersion,
-                CopilotRuntime.PROVIDER.equals(config.provider()))));
+                CopilotRuntime.PROVIDER.equals(config.provider())),
+                copilotSdkLine(CopilotProvider.sdkVersion())));
 
         // Fleet hub — optional infrastructure: nodes are opt-in, so the lines
         // inform when the env names a hub and never fail the doctor.
@@ -454,8 +459,7 @@ public final class DoctorCommand implements Callable<Integer> {
         /** llama.cpp: ask {@code GET /health} whether it is ready, and
          *  {@code GET /props} what the loaded model's window is (card 312). */
         LLAMACPP,
-        /** Copilot: the runtime row decides (card 497); the sign-in line
-         *  follows with card 496. */
+        /** Copilot: the sign-in row (card 496) and the runtime row (card 497). */
         COPILOT
     }
 
@@ -487,6 +491,40 @@ public final class DoctorCommand implements Callable<Integer> {
                     .orElseGet(() -> new Line(problem, prefix + lookup.detail()
                             + ", but it did not report a version"));
         };
+    }
+
+    /**
+     * The row for the Copilot sign-in (card 496): signed in as the login, and
+     * through which sign-in, or not. It says nothing about tokens, and a
+     * missing sign-in is a verdict only when Copilot is the configured
+     * provider.
+     *
+     * @param status           what the machine's Copilot account reports
+     * @param providerSelected whether Copilot is the configured provider
+     * @return the row
+     */
+    static Line copilotSignInLine(CopilotAccount.Status status, boolean providerSelected) {
+        String prefix = CopilotRuntime.PROVIDER + " sign-in: ";
+        Kind problem = providerSelected ? Kind.FAIL : Kind.INFO;
+        return switch (status.state()) {
+            case SIGNED_IN -> new Line(Kind.PASS, prefix + "signed in as " + status.login()
+                    + ("cli".equals(status.method()) ? " (Copilot CLI sign-in)" : " (GitHub sign-in in spectroscope)"));
+            case WAITING -> new Line(Kind.INFO, prefix + "waiting for the code to be confirmed in the browser");
+            case REFUSED -> new Line(problem, prefix + "refused: " + status.message());
+            case NOT_SIGNED_IN -> new Line(problem, prefix + "not signed in. Sign in from the "
+                    + CopilotRuntime.PROVIDER + " provider in the model menu.");
+        };
+    }
+
+    /**
+     * The row naming the Copilot SDK version on the classpath (card 496).
+     *
+     * @param version what {@link CopilotProvider#sdkVersion()} read
+     * @return a note
+     */
+    static Line copilotSdkLine(Optional<String> version) {
+        return new Line(Kind.INFO, version.map(v -> "copilot sdk: copilot-sdk-java " + v)
+                .orElse("copilot sdk: version unknown"));
     }
 
     /**

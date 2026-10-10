@@ -7,6 +7,9 @@ import dev.spectroscope.core.provider.CopilotProvider;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -197,6 +200,8 @@ public final class CopilotAccount {
     private volatile CliAuth cliAuth;
     private volatile long cliAuthAt;
     private volatile String runRefusal;
+    private final Map<String, CopilotProvider> sharedProviders = new HashMap<>();
+    private Boolean sharedChoseCli;
 
     /**
      * An account over the given parts.
@@ -705,6 +710,63 @@ public final class CopilotAccount {
     }
 
     /**
+     * The provider every chat of this process shares for one model and one
+     * runtime (card 496). Each provider starts its own runtime process on
+     * first use and holds up to eight conversations, so handing a new one to
+     * every chat would start a runtime per chat and never stop it. A provider
+     * built under another credential choice (the user signed in, out, or
+     * switched between the app's sign-in and the CLI's) is closed and replaced
+     * on the next call; a chat that still holds it starts its runtime again on
+     * its next request.
+     *
+     * @param model   the model id
+     * @param cliPath the runtime
+     * @return the shared provider for this model, runtime and credential choice
+     */
+    public CopilotProvider shared(String model, String cliPath) {
+        boolean choseCli = choseCli();
+        List<CopilotProvider> stale = new ArrayList<>();
+        CopilotProvider provider;
+        synchronized (sharedProviders) {
+            if (sharedChoseCli != null && sharedChoseCli != choseCli) {
+                stale.addAll(sharedProviders.values());
+                sharedProviders.clear();
+            }
+            sharedChoseCli = choseCli;
+            provider = sharedProviders.computeIfAbsent(model + "\n" + cliPath, key -> provider(model, cliPath));
+        }
+        stale.forEach(CopilotProvider::close);
+        return provider;
+    }
+
+    /**
+     * Whether a sign-in is stored, read from the file alone (card 496). The
+     * runtime is not asked, so the answer is cheap enough for a status the app
+     * reads on every page load. It is the counterpart of "a key is set": the
+     * CLI choice counts as stored, and so does the app's own sign-in whose
+     * token has not expired or can be renewed.
+     *
+     * @return whether a sign-in is stored
+     */
+    public boolean hasStoredSignIn() {
+        Optional<CopilotCredentials.Stored> stored = loaded();
+        if (stored.isEmpty()) {
+            return false;
+        }
+        CopilotCredentials.Stored s = stored.get();
+        if (s.method() == CopilotCredentials.Method.CLI) {
+            return true;
+        }
+        long now = clock.instant().getEpochSecond();
+        boolean expired = s.accessExpiresAt() != 0 && s.accessExpiresAt() <= now;
+        return s.accessToken() != null && (!expired || refreshable(s, now));
+    }
+
+    private boolean choseCli() {
+        return loaded().map(s -> s.method() == CopilotCredentials.Method.CLI).orElse(false);
+    }
+
+    /**
      * The options a Copilot provider is built with.
      *
      * @param model   the model id
@@ -714,8 +776,7 @@ public final class CopilotAccount {
      *         token callback with the stored-login fallback off
      */
     public CopilotProvider.Options providerOptions(String model, String cliPath) {
-        boolean choseCli = loaded().map(s -> s.method() == CopilotCredentials.Method.CLI).orElse(false);
-        return choseCli
+        return choseCli()
                 ? new CopilotProvider.Options(model, cliPath, null, true)
                 : new CopilotProvider.Options(model, cliPath, tokenSource(), false);
     }

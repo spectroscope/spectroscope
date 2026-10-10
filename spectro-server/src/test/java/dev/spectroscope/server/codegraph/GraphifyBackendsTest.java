@@ -59,8 +59,9 @@ class GraphifyBackendsTest {
         assertEquals(SpectroConfig.knownProviders(), both,
                 "the sheet's list is the harness's own list, every name accounted for");
         assertTrue(offered.stream().noneMatch(leftOut::containsKey), "a provider is offered or left out, never both");
-        assertEquals(Map.of("spectro-local", GraphifyBackends.NO_ADDRESS), leftOut,
-                "the bundled runtime is a subprocess with no address graphify could dial");
+        assertEquals(Map.of("spectro-local", GraphifyBackends.NO_ADDRESS,
+                        "copilot", GraphifyBackends.NO_ADDRESS), leftOut,
+                "the bundled runtime and the Copilot runtime are subprocesses with no address graphify could dial");
     }
 
     @Test
@@ -89,6 +90,7 @@ class GraphifyBackendsTest {
 
         assertEquals("openai", added.backend());
         assertEquals(Map.of("spectro-local", GraphifyBackends.NO_ADDRESS,
+                        "copilot", GraphifyBackends.NO_ADDRESS,
                         "newsubprocess", GraphifyBackends.NO_ADDRESS),
                 GraphifyBackends.leftOut(harness, openAiCompat));
     }

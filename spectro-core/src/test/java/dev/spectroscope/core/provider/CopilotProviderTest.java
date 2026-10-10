@@ -45,6 +45,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -127,6 +128,56 @@ class CopilotProviderTest {
                 new PStop(PStop.StopReason.END_TURN)), events);
         assertEquals(1, stops(events));
         assertEquals("Say hello.", runtime.requests("session.send").getFirst().path("prompt").asText());
+    }
+
+    // ---- card 496: AI credits ------------------------------------------------
+
+    @Test
+    void aCompleteUsageEventCarriesItsAiCreditsAsTotalNanoAiuOverOneBillion() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("Hi");
+            // card 478's live event: 1.03609E9 nano units, status complete, cost 1.0
+            turn.usageWithCredits(5294, 34, "complete", 1.03609E9);
+            turn.message("Hi", List.of());
+            turn.idle();
+        });
+
+        PUsage usage = usageOf(drain(provider.stream(ask(List.of(user("Hi.")), List.of(), new CancelSignal()))));
+
+        assertEquals(1.03609, usage.aiCredits().doubleValue(), 1e-9);
+    }
+
+    @Test
+    void noCreditsAreClaimedWhenTheRuntimeSaysTheyAreIncompleteOrSendsNone() throws Exception {
+        for (String status : new String[] {"partial", "unavailable"}) {
+            start("claude-sonnet-5");
+            runtime.onSend(turn -> {
+                turn.delta("Hi");
+                turn.usageWithCredits(10, 1, status, 5.0E8);
+                turn.message("Hi", List.of());
+                turn.idle();
+            });
+            PUsage usage = usageOf(drain(provider.stream(ask(List.of(user("Hi.")), List.of(),
+                    new CancelSignal()))));
+            assertNull(usage.aiCredits(), status + " credits are not a number to show");
+            provider.close();
+            runtime.close();
+        }
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("Hi");
+            turn.usageWithCredits(10, 1, null, null);
+            turn.message("Hi", List.of());
+            turn.idle();
+        });
+        PUsage none = usageOf(drain(provider.stream(ask(List.of(user("Hi.")), List.of(), new CancelSignal()))));
+        assertNull(none.aiCredits(), "no copilotUsage, no credits");
+        assertEquals(10, none.inputTokens(), "the tokens still arrive");
+    }
+
+    private static PUsage usageOf(List<ProviderEvent> events) {
+        return events.stream().filter(e -> e instanceof PUsage).map(e -> (PUsage) e).findFirst().orElseThrow();
     }
 
     @Test

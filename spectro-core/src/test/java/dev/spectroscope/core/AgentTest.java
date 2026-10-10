@@ -687,6 +687,34 @@ class AgentTest {
     }
 
     @Test
+    void aiCreditsRideTheUsageEventAdditivelyAndStayOffTheLineWhenUnreported() throws Exception {
+        // Card 496: Copilot reports what a model call cost in AI credits.
+        FakeProvider withCredits = FakeProvider.scripted(
+                List.of(new LlmProvider.PTextDelta("hi"),
+                        new LlmProvider.PUsage(3897, 34, 1397, 0, 1.03609),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        RunEvent.Usage billed = collect(agentWith(withCredits, null, null)).stream()
+                .filter(RunEvent.Usage.class::isInstance)
+                .map(RunEvent.Usage.class::cast)
+                .findFirst().orElseThrow();
+        assertEquals(1.03609, billed.aiCredits().doubleValue(), 1e-9);
+        assertTrue(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(billed)
+                .contains("\"aiCredits\":1.03609"));
+
+        FakeProvider without = FakeProvider.scripted(
+                List.of(new LlmProvider.PTextDelta("hi"),
+                        new LlmProvider.PUsage(297, 49, 0, 0),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        RunEvent.Usage plain = collect(agentWith(without, null, null)).stream()
+                .filter(RunEvent.Usage.class::isInstance)
+                .map(RunEvent.Usage.class::cast)
+                .findFirst().orElseThrow();
+        assertNull(plain.aiCredits());
+        assertFalse(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(plain)
+                .contains("aiCredits"), "a provider that reports no credits writes the old line");
+    }
+
+    @Test
     void usageWithoutCacheTokensStaysByteIdenticalToTheLegacyShape() {
         // Ollama/openai never report cache counts — their sessions must keep
         // writing EXACTLY the old line (the additive fields stay absent).

@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -464,6 +465,56 @@ class CopilotAccountTest {
             assertFalse(options.useStoredLogin(), "the CLI and gh fallback stay off");
             assertEquals("/x/copilot", options.cliPath());
         }
+    }
+
+    // ---- card 496: one provider per model and runtime, and a cheap stored check ---------
+
+    @Test
+    void theSharedProviderIsOnePerModelAndRuntime() throws Exception {
+        CopilotProvider first = account.shared("auto", "/x/copilot");
+
+        assertSame(first, account.shared("auto", "/x/copilot"), "a second chat reuses the runtime");
+        assertNotSame(first, account.shared("claude-sonnet-5", "/x/copilot"));
+        assertNotSame(first, account.shared("auto", "/y/copilot"));
+        assertNotNull(first.options().tokenSource(), "built with the account's credential choice");
+    }
+
+    @Test
+    void aChangedCredentialChoiceHandsOutANewSharedProvider() throws Exception {
+        FakeCli cli = new FakeCli();
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        account = account(cli);
+        CopilotProvider beforeSignIn = account.shared("auto", "/x/copilot");
+
+        account.signInWithCli();
+        CopilotProvider afterSignIn = account.shared("auto", "/x/copilot");
+
+        assertNotSame(beforeSignIn, afterSignIn, "the CLI choice needs a provider with the stored login");
+        assertTrue(afterSignIn.options().useStoredLogin());
+        account.signOut();
+        CopilotProvider afterSignOut = account.shared("auto", "/x/copilot");
+        assertNotSame(afterSignIn, afterSignOut);
+        assertFalse(afterSignOut.options().useStoredLogin());
+    }
+
+    @Test
+    void theStoredSignInIsReadWithoutAskingTheRuntime() throws Exception {
+        FakeCli cli = new FakeCli();
+        account = account(cli);
+        assertFalse(account.hasStoredSignIn(), "nothing stored");
+
+        cli.auth.set(new CopilotAccount.CliAuth(true, "user", "octo-fixture", null));
+        account.signInWithCli();
+        cli.auth.set(null);
+        assertTrue(account.hasStoredSignIn(), "the CLI choice is stored; the runtime is not asked");
+
+        account.signOut();
+        assertFalse(account.hasStoredSignIn());
+        account = account(null);
+        signInAs("octo-fixture", "gho_fixtureAccess", 28_800, null);
+        assertTrue(account.hasStoredSignIn());
+        clock.epochSecond.addAndGet(28_801);
+        assertFalse(account.hasStoredSignIn(), "an expired token without a refresh token is no sign-in");
     }
 
     // ---- the Copilot CLI's own sign-in ----------------------------------------------------

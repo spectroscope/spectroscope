@@ -355,9 +355,23 @@ public interface LlmProvider {
      *  @param outputTokens        the completion token count
      *  @param cacheReadTokens     tokens served from the prompt cache (0 without caching)
      *  @param cacheCreationTokens tokens freshly written into the prompt cache (0 without caching)
+     *  @param aiCredits           what the call cost in GitHub AI credits, when the provider
+     *                             reports it (Copilot, card 496); null otherwise
      */
     record PUsage(int inputTokens, int outputTokens,
-                  int cacheReadTokens, int cacheCreationTokens) implements ProviderEvent {
+                  int cacheReadTokens, int cacheCreationTokens, Double aiCredits) implements ProviderEvent {
+        /**
+         * The shape of every provider that reports no AI credits.
+         *
+         * @param inputTokens         prompt tokens no cache served
+         * @param outputTokens        the completion token count
+         * @param cacheReadTokens     tokens served from the prompt cache
+         * @param cacheCreationTokens tokens freshly written into the prompt cache
+         */
+        public PUsage(int inputTokens, int outputTokens, int cacheReadTokens, int cacheCreationTokens) {
+            this(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, null);
+        }
+
         /**
          * Compat: no cache tokens (ollama, and any endpoint whose response
          * reports no cached count).

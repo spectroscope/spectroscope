@@ -152,6 +152,10 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      */
     static final Set<String> AUTH_ERRORS = Set.of("authentication", "authorization");
 
+    /** Nano-AI units in one AI credit: the SDK's usage-and-billing page (read 2026-10-10). */
+    @Governs(kind = Governs.Kind.FOREIGN_CONTRACT, unit = Governs.Unit.RATIO)
+    static final double NANO_PER_CREDIT = 1e9;
+
     private static final ObjectMapper JSON = new ObjectMapper()
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -320,6 +324,46 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      * Visible for the fake-runtime tests: {@code cliUrl} connects to a runtime
      * that is already listening instead of starting one.
      */
+    /**
+     * The version of the Copilot SDK on the classpath, read from the
+     * {@code pom.properties} its jar carries (card 496, for the doctor).
+     *
+     * @return the version, or empty when the jar does not say
+     */
+    public static java.util.Optional<String> sdkVersion() {
+        try (java.io.InputStream in = CopilotClient.class.getResourceAsStream(
+                "/META-INF/maven/com.github/copilot-sdk-java/pom.properties")) {
+            if (in == null) {
+                return java.util.Optional.empty();
+            }
+            java.util.Properties properties = new java.util.Properties();
+            properties.load(in);
+            String version = properties.getProperty("version");
+            return version == null || version.isBlank() ? java.util.Optional.empty()
+                    : java.util.Optional.of(version.trim());
+        } catch (java.io.IOException unreadable) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
+     * What one model call cost in GitHub AI credits, or null (card 496). The
+     * SDK's usage-and-billing page calls {@code totalNanoAiu} the AI credit
+     * cost in nano-AI units and divides by 1e9 for credits (read 2026-10-10);
+     * card 478's live event checks out at that factor against GitHub's price
+     * list. Only a cost the runtime calls {@code complete} is a number to show:
+     * {@code partial} and {@code unavailable} are not. {@code cost}, the
+     * premium request multiplier, is never read.
+     */
+    static Double aiCredits(com.github.copilot.generated.AiCreditsStatus status,
+                            com.github.copilot.generated.AssistantUsageCopilotUsage usage) {
+        if (status != com.github.copilot.generated.AiCreditsStatus.COMPLETE || usage == null
+                || usage.totalNanoAiu() == null) {
+            return null;
+        }
+        return usage.totalNanoAiu() / NANO_PER_CREDIT;
+    }
+
     /** {@return what this provider was built from} */
     public Options options() {
         return options;
@@ -1150,7 +1194,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                         int cacheRead = count(data.cacheReadTokens());
                         // The Copilot wire counts cached tokens inside inputTokens (card 468 takes them out).
                         pending.add(new PUsage(Math.max(0, count(data.inputTokens()) - cacheRead),
-                                count(data.outputTokens()), cacheRead, count(data.cacheWriteTokens())));
+                                count(data.outputTokens()), cacheRead, count(data.cacheWriteTokens()),
+                                aiCredits(data.aiCreditsStatus(), data.copilotUsage())));
                         finishReason = data.finishReason();
                     }
                 }

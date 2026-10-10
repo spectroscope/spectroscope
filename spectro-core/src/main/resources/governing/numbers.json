@@ -921,6 +921,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "NANO_PER_CREDIT",
+    "value" : "1.0E9",
+    "expression" : "1e9",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "Nano-AI units in one AI credit: the SDK's usage-and-billing page (read 2026-10-10)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
     "field" : "PING_TIMEOUT_MS",
     "value" : "2000",
     "expression" : "2_000",
