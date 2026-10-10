@@ -12,11 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -107,44 +103,24 @@ public class BundleController {
         if (files == null) {
             return ResponseEntity.status(404).body(Map.of("message", "Unknown bundle: " + id));
         }
-        Path dir = Path.of(dirText);
-        if (!Files.isDirectory(dir)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Not a folder: " + dirText));
-        }
-        Path root = dir.toAbsolutePath().normalize();
-
-        // First pass: resolve every target, reject any path escaping the folder,
-        // and refuse to overwrite an existing file — nothing is written yet.
-        Map<Path, String> targets = new java.util.LinkedHashMap<>();
-        List<String> conflicts = new ArrayList<>();
-        for (Map.Entry<String, String> entry : files.entrySet()) {
-            Path target = root.resolve(entry.getKey()).normalize();
-            if (!target.startsWith(root)) {
-                return ResponseEntity.badRequest().body(Map.of("message", "Refusing a path outside the folder: " + entry.getKey()));
-            }
-            if (Files.exists(target)) {
-                conflicts.add(entry.getKey());
-            }
-            targets.put(target, entry.getValue());
-        }
-        if (!conflicts.isEmpty()) {
-            return ResponseEntity.status(409).body(Map.of(
-                    "message", "Some files already exist in the folder — nothing was written.",
-                    "conflicts", conflicts));
-        }
-
-        // Second pass: write. (A partial failure is reported honestly.)
-        List<String> written = new ArrayList<>();
-        try {
-            for (Map.Entry<Path, String> entry : targets.entrySet()) {
-                Files.createDirectories(entry.getKey().getParent());
-                Files.writeString(entry.getKey(), entry.getValue(), StandardCharsets.UTF_8);
-                written.add(root.relativize(entry.getKey()).toString());
-            }
-        } catch (IOException failure) {
-            return ResponseEntity.status(500).body(Map.of(
-                    "message", "Failed to write the bundle: " + failure.getMessage(), "written", written));
-        }
-        return ResponseEntity.ok(Map.of("dir", root.toString(), "written", written));
+        FolderWriter.Planned planned = FolderWriter.plan(Path.of(dirText), files, false);
+        FolderWriter.Result result = planned instanceof FolderWriter.Ready ready
+                ? FolderWriter.write(ready)
+                : ((FolderWriter.Refused) planned).result();
+        return switch (result) {
+            case FolderWriter.Written w -> ResponseEntity.ok(Map.of("dir", w.dir(), "written", w.written()));
+            case FolderWriter.NotAFolder n ->
+                    ResponseEntity.badRequest().body(Map.of("message", "Not a folder: " + dirText));
+            case FolderWriter.Escape e ->
+                    ResponseEntity.badRequest().body(Map.of("message", "Refusing a path outside the folder: " + e.key()));
+            case FolderWriter.Conflicts c when c.written().isEmpty() -> ResponseEntity.status(409).body(Map.of(
+                    "message", "Some files already exist in the folder \u2014 nothing was written.",
+                    "conflicts", c.conflicts()));
+            case FolderWriter.Conflicts c -> ResponseEntity.status(409).body(Map.of(
+                    "message", "A file appeared in the folder while writing. The files under written were written before it.",
+                    "conflicts", c.conflicts(), "written", c.written()));
+            case FolderWriter.Failed f -> ResponseEntity.status(500).body(Map.of(
+                    "message", "Failed to write the bundle: " + f.message(), "written", f.written()));
+        };
     }
 }
