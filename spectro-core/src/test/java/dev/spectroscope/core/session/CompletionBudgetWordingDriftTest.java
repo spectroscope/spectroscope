@@ -38,7 +38,7 @@ class CompletionBudgetWordingDriftTest {
 
     private static final String DICT = "spectro-web/src/i18n/i18n.ts";
     private static final String GUIDE = "docs/guide-assets/parts/18-ref-config-build.html";
-    private static final String NOTES = "release-notes/v0.15.0-local-copilot.md";
+    private static final String NOTES = "release-notes/v0.15.0.md";
     private static final String OPTIONS =
             "spectro-core/src/main/java/dev/spectroscope/core/AgentOptions.java";
 
