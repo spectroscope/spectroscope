@@ -339,6 +339,7 @@ describe("the switch Project or Playbook", () => {
     expect(out).toContain(dict["lyzr.playbookOnlyHint"].en);
     expect(out).not.toContain(dict["lyzr.playbookDirHint"].en);
     expect(out).toMatch(GENERATE);
+    expect(out).toMatch(GENERATE_OFF);
   });
 
   it("does not offer the project folder's sibling as a playbook folder on Playbook", async () => {
