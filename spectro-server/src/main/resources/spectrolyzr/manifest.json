@@ -793,6 +793,78 @@
           }
         }
       ]
+    },
+    {
+      "id": "spectro-playbook-claude",
+      "when": {
+        "addon": "spectro-playbook"
+      },
+      "root": "project",
+      "append": [
+        {
+          "path": "CLAUDE.md",
+          "template": "common/playbook/CLAUDE.append.tmpl"
+        }
+      ]
+    },
+    {
+      "id": "spectro-playbook",
+      "when": {
+        "addon": "spectro-playbook"
+      },
+      "root": "playbook",
+      "import": {
+        "from": "bundled-playbooks/spectro/",
+        "set_json": {
+          "playbook.json": {
+            "/vars/test": "@@check_command@@"
+          }
+        },
+        "why_by_prefix": [
+          {
+            "prefix": "playbook.json",
+            "why": {
+              "en": "The way of working the agent follows in this project, with a model per step and handover documents.",
+              "de": "Die Arbeitsweise, der der Agent in diesem Projekt folgt, mit einem Modell je Schritt und Übergabedokumenten."
+            }
+          },
+          {
+            "prefix": "LICENSE",
+            "why": {
+              "en": "The licence of the bundled skills, which travels with every copy.",
+              "de": "Die Lizenz der mitgelieferten Skills, die mit jeder Kopie mitgeht."
+            }
+          },
+          {
+            "prefix": "PROVENANCE.md",
+            "why": {
+              "en": "Where the skills come from and how they were changed for spectroscope.",
+              "de": "Woher die Skills stammen und wie sie für spectroscope geändert wurden."
+            }
+          },
+          {
+            "prefix": "docs/",
+            "why": {
+              "en": "A page that shows the steps, models and documents of the playbook in any browser.",
+              "de": "Eine Seite, die Schritte, Modelle und Dokumente des Playbooks in jedem Browser zeigt."
+            }
+          },
+          {
+            "prefix": "skills/",
+            "why": {
+              "en": "A spectropowers skill, or a file of one, that a step of the playbook loads.",
+              "de": "Ein spectropowers-Skill oder eine Datei daraus, die ein Schritt des Playbooks lädt."
+            }
+          },
+          {
+            "prefix": "templates/",
+            "why": {
+              "en": "The template of a document that one step writes and the next step reads.",
+              "de": "Die Vorlage eines Dokuments, das ein Schritt schreibt und der nächste liest."
+            }
+          }
+        ]
+      }
     }
   ]
 }
