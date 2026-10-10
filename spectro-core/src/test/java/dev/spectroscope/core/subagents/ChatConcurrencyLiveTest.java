@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -36,7 +37,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * of n + 1, so all n helpers hold a slot of card 490's pool together; "one
  * after another" gives it the floor 2, so the pool lets one helper at a time
  * through. Every helper gets the bare pass's prompt as its task and the same
- * completion limit. The router times each helper request on the client side:
+ * completion limit. By default the helpers carry no base tools, only the
+ * {@code report_status} every helper has, so each one answers in one request
+ * like the bare pass; {@value #TOOLS_ENV} set to {@code standard} gives them
+ * the standard tools instead. The router times each helper request on the client side:
  * when it opens, when its first text arrives, when it closes, and the token
  * counts the server reports.</p>
  *
@@ -54,6 +58,7 @@ class ChatConcurrencyLiveTest {
     static final String OUT_ENV = "SPECTRO_CONCURRENCY_OUT";
     static final String ROUNDS_ENV = "SPECTRO_CONCURRENCY_ROUNDS";
     static final String NUM_PREDICT_ENV = "SPECTRO_CONCURRENCY_NUM_PREDICT";
+    static final String TOOLS_ENV = "SPECTRO_CONCURRENCY_TOOLS";
 
     /** The bare pass's prompt, word for word ({@code concurrency.py}, PROMPT). */
     static final String PROMPT = "Write the whole numbers from one to one thousand in English words, "
@@ -69,6 +74,8 @@ class ChatConcurrencyLiveTest {
         final LlmProvider real;
         final List<List<ProviderEvent>> parentTurns = new CopyOnWriteArrayList<>();
         final List<Exchange> exchanges = new CopyOnWriteArrayList<>();
+        final AtomicInteger open = new AtomicInteger();
+        final AtomicInteger maxOpen = new AtomicInteger();
 
         Router(LlmProvider real) {
             this.real = real;
@@ -79,20 +86,25 @@ class ChatConcurrencyLiveTest {
             if (!request.system().contains("subagent")) {
                 return parentTurns.remove(0);
             }
+            maxOpen.accumulateAndGet(open.incrementAndGet(), Math::max);
             long sent = System.nanoTime();
             long first = -1;
             int in = 0;
             int out = 0;
             List<ProviderEvent> events = new ArrayList<>();
-            for (ProviderEvent event : real.stream(request)) {
-                if (first < 0 && event instanceof PTextDelta delta && !delta.text().isEmpty()) {
-                    first = System.nanoTime();
+            try {
+                for (ProviderEvent event : real.stream(request)) {
+                    if (first < 0 && event instanceof PTextDelta delta && !delta.text().isEmpty()) {
+                        first = System.nanoTime();
+                    }
+                    if (event instanceof PUsage usage) {
+                        in += usage.inputTokens();
+                        out += usage.outputTokens();
+                    }
+                    events.add(event);
                 }
-                if (event instanceof PUsage usage) {
-                    in += usage.inputTokens();
-                    out += usage.outputTokens();
-                }
-                events.add(event);
+            } finally {
+                open.decrementAndGet();
             }
             exchanges.add(new Exchange(sent, first, System.nanoTime(), in, out));
             return events;
@@ -106,20 +118,26 @@ class ChatConcurrencyLiveTest {
         int rounds = Integer.parseInt(System.getenv().getOrDefault(ROUNDS_ENV, "3"));
         int numPredict = Integer.parseInt(System.getenv().getOrDefault(NUM_PREDICT_ENV, "256"));
         Path cwd = Files.createTempDirectory("card487");
+        boolean standardTools = "standard".equals(System.getenv(TOOLS_ENV));
 
         ObjectNode root = JSON.createObjectNode();
         ObjectNode meta = root.putObject("meta");
         meta.put("url", url).put("model", model).put("num_predict", numPredict).put("prompt", PROMPT)
-                .put("rounds", rounds).put("pass", "harness: scripted parent, explore helpers, card 490 pool");
+                .put("rounds", rounds).put("pass", "harness: scripted parent, explore helpers, card 490 pool")
+                .put("base_tools", standardTools ? "standard" : "none");
         ArrayNode cells = root.putArray("cells");
 
         for (int round = 1; round <= rounds; round++) {
             for (int n = 1; n <= 3; n++) {
                 boolean[] order = (round - 1 + n) % 2 == 0 ? new boolean[] {false, true} : new boolean[] {true, false};
                 for (boolean atOnce : order) {
-                    ObjectNode cell = runCell(url, model, numPredict, n, atOnce, cwd);
+                    ObjectNode cell = runCell(url, model, numPredict, n, atOnce, cwd, standardTools);
                     cell.put("round", round);
                     cells.add(cell);
+                    // The pool lets exactly n helpers to the model at once, or one at a time.
+                    assertEquals(atOnce ? n : 1, cell.get("most_open_at_once").asInt(),
+                            "helper requests open at once, n=" + n + " " + cell.get("mode").asText());
+                    assertEquals(n, cell.get("helpers_reported_back").asInt(), "not every helper reported back");
                     System.out.printf("round %d n=%d %-17s wall %.2fs requests %d%n", round, n,
                             cell.get("mode").asText(), cell.get("wall_seconds").asDouble(),
                             cell.get("requests").size());
@@ -133,8 +151,8 @@ class ChatConcurrencyLiveTest {
         assertEquals(rounds * 6, cells.size(), "not every cell ran");
     }
 
-    private ObjectNode runCell(String url, String model, int numPredict, int n, boolean atOnce, Path cwd)
-            throws IOException {
+    private ObjectNode runCell(String url, String model, int numPredict, int n, boolean atOnce, Path cwd,
+                               boolean standardTools) throws IOException {
         int count = atOnce ? n + 1 : SessionCount.floor();
         Router router = new Router(new OllamaProvider(new OllamaOptions(url, model)));
         ArrayNode agents = JSON.createArrayNode();
@@ -154,7 +172,7 @@ class ChatConcurrencyLiveTest {
                 .cwd(cwd)
                 .parentAgentId("main")
                 .onPermission(request -> false)
-                .baseTools(StandardTools.all())
+                .baseTools(standardTools ? StandardTools.all() : List.of())
                 .maxTokens(numPredict)
                 .sessionsPerChat(count)
                 .build());
@@ -186,6 +204,7 @@ class ChatConcurrencyLiveTest {
                 .put("sessions_per_chat", count).put("helpers_reported_back", results)
                 .put("epoch_start", epochStart).put("epoch_end", epochStart + wall)
                 .put("wall_seconds", wall);
+        cell.put("most_open_at_once", router.maxOpen.get());
         ArrayNode requests = cell.putArray("requests");
         for (Exchange e : router.exchanges) {
             double seconds = (e.doneNanos() - e.sentNanos()) / 1e9;
