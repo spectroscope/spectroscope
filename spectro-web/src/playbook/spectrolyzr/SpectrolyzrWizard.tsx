@@ -17,7 +17,8 @@ import {
   useLyzr,
   type LyzrChoices,
 } from "../../state/spectrolyzr";
-import { effectivePlaybookDir, PLAYBOOK_ADDON, StepAddons } from "./StepAddons";
+import { effectivePlaybookDir, PLAYBOOK_ADDON } from "./folders";
+import { StepAddons } from "./StepAddons";
 import { StepProject } from "./StepProject";
 import { StepReview } from "./StepReview";
 

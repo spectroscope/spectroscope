@@ -19,6 +19,7 @@ import {
   type LyzrCatalog,
   type LyzrPreview,
 } from "../../state/spectrolyzr";
+import { followingPlaybookDir } from "./folders";
 import { SpectrolyzrWizard } from "./SpectrolyzrWizard";
 
 const CATALOG: LyzrCatalog = {
@@ -301,5 +302,35 @@ describe("the language", () => {
       expect(step3, k).toContain(dict[k].de);
     expect(step3).toContain(PREVIEW.files[0].why.de);
     expect(step3).not.toContain(PREVIEW.files[0].why.en);
+  });
+});
+
+describe("the playbook folder", () => {
+  const base = {
+    archetype: "service",
+    language: "java",
+    addons: ["spectro-playbook"],
+    name: "ledger-api",
+    dir: "/w/a/ledger-api",
+    playbookDir: "",
+  };
+
+  it("follows the project folder while it holds the suggestion", () => {
+    const held = { ...base, playbookDir: "/w/a/ledger-api-playbook" };
+    expect(followingPlaybookDir(held, { dir: "/w/b/ledger-lib" })).toEqual({
+      dir: "/w/b/ledger-lib",
+      playbookDir: "/w/b/ledger-api-playbook",
+    });
+    expect(followingPlaybookDir(held, { name: "ledger-lib" })).toEqual({
+      name: "ledger-lib",
+      playbookDir: "/w/a/ledger-lib-playbook",
+    });
+  });
+
+  it("keeps a folder the owner typed, and an empty one", () => {
+    expect(followingPlaybookDir({ ...base, playbookDir: "/elsewhere/pb" }, { dir: "/w/b/x" })).toEqual({
+      dir: "/w/b/x",
+    });
+    expect(followingPlaybookDir(base, { dir: "/w/b/x" })).toEqual({ dir: "/w/b/x" });
   });
 });

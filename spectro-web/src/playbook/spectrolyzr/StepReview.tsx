@@ -8,7 +8,7 @@ import { t, type Lang } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 import { choose, useLyzr, type LyzrFile, type LyzrResult } from "../../state/spectrolyzr";
 import { FileTree, fileKey } from "./FileTree";
-import { effectivePlaybookDir, PLAYBOOK_ADDON } from "./StepAddons";
+import { effectivePlaybookDir, followingPlaybookDir, PLAYBOOK_ADDON } from "./folders";
 import { FieldError, mark, type Invalid } from "./StepProject";
 
 function copy(dir: string): void {
@@ -101,7 +101,7 @@ export function StepReview({
       const res = await fetch("/api/pick-workspace", { method: "POST" });
       if (res.status === 200) {
         const { path } = (await res.json()) as { path: string };
-        choose({ dir: path });
+        choose(followingPlaybookDir(choices, { dir: path }));
       } else if (res.status === 409) {
         setPickNote(t(lang, "lyzr.pickBusy"));
       } else if (res.status !== 204) {
@@ -166,7 +166,7 @@ export function StepReview({
             placeholder={t(lang, "lyzr.typePath")}
             spellCheck={false}
             autoComplete="off"
-            onChange={(e) => choose({ dir: e.target.value })}
+            onChange={(e) => choose(followingPlaybookDir(choices, { dir: e.target.value }))}
           />
         </label>
         <button type="button" className="lyzr-pick" onClick={() => void pick()}>

@@ -4,16 +4,9 @@
 
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
-import { choose, suggestPlaybookDir, useLyzr, type LyzrChoices } from "../../state/spectrolyzr";
+import { choose, useLyzr } from "../../state/spectrolyzr";
+import { effectivePlaybookDir, PLAYBOOK_ADDON } from "./folders";
 import { FieldError, mark, type Invalid } from "./StepProject";
-
-/** The id of the add-on that writes the spectro playbook. */
-export const PLAYBOOK_ADDON = "spectro-playbook";
-
-/** The playbook folder the wizard sends: the one typed, else the sibling of the project folder. */
-export function effectivePlaybookDir(c: LyzrChoices): string {
-  return c.playbookDir !== "" ? c.playbookDir : suggestPlaybookDir(c.dir, c.name);
-}
 
 /** The add-ons and the playbook folder. */
 export function StepAddons({ invalid }: { invalid: Invalid }) {

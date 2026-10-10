@@ -4,6 +4,7 @@
 import { t } from "../../i18n/i18n";
 import { useLang } from "../../state/lang";
 import { choose, nameUsable, useLyzr } from "../../state/spectrolyzr";
+import { followingPlaybookDir } from "./folders";
 
 /** The field a 400 answer named, and the server's words for it. */
 export type Invalid = { field: string; message: string } | null;
@@ -84,7 +85,7 @@ export function StepProject({ invalid }: { invalid: Invalid }) {
           maxLength={40}
           spellCheck={false}
           autoComplete="off"
-          onChange={(e) => choose({ name: e.target.value })}
+          onChange={(e) => choose(followingPlaybookDir(choices, { name: e.target.value }))}
         />
       </label>
       <p className="lyzr-hint">{t(lang, "lyzr.nameRule")}</p>
