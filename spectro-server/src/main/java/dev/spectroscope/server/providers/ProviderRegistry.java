@@ -1,7 +1,10 @@
 package dev.spectroscope.server.providers;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.copilot.CopilotAccount;
+import dev.spectroscope.core.copilot.CopilotRuntime;
 import dev.spectroscope.core.local.LocalModel;
+import dev.spectroscope.core.provider.CopilotProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Which providers are configured and which answer, for every surface that
@@ -91,6 +95,24 @@ public final class ProviderRegistry {
 
     /** The real wires, chosen by the same rule {@code SessionsController.modelWire} uses. */
     static ListResult realList(String provider, SpectroConfig c) {
+        return realList(provider, c, ProviderRegistry::copilotModels);
+    }
+
+    /**
+     * The real wires with the Copilot runtime's list injected. Copilot has no
+     * address to dial; its list is what the runtime answers for the stored
+     * sign-in (card 496). A runtime that is missing or refuses throws, and the
+     * bounded check reads that as {@code bad-answer}.
+     *
+     * @param provider the provider name
+     * @param c        the config the address and key come from
+     * @param copilot  asks the Copilot runtime for its model ids
+     * @return the outcome of one attempt
+     */
+    static ListResult realList(String provider, SpectroConfig c, Supplier<List<String>> copilot) {
+        if (CopilotRuntime.PROVIDER.equals(provider)) {
+            return ListResult.ok(copilot.get(), null);
+        }
         if ("anthropic".equals(provider)) {
             return ModelLists.anthropic(SpectroConfig.resolveApiKey("ANTHROPIC_API_KEY"));
         }
@@ -123,14 +145,15 @@ public final class ProviderRegistry {
     }
 
     /**
-     * How a provider authenticates: {@link #CREDENTIAL_KEY} for every provider
-     * today. Card 478 brings the first {@link #CREDENTIAL_SIGNIN} provider.
+     * How a provider authenticates: {@link #CREDENTIAL_SIGNIN} for a member of
+     * {@link SpectroConfig#signInProviders()} (Copilot, cards 494 to 497),
+     * {@link #CREDENTIAL_KEY} for every other provider.
      *
      * @param provider the provider name
      * @return the credential form
      */
     public static String credentialFormOf(String provider) {
-        return CREDENTIAL_KEY;
+        return SpectroConfig.signsIn(provider) ? CREDENTIAL_SIGNIN : CREDENTIAL_KEY;
     }
 
     /**
@@ -169,9 +192,21 @@ public final class ProviderRegistry {
         return env != null && SpectroConfig.hasApiKey(env);
     }
 
-    /** Whether the credential is there. For a sign-in provider card 478 supplies the answer. */
+    /** Whether the credential is there: the stored sign-in for a provider that
+     *  signs in (read from the file, no runtime starts), else the key. */
     static boolean credentialPresent(String provider) {
+        if (SpectroConfig.signsIn(provider)) {
+            return CopilotAccount.forThisMachine().hasStoredSignIn();
+        }
         return keyPresent(provider);
+    }
+
+    /** The Copilot runtime's model ids, asked the way {@code SessionsController} asks them. */
+    static List<String> copilotModels() {
+        return CopilotAccount.forThisMachine().askRuntime(
+                SpectroConfig.defaultModelFor(CopilotRuntime.PROVIDER),
+                CopilotRuntime.find(null).requirePath(),
+                p -> p.models().stream().map(CopilotProvider.CopilotModel::id).toList());
     }
 
     static String signature(String provider, SpectroConfig c) {

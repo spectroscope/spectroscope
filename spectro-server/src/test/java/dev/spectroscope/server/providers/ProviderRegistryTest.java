@@ -1,6 +1,9 @@
 package dev.spectroscope.server.providers;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.copilot.CopilotAccount;
+import dev.spectroscope.core.copilot.CopilotCredentials;
+import dev.spectroscope.core.copilot.CopilotRuntime;
 import dev.spectroscope.core.local.LocalModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -127,11 +130,20 @@ class ProviderRegistryTest {
         assertNull(checked.credential(), "a keyed provider speaks through keyPresent only");
     }
 
+    /**
+     * Card 480 prepared the sign-in form for card 478; the Copilot stack
+     * (cards 494 to 497) brought the provider. Every member of
+     * {@code SpectroConfig.signInProviders()} takes the sign-in form, every
+     * other known provider the key.
+     */
     @Test
-    void theSignInCredentialFormHasItsOwnWordsAndNoProviderUsesItYet() {
+    void theSignInProvidersTakeTheSignInFormAndEveryOtherTheKey() {
+        assertTrue(SpectroConfig.signInProviders().contains(CopilotRuntime.PROVIDER),
+                "premise: copilot signs in");
         for (String p : SpectroConfig.knownProviders()) {
-            assertEquals(ProviderRegistry.CREDENTIAL_KEY, ProviderRegistry.credentialFormOf(p),
-                    p + " is keyed until card 478 brings a sign-in provider");
+            String expected = SpectroConfig.signInProviders().contains(p)
+                    ? ProviderRegistry.CREDENTIAL_SIGNIN : ProviderRegistry.CREDENTIAL_KEY;
+            assertEquals(expected, ProviderRegistry.credentialFormOf(p), p);
         }
         assertEquals("key", ProviderRegistry.CREDENTIAL_KEY);
         assertEquals("signin", ProviderRegistry.CREDENTIAL_SIGNIN);
@@ -141,6 +153,51 @@ class ProviderRegistryTest {
         assertEquals("not-signed-in", ProviderRegistry.credentialWord(ProviderRegistry.CREDENTIAL_SIGNIN, false));
         assertNull(ProviderRegistry.credentialWord(ProviderRegistry.CREDENTIAL_KEY, true));
         assertNull(ProviderRegistry.credentialWord(ProviderRegistry.CREDENTIAL_KEY, false));
+    }
+
+    /** The row the picker greys out as "not signed in", read from the stored sign-in, never dialled. */
+    @Test
+    void aSignInProviderWithoutAStoredSignInNeedsASignInAndIsNeverChecked() throws IOException {
+        Files.deleteIfExists(CopilotCredentials.defaultPath());
+        assertFalse(CopilotAccount.forThisMachine().hasStoredSignIn(), "premise: the test home stores no sign-in");
+        ProviderRegistry registry = new ProviderRegistry((p, c) -> {
+            throw new AssertionError("a provider that is not signed in must not be dialled: " + p);
+        }, now::get);
+        for (String p : SpectroConfig.signInProviders()) {
+            ProviderRow checked = registry.check(p, config());
+            assertEquals("needs-signin", checked.state(), p);
+            assertEquals("not-signed-in", checked.credential(), p);
+            assertFalse(checked.keyPresent(), p);
+            assertEquals("cloud", checked.kind(), p);
+            assertEquals(checked, row(registry.rows(config()), p), p);
+        }
+    }
+
+    /** A stored sign-in makes the row signed in and configured; reading the rows starts no runtime. */
+    @Test
+    void aStoredSignInReadsSignedInAndConfigured() throws IOException {
+        new CopilotCredentials(CopilotCredentials.defaultPath()).save(
+                new CopilotCredentials.Stored(CopilotCredentials.Method.CLI, null, null, 0, null, 0));
+        try {
+            ProviderRegistry registry = new ProviderRegistry((p, c) -> {
+                throw new AssertionError("rows() must not dial " + p);
+            }, now::get);
+            ProviderRow r = row(registry.rows(config()), CopilotRuntime.PROVIDER);
+            assertEquals("configured", r.state());
+            assertEquals("signed-in", r.credential());
+            assertFalse(r.keyPresent(), "a sign-in is not a key");
+        } finally {
+            Files.deleteIfExists(CopilotCredentials.defaultPath());
+        }
+    }
+
+    /** A signed-in Copilot is checked against its runtime's model list, not against an address. */
+    @Test
+    void theCopilotListIsAskedOfItsRuntime() {
+        ListResult r = ProviderRegistry.realList(CopilotRuntime.PROVIDER, config(), () -> List.of("gpt-5"));
+        assertTrue(r.isOk(), r.outcome());
+        assertEquals(List.of("gpt-5"), r.models());
+        assertNull(r.endpoint());
     }
 
     @Test
