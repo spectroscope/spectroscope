@@ -194,3 +194,14 @@ export function closeSheet(
 ): void {
   if (status?.state === "WAITING") act("cancel");
 }
+
+/**
+ * When the app hears of a sign-in or sign-out: at once when no sheet is open,
+ * and when the sheet closes while one is. Told at once, the app closes the
+ * first-run sheet and the sign-in sheet inside it before "Signed in as" can be
+ * read there.
+ */
+export function signInNotice(changed: boolean, sheetOpen: boolean): "now" | "on-close" | "none" {
+  if (!changed) return "none";
+  return sheetOpen ? "on-close" : "now";
+}

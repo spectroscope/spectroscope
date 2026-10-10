@@ -18,6 +18,7 @@ import {
   closeSheet,
   pollDelayMs,
   signInChanged,
+  signInNotice,
   type AccountNoteState,
   type CopilotAccountAction,
   type CopilotAccountStatus,
@@ -108,9 +109,7 @@ describe("closing the sheet", () => {
 
   it("is what the status line's sheet runs on close", () => {
     const note = stripComments(read("./CopilotSignIn.tsx", import.meta.url));
-    expect(note).toMatch(
-      /onClose=\{\(\) => \{\s*closeSheet\(note\.status, act\);\s*setOpen\(false\);\s*\}\}/,
-    );
+    expect(note).toMatch(/onClose=\{\(\) => \{\s*closeSheet\(note\.status, act\);\s*setOpen\(false\);/);
   });
 });
 
@@ -141,5 +140,31 @@ describe("the app's own GitHub sign-in", () => {
 
   it("the CLI sign-in is offered in its place", () => {
     expect(sheet(base)).toMatch(/<button(?![^>]*disabled)[^>]*>Use the Copilot CLI sign-in<\/button>/);
+  });
+});
+
+describe("the app hears of a sign-in once the sheet that shows it is closed", () => {
+  // Live, 2026-10-10: told at once, the app closed the first-run sheet and with
+  // it the sign-in sheet, so "Signed in as" was never seen there.
+  it("is told at once when no sheet is open", () => {
+    expect(signInNotice(true, false)).toBe("now");
+  });
+  it("is told on close while the sheet is open", () => {
+    expect(signInNotice(true, true)).toBe("on-close");
+  });
+  it("is told nothing when nothing changed", () => {
+    expect(signInNotice(false, true)).toBe("none");
+    expect(signInNotice(false, false)).toBe("none");
+  });
+  it("the status line follows that rule and tells the app on close", () => {
+    const note = stripComments(read("./CopilotSignIn.tsx", import.meta.url));
+    expect(note).toMatch(
+      /const notice = signInNotice\(signInChanged\(seen\.current, note\.status\), openRef\.current\);/,
+    );
+    expect(note).toMatch(/if \(notice === "now"\) notifyCopilotSignInChange\(\);/);
+    expect(note).toMatch(/if \(notice === "on-close"\) toldOnClose\.current = true;/);
+    expect(note).toMatch(
+      /setOpen\(false\);\s*if \(toldOnClose\.current\) \{\s*toldOnClose\.current = false;\s*notifyCopilotSignInChange\(\);/,
+    );
   });
 });

@@ -19,6 +19,7 @@ import {
   pollDelayMs,
   postCopilotAccount,
   signInChanged,
+  signInNotice,
   type AccountNoteState,
   type CopilotAccountAction,
   type CopilotAccountStatus,
@@ -214,9 +215,18 @@ export function CopilotAccountNote() {
   // Review of 2026-10-10: a sign-in or sign-out made here tells the app, which
   // reads the provider status again, so the first-run sheet closes and the
   // model menu lists the account's models without a reload.
+  // Final round: while the sheet is open the app hears of it on close, so the
+  // sheet can say "Signed in as" before the first-run sheet around it goes.
   const seen = useRef<CopilotAccountStatus | null | undefined>(undefined);
+  const openRef = useRef(false);
+  const toldOnClose = useRef(false);
   useEffect(() => {
-    if (signInChanged(seen.current, note.status)) notifyCopilotSignInChange();
+    openRef.current = open;
+  }, [open]);
+  useEffect(() => {
+    const notice = signInNotice(signInChanged(seen.current, note.status), openRef.current);
+    if (notice === "now") notifyCopilotSignInChange();
+    if (notice === "on-close") toldOnClose.current = true;
     if (note.status) seen.current = note.status;
   }, [note.status]);
 
@@ -247,6 +257,10 @@ export function CopilotAccountNote() {
             onClose={() => {
               closeSheet(note.status, act);
               setOpen(false);
+              if (toldOnClose.current) {
+                toldOnClose.current = false;
+                notifyCopilotSignInChange();
+              }
             }}
           />,
           document.body,

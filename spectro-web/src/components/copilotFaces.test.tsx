@@ -243,8 +243,9 @@ describe("a sign-in made in a sheet reaches the app without a reload", () => {
   it("the status line tells the app when its status flips", () => {
     const note = stripComments(read("./CopilotSignIn.tsx", import.meta.url));
     expect(note).toMatch(
-      /if \(signInChanged\(seen\.current, note\.status\)\) notifyCopilotSignInChange\(\);/,
+      /const notice = signInNotice\(signInChanged\(seen\.current, note\.status\), openRef\.current\);/,
     );
+    expect(note).toMatch(/if \(notice === "now"\) notifyCopilotSignInChange\(\);/);
   });
   it("the app re-reads the config when a Copilot sign-in changes", () => {
     const app = stripComments(read("../App.tsx", import.meta.url));
