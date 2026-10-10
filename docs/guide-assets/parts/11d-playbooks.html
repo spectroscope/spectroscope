@@ -4,7 +4,8 @@
 <p class="lead">A playbook is a folder that says how a team builds: which steps come in
 which order, where the work branches, which skill and which model each step uses, and which
 handover document passes from one step to the next. The developer mode reads such a folder,
-checks it, draws it and lets you edit it. It does not run anything by it yet.</p>
+checks it, draws it and lets you edit it. It can also install the skills, commands, hooks and
+agents the folder brings. It does not run anything by it yet.</p>
 
 <h2 id="ch-playbooks-what">What a playbook is</h2>
 
@@ -47,7 +48,8 @@ top of the folder:</p>
 <code>commands/</code> and <code>workflows/</code>. The shipped playbook leaves them empty, and
 version 1 only reads the paths the <code>contents</code> list of <code>playbook.json</code>
 names. The loader reads <code>playbook.json</code> and those files and nothing else, at most 1 MB
-per file and 200 files per folder, and only a folder you have registered.</p>
+per file and 200 files per folder, and only a folder you have registered. What the installation
+does with those entries is described under &ldquo;Installing what a playbook brings&rdquo;.</p>
 
 <h2 id="ch-playbooks-mode">The developer mode</h2>
 
@@ -237,6 +239,56 @@ decision to <i>Review task</i> and set its outcome to <code>pass</code>. Drag th
 end <code>cancelled</code>. Press &ldquo;Save&rdquo;. The file gains one node and three
 arrows, one existing arrow now points at the new decision, and no other line differs.</p>
 
+<h2 id="ch-playbooks-install">Installing what a playbook brings</h2>
+
+<p>A playbook can carry five kinds of content. The Playbook segment shows a Contents row with
+the count of each kind and two buttons, Install and Remove. Install opens a list first. The list
+shows every item with its source path inside the folder, the first twelve characters of its
+SHA-256 hash (the full hash is in the tooltip), its state, and how far it reaches. Nothing is
+written before you press Install in that list, and the click is bound to the list you saw: if the
+folder changed in the meantime, nothing is written, the list is reloaded and the window says
+why.</p>
+
+<table>
+  <tr><th>Kind</th><th>In the folder</th><th>What it becomes</th></tr>
+  <tr><td>Skills</td><td><code>skills/</code>, one pack folder holding one folder per skill</td><td>Copied to <code>~/.spectro/skills/</code> as a pack, each skill with the playbook's <code>LICENSE</code>, its <code>PROVENANCE.md</code> and a <code>spectro-install.json</code> that names the playbook, the folder and the hash. They are advertised as <code>pack:skill</code>. Every new session sees them, in every mode.</td></tr>
+  <tr><td>Commands</td><td><code>commands/</code>, one Markdown file per command</td><td>A one-file skill under the playbook's id, invoked in the message box as <code>/&lt;playbook id&gt;:&lt;name&gt;</code>, with the rest of the message as arguments.</td></tr>
+  <tr><td>Hooks</td><td><code>hooks/</code>, a <code>hooks.json</code> and the scripts beside it</td><td>Entries appended to the <code>hooks</code> list of your user settings. The scripts are copied to <code>~/.spectro/playbook-hooks/</code>, in a folder named after the playbook id, and the placeholder <code>{hooks}</code> in a command becomes the path of that folder.</td></tr>
+  <tr><td>Agents</td><td><code>agents/</code>, one Markdown file per agent with a name, a description, a type and a preamble</td><td>Nothing is copied. The agent file is listed with its hash and checked. A step may name it as the role <code>agent:name</code>, and a playbook run will use its preamble once runs follow the playbook. The agent file cannot set a model, a permission or a tool list.</td></tr>
+  <tr><td>Workflows</td><td><code>workflows/</code>, script files</td><td>Listed with their hash and never copied. The product has no workflow runner, so a workflow file is not run.</td></tr>
+</table>
+
+<p>Hooks have their own tick in the list, and it is off by default. A hook runs before the
+permission check on every tool call of every new session, and a before-tool hook that exits with
+an error blocks the call, so the list shows each resolved command in full and the full text of every
+script beside it. When the project settings of the current workspace set their own hooks, the
+list says that the installed ones do not run there, because the project block replaces the user
+block.</p>
+
+<p>The list also shows a prompt cost line. Every installed skill and command adds one line to
+the system prompt of every new session, and the line says how many characters that is in total.
+The cost weighs more on a local model with a short context window.</p>
+
+<p>A skill that a step names and the installation lacks gets an &ldquo;Install from this
+playbook&rdquo; link in the step table when the playbook carries it. The link opens the same
+list.</p>
+
+<p>The installation writes a record of its work to <code>~/.spectro/playbook-installs.json</code>:
+which playbook, from which folder, on which day, and every item with its hash. It is not a
+settings file and nothing reads it as one. A second install of the same playbook is refused with
+the folder and date of the first, so remove it first. An install is also refused when a target
+already exists for another reason, for example a catalogue pack with the same name, and the
+refusal names the target and who owns it. The size limits of the skill catalogue apply to
+everything one install writes: 400 files and 24 MB together. A symbolic link under a content
+path is refused, and so is a folder without a <code>LICENSE</code> or a
+<code>PROVENANCE.md</code>.</p>
+
+<p>Each skill is built in a staging folder next to the skills folder and moved into place in one
+step, so a failed install leaves nothing half written. Remove takes out what the record lists
+and the hook entries that equal the recorded ones, and nothing else. An installed copy you
+edited after the install is not removed, and the window names it. A new session picks up
+what was installed or removed. A session that is already open keeps what it started with.</p>
+
 <h2 id="ch-playbooks-refused">What a playbook file may not carry</h2>
 
 <p>A shared folder must not be able to route your material or widen your rights. A key named
@@ -255,7 +307,9 @@ and a nested playbook are recognised and refused as not supported in version 1.<
   before, and the playbook only describes how a team means to work.</li>
   <li>You cannot place a box by hand. The graph carries no coordinates, and the layout engine
   decides where each box goes.</li>
-  <li>The skills, agents, hooks and commands of a playbook are not installed into your
-  installation. The step table says whether a named skill is installed, and that is all.</li>
+  <li>Workflow files are listed and not run, because the product has no workflow runner.
+  Hooks are written to your settings only when you tick them, and they apply to every
+  session, not only to the runs of one playbook. A playbook is updated by removing it and
+  installing it again.</li>
   <li>Paths that split into parallel branches and join again are not part of the format yet.</li>
 </ul>

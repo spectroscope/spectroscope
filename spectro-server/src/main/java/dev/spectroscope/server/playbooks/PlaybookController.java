@@ -2,7 +2,11 @@ package dev.spectroscope.server.playbooks;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.playbook.Finding;
+import dev.spectroscope.core.playbook.PlaybookReader;
+import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.Resource;
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,14 +52,42 @@ public class PlaybookController {
 
     private final PlaybookFolders folders;
     private final String bundleRoot;
+    private final InstallLedger ledger;
+    private final Path spectroHome;
+    private final Path launchDir;
+    private final Path userSettings;
 
     public PlaybookController() {
         this(PlaybookFolders.inHome(), BUNDLE_ROOT);
     }
 
     PlaybookController(PlaybookFolders folders, String bundleRoot) {
+        this(folders, bundleRoot, InstallLedger.inHome(),
+                Path.of(System.getProperty("user.home"), ".spectro"), Path.of(System.getProperty("user.dir")),
+                SettingsWriter.userSettingsFile());
+    }
+
+    /**
+     * @param ledger      the install ledger, {@code ~/.spectro/playbook-installs.json}
+     * @param spectroHome {@code ~/.spectro}, where installed skills and hook scripts live
+     * @param launchDir   the launch directory, whose {@code .spectro/skills} is the project skill root
+     */
+    PlaybookController(PlaybookFolders folders, String bundleRoot, InstallLedger ledger, Path spectroHome,
+                       Path launchDir) {
+        this(folders, bundleRoot, ledger, spectroHome, launchDir, spectroHome.resolve("settings.json"));
+    }
+
+    /**
+     * @param userSettings the user settings file the installed hooks are appended to
+     */
+    PlaybookController(PlaybookFolders folders, String bundleRoot, InstallLedger ledger, Path spectroHome,
+                       Path launchDir, Path userSettings) {
         this.folders = folders;
         this.bundleRoot = bundleRoot;
+        this.ledger = ledger;
+        this.spectroHome = spectroHome;
+        this.launchDir = launchDir;
+        this.userSettings = userSettings;
     }
 
     /** GET /api/playbooks?workspace= : the known folders and the one pinned to the workspace. */
@@ -202,6 +235,154 @@ public class PlaybookController {
         } catch (IOException failure) {
             return ResponseEntity.status(500).body(Map.of("message", "Failed to write the playbook: " + failure.getMessage()));
         }
+    }
+
+    /**
+     * {@code GET /api/playbooks/contents?dir=&workspace=} : what a registered folder brings (skills,
+     * commands, hooks, agents, workflows) with source, hash, state and reach, before anything is
+     * installed. Behind the same fence as the writes, because the answer carries the full text of
+     * the hook scripts. A playbook that does not read answers 200 with its findings and no items.
+     */
+    @GetMapping("/api/playbooks/contents")
+    public ResponseEntity<?> contents(@RequestParam("dir") String dir,
+                                      @RequestParam(value = "workspace", required = false) String workspace,
+                                      HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return badRequest("Not a registered playbook folder: " + dir);
+        }
+        String hooksOrigin;
+        try {
+            Path ws = workspace == null || workspace.isBlank() ? null : Path.of(workspace);
+            SpectroConfig.Origin origin = SpectroConfig.loadResolved(SpectroConfig.Overrides.none(), launchDir, ws)
+                    .origins().get("hooks");
+            hooksOrigin = origin == null ? null : origin.winner();
+        } catch (InvalidPathException notAPath) {
+            return badRequest("The workspace is not a usable path.");
+        }
+        PlaybookReader.Read read;
+        try {
+            read = PlaybookReader.read(Files.readString(real.resolve(PlaybookFolders.PLAYBOOK_FILE), StandardCharsets.UTF_8));
+        } catch (IOException unreadable) {
+            return ResponseEntity.ok(new PlaybookContents.Preview("", real.toString(), "", List.of(), 0, hooksOrigin,
+                    List.of(new Finding(PlaybookFolders.PLAYBOOK_FILE, "unreadable: " + unreadable.getMessage()))));
+        }
+        if (read.playbook() == null) {
+            return ResponseEntity.ok(new PlaybookContents.Preview("", real.toString(), "", List.of(), 0, hooksOrigin,
+                    read.findings()));
+        }
+        try {
+            Path projectSkills = SkillLibrary.defaultRoots(launchDir).get(1);
+            return ResponseEntity.ok(PlaybookContents.preview(real, read.playbook(), spectroHome, projectSkills,
+                    ledger, hooksOrigin));
+        } catch (IOException | IllegalStateException failed) {
+            return ResponseEntity.status(500).body(Map.of("message", "The contents could not be read: " + failed.getMessage()));
+        }
+    }
+
+    /**
+     * {@code POST /api/playbooks/contents/install {dir, contentsHash, hooks}} : installs what a
+     * registered folder brings, bound to the contents hash of the list the owner saw. The hooks go
+     * into the user settings only when {@code hooks} is true. Every refusal carries {@code reason},
+     * the name of the installer's status, beside {@code message}.
+     *
+     * @return 200 {@code {installed}}; 400 findings, an unlicensed folder or an unregistered one; 409
+     *         changed, already installed or taken, with {@code names}; 413 too large; 500 failed, with
+     *         {@code leftover}; 404 for a foreign caller
+     */
+    @PostMapping(value = "/api/playbooks/contents/install", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> install(@RequestBody JsonNode body, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        String dir = text(body, "dir");
+        Path real = registered(dir);
+        if (real == null) {
+            return badRequest("Not a registered playbook folder: " + dir);
+        }
+        PlaybookReader.Read read = readPlaybook(real);
+        if (read.playbook() == null) {
+            return refusal(400, PlaybookInstaller.Status.FINDINGS, "The playbook does not read; nothing was written.",
+                    Map.of("findings", read.findings().stream().map(f -> f.path() + ": " + f.message()).toList()));
+        }
+        boolean hooks = body != null && body.path("hooks").asBoolean(false);
+        PlaybookInstaller.Result result = installer().install(real, read.playbook(), text(body, "contentsHash"), hooks);
+        return switch (result.status()) {
+            case INSTALLED -> ResponseEntity.ok(Map.of("installed", result.names()));
+            case FINDINGS -> refusal(400, result.status(), result.message(), Map.of("findings", result.names()));
+            case UNLICENSED -> refusal(400, result.status(), result.message(), Map.of());
+            case CHANGED, ALREADY, TAKEN -> refusal(409, result.status(), result.message(), Map.of("names", result.names()));
+            case TOO_LARGE -> refusal(413, result.status(), result.message(), Map.of());
+            default -> refusal(500, result.status(), result.message(), Map.of("leftover", result.leftover()));
+        };
+    }
+
+    /**
+     * {@code POST /api/playbooks/contents/remove {dir}} : removes what the install ledger records for
+     * the folder's playbook id and keeps every copy edited after the install.
+     *
+     * @return 200 {@code {removed, kept}}; 400 an unregistered folder or a playbook that does not
+     *         read; 404 a foreign caller or a playbook that is not installed; 500 failed, with
+     *         {@code leftover}
+     */
+    @PostMapping(value = "/api/playbooks/contents/remove", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> remove(@RequestBody JsonNode body, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        String dir = text(body, "dir");
+        Path real = registered(dir);
+        if (real == null) {
+            return badRequest("Not a registered playbook folder: " + dir);
+        }
+        PlaybookReader.Read read = readPlaybook(real);
+        if (read.playbook() == null) {
+            return refusal(400, PlaybookInstaller.Status.FINDINGS, "The playbook does not read, so its id is unknown.",
+                    Map.of("findings", read.findings().stream().map(f -> f.path() + ": " + f.message()).toList()));
+        }
+        List<String> recorded;
+        try {
+            recorded = ledger.find(read.playbook().id())
+                    .map(i -> i.items().stream().map(InstallLedger.Item::name).toList())
+                    .orElse(List.of());
+        } catch (IllegalStateException unreadable) {
+            return refusal(500, PlaybookInstaller.Status.FAILED, unreadable.getMessage(), Map.of("leftover", List.of()));
+        }
+        PlaybookInstaller.Result result = installer().remove(real, read.playbook());
+        return switch (result.status()) {
+            case REMOVED -> {
+                List<String> removed = new ArrayList<>(recorded);
+                result.names().forEach(removed::remove);
+                yield ResponseEntity.ok(Map.of("removed", removed, "kept", result.names()));
+            }
+            case NOT_INSTALLED -> refusal(404, result.status(), result.message(), Map.of());
+            default -> refusal(500, result.status(), result.message(), Map.of("leftover", result.leftover()));
+        };
+    }
+
+    private PlaybookInstaller installer() {
+        return new PlaybookInstaller(spectroHome, SkillLibrary.defaultRoots(launchDir).get(1), userSettings, ledger);
+    }
+
+    private static PlaybookReader.Read readPlaybook(Path real) {
+        try {
+            return PlaybookReader.read(Files.readString(real.resolve(PlaybookFolders.PLAYBOOK_FILE), StandardCharsets.UTF_8));
+        } catch (IOException unreadable) {
+            return new PlaybookReader.Read(null, List.of(new Finding(PlaybookFolders.PLAYBOOK_FILE,
+                    "unreadable: " + unreadable.getMessage())));
+        }
+    }
+
+    private static ResponseEntity<Map<String, Object>> refusal(int status, PlaybookInstaller.Status reason, String message,
+                                                               Map<String, Object> extra) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("reason", reason.name());
+        out.put("message", message);
+        out.putAll(extra);
+        return ResponseEntity.status(status).body(out);
     }
 
     /**

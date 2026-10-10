@@ -49,6 +49,7 @@ const LOADED: LoadedPlaybook = {
     ],
     models: { fast: { primary: { provider: "ollama", model: "qwen3:8b" }, fallbacks: [] } },
     documents: {},
+    contents: { skills: [], agents: [], hooks: [], commands: [], workflows: [] },
   },
   topology: {
     entry: "write",
@@ -71,8 +72,8 @@ const LOADED: LoadedPlaybook = {
     {
       id: "write",
       skills: [
-        { name: "spectropowers:brainstorming", installed: true },
-        { name: "spectropowers:missing", installed: false },
+        { name: "spectropowers:brainstorming", installed: true, disabled: false },
+        { name: "spectropowers:missing", installed: false, disabled: false },
       ],
       model: { choice: "fast", provider: "ollama", model: "qwen3:8b", state: "local", reason: null },
     },

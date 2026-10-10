@@ -2,6 +2,7 @@ package dev.spectroscope.core.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.playbook.Playbook;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -273,6 +274,129 @@ class PlaybookGuideDriftTest {
             String edition = Files.readString(root.resolve(name));
             assertTrue(edition.contains("id=\"ch-playbooks-spectrolyzr\""),
                     name + " has no Spectrolyzr section: rebuild it (docs/guide-assets/"
+                            + "build_user_guide.py, both themes, then the PDFs and --stamp)");
+        }
+    }
+
+    private static final String INSTALL_ANCHOR = "id=\"ch-playbooks-install\"";
+
+    /** The section of the chapter that tells what an install writes, cut at the next h2, whitespace collapsed. */
+    private static String installSection(String chapter) {
+        int at = chapter.indexOf(INSTALL_ANCHOR);
+        assertTrue(at >= 0, PART + " has no section with id ch-playbooks-install");
+        int end = chapter.indexOf("<h2 ", at);
+        String section = end < 0 ? chapter.substring(at) : chapter.substring(at, end);
+        return section.replaceAll("\\s+", " ");
+    }
+
+    @Test
+    void theChapterHasASectionOnInstallingWhatAPlaybookBrings() throws IOException {
+        String part = chapter(rootOrSkip());
+        assertTrue(part.contains("<h2 " + INSTALL_ANCHOR + ">Installing what a playbook brings</h2>"),
+                PART + " has no h2 \"Installing what a playbook brings\"");
+    }
+
+    /** The folder names a playbook can carry: the components of the contents record, read by reflection. */
+    private static List<String> contentKinds() {
+        List<String> kinds = new ArrayList<>();
+        for (java.lang.reflect.RecordComponent c : Playbook.Contents.class.getRecordComponents()) {
+            kinds.add(c.getName());
+        }
+        return kinds;
+    }
+
+    @Test
+    void theLoaderChecksTheSameKindsTheContentsRecordNames() throws IOException {
+        Path root = rootOrSkip();
+        String loader = Files.readString(root.resolve(
+                "spectro-server/src/main/java/dev/spectroscope/server/playbooks/PlaybookLoader.java"));
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("lists\\.put\\(\"([a-z]+)\"").matcher(loader);
+        List<String> checked = new ArrayList<>();
+        while (m.find()) {
+            checked.add(m.group(1));
+        }
+        assertEquals(contentKinds().stream().sorted().toList(), checked.stream().sorted().toList(),
+                "PlaybookLoader.contentsFindings checks other kinds than the contents record declares");
+    }
+
+    @Test
+    void theAgentsRowPromisesNoRunTheRunnerCannotDoYet() throws IOException {
+        String section = installSection(chapter(rootOrSkip()));
+        assertFalse(section.contains("runs a child agent"),
+                "the Agents row says a step runs a child agent with the preamble: the runner does not resolve "
+                        + "agent:name yet (cards 482 and P3), and the chapter says runs do not follow the playbook");
+        assertTrue(section.contains("once runs follow the playbook"),
+                "the Agents row does not say that using the preamble waits for runs that follow the playbook");
+    }
+
+    @Test
+    void theInstallSectionNamesEveryKindAndWhatEachBecomes() throws IOException {
+        String section = installSection(chapter(rootOrSkip()));
+        List<String> missing = new ArrayList<>();
+        List<String> kinds = contentKinds();
+        assertTrue(kinds.size() >= 5, "the contents record lost kinds: " + kinds);
+        for (String kind : kinds) {
+            if (!section.contains("<code>" + kind + "/</code>")) {
+                missing.add(kind);
+            }
+        }
+        assertEquals(List.of(), missing, "the install section leaves out a kind of content");
+        assertTrue(section.contains("<code>~/.spectro/skills/</code>"),
+                "the section never says where skills and commands land");
+        assertTrue(section.contains("<code>~/.spectro/playbook-hooks/</code>"),
+                "the section never says where hook scripts are copied");
+        assertTrue(section.contains("<code>{hooks}</code>"),
+                "the section never names the placeholder that resolves to the script folder");
+        assertTrue(section.contains("<code>/&lt;playbook id&gt;:&lt;name&gt;</code>"),
+                "the section never says how a command is invoked");
+    }
+
+    @Test
+    void theInstallSectionStatesTheRulesThatProtectTheReader() throws IOException {
+        String section = installSection(chapter(rootOrSkip()));
+        assertTrue(section.contains("off by default"), "the hooks tick is not described as off by default");
+        assertTrue(section.contains("before the permission check"),
+                "the section never says a hook runs before the permission check");
+        assertTrue(section.contains("characters"), "the section never mentions the prompt cost line");
+        assertTrue(section.contains("<code>~/.spectro/playbook-installs.json</code>"),
+                "the section never names the install ledger");
+        assertTrue(section.contains("edited"), "the section never says how remove treats an edited copy");
+        assertTrue(section.contains("is not run"), "the section never says that workflows are not run");
+        assertTrue(section.contains("remove it first"), "the section never says a second install is refused");
+    }
+
+    @Test
+    void theLedgerAndHookFolderNamesMatchWhatTheServerWrites() throws IOException {
+        Path root = rootOrSkip();
+        String section = installSection(chapter(root));
+        String ledger = Files.readString(root.resolve(
+                "spectro-server/src/main/java/dev/spectroscope/server/playbooks/InstallLedger.java"));
+        String installer = Files.readString(root.resolve(
+                "spectro-server/src/main/java/dev/spectroscope/server/playbooks/PlaybookInstaller.java"));
+        assertTrue(ledger.contains("\"playbook-installs.json\"") && section.contains("playbook-installs.json"),
+                "the ledger file name in the chapter and in InstallLedger differ");
+        assertTrue(installer.contains("\"playbook-hooks\"") && section.contains("playbook-hooks"),
+                "the hook folder name in the chapter and in PlaybookInstaller differ");
+    }
+
+    @Test
+    void theLimitsNoLongerSayThatContentsAreNotInstalled() throws IOException {
+        String part = chapter(rootOrSkip());
+        assertFalse(part.contains("are not installed into your"),
+                "the limits still say a playbook's contents are not installed");
+        assertFalse(part.contains("and that is all"),
+                "the chapter still says the step table only reports installed skills");
+        assertTrue(part.contains("Workflow files are listed and not run"),
+                "the limits do not say what stays out: workflow files are listed and not run");
+    }
+
+    @Test
+    void bothBuiltEditionsCarryTheInstallSection() throws IOException {
+        Path root = rootOrSkip();
+        for (String name : EDITIONS) {
+            String edition = Files.readString(root.resolve(name));
+            assertTrue(edition.contains(INSTALL_ANCHOR),
+                    name + " has no install section: rebuild it (docs/guide-assets/"
                             + "build_user_guide.py, both themes, then the PDFs and --stamp)");
         }
     }

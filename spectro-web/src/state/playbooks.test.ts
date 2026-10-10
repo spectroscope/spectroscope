@@ -62,6 +62,7 @@ const LOADED: LoadedPlaybook = {
     arrows: [{ from: "classify", to: "done", on: "spike" }],
     models: {},
     documents: {},
+    contents: { skills: [], agents: [], hooks: [], commands: [], workflows: [] },
   },
   topology: {
     entry: "classify",
@@ -150,6 +151,27 @@ describe("loading a playbook", () => {
     );
     expect(init?.method ?? "GET").toBe("GET");
     expect(probe().loaded).toEqual(LOADED);
+  });
+
+  it("carries a skill's disabled flag from the load answer to the store unchanged", async () => {
+    const withSkills: LoadedPlaybook = {
+      ...LOADED,
+      steps: [
+        {
+          id: "write",
+          skills: [
+            { name: "spectropowers:brainstorming", installed: false, disabled: true },
+            { name: "spectropowers:writing-plans", installed: true, disabled: false },
+          ],
+          model: null,
+        },
+      ],
+    };
+    respond(200, withSkills);
+    await loadPlaybook("/p/spectro", "/w");
+    const skills = probe().loaded?.steps[0].skills;
+    expect(skills?.map((k) => k.disabled)).toEqual([true, false]);
+    expect(probe().loaded).toEqual(withSkills);
   });
 
   it("drops a previously loaded playbook when the next load is refused", async () => {

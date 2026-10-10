@@ -205,4 +205,184 @@ class PlaybookControllerTest {
         assertEquals(List.of(), folders.read().folders());
         assertFalse(Files.exists(target.resolve("playbook.json")));
     }
+
+    private PlaybookController contentsController() {
+        return new PlaybookController(folders, FIXTURE_ROOT, new InstallLedger(tmp.resolve("home/playbook-installs.json")),
+                tmp.resolve("home/.spectro"), tmp.resolve("launch"));
+    }
+
+    @Test
+    void theContentsRouteAnswersAPreviewForARegisteredFolder() throws IOException {
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+
+        ResponseEntity<?> answered = contents.contents(a.toString(), null, local());
+
+        assertEquals(200, answered.getStatusCode().value());
+        PlaybookContents.Preview preview = (PlaybookContents.Preview) answered.getBody();
+        assertEquals("p", preview.playbook());
+        assertEquals(a.toRealPath().toString(), preview.dir());
+        assertEquals(List.of("skill spectropowers:brainstorming new"),
+                preview.items().stream().map(i -> i.kind() + " " + i.name() + " " + i.state()).toList());
+        assertEquals(List.of(), preview.findings());
+        JsonNode wire = mapper.valueToTree(answered.getBody());
+        assertEquals("spectropowers:brainstorming", wire.path("items").get(0).path("name").asText(null));
+        assertEquals(64, wire.path("contentsHash").asText("").length());
+    }
+
+    @Test
+    void theContentsRouteRefusesAnUnregisteredFolderAndAForeignCaller() throws IOException {
+        Path stranger = playbookFolder("stranger");
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+
+        assertEquals(400, contents.contents(stranger.toString(), null, local()).getStatusCode().value());
+        assertEquals(400, contents.contents("", null, local()).getStatusCode().value());
+        assertEquals(404, contents.contents(a.toString(), null, foreign()).getStatusCode().value());
+        assertEquals(404, contents.contents(a.toString(), null, crossSite()).getStatusCode().value());
+    }
+
+    @Test
+    void theContentsRouteNamesTheFindingsOfAPlaybookThatDoesNotReadInsteadOfFailing() throws IOException {
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+        Files.writeString(a.resolve("playbook.json"), "{ not json");
+
+        ResponseEntity<?> answered = contents.contents(a.toString(), null, local());
+
+        assertEquals(200, answered.getStatusCode().value());
+        PlaybookContents.Preview preview = (PlaybookContents.Preview) answered.getBody();
+        assertEquals(List.of(), preview.items());
+        assertFalse(preview.findings().isEmpty());
+    }
+    @Test
+    void theContentsRouteAnswersABadRequestForAWorkspaceThatIsNotAPath() throws IOException {
+        Path a = playbookFolder("a");
+        PlaybookController contents = contentsController();
+        contents.register(body("dir", a.toString()), local());
+
+        ResponseEntity<?> answered = contents.contents(a.toString(), "work\u0000space", local());
+
+        assertEquals(400, answered.getStatusCode().value());
+        assertEquals(200, contents.contents(a.toString(), tmp.toString(), local()).getStatusCode().value(),
+                "a usable workspace still answers the preview");
+    }
+
+    // ---- install and remove ------------------------------------------------------------------
+
+    /** A registered folder with every kind of content, the fixture of {@link PlaybookInstallerTest}. */
+    private Path fullFolder(PlaybookController controller, String name) throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve(name));
+        Files.writeString(dir.resolve("playbook.json"), PlaybookLoaderTest.MINIMAL.replace(
+                "\"contents\": { \"skills\": [\"skills/spectropowers\"] }", PlaybookContentsTest.CONTENTS));
+        Map<String, String> files = Map.of(
+                "skills/spectropowers/brainstorming/SKILL.md", "---\nname: brainstorming\ndescription: Shape an idea.\n---\nbody\n",
+                "agents/reviewer.md", "---\nname: reviewer\ndescription: Reads the diff.\ntype: explore\n---\nYou review.\n",
+                "hooks/hooks.json", PlaybookContentsTest.HOOKS,
+                "hooks/guard.sh", "#!/bin/sh\nexit 0\n",
+                "commands/ship.md", "---\ndescription: Ship it.\n---\nRun the release.\n",
+                "workflows/build.js", "export default 1;\n",
+                "LICENSE", "MIT\n",
+                "PROVENANCE.md", "made here\n");
+        for (Map.Entry<String, String> file : files.entrySet()) {
+            Path target = dir.resolve(file.getKey());
+            Files.createDirectories(target.getParent());
+            Files.writeString(target, file.getValue());
+        }
+        assertEquals(200, controller.register(body("dir", dir.toString()), local()).getStatusCode().value());
+        return dir;
+    }
+
+    private String shownHash(PlaybookController controller, Path dir) {
+        return ((PlaybookContents.Preview) controller.contents(dir.toString(), null, local()).getBody()).contentsHash();
+    }
+
+    private JsonNode installBody(Path dir, String hash, boolean hooks) {
+        ObjectNode node = mapper.createObjectNode();
+        node.put("dir", dir.toString());
+        node.put("contentsHash", hash);
+        node.put("hooks", hooks);
+        return node;
+    }
+
+    @Test
+    void theInstallRouteAnswersChangedUnlicensedThenInstallsOnceAndAnswersAlready() throws IOException {
+        PlaybookController contents = contentsController();
+        Path a = fullFolder(contents, "a");
+        String hash = shownHash(contents, a);
+
+        ResponseEntity<?> changed = contents.install(installBody(a, "0".repeat(64), true), local());
+        assertEquals(409, changed.getStatusCode().value());
+        assertEquals("CHANGED", map(changed).get("reason"));
+
+        Files.move(a.resolve("LICENSE"), tmp.resolve("LICENSE.aside"));
+        ResponseEntity<?> unlicensed = contents.install(installBody(a, hash, true), local());
+        assertEquals(400, unlicensed.getStatusCode().value());
+        assertEquals("UNLICENSED", map(unlicensed).get("reason"));
+        assertTrue(String.valueOf(map(unlicensed).get("message")).contains("unlicensed copy"));
+        Files.move(tmp.resolve("LICENSE.aside"), a.resolve("LICENSE"));
+        assertFalse(Files.exists(tmp.resolve("home/.spectro/skills")), "no refusal wrote anything");
+
+        ResponseEntity<?> installed = contents.install(installBody(a, hash, true), local());
+        assertEquals(200, installed.getStatusCode().value(), String.valueOf(installed.getBody()));
+        @SuppressWarnings("unchecked")
+        List<String> names = (List<String>) map(installed).get("installed");
+        assertEquals(List.of("spectropowers:brainstorming", "p:ship", "pre_tool_use run_command", "reviewer", "build.js"),
+                names);
+        assertTrue(Files.isRegularFile(tmp.resolve("home/.spectro/skills/spectropowers/brainstorming/SKILL.md")));
+        assertTrue(Files.readString(tmp.resolve("home/.spectro/settings.json")).contains("guard.sh"));
+
+        ResponseEntity<?> again = contents.install(installBody(a, hash, true), local());
+        assertEquals(409, again.getStatusCode().value());
+        assertEquals("ALREADY", map(again).get("reason"));
+        assertTrue(String.valueOf(map(again).get("message")).contains(a.toRealPath().toString()));
+    }
+
+    @Test
+    void theInstallRouteAnswersFindingsForAPlaybookWithAFindingAndRefusesAnUnregisteredFolder() throws IOException {
+        PlaybookController contents = contentsController();
+        Path a = fullFolder(contents, "a");
+        Files.writeString(a.resolve("commands/ship.md"), "---\n---\nRun the release.\n");
+        Path stranger = playbookFolder("stranger");
+
+        ResponseEntity<?> findings = contents.install(installBody(a, shownHash(contents, a), false), local());
+        assertEquals(400, findings.getStatusCode().value());
+        assertEquals("FINDINGS", map(findings).get("reason"));
+        assertTrue(String.valueOf(map(findings).get("findings")).contains("commands/ship.md#description"));
+
+        assertEquals(400, contents.install(installBody(stranger, "x", false), local()).getStatusCode().value());
+        assertFalse(Files.exists(tmp.resolve("home/.spectro/skills")));
+    }
+
+    @Test
+    void theRemoveRouteAnswersRemovedAndKeptAndNotFoundWhenNothingIsInstalled() throws IOException {
+        PlaybookController contents = contentsController();
+        Path a = fullFolder(contents, "a");
+        assertEquals(404, contents.remove(body("dir", a.toString()), local()).getStatusCode().value());
+
+        assertEquals(200, contents.install(installBody(a, shownHash(contents, a), true), local()).getStatusCode().value());
+        ResponseEntity<?> removed = contents.remove(body("dir", a.toString()), local());
+
+        assertEquals(200, removed.getStatusCode().value(), String.valueOf(removed.getBody()));
+        assertEquals(List.of("spectropowers:brainstorming", "p:ship", "pre_tool_use run_command", "reviewer", "build.js"),
+                map(removed).get("removed"));
+        assertEquals(List.of(), map(removed).get("kept"));
+        assertFalse(Files.exists(tmp.resolve("home/.spectro/skills/spectropowers")));
+        assertEquals(400, contents.remove(body("dir", tmp.resolve("absent").toString()), local()).getStatusCode().value());
+    }
+
+    @Test
+    void installAndRemoveRefuseAForeignCallerAndACrossSiteOrigin() throws IOException {
+        PlaybookController contents = contentsController();
+        Path a = fullFolder(contents, "a");
+        String hash = shownHash(contents, a);
+        for (MockHttpServletRequest request : List.of(foreign(), crossSite())) {
+            assertEquals(404, contents.install(installBody(a, hash, true), request).getStatusCode().value());
+            assertEquals(404, contents.remove(body("dir", a.toString()), request).getStatusCode().value());
+        }
+        assertFalse(Files.exists(tmp.resolve("home/.spectro/skills")));
+    }
 }

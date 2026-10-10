@@ -106,6 +106,15 @@ class PlaybookReaderTest {
     }
 
     @Test
+    void hooksOnAStepAreRefusedWithTheirPath() {
+        String inline = MINIMAL.replace("\"model\": \"fast\"", "\"model\": \"fast\", \"hooks\": []");
+        PlaybookReader.Read refused = PlaybookReader.read(inline);
+        assertNull(refused.playbook());
+        assertTrue(refused.findings().stream().anyMatch(f -> f.path().equals("nodes[0].hooks")),
+                refused.findings().toString());
+    }
+
+    @Test
     void splitAndJoinAreNotSupportedInVersionOne() {
         String json = MINIMAL.replace("{ \"kind\": \"end\", \"id\": \"done\", \"result\": \"done\" }",
                 "{ \"kind\": \"end\", \"id\": \"done\", \"result\": \"done\" }, { \"kind\": \"split\", \"id\": \"s\", \"join\": \"j\" }");
