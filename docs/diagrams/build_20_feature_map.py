@@ -69,8 +69,9 @@ FOOT = [
     # SpectroConfig.knownProviders() instead of a table of spellings. The count
     # is held to that set too — this line said "Seven" while listing seven and
     # meaning eight.
-    "Eight backends: anthropic · openai · openrouter · gemini · ollama · lmstudio · llamacpp · "
-    "spectro-local, the last of them a built-in catalogue of local models that needs no key at all.",
+    "Nine backends: anthropic · openai · openrouter · gemini · ollama · lmstudio · llamacpp · "
+    "spectro-local, a built-in catalogue of local models that needs no key at all, and copilot, "
+    "which signs in with GitHub instead.",
     "Everything above writes one thing to disk: append-only JSONL, one line per event, readable with "
     "jq. That file is the API, the storage format and the audit log.",
 ]

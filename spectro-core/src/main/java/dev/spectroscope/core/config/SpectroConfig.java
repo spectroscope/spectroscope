@@ -1318,13 +1318,23 @@ public record SpectroConfig(
     // these as the single source instead of re-declaring the same literals.
     static final Set<String> KNOWN_PROVIDERS =
             Set.of("anthropic", "ollama", "openai", "lmstudio", "llamacpp",
-                    "openrouter", "gemini", "spectro-local");
+                    "openrouter", "gemini", "spectro-local", "copilot");
     /** A stable, human-readable listing of {@link #KNOWN_PROVIDERS} for error
      *  messages — {@link Set#of} has no guaranteed iteration order, so it is
      *  spelled out once and shared by config validation and the live picker
      *  switch instead of being rebuilt (in a different order) in each place. */
     public static final String KNOWN_PROVIDERS_DISPLAY =
-            "anthropic, ollama, openai, lmstudio, llamacpp, openrouter, gemini, spectro-local";
+            "anthropic, ollama, openai, lmstudio, llamacpp, openrouter, gemini, spectro-local, copilot";
+    /** The providers that sign in with an account instead of taking a key
+     *  (card 496). A member has no {@link #keyEnvFor} variable and no
+     *  {@link #endpointFor} address; its onboarding status is a sign-in word. */
+    static final Set<String> SIGN_IN_PROVIDERS = Set.of(dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER);
+    /** Where a Copilot call's content goes for a github.com account: the host
+     *  of GitHub's Copilot API service, under the domain GitHub's allowlist
+     *  reference names (read 2026-10-10). */
+    static final String COPILOT_API_HOST = "api.githubcopilot.com";
+    /** The name a Copilot call gets when the runtime reported a host that cannot be read. */
+    static final String COPILOT_NO_HOST = "GitHub Copilot";
     /** {@code imageProvider}'s known values — the factory's own list rather than
      *  a second spelling of it, so a backend added there is accepted here. */
     static final Set<String> KNOWN_IMAGE_PROVIDERS =
@@ -2618,6 +2628,42 @@ public record SpectroConfig(
         return KNOWN_PROVIDERS.contains(provider);
     }
 
+    /** Whether {@code provider} signs in with an account instead of taking a
+     *  key (card 496): Copilot today.
+     *  @param provider the provider name
+     *  @return true for a member of {@link #signInProviders()} */
+    public static boolean signsIn(String provider) {
+        return SIGN_IN_PROVIDERS.contains(provider);
+    }
+
+    /** The providers that sign in. Exposed so the faces that show a provider's
+     *  status (onboarding, doctor, picker) can be held to this set by a test.
+     *  @return the sign-in providers; iteration order is not defined */
+    public static Set<String> signInProviders() {
+        return SIGN_IN_PROVIDERS;
+    }
+
+    /**
+     * The Copilot provider for a model: built by the machine's Copilot account,
+     * which holds the credential choice of the sign-in sheet, over the runtime
+     * the lookup of card 497 finds. One provider per model and runtime is
+     * shared by every chat of this process, so a second chat does not start a
+     * second runtime.
+     *
+     * @param model       the Copilot model id
+     * @param workspace   the workspace no runtime may come from, or null
+     * @param environment the lookup's inputs
+     * @return the shared provider. Typed as {@link LlmProvider} so this file
+     *         names no Copilot construction ({@code CopilotProviderIsBuiltByTheAccountDriftTest})
+     * @throws IllegalStateException when no usable runtime is found, with the
+     *         lookup's reason ({@code "copilot runtime: ..."})
+     */
+    static LlmProvider copilotProvider(String model, java.nio.file.Path workspace,
+            dev.spectroscope.core.copilot.CopilotRuntime.Environment environment) {
+        String cliPath = dev.spectroscope.core.copilot.CopilotRuntime.find(environment, workspace).requirePath();
+        return dev.spectroscope.core.copilot.CopilotAccount.forThisMachine().shared(model, cliPath);
+    }
+
     /** Every selectable LLM backend. Exposed so a face that switches over the
      *  providers can be held to this list by a test rather than by whoever
      *  remembers to look: the doctor's reachability switch knew three of the
@@ -2713,6 +2759,8 @@ public record SpectroConfig(
             // kept starting the tool-free one with the research-only licence.
             case "spectro-local" -> dev.spectroscope.core.local.LocalCatalog.bundled().defaultId();
             case "anthropic" -> DEFAULTS.model(); // claude-opus-4-8, a real anthropic model
+            // The runtime's own choice; every account's model list carries it.
+            case "copilot" -> "auto";
             default -> null; // gemini, openrouter: no baked default — the caller decides
         };
     }
@@ -2831,6 +2879,9 @@ public record SpectroConfig(
                     new OpenAiCompatProvider.Options(endpointFor(provider), model, openAiCompatKey(),
                             provider, promptCaching));
             case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
+            case "copilot" -> copilotProvider(model,
+                    workspace == null || workspace.isBlank() ? null : java.nio.file.Path.of(workspace),
+                    dev.spectroscope.core.copilot.CopilotRuntime.Environment.current());
             case "spectro-local" -> throw new IllegalStateException(
                     "spectro-local runs through the bundled local runtime "
                     + "(dev.spectroscope.core.local.LocalProviderFactory), wired by the "
@@ -3030,13 +3081,19 @@ public record SpectroConfig(
 
     /** A provider's onboarding status for the first-run dialog and the picker:
      *  an API provider is {@code "ready"} once its key is present and
-     *  {@code "needs-key"} otherwise; a provider with no key variable is
-     *  {@code "local"} — its readiness is a reachability question the live model
-     *  list answers, not a key check.
+     *  {@code "needs-key"} otherwise; a provider that signs in
+     *  ({@link #signsIn}) is {@code "signed-in"} once a sign-in is stored and
+     *  {@code "needs-signin"} otherwise; any other provider has no key variable
+     *  and is {@code "local"}: its readiness is a reachability question the
+     *  live model list answers, not a key check.
      *  @param provider   the provider name
-     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank
-     *  @return "ready" | "needs-key" | "local" */
+     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank, or for
+     *                    a sign-in provider whether a sign-in is stored
+     *  @return "ready" | "needs-key" | "signed-in" | "needs-signin" | "local" */
     public static String onboardingStatus(String provider, boolean keyPresent) {
+        if (signsIn(provider)) {
+            return keyPresent ? "signed-in" : "needs-signin";
+        }
         return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
     }
 
@@ -3264,11 +3321,54 @@ public record SpectroConfig(
      * base URL for the local backends (per-provider address included, card
      * 193). An unparseable base URL degrades to the raw value.
      *
-     * @return e.g. "api.anthropic.com", "localhost:11434", "localhost:1234"
+     * <p>Copilot's runtime is a local process, but what a call sends goes to
+     * GitHub's Copilot service: {@code api.githubcopilot.com} for a github.com
+     * account, the host the runtime reports for a data-residency account
+     * ({@link #copilotHost(String)}).</p>
+     *
+     * @return e.g. "api.anthropic.com", "api.githubcopilot.com", "localhost:11434",
+     *         "localhost" for the bundled runtime
      */
+    /**
+     * The host a Copilot call talks to, from the GitHub host the runtime
+     * reports for the account ({@code auth.getStatus}, or the host the runtime
+     * names when it asks for a token). A github.com account, and an account the
+     * runtime was not asked about yet, talks to {@link #COPILOT_API_HOST}. A
+     * data-residency account names the host the runtime reports. A host that
+     * cannot be read is named as the service, without an address.
+     *
+     * @param statusHost the host the runtime reported, or null
+     * @return the host to show
+     */
+    static String copilotHost(String statusHost) {
+        if (statusHost == null || statusHost.isBlank()) {
+            return COPILOT_API_HOST;
+        }
+        String text = statusHost.strip();
+        String host;
+        try {
+            host = java.net.URI.create(text.contains("://") ? text : "https://" + text).getHost();
+        } catch (RuntimeException unreadable) {
+            return COPILOT_NO_HOST;
+        }
+        if (host == null || host.isBlank()) {
+            return COPILOT_NO_HOST;
+        }
+        host = host.toLowerCase(java.util.Locale.ROOT);
+        return "github.com".equals(host) ? COPILOT_API_HOST : host;
+    }
+
     public String providerHost() {
         if ("anthropic".equals(provider)) {
             return "api.anthropic.com";
+        }
+        if (dev.spectroscope.core.copilot.CopilotRuntime.PROVIDER.equals(provider)) {
+            return copilotHost(dev.spectroscope.core.copilot.CopilotAccount.reportedHost());
+        }
+        if ("spectro-local".equals(provider)) {
+            // The bundled runtime is a llama-server child on a loopback port
+            // chosen when it starts; it was labelled with ollama's port before.
+            return "localhost";
         }
         String effective = isOpenAiCompat(provider) || "ollama".equals(provider)
                 ? endpointFor(provider) : baseUrl;

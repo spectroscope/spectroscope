@@ -166,12 +166,13 @@ const popover = (context: ContextSnapshot, handler: Handler | undefined) => {
       gauge={gauge}
       shownPct={Math.round((42_063 / gauge.denominator.value) * 100)}
       onWindowOverride={handler}
+      aiCredits={null}
     />
   );
 };
 
 const ring = (context: ContextSnapshot, handler: Handler | undefined) => (
-  <ContextRing lastInputTokens={42_063} context={context} onWindowOverride={handler} />
+  <ContextRing lastInputTokens={42_063} context={context} onWindowOverride={handler} aiCredits={null} />
 );
 
 // Card 463: the ring sits in the block under the composer now.
@@ -183,6 +184,7 @@ const meta = (liveView: boolean, handler: Handler) => (
     onApplyProvider={() => {}}
     liveView={liveView}
     lastInputTokens={42_063}
+    aiCredits={null}
     context={SET}
     onWindowOverride={handler}
   />

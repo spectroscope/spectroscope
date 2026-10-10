@@ -33,6 +33,17 @@ dependencies {
     // provider/AnthropicProvider — no other class may import it.
     implementation(libs.anthropic.java)
 
+    // Card 494: the GitHub Copilot Java SDK, an internal detail of
+    // provider/CopilotProvider. It declares the jackson 2.22 family; those
+    // are excluded so the BOM above keeps one Jackson version for the whole
+    // core and for every consumer of its POM. The fake-runtime tests run the
+    // SDK on that version end to end.
+    implementation(libs.copilot.sdk.java) {
+        exclude(group = "com.fasterxml.jackson.core")
+        exclude(group = "com.fasterxml.jackson.datatype")
+    }
+    implementation(libs.jackson.datatype.jsr310)
+
     // Spring Framework as a plain library (RestClient + declarative HTTP
     // interfaces for the Ollama provider). Still no Boot, no container.
     implementation(libs.spring.web)
@@ -103,6 +114,11 @@ tasks.test {
     // writes its table only when both are named on the command line.
     System.getProperty("elision.census.home")?.let { systemProperty("elision.census.home", it) }
     System.getProperty("elision.census.out")?.let { systemProperty("elision.census.out", it) }
+    // Card 494: CopilotLiveReplayTest talks to a real, signed-in Copilot CLI and
+    // writes its redacted record only when both are named on the command line.
+    System.getProperty("copilot.live.cli")?.let { systemProperty("copilot.live.cli", it) }
+    System.getProperty("copilot.live.out")?.let { systemProperty("copilot.live.out", it) }
+    System.getProperty("copilot.live.model")?.let { systemProperty("copilot.live.model", it) }
 }
 
 // Maven Central (card 23): this library publishes through the Central

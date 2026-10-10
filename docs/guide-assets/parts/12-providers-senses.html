@@ -9,22 +9,23 @@ model mid-session.</p>
 <!--SVG:03-provider-port|One port, many backends: the loop only ever sees stream(request). Anthropic, Ollama and the OpenAI-compatible family each implement it; the retry decorator wraps whichever one you picked.-->
 
 <h2 id="ch-providers-three">The backends</h2>
-<p>Eight provider ids resolve to three implementations. Six of them
+<p>Nine provider ids resolve to four implementations. Six of them
 (<code>openai</code>, <code>lmstudio</code>, <code>llamacpp</code>, <code>openrouter</code>,
 <code>gemini</code>, <code>spectro-local</code>) share one wire protocol and differ in which
 host they talk to, whether a key is attached, and which reasoning fields that host
-understands.</p>
+understands. <code>copilot</code> is the fourth: it reaches GitHub Copilot through the
+Copilot runtime, which spectroscope starts as a separate process (macOS only).</p>
 
 <table class="tbl">
-  <tr><th></th><th>anthropic</th><th>ollama</th><th>openai-compatible</th></tr>
-  <tr><td>provider id</td><td><code>anthropic</code></td><td><code>ollama</code></td><td><code>openai</code> · <code>lmstudio</code> · <code>llamacpp</code> · <code>openrouter</code> · <code>gemini</code> · <code>spectro-local</code></td></tr>
-  <tr><td>implementation</td><td><code>AnthropicProvider</code></td><td><code>OllamaProvider</code></td><td><code>OpenAiCompatProvider</code></td></tr>
-  <tr><td>transport</td><td>official SDK, SSE</td><td>NDJSON over <code>POST /api/chat</code></td><td>SSE over <code>POST /v1/chat/completions</code></td></tr>
-  <tr><td>endpoint</td><td><code>api.anthropic.com</code> (fixed)</td><td><code>localhost:11434</code> (preset)</td><td>openai → <code>api.openai.com</code>; lmstudio → <code>localhost:1234</code>; llamacpp → <code>localhost:8080</code>; openrouter → <code>openrouter.ai/api</code>; gemini → the Google gateway; spectro-local → a <code>llama-server</code> spectroscope starts itself. The three local ids read their own <code>…BaseUrl</code> key first (chapter 18); for the rest a set <code>baseUrl</code> overrides the preset</td></tr>
-  <tr><td>key</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td><code>OPENAI_API_KEY</code> (openai) · <code>OPENROUTER_API_KEY</code> (openrouter) · <code>GEMINI_API_KEY</code> (gemini) · none (lmstudio, llamacpp, spectro-local)</td></tr>
-  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td>openai, lmstudio and llamacpp fall back to the placeholder <code>local-model</code>, which a local server ignores; spectro-local takes the bundled catalogue's default; gemini and openrouter have none, so name one</td></tr>
-  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td><code>reasoning_content</code> deltas split out (LM Studio, vLLM). Turning it OFF differs per id: openrouter takes <code>reasoning.enabled</code>, spectro-local takes <code>chat_template_kwargs.enable_thinking</code>, llamacpp takes both that and <code>reasoning_effort: none</code>, LM Studio takes nothing at all</td></tr>
-  <tr><td>quirks</td><td>usage + parsed tool inputs exist only after the stream ends</td><td>mints its own call ids; vision fail-fast for non-vision models</td><td>assembles fragmented tool-call deltas per index</td></tr>
+  <tr><th></th><th>anthropic</th><th>ollama</th><th>openai-compatible</th><th>copilot</th></tr>
+  <tr><td>provider id</td><td><code>anthropic</code></td><td><code>ollama</code></td><td><code>openai</code> · <code>lmstudio</code> · <code>llamacpp</code> · <code>openrouter</code> · <code>gemini</code> · <code>spectro-local</code></td><td><code>copilot</code></td></tr>
+  <tr><td>implementation</td><td><code>AnthropicProvider</code></td><td><code>OllamaProvider</code></td><td><code>OpenAiCompatProvider</code></td><td><code>CopilotProvider</code></td></tr>
+  <tr><td>transport</td><td>official SDK, SSE</td><td>NDJSON over <code>POST /api/chat</code></td><td>SSE over <code>POST /v1/chat/completions</code></td><td>GitHub's Copilot SDK, JSON-RPC to the Copilot runtime</td></tr>
+  <tr><td>endpoint</td><td><code>api.anthropic.com</code> (fixed)</td><td><code>localhost:11434</code> (preset)</td><td>openai → <code>api.openai.com</code>; lmstudio → <code>localhost:1234</code>; llamacpp → <code>localhost:8080</code>; openrouter → <code>openrouter.ai/api</code>; gemini → the Google gateway; spectro-local → a <code>llama-server</code> spectroscope starts itself. The three local ids read their own <code>…BaseUrl</code> key first (chapter 18); for the rest a set <code>baseUrl</code> overrides the preset</td><td>none to set: the Copilot CLI found on this Mac (<code>brew install --cask copilot-cli</code>), or <code>COPILOT_CLI_PATH</code></td></tr>
+  <tr><td>key</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td><code>OPENAI_API_KEY</code> (openai) · <code>OPENROUTER_API_KEY</code> (openrouter) · <code>GEMINI_API_KEY</code> (gemini) · none (lmstudio, llamacpp, spectro-local)</td><td>none: a GitHub sign-in from the model menu</td></tr>
+  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td>openai, lmstudio and llamacpp fall back to the placeholder <code>local-model</code>, which a local server ignores; spectro-local takes the bundled catalogue's default; gemini and openrouter have none, so name one</td><td><code>auto</code>, Copilot's own choice; the menu lists the models the account can use</td></tr>
+  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td><code>reasoning_content</code> deltas split out (LM Studio, vLLM). Turning it OFF differs per id: openrouter takes <code>reasoning.enabled</code>, spectro-local takes <code>chat_template_kwargs.enable_thinking</code>, llamacpp takes both that and <code>reasoning_effort: none</code>, LM Studio takes nothing at all</td><td>the effort levels the model list names for the chosen model</td></tr>
+  <tr><td>quirks</td><td>usage + parsed tool inputs exist only after the stream ends</td><td>mints its own call ids; vision fail-fast for non-vision models</td><td>assembles fragmented tool-call deltas per index</td><td>the runtime keeps the conversation; built-in tools are off, so the harness runs every tool. Each call reports its cost in GitHub AI credits</td></tr>
 </table>
 
 <p><strong>One wire, one endpoint per id, no guessing.</strong> spectroscope used to redirect a
@@ -66,6 +67,10 @@ needs no install either:</p>
 <p>The cloud backends that speak the OpenAI wire do need a key: <code>openai</code>
 (<code>OPENAI_API_KEY</code>), <code>openrouter</code> (<code>OPENROUTER_API_KEY</code>) and
 <code>gemini</code> (<code>GEMINI_API_KEY</code>).
+<code>copilot</code> takes no key: it signs in with a GitHub account that has a Copilot
+subscription and needs the Copilot CLI on a Mac (<code>brew install --cask copilot-cli</code>).
+Pick it in the model menu and open its sign-in sheet; what it costs is billed to that
+account in GitHub AI credits, and the context ring shows the session's total.
 Set the provider in <code>~/.spectro/settings.json</code>, through
 <code>SPECTRO_PROVIDER</code>, with a <code>--provider</code> flag, or from the model
 chip under the message box. The CLI tour is the guided path: <code>spectro tour</code> → Settings

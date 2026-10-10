@@ -101,6 +101,7 @@ describe("a context_cleared event in the ring", () => {
         onApplyProvider: () => {},
         liveView: true,
         lastInputTokens: state.lastInputTokens,
+        aiCredits: state.aiCredits,
         context: state.context,
         onWindowOverride: () => {},
       }),

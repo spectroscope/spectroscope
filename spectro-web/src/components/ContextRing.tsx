@@ -21,7 +21,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ContextSnapshot } from "../state/reducer";
-import { formatTokens } from "../format";
+import { formatCredits, formatTokens } from "../format";
 import { formatWindow } from "./contextWindow";
 import { contextGauge, namedWindow, type ContextGauge } from "./contextRingMath";
 import { t, type Lang } from "../i18n/i18n";
@@ -63,6 +63,9 @@ export function ContextRing(props: {
    *  Undefined where nothing can receive it, the replay view; the popover then
    *  draws no row. Required as a key so a caller cannot drop it by omission. */
   onWindowOverride: ((tokens: number | null) => void) | undefined;
+  /** The session's cost in GitHub AI credits, or null when no call reported
+   *  one (card 496). */
+  aiCredits: number | null;
 }) {
   const { lastInputTokens, context } = props;
   const [open, setOpen] = useState(false);
@@ -154,6 +157,7 @@ export function ContextRing(props: {
           gauge={gauge}
           shownPct={shownPct}
           onWindowOverride={props.onWindowOverride}
+          aiCredits={props.aiCredits}
         />
       )}
     </span>
@@ -177,8 +181,10 @@ export function ContextPopover(props: {
   shownPct: number;
   /** See ContextRing: undefined draws no row. */
   onWindowOverride: ((tokens: number | null) => void) | undefined;
+  /** See ContextRing: null draws no credit line. */
+  aiCredits: number | null;
 }) {
-  const { lastInputTokens, context, gauge, shownPct, onWindowOverride } = props;
+  const { lastInputTokens, context, gauge, shownPct, onWindowOverride, aiCredits } = props;
   const lang = useLang();
   const [draft, setDraft] = useState("");
   // On only when the frame says the operator's window decided. Keyed on the
@@ -204,6 +210,11 @@ export function ContextPopover(props: {
       </p>
       {gauge.compactsAt !== null && (
         <p className="context-compacts tabular">compacts at {formatTokens(gauge.compactsAt)}</p>
+      )}
+      {aiCredits !== null && (
+        <p className="context-credits tabular">
+          {t(lang, "ctx.credits", { credits: formatCredits(aiCredits, lang) })}
+        </p>
       )}
       {named !== null && (
         <p className="context-window tabular">

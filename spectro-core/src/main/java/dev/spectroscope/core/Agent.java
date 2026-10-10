@@ -814,6 +814,7 @@ public final class Agent {
                                     usage.inputTokens(), usage.outputTokens(),
                                     usage.cacheReadTokens() > 0 ? usage.cacheReadTokens() : null,
                                     usage.cacheCreationTokens() > 0 ? usage.cacheCreationTokens() : null,
+                                    usage.aiCredits(),
                                     now()));
                         }
                         case PStop stop -> stopReason = stop.reason();

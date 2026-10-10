@@ -3,7 +3,7 @@
 // function; replay is not a separate code path. Pure and framework-free, the
 // same mental figure as buildGraph.
 
-import type { AskedQuestionWire, ClientMessage, RunEvent } from "../events";
+import { TITLE_AGENT_ID, type AskedQuestionWire, type ClientMessage, type RunEvent } from "../events";
 import { isWorkspaceMode, type WorkspaceMode } from "../workspace/paneState";
 
 import type { ToolResultDetail } from "../import/toolResultDetail";
@@ -300,6 +300,10 @@ export interface UiState {
   usage: TokenUsage;
   /** The current (or most recently finished) run only. */
   runUsage: TokenUsage;
+  /** Session total in GitHub AI credits over every usage event that reported
+   *  one, children included (card 496). Null while none did: no provider but
+   *  Copilot reports credits, and a zero would claim the session was free. */
+  aiCredits: number | null;
   /** Which children billed inside that same run, and for how much. The run
    *  figure counts a subagent exactly the way the session figure does (card
    *  167), and a total that changes meaning has to say so on BOTH lines — the
@@ -415,6 +419,7 @@ export const initialState: UiState = {
   pendingAsks: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   runUsage: { inputTokens: 0, outputTokens: 0 },
+  aiCredits: null,
   runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
   running: false,
   compacting: false,
@@ -1523,6 +1528,21 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       });
 
     case "usage": {
+      // Card 496: a session-title call is paid for like any other call, so its
+      // tokens and AI credits count for the session. It belongs to no run and
+      // has no window of its own: the ring, the run's figures and the list of
+      // children stay as they are.
+      if (event.agentId === TITLE_AGENT_ID) {
+        return {
+          ...state,
+          usage: {
+            inputTokens: state.usage.inputTokens + event.inputTokens,
+            outputTokens: state.usage.outputTokens + event.outputTokens,
+          },
+          aiCredits:
+            event.aiCredits !== undefined ? (state.aiCredits ?? 0) + event.aiCredits : state.aiCredits,
+        };
+      }
       const start = state.assistantTurnStart[event.agentId];
       // Card 414: only a model turn that wrote into an assistant turn has an
       // answer to stamp. A turn that only called a tool is not on the list,
@@ -1554,6 +1574,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           inputTokens: state.usage.inputTokens + event.inputTokens,
           outputTokens: state.usage.outputTokens + event.outputTokens,
         },
+        aiCredits: event.aiCredits !== undefined ? (state.aiCredits ?? 0) + event.aiCredits : state.aiCredits,
         runUsage: {
           inputTokens: state.runUsage.inputTokens + event.inputTokens,
           outputTokens: state.runUsage.outputTokens + event.outputTokens,

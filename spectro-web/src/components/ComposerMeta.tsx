@@ -198,6 +198,9 @@ export function ComposerMeta(props: {
   liveView: boolean;
   /** Context gauge: appears with the first usage event of the view. */
   lastInputTokens: number;
+  /** The session's cost in GitHub AI credits for the ring, or null (card 496).
+   *  Required, so a caller that forgets to pass it does not compile. */
+  aiCredits: number | null;
   context: UiState["context"];
   onWindowOverride?: (tokens: number | null) => void;
 }) {
@@ -229,6 +232,7 @@ export function ComposerMeta(props: {
         <ContextRing
           lastInputTokens={props.lastInputTokens}
           context={props.context}
+          aiCredits={props.aiCredits}
           onWindowOverride={ringWindowOverride(props.liveView, props.onWindowOverride)}
         />
       )}

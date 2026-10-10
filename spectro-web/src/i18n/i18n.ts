@@ -1001,6 +1001,66 @@ export const dict: Record<string, { de: string; en: string }> = {
   "perm.task": { de: "Auftrag: {task}", en: "Task: {task}" },
 
   // provider picker (header)
+  "cp.title": { de: "Anmeldung bei GitHub Copilot", en: "GitHub Copilot sign-in" },
+  "cp.signedInAs": { de: "Angemeldet als {login}", en: "Signed in as {login}" },
+  "cp.notSignedIn": { de: "Nicht angemeldet", en: "Not signed in" },
+  "cp.waiting": { de: "Wartet auf deine Bestätigung im Browser", en: "Waiting for your confirmation in the browser" },
+  "cp.viaGithub": {
+    de: "Über die eigene GitHub-Anmeldung von spectroscope.",
+    en: "Through spectroscope's own GitHub sign-in.",
+  },
+  "cp.viaCli": {
+    de: "Über die Anmeldung der Copilot CLI auf diesem Mac.",
+    en: "Through the sign-in of the Copilot CLI on this Mac.",
+  },
+  "cp.openAndEnter": {
+    de: "Öffne diese Adresse im Browser und gib dort den Code ein:",
+    en: "Open this address in your browser and enter the code there:",
+  },
+  "cp.afterConfirm": {
+    de: "Dieses Fenster aktualisiert sich, sobald du den Code bestätigt hast.",
+    en: "This sheet updates once you have confirmed the code.",
+  },
+  "cp.signInGithub": { de: "Mit GitHub anmelden", en: "Sign in with GitHub" },
+  "cp.signInCli": { de: "Anmeldung der Copilot CLI verwenden", en: "Use the Copilot CLI sign-in" },
+  "cp.noGithub": {
+    de: "Die eigene GitHub-Anmeldung braucht eine registrierte GitHub-OAuth-App, und es ist keine eingerichtet.",
+    en: "The own GitHub sign-in needs a registered GitHub OAuth app, and none is configured.",
+  },
+  "cp.noCli": { de: "Auf diesem Mac wurde keine Copilot CLI gefunden.", en: "No Copilot CLI was found on this Mac." },
+  "cp.cancel": { de: "Abbrechen", en: "Cancel" },
+  "cp.signOut": { de: "Abmelden", en: "Sign out" },
+  "cp.close": { de: "Schließen", en: "Close" },
+  "cp.manage": { de: "Anmeldung …", en: "Sign-in …" },
+  "cp.unreachable": {
+    de: "Der Anmeldestatus konnte nicht gelesen werden.",
+    en: "The sign-in status could not be read.",
+  },
+  "cp.loading": { de: "Anmeldestatus wird gelesen", en: "Reading the sign-in status" },
+  "cp.readFailed": {
+    de: "Der letzte Abruf des Status ist fehlgeschlagen. Es wird weiter versucht.",
+    en: "The last status read failed. The sheet keeps trying.",
+  },
+  "cp.working": { de: "Einen Moment.", en: "One moment." },
+  "cp.workingCli": {
+    de: "Die Copilot CLI wird gefragt. Das kann bis zu 30 Sekunden dauern.",
+    en: "Asking the Copilot CLI. This can take up to 30 seconds.",
+  },
+  "cp.signInOther": { de: "Mit einem anderen GitHub-Konto anmelden", en: "Sign in with another GitHub account" },
+  "cp.checkedOnRun": {
+    de: "GitHub prüft das Copilot-Abonnement beim ersten Lauf. Lehnt es ab, steht der Grund hier.",
+    en: "GitHub checks the Copilot subscription when a run starts. If it refuses, the reason shows here.",
+  },
+  "cp.codeLabel": { de: "Code", en: "Code" },
+  "set.copilotNote": {
+    de: "Copilot meldet sich mit deinem GitHub-Konto an, nicht mit einem API-Key. Jede Antwort wird diesem Konto in GitHub AI-Credits berechnet, und der Kontextring zeigt, was diese Sitzung bisher gekostet hat.",
+    en: "Copilot signs in with your GitHub account instead of an API key. Each answer is billed to that account in GitHub AI credits, and the context ring shows what this session has cost so far.",
+  },
+  "set.copilotInstall": {
+    de: "Dafür braucht es die Copilot CLI auf diesem Mac. Installieren mit: {install}",
+    en: "It needs the Copilot CLI on this Mac. Install it with: {install}",
+  },
+  "ctx.credits": { de: "AI-Credits in dieser Sitzung · {credits}", en: "AI credits this session · {credits}" },
   "pp.chipTitle": { de: "LLM-Backend wechseln", en: "Switch LLM backend" },
   "pp.provider": { de: "Provider", en: "Provider" },
   "pp.model": { de: "Modell", en: "Model" },

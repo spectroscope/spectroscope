@@ -37,13 +37,19 @@ const render = (context: ContextSnapshot | null, lastInputTokens = 24_100): stri
       gauge={gauge}
       shownPct={Math.round((lastInputTokens / gauge.denominator.value) * 100)}
       onWindowOverride={undefined}
+      aiCredits={null}
     />,
   );
 };
 
 const renderRing = (context: ContextSnapshot | null, lastInputTokens: number): string =>
   renderToStaticMarkup(
-    <ContextRing lastInputTokens={lastInputTokens} context={context} onWindowOverride={undefined} />,
+    <ContextRing
+      lastInputTokens={lastInputTokens}
+      context={context}
+      onWindowOverride={undefined}
+      aiCredits={null}
+    />,
   );
 
 /** The whole headline, not a substring of it. */
