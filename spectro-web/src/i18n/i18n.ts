@@ -4863,7 +4863,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pc.count.agentOne": { de: "1 Agent", en: "1 agent" },
   "pc.count.workflow": { de: "{n} Workflows", en: "{n} workflows" },
   "pc.count.workflowOne": { de: "1 Workflow", en: "1 workflow" },
-  "pc.hash": { de: "Inhalts-Hash", en: "Contents hash" },
+  "pc.hash": { de: "Prüfsumme des Inhalts", en: "Contents hash" },
   "pc.runTitle": { de: "Was dieses Playbook mitbringt", en: "What this playbook brings" },
   "pc.runChanged": { de: "Seit der Installation geändert: {names}", en: "Changed since the install: {names}" },
   "pc.notInstalled": { de: "{n} Inhalte sind nicht installiert.", en: "{n} items are not installed." },
