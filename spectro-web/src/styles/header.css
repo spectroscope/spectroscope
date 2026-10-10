@@ -13,6 +13,15 @@
   z-index: var(--z-sticky);
 }
 
+/* Card 514: on a narrow window the header carries back and forward beside the
+   mode switch and the menu. The title is already at zero there, so the gaps
+   give up the width the pair needs. */
+@media (max-width: 767px) {
+  .header {
+    gap: var(--sp-2);
+  }
+}
+
 /* Session titles are headings, not labels: Book weight, tracked like the DS.
    Card 477: the title starts from nothing and grows up to its own text, so a
    short row cuts the title first and the folder chip beside it keeps its full

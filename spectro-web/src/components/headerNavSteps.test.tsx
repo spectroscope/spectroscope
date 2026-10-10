@@ -176,6 +176,17 @@ describe("the pair has one home (card 514)", () => {
     expect(headerCss).toMatch(/\.nav-steps__step:disabled \{/);
   });
 
+  it("tightens the header's gaps on a narrow window, so the pair, the switch and the menu fit at 390 px", () => {
+    // Measured live on 2026-10-10 (Playwright, Chrome, 390 px): with the pair
+    // added at the 12 px gap the header ran 4 px past the window and clipped the
+    // menu. The title already stood at zero, so the gaps give up the width.
+    const headerCss = blankBlockComments(read("../styles/header.css", import.meta.url));
+    const narrow = /@media \(max-width: 767px\) \{([\s\S]*?)\n\}/.exec(headerCss);
+    expect(narrow).not.toBeNull();
+    const rule = /\.header \{([^}]*)\}/.exec(narrow?.[1] ?? "");
+    expect(rule?.[1]).toMatch(/gap: var\(--sp-2\);/);
+  });
+
   it("lists back and forward once in the keymap, with the shortcuts unchanged", () => {
     const keymap = read("./Keymap.tsx", import.meta.url);
     expect(count(keymap, 'keys: ["⌘", "←"]')).toBe(1);
