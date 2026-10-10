@@ -1,9 +1,16 @@
 package dev.spectroscope.server.providers;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -16,6 +23,33 @@ class ProviderRegistryBudgetTest {
 
     /** Card 480 acceptance 2, as a literal so a raised constant cannot raise the bound with it. */
     private static final long CARD_CEILING_MS = 5_000L;
+
+    /** The two files of the user layer, in the test home every test class of this module shares. */
+    private static final List<Path> USER_LAYER =
+            List.of(SpectroConfig.CONFIG_PATH, SpectroConfig.USER_SETTINGS_PATH);
+
+    /** Holds the shared user layer while a test runs, so this class reads an empty one. */
+    @TempDir
+    Path stash;
+
+    @BeforeEach
+    void setTheSharedUserLayerAside() throws IOException {
+        for (Path file : USER_LAYER) {
+            if (Files.exists(file)) {
+                Files.move(file, stash.resolve(file.getFileName()));
+            }
+        }
+    }
+
+    @AfterEach
+    void putTheSharedUserLayerBack() throws IOException {
+        for (Path file : USER_LAYER) {
+            Path kept = stash.resolve(file.getFileName());
+            if (Files.exists(kept)) {
+                Files.move(kept, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
 
     private static SpectroConfig config() {
         return SpectroConfig.load(SpectroConfig.Overrides.none());

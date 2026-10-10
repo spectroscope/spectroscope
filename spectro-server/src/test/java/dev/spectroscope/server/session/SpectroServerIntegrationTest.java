@@ -155,9 +155,12 @@ class SpectroServerIntegrationTest {
                 """.formatted(ollamaMock.getAddress().getPort()));
     }
 
+    /** Removes the config.json written above: it points every provider at 127.0.0.1,
+     *  and the test home outlives this class and a {@code --rerun-tasks} run. */
     @AfterAll
-    static void stopMock() {
+    static void stopMockAndRemoveConfig() throws IOException {
         ollamaMock.stop(0);
+        Files.deleteIfExists(Path.of(System.getProperty("user.home"), ".spectro", "config.json"));
     }
 
     @Test
