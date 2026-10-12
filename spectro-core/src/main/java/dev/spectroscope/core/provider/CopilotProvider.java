@@ -188,6 +188,14 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
     private static final long ABORT_SETTLE_MS = 5_000;
 
+    /**
+     * How long closing a conversation waits for the SDK to attach its reply
+     * to a parked call. A ceiling; the attachment follows the return of the
+     * tool handler on the SDK's own thread.
+     */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
+    private static final long REPLY_ATTACH_WAIT_MS = 2_000;
+
     /** How long the runtime may take to start. Card 478 measured 574 and 752 ms. */
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.SECONDS)
     private static final long START_TIMEOUT_S = 60;
@@ -987,6 +995,25 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                     + " not run " + permission.getKind() + " requests");
         }
 
+        /**
+         * The SDK hangs its reply on a parked future only after {@link #park}
+         * has returned. A future completed before that, with the session
+         * closed right after, loses its pending call in the SDK and the
+         * runtime never hears the error (the 0.15.2 runner, 3 of 4 gate runs).
+         * Waits up to two seconds for the reply to be attached.
+         */
+        private static void awaitReplyAttached(CompletableFuture<Object> result) {
+            long deadline = System.nanoTime() + REPLY_ATTACH_WAIT_MS * 1_000_000L;
+            while (result.getNumberOfDependents() == 0 && System.nanoTime() < deadline) {
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+
         synchronized boolean hasParked() {
             return !parked.isEmpty();
         }
@@ -1000,6 +1027,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         void close() {
             turn = null;
             for (Parked p : takeParked()) {
+                awaitReplyAttached(p.result());
                 p.result().complete(ToolResultObject.error("the conversation was closed"));
             }
             try {
