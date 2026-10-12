@@ -1561,6 +1561,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "REPLY_ATTACH_WAIT_MS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long closing a conversation waits for the SDK to attach its reply to a parked call. A ceiling; the attachment follows the return of the tool handler on the SDK's own thread."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
     "field" : "START_TIMEOUT_S",
     "value" : "60",
     "expression" : "60",
